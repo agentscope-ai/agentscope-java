@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="Agent as Tool" href="agent-as-tool.html">
+    <meta property="article:modified_time" content="2026-04-28T03:14:44+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="Agent as Tool" href="agent-as-tool.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -492,6 +492,12 @@
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">---</span>
 <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">skill-name</span><span class="w">                    </span><span class="c1"># Required: Skill name (lowercase letters, numbers, underscores)</span>
 <span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">This skill should be used when...</span><span class="w">  </span><span class="c1"># Required: Trigger description, explaining when to use</span>
+<span class="nt">homepage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://example.com/docs</span><span class="w">  </span><span class="c1"># Optional: Additional metadata exposed to the agent prompt</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">clawdbot</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">requires</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">env</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">API_KEY</span>
 <span class="nn">---</span>
 
 <span class="c1"># Skill Name</span>
@@ -512,6 +518,13 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> - Skill name (lowercase letters, numbers, underscores)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">description</span></code> - Skill functionality and usage scenarios, helps AI determine when to use</p></li>
 </ul>
+<p><strong>Metadata Notes:</strong></p>
+<ul class="simple">
+<li><p>Any additional YAML frontmatter fields are preserved as skill metadata, not limited to predefined fields</p></li>
+<li><p>Nested maps and lists are supported and keep their structure and insertion order</p></li>
+<li><p>Frontmatter is parsed with SnakeYAML <code class="docutils literal notranslate"><span class="pre">SafeConstructor</span></code>; only top-level YAML objects of type <code class="docutils literal notranslate"><span class="pre">Map</span></code> are accepted</p></li>
+<li><p>Invalid frontmatter or frontmatter exceeding the parser limit is ignored and treated as empty metadata</p></li>
+</ul>
 </section>
 </section>
 <section id="quick-start">
@@ -523,6 +536,7 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use when analyzing data...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">putMetadata</span><span class="p">(</span><span class="s">&quot;homepage&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;https://example.com/docs&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/formulas.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# Common Formulas\n...&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="s">&quot;custom&quot;</span><span class="p">)</span>
@@ -770,28 +784,28 @@ is used.</p>
 </section>
 <section id="feature-4-custom-skill-prompts">
 <h3>Feature 4: Custom Skill Prompts<a class="headerlink" href="#feature-4-custom-skill-prompts" title="Link to this heading">¶</a></h3>
-<p>When SkillBox injects a system prompt into the Agent, it generates a description entry for each registered Skill so the LLM can decide when to load which Skill. The two components of this prompt can be customized via the constructor:</p>
+<p>When SkillBox injects a system prompt into the Agent, it generates one XML <code class="docutils literal notranslate"><span class="pre">&lt;skill&gt;</span></code> entry per registered Skill so the LLM can decide when to load which Skill. Metadata is rendered directly from <code class="docutils literal notranslate"><span class="pre">AgentSkill.getMetadata()</span></code>, and <code class="docutils literal notranslate"><span class="pre">&lt;skill-id&gt;</span></code> is always appended for tool loading.</p>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">instruction</span></code></strong>: The prompt header, explaining how to use Skills (how to load them, path conventions, etc.). Defaults to a built-in <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> usage guide</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">template</span></code></strong>: The format template for each Skill entry, containing three <code class="docutils literal notranslate"><span class="pre">%s</span></code> placeholders corresponding to <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">description</span></code>, and <code class="docutils literal notranslate"><span class="pre">skillId</span></code> in order</p></li>
+<li><p><strong>XML metadata rendering</strong>: Scalar metadata becomes a child element, nested maps become nested XML, and lists become repeated <code class="docutils literal notranslate"><span class="pre">&lt;item&gt;</span></code> elements</p></li>
+<li><p><strong>Metadata exposure control</strong>: <code class="docutils literal notranslate"><span class="pre">skillBox.setExposeAllSkillMetadata(false)</span></code> limits the prompt to <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">description</span></code>, and <code class="docutils literal notranslate"><span class="pre">skill-id</span></code>; the default is to expose all metadata fields</p></li>
 </ul>
 <p>When code execution is enabled, the section appended after <code class="docutils literal notranslate"><span class="pre">&lt;/available_skills&gt;</span></code> can also be customized via <code class="docutils literal notranslate"><span class="pre">.codeExecutionInstruction()</span></code>:</p>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">codeExecutionInstruction</span></code></strong>: Template for the code execution section; every <code class="docutils literal notranslate"><span class="pre">%s</span></code> placeholder will be replaced with the <code class="docutils literal notranslate"><span class="pre">uploadDir</span></code> absolute path. Passing <code class="docutils literal notranslate"><span class="pre">null</span></code> or blank uses the built-in default.</p></li>
 </ul>
-<p>Passing <code class="docutils literal notranslate"><span class="pre">null</span></code> or a blank string for any of these uses the built-in default.</p>
+<p>Passing <code class="docutils literal notranslate"><span class="pre">null</span></code> or a blank string for <code class="docutils literal notranslate"><span class="pre">instruction</span></code> or <code class="docutils literal notranslate"><span class="pre">codeExecutionInstruction</span></code> uses the built-in default.</p>
 <p><strong>Example</strong>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Customize instruction and template</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Customize the instruction header</span>
 <span class="n">String</span><span class="w"> </span><span class="n">customInstruction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
 <span class="s">    ## Available Skills</span>
 <span class="s">    When a task matches a skill, load it with load_skill_through_path.</span>
 <span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
 
-<span class="n">String</span><span class="w"> </span><span class="n">customTemplate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
-<span class="s">    - **%s**: %s (id: %s)</span>
-<span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
+<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">,</span><span class="w"> </span><span class="n">customInstruction</span><span class="p">);</span>
 
-<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">,</span><span class="w"> </span><span class="n">customInstruction</span><span class="p">,</span><span class="w"> </span><span class="n">customTemplate</span><span class="p">);</span>
+<span class="c1">// Optionally expose only core metadata fields in the prompt</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">setExposeAllSkillMetadata</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
 
 <span class="c1">// Customize the code execution section (takes effect when code execution is enabled)</span>
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
@@ -879,7 +893,7 @@ is used.</p>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-04-13</div>
+              Last updated on 2026-04-28</div>
           </div>
           <div class="right-details">
             <div class="icons">

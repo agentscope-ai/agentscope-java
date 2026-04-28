@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="Agent as Tool（子智能体工具）" href="agent-as-tool.html">
+    <meta property="article:modified_time" content="2026-04-28T03:14:44+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="Agent as Tool（子智能体工具）" href="agent-as-tool.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -493,6 +493,12 @@
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">---</span>
 <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">skill-name</span><span class="w">                    </span><span class="c1"># 必需: 技能名称(小写字母、数字、下划线)</span>
 <span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">This skill should be used when...</span><span class="w">  </span><span class="c1"># 必需: 触发描述,说明何时使用</span>
+<span class="nt">homepage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://example.com/docs</span><span class="w">  </span><span class="c1"># 可选: 额外 metadata,会暴露到智能体提示词中</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">clawdbot</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">requires</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">env</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">API_KEY</span>
 <span class="nn">---</span>
 
 <span class="c1"># 技能名称</span>
@@ -513,6 +519,13 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> - 技能的名字（小写字母、数字、下划线）</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">description</span></code> - 技能功能和使用场景描述，帮助 AI 判断何时使用</p></li>
 </ul>
+<p><strong>Metadata 说明:</strong></p>
+<ul class="simple">
+<li><p>YAML frontmatter 中除 <code class="docutils literal notranslate"><span class="pre">name</span></code>、<code class="docutils literal notranslate"><span class="pre">description</span></code> 外的字段都会作为 Skill metadata 保留，不再局限于固定字段</p></li>
+<li><p>支持嵌套 <code class="docutils literal notranslate"><span class="pre">Map/List</span></code>，并保留原有层级结构和插入顺序</p></li>
+<li><p>frontmatter 使用 SnakeYAML <code class="docutils literal notranslate"><span class="pre">SafeConstructor</span></code> 解析，只接受顶层为 <code class="docutils literal notranslate"><span class="pre">Map</span></code> 的 YAML 对象</p></li>
+<li><p>非法 frontmatter 或超过解析器限制的 frontmatter 会被忽略，并按空 metadata 处理</p></li>
+</ul>
 </section>
 <section id="id5">
 <h2>快速开始<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
@@ -523,6 +536,7 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use when analyzing data...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">putMetadata</span><span class="p">(</span><span class="s">&quot;homepage&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;https://example.com/docs&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/formulas.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# 常用公式\n...&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="s">&quot;custom&quot;</span><span class="p">)</span>
@@ -764,28 +778,28 @@
 </section>
 <section id="id14">
 <h3>功能 4: 自定义 Skill 提示词<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
-<p>SkillBox 在注入给 Agent 的系统提示词中,会为每个已注册的 Skill 生成描述信息,供 LLM 判断何时加载哪个 Skill。通过构造函数可自定义提示词的两个组成部分:</p>
+<p>SkillBox 在注入给 Agent 的系统提示词中,会为每个已注册的 Skill 生成一个 XML <code class="docutils literal notranslate"><span class="pre">&lt;skill&gt;</span></code> 条目,供 LLM 判断何时加载哪个 Skill。metadata 直接来自 <code class="docutils literal notranslate"><span class="pre">AgentSkill.getMetadata()</span></code>，并始终追加 <code class="docutils literal notranslate"><span class="pre">&lt;skill-id&gt;</span></code> 作为工具加载标识。</p>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">instruction</span></code></strong>: 提示词头部,说明 Skill 的使用方式(如何加载、路径约定等)。默认包含 <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> 的调用说明</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">template</span></code></strong>: 每个 Skill 条目的格式模板,包含三个 <code class="docutils literal notranslate"><span class="pre">%s</span></code> 占位符,依次对应 <code class="docutils literal notranslate"><span class="pre">name</span></code>、<code class="docutils literal notranslate"><span class="pre">description</span></code>、<code class="docutils literal notranslate"><span class="pre">skillId</span></code></p></li>
+<li><p><strong>XML metadata 渲染</strong>: 标量会渲染为子节点,嵌套 <code class="docutils literal notranslate"><span class="pre">Map</span></code> 会递归渲染为嵌套 XML,列表会渲染为重复的 <code class="docutils literal notranslate"><span class="pre">&lt;item&gt;</span></code> 节点</p></li>
+<li><p><strong>metadata 暴露控制</strong>: <code class="docutils literal notranslate"><span class="pre">skillBox.setExposeAllSkillMetadata(false)</span></code> 可将提示词限制为只暴露 <code class="docutils literal notranslate"><span class="pre">name</span></code>、<code class="docutils literal notranslate"><span class="pre">description</span></code> 和 <code class="docutils literal notranslate"><span class="pre">skill-id</span></code>；默认暴露全部 metadata</p></li>
 </ul>
 <p>开启代码执行后,还可通过 <code class="docutils literal notranslate"><span class="pre">.codeExecutionInstruction()</span></code> 自定义追加在 <code class="docutils literal notranslate"><span class="pre">&lt;/available_skills&gt;</span></code> 之后的代码执行说明段落:</p>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">codeExecutionInstruction</span></code></strong>: 代码执行说明模板,所有 <code class="docutils literal notranslate"><span class="pre">%s</span></code> 占位符都会被替换为 <code class="docutils literal notranslate"><span class="pre">uploadDir</span></code> 的绝对路径。传 <code class="docutils literal notranslate"><span class="pre">null</span></code> 或空字符串时使用内置默认值</p></li>
 </ul>
-<p>三者传 <code class="docutils literal notranslate"><span class="pre">null</span></code> 或空字符串时均使用内置默认值。</p>
+<p><code class="docutils literal notranslate"><span class="pre">instruction</span></code> 和 <code class="docutils literal notranslate"><span class="pre">codeExecutionInstruction</span></code> 传 <code class="docutils literal notranslate"><span class="pre">null</span></code> 或空字符串时均使用内置默认值。</p>
 <p><strong>示例代码</strong>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义 instruction 和 template</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义 instruction 头部</span>
 <span class="n">String</span><span class="w"> </span><span class="n">customInstruction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
 <span class="s">    ## 可用技能</span>
 <span class="s">    当任务匹配某个技能时,使用 load_skill_through_path 加载它。</span>
 <span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
 
-<span class="n">String</span><span class="w"> </span><span class="n">customTemplate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
-<span class="s">    - **%s**: %s (id: %s)</span>
-<span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
+<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">,</span><span class="w"> </span><span class="n">customInstruction</span><span class="p">);</span>
 
-<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">,</span><span class="w"> </span><span class="n">customInstruction</span><span class="p">,</span><span class="w"> </span><span class="n">customTemplate</span><span class="p">);</span>
+<span class="c1">// 可选: 仅向 prompt 暴露核心 metadata</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">setExposeAllSkillMetadata</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
 
 <span class="c1">// 自定义代码执行说明(开启代码执行后生效)</span>
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
@@ -873,7 +887,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-04-13</div>
+              Last updated on 2026-04-28</div>
           </div>
           <div class="right-details">
             <div class="icons">
