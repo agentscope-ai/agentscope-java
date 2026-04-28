@@ -89,40 +89,49 @@ public class AguiAgentAdapter {
      * @return A Flux of AG-UI events
      */
     public Flux<AguiEvent> run(RunAgentInput input) {
-        String threadId = input.getThreadId();
-        String runId = input.getRunId();
+        return Flux.defer(
+                () -> {
+                    String threadId = input.getThreadId();
+                    String runId = input.getRunId();
 
-        // Convert AG-UI messages to AgentScope messages
-        List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
+                    // Convert AG-UI messages to AgentScope messages
+                    List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
 
-        // Create stream options - use incremental mode for true streaming
-        StreamOptions options =
-                StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
+                    // Create stream options - use incremental mode for true streaming
+                    StreamOptions options =
+                            StreamOptions.builder()
+                                    .eventTypes(EventType.ALL)
+                                    .incremental(true)
+                                    .build();
 
-        // Track state for event conversion
-        EventConversionState state = new EventConversionState(threadId, runId);
+                    // Track state for event conversion
+                    EventConversionState state = new EventConversionState(threadId, runId);
 
-        return Flux.concat(
-                        // Emit RUN_STARTED
-                        Flux.just(new AguiEvent.RunStarted(threadId, runId)),
-                        // Stream agent events and convert to AG-UI events
-                        // Use concatMapIterable to preserve strict event ordering
-                        agent.stream(msgs, options)
-                                .concatMapIterable(event -> convertEvent(event, state)),
-                        // Emit any pending end events and RUN_FINISHED
-                        Flux.defer(() -> finishRun(state)))
-                .onErrorResume(
-                        error -> {
-                            // On error, emit RawEvent with error info followed by RunFinished
-                            String errorMessage =
-                                    error.getMessage() != null
-                                            ? error.getMessage()
-                                            : error.getClass().getSimpleName();
-                            return Flux.just(
-                                    new AguiEvent.Raw(
-                                            threadId, runId, Map.of("error", errorMessage)),
-                                    new AguiEvent.RunFinished(threadId, runId));
-                        });
+                    return Flux.concat(
+                                    // Emit RUN_STARTED
+                                    Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                    // Stream agent events and convert to AG-UI events
+                                    // Use concatMapIterable to preserve strict event ordering
+                                    agent.stream(msgs, options)
+                                            .concatMapIterable(event -> convertEvent(event, state)),
+                                    // Emit any pending end events and RUN_FINISHED
+                                    Flux.defer(() -> finishRun(state)))
+                            .onErrorResume(
+                                    error -> {
+                                        // On error, emit RawEvent with error info followed by
+                                        // RunFinished
+                                        String errorMessage =
+                                                error.getMessage() != null
+                                                        ? error.getMessage()
+                                                        : error.getClass().getSimpleName();
+                                        return Flux.just(
+                                                new AguiEvent.Raw(
+                                                        threadId,
+                                                        runId,
+                                                        Map.of("error", errorMessage)),
+                                                new AguiEvent.RunFinished(threadId, runId));
+                                    });
+                });
     }
 
     /**
