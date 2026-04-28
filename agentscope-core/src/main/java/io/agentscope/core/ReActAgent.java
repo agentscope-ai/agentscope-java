@@ -234,12 +234,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      */
     @Override
     public boolean loadIfExists(Session session, SessionKey sessionKey) {
+        setCurrentSessionKey(sessionKey);
         shutdownManager.bindSession(this, session, sessionKey);
         return super.loadIfExists(session, sessionKey);
     }
 
     @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
+        setCurrentSessionKey(sessionKey);
         shutdownManager.bindSession(this, session, sessionKey);
         // Load memory if managed
         if (statePersistence.memoryManaged()) {
