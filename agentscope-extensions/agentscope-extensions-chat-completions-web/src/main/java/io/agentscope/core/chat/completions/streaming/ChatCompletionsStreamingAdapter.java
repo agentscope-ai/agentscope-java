@@ -83,6 +83,15 @@ public class ChatCompletionsStreamingAdapter {
      * from the last REASONING event if incremental chunks were seen, while preserving tool calls
      * and finish reasons.
      *
+     * <p><b>Tool Call Handling:</b> Tool calls are only emitted from the final REASONING event
+     * (isLast=true), never from intermediate incremental events. This is because LLM streaming
+     * produces tool call argument JSON in fragments across multiple chunks. Forwarding individual
+     * fragments would cause OpenAI-compatible clients to accumulate malformed JSON (e.g. the client
+     * would concatenate {@code {"url": "htt} and the final complete {@code {"url":"https://..."}}
+     * into an invalid combined string). By emitting the tool call only once with the fully
+     * accumulated and validated arguments from the final event, clients always receive a single
+     * well-formed JSON arguments string.
+     *
      * @param agent The agent to stream from
      * @param messages The messages to send to the agent
      * @param requestId The request ID for tracking (used as chunk ID)
@@ -111,14 +120,24 @@ public class ChatCompletionsStreamingAdapter {
                         })
                 .flatMap(
                         event -> {
-                            // Filter out text from last REASONING events if we've seen incremental
-                            // ones
                             if (event.getType() == EventType.REASONING
                                     && event.isLast()
                                     && hasSeenIncrementalReasoning.get()) {
-                                // This is the final accumulated text event, filter out its text
-                                // but keep tool calls and finish reason
+                                // Final accumulated event: skip text (already sent via incremental
+                                // chunks) but emit complete, valid tool calls and finish reason.
                                 return convertEventToChunksWithoutText(event, requestId, model);
+                            }
+                            if (event.getType() == EventType.REASONING && !event.isLast()) {
+                                // Intermediate incremental chunk: emit only text content.
+                                // Tool calls must NOT be forwarded here because each LLM streaming
+                                // chunk carries only a fragment of the arguments JSON, which is
+                                // incomplete (e.g. {"url": "htt). Forwarding fragments causes
+                                // OpenAI-compatible clients to accumulate invalid JSON.
+                                // Complete tool calls are emitted once from the final REASONING
+                                // event (PostReasoningEvent) where the full arguments are
+                                // available.
+                                return convertEventToChunksWithoutToolCalls(
+                                        event, requestId, model);
                             }
                             return convertEventToChunks(event, requestId, model);
                         });
@@ -136,7 +155,7 @@ public class ChatCompletionsStreamingAdapter {
      */
     public Flux<ChatCompletionsChunk> convertEventToChunks(
             Event event, String requestId, String model) {
-        return convertEventToChunksInternal(event, requestId, model, true);
+        return convertEventToChunksInternal(event, requestId, model, true, true);
     }
 
     /**
@@ -152,20 +171,43 @@ public class ChatCompletionsStreamingAdapter {
      */
     private Flux<ChatCompletionsChunk> convertEventToChunksWithoutText(
             Event event, String requestId, String model) {
-        return convertEventToChunksInternal(event, requestId, model, false);
+        return convertEventToChunksInternal(event, requestId, model, false, true);
     }
 
     /**
-     * Internal method to convert an agent event to chunks with optional text filtering.
+     * Convert an agent event to chunks, excluding tool calls.
+     *
+     * <p>This is used for intermediate incremental events where the LLM has only emitted partial
+     * argument JSON fragments. Forwarding these fragments to external clients causes them to
+     * accumulate malformed JSON. Tool calls are instead emitted once, complete, from the final
+     * REASONING event via {@link #convertEventToChunksWithoutText}.
+     *
+     * @param event The agent event
+     * @param requestId The request ID
+     * @param model The model name
+     * @return Flux of ChatCompletionsChunk objects (without tool call chunks)
+     */
+    private Flux<ChatCompletionsChunk> convertEventToChunksWithoutToolCalls(
+            Event event, String requestId, String model) {
+        return convertEventToChunksInternal(event, requestId, model, true, false);
+    }
+
+    /**
+     * Internal method to convert an agent event to chunks with optional content filtering.
      *
      * @param event The agent event
      * @param requestId The request ID
      * @param model The model name
      * @param includeText Whether to include text content
+     * @param includeToolCalls Whether to include tool call content
      * @return Flux of ChatCompletionsChunk objects
      */
     private Flux<ChatCompletionsChunk> convertEventToChunksInternal(
-            Event event, String requestId, String model, boolean includeText) {
+            Event event,
+            String requestId,
+            String model,
+            boolean includeText,
+            boolean includeToolCalls) {
         Msg msg = event.getMessage();
         if (msg == null) {
             return Flux.empty();
@@ -195,7 +237,7 @@ public class ChatCompletionsStreamingAdapter {
         }
 
         // Extract tool calls (only for REASONING events from assistant)
-        if (event.getType() == EventType.REASONING) {
+        if (event.getType() == EventType.REASONING && includeToolCalls) {
             List<ToolCall> toolCalls = new ArrayList<>();
             int toolCallIndex = 0;
             for (ContentBlock block : contentBlocks) {
