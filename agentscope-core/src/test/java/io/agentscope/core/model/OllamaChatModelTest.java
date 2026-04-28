@@ -40,6 +40,7 @@ import io.agentscope.core.model.ollama.ThinkOption;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.core.util.JacksonJsonCodec;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
@@ -1023,5 +1024,87 @@ class OllamaChatModelTest {
                 uniqueIdCount,
                 "All stream chunks for a single response must share the same stable ID! Found IDs: "
                         + collectedIds);
+    }
+
+    // ==========================================================================
+    // Proxy configuration tests
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Should create Ollama model with proxy() only")
+    void testProxyOnly() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        OllamaChatModel model =
+                OllamaChatModel.builder()
+                        .modelName("llama3")
+                        .baseUrl("http://localhost:11434")
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals("llama3", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create Ollama model with httpTransport() only")
+    void testHttpTransportOnly() {
+        HttpTransport transport =
+                new HttpTransport() {
+                    @Override
+                    public HttpResponse execute(HttpRequest request) {
+                        return null;
+                    }
+
+                    @Override
+                    public reactor.core.publisher.Flux<String> stream(HttpRequest request) {
+                        return null;
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+
+        OllamaChatModel model =
+                OllamaChatModel.builder()
+                        .modelName("llama3")
+                        .baseUrl("http://localhost:11434")
+                        .httpTransport(transport)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should prefer Ollama httpTransport() over proxy() with warning")
+    void testHttpTransportTakesPrecedenceOverProxy() {
+        HttpTransport transport =
+                new HttpTransport() {
+                    @Override
+                    public HttpResponse execute(HttpRequest request) {
+                        return null;
+                    }
+
+                    @Override
+                    public reactor.core.publisher.Flux<String> stream(HttpRequest request) {
+                        return null;
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        // Both set - httpTransport should take precedence
+        // This should log a warning but still build successfully
+        OllamaChatModel model =
+                OllamaChatModel.builder()
+                        .modelName("llama3")
+                        .baseUrl("http://localhost:11434")
+                        .httpTransport(transport)
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
     }
 }

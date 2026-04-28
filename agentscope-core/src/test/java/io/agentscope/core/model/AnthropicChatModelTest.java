@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import io.agentscope.core.formatter.anthropic.AnthropicChatFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicMultiAgentFormatter;
 import io.agentscope.core.model.test.ModelTestUtils;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -393,5 +394,56 @@ class AnthropicChatModelTest {
                 AnthropicChatModel.builder().apiKey(mockApiKey).stream(false).build();
 
         assertNotNull(nonStreamingModel, "Non-streaming model should be created");
+    }
+
+    // ==========================================================================
+    // Proxy configuration tests
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Should create Anthropic model with proxy()")
+    void testProxyConfiguration() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals("claude-sonnet-4-5-20250929", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create Anthropic model with SOCKS5 proxy with auth")
+    void testProxyWithSocks5AndAuth() {
+        ProxyConfig proxy = ProxyConfig.socks5("socks.example.com", 1080, "user", "pass");
+
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should create Anthropic model with proxy and baseUrl")
+    void testProxyWithBaseUrl() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .baseUrl("https://custom-api.example.com")
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
     }
 }

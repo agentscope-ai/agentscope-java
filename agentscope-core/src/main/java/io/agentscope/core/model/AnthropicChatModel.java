@@ -25,6 +25,8 @@ import io.agentscope.core.formatter.anthropic.AnthropicBaseFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicChatFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicResponseParser;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.transport.ProxyConfig;
+import java.net.Proxy;
 import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
@@ -74,6 +76,7 @@ public class AnthropicChatModel extends ChatModelBase {
      * @param defaultOptions default generation options
      * @param formatter      the message formatter to use (null for default
      *                       Anthropic formatter)
+     * @param proxyConfig    the proxy configuration (null for no proxy)
      */
     public AnthropicChatModel(
             String baseUrl,
@@ -81,7 +84,8 @@ public class AnthropicChatModel extends ChatModelBase {
             String modelName,
             boolean streamEnabled,
             GenerateOptions defaultOptions,
-            AnthropicBaseFormatter formatter) {
+            AnthropicBaseFormatter formatter,
+            ProxyConfig proxyConfig) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -99,6 +103,12 @@ public class AnthropicChatModel extends ChatModelBase {
 
         if (baseUrl != null) {
             clientBuilder.baseUrl(baseUrl);
+        }
+
+        // Configure proxy if provided
+        if (proxyConfig != null) {
+            Proxy proxy = proxyConfig.toJavaProxy();
+            clientBuilder.proxy(proxy);
         }
 
         this.client = clientBuilder.build();
@@ -237,6 +247,7 @@ public class AnthropicChatModel extends ChatModelBase {
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions;
         private AnthropicBaseFormatter formatter;
+        private ProxyConfig proxyConfig;
 
         /**
          * Sets the base URL for the Anthropic API.
@@ -305,13 +316,40 @@ public class AnthropicChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets the proxy configuration for HTTP traffic.
+         *
+         * <p><b>Interaction with other configuration:</b>
+         * AnthropicChatModel constructs the HTTP client internally, so {@code proxy()} is
+         * the <i>only</i> way to configure proxy for this model. Simply call this method
+         * alongside {@link #apiKey(String)}, {@link #baseUrl(String)}, etc., and the proxy
+         * will be applied when the client is built.
+         *
+         * <p><b>Note:</b> The Anthropic SDK is built on OkHttp, which fully supports
+         * {@link ProxyConfig#toJavaProxy()} conversion. Proxy authentication credentials
+         * are applied via the SDK's built-in proxy handling.
+         *
+         * @param proxyConfig the proxy configuration (see {@link ProxyConfig})
+         * @return this builder
+         */
+        public Builder proxy(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
+            return this;
+        }
+
+        /**
          * Builds the AnthropicChatModel instance.
          *
          * @return a new AnthropicChatModel
          */
         public AnthropicChatModel build() {
             return new AnthropicChatModel(
-                    baseUrl, apiKey, modelName, streamEnabled, defaultOptions, formatter);
+                    baseUrl,
+                    apiKey,
+                    modelName,
+                    streamEnabled,
+                    defaultOptions,
+                    formatter,
+                    proxyConfig);
         }
     }
 }

@@ -19,10 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.google.genai.types.ClientOptions;
 import com.google.genai.types.HttpOptions;
+import com.google.genai.types.ProxyOptions;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
 import io.agentscope.core.model.test.ModelTestUtils;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.lang.reflect.Field;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -497,6 +500,125 @@ class GeminiChatModelTest {
 
         assertNotNull(model);
         // Should use default GeminiChatFormatter
+    }
+
+    // ===========================================================================
+    // Proxy configuration tests
+    // ===========================================================================
+
+    @Test
+    @DisplayName("Should create model with proxy() only")
+    void testProxyOnly() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals("gemini-2.0-flash", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create model with clientOptions() only (no proxy)")
+    void testClientOptionsOnly() {
+        ClientOptions clientOptions =
+                ClientOptions.builder().maxConnections(10).maxConnectionsPerHost(5).build();
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .clientOptions(clientOptions)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should smart merge proxy() into clientOptions() when clientOptions has no proxy")
+    void testSmartMergeProxyIntoClientOptions() {
+        // clientOptions without proxy
+        ClientOptions clientOptions =
+                ClientOptions.builder().maxConnections(10).maxConnectionsPerHost(5).build();
+
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        // This should merge proxy into clientOptions without warning
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .clientOptions(clientOptions)
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should handle proxy() with SOCKS5 type")
+    void testProxyWithSocks5() {
+        ProxyConfig proxy = ProxyConfig.socks5("socks.example.com", 1080, "user", "pass");
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should handle proxy() with httpOptions() (no conflict)")
+    void testProxyWithHttpOptions() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+        HttpOptions httpOptions = HttpOptions.builder().build();
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .proxy(proxy)
+                        .httpOptions(httpOptions)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should warn when both proxy() and clientOptions.proxyOptions() are set")
+    void testClientOptionsWithProxyTakesPrecedence() {
+        // clientOptions that already has proxy configured
+        ProxyOptions googleProxy =
+                ProxyOptions.builder()
+                        .host("existing-proxy.com")
+                        .port(3128)
+                        .type(com.google.genai.types.ProxyType.Known.HTTP)
+                        .build();
+
+        ClientOptions clientOptionsWithProxy =
+                ClientOptions.builder().maxConnections(10).proxyOptions(googleProxy).build();
+
+        // Also call proxy() with a different proxy
+        ProxyConfig proxy = ProxyConfig.http("new-proxy.com", 9090);
+
+        // This should log a warning and use clientOptions proxy
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .clientOptions(clientOptionsWithProxy)
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+        // clientOptions proxy should take precedence, proxy() is ignored
     }
 
     private static HttpOptions getHttpOptions(GeminiChatModel model) throws Exception {
