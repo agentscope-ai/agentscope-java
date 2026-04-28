@@ -15,7 +15,9 @@
  */
 package io.agentscope.extensions.scheduler.quartz;
 
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.scheduler.AgentScheduler;
 import io.agentscope.extensions.scheduler.ScheduleAgentTask;
 import io.agentscope.extensions.scheduler.config.AgentConfig;
@@ -154,14 +156,10 @@ public class QuartzAgentScheduler implements AgentScheduler {
     }
 
     /**
-     * Schedule an agent execution based on the provided configuration.
+     * Schedule an agent execution based on the provided configuration with no initial input.
      *
-     * <p>This method creates a Quartz Job and Trigger based on the schedule mode:
-     * <ul>
-     *   <li>{@code CRON}: Uses CronTrigger</li>
-     *   <li>{@code FIXED_RATE}: Uses SimpleTrigger with repeat forever</li>
-     *   <li>{@code FIXED_DELAY}: Uses a one-time trigger and reschedules upon completion</li>
-     * </ul>
+     * <p>This is a convenience method that delegates to {@link #schedule(AgentConfig, ScheduleConfig, Msg)},
+     * passing {@code null} as the initial input message.
      *
      * @param agentConfig The configuration for the agent to be scheduled
      * @param scheduleConfig The scheduling configuration (time, mode, etc.)
@@ -170,6 +168,32 @@ public class QuartzAgentScheduler implements AgentScheduler {
      */
     @Override
     public ScheduleAgentTask schedule(AgentConfig agentConfig, ScheduleConfig scheduleConfig) {
+        return this.schedule(agentConfig, scheduleConfig, null);
+    }
+
+    /**
+     * Schedule an agent execution based on the provided configuration and initial input message.
+     *
+     * <p>This method creates a Quartz Job and Trigger based on the schedule mode:
+     * <ul>
+     *   <li>{@code CRON}: Uses CronTrigger</li>
+     *   <li>{@code FIXED_RATE}: Uses SimpleTrigger with repeat forever</li>
+     *   <li>{@code FIXED_DELAY}: Uses a one-time trigger and reschedules upon completion</li>
+     * </ul>
+     *
+     * <p>If an initial {@code input} message is provided, it will be safely serialized into JSON
+     * and stored within the Quartz JobDataMap. This ensures compatibility with persistent and
+     * clustered Quartz environments (e.g., JDBCJobStore).
+     *
+     * @param agentConfig The configuration for the agent to be scheduled
+     * @param scheduleConfig The scheduling configuration (time, mode, etc.)
+     * @param input The initial message to pass to the agent when triggered (can be null)
+     * @return A task handle for the scheduled agent
+     * @throws RuntimeException if scheduling fails or if the input message serialization fails
+     */
+    @Override
+    public ScheduleAgentTask schedule(
+            AgentConfig agentConfig, ScheduleConfig scheduleConfig, Msg input) {
         if (agentConfig == null) {
             throw new IllegalArgumentException("AgentConfig must not be null");
         }
@@ -205,6 +229,16 @@ public class QuartzAgentScheduler implements AgentScheduler {
                         .usingJobData("schedulerId", schedulerId)
                         .usingJobData("taskName", jobName)
                         .build();
+
+        if (input != null) {
+            try {
+                String msgJson = JsonUtils.getJsonCodec().toJson(input);
+                jobDetail.getJobDataMap().put("inputMsg", msgJson);
+            } catch (Exception e) {
+                logger.error("Failed to serialize input message for task: {}", jobName, e);
+                throw new RuntimeException("Serialization failed for input message", e);
+            }
+        }
 
         QuartzScheduleAgentTask task =
                 new QuartzScheduleAgentTask(runtimeConfig, scheduleConfig, this, jobKey, scheduler);
