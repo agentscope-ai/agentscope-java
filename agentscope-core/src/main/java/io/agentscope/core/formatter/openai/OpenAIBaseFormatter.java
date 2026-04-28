@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter.openai;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
@@ -172,9 +173,12 @@ public abstract class OpenAIBaseFormatter
     /**
      * Apply cache control to OpenAI messages.
      *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
-     * marking) will not be overwritten.
+     * <p>For text-only messages, adds <code>cache_control: {"type": "ephemeral"}</code> at the
+     * message level. For multimodal messages (content is an array), adds cache_control to the
+     * last text content item within the content array, as required by the OpenAI API specification.
+     *
+     * <p>System messages and the last message in the list are targeted. Messages or content items
+     * that already have cache_control set will not be overwritten.
      *
      * @param messages the list of formatted OpenAI messages
      */
@@ -183,13 +187,41 @@ public abstract class OpenAIBaseFormatter
             return;
         }
         for (OpenAIMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
-                msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+            if (!"system".equals(msg.getRole()) || msg.getCacheControl() != null) {
+                continue;
             }
+            applyCacheControlToMessage(msg);
         }
         OpenAIMessage lastMsg = messages.get(messages.size() - 1);
         if (lastMsg.getCacheControl() == null) {
-            lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+            applyCacheControlToMessage(lastMsg);
+        }
+    }
+
+    /**
+     * Apply cache control to a single message.
+     *
+     * <p>For multimodal messages (content is an array), cache_control is added to the last text
+     * content item. For text-only messages, it is added at the message level.
+     *
+     * @param msg the message to apply cache control to
+     */
+    private void applyCacheControlToMessage(OpenAIMessage msg) {
+        List<OpenAIContentPart> contentParts = msg.getContentAsList();
+        if (contentParts != null && !contentParts.isEmpty()) {
+            // Multimodal: add cache_control to the last text content item
+            for (int i = contentParts.size() - 1; i >= 0; i--) {
+                OpenAIContentPart part = contentParts.get(i);
+                if ("text".equals(part.getType()) && part.getCacheControl() == null) {
+                    part.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+                    return;
+                }
+            }
+            // No text part found, fall back to message level
+            msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        } else {
+            // Text-only: set at message level
+            msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
         }
     }
 
