@@ -186,6 +186,121 @@ public class StructuredOutputDynamicDefineTest {
                 .verifyComplete();
     }
 
+    @Test
+    @DisplayName("Should resolve $ref when $defs is hoisted from properties.response to root")
+    void testDefsHoistedToRootForRefResolution() {
+        Memory memory = new InMemoryMemory();
+
+        // Schema with $defs and $ref — when nested under properties.response,
+        // $ref "#/$defs/Material" must resolve from the document root, so the
+        // hoisting logic in StructuredOutputCapableAgent.getParameters() is exercised.
+        String schemaJson =
+                """
+                {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/$defs/Material" }
+                    }
+                  },
+                  "$defs": {
+                    "Material": {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string" },
+                        "quantity": { "type": "integer" }
+                      },
+                      "required": ["name", "quantity"]
+                    }
+                  },
+                  "required": ["items"]
+                }
+                """;
+
+        Map<String, Object> toolInput =
+                Map.of(
+                        "response",
+                        Map.of(
+                                "items",
+                                List.of(
+                                        Map.of("name", "Wood", "quantity", 10),
+                                        Map.of("name", "Stone", "quantity", 5))));
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
+                            if (!hasToolResults) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_ref_1")
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_ref")
+                                                                        .name("generate_response")
+                                                                        .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            } else {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_ref_2")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Done")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 15))
+                                                .build());
+                            }
+                        });
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("material-agent")
+                        .sysPrompt("You are a material assistant")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("List materials").build())
+                        .build();
+
+        Msg responseMsg =
+                agent.call(inputMsg, JsonUtils.getJsonCodec().fromJson(schemaJson, JsonNode.class))
+                        .block();
+
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getMetadata());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = responseMsg.getStructuredData(false);
+        assertNotNull(result);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("items");
+        assertNotNull(items);
+        assertEquals(2, items.size());
+        assertEquals("Wood", items.get(0).get("name"));
+        assertEquals(10, items.get(0).get("quantity"));
+        assertEquals("Stone", items.get(1).get("name"));
+        assertEquals(5, items.get(1).get("quantity"));
+    }
+
     private static MockModel getMockModel() {
         Map<String, Object> toolInput =
                 Map.of(
