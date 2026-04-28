@@ -487,7 +487,7 @@ public class DashScopeHttpClient {
      * @param publicKeyId the public key ID
      * @param publicKey the Base64-encoded public key
      */
-    public static record PublicKeyResult(String publicKeyId, String publicKey) {}
+    public record PublicKeyResult(String publicKeyId, String publicKey) {}
 
     private Map<String, String> buildHeaders(
             boolean streaming, Map<String, String> additionalHeaders, EncryptionContext context) {
