@@ -18,12 +18,14 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.mcp.McpTool;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -405,6 +407,8 @@ class McpClientManagerTest {
         verify(clientWrapper).listTools();
         assertNotNull(registeredTool[0]);
         assertEquals(outputSchema, registeredTool[0].getOutputSchema());
+        assertTrue(registeredTool[0] instanceof McpTool);
+        assertNull(((McpTool) registeredTool[0]).getPresetArguments());
         assertEquals("mcp-group", registeredGroupName[0]);
         assertEquals("test-client", registeredClientName[0]);
         assertEquals(toolPresetParams, registeredPresetParams[0]);

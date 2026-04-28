@@ -183,7 +183,7 @@ class McpClientManager {
                                                             mcpTool.outputSchema())
                                                     : null,
                                             mcpClientWrapper,
-                                            toolPresetParams);
+                                            null);
 
                             // Register with group, MCP client name, and preset parameters via
                             // callback
