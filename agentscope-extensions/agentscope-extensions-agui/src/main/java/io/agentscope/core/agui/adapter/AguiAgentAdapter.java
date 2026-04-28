@@ -183,7 +183,7 @@ public class AguiAgentAdapter {
                                                 state.threadId,
                                                 state.runId,
                                                 messageId,
-                                                "assistant"));
+                                                "reasoning"));
                                 state.startReasoningMessage(messageId);
                             }
 
@@ -211,6 +211,15 @@ public class AguiAgentAdapter {
                                 new AguiEvent.TextMessageEnd(
                                         state.threadId, state.runId, activeMessageId));
                         state.endMessage(activeMessageId);
+                    }
+
+                    // End any active reasoning message before starting tool call
+                    if (state.hasActiveReasoningMessage()) {
+                        String activeReasoningMessageId = state.getCurrentReasoningMessageId();
+                        events.add(
+                                new AguiEvent.ReasoningMessageEnd(
+                                        state.threadId, state.runId, activeReasoningMessageId));
+                        state.endReasoningMessage(activeReasoningMessageId);
                     }
 
                     // Emit tool call start
@@ -245,13 +254,21 @@ public class AguiAgentAdapter {
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof ToolResultBlock toolResult) {
                     String toolCallId = toolResult.getId();
+                    if (toolCallId == null) {
+                        toolCallId = UUID.randomUUID().toString();
+                    }
+
                     String result = extractToolResultText(toolResult);
 
                     boolean hasStarted = state.hasStartedToolCall(toolCallId);
                     if (!hasStarted) {
+                        String toolName = toolResult.getName();
+                        if (toolName == null || toolName.isBlank()) {
+                            toolName = "unknown";
+                        }
                         events.add(
                                 new AguiEvent.ToolCallStart(
-                                        state.threadId, state.runId, toolCallId, "unknown"));
+                                        state.threadId, state.runId, toolCallId, toolName));
                         state.startToolCall(toolCallId);
                     }
 
@@ -366,6 +383,7 @@ public class AguiAgentAdapter {
         private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
         private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
         private String currentTextMessageId = null;
+        private String currentReasoningMessageId = null;
 
         EventConversionState(String threadId, String runId) {
             this.threadId = threadId;
@@ -383,7 +401,7 @@ public class AguiAgentAdapter {
 
         void endMessage(String messageId) {
             endedMessages.add(messageId);
-            if (messageId.equals(currentTextMessageId)) {
+            if (Objects.equals(messageId, currentTextMessageId)) {
                 currentTextMessageId = null;
             }
         }
@@ -430,14 +448,27 @@ public class AguiAgentAdapter {
 
         void startReasoningMessage(String messageId) {
             startedReasoningMessages.add(messageId);
+            currentReasoningMessageId = messageId;
         }
 
         void endReasoningMessage(String messageId) {
             endedReasoningMessages.add(messageId);
+            if (Objects.equals(messageId, currentReasoningMessageId)) {
+                currentReasoningMessageId = null;
+            }
         }
 
         boolean hasEndedReasoningMessage(String messageId) {
             return endedReasoningMessages.contains(messageId);
+        }
+
+        String getCurrentReasoningMessageId() {
+            return currentReasoningMessageId;
+        }
+
+        boolean hasActiveReasoningMessage() {
+            return currentReasoningMessageId != null
+                    && !hasEndedReasoningMessage(currentReasoningMessageId);
         }
 
         Set<String> getStartedReasoningMessages() {
