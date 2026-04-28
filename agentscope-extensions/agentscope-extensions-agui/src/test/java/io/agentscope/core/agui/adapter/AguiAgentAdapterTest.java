@@ -758,8 +758,7 @@ class AguiAgentAdapterTest {
     @Test
     void testTextMessageEndWithLastEventDirectly() {
         // Test that when the last event contains text blocks and the message hasn't been ended,
-        // the TextMessageEnd is emitted through the new hasEndedMessage check
-        // This test specifically covers the new code path at lines 153-158
+        // the TextMessageContent is emitted to prevent tail-data loss, followed by TextMessageEnd.
         String msgId = "msg-text";
         Msg textMsg =
                 Msg.builder()
@@ -797,10 +796,13 @@ class AguiAgentAdapterTest {
         assertEquals(1, textEndCount, "Should have exactly 1 TextMessageEnd");
 
         // Verify the event sequence
+        assertEquals(5, events.size(), "Should emit 5 events exactly");
         assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
         assertInstanceOf(AguiEvent.TextMessageStart.class, events.get(1));
-        assertInstanceOf(AguiEvent.TextMessageEnd.class, events.get(2));
-        assertInstanceOf(AguiEvent.RunFinished.class, events.get(3));
+        assertInstanceOf(AguiEvent.TextMessageContent.class, events.get(2));
+        assertEquals("Hello world", ((AguiEvent.TextMessageContent) events.get(2)).delta());
+        assertInstanceOf(AguiEvent.TextMessageEnd.class, events.get(3));
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(4));
     }
 
     @Test
@@ -1695,5 +1697,203 @@ class AguiAgentAdapterTest {
         assertTrue(
                 !hasReasoningMessageStart,
                 "Should NOT have ReasoningMessageStart for null thinking");
+    }
+
+    @Test
+    void testToolResultProgressStreamingAndAccumulation() {
+        // Test that tool intermediate progress is converted to reasoning blocks
+        // and final result is accumulated correctly.
+        AguiAdapterConfig config =
+                AguiAdapterConfig.builder().enableToolProgressStream(true).build();
+        AguiAgentAdapter adapterWithProgress = new AguiAgentAdapter(mockAgent, config);
+
+        // Chunk 1: isLast = false
+        Msg trChunk1 =
+                Msg.builder()
+                        .id("msg-tr1")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .output(TextBlock.builder().text("Downloading 50%").build())
+                                        .build())
+                        .build();
+        Event event1 = new Event(EventType.TOOL_RESULT, trChunk1, false);
+
+        // Chunk 2: isLast = true
+        Msg trChunk2 =
+                Msg.builder()
+                        .id("msg-tr1")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .output(TextBlock.builder().text(", Done").build())
+                                        .build())
+                        .build();
+        Event event2 = new Event(EventType.TOOL_RESULT, trChunk2, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(event1, event2));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Download it")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithProgress.run(input).collectList().block();
+        assertNotNull(events);
+
+        String expectedThinkingId = "tool-thinking-tc-1";
+
+        // Verify fake reasoning block for progress was created and ended
+        boolean hasFakeReasoningStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageStart)
+                        .anyMatch(
+                                e ->
+                                        expectedThinkingId.equals(
+                                                ((AguiEvent.ReasoningMessageStart) e).messageId()));
+        assertTrue(hasFakeReasoningStart, "Should emit ReasoningMessageStart for tool progress");
+
+        boolean hasFakeReasoningEnd =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageEnd)
+                        .anyMatch(
+                                e ->
+                                        expectedThinkingId.equals(
+                                                ((AguiEvent.ReasoningMessageEnd) e).messageId()));
+        assertTrue(hasFakeReasoningEnd, "Should emit ReasoningMessageEnd to close tool progress");
+
+        // Verify final accumulated result
+        AguiEvent.ToolCallResult toolResult =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallResult)
+                        .map(e -> (AguiEvent.ToolCallResult) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolResult, "Should have ToolCallResult");
+        assertEquals(", Done", toolResult.content(), "Should accumulate all chunks");
+    }
+
+    @Test
+    void testTailEndDataPreservationWhenIsLastIsTrue() {
+        // Test that content in the very last event (isLast=true) is NOT dropped
+        Msg lastMsgWithContent =
+                Msg.builder()
+                        .id("msg-text")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Last crucial words.").build())
+                        .build();
+
+        // One single event, carries content AND isLast=true
+        Event event = new Event(EventType.REASONING, lastMsgWithContent, true);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.just(event));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("t1")
+                        .runId("r1")
+                        .messages(List.of(AguiMessage.userMessage("m1", "Hi")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+        assertNotNull(events);
+
+        // Find events associated with this message
+        boolean hasContent =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent);
+        boolean hasEnd = events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageEnd);
+
+        assertTrue(hasContent, "Must emit TextMessageContent even if isLast is true");
+        assertTrue(hasEnd, "Must emit TextMessageEnd");
+
+        // Verify Content comes before End
+        int contentIndex =
+                events.indexOf(
+                        events.stream()
+                                .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                                .findFirst()
+                                .get());
+        int endIndex =
+                events.indexOf(
+                        events.stream()
+                                .filter(e -> e instanceof AguiEvent.TextMessageEnd)
+                                .findFirst()
+                                .get());
+        assertTrue(contentIndex < endIndex, "Content must be emitted before End");
+    }
+
+    @Test
+    void testEmptyContentListClosesActiveLifecycle() {
+        // Test that an empty content list with isLast=true properly closes active states
+        Msg msg1 =
+                Msg.builder()
+                        .id("msg-1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Start ").build())
+                        .build();
+        Event event1 = new Event(EventType.REASONING, msg1, false);
+
+        // Empty content, but signals end
+        Msg msg2 =
+                Msg.builder()
+                        .id("msg-1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of()) // Empty content!
+                        .build();
+        Event event2 = new Event(EventType.REASONING, msg2, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(event1, event2));
+
+        RunAgentInput input = RunAgentInput.builder().threadId("t1").runId("r1").build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+        assertNotNull(events);
+
+        long endCount = events.stream().filter(e -> e instanceof AguiEvent.TextMessageEnd).count();
+        assertEquals(
+                1,
+                endCount,
+                "Should successfully close the text message even if last content block is empty");
+    }
+
+    @Test
+    void testToolCallArgsTailEndPreservation() {
+        // Test that tool argument JSON in the final chunk is not dropped
+        Msg toolMsg =
+                Msg.builder()
+                        .id("msg-tc1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("tc-1")
+                                        .name("tool")
+                                        .content("}") // The final closing bracket
+                                        .build())
+                        .build();
+
+        // The tool use block comes with isLast=true
+        Event event = new Event(EventType.REASONING, toolMsg, true);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.just(event));
+
+        RunAgentInput input = RunAgentInput.builder().threadId("t1").runId("r1").build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+        assertNotNull(events);
+
+        AguiEvent.ToolCallArgs toolArgs =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallArgs)
+                        .map(e -> (AguiEvent.ToolCallArgs) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolArgs, "Must emit ToolCallArgs even if event.isLast() is true");
+        assertEquals("}", toolArgs.delta());
     }
 }

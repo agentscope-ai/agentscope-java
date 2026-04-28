@@ -32,6 +32,7 @@ public class AguiAdapterConfig {
     private final boolean enableReasoning;
     private final Duration runTimeout;
     private final String defaultAgentId;
+    private final boolean enableToolProgressStream;
 
     private AguiAdapterConfig(Builder builder) {
         this.toolMergeMode = builder.toolMergeMode;
@@ -40,6 +41,7 @@ public class AguiAdapterConfig {
         this.enableReasoning = builder.enableReasoning;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
+        this.enableToolProgressStream = builder.enableToolProgressStream;
     }
 
     /**
@@ -101,6 +103,18 @@ public class AguiAdapterConfig {
     }
 
     /**
+     * Check if tool execution progress should be streamed.
+     *
+     * <p>When enabled, intermediate tool execution events will be converted into
+     * reasoning messages (Thinking UI) to provide real-time feedback to the frontend.
+     *
+     * @return true if tool progress streaming is enabled
+     */
+    public boolean isEnableToolProgressStream() {
+        return enableToolProgressStream;
+    }
+
+    /**
      * Creates a new builder for AguiAdapterConfig.
      *
      * @return A new builder instance
@@ -129,6 +143,7 @@ public class AguiAdapterConfig {
         private boolean enableReasoning = false;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
+        private boolean enableToolProgressStream = false;
 
         /**
          * Set the tool merge mode.
@@ -197,6 +212,22 @@ public class AguiAdapterConfig {
          */
         public Builder defaultAgentId(String defaultAgentId) {
             this.defaultAgentId = defaultAgentId;
+            return this;
+        }
+
+        /**
+         * Set whether to enable tool execution progress stream.
+         *
+         * <p>When enabled, intermediate progress chunks generated during tool execution
+         * (e.g., download progress, code execution stdout) will be converted into
+         * {@code ReasoningMessage} events. This leverages the frontend's "Thinking" UI
+         * to display real-time feedback without modifying the AG-UI protocol.
+         *
+         * @param enableToolProgressStream true to convert progress events to thinking blocks
+         * @return This builder
+         */
+        public Builder enableToolProgressStream(boolean enableToolProgressStream) {
+            this.enableToolProgressStream = enableToolProgressStream;
             return this;
         }
 
