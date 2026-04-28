@@ -710,6 +710,48 @@ class OpenAIResponseParserTest {
         }
 
         @Test
+        @DisplayName("Should treat malformed named trailing chunk as fragment")
+        void testStreamingToolCallMalformedNamedTrailingFragment() {
+            OpenAIResponse response = new OpenAIResponse();
+            response.setObject("chat.completion.chunk");
+
+            OpenAIFunction function = new OpenAIFunction();
+            function.setName("retrieveFromMemory");
+            function.setArguments("}");
+
+            OpenAIToolCall toolCall = new OpenAIToolCall();
+            toolCall.setId(null);
+            toolCall.setIndex(0);
+            toolCall.setType("function");
+            toolCall.setFunction(function);
+
+            OpenAIMessage delta = new OpenAIMessage();
+            delta.setToolCalls(List.of(toolCall));
+            delta.setRole("assistant");
+
+            OpenAIChoice choice = new OpenAIChoice();
+            choice.setDelta(delta);
+            choice.setIndex(0);
+
+            response.setChoices(List.of(choice));
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result);
+            ToolUseBlock toolBlock =
+                    result.getContent().stream()
+                            .filter(block -> block instanceof ToolUseBlock)
+                            .map(block -> (ToolUseBlock) block)
+                            .findFirst()
+                            .orElse(null);
+
+            assertNotNull(toolBlock);
+            assertEquals(OpenAIResponseParser.FRAGMENT_PLACEHOLDER, toolBlock.getName());
+            assertEquals("", toolBlock.getId());
+            assertEquals("}", toolBlock.getContent());
+        }
+
+        @Test
         @DisplayName("Should parse chunk with reasoning content")
         void testChunkWithReasoningContent() {
             OpenAIResponse response = new OpenAIResponse();

@@ -52,6 +52,21 @@ public class OpenAIResponseParser {
     protected static final String FRAGMENT_PLACEHOLDER = "__fragment__";
 
     /**
+     * Some OpenAI-compatible providers occasionally emit a malformed trailing argument fragment
+     * with a non-null tool name but no tool call id. That chunk should still be treated as a
+     * fragment so it can merge back into the previously started tool call instead of becoming a
+     * new synthetic call.
+     */
+    private boolean isMalformedNamedStreamingFragment(
+            String toolCallId, String toolName, String arguments) {
+        return toolCallId == null
+                && toolName != null
+                && !toolName.isEmpty()
+                && arguments != null
+                && !arguments.isEmpty();
+    }
+
+    /**
      * Safely get prompt token count from usage, returning 0 if null or invalid.
      *
      * @param usage the OpenAI usage object (may be null)
@@ -461,14 +476,19 @@ public class OpenAIResponseParser {
                                         }
                                     }
 
-                                    if (toolCallId == null) {
-                                        toolCallId = "streaming_" + System.currentTimeMillis();
-                                    }
                                     if (toolName == null) {
                                         toolName = "";
                                     }
                                     if (arguments == null) {
                                         arguments = "";
+                                    }
+
+                                    boolean malformedNamedFragment =
+                                            isMalformedNamedStreamingFragment(
+                                                    toolCallId, toolName, arguments);
+
+                                    if (!malformedNamedFragment && toolCallId == null) {
+                                        toolCallId = "streaming_" + System.currentTimeMillis();
                                     }
 
                                     log.debug(
@@ -481,7 +501,7 @@ public class OpenAIResponseParser {
 
                                     // For streaming, we get partial tool calls that need to be
                                     // accumulated
-                                    if (!toolName.isEmpty()) {
+                                    if (!toolName.isEmpty() && !malformedNamedFragment) {
                                         // First chunk with complete metadata (has tool name)
                                         Map<String, Object> argsMap = new HashMap<>();
 
@@ -529,6 +549,17 @@ public class OpenAIResponseParser {
                                     } else if (!arguments.isEmpty() || thoughtSignature != null) {
                                         // Subsequent chunks with only argument fragments or just
                                         // signature
+                                        if (malformedNamedFragment) {
+                                            log.debug(
+                                                    "Treating malformed named streaming tool call"
+                                                            + " chunk as fragment: name={},"
+                                                            + " arguments={}",
+                                                    toolName,
+                                                    arguments.length() > 50
+                                                            ? arguments.substring(0, 50) + "..."
+                                                            : arguments);
+                                        }
+
                                         Map<String, Object> metadata = new HashMap<>();
                                         if (thoughtSignature != null) {
                                             metadata.put(
