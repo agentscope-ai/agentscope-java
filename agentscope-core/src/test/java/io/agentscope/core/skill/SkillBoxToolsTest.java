@@ -110,6 +110,8 @@ class SkillBoxToolsTest {
         assertEquals("load_skill_through_path", tool.getName());
         assertNotNull(tool.getDescription());
         assertTrue(tool.getDescription().contains("Load and activate"));
+        assertTrue(tool.getDescription().contains("path=\"SKILL.md\""));
+        assertTrue(tool.getDescription().contains("Do not use '.'"));
     }
 
     @Test
@@ -136,6 +138,12 @@ class SkillBoxToolsTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> skillIdParam = (Map<String, Object>) properties.get("skillId");
         assertNotNull(skillIdParam.get("enum"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> pathParam = (Map<String, Object>) properties.get("path");
+        String pathDescription = (String) pathParam.get("description");
+        assertTrue(pathDescription.contains("Use 'SKILL.md'"));
+        assertTrue(pathDescription.contains("Do not use '.'"));
     }
 
     @Test
@@ -482,5 +490,29 @@ class SkillBoxToolsTest {
         assertTrue(skillBox.isSkillActive(skillId), "Skill should still be activated");
         assertNull(
                 toolkit.getToolGroup(skillId + "_skill_tools"), "Tool group should not be created");
+    }
+
+    @Test
+    @DisplayName("Should not activate skill when resource path is invalid")
+    void testInvalidResourcePathDoesNotActivateSkill() {
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
+        String skillId = "test_skill_custom";
+        assertFalse(skillBox.isSkillActive(skillId));
+
+        Map<String, Object> input = Map.of("skillId", skillId, "path", ".");
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("test-call-016")
+                        .name("load_skill_through_path")
+                        .input(input)
+                        .build();
+        ToolCallParam param =
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+
+        ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
+
+        assertNotNull(result);
+        assertTrue(isErrorResult(result));
+        assertFalse(skillBox.isSkillActive(skillId));
     }
 }
