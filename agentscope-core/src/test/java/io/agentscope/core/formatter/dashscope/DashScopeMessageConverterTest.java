@@ -18,7 +18,6 @@ package io.agentscope.core.formatter.dashscope;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
@@ -38,6 +37,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -164,7 +165,7 @@ class DashScopeMessageConverterTest {
         DashScopeMessage dsMsg = converter.convertToMessage(msg, false);
 
         assertEquals("assistant", dsMsg.getRole());
-        assertNull(dsMsg.getContentAsString());
+        assertEquals("", dsMsg.getContentAsString());
         assertNotNull(dsMsg.getToolCalls());
         assertEquals(1, dsMsg.getToolCalls().size());
     }

@@ -19,6 +19,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Utility methods for message processing and extraction.
@@ -51,7 +52,7 @@ public final class MessageUtils {
 
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT && msg.getName().equals(agentName)) {
+            if (msg.getRole() == MsgRole.ASSISTANT && Objects.equals(msg.getName(), agentName)) {
                 List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
                 if (!toolCalls.isEmpty()) {
                     return toolCalls;

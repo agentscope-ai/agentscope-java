@@ -221,11 +221,10 @@ public class DashScopeMessageConverter {
                 // Assistant with tool calls
                 builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
                 String textContent = extractTextContent(msg);
-                if (textContent.isEmpty()) {
-                    builder.content((String) null);
-                } else {
-                    builder.content(textContent);
-                }
+                // Qwen3 and similar models in thinking mode may produce assistant
+                // messages with reasoning_content + tool_calls but null content.
+                // DashScope API requires the content field to be present.
+                builder.content(textContent.isEmpty() ? "" : textContent);
             } else {
                 builder.content(extractTextContent(msg));
             }

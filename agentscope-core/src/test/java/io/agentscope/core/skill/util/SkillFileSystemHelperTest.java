@@ -29,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -126,6 +127,53 @@ class SkillFileSystemHelperTest {
         AgentSkill loaded = SkillFileSystemHelper.loadSkill(skillsBaseDir, "new-skill", "source");
         assertEquals("new-skill", loaded.getName());
         assertEquals(1, loaded.getResources().size());
+    }
+
+    @Test
+    @DisplayName("Should preserve full metadata when saving and loading")
+    void testSaveSkills_PreservesFullMetadata() throws IOException {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "metadata-skill");
+        metadata.put("description", "Metadata Skill");
+        metadata.put("homepage", "https://example.com/docs");
+        metadata.put(
+                "metadata",
+                Map.of(
+                        "clawdbot",
+                        Map.of(
+                                "requires",
+                                Map.of(
+                                        "env", List.of("API_KEY", "API_SECRET"),
+                                        "bins", List.of("jq")))));
+        AgentSkill skill =
+                new AgentSkill(metadata, "Content", Map.of("references/doc.md", "Doc"), null);
+
+        boolean result = SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(skill), false);
+        assertTrue(result);
+
+        String savedSkillMd =
+                Files.readString(
+                        skillsBaseDir.resolve("metadata-skill").resolve("SKILL.md"),
+                        StandardCharsets.UTF_8);
+        assertTrue(savedSkillMd.contains("homepage: https://example.com/docs"));
+        assertTrue(savedSkillMd.contains("metadata:"));
+        assertTrue(savedSkillMd.contains("clawdbot:"));
+
+        AgentSkill loaded =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "metadata-skill", "source");
+        assertEquals(List.copyOf(metadata.keySet()), List.copyOf(loaded.getMetadata().keySet()));
+        assertEquals("https://example.com/docs", loaded.getMetadataValue("homepage"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> loadedMetadata =
+                (Map<String, Object>) loaded.getMetadataValue("metadata");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> clawdbot = (Map<String, Object>) loadedMetadata.get("clawdbot");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> requires = (Map<String, Object>) clawdbot.get("requires");
+
+        assertEquals(List.of("API_KEY", "API_SECRET"), requires.get("env"));
+        assertEquals(List.of("jq"), requires.get("bins"));
     }
 
     @Test

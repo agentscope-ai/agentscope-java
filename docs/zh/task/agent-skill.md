@@ -59,6 +59,12 @@ skill-name/
 ---
 name: skill-name                    # 必需: 技能名称(小写字母、数字、下划线)
 description: This skill should be used when...  # 必需: 触发描述,说明何时使用
+homepage: https://example.com/docs  # 可选: 额外 metadata,会暴露到智能体提示词中
+metadata:
+  clawdbot:
+    requires:
+      env:
+        - API_KEY
 ---
 
 # 技能名称
@@ -79,6 +85,13 @@ description: This skill should be used when...  # 必需: 触发描述,说明何
 - `name` - 技能的名字（小写字母、数字、下划线）
 - `description` - 技能功能和使用场景描述，帮助 AI 判断何时使用
 
+**Metadata 说明:**
+
+- YAML frontmatter 中除 `name`、`description` 外的字段都会作为 Skill metadata 保留，不再局限于固定字段
+- 支持嵌套 `Map/List`，并保留原有层级结构和插入顺序
+- frontmatter 使用 SnakeYAML `SafeConstructor` 解析，只接受顶层为 `Map` 的 YAML 对象
+- 非法 frontmatter 或超过解析器限制的 frontmatter 会被忽略，并按空 metadata 处理
+
 ## 快速开始
 
 ### 1. 创建 Skill
@@ -89,6 +102,7 @@ description: This skill should be used when...  # 必需: 触发描述,说明何
 AgentSkill skill = AgentSkill.builder()
     .name("data_analysis")
     .description("Use when analyzing data...")
+    .putMetadata("homepage", "https://example.com/docs")
     .skillContent("# Data Analysis\n...")
     .addResource("references/formulas.md", "# 常用公式\n...")
     .source("custom")
@@ -335,31 +349,31 @@ try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "name
 
 ### 功能 4: 自定义 Skill 提示词
 
-SkillBox 在注入给 Agent 的系统提示词中,会为每个已注册的 Skill 生成描述信息,供 LLM 判断何时加载哪个 Skill。通过构造函数可自定义提示词的两个组成部分:
+SkillBox 在注入给 Agent 的系统提示词中,会为每个已注册的 Skill 生成一个 XML `<skill>` 条目,供 LLM 判断何时加载哪个 Skill。metadata 直接来自 `AgentSkill.getMetadata()`，并始终追加 `<skill-id>` 作为工具加载标识。
 
 - **`instruction`**: 提示词头部,说明 Skill 的使用方式(如何加载、路径约定等)。默认包含 `load_skill_through_path` 的调用说明
-- **`template`**: 每个 Skill 条目的格式模板,包含三个 `%s` 占位符,依次对应 `name`、`description`、`skillId`
+- **XML metadata 渲染**: 标量会渲染为子节点,嵌套 `Map` 会递归渲染为嵌套 XML,列表会渲染为重复的 `<item>` 节点
+- **metadata 暴露控制**: `skillBox.setExposeAllSkillMetadata(false)` 可将提示词限制为只暴露 `name`、`description` 和 `skill-id`；默认暴露全部 metadata
 
 开启代码执行后,还可通过 `.codeExecutionInstruction()` 自定义追加在 `</available_skills>` 之后的代码执行说明段落:
 
 - **`codeExecutionInstruction`**: 代码执行说明模板,所有 `%s` 占位符都会被替换为 `uploadDir` 的绝对路径。传 `null` 或空字符串时使用内置默认值
 
-三者传 `null` 或空字符串时均使用内置默认值。
+`instruction` 和 `codeExecutionInstruction` 传 `null` 或空字符串时均使用内置默认值。
 
 **示例代码**:
 
 ```java
-// 自定义 instruction 和 template
+// 自定义 instruction 头部
 String customInstruction = """
     ## 可用技能
     当任务匹配某个技能时,使用 load_skill_through_path 加载它。
     """;
 
-String customTemplate = """
-    - **%s**: %s (id: %s)
-    """;
+SkillBox skillBox = new SkillBox(toolkit, customInstruction);
 
-SkillBox skillBox = new SkillBox(toolkit, customInstruction, customTemplate);
+// 可选: 仅向 prompt 暴露核心 metadata
+skillBox.setExposeAllSkillMetadata(false);
 
 // 自定义代码执行说明(开启代码执行后生效)
 skillBox.codeExecution()
