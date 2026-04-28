@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -124,5 +126,75 @@ class StudioManagerTest {
 
         assertNull(StudioManager.getClient());
         assertFalse(StudioManager.isInitialized());
+    }
+
+    @Test
+    @DisplayName("Builder should support addOtlpHeader method")
+    void testBuilderAddOtlpHeader() {
+        StudioManager.Builder builder =
+                StudioManager.init()
+                        .studioUrl("http://localhost:3000")
+                        .project("TestProject")
+                        .runName("test_run")
+                        .addOtlpHeader("Authorization", "Basic dGVzdDp0ZXN0");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Builder should support otlpHeaders method with map")
+    void testBuilderOtlpHeadersMap() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Authorization", "Bearer token123");
+        headers.put("X-Api-Key", "api-key-value");
+
+        StudioManager.Builder builder =
+                StudioManager.init()
+                        .studioUrl("http://localhost:3000")
+                        .project("TestProject")
+                        .runName("test_run")
+                        .otlpHeaders(headers);
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Builder should support combining header methods with other configuration")
+    void testBuilderCombiningHeadersWithOtherConfig() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-Initial", "initial");
+
+        StudioManager.Builder builder =
+                StudioManager.init()
+                        .studioUrl("https://cloud.langfuse.com")
+                        .tracingUrl("https://cloud.langfuse.com/api/public/otel/v1/traces")
+                        .project("LangfuseProject")
+                        .runName("langfuse_run")
+                        .maxRetries(5)
+                        .reconnectAttempts(3)
+                        .otlpHeaders(headers)
+                        .addOtlpHeader("Authorization", "Basic credentials");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Builder should support Langfuse-style configuration")
+    void testBuilderLangfuseConfiguration() {
+        String publicKey = "pk-lf-test";
+        String secretKey = "sk-lf-test";
+        String base64Credentials =
+                java.util.Base64.getEncoder()
+                        .encodeToString((publicKey + ":" + secretKey).getBytes());
+
+        StudioManager.Builder builder =
+                StudioManager.init()
+                        .studioUrl("https://cloud.langfuse.com")
+                        .tracingUrl("https://cloud.langfuse.com/api/public/otel/v1/traces")
+                        .project("LangfuseProject")
+                        .runName("langfuse_run")
+                        .addOtlpHeader("Authorization", "Basic " + base64Credentials);
+
+        assertNotNull(builder);
     }
 }

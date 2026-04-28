@@ -16,6 +16,9 @@
 package io.agentscope.core.studio;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -48,6 +51,7 @@ public class StudioConfig {
     private final int reconnectAttempts;
     private final Duration reconnectDelay;
     private final Duration reconnectMaxDelay;
+    private final Map<String, String> otlpHeaders;
 
     private StudioConfig(Builder builder) {
         this.studioUrl = builder.studioUrl;
@@ -59,6 +63,7 @@ public class StudioConfig {
         this.reconnectAttempts = builder.reconnectAttempts;
         this.reconnectDelay = builder.reconnectDelay;
         this.reconnectMaxDelay = builder.reconnectMaxDelay;
+        this.otlpHeaders = Collections.unmodifiableMap(new HashMap<>(builder.otlpHeaders));
     }
 
     public static Builder builder() {
@@ -146,6 +151,18 @@ public class StudioConfig {
         return reconnectMaxDelay;
     }
 
+    /**
+     * Gets the OTLP headers for authentication.
+     *
+     * <p>These headers are included in OTLP HTTP requests to the tracing endpoint.
+     * Useful for authentication with systems like Langfuse that require custom headers.
+     *
+     * @return an unmodifiable map of header names to values (default: empty map)
+     */
+    public Map<String, String> getOtlpHeaders() {
+        return otlpHeaders;
+    }
+
     public static class Builder {
         private String studioUrl = "http://localhost:3000";
         private String tracingUrl;
@@ -156,6 +173,7 @@ public class StudioConfig {
         private int reconnectAttempts = 3;
         private Duration reconnectDelay = Duration.ofSeconds(1);
         private Duration reconnectMaxDelay = Duration.ofSeconds(5);
+        private Map<String, String> otlpHeaders = new HashMap<>();
 
         public Builder studioUrl(String studioUrl) {
             this.studioUrl = studioUrl;
@@ -199,6 +217,44 @@ public class StudioConfig {
 
         public Builder reconnectMaxDelay(Duration reconnectMaxDelay) {
             this.reconnectMaxDelay = reconnectMaxDelay;
+            return this;
+        }
+
+        /**
+         * Adds a single OTLP header for authentication.
+         *
+         * <p>This header will be included in OTLP HTTP requests to the tracing endpoint.
+         * Useful for systems like Langfuse that require authentication headers.
+         *
+         * <p>Example for Langfuse:
+         * <pre>{@code
+         * StudioConfig config = StudioConfig.builder()
+         *     .studioUrl("https://cloud.langfuse.com")
+         *     .tracingUrl("https://cloud.langfuse.com/api/public/otel/v1/traces")
+         *     .addOtlpHeader("Authorization", "Basic " + base64Credentials)
+         *     .build();
+         * }</pre>
+         *
+         * @param key   The header name (e.g., "Authorization")
+         * @param value The header value (e.g., "Basic dXNlcjpwYXNz")
+         * @return This builder
+         */
+        public Builder addOtlpHeader(String key, String value) {
+            this.otlpHeaders.put(key, value);
+            return this;
+        }
+
+        /**
+         * Sets all OTLP headers for authentication.
+         *
+         * <p>These headers will be included in OTLP HTTP requests to the tracing endpoint.
+         * This method replaces any previously added headers.
+         *
+         * @param headers Map of header names to values
+         * @return This builder
+         */
+        public Builder otlpHeaders(Map<String, String> headers) {
+            this.otlpHeaders = new HashMap<>(headers);
             return this;
         }
 
