@@ -42,6 +42,10 @@ public class MessageEventHandler implements ClientEventHandler<MessageEvent> {
         Msg msg =
                 MessageConvertUtil.convertFromMessage(
                         event.getMessage(), context.getAgent().getName());
+
+        // Automatically trigger PreReasoningEvent and PostReasoningEvent
+        msg = context.publishPostReasoning(msg);
+
         context.getSink().success(msg);
         LoggerUtil.info(log, "[{}] A2aAgent complete call.", currentRequestId);
         LoggerUtil.debug(log, "[{}] A2aAgent complete with artifact messages: ", currentRequestId);

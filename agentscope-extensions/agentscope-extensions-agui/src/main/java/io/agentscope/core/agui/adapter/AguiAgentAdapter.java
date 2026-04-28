@@ -47,8 +47,9 @@ import reactor.core.publisher.Flux;
  *
  * <p><b>Event Mapping:</b>
  * <ul>
- *   <li>AgentScope REASONING events → AG-UI TEXT_MESSAGE_* events (for TextBlock)</li>
- *   <li>AgentScope REASONING events → AG-UI REASONING_* events (for ThinkingBlock, when enabled)</li>
+ *   <li>AgentScope REASONING/SUMMARY events → AG-UI TEXT_MESSAGE_* events (for TextBlock)</li>
+ *   <li>AgentScope REASONING/SUMMARY events → AG-UI REASONING_* events (for
+ *       ThinkingBlock, when enabled)</li>
  *   <li>AgentScope TOOL_RESULT events → AG-UI TOOL_CALL_END events</li>
  *   <li>ToolUseBlock content → AG-UI TOOL_CALL_START events</li>
  * </ul>
@@ -136,8 +137,8 @@ public class AguiAgentAdapter {
         Msg msg = event.getMessage();
         EventType type = event.getType();
 
-        if (type == EventType.REASONING) {
-            // Handle reasoning events - convert to text messages and tool calls
+        if (type == EventType.REASONING || type == EventType.SUMMARY) {
+            // Handle reasoning/summary events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
                     String text = textBlock.getText();
@@ -324,14 +325,14 @@ public class AguiAgentAdapter {
         StringBuilder sb = new StringBuilder();
         for (ContentBlock output : toolResult.getOutput()) {
             if (output instanceof TextBlock textBlock) {
-                if (sb.length() > 0) {
+                if (!sb.isEmpty()) {
                     sb.append("\n");
                 }
                 sb.append(textBlock.getText());
             }
         }
 
-        return sb.length() > 0 ? sb.toString() : null;
+        return !sb.isEmpty() ? sb.toString() : null;
     }
 
     /**

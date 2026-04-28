@@ -16,6 +16,11 @@
 
 package io.agentscope.core.util;
 
+import io.agentscope.core.message.ToolUseBlock;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Utility class for accessing the global {@link JsonCodec} instance.
  *
@@ -42,6 +47,8 @@ package io.agentscope.core.util;
  * @see JacksonJsonCodec
  */
 public final class JsonUtils {
+
+    private static final Logger log = LoggerFactory.getLogger(JsonUtils.class);
 
     private static volatile JsonCodec codec = new JacksonJsonCodec();
 
@@ -81,5 +88,65 @@ public final class JsonUtils {
      */
     public static void resetToDefault() {
         codec = new JacksonJsonCodec();
+    }
+
+    /**
+     * Check whether the given string is a valid JSON object (i.e. starts with '{' and
+     * can be parsed into a {@link Map}).
+     *
+     * <p>Tool call {@code arguments} must be JSON objects, so plain JSON values like
+     * {@code null}, arrays, or strings are rejected.
+     *
+     * @param str the string to validate
+     * @return {@code true} if {@code str} is a non-null, parseable JSON object
+     */
+    @SuppressWarnings("unchecked")
+    public static boolean isValidJsonObject(String str) {
+        if (str == null || str.isEmpty()) {
+            return false;
+        }
+        try {
+            Map<String, Object> parsed = codec.fromJson(str, Map.class);
+            return parsed != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Resolve the arguments JSON string from a {@link ToolUseBlock}, ensuring the
+     * result is always a valid JSON object.
+     *
+     * <p>Resolution order:
+     * <ol>
+     *   <li>Use {@link ToolUseBlock#getContent()} if it is a valid JSON object</li>
+     *   <li>Serialize {@link ToolUseBlock#getInput()} via {@link JsonCodec#toJson}</li>
+     *   <li>Fall back to {@code "{}"}</li>
+     * </ol>
+     *
+     * <p>This prevents sending malformed JSON (e.g. from interrupted streaming) as
+     * tool call arguments, which would cause model APIs to reject the request.
+     *
+     * @param toolUse the tool use block
+     * @return a valid JSON object string representing the tool call arguments
+     */
+    public static String resolveToolCallArgsJson(ToolUseBlock toolUse) {
+        String content = toolUse.getContent();
+        if (content != null && !content.isEmpty()) {
+            if (isValidJsonObject(content)) {
+                return content;
+            }
+            log.warn(
+                    "Invalid JSON in tool call content for '{}', falling back to input"
+                            + " serialization",
+                    toolUse.getName());
+        }
+
+        try {
+            return codec.toJson(toolUse.getInput());
+        } catch (Exception e) {
+            log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
+            return "{}";
+        }
     }
 }

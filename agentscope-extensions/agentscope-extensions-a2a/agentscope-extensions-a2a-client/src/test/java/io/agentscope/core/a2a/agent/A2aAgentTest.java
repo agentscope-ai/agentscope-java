@@ -58,7 +58,10 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -69,6 +72,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -282,9 +286,10 @@ public class A2aAgentTest {
         List<Event> streamResults =
                 agent.stream(Msg.builder().textContent("test").build()).collectList().block();
         assertNotNull(streamResults);
-        assertEquals(2, streamResults.size());
-        assertFalse(streamResults.get(0).isLast());
-        assertTrue(streamResults.get(1).isLast());
+        assertEquals(3, streamResults.size());
+        assertFalse(streamResults.get(0).isLast()); // ReasoningChunkEvent
+        assertTrue(streamResults.get(1).isLast()); // PostReasoningEvent
+        assertTrue(streamResults.get(2).isLast()); // AGENT_RESULT
     }
 
     @Test
@@ -426,6 +431,113 @@ public class A2aAgentTest {
         assertNotNull(result);
         assertEquals("mock success.", result.getTextContent());
         assertEquals(3, agent.getMemory().getMessages().size());
+    }
+
+    @Test
+    @DisplayName("Should trigger Pre, Chunk, Post reasoning events")
+    void testAgentLifecycleHooksTriggeredCorrectly() {
+        AtomicInteger preCount = new AtomicInteger(0);
+        AtomicInteger chunkCount = new AtomicInteger(0);
+        AtomicInteger postCount = new AtomicInteger(0);
+
+        Hook lifecycleMonitorHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreReasoningEvent) {
+                            preCount.incrementAndGet();
+                        } else if (event instanceof ReasoningChunkEvent) {
+                            chunkCount.incrementAndGet();
+                        } else if (event instanceof PostReasoningEvent) {
+                            postCount.incrementAndGet();
+                        }
+                        return Mono.just(event);
+                    }
+
+                    @Override
+                    public int priority() {
+                        return 1;
+                    }
+                };
+
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-lifecycle-agent")
+                        .agentCard(agentCard)
+                        .hook(new ReplaceA2aClientHook())
+                        .hook(lifecycleMonitorHook)
+                        .build();
+
+        Answer<Void> mockTaskResponse =
+                invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<BiConsumer<ClientEvent, AgentCard>> a2aEventConsumer =
+                            invocation.getArgument(1, List.class);
+
+                    // Task creation
+                    Task initialTask =
+                            new Task.Builder()
+                                    .id("t1")
+                                    .contextId("c1")
+                                    .status(new TaskStatus(TaskState.WORKING))
+                                    .build();
+                    a2aEventConsumer.forEach(c -> c.accept(new TaskEvent(initialTask), agentCard));
+
+                    // Stream output a piece of text (Artifact Update)
+                    TaskArtifactUpdateEvent chunkEvent =
+                            new TaskArtifactUpdateEvent.Builder()
+                                    .taskId("t1")
+                                    .contextId("c1")
+                                    .artifact(
+                                            new Artifact.Builder()
+                                                    .artifactId("a1")
+                                                    .name("mockArtifact")
+                                                    .parts(new TextPart("Hello A2A"))
+                                                    .build())
+                                    .build();
+                    Task workingTask =
+                            new Task.Builder()
+                                    .id("t1")
+                                    .contextId("c1")
+                                    .status(new TaskStatus(TaskState.WORKING))
+                                    .artifacts(List.of(chunkEvent.getArtifact()))
+                                    .build();
+                    a2aEventConsumer.forEach(
+                            c -> c.accept(new TaskUpdateEvent(workingTask, chunkEvent), agentCard));
+
+                    // Task complete (Status Update - COMPLETED)
+                    Task completedTask =
+                            new Task.Builder()
+                                    .id("t1")
+                                    .contextId("c1")
+                                    .status(new TaskStatus(TaskState.COMPLETED))
+                                    .artifacts(List.of(chunkEvent.getArtifact()))
+                                    .build();
+                    TaskStatusUpdateEvent completeEvent =
+                            new TaskStatusUpdateEvent(
+                                    "t1",
+                                    new TaskStatus(TaskState.COMPLETED),
+                                    "c1",
+                                    true,
+                                    Map.of());
+                    a2aEventConsumer.forEach(
+                            c ->
+                                    c.accept(
+                                            new TaskUpdateEvent(completedTask, completeEvent),
+                                            agentCard));
+
+                    return null;
+                };
+
+        doAnswer(mockTaskResponse)
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        agent.stream(Msg.builder().textContent("测试触发").build()).collectList().block();
+
+        assertEquals(1, preCount.get());
+        assertEquals(1, chunkCount.get());
+        assertEquals(1, postCount.get());
     }
 
     private Answer<Void> mockSuccessMessage() {

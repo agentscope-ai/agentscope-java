@@ -86,6 +86,30 @@ Msg response = agent.call(task).block();
 
 ## 配置选项
 
+### 用户确认（needUserConfirm）
+
+控制智能体在创建计划后是否需要等待用户确认才能开始执行。
+
+**默认值**：`true`（需要用户确认）
+
+当启用时，智能体创建计划后会展示计划内容并询问用户是否同意执行（例如 "Should I proceed with this plan?"），只有在用户明确确认后（如回复 "yes"、"go ahead"）才会开始执行子任务。如果用户的消息本身已隐含执行意图（如 "execute the plan"），则跳过确认直接执行。
+
+当禁用时，智能体创建计划后会立即开始执行，无需等待用户确认。
+
+```java
+// 需要用户确认（默认行为）
+PlanNotebook planNotebook = PlanNotebook.builder()
+        .needUserConfirm(true)
+        .build();
+
+// 无需确认，创建计划后立即执行
+PlanNotebook planNotebook = PlanNotebook.builder()
+        .needUserConfirm(false)
+        .build();
+```
+
+> **注意**：当有子任务正在执行时（状态为 `in_progress`），无论 `needUserConfirm` 如何设置，都不会再注入确认规则提示。
+
 ### 限制子任务数量
 
 ```java
