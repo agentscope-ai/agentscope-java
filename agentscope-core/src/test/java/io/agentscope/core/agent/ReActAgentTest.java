@@ -36,6 +36,7 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -805,6 +806,188 @@ class ReActAgentTest {
         ToolUseBlock accumulatedTub = accumulatedToolUseBlocks.get(0);
         assertEquals(
                 "call_stream_1", accumulatedTub.getId(), "Accumulated tool call ID should match");
+    }
+
+    @Test
+    @DisplayName("Should keep cumulative reasoning chunks across tool calls")
+    void testCumulativeReasoningStreamKeepsHistoryAfterToolCall() {
+        MockModel toolModel = createTwoRoundStreamingModel();
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
+
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.REASONING)
+                        .incremental(false)
+                        .includeReasoningResult(false)
+                        .build();
+
+        List<Event> events =
+                agent.stream(
+                                TestUtils.createUserMessage("User", "Use a tool, then continue."),
+                                options)
+                        .collectList()
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(events, "Streaming events should not be null");
+
+        List<Msg> reasoningChunks =
+                events.stream()
+                        .filter(event -> event.getType() == EventType.REASONING)
+                        .filter(event -> !event.isLast())
+                        .map(Event::getMessage)
+                        .toList();
+
+        assertEquals(5, reasoningChunks.size(), "Should emit every streamed reasoning chunk");
+
+        Msg finalCumulativeChunk = reasoningChunks.get(reasoningChunks.size() - 1);
+        List<ContentBlock> cumulativeContent = finalCumulativeChunk.getContent();
+
+        assertTrue(
+                cumulativeContent.stream()
+                        .filter(ThinkingBlock.class::isInstance)
+                        .map(ThinkingBlock.class::cast)
+                        .anyMatch(block -> block.getThinking().contains("think before tool.")),
+                "Cumulative mode should keep pre-tool thinking content");
+        assertTrue(
+                cumulativeContent.stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .anyMatch(block -> block.getText().contains("text before tool.")),
+                "Cumulative mode should keep pre-tool text content");
+        assertTrue(
+                cumulativeContent.stream()
+                        .filter(ToolUseBlock.class::isInstance)
+                        .map(ToolUseBlock.class::cast)
+                        .anyMatch(block -> "call_stream_reset_1".equals(block.getId())),
+                "Cumulative mode should keep the tool call that split reasoning rounds");
+        assertTrue(
+                cumulativeContent.stream()
+                        .filter(ThinkingBlock.class::isInstance)
+                        .map(ThinkingBlock.class::cast)
+                        .anyMatch(block -> block.getThinking().contains("think after tool.")),
+                "Cumulative mode should include post-tool thinking content");
+        assertTrue(
+                cumulativeContent.stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .anyMatch(block -> block.getText().contains("text after tool.")),
+                "Cumulative mode should include post-tool text content");
+    }
+
+    @Test
+    @DisplayName("Should keep incremental reasoning chunks as deltas after tool calls")
+    void testIncrementalReasoningStreamStillEmitsDeltasAfterToolCall() {
+        MockModel toolModel = createTwoRoundStreamingModel();
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
+
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.REASONING)
+                        .incremental(true)
+                        .includeReasoningResult(false)
+                        .build();
+
+        List<Event> events =
+                agent.stream(
+                                TestUtils.createUserMessage("User", "Use a tool, then continue."),
+                                options)
+                        .collectList()
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(events, "Streaming events should not be null");
+
+        List<Msg> reasoningChunks =
+                events.stream()
+                        .filter(event -> event.getType() == EventType.REASONING)
+                        .filter(event -> !event.isLast())
+                        .map(Event::getMessage)
+                        .toList();
+
+        assertEquals(5, reasoningChunks.size(), "Should emit every streamed reasoning chunk");
+
+        Msg finalIncrementalChunk = reasoningChunks.get(reasoningChunks.size() - 1);
+        List<ContentBlock> incrementalContent = finalIncrementalChunk.getContent();
+
+        assertEquals(1, incrementalContent.size(), "Incremental mode should emit only the delta");
+        TextBlock textBlock = assertInstanceOf(TextBlock.class, incrementalContent.get(0));
+        assertEquals("text after tool.", textBlock.getText());
+    }
+
+    private static MockModel createTwoRoundStreamingModel() {
+        final int[] callCount = {0};
+        return new MockModel(
+                messages -> {
+                    int currentCall = callCount[0]++;
+                    if (currentCall == 0) {
+                        return List.of(
+                                ChatResponse.builder()
+                                        .id("reasoning-round-1")
+                                        .content(
+                                                List.of(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("think before tool. ")
+                                                                .build()))
+                                        .usage(new ChatUsage(10, 20, 30))
+                                        .build(),
+                                ChatResponse.builder()
+                                        .id("reasoning-round-1")
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("text before tool. ")
+                                                                .build()))
+                                        .usage(new ChatUsage(10, 20, 30))
+                                        .build(),
+                                ChatResponse.builder()
+                                        .id("reasoning-round-1")
+                                        .content(
+                                                List.of(
+                                                        ToolUseBlock.builder()
+                                                                .id("call_stream_reset_1")
+                                                                .name(TestConstants.TEST_TOOL_NAME)
+                                                                .input(Map.of())
+                                                                .content("{}")
+                                                                .build()))
+                                        .usage(new ChatUsage(10, 20, 30))
+                                        .build());
+                    }
+
+                    return List.of(
+                            ChatResponse.builder()
+                                    .id("reasoning-round-2")
+                                    .content(
+                                            List.of(
+                                                    ThinkingBlock.builder()
+                                                            .thinking("think after tool. ")
+                                                            .build()))
+                                    .usage(new ChatUsage(10, 20, 30))
+                                    .build(),
+                            ChatResponse.builder()
+                                    .id("reasoning-round-2")
+                                    .content(
+                                            List.of(
+                                                    TextBlock.builder()
+                                                            .text("text after tool.")
+                                                            .build()))
+                                    .usage(new ChatUsage(10, 20, 30))
+                                    .build());
+                });
     }
 
     @Test
