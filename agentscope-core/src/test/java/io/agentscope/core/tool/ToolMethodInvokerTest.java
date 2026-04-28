@@ -51,7 +51,7 @@ class ToolMethodInvokerTest {
         ToolUseBlock toolUseBlock = new ToolUseBlock("test-id", method.getName(), input);
         ToolCallParam param =
                 ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
-        return invoker.invokeAsync(tools, method, param, responseConverter).block();
+        return invoker.invokeAsync(tools, method, method, param, responseConverter).block();
     }
 
     // Test class with various method signatures for testing

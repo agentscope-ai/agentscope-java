@@ -29,6 +29,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   <li>{@link OpenAIProperties} under {@code agentscope.openai}</li>
  *   <li>{@link GeminiProperties} under {@code agentscope.gemini}</li>
  *   <li>{@link AnthropicProperties} under {@code agentscope.anthropic}</li>
+ *   <li>{@link ToolProperties} under {@code agentscope.tool}</li>
  * </ul>
  */
 @ConfigurationProperties(prefix = "agentscope")
@@ -45,6 +46,8 @@ public class AgentscopeProperties {
     private final GeminiProperties gemini = new GeminiProperties();
 
     private final AnthropicProperties anthropic = new AnthropicProperties();
+
+    private final ToolProperties tool = new ToolProperties();
 
     public AgentProperties getAgent() {
         return agent;
@@ -68,5 +71,9 @@ public class AgentscopeProperties {
 
     public AnthropicProperties getAnthropic() {
         return anthropic;
+    }
+
+    public ToolProperties getTool() {
+        return tool;
     }
 }

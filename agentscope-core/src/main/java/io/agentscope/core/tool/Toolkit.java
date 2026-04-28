@@ -152,7 +152,24 @@ public class Toolkit {
      * @param toolObject the object containing tool methods
      */
     public void registerTool(Object toolObject) {
-        registerTool(toolObject, null, null, null);
+        registerTool(toolObject, null, null, null, null);
+    }
+
+    /**
+     * Register a tool object and optionally specify its original target class.
+     *
+     * <p>Specifying the target class is highly recommended when the {@code toolObject} is an AOP
+     * proxy (e.g., managed by Spring). Since annotations like {@code @Tool} are not typically
+     * inherited by dynamically generated proxy classes, the toolkit uses the {@code targetClass}
+     * to scan for metadata, while continuing to route actual executions through the proxy instance
+     * to preserve aspects (like transactions or logging).
+     *
+     * @param toolObject the object containing tool methods (can be a proxy instance)
+     * @param targetClass the original, unproxied class to scan for @Tool annotations
+     * (if null, toolObject.getClass() is used)
+     */
+    public void registerTool(Object toolObject, Class<?> targetClass) {
+        registerTool(toolObject, targetClass, null, null, null);
     }
 
     /**
@@ -160,6 +177,7 @@ public class Toolkit {
      */
     private void registerTool(
             Object toolObject,
+            Class<?> targetClass,
             String groupName,
             ExtendedModel extendedModel,
             Map<String, Map<String, Object>> presetParameters) {
@@ -179,19 +197,45 @@ public class Toolkit {
             return;
         }
 
-        Class<?> clazz = toolObject.getClass();
-        Method[] methods = clazz.getDeclaredMethods();
+        Class<?> clazzToScan = targetClass != null ? targetClass : toolObject.getClass();
+        Method[] methods = clazzToScan.getDeclaredMethods();
 
-        for (Method method : methods) {
-            if (method.isAnnotationPresent(Tool.class)) {
-                Tool toolAnnotation = method.getAnnotation(Tool.class);
+        for (Method originalMethod : methods) {
+            if (originalMethod.isAnnotationPresent(Tool.class)) {
+                Tool toolAnnotation = originalMethod.getAnnotation(Tool.class);
                 String toolName =
-                        toolAnnotation.name().isEmpty() ? method.getName() : toolAnnotation.name();
+                        toolAnnotation.name().isEmpty()
+                                ? originalMethod.getName()
+                                : toolAnnotation.name();
                 Map<String, Object> toolPresets =
                         (presetParameters != null && presetParameters.containsKey(toolName))
                                 ? presetParameters.get(toolName)
                                 : null;
-                registerToolMethod(toolObject, method, groupName, extendedModel, toolPresets);
+
+                // Find the corresponding real execution method on the proxy object
+                Method executableMethod = originalMethod;
+                if (targetClass != null && toolObject.getClass() != targetClass) {
+                    try {
+                        executableMethod =
+                                toolObject
+                                        .getClass()
+                                        .getMethod(
+                                                originalMethod.getName(),
+                                                originalMethod.getParameterTypes());
+                    } catch (NoSuchMethodException e) {
+                        logger.debug(
+                                "Proxy method not found for {}, falling back to original method",
+                                originalMethod.getName());
+                    }
+                }
+
+                registerToolMethod(
+                        toolObject,
+                        originalMethod,
+                        executableMethod,
+                        groupName,
+                        extendedModel,
+                        toolPresets);
             }
         }
     }
@@ -338,14 +382,15 @@ public class Toolkit {
      */
     private void registerToolMethod(
             Object toolObject,
-            Method method,
+            Method originalMethod,
+            Method executableMethod,
             String groupName,
             ExtendedModel extendedModel,
             Map<String, Object> presetParameters) {
-        Tool toolAnnotation = method.getAnnotation(Tool.class);
+        Tool toolAnnotation = originalMethod.getAnnotation(Tool.class);
 
         String toolName =
-                !toolAnnotation.name().isEmpty() ? toolAnnotation.name() : method.getName();
+                !toolAnnotation.name().isEmpty() ? toolAnnotation.name() : originalMethod.getName();
         String description =
                 !toolAnnotation.description().isEmpty()
                         ? toolAnnotation.description()
@@ -373,14 +418,19 @@ public class Toolkit {
                                 presetParameters != null
                                         ? presetParameters.keySet()
                                         : Collections.emptySet();
-                        return schemaGenerator.generateParameterSchema(method, excludeParams);
+                        return schemaGenerator.generateParameterSchema(
+                                originalMethod, excludeParams);
                     }
 
                     @Override
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         // Pass custom converter to method invoker
                         return methodInvoker.invokeAsync(
-                                toolObject, method, param, customConverter);
+                                toolObject,
+                                originalMethod,
+                                executableMethod,
+                                param,
+                                customConverter);
                     }
                 };
 
@@ -741,6 +791,7 @@ public class Toolkit {
     public static class ToolRegistration {
         private final Toolkit toolkit;
         private Object toolObject;
+        private Class<?> targetClass;
         private AgentTool agentTool;
         private McpClientWrapper mcpClientWrapper;
         private SubAgentProvider<?> subAgentProvider;
@@ -763,6 +814,15 @@ public class Toolkit {
          */
         public ToolRegistration tool(Object toolObject) {
             this.toolObject = toolObject;
+            return this;
+        }
+
+        /**
+         * Set the tool object and its original target class (useful for AOP proxies).
+         */
+        public ToolRegistration tool(Object toolObject, Class<?> targetClass) {
+            this.toolObject = toolObject;
+            this.targetClass = targetClass;
             return this;
         }
 
@@ -953,7 +1013,8 @@ public class Toolkit {
             }
 
             if (toolObject != null) {
-                toolkit.registerTool(toolObject, groupName, extendedModel, presetParameters);
+                toolkit.registerTool(
+                        toolObject, targetClass, groupName, extendedModel, presetParameters);
             } else if (agentTool != null) {
                 String toolName = agentTool.getName();
                 Map<String, Object> toolPresets =
