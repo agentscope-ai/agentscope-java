@@ -1296,4 +1296,154 @@ class McpClientBuilderTest {
         assertNotNull(syncWrapper);
         assertTrue(syncWrapper instanceof McpSyncClientWrapper);
     }
+
+    // ==================== Protocol Versions Tests ====================
+
+    @Test
+    void testProtocolVersions_SingleVersion() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-client")
+                        .stdioTransport("echo", "test")
+                        .protocolVersions("2025-03-26");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testProtocolVersions_MultipleVersions() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-client")
+                        .stdioTransport("echo", "test")
+                        .protocolVersions("2024-11-05", "2025-03-26", "2025-06-18");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testProtocolVersions_NullThrows() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        McpClientBuilder.create("pv-client")
+                                .stdioTransport("echo", "test")
+                                .protocolVersions((String[]) null));
+    }
+
+    @Test
+    void testProtocolVersions_EmptyThrows() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        McpClientBuilder.create("pv-client")
+                                .stdioTransport("echo", "test")
+                                .protocolVersions());
+    }
+
+    @Test
+    void testProtocolVersions_BuildAsyncWithVersions() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-async")
+                        .stdioTransport("echo", "test")
+                        .protocolVersions("2024-11-05", "2025-03-26");
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertTrue(wrapper instanceof McpAsyncClientWrapper);
+    }
+
+    @Test
+    void testProtocolVersions_BuildSyncWithVersions() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-sync")
+                        .stdioTransport("echo", "test")
+                        .protocolVersions("2024-11-05", "2025-03-26");
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+        assertTrue(wrapper instanceof McpSyncClientWrapper);
+    }
+
+    @Test
+    void testProtocolVersions_WithSseTransport() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-sse")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .protocolVersions("2024-11-05", "2025-03-26");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testProtocolVersions_WithStreamableHttpTransport() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-http")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .protocolVersions("2024-11-05", "2025-03-26");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testProtocolVersions_OverrideTransportIsApplied() throws Exception {
+        // Verify that when protocolVersions is set, the transport is wrapped
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-verify")
+                        .stdioTransport("echo", "test")
+                        .protocolVersions("2024-11-05", "2025-03-26");
+
+        // Use reflection to access the protocolVersions field
+        Field pvField = McpClientBuilder.class.getDeclaredField("protocolVersions");
+        pvField.setAccessible(true);
+        List<String> versions = (List<String>) pvField.get(builder);
+
+        assertNotNull(versions);
+        assertEquals(2, versions.size());
+        assertEquals("2024-11-05", versions.get(0));
+        assertEquals("2025-03-26", versions.get(1));
+    }
+
+    @Test
+    void testProtocolVersions_WithoutSettingUsesDefault() throws Exception {
+        // Verify that when protocolVersions is NOT set, the field remains null
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-default").stdioTransport("echo", "test");
+
+        Field pvField = McpClientBuilder.class.getDeclaredField("protocolVersions");
+        pvField.setAccessible(true);
+        Object versions = pvField.get(builder);
+
+        // Should be null, meaning the transport's default protocolVersions() is used
+        assertEquals(null, versions);
+    }
+
+    @Test
+    void testProtocolVersions_NullElementsAreFiltered() throws Exception {
+        // Verify that null elements in the varargs are silently filtered out
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-null-filter")
+                        .stdioTransport("echo", "test")
+                        .protocolVersions("2024-11-05", null, "2025-03-26");
+
+        Field pvField = McpClientBuilder.class.getDeclaredField("protocolVersions");
+        pvField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<String> versions = (List<String>) pvField.get(builder);
+
+        assertNotNull(versions);
+        assertEquals(2, versions.size());
+        assertEquals("2024-11-05", versions.get(0));
+        assertEquals("2025-03-26", versions.get(1));
+    }
+
+    @Test
+    void testProtocolVersions_AllNullElementsThrows() {
+        // Verify that passing only null elements throws
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        McpClientBuilder.create("pv-all-null")
+                                .stdioTransport("echo", "test")
+                                .protocolVersions(null, null));
+    }
 }
