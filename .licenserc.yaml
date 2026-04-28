@@ -17,6 +17,11 @@ header:
       limitations under the License.
 
   paths-ignore:
+    # Config / example files without license headers
+    - 'agentscope-examples/harness-example/.env.example'
+    - 'agentscope-examples/harness-example/src/main/resources/agentscope.json.example'
+    - 'agentscope-examples/harness-example/src/main/resources/log4j2.xml'
+    - 'agentscope-harness/src/main/resources/agentscope.json.example'
     - '**/*.versionsBackup'
     - '**/.idea/'
     - '**/*.iml'
