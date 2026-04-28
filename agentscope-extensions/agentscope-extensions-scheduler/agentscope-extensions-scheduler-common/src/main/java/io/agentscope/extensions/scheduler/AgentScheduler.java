@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.scheduler;
 
+import io.agentscope.core.message.Msg;
 import io.agentscope.extensions.scheduler.config.AgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import java.util.List;
@@ -101,6 +102,28 @@ public interface AgentScheduler {
      * @throws IllegalArgumentException if agentConfig or scheduleConfig is null or invalid
      */
     ScheduleAgentTask schedule(AgentConfig agentConfig, ScheduleConfig scheduleConfig);
+
+    /**
+     * Schedule an agent to run with an initial input message.
+     *
+     * <p>This method extends {@link #schedule(AgentConfig, ScheduleConfig)} by allowing
+     * developers to pass an initial {@link Msg} object. When the scheduled task is triggered,
+     * the newly created Agent instance will be executed with this input message.
+     *
+     * <p>This is particularly useful for tasks that require specific context, parameters,
+     * or initial instructions to begin their execution.
+     *
+     * @param agentConfig The agent configuration defining how to create agents (can be AgentConfig or RuntimeAgentConfig)
+     * @param scheduleConfig The scheduling configuration including timing and execution policies
+     * @param input The initial message to pass to the agent when triggered (can be null)
+     * @return The ScheduleAgentTask handle for controlling the scheduled task
+     * @throws UnsupportedOperationException if the specific scheduler implementation does not support initial input
+     */
+    default ScheduleAgentTask schedule(
+            AgentConfig agentConfig, ScheduleConfig scheduleConfig, Msg input) {
+        throw new UnsupportedOperationException(
+                "This scheduler implementation does not support initial input.");
+    }
 
     /**
      * Cancel and remove a scheduled task permanently.
