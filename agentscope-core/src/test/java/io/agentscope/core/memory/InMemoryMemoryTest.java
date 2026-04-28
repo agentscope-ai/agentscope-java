@@ -16,6 +16,7 @@
 package io.agentscope.core.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -23,6 +24,8 @@ import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class InMemoryMemoryTest {
@@ -172,5 +175,205 @@ class InMemoryMemoryTest {
         // Clear remaining messages
         memory.clear();
         assertTrue(memory.getMessages().isEmpty());
+    }
+
+    // ==================== Anchor Tests ====================
+
+    @Nested
+    @DisplayName("Anchor (saveAnchor / restoreAnchor / hasAnchor)")
+    class AnchorTests {
+
+        @Test
+        @DisplayName("hasAnchor() returns false before saveAnchor() is called")
+        void testHasAnchorFalseInitially() {
+            assertFalse(memory.hasAnchor());
+        }
+
+        @Test
+        @DisplayName("hasAnchor() returns true after saveAnchor() is called")
+        void testHasAnchorTrueAfterSave() {
+            memory.addMessage(TestUtils.createUserMessage("user", "Hello"));
+            memory.saveAnchor();
+            assertTrue(memory.hasAnchor());
+        }
+
+        @Test
+        @DisplayName("saveAnchor() snapshots current messages and restoreAnchor() restores them")
+        void testSaveAndRestoreAnchor() {
+            Msg msg1 = TestUtils.createUserMessage("user", "Message 1");
+            Msg msg2 = TestUtils.createAssistantMessage("assistant", "Message 2");
+            memory.addMessage(msg1);
+            memory.addMessage(msg2);
+
+            memory.saveAnchor();
+
+            // Add more messages after anchor
+            memory.addMessage(TestUtils.createUserMessage("user", "Message 3"));
+            assertEquals(3, memory.getMessages().size());
+
+            // Restore should revert to the 2-message state
+            memory.restoreAnchor();
+            List<Msg> restored = memory.getMessages();
+            assertEquals(2, restored.size());
+            assertEquals(msg1, restored.get(0));
+            assertEquals(msg2, restored.get(1));
+        }
+
+        @Test
+        @DisplayName("restoreAnchor() is a no-op when no anchor has been saved")
+        void testRestoreAnchorNoOpWhenNoAnchor() {
+            memory.addMessage(TestUtils.createUserMessage("user", "Only message"));
+            // Should not throw, should not change messages
+            memory.restoreAnchor();
+            assertEquals(1, memory.getMessages().size());
+        }
+
+        @Test
+        @DisplayName("saveAnchor() overwrites previous anchor")
+        void testSaveAnchorOverwritesPrevious() {
+            Msg msg1 = TestUtils.createUserMessage("user", "First");
+            memory.addMessage(msg1);
+            memory.saveAnchor(); // anchor = [msg1]
+
+            Msg msg2 = TestUtils.createAssistantMessage("assistant", "Second");
+            memory.addMessage(msg2);
+            memory.saveAnchor(); // anchor = [msg1, msg2]
+
+            // Add a third message and restore
+            memory.addMessage(TestUtils.createUserMessage("user", "Third"));
+            memory.restoreAnchor();
+
+            // Should be [msg1, msg2]
+            List<Msg> restored = memory.getMessages();
+            assertEquals(2, restored.size());
+            assertEquals(msg2, restored.get(1));
+        }
+
+        @Test
+        @DisplayName("restoreAnchor() can be called multiple times idempotently")
+        void testRestoreAnchorMultipleTimes() {
+            Msg msg1 = TestUtils.createUserMessage("user", "Anchor message");
+            memory.addMessage(msg1);
+            memory.saveAnchor();
+
+            memory.addMessage(TestUtils.createUserMessage("user", "Extra"));
+            memory.restoreAnchor();
+            assertEquals(1, memory.getMessages().size());
+
+            // Calling again should still work
+            memory.addMessage(TestUtils.createUserMessage("user", "Extra2"));
+            memory.restoreAnchor();
+            assertEquals(1, memory.getMessages().size());
+        }
+
+        @Test
+        @DisplayName("saveAnchor() on empty memory, restoreAnchor() clears messages")
+        void testSaveAnchorOnEmptyRestoresClear() {
+            memory.saveAnchor(); // anchor = empty
+
+            memory.addMessage(TestUtils.createUserMessage("user", "Added after anchor"));
+            assertEquals(1, memory.getMessages().size());
+
+            memory.restoreAnchor();
+            assertTrue(memory.getMessages().isEmpty());
+        }
+    }
+
+    // ==================== deleteMessagesFrom Tests ====================
+
+    @Nested
+    @DisplayName("deleteMessagesFrom(int fromIndex)")
+    class DeleteMessagesFromTests {
+
+        @Test
+        @DisplayName("Normal truncation: removes messages from index to end")
+        void testDeleteMessagesFromNormal() {
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 0"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 1"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 2"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 3"));
+
+            memory.deleteMessagesFrom(2);
+
+            List<Msg> remaining = memory.getMessages();
+            assertEquals(2, remaining.size());
+            assertEquals("Msg 0", TestUtils.extractTextContent(remaining.get(0)));
+            assertEquals("Msg 1", TestUtils.extractTextContent(remaining.get(1)));
+        }
+
+        @Test
+        @DisplayName("fromIndex = 0 removes all messages")
+        void testDeleteMessagesFromZero() {
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 0"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 1"));
+
+            memory.deleteMessagesFrom(0);
+
+            assertTrue(memory.getMessages().isEmpty());
+        }
+
+        @Test
+        @DisplayName("fromIndex = size - 1 removes only the last message")
+        void testDeleteMessagesFromLastIndex() {
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 0"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 1"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 2"));
+
+            memory.deleteMessagesFrom(2);
+
+            List<Msg> remaining = memory.getMessages();
+            assertEquals(2, remaining.size());
+            assertEquals("Msg 1", TestUtils.extractTextContent(remaining.get(1)));
+        }
+
+        @Test
+        @DisplayName("fromIndex = -1 is a no-op")
+        void testDeleteMessagesFromNegativeIndex() {
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 0"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 1"));
+
+            memory.deleteMessagesFrom(-1);
+
+            assertEquals(2, memory.getMessages().size());
+        }
+
+        @Test
+        @DisplayName("fromIndex = size is a no-op")
+        void testDeleteMessagesFromSizeIndex() {
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 0"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 1"));
+
+            memory.deleteMessagesFrom(
+                    2); // size == 2, valid; actually removes from index 2 (nothing)
+            // Wait - fromIndex == size is actually no-op per impl: fromIndex >= size returns
+            // Actually size=2, fromIndex=2: condition fromIndex >= size is 2>=2 = true => no-op
+            // Let's re-add and test fromIndex == size+1
+            // First restore to 2 messages
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 0 again"));
+            // Now size=3, let's test fromIndex=4
+            memory.deleteMessagesFrom(4);
+            assertEquals(3, memory.getMessages().size());
+        }
+
+        @Test
+        @DisplayName("fromIndex >= size is a no-op")
+        void testDeleteMessagesFromOutOfBounds() {
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 0"));
+            memory.addMessage(TestUtils.createUserMessage("user", "Msg 1"));
+            // size = 2, fromIndex = 2 → no-op (boundary)
+            memory.deleteMessagesFrom(2);
+            assertEquals(2, memory.getMessages().size());
+
+            // fromIndex = 10 → no-op
+            memory.deleteMessagesFrom(10);
+            assertEquals(2, memory.getMessages().size());
+        }
+
+        @Test
+        @DisplayName("deleteMessagesFrom on empty memory is a no-op")
+        void testDeleteMessagesFromEmptyMemory() {
+            memory.deleteMessagesFrom(0);
+            assertTrue(memory.getMessages().isEmpty());
+        }
     }
 }

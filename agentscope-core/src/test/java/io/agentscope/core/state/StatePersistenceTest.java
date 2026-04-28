@@ -15,10 +15,13 @@
  */
 package io.agentscope.core.state;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.session.InMemorySession;
+import io.agentscope.core.session.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -39,6 +42,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -49,6 +53,7 @@ class StatePersistenceTest {
             assertFalse(persistence.toolkitManaged());
             assertFalse(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertFalse(persistence.skillBoxManaged());
         }
 
         @Test
@@ -59,6 +64,7 @@ class StatePersistenceTest {
             assertFalse(persistence.toolkitManaged());
             assertFalse(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertFalse(persistence.skillBoxManaged());
         }
     }
 
@@ -74,6 +80,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -84,6 +91,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -94,6 +102,7 @@ class StatePersistenceTest {
             assertFalse(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -105,6 +114,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertFalse(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -116,6 +126,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -127,11 +138,13 @@ class StatePersistenceTest {
                             .toolkitManaged(false)
                             .planNotebookManaged(false)
                             .statefulToolsManaged(false)
+                            .skillBoxManaged(false)
                             .build();
             assertFalse(persistence.memoryManaged());
             assertFalse(persistence.toolkitManaged());
             assertFalse(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertFalse(persistence.skillBoxManaged());
         }
 
         @Test
@@ -143,11 +156,13 @@ class StatePersistenceTest {
                             .toolkitManaged(false)
                             .planNotebookManaged(true)
                             .statefulToolsManaged(false)
+                            .skillBoxManaged(true)
                             .build();
             assertTrue(persistence.memoryManaged());
             assertFalse(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
     }
 
@@ -167,11 +182,85 @@ class StatePersistenceTest {
         @Test
         @DisplayName("Constructor should accept all boolean values")
         void testConstructor() {
-            StatePersistence persistence = new StatePersistence(true, false, true, false);
+            StatePersistence persistence = new StatePersistence(true, false, true, false, true);
             assertTrue(persistence.memoryManaged());
             assertFalse(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
+        }
+    }
+
+    @Nested
+    @DisplayName("StateModule Default Anchor Methods")
+    class StateModuleDefaultAnchorTests {
+
+        /** A minimal implementation of StateModule for testing default methods. */
+        private final StateModule defaultImpl =
+                new StateModule() {
+                    @Override
+                    public void saveTo(Session session, SessionKey sessionKey) {
+                        // no-op
+                    }
+
+                    @Override
+                    public void loadFrom(Session session, SessionKey sessionKey) {
+                        // no-op
+                    }
+                };
+
+        @Test
+        @DisplayName("saveAnchor default implementation should not throw")
+        void testSaveAnchorIsNoOp() {
+            assertDoesNotThrow(
+                    () -> defaultImpl.saveAnchor(),
+                    "Default saveAnchor should not throw any exception");
+        }
+
+        @Test
+        @DisplayName("restoreAnchor default implementation should not throw")
+        void testRestoreAnchorIsNoOp() {
+            assertDoesNotThrow(
+                    () -> defaultImpl.restoreAnchor(),
+                    "Default restoreAnchor should not throw any exception");
+        }
+
+        @Test
+        @DisplayName("hasAnchor default implementation should return false")
+        void testHasAnchorReturnsFalse() {
+            assertFalse(defaultImpl.hasAnchor(), "Default hasAnchor should return false");
+        }
+
+        @Test
+        @DisplayName("saveAnchor followed by restoreAnchor should not throw")
+        void testSaveAnchorThenRestoreAnchor() {
+            assertDoesNotThrow(
+                    () -> {
+                        defaultImpl.saveAnchor();
+                        defaultImpl.restoreAnchor();
+                    },
+                    "Calling saveAnchor then restoreAnchor should not throw");
+        }
+
+        @Test
+        @DisplayName("hasAnchor should still return false after default saveAnchor")
+        void testHasAnchorAfterDefaultSaveAnchor() {
+            defaultImpl.saveAnchor();
+            assertFalse(
+                    defaultImpl.hasAnchor(),
+                    "Default hasAnchor should still return false even after saveAnchor");
+        }
+
+        @Test
+        @DisplayName("saveTo and loadFrom string overloads should not throw")
+        void testStringOverloadsAreNoOp() {
+            InMemorySession session = new InMemorySession();
+            assertDoesNotThrow(
+                    () -> defaultImpl.saveTo(session, "test-session"),
+                    "saveTo with string ID should not throw");
+            assertDoesNotThrow(
+                    () -> defaultImpl.loadFrom(session, "test-session"),
+                    "loadFrom with string ID should not throw");
         }
     }
 }

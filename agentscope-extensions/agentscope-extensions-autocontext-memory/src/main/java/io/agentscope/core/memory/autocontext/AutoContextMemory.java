@@ -1401,6 +1401,35 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
     }
 
     /**
+     * Deletes all messages from the specified index (inclusive) to the end of the list.
+     *
+     * <p>Unlike the default Memory implementation, this method also truncates
+     * {@code originalMemoryStorage} by finding the matching message ID at the cut point.
+     * This ensures consistency between working and original storage during resend operations.
+     *
+     * @param fromIndex the starting index (inclusive) in working memory from which to delete
+     */
+    @Override
+    public void deleteMessagesFrom(int fromIndex) {
+        if (fromIndex < 0 || fromIndex >= workingMemoryStorage.size()) {
+            return;
+        }
+        // Get the ID of the message at the cut point in working memory
+        String cutMsgId = workingMemoryStorage.get(fromIndex).getId();
+
+        // Truncate workingMemoryStorage
+        workingMemoryStorage.subList(fromIndex, workingMemoryStorage.size()).clear();
+
+        // Find the same message in originalMemoryStorage by ID and truncate
+        for (int i = 0; i < originalMemoryStorage.size(); i++) {
+            if (originalMemoryStorage.get(i).getId().equals(cutMsgId)) {
+                originalMemoryStorage.subList(i, originalMemoryStorage.size()).clear();
+                break;
+            }
+        }
+    }
+
+    /**
      * Extract tool messages from raw messages for compression.
      *
      * <p>This method finds consecutive tool invocation messages in historical conversations

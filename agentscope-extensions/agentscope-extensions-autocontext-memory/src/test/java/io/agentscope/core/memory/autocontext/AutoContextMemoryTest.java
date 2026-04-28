@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
@@ -2072,5 +2073,144 @@ class AutoContextMemoryTest {
                 1,
                 testModel.getCallCount(),
                 "Model should be called exactly once for the second high-token tool group");
+    }
+
+    @Nested
+    @DisplayName("deleteMessagesFrom Tests")
+    class DeleteMessagesFromTests {
+
+        private AutoContextMemory testMemory;
+
+        @BeforeEach
+        void setUpDeleteMemory() {
+            AutoContextConfig cfg =
+                    AutoContextConfig.builder()
+                            .msgThreshold(100)
+                            .maxToken(100000)
+                            .tokenRatio(0.9)
+                            .lastKeep(5)
+                            .build();
+            testMemory = new AutoContextMemory(cfg, new TestModel("summary"));
+        }
+
+        @Test
+        @DisplayName("Should truncate from middle index in both working and original storage")
+        void testDeleteFromMiddleIndex() {
+            // Add 5 messages
+            for (int i = 0; i < 5; i++) {
+                testMemory.addMessage(createTextMessage("Msg " + i, MsgRole.USER));
+            }
+
+            // Delete from index 2 (keep first 2 messages: index 0 and 1)
+            testMemory.deleteMessagesFrom(2);
+
+            List<Msg> working = testMemory.getMessages();
+            assertEquals(2, working.size(), "Working storage should have 2 messages");
+            assertEquals("Msg 0", working.get(0).getTextContent());
+            assertEquals("Msg 1", working.get(1).getTextContent());
+
+            List<Msg> original = testMemory.getOriginalMemoryMsgs();
+            assertEquals(2, original.size(), "Original storage should also have 2 messages");
+        }
+
+        @Test
+        @DisplayName("fromIndex=0 should clear all messages from both storages")
+        void testDeleteFromIndexZeroClearsAll() {
+            for (int i = 0; i < 4; i++) {
+                testMemory.addMessage(createTextMessage("Msg " + i, MsgRole.USER));
+            }
+
+            testMemory.deleteMessagesFrom(0);
+
+            assertTrue(testMemory.getMessages().isEmpty(), "Working storage should be empty");
+            assertTrue(
+                    testMemory.getOriginalMemoryMsgs().isEmpty(),
+                    "Original storage should be empty");
+        }
+
+        @Test
+        @DisplayName("Negative fromIndex should be ignored (no-op)")
+        void testDeleteFromNegativeIndexIsNoOp() {
+            for (int i = 0; i < 3; i++) {
+                testMemory.addMessage(createTextMessage("Msg " + i, MsgRole.USER));
+            }
+
+            testMemory.deleteMessagesFrom(-1);
+
+            assertEquals(3, testMemory.getMessages().size(), "Should remain unchanged");
+            assertEquals(3, testMemory.getOriginalMemoryMsgs().size(), "Should remain unchanged");
+        }
+
+        @Test
+        @DisplayName("fromIndex equal to size should be ignored (no-op)")
+        void testDeleteFromIndexEqualToSizeIsNoOp() {
+            for (int i = 0; i < 3; i++) {
+                testMemory.addMessage(createTextMessage("Msg " + i, MsgRole.USER));
+            }
+            int size = testMemory.getMessages().size(); // 3
+
+            testMemory.deleteMessagesFrom(size);
+
+            assertEquals(3, testMemory.getMessages().size(), "Should remain unchanged");
+        }
+
+        @Test
+        @DisplayName("fromIndex greater than size should be ignored (no-op)")
+        void testDeleteFromIndexGreaterThanSizeIsNoOp() {
+            for (int i = 0; i < 3; i++) {
+                testMemory.addMessage(createTextMessage("Msg " + i, MsgRole.USER));
+            }
+
+            testMemory.deleteMessagesFrom(10);
+
+            assertEquals(3, testMemory.getMessages().size(), "Should remain unchanged");
+        }
+
+        @Test
+        @DisplayName("Both working and original storage should be consistent after delete")
+        void testDualStorageConsistencyAfterDelete() {
+            // Add 6 messages with distinct content
+            for (int i = 0; i < 6; i++) {
+                testMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+            }
+
+            // Delete from index 3
+            testMemory.deleteMessagesFrom(3);
+
+            List<Msg> working = testMemory.getMessages();
+            List<Msg> original = testMemory.getOriginalMemoryMsgs();
+
+            assertEquals(3, working.size(), "Working storage should have 3 messages");
+            assertEquals(3, original.size(), "Original storage should have 3 messages");
+
+            // Verify the remaining messages are the same in both storages
+            for (int i = 0; i < 3; i++) {
+                assertEquals(
+                        working.get(i).getId(),
+                        original.get(i).getId(),
+                        "Message IDs should match between storages at index " + i);
+                assertEquals(
+                        "Message " + i,
+                        working.get(i).getTextContent(),
+                        "Working message content should match at index " + i);
+                assertEquals(
+                        "Message " + i,
+                        original.get(i).getTextContent(),
+                        "Original message content should match at index " + i);
+            }
+        }
+
+        @Test
+        @DisplayName("Should delete last message when fromIndex is size-1")
+        void testDeleteLastMessage() {
+            for (int i = 0; i < 4; i++) {
+                testMemory.addMessage(createTextMessage("Msg " + i, MsgRole.USER));
+            }
+
+            testMemory.deleteMessagesFrom(3);
+
+            assertEquals(3, testMemory.getMessages().size(), "Should keep first 3 messages");
+            assertEquals("Msg 2", testMemory.getMessages().get(2).getTextContent());
+        }
     }
 }
