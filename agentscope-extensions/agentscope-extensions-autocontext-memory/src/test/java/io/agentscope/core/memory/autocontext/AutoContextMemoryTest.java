@@ -2073,4 +2073,170 @@ class AutoContextMemoryTest {
                 testModel.getCallCount(),
                 "Model should be called exactly once for the second high-token tool group");
     }
+
+    @Test
+    @DisplayName(
+            "compressIfNeeded Strategy 1 should compress two consecutive tool groups in one"
+                    + " invocation")
+    void testMultipleToolGroupsCompressedInSingleCall() {
+        TestModel testModel = new TestModel("Compressed tool summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .minConsecutiveToolMessages(2)
+                        .lastKeep(2)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        // Group 1: consecutive tool messages
+        testMemory.addMessage(createTextMessage("User query 1", MsgRole.USER));
+        for (int i = 0; i < 4; i++) {
+            testMemory.addMessage(createToolUseMessage("group1_tool", "g1_" + i));
+            testMemory.addMessage(
+                    createToolResultMessage("group1_tool", "g1_" + i, "result_g1_" + i));
+        }
+
+        // Non-tool message separating the two groups
+        testMemory.addMessage(createTextMessage("User query 2", MsgRole.USER));
+
+        // Group 2: consecutive tool messages
+        for (int i = 0; i < 4; i++) {
+            testMemory.addMessage(createToolUseMessage("group2_tool", "g2_" + i));
+            testMemory.addMessage(
+                    createToolResultMessage("group2_tool", "g2_" + i, "result_g2_" + i));
+        }
+
+        // Assistant message (boundary for search)
+        testMemory.addMessage(createTextMessage("Final assistant response", MsgRole.ASSISTANT));
+
+        // Padding to exceed threshold
+        testMemory.addMessage(createTextMessage("Padding 1", MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Padding 2", MsgRole.USER));
+
+        testModel.reset();
+
+        // Trigger compression
+        boolean compressed = testMemory.compressIfNeeded();
+        assertTrue(compressed, "Compression should have been applied");
+
+        List<Msg> messages = testMemory.getMessages();
+
+        // Both groups should be compressed
+        long group1ToolMsgs =
+                messages.stream()
+                        .filter(
+                                msg ->
+                                        MsgUtils.isToolMessage(msg)
+                                                && "group1_tool".equals(msg.getName()))
+                        .count();
+        long group2ToolMsgs =
+                messages.stream()
+                        .filter(
+                                msg ->
+                                        MsgUtils.isToolMessage(msg)
+                                                && "group2_tool".equals(msg.getName()))
+                        .count();
+
+        assertEquals(
+                0,
+                group1ToolMsgs,
+                "First tool group should be fully compressed and removed from memory");
+        assertEquals(
+                0,
+                group2ToolMsgs,
+                "Second tool group should be fully compressed and removed from memory");
+
+        // Model should be called twice (once per group)
+        assertEquals(
+                2,
+                testModel.getCallCount(),
+                "Model should be called twice - once for each tool group");
+
+        // Verify summary messages replaced both groups
+        long summaryCount =
+                messages.stream()
+                        .filter(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent()
+                                                        .contains("Compressed tool summary"))
+                        .count();
+        assertEquals(2, summaryCount, "Should have two summary messages replacing two tool groups");
+    }
+
+    @Test
+    @DisplayName(
+            "offloadingLargePayload(lastKeep=false) should run Strategy 3 when rawMessages.size <"
+                    + " lastKeep")
+    void testStrategy3NotBlockedByLastKeepGuard() {
+        TestModel testModel = new TestModel("Summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(3) // Low threshold to trigger compression easily
+                        .largePayloadThreshold(50)
+                        .lastKeep(15) // Intentionally high lastKeep
+                        .minConsecutiveToolMessages(100) // Disable Strategy 1
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE) // Disable LLM compression
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        // Total messages will be < lastKeep (15), but contain a large payload
+        // that should be offloaded by Strategy 3
+        testMemory.addMessage(createTextMessage("User message 1", MsgRole.USER));
+
+        // Large message that exceeds largePayloadThreshold
+        String largeText = "L".repeat(200);
+        testMemory.addMessage(createTextMessage(largeText, MsgRole.USER));
+
+        testMemory.addMessage(createTextMessage("User message 2", MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        // Padding to trigger compression
+        testMemory.addMessage(createTextMessage("Padding 1", MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Padding 2", MsgRole.USER));
+
+        // Total messages = 6, which is < lastKeep (15)
+        // Strategy 2 (lastKeep=true) should be skipped since 6 < 15
+        // Strategy 3 (lastKeep=false) should NOT be skipped - the fix ensures this
+
+        boolean compressed = testMemory.compressIfNeeded();
+        assertTrue(
+                compressed,
+                "Strategy 3 should offload large messages regardless of lastKeep count");
+
+        List<Msg> messages = testMemory.getMessages();
+
+        // Verify large message was offloaded (replaced with preview + CONTEXT_OFFLOAD tag)
+        boolean hasOffloadHint =
+                messages.stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent()
+                                                        .contains("CONTEXT_OFFLOAD"));
+        assertTrue(
+                hasOffloadHint,
+                "Large message should be offloaded with CONTEXT_OFFLOAD tag by Strategy 3");
+
+        // Verify that the large original content is no longer in working memory
+        boolean hasLargeContent =
+                messages.stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent().length() >= 200
+                                                && !msg.getTextContent()
+                                                        .contains("CONTEXT_OFFLOAD"));
+        assertFalse(
+                hasLargeContent,
+                "Large message should have been replaced - original large content should not remain"
+                        + " in working memory");
+
+        // Verify offloadContext has the offloaded message
+        Map<String, List<Msg>> offloadContext = testMemory.getOffloadContext();
+        assertFalse(
+                offloadContext.isEmpty(),
+                "OffloadContext should contain the offloaded large message");
+    }
 }

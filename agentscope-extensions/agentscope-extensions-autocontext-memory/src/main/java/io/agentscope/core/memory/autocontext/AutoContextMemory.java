@@ -207,16 +207,15 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         boolean toolCompressed = false;
         int compressionCount = 0;
         int cursorStartIndex = 0;
+        List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
         while (toolIters > 0) {
             toolIters--;
-            List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
             Pair<Integer, Integer> toolMsgIndices =
                     extractPrevToolMsgsForCompress(
                             currentMsgs, autoContextConfig.getLastKeep(), cursorStartIndex);
             if (toolMsgIndices != null) {
                 boolean actuallyCompressed = summaryToolsMessages(currentMsgs, toolMsgIndices);
                 if (actuallyCompressed) {
-                    replaceWorkingMessage(currentMsgs);
                     toolCompressed = true;
                     compressionCount++;
                     cursorStartIndex = toolMsgIndices.first() + 1;
@@ -228,6 +227,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             }
         }
         if (toolCompressed) {
+            replaceWorkingMessage(currentMsgs);
             log.info(
                     "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
             return true;
@@ -1183,8 +1183,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             return false;
         }
 
-        // Strategy 1: If rawMessages has less than lastKeep messages, skip
-        if (rawMessages.size() < autoContextConfig.getLastKeep()) {
+        // Only check lastKeep message count guard when lastKeep protection is enabled
+        if (lastKeep && rawMessages.size() < autoContextConfig.getLastKeep()) {
             return false;
         }
 
