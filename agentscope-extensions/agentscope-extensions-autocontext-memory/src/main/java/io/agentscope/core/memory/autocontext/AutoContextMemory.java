@@ -33,11 +33,13 @@ import io.agentscope.core.plan.model.SubTaskState;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.StateModule;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -418,6 +420,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
         // Step 4: Merge and compress messages (typically tool calls and results)
         Msg compressedMsg = mergeAndCompressCurrentRoundMessages(messagesToCompress);
+        if (compressedMsg == null) {
+            log.warn("Skipping current round compression because the compression model timed out");
+            return false;
+        }
 
         // Build metadata for compression event
         Map<String, Object> metadata = new HashMap<>();
@@ -526,6 +532,14 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
             // Step 5: Generate summary using LLM
             Msg summaryMsg = generateLargeMessageSummary(msg, uuid);
+            if (summaryMsg == null) {
+                clear(uuid);
+                log.warn(
+                        "Skipping current round large message summary at index {} because the"
+                                + " compression model did not finish in time",
+                        i);
+                continue;
+            }
 
             // Build metadata for compression event
             Map<String, Object> metadata = new HashMap<>();
@@ -599,13 +613,12 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
-                model.stream(newMessages, null, options)
-                        .concatMap(chunk -> processChunk(chunk, context))
-                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
-                        .onErrorResume(InterruptedException.class, Mono::error)
-                        .block();
+                executeCompressionModelCall(newMessages, options, context, "large message summary");
+        if (block == null) {
+            return null;
+        }
 
-        if (block != null && block.getChatUsage() != null) {
+        if (block.getChatUsage() != null) {
             log.info(
                     "Large message summary completed, input tokens: {}, output tokens: {}",
                     block.getChatUsage().getInputTokens(),
@@ -622,12 +635,12 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         metadata.put("_compress_meta", compressMeta);
 
         // Preserve _chat_usage from the block if available
-        if (block != null && block.getChatUsage() != null) {
+        if (block.getChatUsage() != null) {
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
         // Create summary message preserving original role and name
-        String summaryContent = block != null ? block.getTextContent() : "";
+        String summaryContent = block.getTextContent();
         String finalContent = summaryContent;
         if (!offloadHint.isEmpty()) {
             finalContent = summaryContent + "\n" + offloadHint;
@@ -658,7 +671,11 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         offload(uuid, originalMessages);
 
         // Use model to generate a compressed summary from message list
-        return generateCurrentRoundSummaryFromMessages(messages, uuid);
+        Msg summary = generateCurrentRoundSummaryFromMessages(messages, uuid);
+        if (summary == null) {
+            clear(uuid);
+        }
+        return summary;
     }
 
     @Override
@@ -755,22 +772,21 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
-                model.stream(newMessages, null, options)
-                        .concatMap(chunk -> processChunk(chunk, context))
-                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
-                        .onErrorResume(InterruptedException.class, Mono::error)
-                        .block();
+                executeCompressionModelCall(newMessages, options, context, "current round summary");
+        if (block == null) {
+            return null;
+        }
 
         // Extract token usage information
         int inputTokens = 0;
         int outputTokens = 0;
-        if (block != null && block.getChatUsage() != null) {
+        if (block.getChatUsage() != null) {
             inputTokens = block.getChatUsage().getInputTokens();
             outputTokens = block.getChatUsage().getOutputTokens();
         }
 
         // Calculate actual output character count (including all content blocks)
-        int actualCharCount = block != null ? MsgUtils.calculateMessageCharCount(block) : 0;
+        int actualCharCount = MsgUtils.calculateMessageCharCount(block);
 
         log.info(
                 "Current round summary completed - original: {} chars, target: {} chars ({}%),"
@@ -792,7 +808,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         compressMeta.put("compressed_current_round", true);
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("_compress_meta", compressMeta);
-        if (block != null && block.getChatUsage() != null) {
+        if (block.getChatUsage() != null) {
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
@@ -800,10 +816,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         return Msg.builder()
                 .role(MsgRole.ASSISTANT)
                 .name("assistant")
-                .content(
-                        TextBlock.builder()
-                                .text((block != null ? block.getTextContent() : "") + offloadHint)
-                                .build())
+                .content(TextBlock.builder().text(block.getTextContent() + offloadHint).build())
                 .metadata(metadata)
                 .build();
     }
@@ -854,6 +867,12 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         offload(uuid, toolsMsg);
 
         Msg toolsSummary = compressToolsInvocation(toolsMsg, uuid);
+        if (toolsSummary == null) {
+            clear(uuid);
+            log.warn(
+                    "Skipping tool invocation compression because the compression model timed out");
+            return false;
+        }
 
         // Build metadata for compression event
         Map<String, Object> metadata = new HashMap<>();
@@ -1015,6 +1034,14 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
             // Step 6: Generate summary
             Msg summaryMsg = summaryPreviousRoundConversation(messagesToSummarize, uuid);
+            if (summaryMsg == null) {
+                clear(uuid);
+                log.warn(
+                        "Skipping previous round conversation summary for round {} because the"
+                                + " compression model did not finish in time",
+                        pairIdx + 1);
+                continue;
+            }
 
             // Build metadata for compression event
             Map<String, Object> metadata = new HashMap<>();
@@ -1112,16 +1139,16 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
-                model.stream(newMessages, null, options)
-                        .concatMap(chunk -> processChunk(chunk, context))
-                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
-                        .onErrorResume(InterruptedException.class, Mono::error)
-                        .block();
+                executeCompressionModelCall(
+                        newMessages, options, context, "previous round conversation summary");
+        if (block == null) {
+            return null;
+        }
 
         // Extract token usage information
         int inputTokens = 0;
         int outputTokens = 0;
-        if (block != null && block.getChatUsage() != null) {
+        if (block.getChatUsage() != null) {
             inputTokens = block.getChatUsage().getInputTokens();
             outputTokens = block.getChatUsage().getOutputTokens();
             log.info(
@@ -1140,14 +1167,14 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         metadata.put("_compress_meta", compressMeta);
 
         // Preserve _chat_usage from the block if available
-        if (block != null && block.getChatUsage() != null) {
+        if (block.getChatUsage() != null) {
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
         // Build the final message content:
         // 1. LLM generated summary (contains ASSISTANT summary + tool compression)
         // 2. Context offload tag with UUID at the end
-        String summaryContent = block != null ? block.getTextContent() : "";
+        String summaryContent = block.getTextContent();
         String offloadTag =
                 offloadUuid != null
                         ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
@@ -1614,17 +1641,15 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                         .build());
         // Insert plan-aware hint message at the end to leverage recency effect
         addPlanAwareHintIfNeeded(newMessages);
-        Msg block =
-                model.stream(newMessages, null, options)
-                        .concatMap(chunk -> processChunk(chunk, context))
-                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
-                        .onErrorResume(InterruptedException.class, Mono::error)
-                        .block();
+        Msg block = executeCompressionModelCall(newMessages, options, context, "tool compression");
+        if (block == null) {
+            return null;
+        }
 
         // Extract token usage information
         int inputTokens = 0;
         int outputTokens = 0;
-        if (block != null && block.getChatUsage() != null) {
+        if (block.getChatUsage() != null) {
             inputTokens = block.getChatUsage().getInputTokens();
             outputTokens = block.getChatUsage().getOutputTokens();
             log.info(
@@ -1643,14 +1668,14 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         metadata.put("_compress_meta", compressMeta);
 
         // Preserve _chat_usage from the block if available
-        if (block != null && block.getChatUsage() != null) {
+        if (block.getChatUsage() != null) {
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
         // Build the final message content:
         // 1. LLM generated compressed tool invocation content
         // 2. Context offload tag with UUID at the end
-        String compressedContent = block != null ? block.getTextContent() : "";
+        String compressedContent = block.getTextContent();
         String offloadTag =
                 offloadUUid != null
                         ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUUid)
@@ -1668,6 +1693,30 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 .content(TextBlock.builder().text(finalContent).build())
                 .metadata(metadata)
                 .build();
+    }
+
+    private Msg executeCompressionModelCall(
+            List<Msg> messages,
+            GenerateOptions options,
+            ReasoningContext context,
+            String operationName) {
+        long timeoutMillis = Math.max(1L, autoContextConfig.getCompressionTimeoutMillis());
+
+        return model.stream(messages, null, options)
+                .concatMap(chunk -> processChunk(chunk, context))
+                .then(Mono.defer(() -> Mono.justOrEmpty(context.buildFinalMessage())))
+                .timeout(Duration.ofMillis(timeoutMillis))
+                .doOnError(
+                        TimeoutException.class,
+                        error ->
+                                log.warn(
+                                        "AutoContext {} timed out after {} ms; skipping this"
+                                                + " compression candidate",
+                                        operationName,
+                                        timeoutMillis))
+                .onErrorResume(TimeoutException.class, error -> Mono.empty())
+                .onErrorResume(InterruptedException.class, Mono::error)
+                .block();
     }
 
     private Mono<Msg> processChunk(ChatResponse chunk, ReasoningContext context) {
