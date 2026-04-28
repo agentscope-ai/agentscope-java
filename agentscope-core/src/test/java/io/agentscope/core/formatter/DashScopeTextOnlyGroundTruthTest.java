@@ -592,7 +592,7 @@ public class DashScopeTextOnlyGroundTruthTest {
 
         return DashScopeMessage.builder()
                 .role("assistant")
-                .content((String) null)
+                .content("")
                 .toolCalls(toolCallList)
                 .build();
     }

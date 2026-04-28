@@ -17,6 +17,7 @@ package io.agentscope.extensions.scheduler.quartz;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -37,6 +38,8 @@ import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
+import org.quartz.Trigger;
+import org.quartz.TriggerKey;
 import reactor.core.publisher.Mono;
 
 /** Unit tests for {@link AgentQuartzJob}. */
@@ -228,5 +231,57 @@ class AgentQuartzJobTest {
 
         verify(mockTask, never()).run();
         verify(mockScheduler, never()).rescheduleNextFixedDelay(any(), anyLong());
+    }
+
+    @Test
+    void testExecuteWithInputMsgSuccess() throws JobExecutionException {
+        when(mockScheduler.getScheduledAgent(taskName)).thenReturn(mockTask);
+        when(mockTask.run(any(Msg.class)))
+                .thenReturn(
+                        Mono.just(
+                                Msg.builder()
+                                        .content(
+                                                TextBlock.builder().text("test with input").build())
+                                        .build()));
+
+        ScheduleConfig scheduleConfig = mock(ScheduleConfig.class);
+        when(scheduleConfig.getScheduleMode()).thenReturn(ScheduleMode.CRON);
+        when(mockTask.getScheduleConfig()).thenReturn(scheduleConfig);
+        when(mockJobDataMap.getString("inputMsg")).thenReturn("{\"name\":\"test_input\"}");
+
+        assertDoesNotThrow(() -> agentQuartzJob.execute(mockContext));
+
+        verify(mockTask, times(1)).run(any(Msg.class));
+        verify(mockTask, never()).run();
+    }
+
+    @Test
+    void testExecuteWithInputMsgDeserializationFailure() {
+        when(mockScheduler.getScheduledAgent(taskName)).thenReturn(mockTask);
+
+        Trigger mockTrigger = mock(Trigger.class);
+        when(mockContext.getTrigger()).thenReturn(mockTrigger);
+        when(mockTrigger.getKey()).thenReturn(new TriggerKey("test-trigger"));
+        when(mockJobDetail.getKey()).thenReturn(new JobKey(taskName));
+
+        // Setup invalid JSON in JobDataMap to force a deserialization exception
+        when(mockJobDataMap.getString("inputMsg")).thenReturn("{invalid-json-format}");
+
+        // Execute and capture the thrown JobExecutionException
+        JobExecutionException exception =
+                assertThrows(
+                        JobExecutionException.class, () -> agentQuartzJob.execute(mockContext));
+
+        // Verify that the exception is marked to unschedule the firing trigger
+        assertTrue(
+                exception.unscheduleFiringTrigger(),
+                "The exception should trigger unscheduling due to toxic data.");
+        assertTrue(
+                exception.getMessage().contains("Invalid inputMsg JSON"),
+                "The exception message should indicate an invalid JSON format.");
+
+        // Verify that neither run() nor run(Msg) was called because execution was aborted
+        verify(mockTask, never()).run();
+        verify(mockTask, never()).run(any(Msg.class));
     }
 }

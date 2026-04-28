@@ -673,7 +673,7 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName("Should allow agent parameters to override preset parameters")
+    @DisplayName("Should keep preset parameters authoritative over agent parameters")
     void testPresetParametersOverride() {
         class OverrideTool {
             @Tool(description = "Test tool for parameter override")
@@ -692,7 +692,7 @@ class ToolkitTest {
                         Map.of("param1", "preset_value1", "param2", "preset_value2"));
         toolkit.registration().tool(new OverrideTool()).presetParameters(presetParams).apply();
 
-        // Call with agent providing param1 (should override preset)
+        // Call with agent providing param1 (preset should still win)
         Map<String, Object> overrideInput = Map.of("param1", "agent_value1");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
@@ -705,9 +705,10 @@ class ToolkitTest {
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
         String resultText = getResultText(result);
 
-        // param1 should be overridden by agent, param2 should use preset
+        // Preset values should not be overridden by agent input
         assertTrue(
-                resultText.contains("param1: agent_value1"), "Agent value should override preset");
+                resultText.contains("param1: preset_value1"),
+                "Preset value should override agent input");
         assertTrue(resultText.contains("param2: preset_value2"), "Preset value should be used");
     }
 

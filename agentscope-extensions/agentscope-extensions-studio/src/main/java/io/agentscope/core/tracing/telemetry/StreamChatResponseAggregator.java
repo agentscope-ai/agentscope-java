@@ -27,7 +27,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * An aggregator for streaming {@link ChatResponse}.
@@ -41,9 +40,9 @@ final class StreamChatResponseAggregator {
     private final ThinkingAccumulator thinkingAcc = new ThinkingAccumulator();
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
 
-    // Usage
-    private final AtomicInteger inputTokens = new AtomicInteger(0);
-    private final AtomicInteger outputTokens = new AtomicInteger(0);
+    // Usage: take the max value from all chunks, since providers report cumulative totals
+    private int inputTokens;
+    private int outputTokens;
     private double time;
 
     private String finishReason;
@@ -73,8 +72,8 @@ final class StreamChatResponseAggregator {
 
         ChatUsage usage = chunk.getUsage();
         if (usage != null) {
-            inputTokens.addAndGet(usage.getInputTokens());
-            outputTokens.addAndGet(usage.getOutputTokens());
+            inputTokens = Math.max(inputTokens, usage.getInputTokens());
+            outputTokens = Math.max(outputTokens, usage.getOutputTokens());
             time = usage.getTime();
         }
 
@@ -95,8 +94,8 @@ final class StreamChatResponseAggregator {
                 .content(contentBlocks)
                 .usage(
                         ChatUsage.builder()
-                                .inputTokens(inputTokens.get())
-                                .outputTokens(outputTokens.get())
+                                .inputTokens(inputTokens)
+                                .outputTokens(outputTokens)
                                 .time(time)
                                 .build())
                 .finishReason(finishReason)
