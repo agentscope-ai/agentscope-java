@@ -105,6 +105,57 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testParseMessageUsesRawJsonFieldIdWhenStrictAccessorThrows() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+        var textBlock = mockTextBlock();
+
+        when(message.id()).thenThrow(new IllegalStateException("id is not set"));
+        when(message._id()).thenReturn(com.anthropic.core.JsonField.of("msg_raw_only"));
+        when(message.content()).thenReturn(List.of(contentBlock));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(contentBlock.text()).thenReturn(Optional.of(textBlock));
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(textBlock.text()).thenReturn("proxy-safe");
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNotNull(response);
+        assertEquals("msg_raw_only", response.getId());
+        assertEquals(1, response.getContent().size());
+    }
+
+    @Test
+    void testParseMessageWithoutIdFallsBackToGeneratedId() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+        var textBlock = mockTextBlock();
+
+        when(message.id()).thenThrow(new IllegalStateException("id is not set"));
+        when(message._id()).thenReturn(com.anthropic.core.JsonField.ofNullable(null));
+        when(message.content()).thenReturn(List.of(contentBlock));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(contentBlock.text()).thenReturn(Optional.of(textBlock));
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(textBlock.text()).thenReturn("proxy-without-id");
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId());
+        assertFalse(response.getId().isEmpty());
+        assertEquals(1, response.getContent().size());
+    }
+
+    @Test
     void testParseMessageWithToolUseBlock() {
         // Create mock Message with tool use content
         // Note: We use null input to avoid Kotlin reflection issues with JsonValue mocking
@@ -293,6 +344,27 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testParseStreamEventsMessageStartWithoutIdStillCompletes() {
+        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
+        RawMessageStartEvent messageStartEvent = mock(RawMessageStartEvent.class);
+        Message message = mock(Message.class);
+
+        when(event.isMessageStart()).thenReturn(true);
+        when(event.asMessageStart()).thenReturn(messageStartEvent);
+        when(messageStartEvent.message()).thenReturn(message);
+        when(message.id()).thenThrow(new IllegalStateException("id is not set"));
+        when(message._id()).thenReturn(com.anthropic.core.JsonField.ofNullable(null));
+        when(event.isContentBlockDelta()).thenReturn(false);
+        when(event.isContentBlockStart()).thenReturn(false);
+        when(event.isMessageDelta()).thenReturn(false);
+
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), Instant.now());
+
+        StepVerifier.create(responseFlux).verifyComplete();
+    }
+
+    @Test
     void testParseStreamEventMessageStart() throws Exception {
         // Test MessageStart event - should set message ID but have empty content
         RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
@@ -314,6 +386,52 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_stream_123", response.getId());
         assertTrue(response.getContent().isEmpty()); // MessageStart has no content
+    }
+
+    @Test
+    void testParseStreamEventMessageStartUsesRawJsonFieldIdWhenStrictAccessorThrows()
+            throws Exception {
+        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        Message message = mock(Message.class);
+
+        when(event.isMessageStart()).thenReturn(true);
+        when(event.asMessageStart()).thenReturn(messageStart);
+        when(messageStart.message()).thenReturn(message);
+        when(message.id()).thenThrow(new IllegalStateException("id is not set"));
+        when(message._id()).thenReturn(com.anthropic.core.JsonField.of("msg_stream_raw_only"));
+        when(event.isContentBlockDelta()).thenReturn(false);
+        when(event.isContentBlockStart()).thenReturn(false);
+        when(event.isMessageDelta()).thenReturn(false);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertEquals("msg_stream_raw_only", response.getId());
+        assertTrue(response.getContent().isEmpty());
+    }
+
+    @Test
+    void testParseStreamEventMessageStartWithoutIdFallsBackToGeneratedId() throws Exception {
+        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        Message message = mock(Message.class);
+
+        when(event.isMessageStart()).thenReturn(true);
+        when(event.asMessageStart()).thenReturn(messageStart);
+        when(messageStart.message()).thenReturn(message);
+        when(message.id()).thenThrow(new IllegalStateException("id is not set"));
+        when(message._id()).thenReturn(com.anthropic.core.JsonField.ofNullable(null));
+        when(event.isContentBlockDelta()).thenReturn(false);
+        when(event.isContentBlockStart()).thenReturn(false);
+        when(event.isMessageDelta()).thenReturn(false);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId());
+        assertFalse(response.getId().isEmpty());
+        assertTrue(response.getContent().isEmpty());
     }
 
     @Test

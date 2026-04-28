@@ -152,6 +152,61 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testParseResponseUsesRawJsonFieldIdWhenStrictAccessorThrows() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+        var textBlock = mockTextBlock();
+
+        when(message.id()).thenThrow(new IllegalStateException("id is not set"));
+        when(message._id()).thenReturn(com.anthropic.core.JsonField.of("msg_formatter_raw_only"));
+        when(message.content()).thenReturn(List.of(contentBlock));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(12L);
+        when(usage.outputTokens()).thenReturn(6L);
+        when(contentBlock.text()).thenReturn(Optional.of(textBlock));
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(textBlock.text()).thenReturn("Response through formatter");
+
+        ChatResponse response = formatter.parseResponse(message, Instant.now());
+
+        assertNotNull(response);
+        assertEquals("msg_formatter_raw_only", response.getId());
+        assertEquals(1, response.getContent().size());
+        assertEquals(12, response.getUsage().getInputTokens());
+        assertEquals(6, response.getUsage().getOutputTokens());
+    }
+
+    @Test
+    void testParseResponseWithoutIdFallsBackToGeneratedId() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+        var textBlock = mockTextBlock();
+
+        when(message.id()).thenThrow(new IllegalStateException("id is not set"));
+        when(message._id()).thenReturn(com.anthropic.core.JsonField.ofNullable(null));
+        when(message.content()).thenReturn(List.of(contentBlock));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(8L);
+        when(usage.outputTokens()).thenReturn(4L);
+        when(contentBlock.text()).thenReturn(Optional.of(textBlock));
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(textBlock.text()).thenReturn("Response without id");
+
+        ChatResponse response = formatter.parseResponse(message, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId());
+        assertTrue(!response.getId().isEmpty());
+        assertEquals(1, response.getContent().size());
+        assertEquals(8, response.getUsage().getInputTokens());
+        assertEquals(4, response.getUsage().getOutputTokens());
+    }
+
+    @Test
     void testParseResponseWithInvalidType() {
         // Pass non-Message object should throw exception
         String invalidResponse = "not a message";
