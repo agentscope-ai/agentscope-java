@@ -1089,6 +1089,89 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testStateLeakOnMultipleSubscriptions() {
+        // Verifies the fix for Issue #510
+        String bugMessageId = "chatcmpl-afaa1eae32eae120";
+        String bugToolId = "chatcmpl-tool-ab42f73d312799c7";
+
+        // Simulate the first streaming text chunk
+        Msg textChunk =
+                Msg.builder()
+                        .id(bugMessageId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("Preparing to call the tool...")
+                                                .build()))
+                        .build();
+        Event textEvent = new Event(EventType.REASONING, textChunk, false);
+
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id(bugMessageId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id(bugToolId)
+                                                .name("getUniversityInfo")
+                                                .input(Map.of())
+                                                .build()))
+                        .build();
+        Event toolEvent = new Event(EventType.REASONING, toolCallMsg, false);
+
+        // Mock the agent stream to return the same events for every subscription
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(textEvent, toolEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("2010331348305129474")
+                        .runId("17816087-d4aa-4743-baee-9989a4ab3c8d")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage(
+                                                "msg-1", "Check university score lines")))
+                        .build();
+
+        // Get the Flux pipeline to test
+        Flux<AguiEvent> resultFlux = adapter.run(input);
+
+        // First subscription: simulate a normal initial streaming request
+        List<AguiEvent> firstRunEvents = resultFlux.collectList().block();
+        assertNotNull(firstRunEvents);
+
+        long firstRunStartCount =
+                firstRunEvents.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .count();
+        assertEquals(1, firstRunStartCount, "First execution should contain 1 TextMessageStart");
+
+        // Second subscription: simulate an automatic retry or buffer flush from the adapter layer
+        List<AguiEvent> secondRunEvents = resultFlux.collectList().block();
+        assertNotNull(secondRunEvents);
+
+        long secondRunStartCount =
+                secondRunEvents.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .count();
+
+        // Verify state isolation is effective; the second subscription should emit START normally
+        assertEquals(
+                1,
+                secondRunStartCount,
+                "State should be isolated; second execution should contain 1 TextMessageStart");
+
+        // Verify that CONTENT is still emitted
+        long secondRunContentCount =
+                secondRunEvents.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .count();
+        assertTrue(secondRunContentCount > 0, "Second execution should contain TextMessageContent");
+    }
+
+    @Test
     void testToolCallStartBackfillWithoutCache() {
         Msg toolResultMsg =
                 Msg.builder()
