@@ -108,6 +108,79 @@ The example uses **TaskToolsBuilder** to create the **Task** and **TaskOutput** 
 
 **Synchronous vs background**: By default, the Task tool runs the sub-agent and returns its reply. If you pass a flag like `run_in_background=true`, the tool returns a `task_id` instead; the orchestrator (or user) can later call **TaskOutput** with that `task_id` to get the result. This requires a **TaskRepository** to store in-flight tasks.
 
+## Passing Custom Context and Parameters
+
+In real-world applications, you may need to pass additional parameters (e.g., `userId`) to a sub-agent alongside the `message`. `SubAgentTool` supports two distinct parameter injection methods:
+
+1. **LLM Dynamic Injection (Business Variables)**: Inferred by the LLM based on the user's chat context (e.g., target translation language, analysis depth).
+2. **System Context Injection (Security Variables)**: Injected by the underlying system via `ToolExecutionContext`. This is completely transparent to the LLM and tamper-proof (e.g., `userId`, `tenantId`).
+
+### 1. Declare parameters
+First, declare custom parameters via `SubAgentConfig`. The framework strictly distinguishes between two types of parameters to ensure security and flexibility:
+
+```java
+SubAgentConfig config = SubAgentConfig.builder()
+        // 1. Declare a business variable (via addParameter: visible to the LLM, inferred by the LLM based on the conversation)
+        .addParameter("analysis_depth", Map.of("type", "string", "enum", List.of("basic", "detailed")), false)
+        // 2. Declare a security variable (via addSystemParameter: invisible to the LLM, strictly injected by the underlying system)
+        .addSystemParameter("userId")
+        .build();
+
+SubAgentTool tool = new SubAgentTool(agentProvider, config);
+```
+
+### 2. Examples of injection methods
+
+#### Method 1: LLM Dynamic Injection (Business Variables)
+Suitable for **business properties**. Variables declared via `addParameter` (such as `analysis_depth`) will be rendered into the JSON Schema passed to the LLM.
+When the user says: *"Help me do an extremely deep code review"*, the LLM will automatically infer and generate the following call:
+```json
+{
+  "message": "Review the codebase",
+  "analysis_depth": "detailed" 
+}
+```
+
+💡 Backend Intervention (Fallback Mechanism): Although business variables are inferred by the LLM, the framework still allows the backend to inject a parameter with the same name via ToolExecutionContext. If the system is in a degraded mode or requires special overrides, the value injected by the underlying system will forcibly override the LLM's inference, ensuring absolute backend control.
+
+#### Method 2: System Context Injection (Security Variables)
+Suitable for **sensitive security properties** (e.g., `userId`). Variables declared via `addSystemParameter` are **completely invisible** to the LLM. The system interceptor will securely inject them directly at runtime.
+```java
+// Register the context at the system entry point
+ToolExecutionContext context = ToolExecutionContext.builder()
+        .register("userId", String.class, "user_123") // Explicitly specify the type as String.class
+        .build();
+
+// Pass the context during execution
+ToolCallParam param = ToolCallParam.builder()
+        .toolUseBlock(toolUseBlock)
+        .input(Map.of("message", "Check my order"))
+        .context(context)
+        .build();
+
+tool.callAsync(param).subscribe();
+```
+
+> **🔒 Security and Priority**
+> Because system parameters (such as `userId`) are declared via `addSystemParameter`, they will not appear in the Schema sent to the LLM. At runtime, the framework strictly follows the principle of **"Absolute Priority for System Context."** Even if a malicious user uses a Prompt Injection attack to force the LLM to forcibly output `"userId": "admin"` in the generated JSON, the underlying framework will **completely ignore** and discard the fake value passed by the LLM, extracting the real context strictly and only from the `ToolExecutionContext`. This fundamentally eliminates the risk of unauthorized access.
+
+### 3. Retrieve parameters in the sub-agent
+Regardless of the injection method, the parameters are ultimately and securely mounted in the `metadata` of the input message received by the sub-agent. The extraction method is identical:
+
+```java
+public Mono<Msg> call(List<Msg> messages) {
+    Msg userMsg = messages.get(messages.size() - 1);
+    Map<String, Object> metadata = userMsg.getMetadata();
+    
+    // Retrieve the system-injected security parameter
+    String userId = (String) metadata.get("userId");
+    // Retrieve the LLM-injected business parameter
+    String depth = (String) metadata.get("analysis_depth");
+    
+    // ... execute specific logic based on these parameters ...
+}
+```
+
 ## Example: Tech Due Diligence Assistant
 
 The AgentScope example implements a **Tech Due Diligence Assistant**: one orchestrator that delegates to four sub-agents.

@@ -36,6 +36,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,6 +45,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -477,6 +479,129 @@ class SubAgentToolTest {
                 "Truncated name must end with an underscore and an 8-character hash");
 
         assertFalse(generatedName.contains("__"));
+    }
+
+    @Test
+    @DisplayName("Should generate schema containing custom parameters but NOT system parameters")
+    void testSchemaWithCustomParameters() {
+        Agent mockAgent = createMockAgent("TestAgent", "Test");
+
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .addParameter("userId", "string", "The user ID", true)
+                        .addParameter("tenantId", "string", "The tenant ID", false)
+                        .addSystemParameter("secureSystemToken") // System parameter
+                        .build();
+
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+        Map<String, Object> schema = tool.getParameters();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+
+        // Custom params should exist
+        assertTrue(properties.containsKey("userId"));
+        assertTrue(properties.containsKey("tenantId"));
+        // System params MUST be invisible to LLM schema
+        assertFalse(properties.containsKey("secureSystemToken"));
+
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) schema.get("required");
+        assertTrue(required.contains("message"));
+        assertTrue(required.contains("userId"));
+        assertFalse(required.contains("tenantId"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should extract custom parameters, prioritize Context override, and filter malicious"
+                    + " fields")
+    void testCustomParameterExtractionAndPriority() {
+        Agent mockAgent = createMockAgent("TestAgent", "Test");
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .forwardEvents(false)
+                        .addParameter("injectedUserId", "string", "User ID", true)
+                        .addParameter("tenantId", "string", "Tenant ID", false)
+                        .build();
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        Map<String, Object> llmInput = new HashMap<>();
+        llmInput.put("message", "Hello");
+        llmInput.put("injectedUserId", "1001"); // Normal business parameters
+        llmInput.put("tenantId", "FAKE_TENANT_FROM_LLM"); // forge parameters
+        llmInput.put("maliciousField", "hacked"); // Undeclared malicious fields
+
+        ToolExecutionContext systemContext =
+                ToolExecutionContext.builder()
+                        .register("tenantId", "REAL_SYSTEM_TENANT_ID")
+                        .build();
+
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_testagent").input(llmInput).build();
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(llmInput)
+                                .context(systemContext)
+                                .build())
+                .block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mockAgent).call(captor.capture());
+        Map<String, Object> metadata = captor.getValue().get(0).getMetadata();
+
+        assertNotNull(metadata);
+        assertEquals("1001", metadata.get("injectedUserId"));
+        assertEquals(
+                "REAL_SYSTEM_TENANT_ID",
+                metadata.get("tenantId"),
+                "System Context MUST override LLM input");
+        assertFalse(metadata.containsKey("maliciousField"));
+        assertFalse(metadata.containsKey("message"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should securely inject system parameters and completely ignore LLM prompt injections")
+    void testSystemParameterSecurityAndInjectionDefense() {
+        Agent mockAgent = createMockAgent("DefenseAgent", "Test prompt injection defense");
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .forwardEvents(false)
+                        .addSystemParameter("authUserId") // System parameters with real context
+                        .addSystemParameter("adminBypassToken") // Forge system parameters by LLM
+                        .build();
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        Map<String, Object> llmInput = new HashMap<>();
+        llmInput.put("message", "Hack system");
+        llmInput.put("adminBypassToken", "FORGED_TOKEN");
+
+        ToolExecutionContext systemContext =
+                ToolExecutionContext.builder().register("authUserId", "sys_user_999").build();
+
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_defenseagent").input(llmInput).build();
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(llmInput)
+                                .context(systemContext)
+                                .build())
+                .block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mockAgent).call(captor.capture());
+        Map<String, Object> metadata = captor.getValue().get(0).getMetadata();
+
+        assertNotNull(metadata);
+        assertEquals("sys_user_999", metadata.get("authUserId"));
+        assertFalse(
+                metadata.containsKey("adminBypassToken"),
+                "Forged system parameter from LLM MUST be ignored");
     }
 
     // Helper methods
