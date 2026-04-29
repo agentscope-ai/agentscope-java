@@ -543,6 +543,203 @@ class AutoContextHookTest {
         assertNotNull(event2);
     }
 
+    @Test
+    @DisplayName("Should handle compression error gracefully and return original event")
+    void testPreReasoningEventHandlesCompressionError() {
+        FailingModel failingModel = new FailingModel(new RuntimeException("model timeout"));
+        AutoContextConfig compressionConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory failingMemory = new AutoContextMemory(compressionConfig, failingModel);
+
+        // Add user-assistant pairs with tool calls (triggers strategy 4)
+        for (int i = 0; i < 3; i++) {
+            failingMemory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .name("user")
+                            .content(TextBlock.builder().text("User message " + i).build())
+                            .build());
+            failingMemory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("assistant")
+                            .content(
+                                    ToolUseBlock.builder()
+                                            .name("test_tool")
+                                            .id("call_" + i)
+                                            .input(new HashMap<>())
+                                            .build())
+                            .build());
+            failingMemory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.TOOL)
+                            .name("test_tool")
+                            .content(
+                                    ToolResultBlock.builder()
+                                            .name("test_tool")
+                                            .id("call_" + i)
+                                            .output(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Result " + i)
+                                                                    .build()))
+                                            .build())
+                            .build());
+            failingMemory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("assistant")
+                            .content(TextBlock.builder().text("Assistant response " + i).build())
+                            .build());
+        }
+        failingMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text("Final user message").build())
+                        .build());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(mockModel)
+                        .memory(failingMemory)
+                        .toolkit(toolkit)
+                        .build();
+
+        List<Msg> inputMessages = new ArrayList<>();
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("system")
+                        .content(TextBlock.builder().text("You are a helpful assistant.").build())
+                        .build());
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build());
+
+        PreReasoningEvent event = new PreReasoningEvent(agent, "test-model", null, inputMessages);
+
+        PreReasoningEvent result = hook.onEvent(event).block();
+
+        assertNotNull(result, "Should return event, not throw");
+        assertEquals(event, result, "Should return original event unchanged on error");
+    }
+
+    @Test
+    @DisplayName("Should propagate wrapped InterruptedException via Mono.error")
+    void testPreReasoningEventPreservesWrappedInterruptedException() {
+        FailingModel failingModel =
+                new FailingModel(
+                        new RuntimeException(new InterruptedException("thread interrupted")));
+        AutoContextConfig compressionConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory failingMemory = new AutoContextMemory(compressionConfig, failingModel);
+
+        // Same message pattern as compression error test (triggers strategy 4)
+        for (int i = 0; i < 3; i++) {
+            failingMemory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .name("user")
+                            .content(TextBlock.builder().text("User message " + i).build())
+                            .build());
+            failingMemory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("assistant")
+                            .content(
+                                    ToolUseBlock.builder()
+                                            .name("test_tool")
+                                            .id("call_" + i)
+                                            .input(new HashMap<>())
+                                            .build())
+                            .build());
+            failingMemory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.TOOL)
+                            .name("test_tool")
+                            .content(
+                                    ToolResultBlock.builder()
+                                            .name("test_tool")
+                                            .id("call_" + i)
+                                            .output(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Result " + i)
+                                                                    .build()))
+                                            .build())
+                            .build());
+            failingMemory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("assistant")
+                            .content(TextBlock.builder().text("Assistant response " + i).build())
+                            .build());
+        }
+        failingMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text("Final user message").build())
+                        .build());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(mockModel)
+                        .memory(failingMemory)
+                        .toolkit(toolkit)
+                        .build();
+
+        List<Msg> inputMessages = new ArrayList<>();
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build());
+
+        PreReasoningEvent event = new PreReasoningEvent(agent, "test-model", null, inputMessages);
+
+        RuntimeException thrown =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        RuntimeException.class, () -> hook.onEvent(event).block());
+        assertTrue(
+                isInterruptedInCauseChain(thrown),
+                "Should propagate exception with InterruptedException in cause chain");
+    }
+
+    private static boolean isInterruptedInCauseChain(Throwable t) {
+        Throwable current = t;
+        while (current != null) {
+            if (current instanceof InterruptedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     /**
      * Simple Model implementation for testing compression.
      */
@@ -577,6 +774,25 @@ class AutoContextHookTest {
 
         void reset() {
             callCount = 0;
+        }
+    }
+
+    private static class FailingModel implements Model {
+        private final RuntimeException exception;
+
+        FailingModel(RuntimeException exception) {
+            this.exception = exception;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            throw exception;
+        }
+
+        @Override
+        public String getModelName() {
+            return "failing-model";
         }
     }
 }
