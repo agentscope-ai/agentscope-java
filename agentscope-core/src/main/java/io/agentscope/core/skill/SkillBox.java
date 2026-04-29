@@ -291,25 +291,37 @@ public class SkillBox implements StateModule {
     }
 
     /**
-     * Sets the logical activation state of a specific skill.
+     * Sets the activation state of a specific skill.
      *
-     * <p>When a skill is set to inactive, it is marked for deactivation. However,
-     * its associated tool group will <b>not</b> be immediately disabled in the underlying
-     * toolkit.
+     * <p>When a skill is set to inactive, its associated tool group will be disabled
+     * in the underlying toolkit, preventing the agent from accessing its tools until
+     * it is activated again.
      *
-     * <p><b>Important:</b> You must explicitly call {@link #syncToolGroupStates()} after
-     * modifying skill states to synchronize these changes with the bound toolkit. Only then
-     * will the agent be prevented from accessing the tools of inactive skills.
+     * <p>This method automatically synchronizes the state change with the bound toolkit.
+     *
+     * <p><b>Warning on Deactivation:</b> Setting a skill to inactive only unbinds its associated
+     * tool group. It does not automatically remove the skill's context or prompt instructions
+     * from the agent's memory. This is a risky operation, as the agent might still attempt to
+     * invoke the inactive tool based on its retained memory context, leading to execution failures.
+     * For a complete and ideal deactivation, it is recommended to implement custom hooks to unbind
+     * both the tool group and its associated context from memory.
      *
      * @param skillId The ID of the skill to modify
-     * @param active  true to mark the skill as active, false to mark as inactive
-     * @throws IllegalArgumentException if skillId is null
+     * @param active  true to activate the skill, false to deactivate
+     * @throws IllegalArgumentException if skillId is null or the skill does not exist
      */
     public void setSkillActive(String skillId, boolean active) {
         if (skillId == null) {
             throw new IllegalArgumentException("Skill ID cannot be null");
         }
+
+        if (!exists(skillId)) {
+            throw new IllegalArgumentException("Skill ID does not exist: " + skillId);
+        }
+
         skillRegistry.setSkillActive(skillId, active);
+        this.syncToolGroupStates();
+
         logger.debug("Skill '{}' active state set to {}", skillId, active);
     }
 

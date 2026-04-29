@@ -162,6 +162,7 @@ class SkillBoxTest {
         void testThrowExceptionForNullSkillIdInOperations() {
             assertThrows(IllegalArgumentException.class, () -> skillBox.removeSkill(null));
             assertThrows(IllegalArgumentException.class, () -> skillBox.exists(null));
+            assertThrows(IllegalArgumentException.class, () -> skillBox.setSkillActive(null, true));
         }
 
         @Test
@@ -260,8 +261,19 @@ class SkillBoxTest {
         }
 
         @Test
-        @DisplayName("Should update skill active state and require explicit sync")
-        void testSetSkillActiveRequiresExplicitSync() {
+        @DisplayName("Should throw exception when setting active state for non-existent skill")
+        void testThrowExceptionForNonExistentSkillInSetActive() {
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> skillBox.setSkillActive("fake_non_existent_skill", true));
+            assertEquals(
+                    "Skill ID does not exist: fake_non_existent_skill", exception.getMessage());
+        }
+
+        @Test
+        @DisplayName("Should update skill active state and automatically sync toolkit")
+        void testSetSkillActiveAutoSyncsState() {
             AgentSkill skill =
                     new AgentSkill("test_active_skill", "Test Active Skill", "# Content", null);
             AgentTool testTool = createTestTool("active_test_tool");
@@ -279,30 +291,22 @@ class SkillBoxTest {
                     "ToolGroup should be inactive initially");
 
             skillBox.setSkillActive(skill.getSkillId(), true);
-            skillBox.syncToolGroupStates();
+
             assertTrue(
                     skillBox.isSkillActive(skill.getSkillId()),
                     "Skill logical state should be active now");
             assertTrue(
                     toolkit.getToolGroup(toolsGroupName).isActive(),
-                    "ToolGroup should be active after sync");
+                    "ToolGroup should be AUTOMATICALLY activated without explicit sync");
 
             skillBox.setSkillActive(skill.getSkillId(), false);
 
-            // The physical state (Toolkit) has not changed yet (the framework will not
-            // automatically synchronize for you)
             assertFalse(
                     skillBox.isSkillActive(skill.getSkillId()),
                     "Skill logical state should be inactive");
-            assertTrue(
-                    toolkit.getToolGroup(toolsGroupName).isActive(),
-                    "ToolGroup should STILL be active before explicit sync");
-
-            skillBox.syncToolGroupStates();
-
             assertFalse(
                     toolkit.getToolGroup(toolsGroupName).isActive(),
-                    "ToolGroup should be inactive after sync");
+                    "ToolGroup should be AUTOMATICALLY deactivated without explicit sync");
         }
     }
 
