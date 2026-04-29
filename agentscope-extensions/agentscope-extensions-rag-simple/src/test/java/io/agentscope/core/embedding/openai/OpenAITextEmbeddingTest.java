@@ -260,4 +260,70 @@ class OpenAITextEmbeddingTest {
                                 .dimensions(-1)
                                 .build());
     }
+
+    @Test
+    @DisplayName("Should build successfully without setting dimensions (open-source model support)")
+    void testBuilderWithoutDimensions() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals(TEST_MODEL_NAME, model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should return default 1536 from getDimensions when dimensions not set")
+    void testGetDimensionsReturnsDefaultWhenNotSet() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .build();
+
+        assertEquals(1536, model.getDimensions());
+    }
+
+    @Test
+    @DisplayName("Should return configured dimensions from getDimensions when explicitly set")
+    void testGetDimensionsReturnsConfiguredValue() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .dimensions(512)
+                        .build();
+
+        assertEquals(512, model.getDimensions());
+    }
+
+    @Test
+    @DisplayName("Should build with null dimensions explicitly passed (open-source model support)")
+    void testBuilderWithNullDimensions() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .dimensions(null)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals(1536, model.getDimensions());
+    }
+
+    @Test
+    @DisplayName("Should reject null ContentBlock when no dimensions set")
+    void testNullContentBlockWithoutDimensions() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .build();
+
+        StepVerifier.create(model.embed((ContentBlock) null))
+                .expectError(EmbeddingException.class)
+                .verify();
+    }
 }
