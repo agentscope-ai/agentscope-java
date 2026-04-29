@@ -208,8 +208,14 @@ public class AutoContextHook implements Hook {
      * <p>This ensures compression happens at a deterministic point (before reasoning)
      * and the LLM receives the compressed context.
      *
+     * <p>If compression fails with a non-interruption exception (e.g. model timeout, rate limit),
+     * the error is logged at WARN level and the original event is returned unchanged, allowing
+     * the agent to continue with uncompressed messages (graceful degradation). If the exception
+     * wraps an {@link InterruptedException} anywhere in its cause chain, {@code Mono.error} is
+     * returned to propagate the interruption signal correctly through the reactive pipeline.
+     *
      * @param event the PreReasoningEvent
-     * @return Mono containing the potentially modified event
+     * @return Mono containing the potentially modified event, or {@code Mono.error} if interrupted
      */
     private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
         Agent agent = event.getAgent();
