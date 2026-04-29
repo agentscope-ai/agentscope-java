@@ -142,7 +142,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
                                         // Only include dimensions if explicitly set
                                         if (dimensions != null) {
-                                                paramsBuilder = paramsBuilder.dimensions(dimensions);
+                                            paramsBuilder = paramsBuilder.dimensions(dimensions);
                                         }
 
                                         EmbeddingCreateParams createParams = paramsBuilder.build();
@@ -187,7 +187,8 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                                         embeddingValues);
 
                                         // Validate dimension if expected dimensions were set
-                                        if (dimensions != null && embeddingArray.length != dimensions) {
+                                        if (dimensions != null
+                                                && embeddingArray.length != dimensions) {
                                             log.warn(
                                                     "Embedding dimension mismatch: expected={},"
                                                             + " actual={}",
