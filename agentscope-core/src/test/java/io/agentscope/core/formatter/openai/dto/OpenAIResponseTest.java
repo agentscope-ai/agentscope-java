@@ -58,17 +58,51 @@ class OpenAIResponseTest {
     }
 
     @Test
-    @DisplayName("Should not detect error for successful response")
+    @DisplayName("Should not detect error for successful response including custom gateway codes")
     void testSuccessfulResponse() {
-        OpenAIResponse response = new OpenAIResponse();
-        response.setCode("200");
-        response.setStatus("success");
-
-        assertFalse(response.isError());
+        OpenAIResponse response1 = new OpenAIResponse();
+        response1.setCode("200");
+        response1.setStatus("success");
+        assertFalse(response1.isError(), "Code 200 should not be an error");
 
         OpenAIResponse response2 = new OpenAIResponse();
         response2.setCode("0");
+        assertFalse(response2.isError(), "Code 0 should not be an error");
 
-        assertFalse(response2.isError());
+        OpenAIResponse response3 = new OpenAIResponse();
+        response3.setCode("ok");
+        assertFalse(response3.isError(), "String code 'ok' should not be an error");
+
+        OpenAIResponse response4 = new OpenAIResponse();
+        response4.setCode("success");
+        assertFalse(response4.isError(), "String code 'success' should not be an error");
+    }
+
+    @Test
+    @DisplayName("Should detect error based on valid HTTP error code range (400-599)")
+    void testErrorDetectionByHttpCodeRange() {
+        OpenAIResponse response400 = new OpenAIResponse();
+        response400.setCode("400");
+        assertTrue(response400.isError(), "Code 400 should be detected as error");
+
+        OpenAIResponse response500 = new OpenAIResponse();
+        response500.setCode("500");
+        assertTrue(response500.isError(), "Code 500 should be detected as error");
+
+        OpenAIResponse response399 = new OpenAIResponse();
+        response399.setCode("399");
+        assertFalse(response399.isError(), "Code 399 should not be an error by default");
+
+        OpenAIResponse response600 = new OpenAIResponse();
+        response600.setCode("600");
+        assertFalse(response600.isError(), "Code 600 should not be an error by default");
+    }
+
+    @Test
+    @DisplayName("Should detect non-standard gateway error by status 'failed' ignoring case")
+    void testNonStandardErrorByStatusFailed() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setStatus("Failed");
+        assertTrue(response.isError(), "Status 'Failed' should be detected as error");
     }
 }

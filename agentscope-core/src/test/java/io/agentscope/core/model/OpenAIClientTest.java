@@ -1005,4 +1005,81 @@ class OpenAIClientTest {
         assertEquals("429", exception.getErrorCode());
         assertTrue(exception.getMessage().contains("MAX_TPM limit exceeded"));
     }
+
+    @Test
+    @DisplayName("Should resolve standard OpenAI rate limit string to 429 status code")
+    void testStandardRateLimitStringCode() {
+        String errorResponse =
+                """
+                {
+                    "error": {
+                        "message": "Rate limit reached",
+                        "type": "requests",
+                        "code": "rate_limit_exceeded"
+                    }
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        OpenAIException exception =
+                assertThrows(
+                        OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
+
+        assertEquals(429, exception.getStatusCode());
+        assertEquals("rate_limit_exceeded", exception.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("Should not falsely resolve out-of-bounds numeric code containing 429")
+    void testFalsePositiveRateLimitNumericError() {
+        String errorResponse =
+                """
+                {
+                    "code": "4290",
+                    "message": "Custom error 4290",
+                    "status": "error"
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        OpenAIException exception =
+                assertThrows(
+                        OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
+
+        // Cannot accurately match 429, so fallback to default 400
+        assertEquals(400, exception.getStatusCode());
+        assertEquals("4290", exception.getErrorCode());
+    }
 }

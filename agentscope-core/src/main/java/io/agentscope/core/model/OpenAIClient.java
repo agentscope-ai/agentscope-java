@@ -455,7 +455,7 @@ public class OpenAIClient {
 
         // Handling HTTP 200 with Body containing errors
         if (errorCode != null) {
-            if (errorCode.contains("429")) {
+            if ("429".equals(errorCode) || "rate_limit_exceeded".equals(errorCode)) {
                 return 429;
             }
 

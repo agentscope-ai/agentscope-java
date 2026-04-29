@@ -206,14 +206,36 @@ public class OpenAIResponse {
      * Check if this response represents an error.
      *
      * Support the detection of standard OpenAI error structures
-     * and non-standard code/status error structures.
+     * and non-standard code/status error structures using a blacklist strategy.
      *
      * @return true if the response contains an error
      */
     public boolean isError() {
-        return error != null
-                || "error".equalsIgnoreCase(status)
-                || (code != null && !code.equals("200") && !code.equals("0"));
+        // Standard OpenAI error format
+        if (error != null) {
+            return true;
+        }
+
+        // Double check using the status field
+        if ("error".equalsIgnoreCase(status) || "failed".equalsIgnoreCase(status)) {
+            return true;
+        }
+
+        // Blacklist strategy for custom error codes
+        if (code != null) {
+            try {
+                int numericCode = Integer.parseInt(code);
+                if (numericCode >= 400 && numericCode <= 599) {
+                    return true;
+                }
+            } catch (NumberFormatException e) {
+                // If code is not numeric (e.g., "ok", "success", "invalid_key"),
+                // we rely on the 'status' or 'error' fields checked above.
+                // Do not blindly assume it's an error.
+            }
+        }
+
+        return false;
     }
 
     /**
