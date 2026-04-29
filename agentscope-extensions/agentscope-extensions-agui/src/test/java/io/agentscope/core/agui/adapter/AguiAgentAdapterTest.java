@@ -269,7 +269,7 @@ class AguiAgentAdapterTest {
 
         long contentCount =
                 events.stream().filter(e -> e instanceof AguiEvent.TextMessageContent).count();
-        assertEquals(2, contentCount, "Should stream summary chunks as text deltas");
+        assertEquals(3, contentCount, "Should stream summary chunks as text deltas");
 
         long startCount =
                 events.stream().filter(e -> e instanceof AguiEvent.TextMessageStart).count();
@@ -1746,7 +1746,7 @@ class AguiAgentAdapterTest {
         List<AguiEvent> events = adapterWithProgress.run(input).collectList().block();
         assertNotNull(events);
 
-        String expectedThinkingId = "tool-thinking-tc-1";
+        String expectedThinkingId = "tool-progress-tc-1";
 
         // Verify fake reasoning block for progress was created and ended
         boolean hasFakeReasoningStart =

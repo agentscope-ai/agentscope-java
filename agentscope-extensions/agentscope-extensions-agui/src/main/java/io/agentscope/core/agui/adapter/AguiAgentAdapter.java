@@ -156,11 +156,11 @@ public class AguiAgentAdapter {
                     String text = textBlock.getText();
                     if (text != null && !text.isEmpty()) {
                         // Start message if not started
-                        if (!state.hasStartedMessage(messageId)) {
+                        if (!state.hasStartedTextMessage(messageId)) {
                             events.add(
                                     new AguiEvent.TextMessageStart(
                                             state.threadId, state.runId, messageId, "assistant"));
-                            state.startMessage(messageId);
+                            state.startTextMessage(messageId);
                         }
                         events.add(
                                 new AguiEvent.TextMessageContent(
@@ -196,7 +196,7 @@ public class AguiAgentAdapter {
                         events.add(
                                 new AguiEvent.TextMessageEnd(
                                         state.threadId, state.runId, activeMessageId));
-                        state.endMessage(activeMessageId);
+                        state.endTextMessage(activeMessageId);
                     }
 
                     // End any active reasoning message before starting tool call
@@ -239,10 +239,11 @@ public class AguiAgentAdapter {
             // Independent lifecycle check: prevents dropping the final data chunk
             // and safely handles empty termination packets.
             if (event.isLast()) {
-                if (state.hasStartedMessage(messageId) && !state.hasEndedMessage(messageId)) {
+                if (state.hasStartedTextMessage(messageId)
+                        && !state.hasEndedTextMessage(messageId)) {
                     events.add(
                             new AguiEvent.TextMessageEnd(state.threadId, state.runId, messageId));
-                    state.endMessage(messageId);
+                    state.endTextMessage(messageId);
                 }
                 if (config.isEnableReasoning()
                         && state.hasStartedReasoningMessage(messageId)
@@ -277,26 +278,26 @@ public class AguiAgentAdapter {
                     }
 
                     if (!event.isLast() && resultText != null && !resultText.isEmpty()) {
+                        // Handle the progress of tool execution (only if enabled)
+                        // (borrowing from the Reasoning block)
                         if (config.isEnableToolProgressStream()) {
-                            // Handle the intermediate progress of tool execution
-                            // (borrowing from the Reasoning block)
-                            String thinkingMsgId = "tool-thinking-" + toolCallId;
+                            String progressMsgId = "tool-progress-" + toolCallId;
 
-                            if (!state.hasStartedReasoningMessage(thinkingMsgId)) {
+                            if (!state.hasStartedReasoningMessage(progressMsgId)) {
                                 events.add(
                                         new AguiEvent.ReasoningMessageStart(
                                                 state.threadId,
                                                 state.runId,
-                                                thinkingMsgId,
+                                                progressMsgId,
                                                 "assistant"));
-                                state.startReasoningMessage(thinkingMsgId);
+                                state.startReasoningMessage(progressMsgId);
                             }
 
                             events.add(
                                     new AguiEvent.ReasoningMessageContent(
                                             state.threadId,
                                             state.runId,
-                                            thinkingMsgId,
+                                            progressMsgId,
                                             resultText));
                         }
                     }
@@ -304,8 +305,7 @@ public class AguiAgentAdapter {
                     // Decouple termination logic from content extraction
                     // to ensure the final progress chunk is emitted before closing.
                     if (event.isLast()) {
-                        // Clear up the fabricated Reasoning blocks
-                        String thinkingMsgId = "tool-thinking-" + toolCallId;
+                        String thinkingMsgId = "tool-progress-" + toolCallId;
                         if (state.hasStartedReasoningMessage(thinkingMsgId)
                                 && !state.hasEndedReasoningMessage(thinkingMsgId)) {
                             events.add(
@@ -343,9 +343,9 @@ public class AguiAgentAdapter {
     private Flux<AguiEvent> finishRun(EventConversionState state) {
         List<AguiEvent> events = new ArrayList<>();
 
-        // End any messages that weren't properly ended
-        for (String messageId : state.getStartedMessages()) {
-            if (!state.hasEndedMessage(messageId)) {
+        // End any text messages that weren't properly ended
+        for (String messageId : state.getStartedTextMessages()) {
+            if (!state.hasEndedTextMessage(messageId)) {
                 events.add(new AguiEvent.TextMessageEnd(state.threadId, state.runId, messageId));
             }
         }
@@ -419,8 +419,8 @@ public class AguiAgentAdapter {
     private static class EventConversionState {
         final String threadId;
         final String runId;
-        private final Set<String> startedMessages = new LinkedHashSet<>();
-        private final Set<String> endedMessages = new LinkedHashSet<>();
+        private final Set<String> startedTextMessages = new LinkedHashSet<>();
+        private final Set<String> endedTextMessages = new LinkedHashSet<>();
         private final Set<String> startedToolCalls = new LinkedHashSet<>();
         private final Set<String> endedToolCalls = new LinkedHashSet<>();
         private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
@@ -433,24 +433,24 @@ public class AguiAgentAdapter {
             this.runId = runId;
         }
 
-        boolean hasStartedMessage(String messageId) {
-            return startedMessages.contains(messageId);
+        boolean hasStartedTextMessage(String messageId) {
+            return startedTextMessages.contains(messageId);
         }
 
-        void startMessage(String messageId) {
-            startedMessages.add(messageId);
+        void startTextMessage(String messageId) {
+            startedTextMessages.add(messageId);
             currentTextMessageId = messageId;
         }
 
-        void endMessage(String messageId) {
-            endedMessages.add(messageId);
+        void endTextMessage(String messageId) {
+            endedTextMessages.add(messageId);
             if (Objects.equals(messageId, currentTextMessageId)) {
                 currentTextMessageId = null;
             }
         }
 
-        boolean hasEndedMessage(String messageId) {
-            return endedMessages.contains(messageId);
+        boolean hasEndedTextMessage(String messageId) {
+            return endedTextMessages.contains(messageId);
         }
 
         String getCurrentTextMessageId() {
@@ -458,11 +458,11 @@ public class AguiAgentAdapter {
         }
 
         boolean hasActiveTextMessage() {
-            return currentTextMessageId != null && !hasEndedMessage(currentTextMessageId);
+            return currentTextMessageId != null && !hasEndedTextMessage(currentTextMessageId);
         }
 
-        Set<String> getStartedMessages() {
-            return startedMessages;
+        Set<String> getStartedTextMessages() {
+            return startedTextMessages;
         }
 
         boolean hasStartedToolCall(String toolCallId) {
