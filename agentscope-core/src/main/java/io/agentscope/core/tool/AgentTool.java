@@ -84,6 +84,10 @@ public interface AgentTool {
      * @return strict mode value ({@code true}/{@code false}) or {@code null} when unspecified
      */
     default Boolean getStrict() {
+        return null;
+    }
+
+    /**
      * Gets the optional output schema for this tool in JSON Schema format.
      *
      * <p>Most tools do not expose a structured output schema to models, so the default
