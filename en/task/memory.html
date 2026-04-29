@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Plan" href="plan.html"><link rel="prev" title="Human-in-the-Loop" href="hitl.html">
+    <meta property="article:modified_time" content="2026-04-29T02:52:17+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Plan" href="plan.html"><link rel="prev" title="Human-in-the-Loop" href="hitl.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/memory.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -742,6 +742,51 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </pre></div>
 </div>
 </section>
+<section id="bailianlongtermmemory">
+<h3>BailianLongTermMemory<a class="headerlink" href="#bailianlongtermmemory" title="Link to this heading">¶</a></h3>
+<p>Long-term memory implementation based on <a class="reference external" href="https://help.aliyun.com/zh/model-studio/memory-library">Bailian Memory Library</a>.</p>
+<p><strong>Usage Example</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.bailian.BailianLongTermMemory</span><span class="p">;</span>
+
+<span class="n">BailianLongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;your_user_id&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">memoryLibraryId</span><span class="p">(</span><span class="s">&quot;your_memory_library_id&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">projectId</span><span class="p">(</span><span class="s">&quot;your_project_id&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">profileSchema</span><span class="p">(</span><span class="s">&quot;your_profile_schema&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>Configuration Notes</strong>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code>: Alibaba Cloud DashScope API key (required)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">userId</span></code>: User ID (required)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">memoryLibraryId</span></code>: Bailian memory library ID (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">projectId</span></code>: Bailian project ID (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">profileSchema</span></code>: Bailian configuration Schema ID (optional)</p></li>
+</ul>
+<p><strong>Complete Example</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianMemoryExample.java</span></code></p>
+<p><strong>Run Example</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">DASHSCOPE_API_KEY</span><span class="o">=</span>sk-xxxx
+<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_USER_ID</span><span class="o">=</span>your_user_id
+<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_MEMORY_LIBRARY_ID</span><span class="o">=</span>your_library_id
+<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_PROJECT_ID</span><span class="o">=</span>your_project_id
+<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_PROFILE_SCHEMA</span><span class="o">=</span>your_profile_schema
+
+<span class="nb">cd</span><span class="w"> </span>agentscope-examples/advanced
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.BailianMemoryExample&quot;</span>
+</pre></div>
+</div>
+</section>
 </section>
 <section id="related-documentation">
 <h2>Related Documentation<a class="headerlink" href="#related-documentation" title="Link to this heading">¶</a></h2>
@@ -806,7 +851,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-04-13</div>
+              Last updated on 2026-04-29</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -859,6 +904,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </ul>
 </li>
 <li><a class="reference internal" href="#remelongtermmemory">ReMeLongTermMemory</a></li>
+<li><a class="reference internal" href="#bailianlongtermmemory">BailianLongTermMemory</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#related-documentation">Related Documentation</a></li>
