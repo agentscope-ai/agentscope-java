@@ -370,8 +370,8 @@ public class DashScopeHttpClient {
      *   <li>Models starting with "qvq" (e.g., qvq-72b, qvq-max)</li>
      *   <li>Models containing "-vl" (e.g., qwen-vl-plus, qwen3-vl-max)</li>
      *   <li>Models containing "-asr" (e.g., qwen3-asr-flash)</li>
-     *   <li>Models starting with "qwen3.5" (e.g., qwen3.5-plus, qwen3.5-flash)</li>
-     *   <li>Models starting with "qwen3.6" (e.g., qwen3.6-plus, qwen3.6-flash)</li>
+     *   <li>Models starting with "qwen3.5"/"qwen3.6" (e.g., qwen3.5-plus, qwen3.5-flash, qwen3.6-plus)</li>
+     *   <li>Models containing "kimi-k2.5"/"kimi-k2.6" (e.g., kimi-k2.6, kimi/kimi-k2.5)</li>
      * </ul>
      *
      * @param modelName the model name
@@ -386,7 +386,9 @@ public class DashScopeHttpClient {
                 || lowerModelName.contains("-vl")
                 || lowerModelName.contains("-asr")
                 || lowerModelName.startsWith("qwen3.5")
-                || lowerModelName.startsWith("qwen3.6");
+                || lowerModelName.startsWith("qwen3.6")
+                || lowerModelName.contains("kimi-k2.5")
+                || lowerModelName.contains("kimi-k2.6");
     }
 
     /**
