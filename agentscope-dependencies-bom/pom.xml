@@ -83,7 +83,7 @@
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.17.0</qdrant.version>
         <milvus.version>2.6.17</milvus.version>
-        <httpclient5.version>5.6</httpclient5.version>
+        <httpclient5.version>5.6.1</httpclient5.version>
         <elasticsearch.version>9.3.3</elasticsearch.version>
         <postgresql.version>42.7.9</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
@@ -92,7 +92,7 @@
         <tika.version>3.3.0</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.6.0</mysql.version>
-        <opentelemetry-reactor.version>2.26.1-alpha</opentelemetry-reactor.version>
+        <opentelemetry-reactor.version>2.27.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.40.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
         <a2a-client.version>0.3.3.Final</a2a-client.version>
@@ -102,7 +102,7 @@
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
-        <spring.version>7.0.6</spring.version>
+        <spring.version>7.0.7</spring.version>
         <spring-boot.version>4.0.4</spring-boot.version>
         <nacos-client.version>3.2.1-2026.03.30</nacos-client.version>
         <json-schema-validator.version>2.0.0</json-schema-validator.version>

@@ -84,7 +84,12 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-reme</artifactId>
-            <version>${revision}</version>
+        </dependency>
+
+        <!-- AgentScope Extensions Bailian Long Term Memory -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-memory-bailian</artifactId>
         </dependency>
 
         <dependency>

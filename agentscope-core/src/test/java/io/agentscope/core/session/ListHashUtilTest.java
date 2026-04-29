@@ -111,30 +111,87 @@ class ListHashUtilTest {
 
     @Test
     void testNeedsFullRewriteHashChanged() {
-        assertTrue(ListHashUtil.needsFullRewrite("abc123", "def456", 5, 5));
+        List<Msg> list = createMsgList(5);
+        String storedHash = ListHashUtil.computeHash(list);
+
+        // Modify an element in the existing prefix (e.g., index 2)
+        list.set(
+                2,
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("modified content").build())
+                        .build());
+
+        assertTrue(ListHashUtil.needsFullRewrite(list, storedHash, 5));
     }
 
     @Test
     void testNeedsFullRewriteListShrunk() {
-        assertTrue(ListHashUtil.needsFullRewrite("abc123", "abc123", 3, 5));
+        List<Msg> list = createMsgList(3);
+        // Current size (3) < existing count (5) -> must rewrite
+        assertTrue(ListHashUtil.needsFullRewrite(list, "any_old_hash", 5));
     }
 
     @Test
     void testNeedsFullRewriteListGrew() {
-        // Hash same, list grew - no full rewrite needed (incremental append)
-        assertFalse(ListHashUtil.needsFullRewrite("abc123", "abc123", 10, 5));
+        List<Msg> list = createMsgList(5);
+        String storedHash = ListHashUtil.computeHash(list);
+
+        // Append new items (list grows to 8)
+        list.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("msg 5").build())
+                        .build());
+        list.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("msg 6").build())
+                        .build());
+        list.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("msg 7").build())
+                        .build());
+
+        // The prefix (first 5) hasn't changed -> no full rewrite needed (incremental append)
+        assertFalse(ListHashUtil.needsFullRewrite(list, storedHash, 5));
     }
 
     @Test
     void testNeedsFullRewriteNoChange() {
-        // Hash same, size same - no rewrite needed
-        assertFalse(ListHashUtil.needsFullRewrite("abc123", "abc123", 5, 5));
+        List<Msg> list = createMsgList(5);
+        String storedHash = ListHashUtil.computeHash(list);
+
+        // Size and content are exactly the same -> no rewrite needed
+        assertFalse(ListHashUtil.needsFullRewrite(list, storedHash, 5));
     }
 
     @Test
     void testNeedsFullRewriteFirstSave() {
-        // No stored hash (first save) - no full rewrite needed
-        assertFalse(ListHashUtil.needsFullRewrite("abc123", null, 5, 0));
+        List<Msg> list = createMsgList(5);
+
+        // No stored hash (first save), existing count is 0 -> no full rewrite needed
+        assertFalse(ListHashUtil.needsFullRewrite(list, null, 0));
+    }
+
+    @Test
+    void testNeedsFullRewriteNullList() {
+        // If current list is null, but we had existing items -> must rewrite (essentially a delete
+        // all)
+        assertTrue(ListHashUtil.needsFullRewrite(null, "some_hash", 5));
+
+        // If current list is null and existing count was 0 -> no rewrite needed
+        assertFalse(ListHashUtil.needsFullRewrite(null, null, 0));
+    }
+
+    @Test
+    void testNeedsFullRewriteMissingHashButHasData() {
+        List<Msg> list = createMsgList(5);
+
+        // Scenario: existingCount is 5, but storedHash is null
+        // (e.g., system upgraded from an older version that didn't save hashes)
+        assertTrue(ListHashUtil.needsFullRewrite(list, null, 5));
     }
 
     private List<Msg> createMsgList(int size) {

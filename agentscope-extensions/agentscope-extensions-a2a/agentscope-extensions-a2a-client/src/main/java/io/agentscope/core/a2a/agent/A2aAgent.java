@@ -120,6 +120,7 @@ public class A2aAgent extends AgentBase {
         LoggerUtil.debug(log, "[{}] A2aAgent call with input messages: ", currentRequestId);
         LoggerUtil.logTextMsgDetail(log, memory.getMessages());
         clientEventContext.setHooks(getSortedHooks());
+        clientEventContext.setInputMessages(memory.getMessages());
         return Mono.defer(
                         () -> {
                             Message message =

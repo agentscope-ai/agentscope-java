@@ -398,8 +398,7 @@ public class MysqlSession implements Session {
 
                         // Determine if full rewrite is needed
                         boolean needsFullRewrite =
-                                ListHashUtil.needsFullRewrite(
-                                        currentHash, storedHash, values.size(), existingCount);
+                                ListHashUtil.needsFullRewrite(values, storedHash, existingCount);
 
                         if (needsFullRewrite) {
                             deleteListItems(conn, sessionId, key);

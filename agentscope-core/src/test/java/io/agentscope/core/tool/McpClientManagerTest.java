@@ -18,12 +18,14 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.mcp.McpTool;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -341,5 +343,74 @@ class McpClientManagerTest {
         verify(clientWrapper).initialize();
         verify(clientWrapper).listTools();
         assertTrue(callbackCalled[0]);
+    }
+
+    @Test
+    void testRegisterMcpClient_PreservesOutputSchemaInRegisteredTool() {
+        ToolRegistry toolRegistry = mock(ToolRegistry.class);
+        ToolGroupManager groupManager = mock(ToolGroupManager.class);
+        McpClientWrapper clientWrapper = mock(McpClientWrapper.class);
+
+        AgentTool[] registeredTool = new AgentTool[1];
+        String[] registeredGroupName = new String[1];
+        String[] registeredClientName = new String[1];
+        Map<String, Object>[] registeredPresetParams = new Map[1];
+
+        McpClientManager manager =
+                new McpClientManager(
+                        toolRegistry,
+                        groupManager,
+                        (tool, groupName, mcpClientName, presetParams) -> {
+                            registeredTool[0] = tool;
+                            registeredGroupName[0] = groupName;
+                            registeredClientName[0] = mcpClientName;
+                            registeredPresetParams[0] = presetParams;
+                        });
+
+        when(clientWrapper.getName()).thenReturn("test-client");
+        when(clientWrapper.initialize()).thenReturn(Mono.empty());
+
+        McpSchema.Tool mockMcpTool = mock(McpSchema.Tool.class);
+        when(mockMcpTool.name()).thenReturn("structured-tool");
+        when(mockMcpTool.description()).thenReturn("Tool with output schema");
+        when(mockMcpTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema(
+                                "object",
+                                Map.of("query", Map.of("type", "string")),
+                                List.of("query"),
+                                null,
+                                null,
+                                null));
+
+        Map<String, Object> outputSchema =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "result",
+                                Map.of("type", "string"),
+                                "confidence",
+                                Map.of("type", "number")));
+        when(mockMcpTool.outputSchema()).thenReturn(outputSchema);
+        when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
+
+        Map<String, Object> toolPresetParams = Map.of("temperature", 0.2);
+        Map<String, Map<String, Object>> presetParamsMapping =
+                Map.of("structured-tool", toolPresetParams);
+
+        manager.registerMcpClient(clientWrapper, null, null, "mcp-group", presetParamsMapping)
+                .block();
+
+        verify(clientWrapper).initialize();
+        verify(clientWrapper).listTools();
+        assertNotNull(registeredTool[0]);
+        assertEquals(outputSchema, registeredTool[0].getOutputSchema());
+        assertTrue(registeredTool[0] instanceof McpTool);
+        assertNull(((McpTool) registeredTool[0]).getPresetArguments());
+        assertEquals("mcp-group", registeredGroupName[0]);
+        assertEquals("test-client", registeredClientName[0]);
+        assertEquals(toolPresetParams, registeredPresetParams[0]);
     }
 }
