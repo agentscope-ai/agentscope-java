@@ -16,15 +16,19 @@
 package io.agentscope.spring.boot.agui.webflux;
 
 import io.agentscope.core.agui.AguiException;
+import io.agentscope.core.agui.AguiRequestContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.AguiSessionManager;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
-import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -129,7 +133,14 @@ public class AguiWebFluxHandler {
         String threadId = input.getThreadId();
         String runId = input.getRunId();
 
+        // Extract headers and query parameters for AguiRequestContext
+        Map<String, List<String>> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        request.headers().asHttpHeaders().forEach(headers::put);
+        Map<String, List<String>> params = new LinkedHashMap<>(request.queryParams());
+
         try {
+            AguiRequestContext.init(headers, params);
+
             // Get header agent ID
             String headerAgentId = request.headers().firstHeader(agentIdHeader);
 
@@ -165,6 +176,8 @@ public class AguiWebFluxHandler {
         } catch (Exception e) {
             logger.error("Error processing AG-UI request: {}", e.getMessage());
             return createErrorResponse(threadId, runId, e.getMessage());
+        } finally {
+            AguiRequestContext.clear();
         }
     }
 
@@ -221,7 +234,7 @@ public class AguiWebFluxHandler {
     public static class Builder {
 
         private AguiAgentRegistry registry;
-        private ThreadSessionManager sessionManager;
+        private AguiSessionManager sessionManager;
         private AguiAdapterConfig config;
         private boolean serverSideMemory = false;
         private String agentIdHeader;
@@ -238,12 +251,12 @@ public class AguiWebFluxHandler {
         }
 
         /**
-         * Set the thread session manager for server-side memory support.
+         * Set the session manager for server-side memory support.
          *
          * @param sessionManager The session manager
          * @return This builder
          */
-        public Builder sessionManager(ThreadSessionManager sessionManager) {
+        public Builder sessionManager(AguiSessionManager sessionManager) {
             this.sessionManager = sessionManager;
             return this;
         }

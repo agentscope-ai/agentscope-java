@@ -104,7 +104,16 @@ public class AguiRequestProcessor {
 
         // Create adapter and run
         AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
-        Flux<AguiEvent> events = adapter.run(effectiveInput);
+        Flux<AguiEvent> events =
+                adapter.run(effectiveInput)
+                        .doFinally(
+                                signal -> {
+                                    logger.debug(
+                                            "Request completed for thread {}, signal: {}",
+                                            threadId,
+                                            signal);
+                                    agentResolver.onComplete(threadId, agent);
+                                });
 
         return new ProcessResult(agent, events);
     }

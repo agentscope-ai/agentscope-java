@@ -17,18 +17,26 @@ package io.agentscope.core.agui.converter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agui.model.AguiDataSource;
 import io.agentscope.core.agui.model.AguiFunctionCall;
+import io.agentscope.core.agui.model.AguiImageContent;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.AguiTextContent;
 import io.agentscope.core.agui.model.AguiToolCall;
+import io.agentscope.core.agui.model.AguiUrlSource;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -369,5 +377,124 @@ class AguiMessageConverterTest {
         assertNotNull(tub);
         // Invalid JSON should result in empty map
         assertTrue(tub.getInput().isEmpty());
+    }
+
+    // --- Multimodal conversion tests ---
+
+    @Test
+    void testConvertMultimodalMessageWithUrlImage() {
+        AguiUrlSource urlSource = new AguiUrlSource("https://example.com/photo.png", null);
+        AguiImageContent imageContent = new AguiImageContent(urlSource);
+        AguiMessage aguiMsg =
+                AguiMessage.multimodalMessage("msg-img-url", "user", List.of(imageContent));
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals("msg-img-url", msg.getId());
+        assertEquals(MsgRole.USER, msg.getRole());
+        assertTrue(msg.hasContentBlocks(ImageBlock.class));
+
+        ImageBlock imgBlock = msg.getFirstContentBlock(ImageBlock.class);
+        assertNotNull(imgBlock);
+        assertInstanceOf(URLSource.class, imgBlock.getSource());
+        URLSource src = (URLSource) imgBlock.getSource();
+        assertEquals("https://example.com/photo.png", src.getUrl());
+    }
+
+    @Test
+    void testConvertMultimodalMessageWithBase64Image() {
+        AguiDataSource dataSource = new AguiDataSource("iVBORw0KGgo=", "image/png");
+        AguiImageContent imageContent = new AguiImageContent(dataSource);
+        AguiMessage aguiMsg =
+                AguiMessage.multimodalMessage("msg-img-b64", "user", List.of(imageContent));
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals("msg-img-b64", msg.getId());
+        assertTrue(msg.hasContentBlocks(ImageBlock.class));
+
+        ImageBlock imgBlock = msg.getFirstContentBlock(ImageBlock.class);
+        assertNotNull(imgBlock);
+        assertInstanceOf(Base64Source.class, imgBlock.getSource());
+        Base64Source src = (Base64Source) imgBlock.getSource();
+        assertEquals("iVBORw0KGgo=", src.getData());
+        assertEquals("image/png", src.getMediaType());
+    }
+
+    @Test
+    void testConvertMultimodalMessageWithTextAndImage() {
+        AguiTextContent textPart = new AguiTextContent("Describe this image:");
+        AguiUrlSource urlSource = new AguiUrlSource("https://example.com/img.jpg", "image/jpeg");
+        AguiImageContent imagePart = new AguiImageContent(urlSource);
+        AguiMessage aguiMsg =
+                AguiMessage.multimodalMessage("msg-mixed", "user", List.of(textPart, imagePart));
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals("msg-mixed", msg.getId());
+        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertTrue(msg.hasContentBlocks(ImageBlock.class));
+
+        TextBlock textBlock = msg.getFirstContentBlock(TextBlock.class);
+        assertEquals("Describe this image:", textBlock.getText());
+
+        ImageBlock imgBlock = msg.getFirstContentBlock(ImageBlock.class);
+        assertInstanceOf(URLSource.class, imgBlock.getSource());
+    }
+
+    @Test
+    void testConvertMultimodalMessageWithImageOnly() {
+        AguiDataSource dataSource = new AguiDataSource("base64data", "image/webp");
+        AguiImageContent imageContent = new AguiImageContent(dataSource);
+        AguiMessage aguiMsg =
+                AguiMessage.multimodalMessage("msg-img-only", "user", List.of(imageContent));
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.hasContentBlocks(ImageBlock.class));
+        assertFalse(msg.hasContentBlocks(TextBlock.class));
+    }
+
+    @Test
+    void testConvertMsgWithImageBlockToAguiMessage() {
+        // Output direction: ImageBlock should be silently skipped
+        Msg msg =
+                Msg.builder()
+                        .id("msg-out")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Here is the result").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/out.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+
+        assertEquals("msg-out", aguiMsg.getId());
+        assertEquals("assistant", aguiMsg.getRole());
+        // Only text content should survive; image is skipped
+        assertEquals("Here is the result", aguiMsg.getContent());
+        assertFalse(aguiMsg.isMultimodal());
+    }
+
+    @Test
+    void testBackwardCompatPlainStringContent() {
+        // Plain string content should still work as before
+        AguiMessage aguiMsg = AguiMessage.userMessage("msg-plain", "Hello, world!");
+
+        assertFalse(aguiMsg.isMultimodal());
+        assertNull(aguiMsg.getContentParts());
+
+        Msg msg = converter.toMsg(aguiMsg);
+        assertEquals("Hello, world!", msg.getTextContent());
+
+        // Round-trip
+        AguiMessage roundTrip = converter.toAguiMessage(msg);
+        assertEquals("Hello, world!", roundTrip.getContent());
     }
 }

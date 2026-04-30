@@ -90,8 +90,10 @@ public class AgentConfiguration {
                                 + "You can help users with various tasks including weather queries "
                                 + "and calculations. Be concise and helpful in your responses.")
                 .model(
-                        DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-plus").stream(
-                                        true)
+                        DashScopeChatModel.builder()
+                                .apiKey(apiKey)
+                                .modelName("qwen3.6-plus")
+                                .stream(true)
                                 .enableThinking(false)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())

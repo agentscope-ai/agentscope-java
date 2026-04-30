@@ -16,6 +16,13 @@
 package io.agentscope.spring.boot.agui.mvc;
 
 import io.agentscope.core.agui.model.RunAgentInput;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,6 +36,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *
  * <p>This controller exposes the AG-UI run endpoints for Spring MVC applications.
  * It delegates the actual processing to {@link AguiMvcController}.
+ *
+ * <p>This version extracts all HTTP request headers and query parameters from the
+ * {@link HttpServletRequest} and passes them to the controller for propagation
+ * via {@link io.agentscope.core.agui.AguiRequestContext}.
  */
 @RestController
 public class AguiRestController {
@@ -62,6 +73,7 @@ public class AguiRestController {
      *   <li>"default"</li>
      * </ol>
      *
+     * @param request The HTTP servlet request
      * @param input The run agent input
      * @param agentIdHeader The agent ID from HTTP header (optional)
      * @return An SseEmitter for streaming AG-UI events
@@ -71,12 +83,15 @@ public class AguiRestController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter run(
+            HttpServletRequest request,
             @RequestBody RunAgentInput input,
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
                     String agentIdHeader) {
-        return aguiMvcController.handle(input, agentIdHeader);
+        Map<String, List<String>> headers = extractHeaders(request);
+        Map<String, List<String>> params = extractParameters(request);
+        return aguiMvcController.handle(input, agentIdHeader, headers, params);
     }
 
     /**
@@ -85,6 +100,7 @@ public class AguiRestController {
      * <p>The path variable takes highest priority for agent resolution.
      *
      * @param agentId The agent ID from path variable
+     * @param request The HTTP servlet request
      * @param input The run agent input
      * @param agentIdHeader The agent ID from HTTP header (optional)
      * @return An SseEmitter for streaming AG-UI events
@@ -94,12 +110,33 @@ public class AguiRestController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter runWithAgentId(
-            @PathVariable String agentId,
+            @PathVariable("agentId") String agentId,
+            HttpServletRequest request,
             @RequestBody RunAgentInput input,
             @RequestHeader(
                             value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
                             required = false)
                     String agentIdHeader) {
-        return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId);
+        Map<String, List<String>> headers = extractHeaders(request);
+        Map<String, List<String>> params = extractParameters(request);
+        return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId, headers, params);
+    }
+
+    private static Map<String, List<String>> extractHeaders(HttpServletRequest request) {
+        Map<String, List<String>> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Enumeration<String> headerNames = request.getHeaderNames();
+        if (headerNames != null) {
+            while (headerNames.hasMoreElements()) {
+                String name = headerNames.nextElement();
+                headers.put(name, Collections.list(request.getHeaders(name)));
+            }
+        }
+        return headers;
+    }
+
+    private static Map<String, List<String>> extractParameters(HttpServletRequest request) {
+        Map<String, List<String>> params = new LinkedHashMap<>();
+        request.getParameterMap().forEach((name, values) -> params.put(name, List.of(values)));
+        return params;
     }
 }

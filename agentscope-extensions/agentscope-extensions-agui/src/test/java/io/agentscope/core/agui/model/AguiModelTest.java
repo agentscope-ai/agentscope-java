@@ -17,6 +17,7 @@ package io.agentscope.core.agui.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -175,6 +176,96 @@ class AguiModelTest {
             AguiMessage msg = new AguiMessage("msg-1", "user", null, null, null);
 
             assertNull(msg.getContent());
+        }
+
+        @Test
+        void testMultimodalMessageFactory() {
+            List<AguiContentPart> parts =
+                    List.of(
+                            new AguiTextContent("Describe this image."),
+                            new AguiImageContent(
+                                    new AguiUrlSource(
+                                            "https://example.com/img.jpg", "image/jpeg")));
+
+            AguiMessage msg = AguiMessage.multimodalMessage("msg-mm", "user", parts);
+
+            assertEquals("msg-mm", msg.getId());
+            assertEquals("user", msg.getRole());
+            assertTrue(msg.isMultimodal());
+            assertNull(msg.getContent());
+            assertEquals(2, msg.getContentParts().size());
+        }
+
+        @Test
+        void testIsMultimodalFalseForPlainText() {
+            AguiMessage msg = AguiMessage.userMessage("msg-1", "Hello");
+
+            assertFalse(msg.isMultimodal());
+            assertNull(msg.getContentParts());
+        }
+
+        @Test
+        void testMultimodalJsonDeserialization() throws JsonProcessingException {
+            String json =
+                    "{\"id\":\"msg-1\",\"role\":\"user\","
+                            + "\"content\":["
+                            + "{\"type\":\"text\",\"text\":\"What is this?\"},"
+                            + "{\"type\":\"image\",\"source\":{\"type\":\"url\","
+                            + "\"value\":\"https://example.com/photo.jpg\","
+                            + "\"mimeType\":\"image/jpeg\"}}"
+                            + "]}";
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertEquals("msg-1", msg.getId());
+            assertEquals("user", msg.getRole());
+            assertTrue(msg.isMultimodal());
+            assertNull(msg.getContent());
+            assertEquals(2, msg.getContentParts().size());
+            assertInstanceOf(AguiTextContent.class, msg.getContentParts().get(0));
+            assertInstanceOf(AguiImageContent.class, msg.getContentParts().get(1));
+        }
+
+        @Test
+        void testPlainTextJsonDeserialization() throws JsonProcessingException {
+            String json = "{\"id\":\"msg-1\",\"role\":\"user\",\"content\":\"Hello world\"}";
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertEquals("msg-1", msg.getId());
+            assertFalse(msg.isMultimodal());
+            assertEquals("Hello world", msg.getContent());
+        }
+
+        @Test
+        void testMultimodalBase64ImageDeserialization() throws JsonProcessingException {
+            String json =
+                    "{\"id\":\"msg-1\",\"role\":\"user\","
+                            + "\"content\":["
+                            + "{\"type\":\"image\",\"source\":{\"type\":\"data\","
+                            + "\"value\":\"iVBORw0KGgo=\","
+                            + "\"mimeType\":\"image/png\"}}"
+                            + "]}";
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertTrue(msg.isMultimodal());
+            assertEquals(1, msg.getContentParts().size());
+            AguiImageContent imgContent = (AguiImageContent) msg.getContentParts().get(0);
+            assertInstanceOf(AguiDataSource.class, imgContent.source());
+            AguiDataSource dataSource = (AguiDataSource) imgContent.source();
+            assertEquals("iVBORw0KGgo=", dataSource.value());
+            assertEquals("image/png", dataSource.mimeType());
+        }
+
+        @Test
+        void testMultimodalEquality() {
+            List<AguiContentPart> parts = List.of(new AguiTextContent("Hello"));
+            AguiMessage msg1 = AguiMessage.multimodalMessage("msg-1", "user", parts);
+            AguiMessage msg2 = AguiMessage.multimodalMessage("msg-1", "user", parts);
+
+            assertEquals(msg1, msg2);
+            assertEquals(msg1.hashCode(), msg2.hashCode());
         }
     }
 
@@ -628,6 +719,138 @@ class AguiModelTest {
             assertEquals(1, input.getMessages().size());
             assertEquals("value", input.getState().get("key"));
             assertEquals(123, input.getForwardedProp("prop1"));
+        }
+    }
+
+    @Nested
+    class AguiContentPartTest {
+
+        @Test
+        void testTextContentCreation() {
+            AguiTextContent text = new AguiTextContent("Hello");
+
+            assertEquals("Hello", text.text());
+        }
+
+        @Test
+        void testTextContentNullThrows() {
+            assertThrows(NullPointerException.class, () -> new AguiTextContent(null));
+        }
+
+        @Test
+        void testImageContentWithUrlSource() {
+            AguiUrlSource source = new AguiUrlSource("https://example.com/img.jpg", "image/jpeg");
+            AguiImageContent image = new AguiImageContent(source);
+
+            assertInstanceOf(AguiUrlSource.class, image.source());
+            assertEquals("https://example.com/img.jpg", ((AguiUrlSource) image.source()).value());
+            assertTrue(image.metadata().isEmpty());
+        }
+
+        @Test
+        void testImageContentWithDataSource() {
+            AguiDataSource source = new AguiDataSource("iVBORw0KGgo=", "image/png");
+            AguiImageContent image = new AguiImageContent(source);
+
+            assertInstanceOf(AguiDataSource.class, image.source());
+            assertEquals("iVBORw0KGgo=", ((AguiDataSource) image.source()).value());
+            assertEquals("image/png", ((AguiDataSource) image.source()).mimeType());
+        }
+
+        @Test
+        void testImageContentNullSourceThrows() {
+            assertThrows(NullPointerException.class, () -> new AguiImageContent(null));
+        }
+
+        @Test
+        void testDataSourceNullValueThrows() {
+            assertThrows(NullPointerException.class, () -> new AguiDataSource(null, "image/png"));
+        }
+
+        @Test
+        void testDataSourceNullMimeTypeThrows() {
+            assertThrows(NullPointerException.class, () -> new AguiDataSource("data", null));
+        }
+
+        @Test
+        void testUrlSourceNullValueThrows() {
+            assertThrows(NullPointerException.class, () -> new AguiUrlSource(null, null));
+        }
+
+        @Test
+        void testUrlSourceOptionalMimeType() {
+            AguiUrlSource source = new AguiUrlSource("https://example.com/img.jpg", null);
+
+            assertEquals("https://example.com/img.jpg", source.value());
+            assertNull(source.mimeType());
+        }
+
+        @Test
+        void testImageContentWithMetadata() {
+            AguiDataSource source = new AguiDataSource("data", "image/png");
+            Map<String, Object> metadata = Map.of("detail", "high");
+            AguiImageContent image = new AguiImageContent(source, metadata);
+
+            assertEquals("high", image.metadata().get("detail"));
+        }
+
+        @Test
+        void testImageContentMetadataImmutable() {
+            AguiDataSource source = new AguiDataSource("data", "image/png");
+            AguiImageContent image = new AguiImageContent(source, Map.of("key", "value"));
+
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> image.metadata().put("new", "value"));
+        }
+
+        @Test
+        void testTextContentJsonSerialization() throws JsonProcessingException {
+            AguiTextContent text = new AguiTextContent("Hello world");
+
+            String json = JsonUtils.getJsonCodec().toJson(text);
+            assertTrue(json.contains("\"type\":\"text\""));
+            assertTrue(json.contains("\"text\":\"Hello world\""));
+
+            AguiContentPart deserialized =
+                    JsonUtils.getJsonCodec().fromJson(json, AguiContentPart.class);
+            assertInstanceOf(AguiTextContent.class, deserialized);
+            assertEquals("Hello world", ((AguiTextContent) deserialized).text());
+        }
+
+        @Test
+        void testImageContentUrlSourceJsonSerialization() throws JsonProcessingException {
+            AguiUrlSource source = new AguiUrlSource("https://example.com/photo.jpg", "image/jpeg");
+            AguiImageContent image = new AguiImageContent(source);
+
+            String json = JsonUtils.getJsonCodec().toJson(image);
+            assertTrue(json.contains("\"type\":\"image\""));
+            assertTrue(json.contains("\"value\":\"https://example.com/photo.jpg\""));
+
+            AguiContentPart deserialized =
+                    JsonUtils.getJsonCodec().fromJson(json, AguiContentPart.class);
+            assertInstanceOf(AguiImageContent.class, deserialized);
+            AguiImageContent imgResult = (AguiImageContent) deserialized;
+            assertInstanceOf(AguiUrlSource.class, imgResult.source());
+        }
+
+        @Test
+        void testImageContentDataSourceJsonSerialization() throws JsonProcessingException {
+            AguiDataSource source = new AguiDataSource("iVBORw0KGgo=", "image/png");
+            AguiImageContent image = new AguiImageContent(source);
+
+            String json = JsonUtils.getJsonCodec().toJson(image);
+            assertTrue(json.contains("\"type\":\"image\""));
+            assertTrue(json.contains("\"mimeType\":\"image/png\""));
+
+            AguiContentPart deserialized =
+                    JsonUtils.getJsonCodec().fromJson(json, AguiContentPart.class);
+            assertInstanceOf(AguiImageContent.class, deserialized);
+            AguiImageContent imgResult = (AguiImageContent) deserialized;
+            assertInstanceOf(AguiDataSource.class, imgResult.source());
+            AguiDataSource ds = (AguiDataSource) imgResult.source();
+            assertEquals("iVBORw0KGgo=", ds.value());
+            assertEquals("image/png", ds.mimeType());
         }
     }
 

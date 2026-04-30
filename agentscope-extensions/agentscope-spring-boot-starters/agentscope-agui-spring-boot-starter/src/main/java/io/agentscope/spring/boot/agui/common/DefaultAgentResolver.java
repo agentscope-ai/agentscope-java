@@ -19,7 +19,9 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.processor.AgentResolver;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Default implementation of {@link AgentResolver} for Spring Boot integration.
@@ -27,14 +29,17 @@ import java.util.Objects;
  * <p>This resolver supports two modes:
  * <ul>
  *   <li><b>Simple mode</b>: Directly looks up agents from the registry</li>
- *   <li><b>Session mode</b>: Uses {@link ThreadSessionManager} for server-side memory</li>
+ *   <li><b>Session mode</b>: Uses {@link AguiSessionManager} for server-side memory</li>
  * </ul>
  */
 public class DefaultAgentResolver implements AgentResolver {
 
     private final AguiAgentRegistry registry;
-    private final ThreadSessionManager sessionManager;
+    private final AguiSessionManager sessionManager;
     private final boolean serverSideMemory;
+
+    /** Tracks the agentId used for each threadId during a request lifecycle. */
+    private final Map<String, String> threadAgentIdMap = new ConcurrentHashMap<>();
 
     /**
      * Creates a simple resolver without session support.
@@ -54,7 +59,7 @@ public class DefaultAgentResolver implements AgentResolver {
      */
     public DefaultAgentResolver(
             AguiAgentRegistry registry,
-            ThreadSessionManager sessionManager,
+            AguiSessionManager sessionManager,
             boolean serverSideMemory) {
         this.registry = Objects.requireNonNull(registry, "registry cannot be null");
         this.sessionManager = sessionManager;
@@ -64,6 +69,8 @@ public class DefaultAgentResolver implements AgentResolver {
     @Override
     public Agent resolveAgent(String agentId, String threadId) {
         if (serverSideMemory && sessionManager != null) {
+            // Track the agentId for this threadId so hasMemory/onComplete can use it
+            threadAgentIdMap.put(threadId, agentId);
             // Server-side memory mode: use session manager
             return sessionManager.getOrCreateAgent(
                     threadId,
@@ -84,9 +91,21 @@ public class DefaultAgentResolver implements AgentResolver {
     @Override
     public boolean hasMemory(String threadId) {
         if (serverSideMemory && sessionManager != null) {
-            return sessionManager.hasMemory(threadId);
+            String agentId = threadAgentIdMap.get(threadId);
+            return agentId != null && sessionManager.hasMemory(threadId, agentId);
         }
         return false;
+    }
+
+    @Override
+    public void onComplete(String threadId, Agent agent) {
+        if (serverSideMemory && sessionManager != null) {
+            String agentId = threadAgentIdMap.remove(threadId);
+            if (agentId == null) {
+                agentId = agent.getAgentId();
+            }
+            sessionManager.saveAgent(threadId, agentId, agent);
+        }
     }
 
     /**
@@ -102,7 +121,7 @@ public class DefaultAgentResolver implements AgentResolver {
     public static class Builder {
 
         private AguiAgentRegistry registry;
-        private ThreadSessionManager sessionManager;
+        private AguiSessionManager sessionManager;
         private boolean serverSideMemory = false;
 
         /**
@@ -122,7 +141,7 @@ public class DefaultAgentResolver implements AgentResolver {
          * @param sessionManager The session manager
          * @return This builder
          */
-        public Builder sessionManager(ThreadSessionManager sessionManager) {
+        public Builder sessionManager(AguiSessionManager sessionManager) {
             this.sessionManager = sessionManager;
             return this;
         }

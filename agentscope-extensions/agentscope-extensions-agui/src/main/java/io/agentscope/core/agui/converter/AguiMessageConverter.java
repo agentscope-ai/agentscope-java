@@ -16,15 +16,25 @@
 package io.agentscope.core.agui.converter;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.agui.model.AguiContentPart;
+import io.agentscope.core.agui.model.AguiContentSource;
+import io.agentscope.core.agui.model.AguiDataSource;
 import io.agentscope.core.agui.model.AguiFunctionCall;
+import io.agentscope.core.agui.model.AguiImageContent;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.AguiTextContent;
 import io.agentscope.core.agui.model.AguiToolCall;
+import io.agentscope.core.agui.model.AguiUrlSource;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
@@ -54,17 +64,40 @@ public class AguiMessageConverter {
         MsgRole role = convertRole(aguiMessage.getRole());
         List<ContentBlock> blocks = new ArrayList<>();
 
-        // Add text content if present
-        if (aguiMessage.getContent() != null && !aguiMessage.getContent().isEmpty()) {
-            if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
-                // For tool messages, wrap content in ToolResultBlock
-                blocks.add(
-                        ToolResultBlock.of(
-                                aguiMessage.getToolCallId(),
-                                null,
-                                TextBlock.builder().text(aguiMessage.getContent()).build()));
-            } else {
-                blocks.add(TextBlock.builder().text(aguiMessage.getContent()).build());
+        if (aguiMessage.isMultimodal()) {
+            // Handle multimodal content parts (text, image, etc.)
+            for (AguiContentPart part : aguiMessage.getContentParts()) {
+                if (part instanceof AguiTextContent textContent) {
+                    if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+                        blocks.add(
+                                ToolResultBlock.of(
+                                        aguiMessage.getToolCallId(),
+                                        null,
+                                        TextBlock.builder().text(textContent.text()).build()));
+                    } else {
+                        blocks.add(TextBlock.builder().text(textContent.text()).build());
+                    }
+                } else if (part instanceof AguiImageContent imageContent) {
+                    blocks.add(
+                            ImageBlock.builder()
+                                    .source(convertSource(imageContent.source()))
+                                    .build());
+                }
+                // Other content types (audio, video, document) are silently skipped
+            }
+        } else {
+            // Add text content if present (plain string format)
+            if (aguiMessage.getContent() != null && !aguiMessage.getContent().isEmpty()) {
+                if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+                    // For tool messages, wrap content in ToolResultBlock
+                    blocks.add(
+                            ToolResultBlock.of(
+                                    aguiMessage.getToolCallId(),
+                                    null,
+                                    TextBlock.builder().text(aguiMessage.getContent()).build()));
+                } else {
+                    blocks.add(TextBlock.builder().text(aguiMessage.getContent()).build());
+                }
             }
         }
 
@@ -231,5 +264,23 @@ public class AguiMessageConverter {
         } catch (JsonException e) {
             return "{}";
         }
+    }
+
+    /**
+     * Convert an AG-UI content source to an AgentScope Source.
+     *
+     * @param source The AG-UI content source
+     * @return The converted AgentScope Source
+     */
+    private Source convertSource(AguiContentSource source) {
+        if (source instanceof AguiDataSource dataSource) {
+            return Base64Source.builder()
+                    .data(dataSource.value())
+                    .mediaType(dataSource.mimeType())
+                    .build();
+        } else if (source instanceof AguiUrlSource urlSource) {
+            return URLSource.builder().url(urlSource.value()).build();
+        }
+        throw new IllegalArgumentException("Unknown content source type: " + source.getClass());
     }
 }

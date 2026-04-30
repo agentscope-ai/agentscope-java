@@ -278,6 +278,91 @@
         .status-dot.disconnected {
             background: var(--accent-red);
         }
+
+        /* Attachment preview area (above input) */
+        .attachments-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .attachments-preview:empty {
+            display: none;
+        }
+
+        .attachment-item {
+            position: relative;
+            width: 72px;
+            height: 72px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+
+        .attachment-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .attachment-remove {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.65);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .attachment-remove:hover {
+            background: var(--accent-red);
+        }
+
+        /* Attachment buttons inside input area */
+        .icon-btn {
+            padding: 0 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .icon-btn:hover {
+            border-color: var(--accent-blue);
+            background: var(--bg-tertiary);
+        }
+
+        /* Images inside rendered messages */
+        .message-images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .message-images img {
+            max-width: 240px;
+            max-height: 240px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -294,7 +379,12 @@
 
         <div id="messages"></div>
 
+        <div id="attachments-preview" class="attachments-preview"></div>
+
         <div class="input-area">
+            <button id="upload-btn" class="icon-btn" title="Upload image">📎</button>
+            <button id="url-btn" class="icon-btn" title="Add image URL">🔗</button>
+            <input type="file" id="file-input" accept="image/*" multiple style="display: none;">
             <input type="text" id="input" placeholder="Type a message... (Press Enter to send)" autocomplete="off">
             <button id="send-btn">Send</button>
             <button id="stop-btn" style="display: none;">Stop</button>
@@ -316,10 +406,111 @@
         const messages = document.getElementById('messages');
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
+        const uploadBtn = document.getElementById('upload-btn');
+        const urlBtn = document.getElementById('url-btn');
+        const fileInput = document.getElementById('file-input');
+        const attachmentsPreview = document.getElementById('attachments-preview');
 
         let threadId = 'thread-' + Date.now();
         let messageHistory = [];
         let isRunning = false;
+
+        // Pending image attachments for the next outgoing message.
+        // Each item matches AG-UI image content part shape:
+        //   { type: 'image', source: { type: 'url' | 'data', value, mimeType } }
+        // Plus a transient `previewUrl` for thumbnail rendering (stripped before send).
+        let pendingAttachments = [];
+
+        const DEFAULT_IMAGE_MIME = 'image/png';
+
+        function inferMimeTypeFromUrl(url) {
+            const match = url.toLowerCase().match(/\.(png|jpe?g|gif|webp|bmp|svg)(?:\?|#|$)/);
+            if (!match) return DEFAULT_IMAGE_MIME;
+            const ext = match[1];
+            if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+            if (ext === 'svg') return 'image/svg+xml';
+            return 'image/' + ext;
+        }
+
+        function readFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function renderAttachmentsPreview() {
+            attachmentsPreview.innerHTML = '';
+            pendingAttachments.forEach((att, idx) => {
+                const item = document.createElement('div');
+                item.className = 'attachment-item';
+
+                const img = document.createElement('img');
+                img.src = att.previewUrl;
+                img.alt = 'attachment';
+                item.appendChild(img);
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'attachment-remove';
+                removeBtn.type = 'button';
+                removeBtn.textContent = '×';
+                removeBtn.title = 'Remove';
+                removeBtn.addEventListener('click', () => {
+                    pendingAttachments.splice(idx, 1);
+                    renderAttachmentsPreview();
+                });
+                item.appendChild(removeBtn);
+
+                attachmentsPreview.appendChild(item);
+            });
+        }
+
+        async function handleFileSelection(files) {
+            for (const file of files) {
+                if (!file.type.startsWith('image/')) continue;
+                try {
+                    const dataUrl = await readFileAsDataUrl(file);
+                    // dataUrl is like "data:image/png;base64,XXXX"
+                    const commaIdx = dataUrl.indexOf(',');
+                    const base64Value = commaIdx >= 0 ? dataUrl.substring(commaIdx + 1) : dataUrl;
+                    pendingAttachments.push({
+                        type: 'image',
+                        source: {
+                            type: 'data',
+                            value: base64Value,
+                            mimeType: file.type || DEFAULT_IMAGE_MIME
+                        },
+                        previewUrl: dataUrl
+                    });
+                } catch (err) {
+                    console.error('Failed to read image file:', err);
+                    appendMessage('error', `Failed to read image: ${file.name}`);
+                }
+            }
+            renderAttachmentsPreview();
+        }
+
+        function handleAddImageUrl() {
+            const url = prompt('Enter image URL (e.g. https://example.com/image.png):');
+            if (!url) return;
+            const trimmed = url.trim();
+            if (!/^https?:\/\//i.test(trimmed)) {
+                appendMessage('error', 'Invalid URL. Must start with http:// or https://');
+                return;
+            }
+            pendingAttachments.push({
+                type: 'image',
+                source: {
+                    type: 'url',
+                    value: trimmed,
+                    mimeType: inferMimeTypeFromUrl(trimmed)
+                },
+                previewUrl: trimmed
+            });
+            renderAttachmentsPreview();
+        }
 
         function setStatus(status, text) {
             statusDot.className = 'status-dot' + (status === 'error' ? ' disconnected' : '');
@@ -328,7 +519,7 @@
 
         let currentAssistantDiv = null;
 
-        function appendMessage(role, content, append = false) {
+        function appendMessage(role, content, append = false, images = null) {
             if (append && role === 'assistant' && currentAssistantDiv) {
                 // Append to current assistant message
                 const contentEl = currentAssistantDiv.querySelector('.message-content');
@@ -351,6 +542,20 @@
                 <div class="message-role">${role}</div>
                 <div class="message-content">${escapeHtml(content)}</div>
             `;
+
+            if (images && images.length > 0) {
+                const imagesEl = document.createElement('div');
+                imagesEl.className = 'message-images';
+                images.forEach(src => {
+                    const img = document.createElement('img');
+                    img.src = src;
+                    img.alt = 'image';
+                    img.addEventListener('click', () => window.open(src, '_blank'));
+                    imagesEl.appendChild(img);
+                });
+                div.appendChild(imagesEl);
+            }
+
             messages.appendChild(div);
             messages.scrollTop = messages.scrollHeight;
 
@@ -383,7 +588,13 @@
 
         async function sendMessage() {
             const text = input.value.trim();
-            if (!text || isRunning) return;
+            // Require either text or at least one attachment to send.
+            if ((!text && pendingAttachments.length === 0) || isRunning) return;
+
+            // Snapshot the attachments for this message, then clear the pending list.
+            const attachmentsForMessage = pendingAttachments;
+            pendingAttachments = [];
+            renderAttachmentsPreview();
 
             input.value = '';
             isRunning = true;
@@ -391,9 +602,33 @@
             stopBtn.style.display = 'inline-block';
             setStatus('running', 'Running...');
 
-            // Add user message
-            appendMessage('user', text);
-            messageHistory.push({ id: 'msg-' + Date.now(), role: 'user', content: text });
+            // Build the AG-UI UserMessage content.
+            // - Plain text only                => content is a string (backward compatible)
+            // - Any attachment present         => content is an array of parts
+            let userContent;
+            if (attachmentsForMessage.length === 0) {
+                userContent = text;
+            } else {
+                userContent = [];
+                if (text) {
+                    userContent.push({ type: 'text', text: text });
+                }
+                for (const att of attachmentsForMessage) {
+                    userContent.push({
+                        type: 'image',
+                        source: {
+                            type: att.source.type,
+                            value: att.source.value,
+                            mimeType: att.source.mimeType
+                        }
+                    });
+                }
+            }
+
+            // Render user message in UI (with image thumbnails if any).
+            const previewUrls = attachmentsForMessage.map(a => a.previewUrl);
+            appendMessage('user', text || '(image)', false, previewUrls.length ? previewUrls : null);
+            messageHistory.push({ id: 'msg-' + Date.now(), role: 'user', content: userContent });
 
             // Show typing indicator
             showTypingIndicator();
@@ -533,6 +768,37 @@
 
         sendBtn.addEventListener('click', sendMessage);
         stopBtn.addEventListener('click', stopGeneration);
+
+        // Attachment: upload local image files
+        uploadBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files || []);
+            if (files.length > 0) {
+                await handleFileSelection(files);
+            }
+            // Reset so selecting the same file again still triggers change.
+            fileInput.value = '';
+        });
+
+        // Attachment: add image URL
+        urlBtn.addEventListener('click', handleAddImageUrl);
+
+        // Attachment: paste image from clipboard directly into the input
+        input.addEventListener('paste', async (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            const imageFiles = [];
+            for (const item of items) {
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    if (file) imageFiles.push(file);
+                }
+            }
+            if (imageFiles.length > 0) {
+                e.preventDefault();
+                await handleFileSelection(imageFiles);
+            }
+        });
 
         // Focus input on load
         input.focus();

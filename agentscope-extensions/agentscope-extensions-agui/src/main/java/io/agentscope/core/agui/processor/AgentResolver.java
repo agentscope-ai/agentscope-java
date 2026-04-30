@@ -47,4 +47,18 @@ public interface AgentResolver {
      * @return true if the thread has existing memory
      */
     boolean hasMemory(String threadId);
+
+    /**
+     * Called when a request completes to allow cleanup or state persistence.
+     *
+     * <p>For distributed session implementations, this is where the agent's state
+     * is saved to the external session store. In-memory implementations can
+     * treat this as a no-op.
+     *
+     * @param threadId The thread ID of the completed request
+     * @param agent The agent that processed the request
+     */
+    default void onComplete(String threadId, Agent agent) {
+        // Default no-op
+    }
 }
