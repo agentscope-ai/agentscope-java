@@ -28,13 +28,21 @@ public class HttpTransportConfig {
     /** Default connect timeout: 30 seconds. */
     public static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(30);
 
-    /** Default read timeout: 5 minutes (for long-running model calls). */
+    /** Default response timeout (TTFT): 5 minutes (Time To First Token for streaming). */
+    public static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofMinutes(5);
+
+    /** Default stream idle timeout: 30 seconds (Maximum wait time between consecutive data chunks). */
+    public static final Duration DEFAULT_STREAM_IDLE_TIMEOUT = Duration.ofSeconds(30);
+
+    /** Default read timeout: 5 minutes (Overall timeout for non-streaming calls). */
     public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofMinutes(5);
 
     /** Default write timeout: 30 seconds. */
     public static final Duration DEFAULT_WRITE_TIMEOUT = Duration.ofSeconds(30);
 
     private final Duration connectTimeout;
+    private final Duration responseTimeout;
+    private final Duration streamIdleTimeout;
     private final Duration readTimeout;
     private final Duration writeTimeout;
     private final int maxIdleConnections;
@@ -45,6 +53,8 @@ public class HttpTransportConfig {
 
     private HttpTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
+        this.responseTimeout = builder.responseTimeout;
+        this.streamIdleTimeout = builder.streamIdleTimeout;
         this.readTimeout = builder.readTimeout;
         this.writeTimeout = builder.writeTimeout;
         this.maxIdleConnections = builder.maxIdleConnections;
@@ -64,7 +74,25 @@ public class HttpTransportConfig {
     }
 
     /**
-     * Get the read timeout.
+     * Get the response timeout (Time To First Token for streaming).
+     *
+     * @return the response timeout duration
+     */
+    public Duration getResponseTimeout() {
+        return responseTimeout;
+    }
+
+    /**
+     * Get the stream idle timeout (maximum time between two consecutive data chunks).
+     *
+     * @return the stream idle timeout duration
+     */
+    public Duration getStreamIdleTimeout() {
+        return streamIdleTimeout;
+    }
+
+    /**
+     * Get the read timeout(for non-streaming).
      *
      * @return the read timeout duration
      */
@@ -153,6 +181,8 @@ public class HttpTransportConfig {
      */
     public static class Builder {
         private Duration connectTimeout = DEFAULT_CONNECT_TIMEOUT;
+        private Duration responseTimeout = DEFAULT_RESPONSE_TIMEOUT;
+        private Duration streamIdleTimeout = DEFAULT_STREAM_IDLE_TIMEOUT;
         private Duration readTimeout = DEFAULT_READ_TIMEOUT;
         private Duration writeTimeout = DEFAULT_WRITE_TIMEOUT;
         private int maxIdleConnections = 5;
@@ -169,6 +199,28 @@ public class HttpTransportConfig {
          */
         public Builder connectTimeout(Duration connectTimeout) {
             this.connectTimeout = connectTimeout;
+            return this;
+        }
+
+        /**
+         * Set the response timeout (Time To First Byte).
+         *
+         * @param responseTimeout the response timeout duration
+         * @return this builder
+         */
+        public Builder responseTimeout(Duration responseTimeout) {
+            this.responseTimeout = responseTimeout;
+            return this;
+        }
+
+        /**
+         * Set the stream idle timeout.
+         *
+         * @param streamIdleTimeout the stream idle timeout duration
+         * @return this builder
+         */
+        public Builder streamIdleTimeout(Duration streamIdleTimeout) {
+            this.streamIdleTimeout = streamIdleTimeout;
             return this;
         }
 

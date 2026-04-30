@@ -38,8 +38,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -174,7 +174,7 @@ public class JdkHttpTransport implements HttpTransport {
             throw new HttpTransportException("Transport has been closed");
         }
 
-        var jdkRequest = buildJdkRequest(request);
+        var jdkRequest = buildJdkRequest(request, false);
 
         try {
             var response = client.send(jdkRequest, BodyHandlers.ofString());
@@ -193,50 +193,64 @@ public class JdkHttpTransport implements HttpTransport {
             return Flux.error(new HttpTransportException("Transport has been closed"));
         }
 
-        var jdkRequest = buildJdkRequest(request);
+        var jdkRequest = buildJdkRequest(request, true);
 
-        // Check status code and read error body immediately when CompletableFuture completes
-        // to avoid stream being closed before we can read it
-        CompletableFuture<java.net.http.HttpResponse<InputStream>> future =
-                client.sendAsync(jdkRequest, BodyHandlers.ofInputStream())
-                        .thenApply(
-                                response -> {
-                                    int statusCode = response.statusCode();
-                                    if (statusCode < 200 || statusCode >= 300) {
-                                        // Read error body immediately while stream is still open
-                                        String errorBody = readInputStream(response.body());
-                                        log.warn(
-                                                "HTTP request failed. URL: {} | Status: {} | Error:"
-                                                        + " {}",
-                                                request.getUrl(),
+        // Use Mono.fromFuture() to ensure lazy execution and proper cancellation propagation.
+        // This prevents "ghost connections" from leaking if the downstream cancels or times out
+        // before headers arrive.
+        return Mono.fromFuture(() -> client.sendAsync(jdkRequest, BodyHandlers.ofInputStream()))
+                .flatMapMany(
+                        response -> {
+                            int statusCode = response.statusCode();
+                            if (statusCode < 200 || statusCode >= 300) {
+                                String errorBody = readInputStream(response.body());
+                                log.warn(
+                                        "HTTP request failed. URL: {} | Status: {} | Error: {}",
+                                        request.getUrl(),
+                                        statusCode,
+                                        errorBody);
+                                return Flux.error(
+                                        new HttpTransportException(
+                                                "HTTP request failed with status "
+                                                        + statusCode
+                                                        + " | "
+                                                        + errorBody,
                                                 statusCode,
-                                                errorBody);
-                                        throw new CompletionException(
-                                                new HttpTransportException(
-                                                        "HTTP request failed with status "
-                                                                + statusCode
-                                                                + " | "
-                                                                + errorBody,
-                                                        statusCode,
-                                                        errorBody));
-                                    }
-                                    return response;
-                                });
+                                                errorBody));
+                            }
+                            return processStreamResponse(response, request);
+                        })
+                .timeout(
+                        // Timeout strategy 1: Time To First Token (TTFT).
+                        // The maximum time to wait for the first piece of data.
+                        Mono.delay(
+                                config.getResponseTimeout() != null
+                                        ? config.getResponseTimeout()
+                                        : HttpTransportConfig.DEFAULT_RESPONSE_TIMEOUT),
 
-        return Mono.fromCompletionStage(future)
-                .flatMapMany(response -> processStreamResponse(response, request))
-                .publishOn(Schedulers.boundedElastic())
+                        // Timeout strategy 2: Inter-token gap (Stream Idle Timeout).
+                        // The maximum time to wait between receiving two consecutive data chunks.
+                        data ->
+                                Mono.delay(
+                                        config.getStreamIdleTimeout() != null
+                                                ? config.getStreamIdleTimeout()
+                                                : HttpTransportConfig.DEFAULT_STREAM_IDLE_TIMEOUT))
                 .onErrorMap(
-                        e -> !(e instanceof HttpTransportException),
                         e -> {
+                            if (e instanceof TimeoutException) {
+                                return new HttpTransportException(
+                                        "Stream timeout: " + e.getMessage(), e);
+                            }
+                            if (e instanceof HttpTransportException) {
+                                return e;
+                            }
                             Throwable cause = e instanceof CompletionException ? e.getCause() : e;
                             if (cause instanceof HttpTransportException) {
-                                return (HttpTransportException) cause;
+                                return cause;
                             }
                             return new HttpTransportException(
                                     "SSE/NDJSON stream failed: " + e.getMessage(), e);
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
+                        });
     }
 
     private Flux<String> processStreamResponse(
@@ -253,11 +267,13 @@ public class JdkHttpTransport implements HttpTransport {
 
         // Use Flux.using to manage resource lifecycle
         return Flux.using(
-                () ->
-                        new BufferedReader(
-                                new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
-                reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
-                this::closeQuietly);
+                        () ->
+                                new BufferedReader(
+                                        new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
+                        reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
+                        this::closeQuietly)
+                // reader.lines() uses blocking I/O internally
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private Flux<String> readSseLines(BufferedReader reader) {
@@ -310,7 +326,7 @@ public class JdkHttpTransport implements HttpTransport {
         return closed.get();
     }
 
-    private java.net.http.HttpRequest buildJdkRequest(HttpRequest request) {
+    private java.net.http.HttpRequest buildJdkRequest(HttpRequest request, boolean isStreaming) {
         URI uri;
         try {
             uri = URI.create(request.getUrl());
@@ -318,8 +334,11 @@ public class JdkHttpTransport implements HttpTransport {
             throw new HttpTransportException("Invalid URL: " + request.getUrl(), e);
         }
 
-        var builder =
-                java.net.http.HttpRequest.newBuilder().uri(uri).timeout(config.getReadTimeout());
+        var builder = java.net.http.HttpRequest.newBuilder().uri(uri);
+
+        if (!isStreaming && config.getReadTimeout() != null) {
+            builder.timeout(config.getReadTimeout());
+        }
 
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             builder.header(header.getKey(), header.getValue());

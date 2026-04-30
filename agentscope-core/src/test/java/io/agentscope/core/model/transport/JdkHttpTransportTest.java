@@ -57,7 +57,9 @@ class JdkHttpTransportTest {
         HttpTransportConfig config =
                 HttpTransportConfig.builder()
                         .connectTimeout(Duration.ofSeconds(5))
-                        .readTimeout(Duration.ofSeconds(10))
+                        .readTimeout(Duration.ofSeconds(2)) // Global timeout for sync calls
+                        .responseTimeout(Duration.ofSeconds(2)) // TTFT for streaming
+                        .streamIdleTimeout(Duration.ofSeconds(1)) // Inter-token gap for streaming
                         .build();
         transport = new JdkHttpTransport(config);
     }
@@ -304,6 +306,8 @@ class JdkHttpTransportTest {
                 HttpTransportConfig.builder()
                         .connectTimeout(Duration.ofSeconds(10))
                         .readTimeout(Duration.ofSeconds(30))
+                        .responseTimeout(Duration.ofSeconds(45))
+                        .streamIdleTimeout(Duration.ofSeconds(15))
                         .build();
 
         JdkHttpTransport builtTransport = JdkHttpTransport.builder().config(config).build();
@@ -311,6 +315,8 @@ class JdkHttpTransportTest {
         assertNotNull(builtTransport);
         assertNotNull(builtTransport.getClient());
         assertEquals(config, builtTransport.getConfig());
+        assertEquals(Duration.ofSeconds(45), builtTransport.getConfig().getResponseTimeout());
+        assertEquals(Duration.ofSeconds(15), builtTransport.getConfig().getStreamIdleTimeout());
         assertFalse(builtTransport.isClosed());
         builtTransport.close();
         assertTrue(builtTransport.isClosed());
@@ -1062,5 +1068,131 @@ class JdkHttpTransportTest {
         assertEquals(HttpClient.Version.HTTP_1_1, config.getHttpVersion().toJdkHttpVersion());
         assertNotNull(jdkHttpTransport);
         assertNotNull(jdkHttpTransport2);
+    }
+
+    @Test
+    void testStreamColdStartSurvivesGlobalTimeout() throws Exception {
+        // Reproduces the bug reported in the issue 1302
+
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .readTimeout(Duration.ofSeconds(1)) // Very tight global timeout
+                        .responseTimeout(Duration.ofSeconds(4)) // Ample Time-To-First-Token timeout
+                        .streamIdleTimeout(Duration.ofSeconds(2))
+                        .build();
+
+        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
+
+        try {
+            // Simulate the cold start overhead + LLM thinking time by delaying headers for 2
+            // seconds.
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setHeader("Content-Type", "text/event-stream")
+                            .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
+                            .setHeadersDelay(2, TimeUnit.SECONDS));
+
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/cold-start-bug-reproduction").toString())
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            // The test succeeds ONLY if the stream survives the 2-second initial delay
+            // without being killed by the 1-second global readTimeout.
+            StepVerifier.create(customTransport.stream(request))
+                    .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                    .verifyComplete();
+        } finally {
+            customTransport.close();
+        }
+    }
+
+    @Test
+    void testStreamResponseTimeout() {
+        // Test Timeout Strategy 1 (TTFT):
+        // Delay headers by 3 seconds, which exceeds the configured responseTimeout (2 seconds).
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
+                        .setHeader("Content-Type", "text/event-stream")
+                        .setHeadersDelay(3, TimeUnit.SECONDS));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/ttft-timeout").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && e.getMessage().contains("Stream timeout"))
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void testStreamIdleTimeout() {
+        // Test Timeout Strategy 2 (Inter-token gap):
+        // Throttle body to emit 1 byte every 2 seconds.
+        // This exceeds the configured streamIdleTimeout (1 second).
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "text/event-stream")
+                        .setBody("data: {\"id\":\"1\"}\n\ndata: {\"id\":\"2\"}\n\n")
+                        .throttleBody(1, 2, TimeUnit.SECONDS));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/idle-timeout").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && e.getMessage().contains("Stream timeout"))
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void testStreamSurvivesGlobalReadTimeout() {
+        // Verify that streaming requests are NOT killed by the global readTimeout.
+        // readTimeout is 2s, but we will make the stream take roughly 3s overall.
+        // We throttle 10 bytes every 500ms. Inter-token gap is < 1s, so streamIdleTimeout is
+        // respected.
+        String sseBody =
+                "data: 1\n\n"
+                        + "data: 2\n\n"
+                        + "data: 3\n\n"
+                        + "data: 4\n\n"
+                        + "data: 5\n\n"
+                        + "data: [DONE]\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "text/event-stream")
+                        .setBody(sseBody)
+                        .throttleBody(10, 500, TimeUnit.MILLISECONDS));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/survive-timeout").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNextCount(5) // Should successfully receive all 5 data chunks
+                .verifyComplete();
     }
 }
