@@ -1046,13 +1046,12 @@ class OpenAIClientTest {
     }
 
     @Test
-    @DisplayName("Should not falsely resolve out-of-bounds numeric code containing 429")
-    void testFalsePositiveRateLimitNumericError() {
+    @DisplayName("Should intelligently resolve complex 429 string codes to trigger retry")
+    void testComplexRateLimitStringCode() {
         String errorResponse =
                 """
                 {
-                    "code": "4290",
-                    "message": "Custom error 4290",
+                    "code": "HTTP 429 Too Many Requests",
                     "status": "error"
                 }
                 """;
@@ -1078,8 +1077,46 @@ class OpenAIClientTest {
                 assertThrows(
                         OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
 
-        // Cannot accurately match 429, so fallback to default 400
+        // Matches RATE_LIMIT_PATTERN (\b429\b) and resolves to 429 status code
+        assertEquals(429, exception.getStatusCode());
+        assertEquals("HTTP 429 Too Many Requests", exception.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("Should not falsely resolve string codes containing 429 as rate limit error")
+    void testFalsePositiveRateLimitStringError() {
+        String errorResponse =
+                """
+                {
+                    "code": "err_4291_token",
+                    "message": "Token limit error, not a rate limit",
+                    "status": "error"
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        OpenAIException exception =
+                assertThrows(
+                        OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
+
+        // Cannot accurately match word boundary 429, so fallback to default 400
         assertEquals(400, exception.getStatusCode());
-        assertEquals("4290", exception.getErrorCode());
+        assertEquals("err_4291_token", exception.getErrorCode());
     }
 }

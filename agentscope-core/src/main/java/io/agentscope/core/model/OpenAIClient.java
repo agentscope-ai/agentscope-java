@@ -95,6 +95,7 @@ public class OpenAIClient {
     }
 
     private static final Pattern VERSION_PATTERN = Pattern.compile(".*/v\\d+$");
+    private static final Pattern RATE_LIMIT_PATTERN = Pattern.compile(".*\\b429\\b.*");
 
     /**
      * Normalize the base URL by removing trailing slashes.
@@ -455,7 +456,11 @@ public class OpenAIClient {
 
         // Handling HTTP 200 with Body containing errors
         if (errorCode != null) {
-            if ("429".equals(errorCode) || "rate_limit_exceeded".equals(errorCode)) {
+            // Use a regex to ensure "429" appears as a standalone word
+            // For example, "HTTP 429 Too Many Requests"
+            // And compatible with OpenAI's standard strings
+            if (RATE_LIMIT_PATTERN.matcher(errorCode).matches()
+                    || "rate_limit_exceeded".equalsIgnoreCase(errorCode)) {
                 return 429;
             }
 
