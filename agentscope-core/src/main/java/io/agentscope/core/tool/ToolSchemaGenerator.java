@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -91,15 +92,25 @@ class ToolSchemaGenerator {
         return schema;
     }
 
-    // TODO: putAll silently overwrites when different parameters define the same def key
-    //  (e.g. different classes with the same simple name under PLAIN_DEFINITION_KEYS).
-    //  Add value-equality check and fail-fast on true conflicts in a follow-up.
     @SuppressWarnings("unchecked")
     private void hoistDefs(
             Map<String, Object> paramSchema, String key, Map<String, Object> target) {
         Object raw = paramSchema.remove(key);
         if (raw instanceof Map<?, ?> defs && !defs.isEmpty()) {
-            target.putAll((Map<String, Object>) defs);
+            Map<String, Object> normalizedDefs = (Map<String, Object>) defs;
+            for (Map.Entry<String, Object> entry : normalizedDefs.entrySet()) {
+                String defKey = entry.getKey();
+                Object incomingDef = entry.getValue();
+                Object existingDef = target.get(defKey);
+                if (existingDef == null) {
+                    target.put(defKey, incomingDef);
+                    continue;
+                }
+                if (!Objects.equals(existingDef, incomingDef)) {
+                    throw new IllegalStateException(
+                            "Conflicting schema definition found for key: " + defKey);
+                }
+            }
         }
     }
 

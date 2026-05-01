@@ -30,6 +30,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -102,7 +103,7 @@ class HookEventTest {
         @Test
         @DisplayName("Should create and access event")
         void testCreationAndAccess() {
-            PreCallEvent event = new PreCallEvent(testAgent, null);
+            PreCallEvent event = new PreCallEvent(testAgent, new ArrayList<>());
 
             assertEquals(HookEventType.PRE_CALL, event.getType());
             assertEquals(testAgent, event.getAgent());

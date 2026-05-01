@@ -159,6 +159,7 @@ Google 的 Gemini 系列模型，支持 Gemini API 和 Vertex AI。
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
         .modelName("gemini-2.5-flash")  // 默认值
+        .baseUrl("https://your-gateway.example")  // 可选
         .build();
 ```
 
@@ -179,12 +180,15 @@ GeminiChatModel model = GeminiChatModel.builder()
 | 配置项 | 说明 |
 |--------|------|
 | `apiKey` | Gemini API 密钥 |
+| `baseUrl` | 自定义 Gemini API 端点（可选） |
 | `modelName` | 模型名称，默认 `gemini-2.5-flash` |
 | `project` | GCP 项目 ID（Vertex AI） |
 | `location` | GCP 区域（Vertex AI） |
 | `vertexAI` | 是否使用 Vertex AI |
 | `credentials` | GCP 凭证（Vertex AI） |
 | `streamEnabled` | 是否启用流式输出，默认 `true` |
+
+如需覆盖请求端点，可使用 `baseUrl(...)`。更高级的传输层或代理配置，仍建议通过 `httpOptions(...)` 或 `clientOptions(...)` 处理。
 
 ## Ollama
 

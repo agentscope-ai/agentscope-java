@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -265,6 +266,36 @@ class FileSystemSkillRepositoryTest {
         assertTrue(loaded.getResources().containsKey("references/guide.md"));
         assertTrue(loaded.getResources().containsKey("config.json"));
         assertEquals("{\"key\": \"value\"}", loaded.getResources().get("config.json"));
+    }
+
+    @Test
+    @DisplayName("Should round trip full metadata through filesystem repository")
+    void testSave_RoundTripFullMetadata() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "repo-metadata-skill");
+        metadata.put("description", "Repository Metadata Skill");
+        metadata.put("homepage", "https://example.com/repo");
+        metadata.put(
+                "metadata",
+                Map.of(
+                        "clawdbot",
+                        Map.of("emoji", "📋", "requires", Map.of("env", List.of("API_KEY")))));
+        AgentSkill skill = new AgentSkill(metadata, "Repository content", null, null);
+
+        assertTrue(repository.save(List.of(skill), false));
+
+        AgentSkill loaded = repository.getSkill("repo-metadata-skill");
+        assertEquals(List.copyOf(metadata.keySet()), List.copyOf(loaded.getMetadata().keySet()));
+        assertEquals("https://example.com/repo", loaded.getMetadataValue("homepage"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> loadedMetadata =
+                (Map<String, Object>) loaded.getMetadataValue("metadata");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> clawdbot = (Map<String, Object>) loadedMetadata.get("clawdbot");
+
+        assertEquals("📋", clawdbot.get("emoji"));
+        assertEquals(Map.of("env", List.of("API_KEY")), clawdbot.get("requires"));
     }
 
     @Test

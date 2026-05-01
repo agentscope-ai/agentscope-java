@@ -376,6 +376,20 @@ public class ElasticsearchStoreTest {
                 .verify();
     }
 
+    @Test
+    @DisplayName("Should add documents with payload")
+    void testAddPayload() throws VectorStoreException {
+        store = createMockStoreForAdd(true);
+
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        DocumentMetadata metadata =
+                new DocumentMetadata(content, "doc-1", "chunk-1", Map.of("k", "v"));
+        Document doc = new Document(metadata);
+        doc.setEmbedding(new double[TEST_DIMENSIONS]);
+
+        StepVerifier.create(store.add(List.of(doc))).verifyComplete();
+    }
+
     // ==================== Search Method Tests ====================
 
     @SuppressWarnings("unchecked")
@@ -433,6 +447,7 @@ public class ElasticsearchStoreTest {
         List<Double> vector = new ArrayList<>();
         for (int i = 0; i < TEST_DIMENSIONS; i++) vector.add(0.0);
         source.put("vector", vector);
+        source.put("payload", "{\"k\":\"v\"}");
 
         store = createMockStoreForSearch(List.of(source));
 
@@ -450,6 +465,7 @@ public class ElasticsearchStoreTest {
                             assertEquals(1, results.size());
                             assertEquals("doc-1", results.get(0).getMetadata().getDocId());
                             assertEquals(0.95, results.get(0).getScore());
+                            assertEquals("v", results.get(0).getMetadata().getPayloadValue("k"));
                         })
                 .verifyComplete();
     }

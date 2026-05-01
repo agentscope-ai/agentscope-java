@@ -37,6 +37,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,30 +55,20 @@ public class SkillBox implements StateModule {
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
 
+    private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
+
     public SkillBox(Toolkit toolkit) {
-        this(toolkit, null, null);
+        this(toolkit, null);
     }
 
     /**
-     * Creates a SkillBox with custom skill prompt instruction and template.
-     *
-     * @param instruction Custom instruction header (null or blank uses default)
-     * @param template Custom skill template (null or blank uses default)
-     */
-    public SkillBox(String instruction, String template) {
-        this(null, instruction, template);
-    }
-
-    /**
-     * Creates a SkillBox with a toolkit and custom skill prompt instruction and template.
+     * Creates a SkillBox with a toolkit and custom skill prompt instruction.
      *
      * @param toolkit The toolkit to bind
      * @param instruction Custom instruction header (null or blank uses default)
-     * @param template Custom skill template (null or blank uses default)
      */
-    public SkillBox(Toolkit toolkit, String instruction, String template) {
-        this.skillPromptProvider =
-                new AgentSkillPromptProvider(skillRegistry, instruction, template);
+    public SkillBox(Toolkit toolkit, String instruction) {
+        this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry, instruction);
         this.skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
         this.toolkit = toolkit;
     }
@@ -92,6 +83,19 @@ public class SkillBox implements StateModule {
      */
     public String getSkillPrompt() {
         return skillPromptProvider.getSkillSystemPrompt();
+    }
+
+    /**
+     * Controls whether the skill prompt exposes all metadata fields or only the core fields.
+     *
+     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-id}
+     * are included in the skill prompt.
+     *
+     * @param exposeAllMetadata {@code true} to expose all metadata, {@code false} to expose only
+     *                          the core fields
+     */
+    public void setExposeAllSkillMetadata(boolean exposeAllMetadata) {
+        skillPromptProvider.setExposeAllMetadata(exposeAllMetadata);
     }
 
     /**
@@ -759,13 +763,19 @@ public class SkillBox implements StateModule {
                     if (targetPath.getParent() != null) {
                         Files.createDirectories(targetPath.getParent());
                     }
-                    if (content.startsWith(BASE64_PREFIX)) {
-                        String encoded = content.substring(BASE64_PREFIX.length());
-                        byte[] decoded = Base64.getDecoder().decode(encoded);
-                        Files.write(targetPath, decoded);
-                    } else {
-                        Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+
+                    Object lock =
+                            FILE_LOCKS.computeIfAbsent(targetPath.toString(), k -> new Object());
+                    synchronized (lock) {
+                        if (content.startsWith(BASE64_PREFIX)) {
+                            String encoded = content.substring(BASE64_PREFIX.length());
+                            byte[] decoded = Base64.getDecoder().decode(encoded);
+                            Files.write(targetPath, decoded);
+                        } else {
+                            Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+                        }
                     }
+
                     logger.debug("Uploaded file: {}", targetPath);
                     fileCount++;
                 } catch (IOException | IllegalArgumentException e) {
