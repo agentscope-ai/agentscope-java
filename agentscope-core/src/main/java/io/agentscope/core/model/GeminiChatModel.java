@@ -74,6 +74,7 @@ public class GeminiChatModel extends ChatModelBase {
      * Creates a new Gemini chat model instance.
      *
      * @param apiKey         the API key for authentication (for Gemini API)
+     * @param baseUrl        the custom base URL for Gemini API (null for default)
      * @param modelName      the model name to use (e.g., "gemini-2.0-flash",
      *                       "gemini-1.5-pro")
      * @param streamEnabled  whether streaming should be enabled
@@ -90,6 +91,7 @@ public class GeminiChatModel extends ChatModelBase {
      */
     public GeminiChatModel(
             String apiKey,
+            String baseUrl,
             String modelName,
             boolean streamEnabled,
             String project,
@@ -106,7 +108,7 @@ public class GeminiChatModel extends ChatModelBase {
         this.project = project;
         this.location = location;
         this.vertexAI = vertexAI;
-        this.httpOptions = httpOptions;
+        this.httpOptions = resolveHttpOptions(baseUrl, httpOptions);
         this.credentials = credentials;
         this.clientOptions = clientOptions;
         this.defaultOptions =
@@ -136,14 +138,73 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         // Configure HTTP and client options
-        if (httpOptions != null) {
-            clientBuilder.httpOptions(httpOptions);
+        if (this.httpOptions != null) {
+            clientBuilder.httpOptions(this.httpOptions);
         }
         if (clientOptions != null) {
             clientBuilder.clientOptions(clientOptions);
         }
 
         this.client = clientBuilder.build();
+    }
+
+    /**
+     * Creates a new Gemini chat model instance using the default endpoint configuration.
+     *
+     * <p>This overload passes {@code null} for {@code baseUrl}, allowing the SDK to use its
+     * default endpoint behavior for either Gemini API or Vertex AI, depending on the provided
+     * configuration.
+     *
+     * @param apiKey         the API key for authentication (for Gemini API)
+     * @param modelName      the model name to use (e.g., "gemini-2.0-flash",
+     *                       "gemini-1.5-pro")
+     * @param streamEnabled  whether streaming should be enabled
+     * @param project        the Google Cloud project ID (for Vertex AI)
+     * @param location       the Google Cloud location (for Vertex AI, e.g.,
+     *                       "us-central1")
+     * @param vertexAI       whether to use Vertex AI APIs (null for auto-detection)
+     * @param httpOptions    HTTP options for the client
+     * @param credentials    Google credentials (for Vertex AI)
+     * @param clientOptions  client options for the API client
+     * @param defaultOptions default generation options
+     * @param formatter      the message formatter to use (null for default Gemini
+     *                       formatter)
+     */
+    public GeminiChatModel(
+            String apiKey,
+            String modelName,
+            boolean streamEnabled,
+            String project,
+            String location,
+            Boolean vertexAI,
+            HttpOptions httpOptions,
+            GoogleCredentials credentials,
+            ClientOptions clientOptions,
+            GenerateOptions defaultOptions,
+            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter) {
+        this(
+                apiKey,
+                null,
+                modelName,
+                streamEnabled,
+                project,
+                location,
+                vertexAI,
+                httpOptions,
+                credentials,
+                clientOptions,
+                defaultOptions,
+                formatter);
+    }
+
+    private static HttpOptions resolveHttpOptions(String baseUrl, HttpOptions httpOptions) {
+        if (baseUrl == null) {
+            return httpOptions;
+        }
+        if (httpOptions == null) {
+            return HttpOptions.builder().baseUrl(baseUrl).build();
+        }
+        return httpOptions.toBuilder().baseUrl(baseUrl).build();
     }
 
     /**
@@ -281,6 +342,7 @@ public class GeminiChatModel extends ChatModelBase {
      */
     public static class Builder {
         private String apiKey;
+        private String baseUrl;
         private String modelName = "gemini-2.5-flash";
         private boolean streamEnabled = true;
         private String project;
@@ -301,6 +363,17 @@ public class GeminiChatModel extends ChatModelBase {
          */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            return this;
+        }
+
+        /**
+         * Sets the custom base URL (for Gemini API).
+         *
+         * @param baseUrl the custom Gemini API base URL
+         * @return this builder
+         */
+        public Builder baseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
             return this;
         }
 
@@ -424,6 +497,7 @@ public class GeminiChatModel extends ChatModelBase {
         public GeminiChatModel build() {
             return new GeminiChatModel(
                     apiKey,
+                    baseUrl,
                     modelName,
                     streamEnabled,
                     project,
