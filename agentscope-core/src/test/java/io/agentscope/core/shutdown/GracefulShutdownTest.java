@@ -115,32 +115,32 @@ class GracefulShutdownTest {
         }
 
         @Test
-        @DisplayName("DEFAULT config has isRegister set to false")
-        void defaultConfigJvmHookDisabled() {
+        @DisplayName("DEFAULT config has shutdown hook enabled")
+        void defaultConfigJvmHookEnabled() {
             GracefulShutdownConfig cfg = GracefulShutdownConfig.DEFAULT;
-            assertFalse(cfg.isRegister());
+            assertTrue(cfg.enableShutdownHook());
         }
 
         @Test
-        @DisplayName("2-param constructor sets isRegister to false")
+        @DisplayName("2-param constructor enables shutdown hook")
         void twoParamConstructorJvmHookEnabled() {
             GracefulShutdownConfig cfg =
                     new GracefulShutdownConfig(Duration.ofSeconds(10), PartialReasoningPolicy.SAVE);
-            assertFalse(cfg.isRegister());
+            assertTrue(cfg.enableShutdownHook());
         }
 
         @Test
-        @DisplayName("3-param constructor allows explicit isRegister value")
+        @DisplayName("3-param constructor allows explicit shutdown hook enabled value")
         void threeParamConstructorExplicitValue() {
             GracefulShutdownConfig cfgWithHook =
                     new GracefulShutdownConfig(
                             Duration.ofSeconds(10), PartialReasoningPolicy.SAVE, true);
-            assertTrue(cfgWithHook.isRegister());
+            assertTrue(cfgWithHook.enableShutdownHook());
 
             GracefulShutdownConfig cfgWithoutHook =
                     new GracefulShutdownConfig(
                             Duration.ofSeconds(10), PartialReasoningPolicy.SAVE, false);
-            assertFalse(cfgWithoutHook.isRegister());
+            assertFalse(cfgWithoutHook.enableShutdownHook());
         }
     }
 
@@ -612,19 +612,19 @@ class GracefulShutdownTest {
     class JvmShutdownHookTests {
 
         @Test
-        @DisplayName("register does nothing when isRegister is false")
-        void registerSkippedWhenDisabled() {
+        @DisplayName("register succeeds when shutdown hook logic is disabled")
+        void registerSucceedsWhenShutdownHookDisabled() {
             AgentScopeJvmShutdownHook.resetForTesting();
             manager.setConfig(
                     new GracefulShutdownConfig(
                             Duration.ofSeconds(10), PartialReasoningPolicy.SAVE, false));
 
-            // Should not throw and should not register the hook
+            // Registration still succeeds; the hook skips AgentScope graceful shutdown at runtime.
             assertDoesNotThrow(() -> AgentScopeJvmShutdownHook.register(manager));
         }
 
         @Test
-        @DisplayName("register is idempotent when isRegister is true")
+        @DisplayName("register is idempotent when shutdown hook logic is enabled")
         void registerIdempotentWhenEnabled() {
             AgentScopeJvmShutdownHook.resetForTesting();
             manager.setConfig(

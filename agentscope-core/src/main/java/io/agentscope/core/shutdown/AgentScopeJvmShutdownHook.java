@@ -18,6 +18,7 @@ package io.agentscope.core.shutdown;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +36,7 @@ public final class AgentScopeJvmShutdownHook {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeJvmShutdownHook.class);
     private static final AtomicBoolean REGISTERED = new AtomicBoolean(false);
+    private static final AtomicReference<Thread> SHUTDOWN_HOOK_THREAD = new AtomicReference<>();
 
     private static final Duration INTERRUPT_GRACE_PERIOD = Duration.ofSeconds(5);
 
@@ -47,37 +49,41 @@ public final class AgentScopeJvmShutdownHook {
      * the JVM hook registration behavior in isolation.
      */
     static void resetForTesting() {
-        REGISTERED.set(false);
+        if (REGISTERED.get() && REGISTERED.compareAndSet(true, false)) {
+            Runtime.getRuntime().removeShutdownHook(SHUTDOWN_HOOK_THREAD.get());
+            SHUTDOWN_HOOK_THREAD.set(null);
+        }
     }
 
     public static void register(GracefulShutdownManager manager) {
-        if (!manager.getConfig().isRegister()) {
-            return;
-        }
         if (!REGISTERED.compareAndSet(false, true)) {
             return;
         }
-        Runtime.getRuntime()
-                .addShutdownHook(
-                        new Thread(
-                                () -> {
-                                    try {
-                                        manager.performGracefulShutdown();
-                                        Duration timeout = manager.getConfig().shutdownTimeout();
-                                        // Wait for shutdown timeout + an extra grace period,
-                                        // so agents have time to handle the interrupt and
-                                        // clean up before HTTP transports are closed.
-                                        Duration awaitTimeout =
-                                                timeout != null
-                                                        ? timeout.plus(INTERRUPT_GRACE_PERIOD)
-                                                        : null;
-                                        manager.awaitTermination(awaitTimeout);
-                                    } catch (Exception e) {
-                                        log.warn("Graceful shutdown hook failed", e);
-                                    } finally {
-                                        HttpTransportFactory.shutdown();
-                                    }
-                                },
-                                "agentscope-jvm-shutdown-hook"));
+        Thread hook =
+                new Thread(
+                        () -> {
+                            if (!manager.getConfig().enableShutdownHook()) {
+                                return;
+                            }
+                            try {
+                                manager.performGracefulShutdown();
+                                Duration timeout = manager.getConfig().shutdownTimeout();
+                                // Wait for shutdown timeout + an extra grace period,
+                                // so agents have time to handle the interrupt and
+                                // clean up before HTTP transports are closed.
+                                Duration awaitTimeout =
+                                        timeout != null
+                                                ? timeout.plus(INTERRUPT_GRACE_PERIOD)
+                                                : null;
+                                manager.awaitTermination(awaitTimeout);
+                            } catch (Exception e) {
+                                log.warn("Graceful shutdown hook failed", e);
+                            } finally {
+                                HttpTransportFactory.shutdown();
+                            }
+                        },
+                        "agentscope-jvm-shutdown-hook");
+        SHUTDOWN_HOOK_THREAD.set(hook);
+        Runtime.getRuntime().addShutdownHook(hook);
     }
 }

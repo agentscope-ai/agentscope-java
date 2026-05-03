@@ -25,7 +25,7 @@ import java.util.Objects;
  * <ul>
  *   <li>Maximum time to wait for ongoing operations to complete</li>
  *   <li>Policy for handling partial reasoning results</li>
- *   <li>Policy for control register jvm shutdown hook</li>
+ *   <li>Whether AgentScope should run graceful shutdown from the JVM shutdown hook</li>
  * </ul>
  *
  * @param shutdownTimeout       maximum duration to wait for shutdown completion;
@@ -33,12 +33,13 @@ import java.util.Objects;
  *                              to complete; if specified, must be a positive duration
  * @param partialReasoningPolicy policy for handling incomplete reasoning results during shutdown;
  *                              cannot be null
- * @param isRegister Policy for control register jvm shutdown hook
+ * @param enableShutdownHook   whether AgentScope should run graceful shutdown from the JVM
+ *                             shutdown hook
  */
 public record GracefulShutdownConfig(
         Duration shutdownTimeout,
         PartialReasoningPolicy partialReasoningPolicy,
-        boolean isRegister) {
+        boolean enableShutdownHook) {
 
     /**
      * Default configuration instance.
@@ -47,11 +48,11 @@ public record GracefulShutdownConfig(
      * <ul>
      *   <li>Shutdown timeout: null (wait indefinitely)</li>
      *   <li>Partial reasoning policy: {@link PartialReasoningPolicy#SAVE}</li>
-     *   <li>Is register jvm shutdownHook: {@code false}</li>
+     *   <li>Enable AgentScope JVM shutdown hook behavior: {@code true}</li>
      * </ul>
      */
     public static final GracefulShutdownConfig DEFAULT =
-            new GracefulShutdownConfig(null, PartialReasoningPolicy.SAVE, false);
+            new GracefulShutdownConfig(null, PartialReasoningPolicy.SAVE, true);
 
     /**
      *
@@ -64,7 +65,7 @@ public record GracefulShutdownConfig(
      */
     public GracefulShutdownConfig(
             Duration shutdownTimeout, PartialReasoningPolicy partialReasoningPolicy) {
-        this(shutdownTimeout, partialReasoningPolicy, false);
+        this(shutdownTimeout, partialReasoningPolicy, true);
     }
 
     /**
