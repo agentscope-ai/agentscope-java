@@ -662,23 +662,41 @@ class AutoContextMemoryTest {
 
         // Verify that messages were compressed
         // Original: 8 initial + 1 user + 4 tool messages = 13 messages
-        // After compression: 8 initial + 1 user + 1 compressed = 10 messages (or less)
+        // After compression with preserved tool structure: 8 initial + 1 user +
+        // compressed assistant/tool pair = 11 messages (or less)
         assertTrue(
-                messages.size() <= 10,
-                "Messages should be compressed. Expected 10 or less, got " + messages.size());
+                messages.size() <= 11,
+                "Messages should be compressed. Expected 11 or less, got " + messages.size());
 
-        // Verify that the compressed message contains the expected format
-        boolean hasCompressedMessage = false;
+        // Verify that the compressed assistant summary still preserves tool call structure
+        Msg compressedAssistant = null;
         for (Msg msg : messages) {
             String content = msg.getTextContent();
             if (content != null
                     && (content.contains("compressed_current_round")
-                            || content.contains("Compressed current round summary"))) {
-                hasCompressedMessage = true;
+                            || content.contains("Compressed current round summary"))
+                    && msg.hasContentBlocks(ToolUseBlock.class)) {
+                compressedAssistant = msg;
                 break;
             }
         }
-        assertTrue(hasCompressedMessage, "Should contain compressed current round message");
+        assertNotNull(
+                compressedAssistant,
+                "Should contain a compressed current round assistant message that still carries"
+                        + " ToolUseBlock structure");
+
+        Msg compressedToolResult =
+                messages.stream()
+                        .filter(
+                                m ->
+                                        m.getRole() == MsgRole.TOOL
+                                                && m.hasContentBlocks(ToolResultBlock.class))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(
+                compressedToolResult,
+                "Compressed current round should still contain a TOOL message with ToolResultBlock"
+                        + " content");
 
         // Verify that tool messages were offloaded (can be reloaded)
         boolean hasOffloadHint = false;
@@ -715,6 +733,77 @@ class AutoContextMemoryTest {
         assertTrue(
                 offloadContext.size() >= 1,
                 "Should have at least 1 offloaded entry. Got " + offloadContext.size());
+    }
+
+    @Test
+    @DisplayName(
+            "Should preserve tool_use and tool_result pairing during current round compression")
+    void testCurrentRoundCompressionPreservesToolPairStructure() {
+        TestModel model = new TestModel("Compressed current round summary");
+        AutoContextConfig cfg =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory mem = new AutoContextMemory(cfg, model);
+
+        for (int i = 0; i < 8; i++) {
+            mem.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+
+        mem.addMessage(createTextMessage("User asks to use tools", MsgRole.USER));
+        mem.addMessage(createToolUseMessage("tool_a", "call_a"));
+        mem.addMessage(createToolResultMessage("tool_a", "call_a", "Result A"));
+        mem.addMessage(createToolUseMessage("tool_b", "call_b"));
+        mem.addMessage(createToolResultMessage("tool_b", "call_b", "Result B"));
+
+        mem.compressIfNeeded();
+
+        List<Msg> messages = mem.getMessages();
+        int latestUserIndex = -1;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i).getRole() == MsgRole.USER) {
+                latestUserIndex = i;
+                break;
+            }
+        }
+
+        assertTrue(latestUserIndex >= 0, "Expected to find the latest user message");
+        assertTrue(
+                latestUserIndex + 2 < messages.size(),
+                "Compressed current round should keep both assistant tool calls and tool results");
+
+        Msg assistantMsg = messages.get(latestUserIndex + 1);
+        Msg toolMsg = messages.get(latestUserIndex + 2);
+
+        assertEquals(
+                MsgRole.ASSISTANT,
+                assistantMsg.getRole(),
+                "Compressed current round should still expose an assistant tool-call message");
+        assertTrue(
+                assistantMsg.hasContentBlocks(ToolUseBlock.class),
+                "Compressed assistant message should preserve ToolUseBlock content");
+        assertEquals(
+                2,
+                assistantMsg.getContentBlocks(ToolUseBlock.class).size(),
+                "Compressed assistant message should preserve both tool calls");
+
+        assertEquals(
+                MsgRole.TOOL,
+                toolMsg.getRole(),
+                "Compressed current round should still expose a tool-result message");
+        assertTrue(
+                toolMsg.hasContentBlocks(ToolResultBlock.class),
+                "Compressed tool message should preserve ToolResultBlock content");
+        assertEquals(
+                2,
+                toolMsg.getContentBlocks(ToolResultBlock.class).size(),
+                "Compressed tool message should preserve both tool results");
     }
 
     @Test
