@@ -269,7 +269,7 @@ class AguiAgentAdapterTest {
 
         long contentCount =
                 events.stream().filter(e -> e instanceof AguiEvent.TextMessageContent).count();
-        assertEquals(2, contentCount, "Should stream summary chunks as text deltas");
+        assertEquals(3, contentCount, "Should stream summary chunks as text deltas");
 
         long startCount =
                 events.stream().filter(e -> e instanceof AguiEvent.TextMessageStart).count();
@@ -654,9 +654,10 @@ class AguiAgentAdapterTest {
     }
 
     @Test
-    void testTextMessageEndNotDuplicatedWhenLastEventAfterToolCall() {
-        // Test that when a text message is interrupted by a tool call and then the last event
-        // contains text blocks with the same message ID, only one TextMessageEnd is emitted
+    void testTextMessageLifecycleWhenInterruptedByToolCall() {
+        // Test that when a text message is interrupted by a tool call, the active text message
+        // is closed immediately. When subsequent text blocks with the same message ID arrive,
+        // a new text message lifecycle (Start -> Content -> End) is initiated.
         String msgId = "msg-text";
         Msg firstMsg =
                 Msg.builder()
@@ -700,7 +701,7 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Should have exactly one TextMessageEnd for the same message ID
+        // Verify that TextMessageEnd is emitted twice due to the tool call interruption
         long textEndCount =
                 events.stream()
                         .filter(e -> e instanceof AguiEvent.TextMessageEnd)
@@ -710,7 +711,19 @@ class AguiAgentAdapterTest {
                                     return msgId.equals(end.messageId());
                                 })
                         .count();
-        assertEquals(1, textEndCount, "Should have exactly 1 TextMessageEnd per message ID");
+        assertEquals(2, textEndCount, "Should emit exactly 2 TextMessageEnds: one for the interrupt, one for the final chunk");
+
+        // Optional: You can also verify that it was started twice for the same reason
+        long textStartCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .filter(
+                                e -> {
+                                    AguiEvent.TextMessageStart start = (AguiEvent.TextMessageStart) e;
+                                    return msgId.equals(start.messageId());
+                                })
+                        .count();
+        assertEquals(2, textStartCount, "Should emit exactly 2 TextMessageStarts due to the tool call interruption");
     }
 
     @Test
@@ -799,8 +812,9 @@ class AguiAgentAdapterTest {
         // Verify the event sequence
         assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
         assertInstanceOf(AguiEvent.TextMessageStart.class, events.get(1));
-        assertInstanceOf(AguiEvent.TextMessageEnd.class, events.get(2));
-        assertInstanceOf(AguiEvent.RunFinished.class, events.get(3));
+        assertInstanceOf(AguiEvent.TextMessageContent.class, events.get(2));
+        assertInstanceOf(AguiEvent.TextMessageEnd.class, events.get(3));
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(4));
     }
 
     @Test

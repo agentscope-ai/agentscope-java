@@ -35,6 +35,7 @@ import io.agentscope.core.state.State;
  *   <li>{@link VideoBlock} - Video content (URL or Base64)
  *   <li>{@link ToolUseBlock} - Tool execution requests
  *   <li>{@link ToolResultBlock} - Tool execution results
+ *   <li>{@link CustomBlock} - Custom extension block to trigger AG-UI Custom events
  * </ul>
  *
  * <p>Uses Jackson annotations for polymorphic JSON serialization with the "type" discriminator
@@ -49,7 +50,8 @@ import io.agentscope.core.state.State;
     @JsonSubTypes.Type(value = AudioBlock.class, name = "audio"),
     @JsonSubTypes.Type(value = VideoBlock.class, name = "video"),
     @JsonSubTypes.Type(value = ToolUseBlock.class, name = "tool_use"),
-    @JsonSubTypes.Type(value = ToolResultBlock.class, name = "tool_result")
+    @JsonSubTypes.Type(value = ToolResultBlock.class, name = "tool_result"),
+    @JsonSubTypes.Type(value = CustomBlock.class, name = "custom")
 })
 public sealed class ContentBlock implements State
         permits TextBlock,
@@ -58,4 +60,5 @@ public sealed class ContentBlock implements State
                 VideoBlock,
                 ThinkingBlock,
                 ToolUseBlock,
-                ToolResultBlock {}
+                ToolResultBlock,
+                CustomBlock {}
