@@ -55,8 +55,9 @@
         <module>multiagent-patterns/pipeline</module>
         <module>multiagent-patterns/skills</module>
         <module>a2a-rocketmq</module>
-        <module>harness-example</module>
+        <module>harness-example-local</module>
         <module>harness-example-sandbox</module>
+        <module>harness-example-remote</module>
     </modules>
 
     <properties>

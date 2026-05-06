@@ -869,6 +869,16 @@ public class HarnessAgent implements Agent, StateModule {
                 effectiveSession = new WorkspaceSession(resolvedWorkspace, resolvedAgentId);
             }
 
+            // Mode 1 (RemoteFilesystemSpec) is inherently distributed: automatically require a
+            // distributed Session so that conversation state is also shared across replicas.
+            if (remoteFilesystemSpec != null && effectiveSession instanceof WorkspaceSession) {
+                throw new IllegalStateException(
+                        "filesystem(RemoteFilesystemSpec) is designed for distributed / multi-replica"
+                                + " deployments, but the effective Session is a local"
+                                + " WorkspaceSession. Configure a distributed Session backend"
+                                + " (for example RedisSession) via .session(...).");
+            }
+
             AtomicReference<String> userIdRef = new AtomicReference<>();
             AtomicReference<String> sessionIdRef = new AtomicReference<>();
             AbstractFilesystem filesystem =
@@ -894,8 +904,12 @@ public class HarnessAgent implements Agent, StateModule {
                 filesystem = capturedSandboxFs;
 
                 defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
-                if (sandboxDistributedOptions != null
-                        && sandboxDistributedOptions.isRequireDistributed()) {
+                // Mode 2 (SandboxFilesystemSpec) always validates distributed prerequisites unless
+                // the caller explicitly opts out via sandboxDistributed(requireDistributed=false).
+                boolean skipDistributedValidation =
+                        sandboxDistributedOptions != null
+                                && !sandboxDistributedOptions.isRequireDistributed();
+                if (!skipDistributedValidation) {
                     validateDistributedSandboxConfig(effectiveSession, defaultSandboxContext);
                 }
 
@@ -1115,17 +1129,24 @@ public class HarnessAgent implements Agent, StateModule {
             if (sandboxFilesystemSpec.getSandboxStateStore() == null
                     && effectiveSession instanceof WorkspaceSession) {
                 throw new IllegalStateException(
-                        "sandboxDistributed(requireDistributed=true) requires a distributed"
-                                + " Session backend (for example RedisSession)."
-                                + " Current effective session is WorkspaceSession.");
+                        "filesystem(SandboxFilesystemSpec) requires a distributed Session backend"
+                                + " (for example RedisSession) to persist and restore sandbox"
+                                + " state across distributed instances."
+                                + " Configure one via .session(...)."
+                                + " For single-node use, opt out via"
+                                + " .sandboxDistributed(SandboxDistributedOptions.builder()"
+                                + ".requireDistributed(false).build()).");
             }
             if (sandboxContext == null
                     || sandboxContext.getSnapshotSpec() == null
                     || sandboxContext.getSnapshotSpec() instanceof NoopSnapshotSpec) {
                 throw new IllegalStateException(
-                        "sandboxDistributed(requireDistributed=true) requires a non-noop"
-                                + " snapshotSpec to restore workspace archives across"
-                                + " distributed instances.");
+                        "filesystem(SandboxFilesystemSpec) requires a non-noop snapshotSpec to"
+                                + " restore workspace archives across distributed instances."
+                                + " Configure one via SandboxFilesystemSpec.snapshotSpec(...)."
+                                + " For single-node use, opt out via"
+                                + " .sandboxDistributed(SandboxDistributedOptions.builder()"
+                                + ".requireDistributed(false).build()).");
             }
         }
 

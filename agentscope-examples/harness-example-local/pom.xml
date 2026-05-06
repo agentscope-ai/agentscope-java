@@ -27,7 +27,7 @@
     </parent>
 
     <name>AgentScope Java - Harness Example</name>
-    <artifactId>harness-example</artifactId>
+    <artifactId>harness-example-local</artifactId>
     <description>AgentScope Harness Example - Enhanced agent runtime with workspace context, subagent orchestration, memory management, and backend abstraction</description>
 
     <properties>
