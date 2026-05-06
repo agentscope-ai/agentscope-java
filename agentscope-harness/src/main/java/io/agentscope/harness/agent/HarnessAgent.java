@@ -40,6 +40,7 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
@@ -435,6 +436,7 @@ public class HarnessAgent implements Agent, StateModule {
 
         // Harness-specific params
         private Path workspace;
+        private Path projectWorkspace;
         private String environmentMemory;
         private AbstractFilesystem abstractFilesystem;
         private Session session;
@@ -555,6 +557,23 @@ public class HarnessAgent implements Agent, StateModule {
         /** Sets the workspace directory. Defaults to {@code ${cwd}/.agentscope/workspace}. */
         public Builder workspace(Path workspace) {
             this.workspace = workspace;
+            return this;
+        }
+
+        /**
+         * Sets the project workspace directory exposed to the built-in file tools.
+         *
+         * <p>{@link #workspace(Path)} remains the harness workspace used for {@code AGENTS.md},
+         * memory, sessions, skills, and other agent state. When this option is set, built-in file
+         * tools such as {@code read_file}, {@code write_file}, {@code edit_file}, {@code grep_files}
+         * and {@code glob_files} operate against this project directory instead, without applying
+         * the per-user namespace that is used by the harness workspace backend.
+         *
+         * <p>This is useful for applications that keep agent state in one stable directory but need
+         * the agent to work on arbitrary project folders.
+         */
+        public Builder projectWorkspace(Path projectWorkspace) {
+            this.projectWorkspace = projectWorkspace;
             return this;
         }
 
@@ -854,6 +873,8 @@ public class HarnessAgent implements Agent, StateModule {
             AtomicReference<String> sessionIdRef = new AtomicReference<>();
             AbstractFilesystem filesystem =
                     resolveFilesystem(resolvedWorkspace, resolvedAgentId, userIdRef, sessionIdRef);
+            AbstractFilesystem toolFilesystem =
+                    resolveProjectFilesystem(projectWorkspace, filesystem);
 
             // ---- Sandbox integration ----
             SandboxLifecycleHook sandboxLifecycleHook = null;
@@ -933,7 +954,7 @@ public class HarnessAgent implements Agent, StateModule {
             }
 
             if (toolResultEvictionConfig != null) {
-                allHooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
+                allHooks.add(new ToolResultEvictionHook(toolFilesystem, toolResultEvictionConfig));
             }
 
             SessionPersistenceHook sessionPersistenceHook = new SessionPersistenceHook();
@@ -957,7 +978,7 @@ public class HarnessAgent implements Agent, StateModule {
             agentToolkit.registerTool(getTool);
             agentToolkit.registerTool(new SessionSearchTool(wsManager));
 
-            agentToolkit.registerTool(new FilesystemTool(filesystem));
+            agentToolkit.registerTool(new FilesystemTool(toolFilesystem));
 
             if (filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
@@ -1089,6 +1110,14 @@ public class HarnessAgent implements Agent, StateModule {
             }
             // Default to Mode 3 with out-of-the-box LocalFilesystemWithShell settings.
             return new LocalFilesystemWithShell(workspace, nsFactory);
+        }
+
+        private AbstractFilesystem resolveProjectFilesystem(
+                Path projectWorkspace, AbstractFilesystem workspaceFilesystem) {
+            if (projectWorkspace == null) {
+                return workspaceFilesystem;
+            }
+            return new LocalFilesystem(projectWorkspace, true, 10);
         }
 
         private void validateDistributedSandboxConfig(
