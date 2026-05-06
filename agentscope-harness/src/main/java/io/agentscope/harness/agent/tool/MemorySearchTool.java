@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Uses keyword-based search through all memory files visible via the configured
  * {@link io.agentscope.harness.agent.filesystem.AbstractFilesystem} (works across Local,
- * Sandbox, and Store backends without any local SQLite dependency).
+ * Sandbox, and Store backends).
  */
 public class MemorySearchTool {
 

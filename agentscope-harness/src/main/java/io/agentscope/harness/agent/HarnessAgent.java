@@ -112,7 +112,7 @@ import reactor.core.publisher.Mono;
  *     .name("MyAgent")
  *     .model(model)
  *     .sysPrompt("You are a helpful assistant.")
- *     .workspace(Path.of("/path/to/workspace"))
+ *     .workspace("/path/to/workspace")
  *     .build();
  *
  * Msg response = agent.call(
@@ -438,7 +438,6 @@ public class HarnessAgent implements Agent, StateModule {
         private String environmentMemory;
         private AbstractFilesystem abstractFilesystem;
         private Session session;
-        private SandboxStateStore sandboxStateStore;
         private SandboxDistributedOptions sandboxDistributedOptions;
 
         /**
@@ -552,9 +551,37 @@ public class HarnessAgent implements Agent, StateModule {
             return this;
         }
 
-        /** Sets the workspace directory. Defaults to {@code ${cwd}/.agentscope/workspace}. */
+        /**
+         * Sets the workspace directory. Pass {@code null} to use the default
+         * {@code ${cwd}/.agentscope/workspace}.
+         *
+         * @see #workspace(String)
+         */
         public Builder workspace(Path workspace) {
             this.workspace = workspace;
+            return this;
+        }
+
+        /**
+         * Sets the workspace directory from a filesystem path string (resolved with
+         * {@link Path#of(String, String...)}). Equivalent to {@link #workspace(Path)} with
+         * {@code Path.of(path.strip())}.
+         *
+         * <p>Pass {@code null} for the same default as {@link #workspace(Path)} with a {@code null}
+         * argument. Blank or whitespace-only strings are rejected.
+         *
+         * @param path absolute or relative path string, or {@code null} for the default workspace
+         */
+        public Builder workspace(String path) {
+            if (path == null) {
+                this.workspace = null;
+                return this;
+            }
+            String trimmed = path.strip();
+            if (trimmed.isEmpty()) {
+                throw new IllegalArgumentException("workspace path must not be blank");
+            }
+            this.workspace = Path.of(trimmed);
             return this;
         }
 
@@ -657,17 +684,6 @@ public class HarnessAgent implements Agent, StateModule {
          */
         public Builder session(Session session) {
             this.session = session;
-            return this;
-        }
-
-        /**
-         * Overrides the store used to persist/resume sandbox session state.
-         *
-         * <p>When not set, sandbox mode uses a {@link SessionSandboxStateStore} backed by the
-         * configured {@link #session(Session)} (or the default {@link WorkspaceSession}).
-         */
-        public Builder sandboxStateStore(SandboxStateStore sandboxStateStore) {
-            this.sandboxStateStore = sandboxStateStore;
             return this;
         }
 
@@ -881,8 +897,8 @@ public class HarnessAgent implements Agent, StateModule {
                 }
 
                 SandboxStateStore stateStore =
-                        sandboxStateStore != null
-                                ? sandboxStateStore
+                        sandboxFilesystemSpec.getSandboxStateStore() != null
+                                ? sandboxFilesystemSpec.getSandboxStateStore()
                                 : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
                 SandboxManager sandboxManager =
                         new SandboxManager(
@@ -1093,7 +1109,8 @@ public class HarnessAgent implements Agent, StateModule {
 
         private void validateDistributedSandboxConfig(
                 Session effectiveSession, SandboxContext sandboxContext) {
-            if (sandboxStateStore == null && effectiveSession instanceof WorkspaceSession) {
+            if (sandboxFilesystemSpec.getSandboxStateStore() == null
+                    && effectiveSession instanceof WorkspaceSession) {
                 throw new IllegalStateException(
                         "sandboxDistributed(requireDistributed=true) requires a distributed"
                                 + " Session backend (for example RedisSession)."

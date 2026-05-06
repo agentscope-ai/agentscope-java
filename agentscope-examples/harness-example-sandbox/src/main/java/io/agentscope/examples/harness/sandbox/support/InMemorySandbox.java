@@ -18,15 +18,25 @@ package io.agentscope.examples.harness.sandbox.support;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceProjectionApplier;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 
 /**
  * In-process {@link Sandbox} that uses a local temp directory as the workspace (for examples).
+ *
+ * <p>Applies {@link WorkspaceProjectionApplier} payloads on {@link #start} and extracts tar
+ * archives in {@link #hydrateWorkspace} so host-projected skills match production behaviour.
  */
 public class InMemorySandbox implements Sandbox {
 
@@ -46,8 +56,26 @@ public class InMemorySandbox implements Sandbox {
         if (!Files.exists(workspaceDir)) {
             Files.createDirectories(workspaceDir);
         }
+        applyWorkspaceProjectionIfChanged(state.getWorkspaceSpec());
         state.setWorkspaceRootReady(true);
         running.set(true);
+    }
+
+    private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec) throws Exception {
+        WorkspaceProjectionApplier.ProjectionPayload payload =
+                WorkspaceProjectionApplier.build(spec);
+        if (payload == null) {
+            return;
+        }
+        if (Objects.equals(payload.hash(), state.getWorkspaceProjectionHash())) {
+            return;
+        }
+        if (payload.fileCount() > 0) {
+            try (InputStream archive = new ByteArrayInputStream(payload.tarBytes())) {
+                hydrateWorkspace(archive);
+            }
+        }
+        state.setWorkspaceProjectionHash(payload.hash());
     }
 
     @Override
@@ -107,7 +135,33 @@ public class InMemorySandbox implements Sandbox {
 
     @Override
     public void hydrateWorkspace(InputStream archive) throws Exception {
-        // no-op
+        if (archive == null) {
+            return;
+        }
+        Path root = workspaceDir.normalize();
+        try (TarArchiveInputStream tar = new TarArchiveInputStream(archive)) {
+            TarArchiveEntry entry;
+            while ((entry = tar.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String name = entry.getName();
+                if (name.startsWith("/")) {
+                    name = name.substring(1);
+                }
+                if (name.isBlank()) {
+                    continue;
+                }
+                Path dest = root.resolve(name).normalize();
+                if (!dest.startsWith(root)) {
+                    throw new IOException("Tar entry escapes workspace: " + name);
+                }
+                Files.createDirectories(dest.getParent());
+                try (OutputStream out = Files.newOutputStream(dest)) {
+                    tar.transferTo(out);
+                }
+            }
+        }
     }
 
     public Path getWorkspaceDir() {

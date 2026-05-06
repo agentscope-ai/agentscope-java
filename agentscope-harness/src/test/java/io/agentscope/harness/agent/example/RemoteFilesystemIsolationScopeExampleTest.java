@@ -95,7 +95,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
@@ -128,7 +128,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
@@ -165,7 +165,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
                         .build();
@@ -198,7 +198,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
                         .build();
@@ -231,7 +231,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("shared-assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.AGENT))

@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.memory;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -54,6 +55,8 @@ import reactor.core.publisher.Mono;
  * Sandbox, and Remote filesystems without any direct {@code java.nio.file.Files} usage).
  */
 public class MemoryConsolidator {
+
+    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
 
     private static final Logger log = LoggerFactory.getLogger(MemoryConsolidator.class);
 
@@ -186,7 +189,7 @@ public class MemoryConsolidator {
             return "";
         }
 
-        GlobResult glob = fs.glob("*.md", "memory");
+        GlobResult glob = fs.glob(DEFAULT_FS_RUNTIME, "*.md", "memory");
         if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
             return "";
         }

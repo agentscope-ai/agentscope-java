@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -64,11 +65,15 @@ public class SandboxLifecycleHook implements Hook, RuntimeContextAware {
     private RuntimeContext runtimeContext;
 
     /**
-     * Thread-local acquire result to track the session acquired for the current call.
-     * Using ThreadLocal allows concurrent calls on different threads to have independent
-     * session state.
+     * Holds the acquire result between {@link PreCallEvent} and {@link PostCallEvent}.
+     *
+     * <p>Not {@link ThreadLocal}: Reactor may resume hook stages on different threads, so a
+     * thread-local would drop the handle and skip persist/release. A typical {@link
+     * io.agentscope.harness.agent.HarnessAgent} rejects concurrent calls per agent, so a single
+     * {@link AtomicReference} is sufficient.
      */
-    private final ThreadLocal<SandboxAcquireResult> currentAcquireResult = new ThreadLocal<>();
+    private final AtomicReference<SandboxAcquireResult> currentAcquireResult =
+            new AtomicReference<>();
 
     /**
      * Creates the hook.
@@ -157,10 +162,13 @@ public class SandboxLifecycleHook implements Hook, RuntimeContextAware {
     private <T extends HookEvent> Mono<T> handlePost(T event) {
         return Mono.fromCallable(
                 () -> {
-                    SandboxAcquireResult result = currentAcquireResult.get();
-                    currentAcquireResult.remove();
+                    SandboxAcquireResult result = currentAcquireResult.getAndSet(null);
 
                     if (result == null) {
+                        log.warn(
+                                "[sandbox-hook] PostCall/ErrorEvent: no in-flight acquire result"
+                                        + " (persist/release skipped — was PreCall skipped or ref"
+                                        + " already consumed?)");
                         return event;
                     }
 

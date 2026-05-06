@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.hook;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
@@ -54,6 +55,8 @@ import reactor.core.publisher.Mono;
  * Remote filesystems.
  */
 public class MemoryMaintenanceHook implements Hook {
+
+    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
 
     private static final Logger log = LoggerFactory.getLogger(MemoryMaintenanceHook.class);
 
@@ -126,7 +129,7 @@ public class MemoryMaintenanceHook implements Hook {
         if (fs == null) {
             return;
         }
-        GlobResult glob = fs.glob("*.md", WorkspaceConstants.MEMORY_DIR);
+        GlobResult glob = fs.glob(DEFAULT_FS_RUNTIME, "*.md", WorkspaceConstants.MEMORY_DIR);
         if (glob == null || glob.matches() == null) {
             return;
         }
@@ -149,7 +152,7 @@ public class MemoryMaintenanceHook implements Hook {
                 if (fileDate.isBefore(cutoff)) {
                     String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
                     String toPath = WorkspaceConstants.MEMORY_DIR + "/archive/" + fileName;
-                    fs.move(fromPath, toPath);
+                    fs.move(DEFAULT_FS_RUNTIME, fromPath, toPath);
                     log.debug("Archived expired daily file: {}", fileName);
                 }
             } catch (Exception e) {
@@ -174,7 +177,7 @@ public class MemoryMaintenanceHook implements Hook {
         if (fs == null) {
             return;
         }
-        GlobResult glob = fs.glob("*.log.jsonl", WorkspaceConstants.AGENTS_DIR);
+        GlobResult glob = fs.glob(DEFAULT_FS_RUNTIME, "*.log.jsonl", WorkspaceConstants.AGENTS_DIR);
         if (glob == null || glob.matches() == null) {
             return;
         }
@@ -191,7 +194,7 @@ public class MemoryMaintenanceHook implements Hook {
             try {
                 Instant modified = Instant.parse(modifiedAt);
                 if (modified.isBefore(cutoff)) {
-                    fs.delete(fi.path());
+                    fs.delete(DEFAULT_FS_RUNTIME, fi.path());
                     log.debug("Pruned old session file: {}", fi.path());
                 }
             } catch (Exception e) {

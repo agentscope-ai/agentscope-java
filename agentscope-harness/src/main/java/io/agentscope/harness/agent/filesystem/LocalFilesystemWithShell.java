@@ -61,6 +61,21 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     }
 
     /**
+     * Same as {@link #LocalFilesystemWithShell(Path)} with a path string; see
+     * {@link LocalFilesystem#LocalFilesystem(String)} for {@code null} / blank rules.
+     */
+    public LocalFilesystemWithShell(String rootDir) {
+        this(
+                LocalFilesystem.rootDirFromString(rootDir),
+                false,
+                DEFAULT_EXECUTE_TIMEOUT,
+                100_000,
+                null,
+                false,
+                null);
+    }
+
+    /**
      * Creates an abstract filesystem with default settings and namespace support.
      *
      * @param rootDir working directory for both filesystem and shell operations
@@ -68,6 +83,21 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      */
     public LocalFilesystemWithShell(Path rootDir, NamespaceFactory namespaceFactory) {
         this(rootDir, false, DEFAULT_EXECUTE_TIMEOUT, 100_000, null, false, namespaceFactory);
+    }
+
+    /**
+     * Same as {@link #LocalFilesystemWithShell(Path, NamespaceFactory)} with a path string; see
+     * {@link LocalFilesystem#LocalFilesystem(String)} for {@code null} / blank rules.
+     */
+    public LocalFilesystemWithShell(String rootDir, NamespaceFactory namespaceFactory) {
+        this(
+                LocalFilesystem.rootDirFromString(rootDir),
+                false,
+                DEFAULT_EXECUTE_TIMEOUT,
+                100_000,
+                null,
+                false,
+                namespaceFactory);
     }
 
     /**
@@ -88,6 +118,27 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             Map<String, String> env,
             boolean inheritEnv) {
         this(rootDir, virtualMode, timeout, maxOutputBytes, env, inheritEnv, null);
+    }
+
+    /**
+     * Same as {@link #LocalFilesystemWithShell(Path, boolean, int, int, Map, boolean)} with a path
+     * string; see {@link LocalFilesystem#LocalFilesystem(String)} for {@code null} / blank rules.
+     */
+    public LocalFilesystemWithShell(
+            String rootDir,
+            boolean virtualMode,
+            int timeout,
+            int maxOutputBytes,
+            Map<String, String> env,
+            boolean inheritEnv) {
+        this(
+                LocalFilesystem.rootDirFromString(rootDir),
+                virtualMode,
+                timeout,
+                maxOutputBytes,
+                env,
+                inheritEnv,
+                null);
     }
 
     /**
@@ -128,6 +179,29 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         } else {
             this.env = env != null ? Map.copyOf(env) : Map.of();
         }
+    }
+
+    /**
+     * Same as {@link #LocalFilesystemWithShell(Path, boolean, int, int, Map, boolean,
+     * NamespaceFactory)} with a path string; see {@link LocalFilesystem#LocalFilesystem(String)}
+     * for {@code null} / blank rules.
+     */
+    public LocalFilesystemWithShell(
+            String rootDir,
+            boolean virtualMode,
+            int timeout,
+            int maxOutputBytes,
+            Map<String, String> env,
+            boolean inheritEnv,
+            NamespaceFactory namespaceFactory) {
+        this(
+                LocalFilesystem.rootDirFromString(rootDir),
+                virtualMode,
+                timeout,
+                maxOutputBytes,
+                env,
+                inheritEnv,
+                namespaceFactory);
     }
 
     @Override

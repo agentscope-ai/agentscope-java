@@ -14,7 +14,7 @@
 
 1. 用 **`SandboxFilesystemSpec#toSandboxContext(hostWorkspaceRoot)`** 得到 **`SandboxContext`**（内含 `SandboxClient`、隔离范围、快照 spec、`WorkspaceSpec` 等），并同时把宿主侧需要投影进沙箱的目录（`AGENTS.md`、`skills/`、`subagents/`、`knowledge/`）装入一个 `WorkspaceProjectionEntry`（见 [§6 工作区投影](#6-工作区投影与-skills-同步)）。
 2. 使用 **`SandboxBackedFilesystem`** 作为 agent 的 `AbstractFilesystem` 实现（对上层透明）。
-3. 构造 **`SandboxManager(client, stateStore, agentId)`**；未显式配置 `sandboxStateStore` 时，默认使用 **`SessionSandboxStateStore(effectiveSession, agentId)`**，将沙箱元数据与当前 `Session` 关联。
+3. 构造 **`SandboxManager(client, stateStore, agentId)`**；未在 **`SandboxFilesystemSpec#sandboxStateStore`** 上显式配置时，默认使用 **`SessionSandboxStateStore(effectiveSession, agentId)`**，将沙箱元数据与当前 `Session` 关联。
 4. 注册 **`SandboxLifecycleHook(sandboxManager, filesystemProxy)`**（优先级 `50`）：在每次 `PreCall` 中 **acquire → `start()`**（含 4-分支工作区初始化，见 [§5 快照与 4-分支恢复](#5-快照与-4-分支恢复)），在 **`PostCall` / `Error`** 中 **`stop()`（持久快照）→ 持久化 state → release** 并清空代理上的活动会话。
 
 只有后端实现 **`AbstractSandboxFilesystem`** 时，`HarnessAgent` 才会注册 **`ShellExecuteTool`**；沙箱模式下文件与 shell 命令都走沙箱内部，宿主机不受影响。
@@ -261,7 +261,7 @@ call 3: shell_execute("cat results.csv")      → 读 call 2 产生的文件
 
 ## 7. 状态：`SandboxStateStore` 与 `Session`
 
-- **`SandboxStateStore`**：抽象「与某次隔离键绑定的沙箱元数据（sessionId + 快照引用）」的持久化。便于替换为自定义实现。
+- **`SandboxStateStore`**：抽象「与某次隔离键绑定的沙箱元数据（sessionId + 快照引用）」的持久化。便于替换为自定义实现；在 **`SandboxFilesystemSpec#sandboxStateStore`** 上配置（未设置则走默认）。
 - **默认 `SessionSandboxStateStore`**：依赖构建时选定的 `Session`（与 `SessionPersistenceHook` 等共用的**会话抽象**；若你使用 Redis 等分布式 `Session`，沙箱元数据可随之跨进程可见）。
 - **`WorkspaceSession`** 仍负责**工作区布局下的 per-session 配置**；**不要**将 `WorkspaceSession` 的 JSON 与「沙箱 state JSON」混为同一套职责——沙箱的 resume 数据以 **`SandboxStateStore`** 为准。
 

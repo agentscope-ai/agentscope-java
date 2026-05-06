@@ -89,7 +89,7 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
                         .build();
 
@@ -119,7 +119,7 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
                         .build();
 
@@ -153,7 +153,7 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
                         .build();
 
@@ -182,7 +182,7 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
                         .build();
 
@@ -215,7 +215,7 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("shared-assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
                         .build();
 

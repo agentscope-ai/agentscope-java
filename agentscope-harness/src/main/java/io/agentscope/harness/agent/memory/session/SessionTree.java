@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.memory.session;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
@@ -52,6 +53,8 @@ import org.slf4j.LoggerFactory;
  * failed/short interactions.
  */
 public class SessionTree {
+
+    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
 
     private static final Logger log = LoggerFactory.getLogger(SessionTree.class);
     private static final int SESSION_FORMAT_VERSION = 1;
@@ -318,7 +321,7 @@ public class SessionTree {
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
-        ReadResult read = filesystem.read(relativePath, 0, 0);
+        ReadResult read = filesystem.read(DEFAULT_FS_RUNTIME, relativePath, 0, 0);
         if (!read.isSuccess() || read.fileData() == null || read.fileData().content() == null) {
             return;
         }
@@ -351,7 +354,7 @@ public class SessionTree {
         }
         try {
             byte[] bytes = Files.readAllBytes(file);
-            filesystem.uploadFiles(List.of(Map.entry(relativePath, bytes)));
+            filesystem.uploadFiles(DEFAULT_FS_RUNTIME, List.of(Map.entry(relativePath, bytes)));
         } catch (IOException e) {
             log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
         }

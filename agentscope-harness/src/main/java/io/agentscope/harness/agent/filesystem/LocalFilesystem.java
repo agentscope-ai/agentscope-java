@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
@@ -71,6 +72,17 @@ public class LocalFilesystem implements AbstractFilesystem {
     private final NamespaceFactory namespaceFactory;
 
     /**
+     * Same as {@link #LocalFilesystem(Path)} with {@link Path#of(String, String...) Path.of(path)}
+     * after {@link String#strip()}. Pass {@code null} for the same CWD semantics as a {@code null}
+     * {@link Path}. Blank strings are rejected.
+     *
+     * @param rootDir filesystem root as a path string, or {@code null} for process working directory
+     */
+    public LocalFilesystem(String rootDir) {
+        this(rootDirFromString(rootDir), false, DEFAULT_MAX_FILE_SIZE_MB, null);
+    }
+
+    /**
      * Creates a abstract filesystem rooted at the given directory.
      *
      * @param rootDir root directory for all operations ({@code null} means CWD)
@@ -88,6 +100,14 @@ public class LocalFilesystem implements AbstractFilesystem {
      */
     public LocalFilesystem(Path rootDir, boolean virtualMode, int maxFileSizeMb) {
         this(rootDir, virtualMode, maxFileSizeMb, null);
+    }
+
+    /**
+     * Same as {@link #LocalFilesystem(Path, boolean, int)} with a path string; see
+     * {@link #LocalFilesystem(String)} for {@code null} / blank rules.
+     */
+    public LocalFilesystem(String rootDir, boolean virtualMode, int maxFileSizeMb) {
+        this(rootDirFromString(rootDir), virtualMode, maxFileSizeMb, null);
     }
 
     /**
@@ -117,6 +137,33 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     /**
+     * Same as {@link #LocalFilesystem(Path, boolean, int, NamespaceFactory)} with a path string;
+     * see {@link #LocalFilesystem(String)} for {@code null} / blank rules.
+     */
+    public LocalFilesystem(
+            String rootDir,
+            boolean virtualMode,
+            int maxFileSizeMb,
+            NamespaceFactory namespaceFactory) {
+        this(rootDirFromString(rootDir), virtualMode, maxFileSizeMb, namespaceFactory);
+    }
+
+    /**
+     * Converts a root path string to {@link Path}. {@code null} yields {@code null} (CWD). Non-null
+     * values must be non-blank after {@link String#strip()}.
+     */
+    static Path rootDirFromString(String rootDir) {
+        if (rootDir == null) {
+            return null;
+        }
+        String trimmed = rootDir.strip();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("root directory path must not be blank");
+        }
+        return Path.of(trimmed);
+    }
+
+    /**
      * Returns the root directory for this filesystem.
      */
     public Path getCwd() {
@@ -124,7 +171,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public LsResult ls(String path) {
+    public LsResult ls(RuntimeContext runtimeContext, String path) {
         Path dirPath = resolvePath(path);
         if (!Files.exists(dirPath) || !Files.isDirectory(dirPath)) {
             return LsResult.success(List.of());
@@ -159,7 +206,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public ReadResult read(String filePath, int offset, int limit) {
+    public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
         Path resolved = resolvePath(filePath);
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {
@@ -209,7 +256,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public WriteResult write(String filePath, String content) {
+    public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         Path resolved = resolvePath(filePath);
 
         if (Files.exists(resolved)) {
@@ -233,7 +280,11 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     @Override
     public EditResult edit(
-            String filePath, String oldString, String newString, boolean replaceAll) {
+            RuntimeContext runtimeContext,
+            String filePath,
+            String oldString,
+            String newString,
+            boolean replaceAll) {
         Path resolved = resolvePath(filePath);
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {
@@ -264,7 +315,8 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public GrepResult grep(String pattern, String path, String glob) {
+    public GrepResult grep(
+            RuntimeContext runtimeContext, String pattern, String path, String glob) {
         Path basePath;
         try {
             basePath = resolvePath(path != null ? path : ".");
@@ -284,7 +336,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public GlobResult glob(String pattern, String path) {
+    public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
         String effectivePattern = pattern;
         if (effectivePattern.startsWith("/")) {
             effectivePattern = effectivePattern.substring(1);
@@ -341,7 +393,8 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public List<FileUploadResponse> uploadFiles(List<Map.Entry<String, byte[]>> files) {
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
         List<FileUploadResponse> responses = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : files) {
             String filePath = entry.getKey();
@@ -363,7 +416,8 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public List<FileDownloadResponse> downloadFiles(List<String> paths) {
+    public List<FileDownloadResponse> downloadFiles(
+            RuntimeContext runtimeContext, List<String> paths) {
         List<FileDownloadResponse> responses = new ArrayList<>();
         for (String filePath : paths) {
             try {
@@ -388,7 +442,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public WriteResult delete(String path) {
+    public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
         Path resolved = resolvePath(path);
         if (!Files.exists(resolved)) {
@@ -417,7 +471,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public WriteResult move(String fromPath, String toPath) {
+    public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
         AbstractFilesystem.validatePath(fromPath);
         AbstractFilesystem.validatePath(toPath);
         Path from = resolvePath(fromPath);
@@ -438,7 +492,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public boolean exists(String path) {
+    public boolean exists(RuntimeContext runtimeContext, String path) {
         if (path == null || path.isBlank()) {
             return false;
         }

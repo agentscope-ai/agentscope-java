@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.BaseSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
@@ -89,7 +90,8 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     @Override
-    public List<FileUploadResponse> uploadFiles(List<Map.Entry<String, byte[]>> files) {
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
         Sandbox active = requireSandbox();
         List<FileUploadResponse> results = new ArrayList<>(files.size());
 
@@ -132,7 +134,8 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     @Override
-    public List<FileDownloadResponse> downloadFiles(List<String> paths) {
+    public List<FileDownloadResponse> downloadFiles(
+            RuntimeContext runtimeContext, List<String> paths) {
         Sandbox active = requireSandbox();
         List<FileDownloadResponse> results = new ArrayList<>(paths.size());
 

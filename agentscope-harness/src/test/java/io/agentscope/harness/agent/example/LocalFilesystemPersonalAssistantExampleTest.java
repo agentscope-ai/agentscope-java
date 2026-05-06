@@ -83,7 +83,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
                 HarnessAgent.builder()
                         .name("my-local-assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
                         .build();
 
@@ -122,7 +122,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
                 HarnessAgent.builder()
                         .name("my-local-assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
                         .build();
 
@@ -151,7 +151,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
                 HarnessAgent.builder()
                         .name("my-local-assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
                         .build();
 

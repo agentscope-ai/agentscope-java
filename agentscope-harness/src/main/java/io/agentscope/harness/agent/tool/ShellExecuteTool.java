@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.AbstractSandboxFilesystem;
@@ -31,11 +32,16 @@ public class ShellExecuteTool {
         this.sandbox = sandbox;
     }
 
+    /**
+     * @param runtimeContext per-call agent runtime injected by the framework (not an LLM argument);
+     *     may be {@code null} when no merged context is available
+     */
     @Tool(
             description =
                     "Execute a shell command. Use for git, npm, build, test, and other terminal"
                             + " operations. Returns combined output and exit code.")
     public String execute(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "command", description = "Shell command to execute") String command,
             @ToolParam(
                             name = "working_directory",
