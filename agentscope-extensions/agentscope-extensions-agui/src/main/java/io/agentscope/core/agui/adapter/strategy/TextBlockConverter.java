@@ -36,7 +36,7 @@ public class TextBlockConverter implements BlockEventConverter<TextBlock> {
         String text = block.getText();
         String msgId = event.getMessage().getId();
 
-        if (text != null && !text.isEmpty()) {
+        if (text != null && !text.isBlank()) {
             if (!ctx.isTextActive(msgId)) {
                 ctx.flushAllActiveTexts();
 

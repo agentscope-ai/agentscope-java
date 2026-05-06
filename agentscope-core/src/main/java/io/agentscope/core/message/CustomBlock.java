@@ -36,12 +36,12 @@ public final class CustomBlock extends ContentBlock {
     /**
      * Creates a new custom block for JSON deserialization.
      *
-     * @param name The name of the custom event
+     * @param name The name of the custom event (null will be converted to empty string)
      * @param value The arbitrary payload value associated with the event
      */
     @JsonCreator
     public CustomBlock(@JsonProperty("name") String name, @JsonProperty("value") Object value) {
-        this.name = name;
+        this.name = name != null ? name : "";
         this.value = value;
     }
 
@@ -105,10 +105,10 @@ public final class CustomBlock extends ContentBlock {
         /**
          * Builds a new CustomBlock with the configured properties.
          *
-         * @return A new CustomBlock instance
+         * @return A new CustomBlock instance (null name will be converted to empty string)
          */
         public CustomBlock build() {
-            return new CustomBlock(name, value);
+            return new CustomBlock(name != null ? name : "", value);
         }
     }
 }

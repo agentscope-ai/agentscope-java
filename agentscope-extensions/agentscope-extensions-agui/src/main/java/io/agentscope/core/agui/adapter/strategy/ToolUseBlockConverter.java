@@ -46,7 +46,10 @@ public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> 
             ctx.flushAllActiveTexts();
             ctx.flushAllActiveReasonings();
 
-            String toolName = block.getName() != null ? block.getName() : "unknown";
+            String toolName =
+                    block.getName() != null && !block.getName().isBlank()
+                            ? block.getName()
+                            : "unknown";
             ctx.emit(
                     new AguiEvent.ToolCallStart(
                             ctx.getThreadId(), ctx.getRunId(), toolCallId, toolName));
@@ -59,7 +62,7 @@ public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> 
         // Emit tool call args if enabled
         if (ctx.getConfig().isEmitToolCallArgs() && !event.isLast()) {
             String args = block.getContent();
-            if (args != null && !args.isEmpty()) {
+            if (args != null && !args.isBlank()) {
                 ctx.emit(
                         new AguiEvent.ToolCallArgs(
                                 ctx.getThreadId(), ctx.getRunId(), toolCallId, args));

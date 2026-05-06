@@ -66,14 +66,29 @@ public class StreamContext {
         this.config = config;
     }
 
+    /**
+     * Returns the thread identifier associated with this stream context.
+     *
+     * @return the thread ID
+     */
     public String getThreadId() {
         return threadId;
     }
 
+    /**
+     * Returns the run identifier associated with this stream context.
+     *
+     * @return the run ID
+     */
     public String getRunId() {
         return runId;
     }
 
+    /**
+     * Returns the adapter configuration used by this stream context.
+     *
+     * @return the adapter configuration
+     */
     public AguiAdapterConfig getConfig() {
         return config;
     }
