@@ -20,7 +20,6 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agui.adapter.StreamContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.message.ToolUseBlock;
-
 import java.util.UUID;
 
 /**
@@ -35,8 +34,12 @@ public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> 
 
     @Override
     public void convert(ToolUseBlock block, Event event, StreamContext ctx) {
-        String toolCallId = block.getId() != null ? block.getId() :
-                (ctx.getLastActiveToolId() != null ? ctx.getLastActiveToolId() : UUID.randomUUID().toString());
+        String toolCallId =
+                block.getId() != null
+                        ? block.getId()
+                        : (ctx.getLastActiveToolId() != null
+                                ? ctx.getLastActiveToolId()
+                                : UUID.randomUUID().toString());
 
         if (!ctx.isToolActive(toolCallId)) {
             // End any active Text/Reasoning message before starting tool call
@@ -44,8 +47,11 @@ public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> 
             ctx.flushAllActiveReasonings();
 
             String toolName = block.getName() != null ? block.getName() : "unknown";
-            ctx.emit(new AguiEvent.ToolCallStart(ctx.getThreadId(), ctx.getRunId(), toolCallId, toolName));
-            ctx.deferEndEvent(StreamContext.PREFIX_TOOL + toolCallId,
+            ctx.emit(
+                    new AguiEvent.ToolCallStart(
+                            ctx.getThreadId(), ctx.getRunId(), toolCallId, toolName));
+            ctx.deferEndEvent(
+                    StreamContext.PREFIX_TOOL + toolCallId,
                     new AguiEvent.ToolCallEnd(ctx.getThreadId(), ctx.getRunId(), toolCallId));
             ctx.addActiveTool(toolCallId);
         }
@@ -54,7 +60,9 @@ public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> 
         if (ctx.getConfig().isEmitToolCallArgs() && !event.isLast()) {
             String args = block.getContent();
             if (args != null && !args.isEmpty()) {
-                ctx.emit(new AguiEvent.ToolCallArgs(ctx.getThreadId(), ctx.getRunId(), toolCallId, args));
+                ctx.emit(
+                        new AguiEvent.ToolCallArgs(
+                                ctx.getThreadId(), ctx.getRunId(), toolCallId, args));
             }
         }
     }

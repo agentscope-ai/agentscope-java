@@ -33,11 +33,8 @@ public class CustomBlockConverter implements BlockEventConverter<CustomBlock> {
 
     @Override
     public void convert(CustomBlock block, Event event, StreamContext ctx) {
-        ctx.emit(new AguiEvent.Custom(
-                ctx.getThreadId(),
-                ctx.getRunId(),
-                block.getName(),
-                block.getValue()
-        ));
+        ctx.emit(
+                new AguiEvent.Custom(
+                        ctx.getThreadId(), ctx.getRunId(), block.getName(), block.getValue()));
     }
 }

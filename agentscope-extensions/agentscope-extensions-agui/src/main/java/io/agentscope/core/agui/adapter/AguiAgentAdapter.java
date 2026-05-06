@@ -19,13 +19,13 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
 import io.agentscope.core.agui.adapter.strategy.CustomBlockConverter;
 import io.agentscope.core.agui.adapter.strategy.TextBlockConverter;
 import io.agentscope.core.agui.adapter.strategy.ThinkingBlockConverter;
 import io.agentscope.core.agui.adapter.strategy.ToolResultBlockConverter;
 import io.agentscope.core.agui.adapter.strategy.ToolUseBlockConverter;
+import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
@@ -35,13 +35,12 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import reactor.core.publisher.Flux;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import reactor.core.publisher.Flux;
 
 /**
  * Adapter that bridges AgentScope agents to the AG-UI protocol.
@@ -105,27 +104,32 @@ public class AguiAgentAdapter {
         String runId = input.getRunId();
         List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
         // Create stream options - use incremental mode for true streaming
-        StreamOptions options = StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
+        StreamOptions options =
+                StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
 
-        return Flux.defer(() -> {
-            StreamContext ctx = new StreamContext(threadId, runId, config);
+        return Flux.defer(
+                () -> {
+                    StreamContext ctx = new StreamContext(threadId, runId, config);
 
-            return Flux.concat(
-                    // Emit RUN_STARTED
-                    Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                    return Flux.concat(
+                                    // Emit RUN_STARTED
+                                    Flux.just(new AguiEvent.RunStarted(threadId, runId)),
 
-                    // Stream agent events and convert to AG-UI events
-                    // Use concatMapIterable to preserve strict event ordering
-                    agent.stream(msgs, options)
-                            .concatMapIterable(event -> processEvent(event, ctx)),
+                                    // Stream agent events and convert to AG-UI events
+                                    // Use concatMapIterable to preserve strict event ordering
+                                    agent.stream(msgs, options)
+                                            .concatMapIterable(event -> processEvent(event, ctx)),
 
-                    // Emit any pending end events
-                    Flux.defer(() -> Flux.fromIterable(ctx.flushAllRemainingDeferred())),
+                                    // Emit any pending end events
+                                    Flux.defer(
+                                            () ->
+                                                    Flux.fromIterable(
+                                                            ctx.flushAllRemainingDeferred())),
 
-                    // Emit RUN_FINISHED
-                    Flux.just(new AguiEvent.RunFinished(threadId, runId))
-            ).onErrorResume(error -> handleError(threadId, runId, ctx, error));
-        });
+                                    // Emit RUN_FINISHED
+                                    Flux.just(new AguiEvent.RunFinished(threadId, runId)))
+                            .onErrorResume(error -> handleError(threadId, runId, ctx, error));
+                });
     }
 
     /**
@@ -160,11 +164,13 @@ public class AguiAgentAdapter {
      * @param error    The thrown exception
      * @return A Flux containing the fallback closure events
      */
-    private Flux<AguiEvent> handleError(String threadId, String runId, StreamContext ctx, Throwable error) {
+    private Flux<AguiEvent> handleError(
+            String threadId, String runId, StreamContext ctx, Throwable error) {
         List<AguiEvent> events = new ArrayList<>();
         events.addAll(ctx.flushAllRemainingDeferred());
 
-        String msg = error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
+        String msg =
+                error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
         events.add(new AguiEvent.Raw(threadId, runId, Map.of("error", msg)));
         events.add(new AguiEvent.RunFinished(threadId, runId));
 

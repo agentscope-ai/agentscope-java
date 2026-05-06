@@ -22,7 +22,6 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-
 import java.util.UUID;
 
 /**
@@ -37,8 +36,12 @@ public class ToolResultBlockConverter implements BlockEventConverter<ToolResultB
 
     @Override
     public void convert(ToolResultBlock block, Event event, StreamContext ctx) {
-        String toolCallId = block.getId() != null ? block.getId() :
-                (ctx.getLastActiveToolId() != null ? ctx.getLastActiveToolId() : UUID.randomUUID().toString());
+        String toolCallId =
+                block.getId() != null
+                        ? block.getId()
+                        : (ctx.getLastActiveToolId() != null
+                                ? ctx.getLastActiveToolId()
+                                : UUID.randomUUID().toString());
         String result = extractToolResultText(block);
 
         // Closing Start/End Phase
@@ -47,19 +50,24 @@ public class ToolResultBlockConverter implements BlockEventConverter<ToolResultB
         } else {
             // Fall-back: The previous process did not proceed to Start for some reason
             // (e.g., recovery directly from the context)
-            String toolName = block.getName() != null && !block.getName().isBlank() ? block.getName() : "unknown";
-            ctx.emit(new AguiEvent.ToolCallStart(ctx.getThreadId(), ctx.getRunId(), toolCallId, toolName));
+            String toolName =
+                    block.getName() != null && !block.getName().isBlank()
+                            ? block.getName()
+                            : "unknown";
+            ctx.emit(
+                    new AguiEvent.ToolCallStart(
+                            ctx.getThreadId(), ctx.getRunId(), toolCallId, toolName));
             ctx.emit(new AguiEvent.ToolCallEnd(ctx.getThreadId(), ctx.getRunId(), toolCallId));
         }
 
-        ctx.emit(new AguiEvent.ToolCallResult(
-                ctx.getThreadId(),
-                ctx.getRunId(),
-                toolCallId,
-                result != null ? result : "",
-                "tool",
-                event.getMessage().getId()
-        ));
+        ctx.emit(
+                new AguiEvent.ToolCallResult(
+                        ctx.getThreadId(),
+                        ctx.getRunId(),
+                        toolCallId,
+                        result != null ? result : "",
+                        "tool",
+                        event.getMessage().getId()));
 
         if (ctx.isToolActive(toolCallId)) {
             ctx.removeActiveTool(toolCallId);

@@ -711,7 +711,11 @@ class AguiAgentAdapterTest {
                                     return msgId.equals(end.messageId());
                                 })
                         .count();
-        assertEquals(2, textEndCount, "Should emit exactly 2 TextMessageEnds: one for the interrupt, one for the final chunk");
+        assertEquals(
+                2,
+                textEndCount,
+                "Should emit exactly 2 TextMessageEnds: one for the interrupt, one for the final"
+                        + " chunk");
 
         // Optional: You can also verify that it was started twice for the same reason
         long textStartCount =
@@ -719,11 +723,15 @@ class AguiAgentAdapterTest {
                         .filter(e -> e instanceof AguiEvent.TextMessageStart)
                         .filter(
                                 e -> {
-                                    AguiEvent.TextMessageStart start = (AguiEvent.TextMessageStart) e;
+                                    AguiEvent.TextMessageStart start =
+                                            (AguiEvent.TextMessageStart) e;
                                     return msgId.equals(start.messageId());
                                 })
                         .count();
-        assertEquals(2, textStartCount, "Should emit exactly 2 TextMessageStarts due to the tool call interruption");
+        assertEquals(
+                2,
+                textStartCount,
+                "Should emit exactly 2 TextMessageStarts due to the tool call interruption");
     }
 
     @Test

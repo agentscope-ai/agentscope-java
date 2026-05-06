@@ -40,9 +40,7 @@ public final class CustomBlock extends ContentBlock {
      * @param value The arbitrary payload value associated with the event
      */
     @JsonCreator
-    public CustomBlock(
-            @JsonProperty("name") String name,
-            @JsonProperty("value") Object value) {
+    public CustomBlock(@JsonProperty("name") String name, @JsonProperty("value") Object value) {
         this.name = name;
         this.value = value;
     }

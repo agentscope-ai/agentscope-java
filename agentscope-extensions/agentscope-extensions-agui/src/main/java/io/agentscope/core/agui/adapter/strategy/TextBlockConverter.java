@@ -40,12 +40,18 @@ public class TextBlockConverter implements BlockEventConverter<TextBlock> {
             if (!ctx.isTextActive(msgId)) {
                 ctx.flushAllActiveTexts();
 
-                ctx.emit(new AguiEvent.TextMessageStart(ctx.getThreadId(), ctx.getRunId(), msgId, "assistant"));
-                ctx.deferEndEvent(StreamContext.PREFIX_TEXT + msgId, new AguiEvent.TextMessageEnd(ctx.getThreadId(), ctx.getRunId(), msgId));
+                ctx.emit(
+                        new AguiEvent.TextMessageStart(
+                                ctx.getThreadId(), ctx.getRunId(), msgId, "assistant"));
+                ctx.deferEndEvent(
+                        StreamContext.PREFIX_TEXT + msgId,
+                        new AguiEvent.TextMessageEnd(ctx.getThreadId(), ctx.getRunId(), msgId));
                 ctx.addActiveText(msgId);
             }
 
-            ctx.emit(new AguiEvent.TextMessageContent(ctx.getThreadId(), ctx.getRunId(), msgId, text));
+            ctx.emit(
+                    new AguiEvent.TextMessageContent(
+                            ctx.getThreadId(), ctx.getRunId(), msgId, text));
         }
 
         if (event.isLast() && ctx.isTextActive(msgId)) {

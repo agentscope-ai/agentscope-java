@@ -16,7 +16,13 @@
 package io.agentscope.core.agui.adapter;
 
 import io.agentscope.core.agui.event.AguiEvent;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * Context holder for the AG-UI stream pipeline.
@@ -60,9 +66,17 @@ public class StreamContext {
         this.config = config;
     }
 
-    public String getThreadId() { return threadId; }
-    public String getRunId() { return runId; }
-    public AguiAdapterConfig getConfig() { return config; }
+    public String getThreadId() {
+        return threadId;
+    }
+
+    public String getRunId() {
+        return runId;
+    }
+
+    public AguiAdapterConfig getConfig() {
+        return config;
+    }
 
     // --- Event Emission and Deferred Management API ---
 
@@ -150,15 +164,31 @@ public class StreamContext {
 
     // --- Text State Management ---
 
-    public boolean isTextActive(String id) { return activeTextIds.contains(id); }
-    public void addActiveText(String id) { activeTextIds.add(id); }
-    public void removeActiveText(String id) { activeTextIds.remove(id); }
+    public boolean isTextActive(String id) {
+        return activeTextIds.contains(id);
+    }
+
+    public void addActiveText(String id) {
+        activeTextIds.add(id);
+    }
+
+    public void removeActiveText(String id) {
+        activeTextIds.remove(id);
+    }
 
     // --- Reasoning State Management ---
 
-    public boolean isReasoningActive(String id) { return activeReasoningIds.contains(id); }
-    public void addActiveReasoning(String id) { activeReasoningIds.add(id); }
-    public void removeActiveReasoning(String id) { activeReasoningIds.remove(id); }
+    public boolean isReasoningActive(String id) {
+        return activeReasoningIds.contains(id);
+    }
+
+    public void addActiveReasoning(String id) {
+        activeReasoningIds.add(id);
+    }
+
+    public void removeActiveReasoning(String id) {
+        activeReasoningIds.remove(id);
+    }
 
     // --- Tool State Management ---
 
