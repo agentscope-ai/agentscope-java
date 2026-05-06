@@ -23,7 +23,7 @@ import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
  * required — uses {@link FixedReplyModel} for a single turn per {@code call}. The
  * {@code store} mode is an alias for {@code remote} (shared KV / {@link RemoteFilesystemSpec}).
  *
- * <p>Usage: {@code java ... HarnessSandboxExampleApp [all|local|sandbox|remote|store]}
+ * <p>Usage: {@code java ... HarnessSandboxExampleApp [all|local|sandbox|remote|store|docker-python]}
  */
 public final class HarnessSandboxExampleApp {
 
@@ -42,9 +42,10 @@ public final class HarnessSandboxExampleApp {
             case "local" -> LocalFilesystemPersonalAssistantExample.main(new String[0]);
             case "sandbox" -> SandboxFilesystemIsolationScopeExample.main(new String[0]);
             case "remote", "store" -> RemoteFilesystemIsolationScopeExample.main(new String[0]);
+            case "docker-python" -> DockerPythonSandboxExample.main(new String[0]);
             default -> {
                 System.err.println("Unknown mode: " + mode);
-                System.err.println("Use: all | local | sandbox | remote | store");
+                System.err.println("Use: all | local | sandbox | remote | store | docker-python");
                 System.exit(1);
             }
         }
