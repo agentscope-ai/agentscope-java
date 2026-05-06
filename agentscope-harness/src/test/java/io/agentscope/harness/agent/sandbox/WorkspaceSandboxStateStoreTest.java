@@ -211,17 +211,17 @@ class WorkspaceSandboxStateStoreTest {
     private static SandboxIsolationKey isolationKey(IsolationScope scope, String value) {
         return SandboxIsolationKey.resolve(
                         scope,
-                        buildCtxForScope(scope, value).toCore(),
+                        buildCtxForScope(scope, value),
                         value.startsWith("user") || scope == IsolationScope.GLOBAL
                                 ? "test-agent"
                                 : value)
                 .orElseThrow(() -> new IllegalStateException("Key could not be resolved"));
     }
 
-    private static io.agentscope.harness.agent.RuntimeContext buildCtxForScope(
+    private static io.agentscope.core.agent.RuntimeContext buildCtxForScope(
             IsolationScope scope, String value) {
-        io.agentscope.harness.agent.RuntimeContext.Builder b =
-                io.agentscope.harness.agent.RuntimeContext.builder();
+        io.agentscope.core.agent.RuntimeContext.Builder b =
+                io.agentscope.core.agent.RuntimeContext.builder();
         switch (scope) {
             case SESSION -> b.sessionKey(SimpleSessionKey.of(value));
             case USER -> b.userId(value);

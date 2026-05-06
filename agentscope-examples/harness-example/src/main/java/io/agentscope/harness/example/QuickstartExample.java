@@ -15,12 +15,12 @@
  */
 package io.agentscope.harness.example;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.RuntimeContext;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;

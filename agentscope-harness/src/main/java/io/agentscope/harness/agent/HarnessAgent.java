@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -177,7 +178,7 @@ public class HarnessAgent implements Agent, StateModule {
 
     private io.agentscope.core.agent.RuntimeContext coreForDelegate() {
         return runtimeContext != null
-                ? runtimeContext.toCore()
+                ? runtimeContext
                 : io.agentscope.core.agent.RuntimeContext.empty();
     }
 
@@ -231,7 +232,7 @@ public class HarnessAgent implements Agent, StateModule {
 
     private io.agentscope.core.agent.RuntimeContext coreRuntimeForRecovery() {
         return runtimeContext != null
-                ? runtimeContext.toCore()
+                ? runtimeContext
                 : io.agentscope.core.agent.RuntimeContext.empty();
     }
 
@@ -295,11 +296,13 @@ public class HarnessAgent implements Agent, StateModule {
         }
         // Inject default sandbox context if the call doesn't provide one
         SandboxContext sandboxCtx =
-                ctx.getSandboxContext() != null ? ctx.getSandboxContext() : defaultSandboxContext;
+                ctx.get(SandboxContext.class) != null
+                        ? ctx.get(SandboxContext.class)
+                        : defaultSandboxContext;
 
         if (session == ctx.getSession()
                 && sessionKey == ctx.getSessionKey()
-                && sandboxCtx == ctx.getSandboxContext()) {
+                && sandboxCtx == ctx.get(SandboxContext.class)) {
             return ctx;
         }
         return RuntimeContext.builder()
@@ -308,7 +311,7 @@ public class HarnessAgent implements Agent, StateModule {
                 .session(session)
                 .sessionKey(sessionKey)
                 .putAll(ctx.getExtra())
-                .sandboxContext(sandboxCtx)
+                .put(SandboxContext.class, sandboxCtx)
                 .build();
     }
 

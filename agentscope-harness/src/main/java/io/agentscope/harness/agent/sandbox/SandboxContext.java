@@ -21,7 +21,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 /**
  * Immutable configuration for sandbox behavior.
  *
- * <p>Built with the agent and attached to {@link io.agentscope.harness.agent.RuntimeContext} for
+ * <p>Built with the agent and attached to {@link io.agentscope.core.agent.RuntimeContext} for
  * each call.
  */
 public final class SandboxContext {

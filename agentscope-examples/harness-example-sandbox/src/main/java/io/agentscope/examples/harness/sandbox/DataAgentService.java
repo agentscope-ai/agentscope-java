@@ -15,6 +15,7 @@
  */
 package io.agentscope.examples.harness.sandbox;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.DashScopeChatModel;
@@ -26,7 +27,6 @@ import io.agentscope.examples.harness.sandbox.support.InMemorySandboxFilesystemS
 import io.agentscope.examples.harness.sandbox.support.SharedInMemorySandboxStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.RuntimeContext;
 import jakarta.annotation.PostConstruct;
 import java.io.InputStream;
 import java.nio.file.Files;
