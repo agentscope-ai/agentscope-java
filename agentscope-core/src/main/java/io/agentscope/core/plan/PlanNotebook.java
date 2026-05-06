@@ -163,6 +163,14 @@ public class PlanNotebook implements StateModule {
     /**
      * Load PlanNotebook state from the session.
      *
+     * <p>After deserialization, any {@link SubTaskState#IN_PROGRESS} subtasks are reset to {@link
+     * SubTaskState#TODO}. The {@code IN_PROGRESS} state implies an active execution flow is
+     * driving the subtask; once the process has been interrupted and resumed, that invariant no
+     * longer holds, so leftover {@code IN_PROGRESS} entries are stale data. Without this
+     * normalization, the state-machine guards in {@link #updateSubtaskState} would refuse to
+     * re-activate the very subtask we just resumed (because "another subtask is already
+     * in_progress"), effectively dead-locking the plan.
+     *
      * @param session the session to load state from
      * @param sessionKey the session identifier
      */
@@ -171,7 +179,30 @@ public class PlanNotebook implements StateModule {
         // Clear existing state first to avoid stale data
         this.currentPlan = null;
         session.get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
-                .ifPresent(state -> this.currentPlan = state.currentPlan());
+                .ifPresent(
+                        state -> {
+                            this.currentPlan = state.currentPlan();
+                            resetStaleInProgressSubtasks();
+                        });
+    }
+
+    /**
+     * Reset any subtask still marked as {@link SubTaskState#IN_PROGRESS} back to {@link
+     * SubTaskState#TODO}.
+     *
+     * <p>Called right after {@link #loadFrom} to recover a clean, re-entrant state machine after
+     * an interruption. Without this, the next call to {@link #updateSubtaskState} would be
+     * blocked by the "no other subtask is in_progress" guard.
+     */
+    private void resetStaleInProgressSubtasks() {
+        if (currentPlan == null || currentPlan.getSubtasks() == null) {
+            return;
+        }
+        for (SubTask subtask : currentPlan.getSubtasks()) {
+            if (subtask.getState() == SubTaskState.IN_PROGRESS) {
+                subtask.setState(SubTaskState.TODO);
+            }
+        }
     }
 
     /** Builder for constructing PlanNotebook instances with customizable settings. */
