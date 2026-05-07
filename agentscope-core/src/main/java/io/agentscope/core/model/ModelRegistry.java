@@ -122,7 +122,7 @@ public final class ModelRegistry {
      * Pattern#matches}. Newly registered factories are consulted before older user registrations
      * and before built-in providers.
      *
-     * @param modelNameRegex regex with semantics of {@link Pattern#matches(CharSequence)} on the
+     * @param modelNameRegex regex with semantics of Pattern#matches(CharSequence) on the
      *     full model id
      * @param factory creates a {@link Model} from the full model id
      */
