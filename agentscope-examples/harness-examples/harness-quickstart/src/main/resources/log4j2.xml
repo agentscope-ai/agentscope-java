@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Log4j2 configuration for the harness-example Text-to-SQL demo.
+  Override io.agentscope log level at runtime: AGENTSCOPE_LOG_LEVEL=DEBUG
+-->
+<Configuration status="INFO">
+    <Properties>
+        <Property name="AGENTSCOPE_LEVEL">${env:AGENTSCOPE_LOG_LEVEL:-INFO}</Property>
+        <Property name="CONSOLE_PATTERN">%d{HH:mm:ss.SSS} %-5level %-36.36c{1.} : %m%n%throwable</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="${CONSOLE_PATTERN}" charset="UTF-8"/>
+        </Console>
+    </Appenders>
+
+    <Loggers>
+        <!-- AgentScope libraries (core, harness, example) -->
+        <Logger name="io.agentscope" level="${AGENTSCOPE_LEVEL}" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+
+        <Logger name="io.netty" level="WARN"/>
+        <Logger name="reactor.netty" level="WARN"/>
+        <Logger name="io.projectreactor" level="WARN"/>
+        <Logger name="okhttp3" level="WARN"/>
+        <Logger name="com.alibaba" level="WARN"/>
+
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+        </Root>
+    </Loggers>
+</Configuration>
