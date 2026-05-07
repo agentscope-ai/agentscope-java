@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory;
  * the JAR. When the example is run for the first time, {@link #init(Path)} extracts them into the
  * given workspace directory so the agent can read and modify them at runtime.
  *
- * <h3>Workspace structure</h3>
+ * Workspace structure:
  *
  * <pre>
  * &lt;workspace&gt;/
