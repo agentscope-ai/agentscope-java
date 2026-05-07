@@ -107,16 +107,16 @@ class HarnessAgentDistributedSandboxTest {
     }
 
     @Test
-    void sandboxDistributed_appliesIsolationAndSnapshotOverride() {
+    void sandboxDistributed_appliesSnapshotOverride() {
         Session distributedSession = mock(Session.class);
         DockerFilesystemSpec spec = new DockerFilesystemSpec();
+        spec.isolationScope(IsolationScope.AGENT);
         LocalSnapshotSpec snapshotSpec = new LocalSnapshotSpec(workspace.resolve("snapshots"));
 
         SandboxDistributedOptions options =
                 SandboxDistributedOptions.builder()
                         .session(distributedSession)
                         .snapshotSpec(snapshotSpec)
-                        .isolationScope(IsolationScope.AGENT)
                         .build();
 
         assertDoesNotThrow(

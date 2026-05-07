@@ -719,13 +719,16 @@ public class HarnessAgent implements Agent, StateModule {
         /**
          * Enables high-level distributed sandbox configuration.
          *
-         * <p>This helper bundles three distributed concerns:
+         * <p>Bundles distributed concerns that pair with {@link #filesystem(SandboxFilesystemSpec)}:
+         *
          * <ul>
-         *   <li>distributed {@link Session} for sandbox state slots</li>
-         *   <li>remote/non-noop {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}
-         *       for workspace archive persistence</li>
-         *   <li>{@link IsolationScope} for sharing granularity</li>
+         *   <li>distributed {@link Session} for sandbox state slots
+         *   <li>optional {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}
+         *       override for workspace archive persistence
+         *   <li>{@code requireDistributed} gate for fail-fast validation
          * </ul>
+         *
+         * <p>Configure {@link IsolationScope} on the {@code SandboxFilesystemSpec} only.
          *
          * <p>Requires sandbox mode (i.e. {@link #filesystem(SandboxFilesystemSpec)}).
          */
@@ -917,15 +920,10 @@ public class HarnessAgent implements Agent, StateModule {
             SandboxContext defaultSandboxContext = null;
             SandboxBackedFilesystem capturedSandboxFs = null;
             if (sandboxFilesystemSpec != null) {
-                if (sandboxDistributedOptions != null) {
-                    if (sandboxDistributedOptions.getIsolationScope() != null) {
-                        sandboxFilesystemSpec.isolationScope(
-                                sandboxDistributedOptions.getIsolationScope());
-                    }
-                    if (sandboxDistributedOptions.getSnapshotSpec() != null) {
-                        sandboxFilesystemSpec.snapshotSpec(
-                                sandboxDistributedOptions.getSnapshotSpec());
-                    }
+                if (sandboxDistributedOptions != null
+                        && sandboxDistributedOptions.getSnapshotSpec() != null) {
+                    sandboxFilesystemSpec.snapshotSpec(
+                            sandboxDistributedOptions.getSnapshotSpec());
                 }
                 capturedSandboxFs = new SandboxBackedFilesystem();
                 capturedSandboxFs.configureNamespace(buildDynamicNamespaceFactory(userIdRef));

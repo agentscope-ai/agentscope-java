@@ -29,6 +29,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import java.nio.file.Files;
@@ -91,6 +92,10 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         // First call — no persisted state → create
@@ -121,6 +126,10 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         agent.call(userMsg("call from session-1"), ctx("session-2-1", "alice")).block();
@@ -155,6 +164,10 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         agent.call(userMsg("session A"), ctx("session-a", "alice")).block();
@@ -184,6 +197,10 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         agent.call(userMsg("hi from alice2"), ctx("s1", "alice2")).block();
@@ -217,6 +234,10 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         // Different users, different sessions — all share one AGENT-scoped sandbox

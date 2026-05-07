@@ -274,7 +274,7 @@ call 3: shell_execute("cat results.csv")      → 读 call 2 产生的文件
 
 `HarnessAgent.Builder#sandboxDistributed(SandboxDistributedOptions)` 可统一下发：
 
-- 覆盖/合并 **`isolationScope`** 与 **`snapshotSpec`**（若提供）；
+- 覆盖 **`snapshotSpec`**（若提供）；**`IsolationScope` 只在 `SandboxFilesystemSpec` 上配置**，不在此重复；
 - 在选项中**显式指定**用于沙箱的 `Session`（若与主 `session` 不同）；
 - 使用 `SandboxDistributedOptions#oss` / `#redis` 等辅助构造常见组合（见类 JavaDoc）。
 
