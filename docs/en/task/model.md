@@ -1,4 +1,3 @@
-model.md
 # Model
 
 This guide introduces the LLM models supported by AgentScope Java and how to configure them.
@@ -26,6 +25,86 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 | Anthropic | [Anthropic Console](https://console.anthropic.com/settings/keys) | `ANTHROPIC_API_KEY` |
 | Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
 | DeepSeek | [DeepSeek Platform](https://platform.deepseek.com/api_keys) | - |
+
+## ModelRegistry
+
+[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java) (`io.agentscope.core.model.ModelRegistry`) resolves a `Model` from a **string id**, so you do not have to call each vendor’s `*ChatModel.builder()` for simple setups. With Harness, use `HarnessAgent.builder().model(String)`; anywhere else that needs a `Model`, call `ModelRegistry.resolve(...)` and pass the result into `ReActAgent` or other builders.
+
+### API summary
+
+| Method | Description |
+|--------|-------------|
+| `register(String name, Model model)` | Registers a **named** model; `resolve(name)` returns that instance. |
+| `registerFactory(String regex, ModelFactory factory)` | Registers a custom factory for ids matching the regex; **later** registrations take precedence over earlier user factories and over built-in rules. |
+| `resolve(String modelId)` | Returns a `Model`; throws `IllegalArgumentException` if the id cannot be resolved or creation fails. |
+| `canResolve(String modelId)` | Returns whether the id can be resolved (does not create a model). |
+| `reset()` | Clears named registrations, user factories, and the resolve cache; built-in rules stay. Intended for tests or in-process reset. |
+
+`ModelFactory` is a functional interface: `Model create(String modelId)` with the full id string.
+
+### Built-in id formats and environment variables
+
+With the right environment variables set, you can use these id forms (with `resolve` or `HarnessAgent.Builder.model(String)`, for example):
+
+| Example id | Environment variable | Notes |
+|------------|----------------------|-------|
+| `openai:gpt-4o-mini` | `OPENAI_API_KEY` | OpenAI-compatible HTTP model |
+| `dashscope:qwen-max` | `DASHSCOPE_API_KEY` | Alibaba DashScope / Bailian |
+| Any id starting with `qwen-`, e.g. `qwen-max` | `DASHSCOPE_API_KEY` | Uses the whole string as the DashScope `modelName` |
+| `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` (optional; SDK may read from the environment) | Anthropic Claude |
+| `gemini:gemini-2.5-flash` | `GEMINI_API_KEY` | Google Gemini API |
+| `ollama:llama3` | `OLLAMA_BASE_URL` (optional, default `http://localhost:11434`) | Local Ollama |
+
+Within one process, repeated `resolve` of the **same** factory-based id returns a **cached** `Model` instance. **Named** registrations are not cached that way.
+
+### Example: named registration (reuse a tuned model)
+
+Build once with full control, then register under a name:
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.harness.agent.HarnessAgent;
+
+Model tuned = OpenAIChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o")
+        .generateOptions(GenerateOptions.builder().temperature(0.2).build())
+        .build();
+ModelRegistry.register("my-gpt4o", tuned);
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("demo")
+        .model("my-gpt4o")
+        .workspace(workspace)
+        .build();
+```
+
+### Example: built-in prefix (default connection settings)
+
+```java
+import io.agentscope.harness.agent.HarnessAgent;
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("demo")
+        .model("dashscope:qwen-max")
+        .workspace(workspace)
+        .build();
+```
+
+### Example: custom factory
+
+```java
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
+
+ModelRegistry.registerFactory(
+        "my-llm:.+",
+        id -> myModelFactory(id.substring("my-llm:".length())));
+
+Model m = ModelRegistry.resolve("my-llm:prod");
+```
 
 ## DashScope
 

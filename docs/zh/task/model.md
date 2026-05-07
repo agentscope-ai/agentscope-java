@@ -26,6 +26,86 @@
 | Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
 | DeepSeek | [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) | - |
 
+## ModelRegistry
+
+[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java)（`io.agentscope.core.model.ModelRegistry`）用**字符串 id**得到 `Model` 实例，适合不想手写各厂商 `*ChatModel.builder()` 的场景。例如 Harness 场景下可使用 `HarnessAgent.builder().model(String)`；任意需要 `Model` 的地方可先调用 `ModelRegistry.resolve(...)` 再传入 `ReActAgent` 等构建器。
+
+### API 一览
+
+| 方法 | 说明 |
+|------|------|
+| `register(String name, Model model)` | 注册**具名**模型；之后对同名 id 调用 `resolve` 直接返回该实例。 |
+| `registerFactory(String regex, ModelFactory factory)` | 为匹配正则的 id 注册自定义工厂；**后注册的工厂优先**于更早注册的用户工厂，且优先于内置规则。 |
+| `resolve(String modelId)` | 解析并返回 `Model`；无法解析或创建失败时抛出 `IllegalArgumentException`。 |
+| `canResolve(String modelId)` | 仅判断是否可解析（不创建实例）。 |
+| `reset()` | 清空具名注册、用户工厂与解析缓存；内置规则保留。一般仅在测试或进程内重置时使用。 |
+
+`ModelFactory` 为函数式接口：`Model create(String modelId)`，参数为完整模型 id 字符串。
+
+### 内置 id 格式与环境变量
+
+在已配置对应环境变量的前提下，可使用下列 id 形式（适用于 `resolve` 以及 `HarnessAgent.Builder.model(String)` 等）：
+
+| id 示例 | 所需环境变量 | 说明 |
+|---------|--------------|------|
+| `openai:gpt-4o-mini` | `OPENAI_API_KEY` | OpenAI 兼容 HTTP 模型 |
+| `dashscope:qwen-max` | `DASHSCOPE_API_KEY` | 阿里云 DashScope / 百炼 |
+| `qwen-max` 等以 `qwen-` 开头的 id | `DASHSCOPE_API_KEY` | 将整个字符串作为 DashScope 的 `modelName` |
+| `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`（可选；未设置时可依赖 SDK 从环境读取） | Anthropic Claude |
+| `gemini:gemini-2.5-flash` | `GEMINI_API_KEY` | Google Gemini API |
+| `ollama:llama3` | `OLLAMA_BASE_URL`（可选，默认 `http://localhost:11434`） | 本地 Ollama |
+
+同一进程内，对**相同**工厂解析 id 多次时，返回的 `Model` 实例会被缓存复用；**具名**注册不走该缓存。
+
+### 示例：具名注册（自定义配置后复用）
+
+需要先精细配置（温度、超时等）时，用 Builder 构建一次，再注册成名字：
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.harness.agent.HarnessAgent;
+
+Model tuned = OpenAIChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o")
+        .generateOptions(GenerateOptions.builder().temperature(0.2).build())
+        .build();
+ModelRegistry.register("my-gpt4o", tuned);
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("demo")
+        .model("my-gpt4o")
+        .workspace(workspace)
+        .build();
+```
+
+### 示例：内置前缀（默认连接参数）
+
+```java
+import io.agentscope.harness.agent.HarnessAgent;
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("demo")
+        .model("dashscope:qwen-max")
+        .workspace(workspace)
+        .build();
+```
+
+### 示例：自定义工厂
+
+```java
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
+
+ModelRegistry.registerFactory(
+        "my-llm:.+",
+        id -> myModelFactory(id.substring("my-llm:".length())));
+
+Model m = ModelRegistry.resolve("my-llm:prod");
+```
+
 ## DashScope
 
 阿里云 LLM 平台，提供通义千问系列模型。
