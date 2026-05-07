@@ -1120,6 +1120,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         // Long-term memory configuration
         private LongTermMemory longTermMemory;
         private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
+        private boolean longTermMemoryAsyncRecord = false;
 
         // State persistence configuration
         private StatePersistence statePersistence;
@@ -1419,6 +1420,29 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
+         * Sets whether long-term memory recording should be performed asynchronously.
+         *
+         * <p>When enabled, the framework will record memories to long-term storage
+         * in a fire-and-forget manner, without blocking the agent's main execution flow.
+         * This improves response latency but means memory persistence is not guaranteed
+         * before the agent returns its response.
+         *
+         * <p>When disabled (default), the framework waits for the recording operation
+         * to complete before returning the agent's response. This ensures memory
+         * persistence is finalized but may increase response latency.
+         *
+         * <p>Note: This setting only affects the static control mode (STATIC_CONTROL, BOTH).
+         * Agent-controlled recording through tools is always synchronous.
+         *
+         * @param asyncRecord Whether to record memories asynchronously
+         * @return This builder instance for method chaining
+         */
+        public Builder longTermMemoryAsyncRecord(boolean asyncRecord) {
+            this.longTermMemoryAsyncRecord = asyncRecord;
+            return this;
+        }
+
+        /**
          * Sets the state persistence configuration.
          *
          * <p>Use this to control which components' state is managed by the agent during
@@ -1591,7 +1615,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             if (longTermMemoryMode == LongTermMemoryMode.STATIC_CONTROL
                     || longTermMemoryMode == LongTermMemoryMode.BOTH) {
                 StaticLongTermMemoryHook hook =
-                        new StaticLongTermMemoryHook(longTermMemory, memory);
+                        new StaticLongTermMemoryHook(
+                                longTermMemory, memory, longTermMemoryAsyncRecord);
                 hooks.add(hook);
             }
         }

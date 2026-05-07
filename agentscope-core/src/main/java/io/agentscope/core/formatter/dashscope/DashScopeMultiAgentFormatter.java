@@ -302,9 +302,8 @@ public class DashScopeMultiAgentFormatter
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
-            // Set content to null if empty when tool calls exist (Python behavior)
             String textContent = extractTextContent(msg);
-            builder.content(textContent.isEmpty() ? null : textContent);
+            builder.content(textContent.isEmpty() ? "" : textContent);
         } else {
             builder.content(extractTextContent(msg));
         }

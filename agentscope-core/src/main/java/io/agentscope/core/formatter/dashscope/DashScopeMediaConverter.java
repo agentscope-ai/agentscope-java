@@ -81,7 +81,11 @@ public class DashScopeMediaConverter {
     public DashScopeContentPart convertImageBlockToContentPart(ImageBlock imageBlock)
             throws Exception {
         String imageUrl = convertImageBlockToUrl(imageBlock);
-        return DashScopeContentPart.image(imageUrl);
+        return DashScopeContentPart.builder()
+                .image(imageUrl)
+                .minPixels(imageBlock.getMinPixels())
+                .maxPixels(imageBlock.getMaxPixels())
+                .build();
     }
 
     /**
@@ -130,7 +134,14 @@ public class DashScopeMediaConverter {
     public DashScopeContentPart convertVideoBlockToContentPart(VideoBlock videoBlock)
             throws Exception {
         String videoUrl = convertVideoBlockToUrl(videoBlock);
-        return DashScopeContentPart.video(videoUrl);
+        return DashScopeContentPart.builder()
+                .video(videoUrl)
+                .fps(videoBlock.getFps())
+                .maxFrames(videoBlock.getMaxFrames())
+                .minPixels(videoBlock.getMinPixels())
+                .maxPixels(videoBlock.getMaxPixels())
+                .totalPixels(videoBlock.getTotalPixels())
+                .build();
     }
 
     /**

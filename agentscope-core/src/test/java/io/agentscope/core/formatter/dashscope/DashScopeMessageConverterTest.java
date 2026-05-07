@@ -18,7 +18,6 @@ package io.agentscope.core.formatter.dashscope;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
@@ -38,6 +37,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -164,7 +165,7 @@ class DashScopeMessageConverterTest {
         DashScopeMessage dsMsg = converter.convertToMessage(msg, false);
 
         assertEquals("assistant", dsMsg.getRole());
-        assertNull(dsMsg.getContentAsString());
+        assertEquals("", dsMsg.getContentAsString());
         assertNotNull(dsMsg.getToolCalls());
         assertEquals(1, dsMsg.getToolCalls().size());
     }
@@ -562,5 +563,69 @@ class DashScopeMessageConverterTest {
         assertNotNull(args);
         assertTrue(args.contains("city"));
         assertTrue(args.contains("Shanghai"));
+    }
+
+    @Nested
+    @DisplayName("Qwen3 Thinking Mode Tests (Issue #1268)")
+    class Qwen3ThinkingModeTests {
+
+        @Test
+        @DisplayName(
+                "Should set empty content for assistant with ThinkingBlock + ToolUseBlock but no"
+                        + " TextBlock")
+        void testThinkingModeAssistantWithToolCallsHasNonNullContent() {
+            ThinkingBlock thinkingBlock =
+                    ThinkingBlock.builder().thinking("Let me call the tool...").build();
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_123")
+                            .name("get_weather")
+                            .input(Map.of("city", "Shanghai"))
+                            .build();
+
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(List.of(thinkingBlock, toolBlock))
+                            .build();
+
+            DashScopeMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("assistant", result.getRole());
+            assertNotNull(result.getToolCalls());
+            assertNotNull(
+                    result.getContentAsString(),
+                    "Content should not be null to comply with DashScope API");
+            assertEquals("", result.getContentAsString());
+        }
+
+        @Test
+        @DisplayName(
+                "Should preserve text content when both TextBlock and ThinkingBlock exist with tool"
+                        + " calls")
+        void testThinkingModeAssistantWithTextAndToolCalls() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(
+                                    List.of(
+                                            ThinkingBlock.builder()
+                                                    .thinking("reasoning...")
+                                                    .build(),
+                                            TextBlock.builder().text("Here is my answer").build(),
+                                            ToolUseBlock.builder()
+                                                    .id("call_456")
+                                                    .name("search")
+                                                    .input(Map.of("q", "test"))
+                                                    .build()))
+                            .build();
+
+            DashScopeMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("Here is my answer", result.getContentAsString());
+            assertNotNull(result.getToolCalls());
+        }
     }
 }

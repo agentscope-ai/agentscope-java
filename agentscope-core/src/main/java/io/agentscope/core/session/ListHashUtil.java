@@ -138,26 +138,35 @@ public final class ListHashUtil {
     }
 
     /**
-     * Determine if a full rewrite is needed based on hash and size comparison.
+     * Determine if a full rewrite is needed based on list content and existing count.
      *
-     * @param currentHash the hash of the current list
+     * @param currentValues the current complete list of state objects
      * @param storedHash the previously stored hash (may be null)
-     * @param currentSize the current list size
      * @param existingCount the count of items already stored
      * @return true if full rewrite is needed, false if incremental append is sufficient
      */
     public static boolean needsFullRewrite(
-            String currentHash, String storedHash, int currentSize, int existingCount) {
-        // Case 1: Hash changed (list was modified, not just appended)
-        if (hasChanged(currentHash, storedHash)) {
-            return true;
+            List<? extends State> currentValues, String storedHash, int existingCount) {
+        if (currentValues == null) {
+            return existingCount > 0;
         }
 
-        // Case 2: List shrunk (items were deleted)
+        int currentSize = currentValues.size();
+
+        // Case 1: List shrunk (items were deleted)
         if (currentSize < existingCount) {
             return true;
         }
 
-        return false;
+        // Case 2: Missing hash but existing data found (e.g., version upgrade or corrupted hash)
+        // Must rewrite because we cannot verify unmodified state.
+        if (storedHash == null && existingCount > 0) {
+            return true;
+        }
+
+        // Case 3: Check if the previously existing elements were modified.
+        List<? extends State> prefix = currentValues.subList(0, existingCount);
+        String prefixHash = computeHash(prefix);
+        return hasChanged(prefixHash, storedHash);
     }
 }
