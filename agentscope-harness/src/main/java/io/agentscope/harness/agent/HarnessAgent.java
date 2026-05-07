@@ -922,8 +922,7 @@ public class HarnessAgent implements Agent, StateModule {
             if (sandboxFilesystemSpec != null) {
                 if (sandboxDistributedOptions != null
                         && sandboxDistributedOptions.getSnapshotSpec() != null) {
-                    sandboxFilesystemSpec.snapshotSpec(
-                            sandboxDistributedOptions.getSnapshotSpec());
+                    sandboxFilesystemSpec.snapshotSpec(sandboxDistributedOptions.getSnapshotSpec());
                 }
                 capturedSandboxFs = new SandboxBackedFilesystem();
                 capturedSandboxFs.configureNamespace(buildDynamicNamespaceFactory(userIdRef));
