@@ -129,7 +129,11 @@ public class SessionSearchTool {
         List<Path> sessionFiles = new ArrayList<>();
         try (Stream<Path> walk = Files.list(sessionDir)) {
             walk.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(WorkspaceConstants.SESSION_CONTEXT_EXT))
+                    .filter(
+                            p ->
+                                    p.getFileName()
+                                            .toString()
+                                            .endsWith(WorkspaceConstants.SESSION_CONTEXT_EXT))
                     .forEach(sessionFiles::add);
         } catch (IOException e) {
             log.debug("Could not list local session dir for agent {}: {}", agentId, e.getMessage());
@@ -218,8 +222,7 @@ public class SessionSearchTool {
         }
 
         if (agentId != null) {
-            Path sessionDir =
-                    agentsDir.resolve(agentId).resolve(WorkspaceConstants.SESSIONS_DIR);
+            Path sessionDir = agentsDir.resolve(agentId).resolve(WorkspaceConstants.SESSIONS_DIR);
             collectLogFiles(sessionDir, files);
             return files;
         }
@@ -257,7 +260,9 @@ public class SessionSearchTool {
                     logFile.resolveSibling(
                             logFile.getFileName()
                                     .toString()
-                                    .replace(WorkspaceConstants.SESSION_LOG_EXT, WorkspaceConstants.SESSION_CONTEXT_EXT));
+                                    .replace(
+                                            WorkspaceConstants.SESSION_LOG_EXT,
+                                            WorkspaceConstants.SESSION_CONTEXT_EXT));
             SessionTree tree = new SessionTree(contextFile, workspaceManager.getWorkspace(), null);
             tree.load();
 

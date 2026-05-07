@@ -188,9 +188,7 @@ public class HarnessAgent implements Agent, StateModule {
     }
 
     private RuntimeContext coreForDelegate() {
-        return runtimeContext != null
-                ? runtimeContext
-                : RuntimeContext.empty();
+        return runtimeContext != null ? runtimeContext : RuntimeContext.empty();
     }
 
     private Mono<Msg> recoverFromOverflow(List<Msg> msgs) {

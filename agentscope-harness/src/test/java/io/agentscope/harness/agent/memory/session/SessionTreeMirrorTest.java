@@ -143,8 +143,7 @@ class SessionTreeMirrorTest {
         // Write entry-2 locally but don't wait for mirror (still in-flight)
         SessionTree t2 = new SessionTree(context, workspace, fs);
         t2.load();
-        t2.append(
-                new SessionEntry.MessageEntry(null, null, null, "ASSISTANT", "entry-2", null));
+        t2.append(new SessionEntry.MessageEntry(null, null, null, "ASSISTANT", "entry-2", null));
         t2.flush(); // local: entry-1+2; remote may still only have entry-1
 
         // Load a fresh tree — local has entry-1+2
