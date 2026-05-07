@@ -22,16 +22,25 @@ import java.util.List;
 /**
  * Event fired before agent starts processing.
  *
- * <p><b>Modifiable:</b> No (notification-only)
+ * <p><b>Modifiable:</b> Yes — {@link #setInputMessages(List)} and the inherited
+ * {@link HookEvent#setSystemMessage}, {@link HookEvent#appendSystemContent(String)} methods.
  *
  * <p><b>Context:</b>
  * <ul>
  *   <li>{@link #getAgent()} - The agent instance</li>
- *   <li>{@link #getMemory()} - Agent's memory (includes input messages already added)</li>
+ *   <li>{@link #getMemory()} - Agent's current (live) memory</li>
+ *   <li>{@link #getInputMessages()} - Full message view: memory snapshot + this call's
+ *       arguments. Hooks may append non-SYSTEM messages to the tail. Injecting
+ *       {@link io.agentscope.core.message.MsgRole#SYSTEM} messages here is
+ *       <strong>forbidden</strong>; use {@link HookEvent#setSystemMessage} instead.</li>
+ *   <li>{@link #getSystemMessage()} - The unified system message seeded from
+ *       {@code sysPrompt}; modify via the helper methods on {@link HookEvent}.</li>
  * </ul>
  *
  * <p><b>Use Cases:</b>
  * <ul>
+ *   <li>Inject workspace context, skill prompts, or other static guidance into
+ *       the system message via {@link HookEvent#appendSystemContent(String)}</li>
  *   <li>Log the start of agent execution</li>
  *   <li>Initialize execution-specific resources</li>
  *   <li>Track agent invocation metrics</li>

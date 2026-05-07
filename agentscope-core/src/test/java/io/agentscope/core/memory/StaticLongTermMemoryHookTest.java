@@ -136,15 +136,19 @@ class StaticLongTermMemoryHookTest {
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         resultEvent -> {
+                            // Memory is now injected into systemMsg, not inputMessages
                             List<Msg> messages = resultEvent.getInputMessages();
-                            assertEquals(2, messages.size());
-                            assertEquals(MsgRole.SYSTEM, messages.get(1).getRole());
+                            assertEquals(1, messages.size(), "inputMessages should be unchanged");
+                            assertNotNull(
+                                    resultEvent.getSystemMessage(), "systemMsg should be set");
                             assertTrue(
-                                    messages.get(1)
+                                    resultEvent
+                                            .getSystemMessage()
                                             .getTextContent()
                                             .contains("<long_term_memory>"));
                             assertTrue(
-                                    messages.get(1)
+                                    resultEvent
+                                            .getSystemMessage()
                                             .getTextContent()
                                             .contains("User prefers dark mode"));
                         })

@@ -28,6 +28,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.skill.AgentSkill;
@@ -111,7 +112,7 @@ import reactor.core.publisher.Mono;
  * <pre>{@code
  * HarnessAgent agent = HarnessAgent.builder()
  *     .name("MyAgent")
- *     .model(model)
+ *     .model(model) // or .model("openai:gpt-5.5") via {@link ModelRegistry}
  *     .sysPrompt("You are a helpful assistant.")
  *     .workspace("/path/to/workspace")
  *     .build();
@@ -176,10 +177,20 @@ public class HarnessAgent implements Agent, StateModule {
         return delegate.stream(msgs, options, coreForDelegate());
     }
 
-    private io.agentscope.core.agent.RuntimeContext coreForDelegate() {
+    /** Streams with default {@link StreamOptions} and a runtime context. */
+    public Flux<Event> stream(List<Msg> msgs, RuntimeContext ctx) {
+        return stream(msgs, StreamOptions.defaults(), ctx);
+    }
+
+    /** Streams a single message with default {@link StreamOptions} and a runtime context. */
+    public Flux<Event> stream(Msg msg, RuntimeContext ctx) {
+        return stream(List.of(msg), ctx);
+    }
+
+    private RuntimeContext coreForDelegate() {
         return runtimeContext != null
                 ? runtimeContext
-                : io.agentscope.core.agent.RuntimeContext.empty();
+                : RuntimeContext.empty();
     }
 
     private Mono<Msg> recoverFromOverflow(List<Msg> msgs) {
@@ -503,6 +514,23 @@ public class HarnessAgent implements Agent, StateModule {
             return this;
         }
 
+        /**
+         * Configures the model from a string id resolved via {@link ModelRegistry}: a named
+         * registration ({@link ModelRegistry#register(String, Model)}) or a built-in pattern such
+         * as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code anthropic:claude-sonnet-4-5},
+         * {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}. API keys for auto-created models
+         * come from standard environment variables ({@code OPENAI_API_KEY}, {@code DASHSCOPE_API_KEY},
+         * etc.).
+         *
+         * @param modelId registry id or {@code provider:model} string
+         * @return this builder
+         * @throws IllegalArgumentException if the id cannot be resolved
+         */
+        public Builder model(String modelId) {
+            this.model = ModelRegistry.resolve(modelId);
+            return this;
+        }
+
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
             return this;
@@ -768,7 +796,9 @@ public class HarnessAgent implements Agent, StateModule {
 
         /**
          * Sets a resolver for model name strings to {@link Model} instances. Used when spec-based
-         * subagents specify a {@code model} override (e.g. {@code "openai:gpt-4o-mini"}).
+         * subagents specify a {@code model} override (e.g. {@code "openai:gpt-4o-mini"}). When unset,
+         * {@link ModelRegistry#resolve(String)} is used so subagent specs can use the same string ids
+         * as {@link #model(String)}.
          */
         public Builder modelResolver(Function<String, Model> resolver) {
             this.modelResolver = resolver;
@@ -873,10 +903,10 @@ public class HarnessAgent implements Agent, StateModule {
             // distributed Session so that conversation state is also shared across replicas.
             if (remoteFilesystemSpec != null && effectiveSession instanceof WorkspaceSession) {
                 throw new IllegalStateException(
-                        "filesystem(RemoteFilesystemSpec) is designed for distributed / multi-replica"
-                                + " deployments, but the effective Session is a local"
-                                + " WorkspaceSession. Configure a distributed Session backend"
-                                + " (for example RedisSession) via .session(...).");
+                        "filesystem(RemoteFilesystemSpec) is designed for distributed /"
+                                + " multi-replica deployments, but the effective Session is a local"
+                                + " WorkspaceSession. Configure a distributed Session backend (for"
+                                + " example RedisSession) via .session(...).");
             }
 
             AtomicReference<String> userIdRef = new AtomicReference<>();
@@ -1234,8 +1264,8 @@ public class HarnessAgent implements Agent, StateModule {
         /**
          * Builds a factory for a spec-based subagent. The resulting HarnessAgent is fully
          * independent from the main agent — it uses the spec's own system prompt, workspace,
-         * and configuration. Supports per-subagent model override when a {@code modelResolver}
-         * is configured.
+         * and configuration. Supports per-subagent {@code model} override via an explicit {@code
+         * modelResolver}, or by default {@link ModelRegistry#resolve(String)}.
          */
         private SubagentFactory buildSpecFactory(SubagentSpec spec, Path defaultWorkspace) {
             final Model capturedModel = this.model;
@@ -1249,26 +1279,30 @@ public class HarnessAgent implements Agent, StateModule {
                                 ? Path.of(spec.getWorkspace())
                                 : defaultWorkspace;
 
+                Function<String, Model> effectiveResolver =
+                        capturedResolver != null ? capturedResolver : ModelRegistry::resolve;
+
                 Model effectiveModel = capturedModel;
-                if (spec.getModel() != null
-                        && !spec.getModel().isBlank()
-                        && capturedResolver != null) {
-                    try {
-                        Model resolved = capturedResolver.apply(spec.getModel());
-                        if (resolved != null) {
-                            effectiveModel = resolved;
-                            log.debug(
-                                    "Subagent '{}' using overridden model: {}",
+                if (spec.getModel() != null && !spec.getModel().isBlank()) {
+                    String specModel = spec.getModel().trim();
+                    if (ModelRegistry.canResolve(specModel) || capturedResolver != null) {
+                        try {
+                            Model resolved = effectiveResolver.apply(specModel);
+                            if (resolved != null) {
+                                effectiveModel = resolved;
+                                log.debug(
+                                        "Subagent '{}' using overridden model: {}",
+                                        spec.getName(),
+                                        spec.getModel());
+                            }
+                        } catch (Exception e) {
+                            log.warn(
+                                    "Failed to resolve model '{}' for subagent '{}', falling back"
+                                            + " to parent model: {}",
+                                    spec.getModel(),
                                     spec.getName(),
-                                    spec.getModel());
+                                    e.getMessage());
                         }
-                    } catch (Exception e) {
-                        log.warn(
-                                "Failed to resolve model '{}' for subagent '{}', falling back to"
-                                        + " parent model: {}",
-                                spec.getModel(),
-                                spec.getName(),
-                                e.getMessage());
                     }
                 }
 

@@ -32,6 +32,11 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Tool for searching past session transcripts and viewing session history.
+ *
+ * <p>Operates exclusively on the local session cache. Remote synchronisation is handled by
+ * {@link io.agentscope.harness.agent.memory.session.SessionTree#load()} in write paths
+ * (e.g. {@link io.agentscope.harness.agent.memory.MemoryFlushManager}), keeping this tool
+ * lightweight and fast for in-process search.
  */
 public class SessionSearchTool {
 
@@ -71,15 +76,12 @@ public class SessionSearchTool {
 
         List<String> results = new ArrayList<>();
 
-        List<Path> sessionDirs = listSessionDirs(effectiveAgentId);
-        for (Path sessionDir : sessionDirs) {
-            List<Path> sessionFiles = listJsonlFiles(sessionDir);
-            for (Path file : sessionFiles) {
-                if (results.size() >= limit) {
-                    break;
-                }
-                searchInSessionFile(file, lowerQuery, results, limit);
+        List<Path> sessionFiles = listLogFiles(effectiveAgentId);
+        for (Path file : sessionFiles) {
+            if (results.size() >= limit) {
+                break;
             }
+            searchInSessionFile(file, lowerQuery, results, limit);
         }
 
         if (results.isEmpty()) {
@@ -104,11 +106,7 @@ public class SessionSearchTool {
             return "Error: agentId is required";
         }
 
-        Path sessionDir = workspaceManager.getSessionDir(agentId);
-        if (!Files.isDirectory(sessionDir)) {
-            return "No sessions found for agent: " + agentId;
-        }
-
+        // Prefer the structured session-store index (already two-layer: remote then local).
         String storeContent =
                 workspaceManager.readManagedWorkspaceFileUtf8(
                         WorkspaceConstants.AGENTS_DIR
@@ -118,12 +116,25 @@ public class SessionSearchTool {
                                 + WorkspaceConstants.SESSIONS_DIR
                                 + "/"
                                 + WorkspaceConstants.SESSIONS_STORE);
-
         if (!storeContent.isBlank()) {
             return storeContent;
         }
 
-        List<Path> sessionFiles = listJsonlFiles(sessionDir);
+        // List sessions from local cache only — remote sync is handled at write time.
+        Path sessionDir = workspaceManager.getSessionDir(agentId);
+        if (!Files.isDirectory(sessionDir)) {
+            return "No sessions found for agent: " + agentId;
+        }
+
+        List<Path> sessionFiles = new ArrayList<>();
+        try (Stream<Path> walk = Files.list(sessionDir)) {
+            walk.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(WorkspaceConstants.SESSION_CONTEXT_EXT))
+                    .forEach(sessionFiles::add);
+        } catch (IOException e) {
+            log.debug("Could not list local session dir for agent {}: {}", agentId, e.getMessage());
+        }
+
         if (sessionFiles.isEmpty()) {
             return "No sessions found for agent: " + agentId;
         }
@@ -132,10 +143,7 @@ public class SessionSearchTool {
         sb.append("Sessions for agent ").append(agentId).append(":\n");
         for (Path file : sessionFiles) {
             String name = file.getFileName().toString();
-            String sessionId =
-                    name.replace(WorkspaceConstants.SESSION_CONTEXT_EXT, "")
-                            .replace(WorkspaceConstants.SESSION_LOG_EXT, "")
-                            .replace(".json", "");
+            String sessionId = name.replace(WorkspaceConstants.SESSION_CONTEXT_EXT, "");
             sb.append("  - ").append(sessionId).append("\n");
         }
         return sb.toString();
@@ -171,7 +179,7 @@ public class SessionSearchTool {
             return "Session not found: " + sessionId;
         }
 
-        SessionTree tree = new SessionTree(contextFile);
+        SessionTree tree = new SessionTree(contextFile, workspaceManager.getWorkspace(), null);
         tree.load();
 
         List<SessionEntry.MessageEntry> messages = tree.getMessageEntries();
@@ -193,61 +201,67 @@ public class SessionSearchTool {
         return sb.toString();
     }
 
-    private List<Path> listSessionDirs(String agentId) {
-        List<Path> dirs = new ArrayList<>();
+    // -------------------------------------------------------------------------
+    //  Private helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Collects all {@code .log.jsonl} files under the sessions directory for the given agent
+     * (or all agents when {@code agentId} is {@code null}).
+     * Only scans the local disk; remote-only sessions are handled via sessionList / sessionHistory.
+     */
+    private List<Path> listLogFiles(String agentId) {
+        List<Path> files = new ArrayList<>();
         Path agentsDir = workspaceManager.getWorkspace().resolve(WorkspaceConstants.AGENTS_DIR);
         if (!Files.isDirectory(agentsDir)) {
-            return dirs;
+            return files;
         }
 
         if (agentId != null) {
-            Path dir = agentsDir.resolve(agentId).resolve(WorkspaceConstants.SESSIONS_DIR);
-            if (Files.isDirectory(dir)) {
-                dirs.add(dir);
-            }
-            return dirs;
+            Path sessionDir =
+                    agentsDir.resolve(agentId).resolve(WorkspaceConstants.SESSIONS_DIR);
+            collectLogFiles(sessionDir, files);
+            return files;
         }
 
         try (Stream<Path> walk = Files.list(agentsDir)) {
             walk.filter(Files::isDirectory)
                     .forEach(
-                            agentDir -> {
-                                Path sessDir = agentDir.resolve(WorkspaceConstants.SESSIONS_DIR);
-                                if (Files.isDirectory(sessDir)) {
-                                    dirs.add(sessDir);
-                                }
-                            });
-        } catch (IOException e) {
-            // ignore
-        }
-        return dirs;
-    }
-
-    private List<Path> listJsonlFiles(Path dir) {
-        List<Path> files = new ArrayList<>();
-        if (!Files.isDirectory(dir)) {
-            return files;
-        }
-        try (Stream<Path> walk = Files.list(dir)) {
-            walk.filter(p -> p.toString().endsWith(".log.jsonl"))
-                    .filter(Files::isRegularFile)
-                    .forEach(files::add);
+                            agentDir ->
+                                    collectLogFiles(
+                                            agentDir.resolve(WorkspaceConstants.SESSIONS_DIR),
+                                            files));
         } catch (IOException e) {
             // ignore
         }
         return files;
     }
 
+    private void collectLogFiles(Path sessionDir, List<Path> collector) {
+        if (!Files.isDirectory(sessionDir)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.list(sessionDir)) {
+            walk.filter(p -> p.toString().endsWith(WorkspaceConstants.SESSION_LOG_EXT))
+                    .filter(Files::isRegularFile)
+                    .forEach(collector::add);
+        } catch (IOException e) {
+            // ignore
+        }
+    }
+
     private void searchInSessionFile(
-            Path file, String lowerQuery, List<String> results, int limit) {
+            Path logFile, String lowerQuery, List<String> results, int limit) {
         try {
-            SessionTree tree =
-                    new SessionTree(
-                            file.resolveSibling(
-                                    file.getFileName().toString().replace(".log.jsonl", ".jsonl")));
+            Path contextFile =
+                    logFile.resolveSibling(
+                            logFile.getFileName()
+                                    .toString()
+                                    .replace(WorkspaceConstants.SESSION_LOG_EXT, WorkspaceConstants.SESSION_CONTEXT_EXT));
+            SessionTree tree = new SessionTree(contextFile, workspaceManager.getWorkspace(), null);
             tree.load();
 
-            String relPath = workspaceManager.getWorkspace().relativize(file).toString();
+            String relPath = workspaceManager.getWorkspace().relativize(logFile).toString();
             for (SessionEntry.MessageEntry msg : tree.getMessageEntries()) {
                 if (results.size() >= limit) {
                     break;

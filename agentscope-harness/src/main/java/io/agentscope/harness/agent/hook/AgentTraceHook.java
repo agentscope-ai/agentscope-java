@@ -196,7 +196,10 @@ public class AgentTraceHook implements Hook {
         if (s == null || s.isEmpty()) {
             return "<empty>";
         }
-        return s.length() <= max ? s : s.substring(0, max) + "...";
+        if (s.length() <= max) {
+            return s;
+        }
+        return s.substring(0, max) + "...[truncated, limit=" + max + " chars]";
     }
 
     private static String mapToJson(Map<String, Object> map) {

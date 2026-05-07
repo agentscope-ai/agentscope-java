@@ -66,7 +66,8 @@ class HarnessAgentDistributedSandboxTest {
 
     @Test
     void sandboxMode_withLocalSession_failsFastByDefault() {
-        // Mode 2 (SandboxFilesystemSpec) now validates automatically — no sandboxDistributed() needed.
+        // Mode 2 (SandboxFilesystemSpec) now validates automatically — no sandboxDistributed()
+        // needed.
         IllegalStateException ex =
                 assertThrows(
                         IllegalStateException.class,
@@ -80,7 +81,8 @@ class HarnessAgentDistributedSandboxTest {
         assertEquals(
                 true,
                 ex.getMessage().contains("distributed Session backend"),
-                "sandbox mode should fail-fast when effective session remains local WorkspaceSession");
+                "sandbox mode should fail-fast when effective session remains local"
+                        + " WorkspaceSession");
     }
 
     @Test

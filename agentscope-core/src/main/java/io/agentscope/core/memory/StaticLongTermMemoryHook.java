@@ -23,8 +23,6 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -116,13 +114,15 @@ public class StaticLongTermMemoryHook implements Hook {
     }
 
     /**
-     * Handles PreReasoningEvent by retrieving relevant memories and injecting them.
+     * Handles PreCallEvent by retrieving relevant memories and injecting them into the system
+     * message via {@link PreCallEvent#appendSystemContent}.
      *
-     * <p>Retrieves memories relevant to the user's query and injects them as a system
-     * message at the beginning of the message list. The memories are wrapped in
-     * {@code <long_term_memory>} tags for clear identification.
+     * <p>Retrieves memories relevant to the last user message and appends them to the unified
+     * system message. The memories are wrapped in {@code <long_term_memory>} tags for clear
+     * identification. Since this hook fires only on {@link PreCallEvent} (once per call), there
+     * is no risk of accumulation across reasoning iterations.
      *
-     * @param event the PreReasoningEvent
+     * @param event the PreCallEvent
      * @return Mono containing the potentially modified event
      */
     private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
@@ -142,24 +142,7 @@ public class StaticLongTermMemoryHook implements Hook {
                 .filter(memoryText -> memoryText != null && !memoryText.isEmpty())
                 .flatMap(
                         memoryText -> {
-                            // Wrap memory content in tags
-                            String wrappedMemory = wrap(memoryText);
-
-                            // Create system message with retrieved memories
-                            Msg memoryMsg =
-                                    Msg.builder()
-                                            .role(MsgRole.SYSTEM)
-                                            .name("long_term_memory")
-                                            .content(
-                                                    TextBlock.builder().text(wrappedMemory).build())
-                                            .build();
-
-                            // Inject memory message at the beginning
-                            List<Msg> enhancedMessages = new ArrayList<>();
-                            enhancedMessages.addAll(inputMessages);
-                            enhancedMessages.add(memoryMsg);
-                            event.setInputMessages(enhancedMessages);
-
+                            event.appendSystemContent(wrap(memoryText));
                             return Mono.just(event);
                         })
                 .defaultIfEmpty(event)

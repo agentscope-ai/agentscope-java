@@ -97,16 +97,14 @@ class SkillHookTest {
         // Act: Process event through hook
         PreCallEvent result = skillHook.onEvent(event).block();
 
-        // Assert: Skill prompt should be injected
+        // Assert: Skill prompt should be injected into systemMsg, not inputMessages
         assertNotNull(result, "Event should be processed");
-        assertEquals(2, result.getInputMessages().size(), "Should add skill prompt message");
-        assertEquals(
-                MsgRole.SYSTEM,
-                result.getInputMessages().get(0).getRole(),
-                "Skill prompt should be SYSTEM message");
+        assertEquals(1, result.getInputMessages().size(), "Should not add SYSTEM to inputMessages");
+        assertNotNull(result.getSystemMessage(), "systemMsg should be set by SkillHook");
+        assertEquals(MsgRole.SYSTEM, result.getSystemMessage().getRole());
         assertTrue(
-                result.getInputMessages().get(0).getContent().toString().contains("test_skill"),
-                "Skill prompt should contain skill information");
+                result.getSystemMessage().getTextContent().contains("test_skill"),
+                "systemMsg should contain skill information");
     }
 
     /**
@@ -153,16 +151,11 @@ class SkillHookTest {
         // Act: Process event through hook
         PreCallEvent result = skillHook.onEvent(event).block();
 
-        // Assert: Skill prompt should be added for registered skills
+        // Assert: Skill prompt should be in systemMsg, not inputMessages
         assertNotNull(result, "Event should be processed");
-        assertEquals(
-                2,
-                result.getInputMessages().size(),
-                "Should add skill prompt for registered skills");
-        assertEquals(
-                MsgRole.SYSTEM,
-                result.getInputMessages().get(0).getRole(),
-                "Skill prompt should be SYSTEM message");
+        assertEquals(1, result.getInputMessages().size(), "Should not add SYSTEM to inputMessages");
+        assertNotNull(result.getSystemMessage(), "systemMsg should be set for registered skills");
+        assertEquals(MsgRole.SYSTEM, result.getSystemMessage().getRole());
     }
 
     @Test
@@ -271,29 +264,26 @@ class SkillHookTest {
         // Act: Process event through hook
         PreCallEvent result = skillHook.onEvent(event).block();
 
-        // Assert: Skill prompt should be injected at the FIRST position
+        // Assert: Skill prompt should be in systemMsg; inputMessages unchanged
         assertNotNull(result, "Event should be processed");
-        assertEquals(3, result.getInputMessages().size(), "Should add skill prompt message");
-
-        // Verify the first message is the skill prompt (SYSTEM role)
-        Msg firstMsg = result.getInputMessages().get(0);
         assertEquals(
-                MsgRole.SYSTEM,
-                firstMsg.getRole(),
-                "First message should be SYSTEM message with skill prompt");
+                2,
+                result.getInputMessages().size(),
+                "inputMessages should not gain a SYSTEM entry");
+        assertNotNull(result.getSystemMessage(), "systemMsg should be set");
         assertTrue(
-                firstMsg.getTextContent().contains("test_skill"),
-                "First message should contain skill information");
+                result.getSystemMessage().getTextContent().contains("test_skill"),
+                "systemMsg should contain skill information");
 
-        // Verify original messages are preserved in order after skill prompt
+        // Verify original messages are preserved in order
         assertEquals(
                 "User query",
-                result.getInputMessages().get(1).getTextContent(),
-                "Second message should be original user query");
+                result.getInputMessages().get(0).getTextContent(),
+                "First message should be original user query");
         assertEquals(
                 "Assistant response",
-                result.getInputMessages().get(2).getTextContent(),
-                "Third message should be original assistant response");
+                result.getInputMessages().get(1).getTextContent(),
+                "Second message should be original assistant response");
     }
 
     @Test
@@ -334,42 +324,23 @@ class SkillHookTest {
         // Act: Process event through hook
         PreCallEvent result = skillHook.onEvent(event).block();
 
-        // Assert: Should still have exactly 3 messages (merged, not added)
+        // Assert: SkillHook uses systemMsg API now; inputMessages are NOT modified.
+        // The pre-existing SYSTEM message in inputMessages stays there (it's in the caller's list),
+        // and the skill prompt is appended to event.getSystemMessage().
         assertNotNull(result, "Event should be processed");
-        assertEquals(
-                3,
-                result.getInputMessages().size(),
-                "Should merge into existing SYSTEM message, not add a new one");
 
-        // Verify there is exactly one SYSTEM message
-        long systemCount =
-                result.getInputMessages().stream()
-                        .filter(m -> m.getRole() == MsgRole.SYSTEM)
-                        .count();
-        assertEquals(1, systemCount, "There should be exactly one SYSTEM message");
-
-        // Verify the merged SYSTEM message is at index 0
-        Msg systemMsg = result.getInputMessages().get(0);
-        assertEquals(MsgRole.SYSTEM, systemMsg.getRole());
-
-        // Verify structural merge: content blocks are preserved, not flattened
-        // First content block should be the original system instruction TextBlock,
-        // second should be the skill prompt TextBlock
+        // inputMessages still has 3 items (unchanged by SkillHook)
         assertEquals(
-                2,
-                systemMsg.getContent().size(),
-                "Merged SYSTEM message should have 2 content blocks (structural merge)");
-        assertInstanceOf(TextBlock.class, systemMsg.getContent().get(0));
-        assertInstanceOf(TextBlock.class, systemMsg.getContent().get(1));
-        assertEquals(
-                "System instruction",
-                ((TextBlock) systemMsg.getContent().get(0)).getText(),
-                "First content block should be the original system instruction");
+                3, result.getInputMessages().size(), "SkillHook should not modify inputMessages");
+
+        // systemMsg should contain the skill prompt
+        assertNotNull(result.getSystemMessage(), "systemMsg should be set by SkillHook");
+        assertEquals(MsgRole.SYSTEM, result.getSystemMessage().getRole());
         assertTrue(
-                ((TextBlock) systemMsg.getContent().get(1)).getText().contains("test_skill"),
-                "Second content block should be the skill prompt");
+                result.getSystemMessage().getTextContent().contains("test_skill"),
+                "systemMsg should contain skill information");
 
-        // Verify other messages are preserved
+        // Verify original messages are preserved in order
         assertEquals("User query", result.getInputMessages().get(1).getTextContent());
         assertEquals("Assistant response", result.getInputMessages().get(2).getTextContent());
     }

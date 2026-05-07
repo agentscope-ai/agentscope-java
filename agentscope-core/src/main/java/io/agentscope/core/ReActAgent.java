@@ -157,6 +157,16 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final StatePersistence statePersistence;
     private RuntimeContext pendingRuntimeContext;
 
+    /**
+     * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
+     * PreSummaryEvent. It is safe to use an {@link java.util.concurrent.atomic.AtomicReference}
+     * here because {@code AgentBase.acquireExecution()} guarantees that only one {@code call()}
+     * runs concurrently per agent instance, so this reference is effectively owned by a single
+     * logical execution at any time.
+     */
+    private final java.util.concurrent.atomic.AtomicReference<Msg> currentSystemMsg =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
     // ==================== Constructor ====================
 
     private ReActAgent(Builder builder, Toolkit agentToolkit) {
@@ -193,6 +203,25 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             ctx = RuntimeContext.empty();
         }
         bindRuntimeContextToHooks(ctx);
+        // Reset per-call system message; will be initialised by consumeSystemMsgAfterPreCall
+        currentSystemMsg.set(null);
+    }
+
+    @Override
+    protected Msg seedSystemMsg() {
+        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
+            return Msg.builder()
+                    .name("system")
+                    .role(MsgRole.SYSTEM)
+                    .content(TextBlock.builder().text(sysPrompt).build())
+                    .build();
+        }
+        return null;
+    }
+
+    @Override
+    protected void consumeSystemMsgAfterPreCall(Msg systemMsg) {
+        currentSystemMsg.set(systemMsg);
     }
 
     @Override
@@ -537,17 +566,17 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         ReasoningContext context = new ReasoningContext(getName());
 
         return checkInterruptedAsync()
-                .then(notifyPreReasoningEvent(prepareMessages()))
+                .then(notifyPreReasoningEvent(memory.getMessages()))
                 .flatMapMany(
                         event -> {
                             GenerateOptions options =
                                     event.getEffectiveGenerateOptions() != null
                                             ? event.getEffectiveGenerateOptions()
                                             : buildGenerateOptions();
-                            return model.stream(
-                                            event.getInputMessages(),
-                                            toolkit.getToolSchemas(),
-                                            options)
+                            List<Msg> modelInput =
+                                    prependSystemMsg(
+                                            event.getInputMessages(), event.getSystemMessage());
+                            return model.stream(modelInput, toolkit.getToolSchemas(), options)
                                     .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk));
                         })
                 .doOnNext(
@@ -805,7 +834,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         return notifyPreSummaryHook(messageList, generateOptions)
                 .flatMap(
                         preSummaryEvent -> {
-                            List<Msg> effectiveMessages = preSummaryEvent.getInputMessages();
+                            List<Msg> effectiveMessages =
+                                    prependSystemMsg(
+                                            preSummaryEvent.getInputMessages(),
+                                            preSummaryEvent.getSystemMessage());
                             GenerateOptions effectiveOptions =
                                     preSummaryEvent.getEffectiveGenerateOptions();
 
@@ -846,7 +878,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private List<Msg> prepareSummaryMessages() {
-        List<Msg> messageList = prepareMessages();
+        List<Msg> messageList = new ArrayList<>(memory.getMessages());
         messageList.add(
                 Msg.builder()
                         .name("user")
@@ -887,20 +919,21 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     // ==================== Helper Methods ====================
 
     /**
-     * Prepare messages for model input.
+     * Prepends the system message to {@code msgs} if non-null.
+     *
+     * <p>Called immediately before each {@code model.stream()} invocation to build the final
+     * LLM input without contaminating the in-memory message list.
      */
-    private List<Msg> prepareMessages() {
-        List<Msg> messages = new ArrayList<>();
-        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
-            messages.add(
-                    Msg.builder()
-                            .name("system")
-                            .role(MsgRole.SYSTEM)
-                            .content(TextBlock.builder().text(sysPrompt).build())
-                            .build());
+    private static List<Msg> prependSystemMsg(List<Msg> msgs, Msg systemMsg) {
+        if (systemMsg == null) {
+            return msgs != null ? msgs : List.of();
         }
-        messages.addAll(memory.getMessages());
-        return messages;
+        List<Msg> result = new ArrayList<>();
+        result.add(systemMsg);
+        if (msgs != null) {
+            result.addAll(msgs);
+        }
+        return result;
     }
 
     /**
@@ -982,7 +1015,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private Mono<PreReasoningEvent> notifyPreReasoningEvent(List<Msg> msgs) {
-        return notifyHooks(new PreReasoningEvent(this, model.getModelName(), null, msgs));
+        PreReasoningEvent event = new PreReasoningEvent(this, model.getModelName(), null, msgs);
+        event.setSystemMessage(currentSystemMsg.get());
+        return notifyHooks(event);
     }
 
     private Mono<PostReasoningEvent> notifyPostReasoning(Msg msg) {
@@ -1052,9 +1087,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     private Mono<PreSummaryEvent> notifyPreSummaryHook(
             List<Msg> msgs, GenerateOptions generateOptions) {
-        return notifyHooks(
+        PreSummaryEvent event =
                 new PreSummaryEvent(
-                        this, model.getModelName(), generateOptions, msgs, maxIters, maxIters));
+                        this, model.getModelName(), generateOptions, msgs, maxIters, maxIters);
+        event.setSystemMessage(currentSystemMsg.get());
+        return notifyHooks(event);
     }
 
     private Mono<PostSummaryEvent> notifyPostSummaryHook(Msg msg, GenerateOptions generateOptions) {
