@@ -23,10 +23,14 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Static Long-Term Memory Hook for automatic memory management.
@@ -71,18 +75,38 @@ import reactor.core.publisher.Mono;
 public class StaticLongTermMemoryHook implements Hook {
 
     private static final Logger log = LoggerFactory.getLogger(StaticLongTermMemoryHook.class);
+    // Dedicated async scheduler for long-term memory recording:
+    // - max 1 concurrent workers
+    // - max 3 queued tasks (new tasks are rejected when saturated)
+    // This avoids unbounded queuing on the global boundedElastic scheduler.
+    private static final Scheduler ASYNC_RECORD_SCHEDULER =
+            Schedulers.newBoundedElastic(1, 3, "long-term-memory-record");
 
     private final LongTermMemory longTermMemory;
     private final Memory memory;
+    private final boolean asyncRecord;
 
     /**
-     * Creates a new StaticLongTermMemoryHook.
+     * Creates a new StaticLongTermMemoryHook with synchronous recording.
      *
      * @param longTermMemory The long-term memory instance for persistent storage
      * @param memory The agent's memory for accessing conversation history
      * @throws IllegalArgumentException if longTermMemory or memory is null
      */
     public StaticLongTermMemoryHook(LongTermMemory longTermMemory, Memory memory) {
+        this(longTermMemory, memory, false);
+    }
+
+    /**
+     * Creates a new StaticLongTermMemoryHook.
+     *
+     * @param longTermMemory The long-term memory instance for persistent storage
+     * @param memory The agent's memory for accessing conversation history
+     * @param asyncRecord Whether to record memories asynchronously (fire-and-forget)
+     * @throws IllegalArgumentException if longTermMemory or memory is null
+     */
+    public StaticLongTermMemoryHook(
+            LongTermMemory longTermMemory, Memory memory, boolean asyncRecord) {
         if (longTermMemory == null) {
             throw new IllegalArgumentException("Long-term memory cannot be null");
         }
@@ -91,6 +115,7 @@ public class StaticLongTermMemoryHook implements Hook {
         }
         this.longTermMemory = longTermMemory;
         this.memory = memory;
+        this.asyncRecord = asyncRecord;
     }
 
     @Override
@@ -114,15 +139,13 @@ public class StaticLongTermMemoryHook implements Hook {
     }
 
     /**
-     * Handles PreCallEvent by retrieving relevant memories and injecting them into the system
-     * message via {@link PreCallEvent#appendSystemContent}.
+     * Handles PreReasoningEvent by retrieving relevant memories and injecting them.
      *
-     * <p>Retrieves memories relevant to the last user message and appends them to the unified
-     * system message. The memories are wrapped in {@code <long_term_memory>} tags for clear
-     * identification. Since this hook fires only on {@link PreCallEvent} (once per call), there
-     * is no risk of accumulation across reasoning iterations.
+     * <p>Retrieves memories relevant to the user's query and injects them as a system
+     * message at the beginning of the message list. The memories are wrapped in
+     * {@code <long_term_memory>} tags for clear identification.
      *
-     * @param event the PreCallEvent
+     * @param event the PreReasoningEvent
      * @return Mono containing the potentially modified event
      */
     private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
@@ -142,7 +165,23 @@ public class StaticLongTermMemoryHook implements Hook {
                 .filter(memoryText -> memoryText != null && !memoryText.isEmpty())
                 .flatMap(
                         memoryText -> {
-                            event.appendSystemContent(wrap(memoryText));
+                            // Wrap memory content in tags
+                            String wrappedMemory = wrap(memoryText);
+
+                            // Create user message with retrieved memories
+                            Msg memoryMsg =
+                                    Msg.builder()
+                                            .role(MsgRole.USER)
+                                            .name("long_term_memory")
+                                            .content(
+                                                    TextBlock.builder().text(wrappedMemory).build())
+                                            .build();
+
+                            // Inject memory message at the end
+                            List<Msg> enhancedMessages = new ArrayList<>(inputMessages);
+                            enhancedMessages.add(memoryMsg);
+                            event.setInputMessages(enhancedMessages);
+
                             return Mono.just(event);
                         })
                 .defaultIfEmpty(event)
@@ -163,6 +202,16 @@ public class StaticLongTermMemoryHook implements Hook {
      * the long-term memory backend (e.g., Mem0) to extract memorable information from
      * the entire conversation context.
      *
+     * <p>When {@code asyncRecord} is enabled, the recording is performed in a
+     * fire-and-forget manner that does not block the agent's response. Async recording
+     * uses a bounded scheduler (1 workers, queue size 3). When saturated, new record
+     * tasks are dropped and logged.
+     *
+     * <p><b>Trade-offs:</b> This async path intentionally decouples recording from the
+     * main event chain. The returned subscription is not retained in this mode, so
+     * in-flight record tasks are not explicitly cancelled by this class.
+     * Otherwise, the recording completes before returning the event.
+     *
      * @param event the PostCallEvent
      * @return Mono containing the unmodified event
      */
@@ -174,16 +223,39 @@ public class StaticLongTermMemoryHook implements Hook {
         }
 
         // Record to long-term memory
-        return longTermMemory
-                .record(allMessages)
-                .thenReturn(event)
-                .onErrorResume(
-                        error -> {
-                            // Log error but don't interrupt the flow
-                            log.warn(
-                                    "Failed to record to long-term memory: {}", error.getMessage());
-                            return Mono.just(event);
-                        });
+        if (asyncRecord) {
+            // Fire-and-forget: schedule on a dedicated bounded scheduler so the agent's
+            // response is not blocked while still limiting backlog growth.
+            return Mono.deferContextual(
+                    ctxView -> {
+                        longTermMemory
+                                .record(allMessages)
+                                .subscribeOn(ASYNC_RECORD_SCHEDULER)
+                                .contextWrite(context -> context.putAll(ctxView))
+                                .onErrorResume(
+                                        error -> {
+                                            log.warn(
+                                                    "Failed to asynchronously record to long-term"
+                                                            + " memory: {}",
+                                                    error.getMessage());
+                                            return Mono.empty();
+                                        })
+                                .subscribe();
+                        return Mono.just(event);
+                    });
+        } else {
+            return longTermMemory
+                    .record(allMessages)
+                    .thenReturn(event)
+                    .onErrorResume(
+                            error -> {
+                                // Log error but don't interrupt the flow
+                                log.warn(
+                                        "Failed to record to long-term memory: {}",
+                                        error.getMessage());
+                                return Mono.just(event);
+                            });
+        }
     }
 
     /**

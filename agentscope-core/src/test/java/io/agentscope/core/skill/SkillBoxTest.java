@@ -1165,6 +1165,27 @@ class SkillBoxTest {
             assertTrue(codeExecutionStart >= 0);
             assertTrue(availableSkillsEnd < codeExecutionStart);
         }
+
+        @Test
+        @DisplayName("Should expose only core skill metadata when configured")
+        void testExposeOnlyCoreSkillMetadata() {
+            Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+            metadata.put("name", "trello");
+            metadata.put("description", "Manage Trello boards");
+            metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
+            metadata.put("metadata", Map.of("clawdbot", Map.of("emoji", "📋")));
+            AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+            skillBox.registerSkill(skill);
+            skillBox.setExposeAllSkillMetadata(false);
+
+            String prompt = skillBox.getSkillPrompt();
+
+            assertTrue(prompt.contains("<name>trello</name>"));
+            assertTrue(prompt.contains("<description>Manage Trello boards</description>"));
+            assertTrue(prompt.contains("<skill-id>trello_custom</skill-id>"));
+            assertFalse(prompt.contains("<homepage>"));
+            assertFalse(prompt.contains("<metadata>"));
+        }
     }
 
     /**

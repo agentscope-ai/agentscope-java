@@ -58,7 +58,7 @@ class McpAsyncClientWrapperTest {
     void testInitialize_Success() {
         // Mock initialization
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.12-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -104,7 +104,7 @@ class McpAsyncClientWrapperTest {
     @Test
     void testInitialize_AlreadyInitialized() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.12-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",

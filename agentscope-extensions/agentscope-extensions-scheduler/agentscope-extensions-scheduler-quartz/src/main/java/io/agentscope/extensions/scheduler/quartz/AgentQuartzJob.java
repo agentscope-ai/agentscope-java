@@ -16,11 +16,14 @@
 package io.agentscope.extensions.scheduler.quartz;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.scheduler.ScheduleAgentTask;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
 import org.quartz.InterruptableJob;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Quartz Job implementation that executes an AgentScope agent task.
@@ -30,6 +33,8 @@ import org.quartz.JobExecutionException;
  * It also handles the rescheduling for {@code FIXED_DELAY} tasks.
  */
 public class AgentQuartzJob implements InterruptableJob {
+
+    private static final Logger logger = LoggerFactory.getLogger(AgentQuartzJob.class);
 
     private volatile boolean interrupted;
 
@@ -57,16 +62,48 @@ public class AgentQuartzJob implements InterruptableJob {
         if (task == null) {
             return;
         }
+
+        ScheduleAgentTask<Msg> t = task;
+        Msg inputMsg = null;
+        String msgJson = context.getJobDetail().getJobDataMap().getString("inputMsg");
+
+        if (msgJson != null && !msgJson.trim().isEmpty()) {
+            try {
+                inputMsg = JsonUtils.getJsonCodec().fromJson(msgJson, Msg.class);
+            } catch (Exception ex) {
+                logger.error(
+                        "Failed to deserialize inputMsg. schedulerId={}, taskName={}, jobKey={},"
+                                + " triggerKey={}, msgLen={}",
+                        schedulerId,
+                        taskName,
+                        context.getJobDetail().getKey(),
+                        context.getTrigger().getKey(),
+                        msgJson.length(),
+                        ex);
+
+                JobExecutionException jee =
+                        new JobExecutionException(
+                                "Invalid inputMsg JSON for scheduled task: " + taskName, ex, false);
+                jee.setUnscheduleFiringTrigger(true);
+                throw jee;
+            }
+        }
+
         try {
-            ScheduleAgentTask<Msg> t = task;
             // Blocking is acceptable here because Quartz jobs run in their own dedicated thread
             // pool
             // and are executed synchronously; we need to wait for the reactive pipeline to
             // complete.
-            t.run().block();
+            if (inputMsg != null) {
+                t.run(inputMsg).block();
+            } else {
+                t.run().block();
+            }
         } catch (Exception e) {
+            logger.error("Error executing scheduled agent task: {}", taskName, e);
             throw new JobExecutionException(e);
         }
+
         if (interrupted) {
             return;
         }

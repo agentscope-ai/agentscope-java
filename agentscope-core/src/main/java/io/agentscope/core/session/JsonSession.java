@@ -142,8 +142,7 @@ public class JsonSession implements Session {
 
             // Determine if full rewrite is needed
             boolean needsFullRewrite =
-                    ListHashUtil.needsFullRewrite(
-                            currentHash, storedHash, values.size(), (int) existingCount);
+                    ListHashUtil.needsFullRewrite(values, storedHash, (int) existingCount);
 
             if (needsFullRewrite) {
                 // Full rewrite: delete existing file and write all items
