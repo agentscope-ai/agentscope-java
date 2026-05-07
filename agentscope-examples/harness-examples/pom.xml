@@ -22,6 +22,9 @@
     <modules>
         <module>harness-example-common</module>
         <module>harness-quickstart</module>
-        <module>harness-sandbox</module>
+        <module>harness-sandbox-docker</module>
+        <module>harness-example-local</module>
+        <module>harness-example-sandbox</module>
+        <module>harness-example-remote</module>
     </modules>
 </project>

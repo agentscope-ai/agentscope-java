@@ -17,6 +17,7 @@ package io.agentscope.examples.harness.common.util;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -24,7 +25,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.RuntimeContext;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;

@@ -15,17 +15,17 @@
  */
 package io.agentscope.harness.example;
 
-import static io.agentscope.examples.harness.common.util.ExampleUtils.ctx;
-import static io.agentscope.examples.harness.common.util.ExampleUtils.runHarnessTurn;
-import static io.agentscope.examples.harness.common.util.ExampleUtils.startHarnessChat;
-
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.Model;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -123,7 +123,7 @@ public class TextToSqlExample {
         // 1. Resolve configuration from environment variables
         // ------------------------------------------------------------------
 
-        String apiKey = requireEnv(ENV_API_KEY);
+        requireEnv(ENV_API_KEY);
         String modelName = env(ENV_MODEL_NAME, DEFAULT_MODEL);
         Path workspace = Paths.get(env(ENV_WORKSPACE, DEFAULT_WORKSPACE));
         Path dbPath = resolveDatabasePath(Paths.get(env(ENV_DB_PATH, DEFAULT_DB_PATH)));
@@ -137,13 +137,11 @@ public class TextToSqlExample {
         WorkspaceInitializer.init(workspace);
 
         // ------------------------------------------------------------------
-        // 3. Build the LLM model
+        // 3. Model id for HarnessAgent (resolved via ModelRegistry; needs DASHSCOPE_API_KEY)
         // ------------------------------------------------------------------
 
-        System.out.println("[2/3] Connecting to model: " + modelName);
-        Model model =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName(modelName).stream(true)
-                        .build();
+        String modelId = "dashscope:" + modelName;
+        System.out.println("[2/3] Connecting to model: " + modelId);
 
         // ------------------------------------------------------------------
         // 4. Build the agent
@@ -165,7 +163,7 @@ public class TextToSqlExample {
                                         + " store database. When asked a question, explore the"
                                         + " database schema, write a correct SQL query, execute it,"
                                         + " and present the results in a clear, formatted answer.")
-                        .model(model)
+                        .model(modelId)
                         .workspace(workspace)
                         .enableAgentTracingLog(true)
                         .toolkit(toolkit)
@@ -177,10 +175,10 @@ public class TextToSqlExample {
                         ? "text-to-sql-" + UUID.randomUUID().toString().substring(0, 8)
                         : DEFAULT_SHARED_SESSION_ID;
         System.out.println("Session ID: " + sessionId);
-        RuntimeContext ctx = ctx(sessionId);
+        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
 
         if (parsedArgs.question() != null) {
-            runHarnessTurn(agent, ctx, parsedArgs.question());
+            runOneTurn(agent, ctx, parsedArgs.question());
             return;
         }
 
@@ -189,7 +187,35 @@ public class TextToSqlExample {
                         + " Same session for all turns (memory tools share context).");
         System.out.println("Tip: add --new-session to generate a UUID-based fresh session.");
         System.out.println("Leave: empty line, quit, exit, q, or EOF (Ctrl-D).\n");
-        startHarnessChat(agent, ctx);
+
+        BufferedReader stdin =
+                new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        while (true) {
+            System.out.print("> ");
+            System.out.flush();
+            String line = stdin.readLine();
+            if (line == null) {
+                System.out.println("\n(end of input)");
+                break;
+            }
+            String question = line.strip();
+            if (question.isEmpty()) {
+                System.out.println("Goodbye.");
+                break;
+            }
+            if (isQuitCommand(question)) {
+                System.out.println("Goodbye.");
+                break;
+            }
+            runOneTurn(agent, ctx, question);
+            System.out.println();
+        }
+    }
+
+    private static boolean isQuitCommand(String line) {
+        return line.equalsIgnoreCase("quit")
+                || line.equalsIgnoreCase("exit")
+                || line.equalsIgnoreCase("q");
     }
 
     private static ParsedArgs parseArgs(String[] args) {
@@ -207,6 +233,24 @@ public class TextToSqlExample {
         }
         String question = questionBuilder.length() == 0 ? null : questionBuilder.toString();
         return new ParsedArgs(newSession, question);
+    }
+
+    private static void runOneTurn(HarnessAgent agent, RuntimeContext ctx, String question) {
+        System.out.println("─".repeat(50));
+        System.out.println("Question: " + question);
+        System.out.println();
+
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text(question).build())
+                        .build();
+        Msg reply = agent.call(userMsg, ctx).block();
+
+        System.out.println("─".repeat(50));
+        System.out.println("\nAnswer:\n");
+        System.out.println(reply != null ? reply.getTextContent() : "(no response)");
+        System.out.println();
     }
 
     // -------------------------------------------------------------------------

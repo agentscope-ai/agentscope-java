@@ -20,10 +20,10 @@ import static io.agentscope.examples.harness.common.util.ExampleUtils.getDashSco
 import static io.agentscope.examples.harness.common.util.ExampleUtils.printWelcome;
 import static io.agentscope.examples.harness.common.util.ExampleUtils.startChat;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.RuntimeContext;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
