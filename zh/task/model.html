@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-04-24T08:26:23+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
+    <meta property="article:modified_time" content="2026-05-08T05:45:43+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/model.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -534,6 +534,129 @@
 </table>
 </div>
 </section>
+<section id="modelregistry">
+<h2>ModelRegistry<a class="headerlink" href="#modelregistry" title="Link to this heading">¶</a></h2>
+<p><a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java"><code class="docutils literal notranslate"><span class="pre">ModelRegistry</span></code></a>（<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.model.ModelRegistry</span></code>）用<strong>字符串 id</strong>得到 <code class="docutils literal notranslate"><span class="pre">Model</span></code> 实例，适合不想手写各厂商 <code class="docutils literal notranslate"><span class="pre">*ChatModel.builder()</span></code> 的场景。例如 Harness 场景下可使用 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.builder().model(String)</span></code>；任意需要 <code class="docutils literal notranslate"><span class="pre">Model</span></code> 的地方可先调用 <code class="docutils literal notranslate"><span class="pre">ModelRegistry.resolve(...)</span></code> 再传入 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 等构建器。</p>
+<section id="api">
+<h3>API 一览<a class="headerlink" href="#api" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>方法</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">register(String</span> <span class="pre">name,</span> <span class="pre">Model</span> <span class="pre">model)</span></code></p></td>
+<td><p>注册<strong>具名</strong>模型；之后对同名 id 调用 <code class="docutils literal notranslate"><span class="pre">resolve</span></code> 直接返回该实例。</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">registerFactory(String</span> <span class="pre">regex,</span> <span class="pre">ModelFactory</span> <span class="pre">factory)</span></code></p></td>
+<td><p>为匹配正则的 id 注册自定义工厂；<strong>后注册的工厂优先</strong>于更早注册的用户工厂，且优先于内置规则。</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">resolve(String</span> <span class="pre">modelId)</span></code></p></td>
+<td><p>解析并返回 <code class="docutils literal notranslate"><span class="pre">Model</span></code>；无法解析或创建失败时抛出 <code class="docutils literal notranslate"><span class="pre">IllegalArgumentException</span></code>。</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">canResolve(String</span> <span class="pre">modelId)</span></code></p></td>
+<td><p>仅判断是否可解析（不创建实例）。</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">reset()</span></code></p></td>
+<td><p>清空具名注册、用户工厂与解析缓存；内置规则保留。一般仅在测试或进程内重置时使用。</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">ModelFactory</span></code> 为函数式接口：<code class="docutils literal notranslate"><span class="pre">Model</span> <span class="pre">create(String</span> <span class="pre">modelId)</span></code>，参数为完整模型 id 字符串。</p>
+</section>
+<section id="id">
+<h3>内置 id 格式与环境变量<a class="headerlink" href="#id" title="Link to this heading">¶</a></h3>
+<p>在已配置对应环境变量的前提下，可使用下列 id 形式（适用于 <code class="docutils literal notranslate"><span class="pre">resolve</span></code> 以及 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.Builder.model(String)</span></code> 等）：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>id 示例</p></th>
+<th class="head"><p>所需环境变量</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">openai:gpt-4o-mini</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code></p></td>
+<td><p>OpenAI 兼容 HTTP 模型</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dashscope:qwen-max</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code></p></td>
+<td><p>阿里云 DashScope / 百炼</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">qwen-max</span></code> 等以 <code class="docutils literal notranslate"><span class="pre">qwen-</span></code> 开头的 id</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code></p></td>
+<td><p>将整个字符串作为 DashScope 的 <code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">anthropic:claude-sonnet-4-5-20250929</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code>（可选；未设置时可依赖 SDK 从环境读取）</p></td>
+<td><p>Anthropic Claude</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gemini:gemini-2.5-flash</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GEMINI_API_KEY</span></code></p></td>
+<td><p>Google Gemini API</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ollama:llama3</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OLLAMA_BASE_URL</span></code>（可选，默认 <code class="docutils literal notranslate"><span class="pre">http://localhost:11434</span></code>）</p></td>
+<td><p>本地 Ollama</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>同一进程内，对<strong>相同</strong>工厂解析 id 多次时，返回的 <code class="docutils literal notranslate"><span class="pre">Model</span></code> 实例会被缓存复用；<strong>具名</strong>注册不走该缓存。</p>
+</section>
+<section id="id3">
+<h3>示例：具名注册（自定义配置后复用）<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>需要先精细配置（温度、超时等）时，用 Builder 构建一次，再注册成名字：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ModelRegistry</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.OpenAIChatModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.HarnessAgent</span><span class="p">;</span>
+
+<span class="n">Model</span><span class="w"> </span><span class="n">tuned</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">generateOptions</span><span class="p">(</span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.2</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ModelRegistry</span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="s">&quot;my-gpt4o&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">tuned</span><span class="p">);</span>
+
+<span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;demo&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;my-gpt4o&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id4">
+<h3>示例：内置前缀（默认连接参数）<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.HarnessAgent</span><span class="p">;</span>
+
+<span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;demo&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id5">
+<h3>示例：自定义工厂<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.Model</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ModelRegistry</span><span class="p">;</span>
+
+<span class="n">ModelRegistry</span><span class="p">.</span><span class="na">registerFactory</span><span class="p">(</span>
+<span class="w">        </span><span class="s">&quot;my-llm:.+&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="n">id</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">myModelFactory</span><span class="p">(</span><span class="n">id</span><span class="p">.</span><span class="na">substring</span><span class="p">(</span><span class="s">&quot;my-llm:&quot;</span><span class="p">.</span><span class="na">length</span><span class="p">())));</span>
+
+<span class="n">Model</span><span class="w"> </span><span class="n">m</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ModelRegistry</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span><span class="s">&quot;my-llm:prod&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
 <section id="dashscope">
 <h2>DashScope<a class="headerlink" href="#dashscope" title="Link to this heading">¶</a></h2>
 <p>阿里云 LLM 平台，提供通义千问系列模型。</p>
@@ -543,8 +666,8 @@
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<section id="id3">
-<h3>配置项<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<section id="id6">
+<h3>配置项<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -604,8 +727,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id4">
-<h3>思考模式<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<section id="id7">
+<h3>思考模式<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
@@ -637,8 +760,8 @@
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<section id="api">
-<h3>兼容 API<a class="headerlink" href="#api" title="Link to this heading">¶</a></h3>
+<section id="id8">
+<h3>兼容 API<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <p>适用于 DeepSeek、vLLM 等兼容提供商：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;your-api-key&quot;</span><span class="p">)</span>
@@ -648,8 +771,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id5">
-<h3>配置项<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<section id="id9">
+<h3>配置项<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -687,8 +810,8 @@
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<section id="id6">
-<h3>配置项<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<section id="id10">
+<h3>配置项<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -739,8 +862,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id7">
-<h3>配置项<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<section id="id11">
+<h3>配置项<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -788,8 +911,8 @@
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<section id="id8">
-<h3>配置项<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<section id="id12">
+<h3>配置项<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -817,8 +940,8 @@
 </table>
 </div>
 </section>
-<section id="id9">
-<h3>高级配置<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<section id="id13">
+<h3>高级配置<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
 <p>高级模型加载和生成参数：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OllamaOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">numCtx</span><span class="p">(</span><span class="mi">4096</span><span class="p">)</span><span class="w">           </span><span class="c1">// 上下文窗口大小</span>
@@ -863,11 +986,11 @@
 </pre></div>
 </div>
 </section>
-<section id="id10">
-<h3>可用参数<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<section id="id14">
+<h3>可用参数<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
 <p>Ollama 支持超过 40 个参数进行精细调整：</p>
-<section id="id11">
-<h4>模型加载参数<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h4>
+<section id="id15">
+<h4>模型加载参数<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h4>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">numCtx</span></code>: 上下文窗口大小（默认：2048）</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">numBatch</span></code>: 提示处理的批处理大小（默认：512）</p></li>
@@ -877,8 +1000,8 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">useMLock</span></code>: 锁定模型在内存中以防止交换</p></li>
 </ul>
 </section>
-<section id="id12">
-<h4>生成参数<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h4>
+<section id="id16">
+<h4>生成参数<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h4>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code>: 生成随机性（0.0-2.0）</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">topK</span></code>: Top-K 采样（标准：40）</p></li>
@@ -892,8 +1015,8 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">stop</span></code>: 立即停止生成的字符串</p></li>
 </ul>
 </section>
-<section id="id13">
-<h4>采样策略<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h4>
+<section id="id17">
+<h4>采样策略<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h4>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">mirostat</span></code>: Mirostat 采样（0=禁用，1=Mirostat v1，2=Mirostat v2）</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">mirostatTau</span></code>: Mirostat 目标熵（默认：5.0）</p></li>
@@ -904,8 +1027,8 @@
 </section>
 </section>
 </section>
-<section id="id14">
-<h2>生成选项<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h2>
+<section id="id18">
+<h2>生成选项<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
 <p>通过 <code class="docutils literal notranslate"><span class="pre">GenerateOptions</span></code> 配置生成参数：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.7</span><span class="p">)</span><span class="w">           </span><span class="c1">// 随机性 (0.0-2.0)</span>
@@ -929,8 +1052,8 @@
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<section id="id15">
-<h3>参数说明<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<section id="id19">
+<h3>参数说明<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -988,8 +1111,8 @@
 </table>
 </div>
 </section>
-<section id="id16">
-<h3>工具选择策略<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
+<section id="id20">
+<h3>工具选择策略<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">Auto</span><span class="p">()</span><span class="w">              </span><span class="c1">// 模型自行决定（默认）</span>
 <span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">None</span><span class="p">()</span><span class="w">              </span><span class="c1">// 禁止工具调用</span>
 <span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">Required</span><span class="p">()</span><span class="w">          </span><span class="c1">// 强制调用工具</span>
@@ -997,8 +1120,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id17">
-<h3>扩展参数<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
+<section id="id21">
+<h3>扩展参数<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h3>
 <p>支持传递提供商特有的参数：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">additionalHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span>
@@ -1009,8 +1132,8 @@
 </div>
 </section>
 </section>
-<section id="id18">
-<h2>超时和重试<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
+<section id="id22">
+<h2>超时和重试<a class="headerlink" href="#id22" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">execConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
@@ -1060,12 +1183,12 @@
 </tbody>
 </table>
 </div>
-<section id="id19">
-<h3>默认行为<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
+<section id="id23">
+<h3>默认行为<a class="headerlink" href="#id23" title="Link to this heading">¶</a></h3>
 <p>不指定 Formatter 时，模型使用对应的 <code class="docutils literal notranslate"><span class="pre">ChatFormatter</span></code>，适用于单智能体场景。</p>
 </section>
-<section id="id20">
-<h3>多智能体场景<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h3>
+<section id="id24">
+<h3>多智能体场景<a class="headerlink" href="#id24" title="Link to this heading">¶</a></h3>
 <p>在多智能体协作（如 Pipeline、MsgHub）中，需要使用 <code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code>。它会：</p>
 <ul class="simple">
 <li><p>将多个智能体的消息合并为对话历史</p></li>
@@ -1106,8 +1229,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id21">
-<h3>自定义历史提示<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h3>
+<section id="id25">
+<h3>自定义历史提示<a class="headerlink" href="#id25" title="Link to this heading">¶</a></h3>
 <p>可以自定义对话历史的提示语：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">String</span><span class="w"> </span><span class="n">customPrompt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;# 对话记录\n以下是之前的对话内容：\n&quot;</span><span class="p">;</span>
 
@@ -1201,7 +1324,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-04-24</div>
+              Last updated on 2026-05-08</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1239,50 +1362,58 @@
 <li><a class="reference internal" href="#">模型</a><ul>
 <li><a class="reference internal" href="#id2">支持的模型</a></li>
 <li><a class="reference internal" href="#api-key">获取 API Key</a></li>
+<li><a class="reference internal" href="#modelregistry">ModelRegistry</a><ul>
+<li><a class="reference internal" href="#api">API 一览</a></li>
+<li><a class="reference internal" href="#id">内置 id 格式与环境变量</a></li>
+<li><a class="reference internal" href="#id3">示例：具名注册（自定义配置后复用）</a></li>
+<li><a class="reference internal" href="#id4">示例：内置前缀（默认连接参数）</a></li>
+<li><a class="reference internal" href="#id5">示例：自定义工厂</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#dashscope">DashScope</a><ul>
-<li><a class="reference internal" href="#id3">配置项</a></li>
+<li><a class="reference internal" href="#id6">配置项</a></li>
 <li><a class="reference internal" href="#endpointtype">端点类型（endpointType）</a></li>
-<li><a class="reference internal" href="#id4">思考模式</a></li>
+<li><a class="reference internal" href="#id7">思考模式</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#openai">OpenAI</a><ul>
-<li><a class="reference internal" href="#api">兼容 API</a></li>
-<li><a class="reference internal" href="#id5">配置项</a></li>
+<li><a class="reference internal" href="#id8">兼容 API</a></li>
+<li><a class="reference internal" href="#id9">配置项</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#anthropic">Anthropic</a><ul>
-<li><a class="reference internal" href="#id6">配置项</a></li>
+<li><a class="reference internal" href="#id10">配置项</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#gemini">Gemini</a><ul>
 <li><a class="reference internal" href="#gemini-api">Gemini API</a></li>
 <li><a class="reference internal" href="#vertex-ai">Vertex AI</a></li>
-<li><a class="reference internal" href="#id7">配置项</a></li>
+<li><a class="reference internal" href="#id11">配置项</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#ollama">Ollama</a><ul>
-<li><a class="reference internal" href="#id8">配置项</a></li>
-<li><a class="reference internal" href="#id9">高级配置</a></li>
+<li><a class="reference internal" href="#id12">配置项</a></li>
+<li><a class="reference internal" href="#id13">高级配置</a></li>
 <li><a class="reference internal" href="#generateoptions">GenerateOptions 支持</a></li>
-<li><a class="reference internal" href="#id10">可用参数</a><ul>
-<li><a class="reference internal" href="#id11">模型加载参数</a></li>
-<li><a class="reference internal" href="#id12">生成参数</a></li>
-<li><a class="reference internal" href="#id13">采样策略</a></li>
+<li><a class="reference internal" href="#id14">可用参数</a><ul>
+<li><a class="reference internal" href="#id15">模型加载参数</a></li>
+<li><a class="reference internal" href="#id16">生成参数</a></li>
+<li><a class="reference internal" href="#id17">采样策略</a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id14">生成选项</a><ul>
-<li><a class="reference internal" href="#id15">参数说明</a></li>
-<li><a class="reference internal" href="#id16">工具选择策略</a></li>
-<li><a class="reference internal" href="#id17">扩展参数</a></li>
+<li><a class="reference internal" href="#id18">生成选项</a><ul>
+<li><a class="reference internal" href="#id19">参数说明</a></li>
+<li><a class="reference internal" href="#id20">工具选择策略</a></li>
+<li><a class="reference internal" href="#id21">扩展参数</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id18">超时和重试</a></li>
+<li><a class="reference internal" href="#id22">超时和重试</a></li>
 <li><a class="reference internal" href="#formatter">Formatter</a><ul>
-<li><a class="reference internal" href="#id19">默认行为</a></li>
-<li><a class="reference internal" href="#id20">多智能体场景</a></li>
-<li><a class="reference internal" href="#id21">自定义历史提示</a></li>
+<li><a class="reference internal" href="#id23">默认行为</a></li>
+<li><a class="reference internal" href="#id24">多智能体场景</a></li>
+<li><a class="reference internal" href="#id25">自定义历史提示</a></li>
 <li><a class="reference internal" href="#multiagentformatter">何时使用 MultiAgentFormatter</a></li>
 </ul>
 </li>
