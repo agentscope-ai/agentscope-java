@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -356,6 +357,82 @@ class HookEventTest {
             Throwable error = new RuntimeException("Test");
             assertThrows(NullPointerException.class, () -> new ErrorEvent(null, error));
             assertThrows(NullPointerException.class, () -> new ErrorEvent(testAgent, null));
+        }
+    }
+
+    @Nested
+    @DisplayName("System message API Tests")
+    class SystemMessageApiTests {
+
+        private PreCallEvent event;
+
+        @org.junit.jupiter.api.BeforeEach
+        void setup() {
+            event = new PreCallEvent(testAgent, List.of());
+        }
+
+        @Test
+        @DisplayName("getSystemMessage returns null by default")
+        void getSystemMessage_nullByDefault() {
+            assertNull(event.getSystemMessage());
+        }
+
+        @Test
+        @DisplayName("setSystemMessage stores and retrieves value")
+        void setSystemMessage_storesValue() {
+            Msg sys =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .content(TextBlock.builder().text("hello").build())
+                            .build();
+            event.setSystemMessage(sys);
+            assertEquals(sys, event.getSystemMessage());
+        }
+
+        @Test
+        @DisplayName("setSystemMessage(null) clears value")
+        void setSystemMessage_null_clears() {
+            event.appendSystemContent("init");
+            event.setSystemMessage(null);
+            assertNull(event.getSystemMessage());
+        }
+
+        @Test
+        @DisplayName("appendSystemContent(String) creates SYSTEM msg when null")
+        void appendSystemContent_string_createsWhenNull() {
+            event.appendSystemContent("Hello system");
+
+            Msg sys = event.getSystemMessage();
+            assertNotNull(sys);
+            assertEquals(MsgRole.SYSTEM, sys.getRole());
+            assertEquals("Hello system", sys.getTextContent());
+        }
+
+        @Test
+        @DisplayName("appendSystemContent(String) appends to existing message")
+        void appendSystemContent_string_appendsToExisting() {
+            event.appendSystemContent("Part 1");
+            event.appendSystemContent("Part 2");
+
+            Msg sys = event.getSystemMessage();
+            assertNotNull(sys);
+            assertEquals(2, sys.getContent().size());
+            assertEquals("Part 1\nPart 2", sys.getTextContent());
+        }
+
+        @Test
+        @DisplayName("appendSystemContent(ContentBlock) rejects null")
+        void appendSystemContent_block_rejectsNull() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> event.appendSystemContent((ContentBlock) null));
+        }
+
+        @Test
+        @DisplayName("appendSystemContent(String) rejects null")
+        void appendSystemContent_string_rejectsNull() {
+            assertThrows(
+                    NullPointerException.class, () -> event.appendSystemContent((String) null));
         }
     }
 }
