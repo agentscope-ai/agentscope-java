@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
@@ -167,6 +168,10 @@ class ToolMethodInvoker {
             // Special handling: inject ToolExecutionContext automatically
             else if (param.getType() == ToolExecutionContext.class) {
                 args[i] = context;
+            }
+            // Per-call agent runtime (when merged into the execution context)
+            else if (param.getType() == RuntimeContext.class) {
+                args[i] = context != null ? context.get(RuntimeContext.class) : null;
             }
             // User-defined POJO: try to resolve from context
             else if (isUserContextPojo(param)) {
