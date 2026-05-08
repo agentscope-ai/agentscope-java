@@ -82,7 +82,8 @@ final class DockerPythonSandboxImage {
 
     private static Path findDockerfile() {
         String relative = "src/main/docker/python-sandbox/Dockerfile";
-        String moduleRelative = "agentscope-examples/harness-examples/harness-sandbox/" + relative;
+        String moduleRelative =
+                "agentscope-examples/harness-examples/harness-sandbox-docker/" + relative;
         Path cwd = Path.of(System.getProperty("user.dir"));
         for (Path candidate : List.of(cwd.resolve(relative), cwd.resolve(moduleRelative))) {
             if (Files.isRegularFile(candidate)) {

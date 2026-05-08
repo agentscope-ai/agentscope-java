@@ -478,6 +478,13 @@ public class DockerSandbox extends AbstractBaseSandbox {
             }
         }
 
+        String network = dockerState.getNetwork();
+        cmd.add("--network=" + (network == null || network.isBlank() ? "none" : network));
+
+        if (dockerState.getAdditionalRunArgs() != null) {
+            cmd.addAll(dockerState.getAdditionalRunArgs());
+        }
+
         cmd.add(dockerState.getImage());
         // Keep the container alive with an idle shell loop
         cmd.add("sh");

@@ -17,7 +17,9 @@ package io.agentscope.harness.agent.sandbox.impl.docker;
 
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -47,6 +49,12 @@ public class DockerSandboxClientOptions extends SandboxClientOptions {
 
     /** Host ports to expose from the container ({@code hostPort:containerPort} mapping). */
     private int[] exposedPorts = {};
+
+    /** Additional raw arguments appended to {@code docker run} before the image name. */
+    private List<String> additionalRunArgs = new ArrayList<>();
+
+    /** Docker network mode or network name passed to {@code docker run --network}. */
+    private String network;
 
     @Override
     public String getType() {
@@ -224,5 +232,86 @@ public class DockerSandboxClientOptions extends SandboxClientOptions {
      */
     public void setExposedPorts(int[] exposedPorts) {
         this.exposedPorts = exposedPorts != null ? exposedPorts : new int[0];
+    }
+
+    /**
+     * Returns the docker network mode or network name.
+     *
+     * @return docker network value, or {@code null} when unset
+     */
+    public String getNetwork() {
+        return network;
+    }
+
+    /**
+     * Sets the docker network mode or network name.
+     *
+     * @param network docker network value
+     * @return this options instance
+     */
+    public DockerSandboxClientOptions network(String network) {
+        this.network = normalizeNetwork(network);
+        return this;
+    }
+
+    /**
+     * Sets the docker network mode or network name.
+     *
+     * @param network docker network value
+     */
+    public void setNetwork(String network) {
+        this.network = normalizeNetwork(network);
+    }
+
+    /**
+     * Returns additional raw arguments appended to {@code docker run}.
+     *
+     * @return additional docker run arguments
+     */
+    public List<String> getAdditionalRunArgs() {
+        return additionalRunArgs;
+    }
+
+    /**
+     * Appends additional raw arguments to {@code docker run} before the image name.
+     *
+     * @param additionalRunArgs additional docker run arguments
+     * @return this options instance
+     */
+    public DockerSandboxClientOptions additionalRunArgs(String... additionalRunArgs) {
+        if (additionalRunArgs == null) {
+            return this;
+        }
+        for (String additionalRunArg : additionalRunArgs) {
+            if (additionalRunArg != null && !additionalRunArg.isBlank()) {
+                this.additionalRunArgs.add(additionalRunArg);
+            }
+        }
+        return this;
+    }
+
+    /**
+     * Sets the additional raw arguments appended to {@code docker run}.
+     *
+     * @param additionalRunArgs additional docker run arguments
+     */
+    public void setAdditionalRunArgs(List<String> additionalRunArgs) {
+        this.additionalRunArgs = new ArrayList<>();
+        if (additionalRunArgs == null) {
+            return;
+        }
+        for (String additionalRunArg : additionalRunArgs) {
+            if (additionalRunArg != null && !additionalRunArg.isBlank()) {
+                this.additionalRunArgs.add(additionalRunArg);
+            }
+        }
+    }
+
+    private String normalizeNetwork(String network) {
+        if (network == null) {
+            return null;
+        }
+        String trimmed = network.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

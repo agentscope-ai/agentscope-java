@@ -80,6 +80,8 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
             state.setMemorySizeBytes(options.getMemorySizeBytes());
             state.setCpuCount(options.getCpuCount());
             state.setExposedPorts(options.getExposedPorts());
+            state.setNetwork(options.getNetwork());
+            state.setAdditionalRunArgs(options.getAdditionalRunArgs());
         }
 
         if (snapshotSpec != null) {

@@ -25,6 +25,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.sandbox.filesystem.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.filesystem.SandboxFilesystemSpec;
 import java.nio.file.Files;
@@ -52,9 +53,9 @@ public final class DockerPythonSandboxExample {
         SandboxFilesystemSpec sandboxSpec =
                 new DockerFilesystemSpec()
                         .image(DockerPythonSandboxImage.IMAGE)
+                        .network("none")
                         .workspaceRoot("/workspace")
                         .workspaceProjectionRoots(List.of("AGENTS.md", "examples"));
-
         HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("docker-python-sandbox-agent")
@@ -62,6 +63,10 @@ public final class DockerPythonSandboxExample {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(sandboxSpec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .maxIters(20)
                         .build();
 
