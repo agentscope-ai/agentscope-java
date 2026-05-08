@@ -320,7 +320,14 @@ public class SkillBox implements StateModule {
         }
 
         skillRegistry.setSkillActive(skillId, active);
-        this.syncToolGroupStates();
+
+        if (this.toolkit != null) {
+            RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
+            if (registeredSkill != null) {
+                String toolGroupName = registeredSkill.getToolsGroupName();
+                this.toolkit.updateToolGroups(List.of(toolGroupName), active);
+            }
+        }
 
         logger.debug("Skill '{}' active state set to {}", skillId, active);
     }
