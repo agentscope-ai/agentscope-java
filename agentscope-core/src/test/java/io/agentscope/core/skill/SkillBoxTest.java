@@ -308,6 +308,37 @@ class SkillBoxTest {
                     toolkit.getToolGroup(toolsGroupName).isActive(),
                     "ToolGroup should be AUTOMATICALLY deactivated without explicit sync");
         }
+
+        @Test
+        @DisplayName("Should successfully set active state for a skill without bound tools")
+        void testSetSkillActiveWithoutTools() {
+            AgentSkill purePromptSkill =
+                    new AgentSkill(
+                            "pure_prompt_skill",
+                            "Skill without tools",
+                            "# Just a pure prompt instruction",
+                            null);
+            skillBox.registerSkill(purePromptSkill);
+
+            String toolsGroupName = purePromptSkill.getSkillId() + "_skill_tools";
+            assertNull(
+                    toolkit.getToolGroup(toolsGroupName),
+                    "ToolGroup should not exist for pure prompt skill");
+
+            assertDoesNotThrow(
+                    () -> skillBox.setSkillActive(purePromptSkill.getSkillId(), true),
+                    "Should not throw exception when activating a non-tool-bind skill");
+            assertTrue(
+                    skillBox.isSkillActive(purePromptSkill.getSkillId()),
+                    "Logical state should be active");
+
+            assertDoesNotThrow(
+                    () -> skillBox.setSkillActive(purePromptSkill.getSkillId(), false),
+                    "Should not throw exception when deactivating a non-tool-bind skill");
+            assertFalse(
+                    skillBox.isSkillActive(purePromptSkill.getSkillId()),
+                    "Logical state should be inactive");
+        }
     }
 
     @Nested
