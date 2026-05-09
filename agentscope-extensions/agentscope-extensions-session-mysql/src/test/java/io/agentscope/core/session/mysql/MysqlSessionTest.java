@@ -25,6 +25,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.session.ListHashUtil;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
@@ -280,6 +284,45 @@ public class MysqlSessionTest {
         assertEquals(2, loaded.size());
         assertEquals("value1", loaded.get(0).value());
         assertEquals("value2", loaded.get(1).value());
+    }
+
+    @Test
+    @DisplayName("Should compute same hash for equivalent message lists")
+    void testComputeHashEquivalentMessageLists() {
+        List<Msg> first =
+                List.of(
+                        Msg.builder()
+                                .id("m-user-1")
+                                .timestamp("2026-05-08 14:00:00.000")
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("hello").build())
+                                .build(),
+                        Msg.builder()
+                                .id("m-assistant-1")
+                                .timestamp("2026-05-08 14:00:01.000")
+                                .role(MsgRole.ASSISTANT)
+                                .content(TextBlock.builder().text("hello").build())
+                                .build());
+
+        List<Msg> second =
+                List.of(
+                        Msg.builder()
+                                .id("m-user-1")
+                                .timestamp("2026-05-08 14:00:00.000")
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("hello").build())
+                                .build(),
+                        Msg.builder()
+                                .id("m-assistant-1")
+                                .timestamp("2026-05-08 14:00:01.000")
+                                .role(MsgRole.ASSISTANT)
+                                .content(TextBlock.builder().text("hello").build())
+                                .build());
+
+        String h1 = ListHashUtil.computeHash(first);
+        String h2 = ListHashUtil.computeHash(second);
+
+        assertEquals(h1, h2);
     }
 
     @Test
