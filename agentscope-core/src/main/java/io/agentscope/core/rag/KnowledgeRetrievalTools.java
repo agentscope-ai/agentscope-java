@@ -133,7 +133,7 @@ public class KnowledgeRetrievalTools {
 
         // Set default value
         if (limit == null) {
-            limit = 5;
+            limit = defaultConfig.getLimit();
         }
 
         // Extract conversation history from agent if available

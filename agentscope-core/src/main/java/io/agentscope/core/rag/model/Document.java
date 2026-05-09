@@ -214,7 +214,7 @@ public class Document {
         Map<String, Object> keyMap = new LinkedHashMap<>();
         keyMap.put("doc_id", metadata.getDocId());
         keyMap.put("chunk_id", metadata.getChunkId());
-        keyMap.put("content", metadata.getContent());
+        keyMap.put("content", metadata.getContentText());
 
         // Serialize to JSON (ensure_ascii=False in Python, so we use default UTF-8)
         String jsonKey = JsonUtils.getJsonCodec().toJson(keyMap);
