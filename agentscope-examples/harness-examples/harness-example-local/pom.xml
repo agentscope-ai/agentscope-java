@@ -31,7 +31,7 @@
     <description>AgentScope Harness Example - Enhanced agent runtime with workspace context, subagent orchestration, memory management, and backend abstraction</description>
 
     <properties>
-        <log4j2.version>2.24.3</log4j2.version>
+        <log4j2.version>2.26.0</log4j2.version>
     </properties>
 
     <dependencies>
