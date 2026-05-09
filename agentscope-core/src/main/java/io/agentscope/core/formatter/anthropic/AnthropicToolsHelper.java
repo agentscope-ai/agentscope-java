@@ -15,6 +15,10 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
+import static com.anthropic.models.messages.ToolChoice.ofAny;
+import static com.anthropic.models.messages.ToolChoice.ofAuto;
+import static com.anthropic.models.messages.ToolChoice.ofTool;
+
 import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.MessageCreateParams;
@@ -27,6 +31,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,27 +91,19 @@ public class AnthropicToolsHelper {
     private static void applyToolChoice(
             MessageCreateParams.Builder builder, ToolChoice toolChoice) {
         if (toolChoice instanceof ToolChoice.Auto) {
-            builder.toolChoice(
-                    com.anthropic.models.messages.ToolChoice.ofAuto(
-                            ToolChoiceAuto.builder().build()));
+            builder.toolChoice(ofAuto(ToolChoiceAuto.builder().build()));
         } else if (toolChoice instanceof ToolChoice.None) {
             // Anthropic doesn't have None, use Any instead
-            builder.toolChoice(
-                    com.anthropic.models.messages.ToolChoice.ofAny(
-                            ToolChoiceAny.builder().build()));
+            builder.toolChoice(ofAny(ToolChoiceAny.builder().build()));
         } else if (toolChoice instanceof ToolChoice.Required) {
             // Anthropic doesn't have a direct "required" option, use "any" which forces tool
             // use
             log.warn(
                     "Anthropic API doesn't support ToolChoice.Required directly, using 'any'"
                             + " instead");
-            builder.toolChoice(
-                    com.anthropic.models.messages.ToolChoice.ofAny(
-                            ToolChoiceAny.builder().build()));
+            builder.toolChoice(ofAny(ToolChoiceAny.builder().build()));
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
-            builder.toolChoice(
-                    com.anthropic.models.messages.ToolChoice.ofTool(
-                            ToolChoiceTool.builder().name(specific.toolName()).build()));
+            builder.toolChoice(ofTool(ToolChoiceTool.builder().name(specific.toolName()).build()));
         } else {
             log.warn("Unknown tool choice type: {}", toolChoice);
         }
@@ -203,7 +200,7 @@ public class AnthropicToolsHelper {
     private static <T> T getOption(
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Function<GenerateOptions, T> getter) {
+            Function<GenerateOptions, T> getter) {
         if (options != null) {
             T value = getter.apply(options);
             if (value != null) {

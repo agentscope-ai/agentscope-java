@@ -61,7 +61,7 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 
 // 4. Chat with Agent - Agent will speak while generating response
-Msg response = agent.call(Msg.user("你好，今天天气怎么样？")).block();
+Msg response = agent.call(Msg.builder().textContent("你好，今天天气怎么样？").build()).block();
 ```
 
 ### Server Mode (Web/SSE)
@@ -150,15 +150,18 @@ Agent calls TTS via tool, Agent decides when to convert text to speech:
 DashScopeMultiModalTool multiModalTool = new DashScopeMultiModalTool(apiKey);
 
 // 2. Create Agent, register tool
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(multiModalTool);
+
 ReActAgent agent = ReActAgent.builder()
     .name("MultiModalAssistant")
     .sysPrompt("你是一个多模态助手。当用户要求朗读时，使用 dashscope_text_to_audio 工具。")
     .model(chatModel)
-    .tools(multiModalTool)
+    .toolkit(toolkit)
     .build();
 
 // 3. Agent can actively call TTS tool
-Msg response = agent.call(Msg.user("请用语音说一句'欢迎光临'")).block();
+Msg response = agent.call(Msg.builder().textContent("请用语音说一句'欢迎光临'").build()).block();
 ```
 
 ---

@@ -33,6 +33,7 @@ import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DashScope formatter for multi-agent conversations.
@@ -301,9 +302,8 @@ public class DashScopeMultiAgentFormatter
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
-            // Set content to null if empty when tool calls exist (Python behavior)
             String textContent = extractTextContent(msg);
-            builder.content(textContent.isEmpty() ? null : textContent);
+            builder.content(textContent.isEmpty() ? "" : textContent);
         } else {
             builder.content(extractTextContent(msg));
         }
@@ -361,6 +361,31 @@ public class DashScopeMultiAgentFormatter
         MessageGroup(GroupType type, List<Msg> messages) {
             this.type = type;
             this.messages = messages;
+        }
+    }
+
+    /**
+     * Apply cache control to DashScope messages.
+     *
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
+     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
+     * marking) will not be overwritten.
+     *
+     * @param messages the list of formatted DashScope messages
+     */
+    public void applyCacheControl(List<DashScopeMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        Map<String, String> ephemeral = DashScopeChatFormatter.getEphemeralCacheControl();
+        for (DashScopeMessage msg : messages) {
+            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
+                msg.setCacheControl(ephemeral);
+            }
+        }
+        DashScopeMessage lastMsg = messages.get(messages.size() - 1);
+        if (lastMsg.getCacheControl() == null) {
+            lastMsg.setCacheControl(ephemeral);
         }
     }
 }

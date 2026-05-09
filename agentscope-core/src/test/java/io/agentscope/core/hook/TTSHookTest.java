@@ -473,7 +473,7 @@ class TTSHookTest {
                             .build();
             PreReasoningEvent event =
                     new PreReasoningEvent(
-                            mockAgent, "test-model", mockGenerateOptions, java.util.List.of(msg));
+                            mockAgent, "test-model", mockGenerateOptions, List.of(msg));
 
             var result = hook.onEvent(event).block();
 

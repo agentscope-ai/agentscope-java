@@ -7,7 +7,7 @@
 | 提供商     | 类                      | 流式  | 工具  | 视觉  | 推理  |
 |------------|-------------------------|-------|-------|-------|-------|
 | DashScope  | `DashScopeChatModel`    | ✅    | ✅    | ✅    | ✅    |
-| OpenAI     | `OpenAIChatModel`       | ✅    | ✅    | ✅    |       |
+| OpenAI     | `OpenAIChatModel`       | ✅    | ✅    | ✅    | ✅    |
 | Anthropic  | `AnthropicChatModel`    | ✅    | ✅    | ✅    | ✅    |
 | Gemini     | `GeminiChatModel`       | ✅    | ✅    | ✅    | ✅    |
 | Ollama     | `OllamaChatModel`       | ✅    | ✅    | ✅    | ✅    |
@@ -25,6 +25,86 @@
 | Anthropic | [Anthropic Console](https://console.anthropic.com/settings/keys) | `ANTHROPIC_API_KEY` |
 | Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
 | DeepSeek | [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) | - |
+
+## ModelRegistry
+
+[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java)（`io.agentscope.core.model.ModelRegistry`）用**字符串 id**得到 `Model` 实例，适合不想手写各厂商 `*ChatModel.builder()` 的场景。例如 Harness 场景下可使用 `HarnessAgent.builder().model(String)`；任意需要 `Model` 的地方可先调用 `ModelRegistry.resolve(...)` 再传入 `ReActAgent` 等构建器。
+
+### API 一览
+
+| 方法 | 说明 |
+|------|------|
+| `register(String name, Model model)` | 注册**具名**模型；之后对同名 id 调用 `resolve` 直接返回该实例。 |
+| `registerFactory(String regex, ModelFactory factory)` | 为匹配正则的 id 注册自定义工厂；**后注册的工厂优先**于更早注册的用户工厂，且优先于内置规则。 |
+| `resolve(String modelId)` | 解析并返回 `Model`；无法解析或创建失败时抛出 `IllegalArgumentException`。 |
+| `canResolve(String modelId)` | 仅判断是否可解析（不创建实例）。 |
+| `reset()` | 清空具名注册、用户工厂与解析缓存；内置规则保留。一般仅在测试或进程内重置时使用。 |
+
+`ModelFactory` 为函数式接口：`Model create(String modelId)`，参数为完整模型 id 字符串。
+
+### 内置 id 格式与环境变量
+
+在已配置对应环境变量的前提下，可使用下列 id 形式（适用于 `resolve` 以及 `HarnessAgent.Builder.model(String)` 等）：
+
+| id 示例 | 所需环境变量 | 说明 |
+|---------|--------------|------|
+| `openai:gpt-4o-mini` | `OPENAI_API_KEY` | OpenAI 兼容 HTTP 模型 |
+| `dashscope:qwen-max` | `DASHSCOPE_API_KEY` | 阿里云 DashScope / 百炼 |
+| `qwen-max` 等以 `qwen-` 开头的 id | `DASHSCOPE_API_KEY` | 将整个字符串作为 DashScope 的 `modelName` |
+| `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`（可选；未设置时可依赖 SDK 从环境读取） | Anthropic Claude |
+| `gemini:gemini-2.5-flash` | `GEMINI_API_KEY` | Google Gemini API |
+| `ollama:llama3` | `OLLAMA_BASE_URL`（可选，默认 `http://localhost:11434`） | 本地 Ollama |
+
+同一进程内，对**相同**工厂解析 id 多次时，返回的 `Model` 实例会被缓存复用；**具名**注册不走该缓存。
+
+### 示例：具名注册（自定义配置后复用）
+
+需要先精细配置（温度、超时等）时，用 Builder 构建一次，再注册成名字：
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.harness.agent.HarnessAgent;
+
+Model tuned = OpenAIChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o")
+        .generateOptions(GenerateOptions.builder().temperature(0.2).build())
+        .build();
+ModelRegistry.register("my-gpt4o", tuned);
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("demo")
+        .model("my-gpt4o")
+        .workspace(workspace)
+        .build();
+```
+
+### 示例：内置前缀（默认连接参数）
+
+```java
+import io.agentscope.harness.agent.HarnessAgent;
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("demo")
+        .model("dashscope:qwen-max")
+        .workspace(workspace)
+        .build();
+```
+
+### 示例：自定义工厂
+
+```java
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
+
+ModelRegistry.registerFactory(
+        "my-llm:.+",
+        id -> myModelFactory(id.substring("my-llm:".length())));
+
+Model m = ModelRegistry.resolve("my-llm:prod");
+```
 
 ## DashScope
 
@@ -47,6 +127,31 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 | `stream` | 是否启用流式输出，默认 `true` |
 | `enableThinking` | 启用思考模式，模型会展示推理过程 |
 | `enableSearch` | 启用联网搜索，获取实时信息 |
+| `endpointType` | API 端点类型（默认 `AUTO` 自动识别），可选 `TEXT`（强制文本 API）或 `MULTIMODAL`（强制多模态 API） |
+| `defaultOptions` | 默认生成选项（temperature、maxTokens 等） |
+| `formatter` | 消息格式化器（默认 `DashScopeChatFormatter`） |
+
+### 端点类型（endpointType）
+
+DashScope 模型支持文本和多模态两种 API 端点。默认情况下，框架会根据模型名称自动识别应使用的端点类型（如 `qwen-vl-*` 以及 `qwen3.5` 系列自动使用多模态端点）。
+
+当自动识别不准确时（例如使用自定义模型名称或兼容 API），可以手动指定端点类型：
+
+```java
+// 强制使用多模态 API（适用于包含图片/音频等内容的场景）
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("custom-model")
+        .endpointType(EndpointType.MULTIMODAL)
+        .build();
+
+// 强制使用文本 API
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("custom-model")
+        .endpointType(EndpointType.TEXT)
+        .build();
+```
 
 ### 思考模式
 
@@ -102,6 +207,7 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 | `modelName` | 模型名称，如 `gpt-4o`、`gpt-4o-mini` |
 | `baseUrl` | 自定义 API 端点（可选） |
 | `stream` | 是否启用流式输出，默认 `true` |
+| `generateOptions` | 默认生成选项（注意：OpenAI 使用 `.generateOptions()` 而非 `.defaultOptions()`） |
 
 ## Anthropic
 
@@ -133,6 +239,7 @@ Google 的 Gemini 系列模型，支持 Gemini API 和 Vertex AI。
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
         .modelName("gemini-2.5-flash")  // 默认值
+        .baseUrl("https://your-gateway.example")  // 可选
         .build();
 ```
 
@@ -153,12 +260,15 @@ GeminiChatModel model = GeminiChatModel.builder()
 | 配置项 | 说明 |
 |--------|------|
 | `apiKey` | Gemini API 密钥 |
+| `baseUrl` | 自定义 Gemini API 端点（可选） |
 | `modelName` | 模型名称，默认 `gemini-2.5-flash` |
 | `project` | GCP 项目 ID（Vertex AI） |
 | `location` | GCP 区域（Vertex AI） |
 | `vertexAI` | 是否使用 Vertex AI |
 | `credentials` | GCP 凭证（Vertex AI） |
 | `streamEnabled` | 是否启用流式输出，默认 `true` |
+
+如需覆盖请求端点，可使用 `baseUrl(...)`。更高级的传输层或代理配置，仍建议通过 `httpOptions(...)` 或 `clientOptions(...)` 处理。
 
 ## Ollama
 
@@ -271,7 +381,7 @@ GenerateOptions options = GenerateOptions.builder()
         .topK(40)                   // Top-K 采样
         .maxTokens(2000)            // 最大输出 token 数
         .seed(42L)                  // 随机种子
-        .toolChoice(new ToolChoice.auto())  // 工具选择策略
+        .toolChoice(new ToolChoice.Auto())  // 工具选择策略
         .build();
 
 DashScopeChatModel model = DashScopeChatModel.builder()
@@ -295,17 +405,21 @@ OllamaChatModel model = OllamaChatModel.builder()
 | `topP` | Double | 核采样阈值，0.0-1.0 |
 | `topK` | Integer | 限制候选 token 数量 |
 | `maxTokens` | Integer | 最大生成 token 数 |
+| `maxCompletionTokens` | Integer | 最大完成 token 数 |
 | `thinkingBudget` | Integer | 思考 token 预算 |
+| `reasoningEffort` | String | 推理强度（如 `low`、`medium`、`high`） |
+| `frequencyPenalty` | Double | 频率惩罚，-2.0-2.0 |
+| `presencePenalty` | Double | 存在惩罚，-2.0-2.0 |
 | `seed` | Long | 随机种子 |
 | `toolChoice` | ToolChoice | 工具选择策略 |
 
 ### 工具选择策略
 
 ```java
-ToolChoice.auto()              // 模型自行决定（默认）
-ToolChoice.none()              // 禁止工具调用
-ToolChoice.required()          // 强制调用工具
-ToolChoice.specific("tool_name")  // 强制调用指定工具
+new ToolChoice.Auto()              // 模型自行决定（默认）
+new ToolChoice.None()              // 禁止工具调用
+new ToolChoice.Required()          // 强制调用工具
+new ToolChoice.Specific("tool_name")  // 强制调用指定工具
 ```
 
 ### 扩展参数

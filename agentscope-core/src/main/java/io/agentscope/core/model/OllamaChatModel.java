@@ -187,8 +187,25 @@ public class OllamaChatModel extends ChatModelBase {
         Flux<ChatResponse> responseFlux;
         if (stream) {
             responseFlux =
-                    httpClient.stream(request)
-                            .map(response -> formatter.parseResponse(response, Instant.now()));
+                    Flux.defer(
+                            () -> {
+                                final String[] finalStableId = new String[1];
+
+                                return httpClient.stream(request)
+                                        .map(
+                                                response -> {
+                                                    ChatResponse parsedResponse =
+                                                            formatter.parseResponse(
+                                                                    response, Instant.now());
+
+                                                    if (finalStableId[0] == null) {
+                                                        finalStableId[0] = parsedResponse.getId();
+                                                        return parsedResponse;
+                                                    }
+
+                                                    return parsedResponse.withId(finalStableId[0]);
+                                                });
+                            });
         } else {
             responseFlux =
                     Flux.defer(

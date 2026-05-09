@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.hook;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -101,6 +103,8 @@ class GenericRAGHookTest {
         assertNotNull(newHook);
         assertEquals(knowledge, newHook.getKnowledgeBase());
         assertNotNull(newHook.getDefaultConfig());
+        assertEquals(5, newHook.getDefaultConfig().getLimit());
+        assertEquals(0.5, newHook.getDefaultConfig().getScoreThreshold());
     }
 
     @Test
@@ -149,16 +153,20 @@ class GenericRAGHookTest {
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         result -> {
-                            assertTrue(result instanceof PreCallEvent);
-                            PreCallEvent preCallEvent = (PreCallEvent) result;
-                            List<Msg> enhancedMessages = preCallEvent.getInputMessages();
+                            assertInstanceOf(PreCallEvent.class, result);
+                            List<Msg> enhancedMessages = result.getInputMessages();
 
                             // Should have knowledge message + original message
                             assertTrue(enhancedMessages.size() >= 2);
-                            // First message should be system message with knowledge
-                            Msg firstMsg = enhancedMessages.get(1);
-                            assertEquals(MsgRole.SYSTEM, firstMsg.getRole());
-                            assertTrue(firstMsg.getTextContent().contains("knowledge base"));
+                            // First message should be user message with question
+                            assertEquals(MsgRole.USER, enhancedMessages.get(0).getRole());
+                            // Second message should be user message with knowledge retrieval
+                            assertEquals(MsgRole.USER, enhancedMessages.get(1).getRole());
+                            assertTrue(
+                                    enhancedMessages
+                                            .get(1)
+                                            .getTextContent()
+                                            .contains("knowledge base"));
                         })
                 .verifyComplete();
     }
@@ -339,7 +347,7 @@ class GenericRAGHookTest {
         }
 
         @Override
-        public Mono<double[]> embed(io.agentscope.core.message.ContentBlock block) {
+        public Mono<double[]> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }

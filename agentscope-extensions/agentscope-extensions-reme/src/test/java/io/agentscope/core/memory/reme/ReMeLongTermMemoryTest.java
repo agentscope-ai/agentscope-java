@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -638,7 +639,7 @@ class ReMeLongTermMemoryTest {
         StepVerifier.create(memory.record(messages)).verifyComplete();
 
         // Verify request body contains correct role mappings
-        okhttp3.mockwebserver.RecordedRequest recordedRequest;
+        RecordedRequest recordedRequest;
         try {
             recordedRequest = mockServer.takeRequest();
             String requestBody = recordedRequest.getBody().readUtf8();
@@ -672,7 +673,7 @@ class ReMeLongTermMemoryTest {
         StepVerifier.create(memory.record(messages)).verifyComplete();
 
         // Verify request contains workspace_id
-        okhttp3.mockwebserver.RecordedRequest recordedRequest;
+        RecordedRequest recordedRequest;
         try {
             recordedRequest = mockServer.takeRequest();
             String requestBody = recordedRequest.getBody().readUtf8();
@@ -704,7 +705,7 @@ class ReMeLongTermMemoryTest {
                 .verifyComplete();
 
         // Verify request contains workspace_id and query
-        okhttp3.mockwebserver.RecordedRequest recordedRequest;
+        RecordedRequest recordedRequest;
         try {
             recordedRequest = mockServer.takeRequest();
             String requestBody = recordedRequest.getBody().readUtf8();

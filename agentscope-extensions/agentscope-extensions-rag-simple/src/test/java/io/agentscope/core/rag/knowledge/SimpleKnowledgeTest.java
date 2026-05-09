@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -275,8 +277,7 @@ class SimpleKnowledgeTest {
      * Creates a test document.
      */
     private Document createDocument(String docId, String content) {
-        io.agentscope.core.message.TextBlock textBlock =
-                io.agentscope.core.message.TextBlock.builder().text(content).build();
+        TextBlock textBlock = TextBlock.builder().text(content).build();
         DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, "0");
         return new Document(metadata);
     }
@@ -298,12 +299,12 @@ class SimpleKnowledgeTest {
         }
 
         @Override
-        public Mono<double[]> embed(io.agentscope.core.message.ContentBlock block) {
+        public Mono<double[]> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }
-            if (block instanceof io.agentscope.core.message.TextBlock) {
-                String text = ((io.agentscope.core.message.TextBlock) block).getText();
+            if (block instanceof TextBlock) {
+                String text = ((TextBlock) block).getText();
                 return Mono.fromCallable(
                         () -> {
                             // Generate deterministic embedding based on text

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -541,7 +542,7 @@ class DashScopeRealtimeTTSModelTest {
             DashScopeRealtimeTTSModel model =
                     DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
 
-            assertTrue(model.waitForResponseDone(1, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(model.waitForResponseDone(1, TimeUnit.SECONDS));
         }
 
         @Test
@@ -551,7 +552,7 @@ class DashScopeRealtimeTTSModelTest {
                     DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
 
             // When responseDoneFuture is null, should return true immediately
-            assertTrue(model.waitForResponseDone(1, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(model.waitForResponseDone(1, TimeUnit.SECONDS));
         }
     }
 
@@ -868,7 +869,7 @@ class DashScopeRealtimeTTSModelTest {
                     DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
 
             // With null responseDoneFuture, should return true immediately
-            assertTrue(model.waitForResponseDone(1, java.util.concurrent.TimeUnit.MILLISECONDS));
+            assertTrue(model.waitForResponseDone(1, TimeUnit.MILLISECONDS));
         }
 
         @Test
@@ -878,7 +879,7 @@ class DashScopeRealtimeTTSModelTest {
                     DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
 
             // With null responseDoneFuture, should return true immediately
-            assertTrue(model.waitForResponseDone(0, java.util.concurrent.TimeUnit.MILLISECONDS));
+            assertTrue(model.waitForResponseDone(0, TimeUnit.MILLISECONDS));
         }
     }
 

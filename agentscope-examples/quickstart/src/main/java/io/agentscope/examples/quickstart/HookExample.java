@@ -25,6 +25,7 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreActingEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.hook.recorder.JsonlTraceExporter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
@@ -34,6 +35,7 @@ import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.quickstart.util.MsgUtils;
+import java.nio.file.Path;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
@@ -56,6 +58,13 @@ public class HookExample {
         // Create monitoring hook
         Hook monitoringHook = new MonitoringHook();
 
+        // Built-in JSONL trace exporter (local file, easy to attach to issues)
+        JsonlTraceExporter jsonlTrace =
+                JsonlTraceExporter.builder(Path.of("logs", "agentscope-trace.jsonl"))
+                        .includeReasoningChunks(true)
+                        .includeActingChunks(true)
+                        .build();
+
         // Create toolkit with a tool that emits progress
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new ProgressTools());
@@ -63,30 +72,32 @@ public class HookExample {
         System.out.println("Registered tools:");
         System.out.println("  - process_data: Simulate data processing with progress updates\n");
 
-        // Create Agent with hook
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("HookAgent")
-                        .sysPrompt(
-                                "You are a helpful assistant. When processing data, use the"
-                                        + " process_data tool.")
-                        .model(
-                                DashScopeChatModel.builder()
-                                        .apiKey(apiKey)
-                                        .modelName("qwen-plus")
-                                        .stream(true)
-                                        .enableThinking(true)
-                                        .formatter(new DashScopeChatFormatter())
-                                        .build())
-                        .toolkit(toolkit)
-                        .memory(new InMemoryMemory())
-                        .hooks(List.of(monitoringHook))
-                        .build();
+        try (jsonlTrace) {
+            // Create Agent with hooks
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("HookAgent")
+                            .sysPrompt(
+                                    "You are a helpful assistant. When processing data, use the"
+                                            + " process_data tool.")
+                            .model(
+                                    DashScopeChatModel.builder()
+                                            .apiKey(apiKey)
+                                            .modelName("qwen-plus")
+                                            .stream(true)
+                                            .enableThinking(true)
+                                            .formatter(new DashScopeChatFormatter())
+                                            .build())
+                            .toolkit(toolkit)
+                            .memory(new InMemoryMemory())
+                            .hooks(List.of(monitoringHook, jsonlTrace))
+                            .build();
 
-        System.out.println("Try asking: 'Process the customer dataset'\n");
+            System.out.println("Try asking: 'Process the customer dataset'\n");
 
-        // Start interactive chat
-        ExampleUtils.startChat(agent);
+            // Start interactive chat
+            ExampleUtils.startChat(agent);
+        }
     }
 
     /**

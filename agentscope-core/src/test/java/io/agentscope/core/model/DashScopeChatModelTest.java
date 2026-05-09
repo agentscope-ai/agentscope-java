@@ -848,6 +848,115 @@ class DashScopeChatModelTest {
         }
     }
 
+    @Test
+    @DisplayName("Should apply cache_control to request when cacheControl option is enabled")
+    void testCacheControlApplied() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().cacheControl(true).build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+        assertTrue(
+                body.contains("\"cache_control\""),
+                "Request body should contain cache_control: " + body);
+        assertTrue(
+                body.contains("\"ephemeral\""),
+                "Request body should contain ephemeral cache type: " + body);
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("Should NOT apply cache_control when cacheControl option is not enabled")
+    void testCacheControlNotAppliedWhenDisabled() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+        assertFalse(
+                body.contains("\"cache_control\""),
+                "Request body should NOT contain cache_control when disabled: " + body);
+
+        mockServer.shutdown();
+    }
+
     /**
      *  Use reflection to invoke applyThinkingMode
      *

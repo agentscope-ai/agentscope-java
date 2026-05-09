@@ -228,13 +228,11 @@ class OpenAIResponseParserTest {
         message.setContent("Let me call a tool");
         message.setRole("assistant");
 
-        io.agentscope.core.formatter.openai.dto.OpenAIToolCall toolCall =
-                new io.agentscope.core.formatter.openai.dto.OpenAIToolCall();
+        OpenAIToolCall toolCall = new OpenAIToolCall();
         toolCall.setId("call_123");
         toolCall.setType("function");
 
-        io.agentscope.core.formatter.openai.dto.OpenAIFunction function =
-                new io.agentscope.core.formatter.openai.dto.OpenAIFunction();
+        OpenAIFunction function = new OpenAIFunction();
         function.setName("test_tool");
         function.setArguments("{\"param\":\"value\"}");
         toolCall.setFunction(function);

@@ -23,11 +23,17 @@ import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -383,8 +389,8 @@ class OpenAIConversationMergerTest {
     void testToolResultFormatWithNameOnly() {
         List<Msg> messages = new ArrayList<>();
 
-        io.agentscope.core.message.ToolResultBlock toolResult =
-                io.agentscope.core.message.ToolResultBlock.builder()
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
                         .name("search_tool")
                         .output(List.of(TextBlock.builder().text("Search completed").build()))
                         .build();
@@ -434,7 +440,7 @@ class OpenAIConversationMergerTest {
         // Use reflection to create ImageBlock with null source
         ImageBlock imageBlock;
         try {
-            java.lang.reflect.Field sourceField = ImageBlock.class.getDeclaredField("source");
+            Field sourceField = ImageBlock.class.getDeclaredField("source");
             sourceField.setAccessible(true);
             imageBlock =
                     ImageBlock.builder().source(URLSource.builder().url("temp").build()).build();
@@ -567,10 +573,8 @@ class OpenAIConversationMergerTest {
                         .content(List.of(TextBlock.builder().text("Question").build()))
                         .build();
 
-        io.agentscope.core.message.ThinkingBlock thinkingBlock =
-                io.agentscope.core.message.ThinkingBlock.builder()
-                        .thinking("Let me analyze this...")
-                        .build();
+        ThinkingBlock thinkingBlock =
+                ThinkingBlock.builder().thinking("Let me analyze this...").build();
 
         Msg msg2 =
                 Msg.builder()
@@ -606,15 +610,12 @@ class OpenAIConversationMergerTest {
         List<Msg> messages = new ArrayList<>();
 
         // Use reflection to create VideoBlock with null source
-        io.agentscope.core.message.VideoBlock videoBlock;
+        VideoBlock videoBlock;
         try {
-            java.lang.reflect.Field sourceField =
-                    io.agentscope.core.message.VideoBlock.class.getDeclaredField("source");
+            Field sourceField = VideoBlock.class.getDeclaredField("source");
             sourceField.setAccessible(true);
             videoBlock =
-                    io.agentscope.core.message.VideoBlock.builder()
-                            .source(URLSource.builder().url("temp").build())
-                            .build();
+                    VideoBlock.builder().source(URLSource.builder().url("temp").build()).build();
             sourceField.set(videoBlock, null);
         } catch (Exception e) {
             throw new RuntimeException("Failed to create test VideoBlock", e);
@@ -657,7 +658,7 @@ class OpenAIConversationMergerTest {
         // Use reflection to create AudioBlock with null source
         AudioBlock audioBlock;
         try {
-            java.lang.reflect.Field sourceField = AudioBlock.class.getDeclaredField("source");
+            Field sourceField = AudioBlock.class.getDeclaredField("source");
             sourceField.setAccessible(true);
             audioBlock =
                     AudioBlock.builder().source(URLSource.builder().url("temp").build()).build();
@@ -814,13 +815,12 @@ class OpenAIConversationMergerTest {
         // Use reflection to create AudioBlock with custom Source subclass
         AudioBlock audioBlock;
         try {
-            java.lang.reflect.Field sourceField = AudioBlock.class.getDeclaredField("source");
+            Field sourceField = AudioBlock.class.getDeclaredField("source");
             sourceField.setAccessible(true);
             audioBlock =
                     AudioBlock.builder().source(URLSource.builder().url("temp").build()).build();
             // Create an anonymous Source subclass (neither URLSource nor Base64Source)
-            io.agentscope.core.message.Source customSource =
-                    new io.agentscope.core.message.Source() {};
+            Source customSource = new Source() {};
             sourceField.set(audioBlock, customSource);
         } catch (Exception e) {
             throw new RuntimeException("Failed to create test AudioBlock", e);
@@ -862,8 +862,7 @@ class OpenAIConversationMergerTest {
 
         // Create Base64Source with empty data to trigger processing failure
         Base64Source invalidSource = Base64Source.builder().data("").mediaType("video/mp4").build();
-        io.agentscope.core.message.VideoBlock videoBlock =
-                io.agentscope.core.message.VideoBlock.builder().source(invalidSource).build();
+        VideoBlock videoBlock = VideoBlock.builder().source(invalidSource).build();
 
         Msg msg1 =
                 Msg.builder()
@@ -910,7 +909,7 @@ class OpenAIConversationMergerTest {
                 Msg.builder()
                         .role(MsgRole.ASSISTANT)
                         .name("Bob")
-                        .content((List<io.agentscope.core.message.ContentBlock>) null)
+                        .content((List<ContentBlock>) null)
                         .build();
 
         messages.add(msg1);
@@ -930,11 +929,8 @@ class OpenAIConversationMergerTest {
     void testToolResultBlockWithEmptyResult() {
         List<Msg> messages = new ArrayList<>();
 
-        io.agentscope.core.message.ToolResultBlock toolResult =
-                io.agentscope.core.message.ToolResultBlock.builder()
-                        .name("empty_tool")
-                        .output(List.of())
-                        .build();
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder().name("empty_tool").output(List.of()).build();
 
         Msg msg =
                 Msg.builder()

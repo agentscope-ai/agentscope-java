@@ -37,6 +37,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,42 +55,20 @@ public class SkillBox implements StateModule {
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
 
-    /**
-     * Creates a SkillBox without a toolkit.
-     *
-     * <p>This constructor will be removed in the next release. A SkillBox must hold a
-     * {@link Toolkit} to operate correctly. Relying on automatic toolkit assignment makes
-     * behavior less explicit and harder to reason about.
-     */
-    @Deprecated
-    public SkillBox() {
-        this(null, null, null);
-    }
+    private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
 
     public SkillBox(Toolkit toolkit) {
-        this(toolkit, null, null);
+        this(toolkit, null);
     }
 
     /**
-     * Creates a SkillBox with custom skill prompt instruction and template.
-     *
-     * @param instruction Custom instruction header (null or blank uses default)
-     * @param template Custom skill template (null or blank uses default)
-     */
-    public SkillBox(String instruction, String template) {
-        this(null, instruction, template);
-    }
-
-    /**
-     * Creates a SkillBox with a toolkit and custom skill prompt instruction and template.
+     * Creates a SkillBox with a toolkit and custom skill prompt instruction.
      *
      * @param toolkit The toolkit to bind
      * @param instruction Custom instruction header (null or blank uses default)
-     * @param template Custom skill template (null or blank uses default)
      */
-    public SkillBox(Toolkit toolkit, String instruction, String template) {
-        this.skillPromptProvider =
-                new AgentSkillPromptProvider(skillRegistry, instruction, template);
+    public SkillBox(Toolkit toolkit, String instruction) {
+        this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry, instruction);
         this.skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
         this.toolkit = toolkit;
     }
@@ -104,6 +83,19 @@ public class SkillBox implements StateModule {
      */
     public String getSkillPrompt() {
         return skillPromptProvider.getSkillSystemPrompt();
+    }
+
+    /**
+     * Controls whether the skill prompt exposes all metadata fields or only the core fields.
+     *
+     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-id}
+     * are included in the skill prompt.
+     *
+     * @param exposeAllMetadata {@code true} to expose all metadata, {@code false} to expose only
+     *                          the core fields
+     */
+    public void setExposeAllSkillMetadata(boolean exposeAllMetadata) {
+        skillPromptProvider.setExposeAllMetadata(exposeAllMetadata);
     }
 
     /**
@@ -717,6 +709,7 @@ public class SkillBox implements StateModule {
             }
         }
 
+        skillPromptProvider.setUploadDir(uploadDir);
         return uploadDir;
     }
 
@@ -770,13 +763,19 @@ public class SkillBox implements StateModule {
                     if (targetPath.getParent() != null) {
                         Files.createDirectories(targetPath.getParent());
                     }
-                    if (content.startsWith(BASE64_PREFIX)) {
-                        String encoded = content.substring(BASE64_PREFIX.length());
-                        byte[] decoded = Base64.getDecoder().decode(encoded);
-                        Files.write(targetPath, decoded);
-                    } else {
-                        Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+
+                    Object lock =
+                            FILE_LOCKS.computeIfAbsent(targetPath.toString(), k -> new Object());
+                    synchronized (lock) {
+                        if (content.startsWith(BASE64_PREFIX)) {
+                            String encoded = content.substring(BASE64_PREFIX.length());
+                            byte[] decoded = Base64.getDecoder().decode(encoded);
+                            Files.write(targetPath, decoded);
+                        } else {
+                            Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+                        }
                     }
+
                     logger.debug("Uploaded file: {}", targetPath);
                     fileCount++;
                 } catch (IOException | IllegalArgumentException e) {
@@ -855,6 +854,7 @@ public class SkillBox implements StateModule {
         private boolean withShellCalled = false;
         private boolean enableRead = false;
         private boolean enableWrite = false;
+        private String codeExecutionInstruction;
 
         CodeExecutionBuilder(SkillBox skillBox) {
             this.skillBox = skillBox;
@@ -994,6 +994,23 @@ public class SkillBox implements StateModule {
         }
 
         /**
+         * Set a custom code execution instruction for the system prompt.
+         *
+         * <p>The instruction is appended to the skill system prompt when code execution is enabled.
+         * Use {@code %s} as a placeholder for the upload directory absolute path — every
+         * occurrence will be replaced with the actual path.
+         *
+         * <p>Pass {@code null} or blank to use the default instruction.
+         *
+         * @param instruction Custom code execution instruction template
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder codeExecutionInstruction(String instruction) {
+            this.codeExecutionInstruction = instruction;
+            return this;
+        }
+
+        /**
          * Apply the configuration and enable code execution.
          *
          * <p>This method:
@@ -1017,8 +1034,7 @@ public class SkillBox implements StateModule {
             }
 
             // Handle replacement: remove existing tool group if present
-            if (skillBox.toolkit != null
-                    && skillBox.toolkit.getToolGroup("skill_code_execution_tool_group") != null) {
+            if (skillBox.toolkit.getToolGroup("skill_code_execution_tool_group") != null) {
                 skillBox.toolkit.removeToolGroups(List.of("skill_code_execution_tool_group"));
                 logger.info("Replacing existing code execution configuration");
             }
@@ -1107,6 +1123,10 @@ public class SkillBox implements StateModule {
                     shellEnabled,
                     enableRead,
                     enableWrite);
+
+            boolean injectCodeExecutionPrompt = shellEnabled || codeExecutionInstruction != null;
+            skillBox.skillPromptProvider.setCodeExecutionEnable(injectCodeExecutionPrompt);
+            skillBox.skillPromptProvider.setCodeExecutionInstruction(codeExecutionInstruction);
         }
 
         /**

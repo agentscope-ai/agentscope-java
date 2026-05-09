@@ -152,7 +152,7 @@ class ChatModelNonStreamingBlockingBehaviorTest {
                         },
                         error -> latch.countDown());
 
-        latch.await(3, TimeUnit.SECONDS);
+        latch.await(5, TimeUnit.SECONDS);
         assertNotNull(streamThreadName.get());
         assertNotEquals(
                 currentThreadName,

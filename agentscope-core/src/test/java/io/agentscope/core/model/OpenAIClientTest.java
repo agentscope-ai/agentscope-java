@@ -25,9 +25,13 @@ import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.model.exception.OpenAIException;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -427,10 +431,8 @@ class OpenAIClientTest {
                                                 .build()))
                         .build();
 
-        java.util.List<java.util.concurrent.Future<OpenAIResponse>> futures =
-                new java.util.ArrayList<>();
-        java.util.concurrent.ExecutorService executor =
-                java.util.concurrent.Executors.newFixedThreadPool(5);
+        List<Future<OpenAIResponse>> futures = new ArrayList<>();
+        ExecutorService executor = Executors.newFixedThreadPool(5);
 
         for (int i = 0; i < 5; i++) {
             futures.add(
@@ -444,12 +446,12 @@ class OpenAIClientTest {
                             }));
         }
 
-        for (java.util.concurrent.Future<OpenAIResponse> future : futures) {
+        for (Future<OpenAIResponse> future : futures) {
             assertNotNull(future.get());
         }
 
         executor.shutdown();
-        executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        executor.awaitTermination(5, TimeUnit.SECONDS);
 
         assertEquals(5, mockServer.getRequestCount());
     }
@@ -881,5 +883,36 @@ class OpenAIClientTest {
         assertTrue(
                 recordedRequest.getPath().contains("/v4/chat/completions"),
                 "Stream path should contain custom endpoint path: " + recordedRequest.getPath());
+    }
+
+    @Test
+    @DisplayName("Should throw OpenAIException when handle custom endpoint path in stream call")
+    void testThrowOpenAIExceptionWhenCustomEndpointPathInStreamCall() {
+        String sseResponse = "";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(sseResponse)
+                        .setResponseCode(301)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // Use custom endpoint path for stream call
+        GenerateOptions options =
+                GenerateOptions.builder().endpointPath("/v4/chat/completions").build();
+
+        assertThrows(
+                OpenAIException.class,
+                () -> client.stream(TEST_API_KEY, baseUrl, request, options).collectList().block());
     }
 }

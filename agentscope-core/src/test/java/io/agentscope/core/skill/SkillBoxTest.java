@@ -41,13 +41,19 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -408,19 +414,6 @@ class SkillBoxTest {
         }
 
         @Test
-        @DisplayName("Should throw exception when enabling code execution without toolkit")
-        void testEnableCodeExecutionWithoutToolkit() {
-            SkillBox skillBoxWithoutToolkit = new SkillBox();
-
-            IllegalStateException exception =
-                    assertThrows(
-                            IllegalStateException.class,
-                            () -> skillBoxWithoutToolkit.codeExecution().withShell().enable());
-            assertEquals(
-                    "Must bind toolkit before enabling code execution", exception.getMessage());
-        }
-
-        @Test
         @DisplayName("Should upload skill files to upload directory organized by skill ID")
         void testUploadSkillFilesToUploadDir() throws IOException {
             String workDir = tempDir.resolve("scripts").toString();
@@ -760,6 +753,98 @@ class SkillBoxTest {
             // Verify validator was preserved
             assertEquals(customValidator, shellTool.getCommandValidator());
         }
+
+        @Test
+        @DisplayName(
+                "Should safely upload skill files concurrently across multiple SkillBox instances")
+        void testConcurrentUploadSkillFiles() throws InterruptedException {
+            int threadCount = 10;
+            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+
+            try {
+                CountDownLatch startLatch = new CountDownLatch(1);
+                CountDownLatch doneLatch = new CountDownLatch(threadCount);
+
+                // Shared working directory for all SkillBox instances
+                String sharedWorkDir = tempDir.resolve("concurrent-upload").toString();
+
+                // Create a relatively large payload to increase the probability of write collisions
+                String largeContent = "A".repeat(100 * 1024);
+                Map<String, String> resources = new HashMap<>();
+                resources.put("scripts/heavy_worker.py", largeContent);
+                AgentSkill sharedSkill =
+                        new AgentSkill(
+                                "concurrent_skill", "Concurrent Skill", "Content", resources);
+
+                List<Exception> exceptions = Collections.synchronizedList(new ArrayList<>());
+
+                for (int i = 0; i < threadCount; i++) {
+                    executor.submit(
+                            () -> {
+                                try {
+                                    // Simulate multiple isolated agents, each with its own Toolkit
+                                    // and
+                                    // SkillBox
+                                    Toolkit localToolkit = new Toolkit();
+                                    SkillBox localSkillBox = new SkillBox(localToolkit);
+
+                                    // Point all of them to the exact same shared physical directory
+                                    localSkillBox
+                                            .codeExecution()
+                                            .workDir(sharedWorkDir)
+                                            .withShell()
+                                            .withRead()
+                                            .withWrite()
+                                            .enable();
+
+                                    localSkillBox.registerSkill(sharedSkill);
+
+                                    startLatch.await();
+
+                                    // Concurrent execution! (This would corrupt files or throw
+                                    // FileSystemException without the lock)
+                                    localSkillBox.uploadSkillFiles();
+                                } catch (Exception e) {
+                                    exceptions.add(e);
+                                } finally {
+                                    doneLatch.countDown();
+                                }
+                            });
+                }
+
+                startLatch.countDown();
+
+                // Wait up to 10 seconds for all threads to finish
+                assertTrue(
+                        doneLatch.await(10, TimeUnit.SECONDS),
+                        "Timeout waiting for concurrent uploads");
+                executor.shutdown();
+
+                assertTrue(
+                        exceptions.isEmpty(),
+                        "Concurrent execution threw exceptions: " + exceptions);
+
+                Path targetPath =
+                        Path.of(sharedWorkDir)
+                                .resolve("skills/concurrent_skill_custom/scripts/heavy_worker.py");
+                assertTrue(Files.exists(targetPath), "Target file should exist");
+
+                assertDoesNotThrow(
+                        () -> {
+                            String readContent = Files.readString(targetPath);
+                            assertEquals(
+                                    largeContent.length(),
+                                    readContent.length(),
+                                    "File content should not be corrupted or truncated");
+                            assertEquals(
+                                    largeContent,
+                                    readContent,
+                                    "File content exactly matches the original");
+                        });
+            } finally {
+                executor.shutdownNow();
+            }
+        }
     }
 
     @Test
@@ -948,6 +1033,159 @@ class SkillBoxTest {
                 .filter(block -> block instanceof TextBlock)
                 .map(block -> ((TextBlock) block).getText())
                 .anyMatch(text -> text != null && text.startsWith("Error:"));
+    }
+
+    @Nested
+    @DisplayName("Skill Prompt Code Execution Integration Tests")
+    class SkillPromptCodeExecutionTest {
+
+        @TempDir Path tempDir;
+
+        @Test
+        @DisplayName("Should not include code execution section in prompt before enabling")
+        void testPromptHasNoCodeExecutionSectionBeforeEnable() {
+            AgentSkill skill = new AgentSkill("data-analysis", "Analyze data", "# Content", null);
+            skillBox.registerSkill(skill);
+
+            String prompt = skillBox.getSkillPrompt();
+
+            assertFalse(prompt.contains("## Code Execution"));
+            assertFalse(prompt.contains("<code_execution>"));
+        }
+
+        @Test
+        @DisplayName("Should include code execution section with uploadDir after enable and upload")
+        void testPromptIncludesUploadDirAfterEnableAndUpload() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            skillBox.codeExecution().workDir(tempDir.toString()).withShell().enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+            String expectedUploadDir = tempDir.resolve("skills").toAbsolutePath().toString();
+
+            assertTrue(prompt.contains("## Code Execution"));
+            assertTrue(prompt.contains("<code_execution>"));
+            assertTrue(prompt.contains(expectedUploadDir));
+        }
+
+        @Test
+        @DisplayName("Should show skill-id based subdirectory pattern in code execution section")
+        void testPromptShowsSkillIdSubdirectoryPattern() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            skillBox.codeExecution().workDir(tempDir.toString()).withShell().enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+            String uploadDir = tempDir.resolve("skills").toAbsolutePath().toString();
+
+            assertTrue(prompt.contains(uploadDir + "/<skill-id>/scripts/"));
+            assertTrue(prompt.contains(uploadDir + "/<skill-id>/assets/"));
+        }
+
+        @Test
+        @DisplayName("Should instruct LLM to use existing scripts and absolute paths")
+        void testPromptInstructsAbsolutePathsAndExistingScripts() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            skillBox.codeExecution().workDir(tempDir.toString()).withShell().enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+
+            assertTrue(prompt.contains("absolute paths"));
+            assertTrue(prompt.contains("existing script"));
+        }
+
+        @Test
+        @DisplayName("Should use custom code execution instruction via builder")
+        void testCustomCodeExecutionInstructionViaBuilder() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            String customInstruction = "## My Custom Section\nRoot: %s";
+            skillBox.codeExecution()
+                    .workDir(tempDir.toString())
+                    .codeExecutionInstruction(customInstruction)
+                    .withShell()
+                    .enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+            String expectedUploadDir = tempDir.resolve("skills").toAbsolutePath().toString();
+
+            assertTrue(prompt.contains("## My Custom Section"));
+            assertTrue(prompt.contains("Root: " + expectedUploadDir));
+            assertFalse(prompt.contains("## Code Execution"));
+        }
+
+        @Test
+        @DisplayName("Code execution section should appear after </available_skills> in prompt")
+        void testCodeExecutionSectionOrderInPrompt() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            skillBox.codeExecution().workDir(tempDir.toString()).withShell().enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+
+            int availableSkillsEnd = prompt.indexOf("</available_skills>");
+            int codeExecutionStart = prompt.indexOf("## Code Execution");
+            assertTrue(availableSkillsEnd >= 0);
+            assertTrue(codeExecutionStart >= 0);
+            assertTrue(availableSkillsEnd < codeExecutionStart);
+        }
+
+        @Test
+        @DisplayName("Should expose only core skill metadata when configured")
+        void testExposeOnlyCoreSkillMetadata() {
+            Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+            metadata.put("name", "trello");
+            metadata.put("description", "Manage Trello boards");
+            metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
+            metadata.put("metadata", Map.of("clawdbot", Map.of("emoji", "📋")));
+            AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+            skillBox.registerSkill(skill);
+            skillBox.setExposeAllSkillMetadata(false);
+
+            String prompt = skillBox.getSkillPrompt();
+
+            assertTrue(prompt.contains("<name>trello</name>"));
+            assertTrue(prompt.contains("<description>Manage Trello boards</description>"));
+            assertTrue(prompt.contains("<skill-id>trello_custom</skill-id>"));
+            assertFalse(prompt.contains("<homepage>"));
+            assertFalse(prompt.contains("<metadata>"));
+        }
     }
 
     /**

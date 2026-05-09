@@ -949,8 +949,7 @@ class OllamaChatModelTest {
                 .doOnNext(
                         response -> {
                             if (response.getContent() != null && !response.getContent().isEmpty()) {
-                                io.agentscope.core.message.ContentBlock block =
-                                        response.getContent().get(0);
+                                ContentBlock block = response.getContent().get(0);
                                 if (block instanceof TextBlock) {
                                     String text = ((TextBlock) block).getText();
                                     System.out.print(text); // Print chunk to stdout
@@ -969,5 +968,60 @@ class OllamaChatModelTest {
         HttpRequest request = captor.getValue();
         assertEquals("POST", request.getMethod());
         assertTrue(request.getUrl().endsWith("/api/chat"));
+    }
+
+    @Test
+    @DisplayName("Should populate and maintain stable ID for streaming responses")
+    void testStreamStableMessageId() {
+        // no ID field is included, simulating real Ollama behavior
+        String part1 =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Thinking...\"},\"done\":false}";
+        String part2 =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\""
+                        + " Hello\"},\"done\":false}";
+        String part3 =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\""
+                        + " World\"},\"done\":false}";
+        String part4 =
+                "{\"model\":\"" + TEST_MODEL_NAME + "\",\"done\":true,\"total_duration\":100}";
+
+        when(httpTransport.stream(any(HttpRequest.class)))
+                .thenReturn(Flux.just(part1, part2, part3, part4));
+
+        GenerateOptions genOptions = OllamaOptions.builder().build().toGenerateOptions();
+
+        List<ChatResponse> responses =
+                model.stream(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                                null,
+                                genOptions)
+                        .collectList()
+                        .block();
+
+        assertNotNull(responses);
+        assertFalse(responses.isEmpty(), "Stream responses should not be empty");
+
+        // collect all the IDs for assertion
+        List<String> collectedIds = new ArrayList<>();
+        for (int i = 0; i < responses.size(); i++) {
+            String id = responses.get(i).getId();
+
+            assertNotNull(id);
+            collectedIds.add(id);
+        }
+
+        // verify the stability of the ID (Stable ID)
+        long uniqueIdCount = collectedIds.stream().distinct().count();
+        assertEquals(
+                1,
+                uniqueIdCount,
+                "All stream chunks for a single response must share the same stable ID! Found IDs: "
+                        + collectedIds);
     }
 }

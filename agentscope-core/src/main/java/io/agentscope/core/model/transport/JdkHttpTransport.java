@@ -19,6 +19,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.Authenticator;
 import java.net.InetSocketAddress;
 import java.net.PasswordAuthentication;
 import java.net.Proxy;
@@ -27,7 +28,6 @@ import java.net.SocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
-import java.net.http.HttpClient.Version;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
@@ -111,7 +111,7 @@ public class JdkHttpTransport implements HttpTransport {
     private static HttpClient buildClient(HttpTransportConfig config) {
         HttpClient.Builder builder =
                 HttpClient.newBuilder()
-                        .version(Version.HTTP_2)
+                        .version(config.getHttpVersion().toJdkHttpVersion())
                         .followRedirects(Redirect.NORMAL)
                         .connectTimeout(config.getConnectTimeout());
 
@@ -152,7 +152,7 @@ public class JdkHttpTransport implements HttpTransport {
                 final String username = proxyConfig.getUsername();
                 final String password = proxyConfig.getPassword();
                 builder.authenticator(
-                        new java.net.Authenticator() {
+                        new Authenticator() {
                             @Override
                             protected PasswordAuthentication getPasswordAuthentication() {
                                 if (getRequestorType() == RequestorType.PROXY) {

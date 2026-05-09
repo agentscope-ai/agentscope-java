@@ -33,6 +33,7 @@ import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -423,7 +424,7 @@ public class PlanNotebook implements StateModule {
     public static List<Map<String, Object>> subtasksToMaps(List<SubTask> subtasks) {
         List<Map<String, Object>> maps = new ArrayList<>();
         for (SubTask subtask : subtasks) {
-            Map<String, Object> map = new java.util.HashMap<>();
+            Map<String, Object> map = new HashMap<>();
             map.put("name", subtask.getName() != null ? subtask.getName() : "Unnamed Subtask");
             map.put(
                     "description",
@@ -446,7 +447,7 @@ public class PlanNotebook implements StateModule {
         if (subtask == null) {
             return null;
         }
-        Map<String, Object> map = new java.util.HashMap<>();
+        Map<String, Object> map = new HashMap<>();
         map.put("name", subtask.getName() != null ? subtask.getName() : "Unnamed Subtask");
         map.put("description", subtask.getDescription() != null ? subtask.getDescription() : "");
         map.put(

@@ -17,6 +17,7 @@ package io.agentscope.core.tool.test;
 
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import reactor.core.publisher.Mono;
 
@@ -137,7 +138,7 @@ public class SampleTools {
     @Tool(name = "async_delayed", description = "Async tool with simulated delay")
     public Mono<String> asyncDelayed(
             @ToolParam(name = "delayMs", description = "Delay in milliseconds") int delayMs) {
-        return Mono.delay(java.time.Duration.ofMillis(delayMs))
+        return Mono.delay(Duration.ofMillis(delayMs))
                 .map(tick -> "Completed after " + delayMs + "ms");
     }
 

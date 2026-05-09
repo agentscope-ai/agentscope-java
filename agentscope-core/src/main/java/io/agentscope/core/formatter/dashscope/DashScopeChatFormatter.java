@@ -29,6 +29,7 @@ import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -40,6 +41,8 @@ import java.util.stream.Collectors;
  */
 public class DashScopeChatFormatter
         extends AbstractBaseFormatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> {
+
+    private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
 
     private final DashScopeMessageConverter messageConverter;
     private final DashScopeResponseParser responseParser;
@@ -167,5 +170,38 @@ public class DashScopeChatFormatter
         applyToolChoice(request, toolChoice);
 
         return request;
+    }
+
+    /**
+     * Apply cache control to DashScope messages.
+     *
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
+     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
+     * marking) will not be overwritten.
+     *
+     * @param messages the list of formatted DashScope messages
+     */
+    public void applyCacheControl(List<DashScopeMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        for (DashScopeMessage msg : messages) {
+            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
+                msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+            }
+        }
+        DashScopeMessage lastMsg = messages.get(messages.size() - 1);
+        if (lastMsg.getCacheControl() == null) {
+            lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        }
+    }
+
+    /**
+     * Get the ephemeral cache control constant.
+     *
+     * @return unmodifiable map representing ephemeral cache control
+     */
+    static Map<String, String> getEphemeralCacheControl() {
+        return EPHEMERAL_CACHE_CONTROL;
     }
 }

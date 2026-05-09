@@ -15,6 +15,10 @@
  */
 package io.agentscope.core.tool;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.networknt.schema.Error;
 import com.networknt.schema.InputFormat;
 import com.networknt.schema.Schema;
@@ -24,6 +28,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +48,7 @@ public final class ToolValidator {
 
     private static final SchemaRegistry SCHEMA_REGISTRY =
             SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private ToolValidator() {
         // Utility class
@@ -80,8 +86,10 @@ public final class ToolValidator {
             // Create Schema from the schema string
             Schema jsonSchema = SCHEMA_REGISTRY.getSchema(schemaJson);
 
+            String normalizedInput = normalizeOptionalNullFields(input, schemaJson);
+
             // Validate
-            List<Error> errors = jsonSchema.validate(input, InputFormat.JSON);
+            List<Error> errors = jsonSchema.validate(normalizedInput, InputFormat.JSON);
 
             if (errors.isEmpty()) {
                 return null; // Validation passed
@@ -93,6 +101,104 @@ public final class ToolValidator {
         } catch (Exception e) {
             return "Schema validation error: " + e.getMessage();
         }
+    }
+
+    /**
+     * Removes null-valued object properties before schema validation.
+     *
+     * <p>This treats explicit nulls the same as omitted optional fields, while still allowing
+     * required-field validation to fail naturally after the null-valued property is removed.
+     */
+    private static String normalizeOptionalNullFields(String input, String schemaJson)
+            throws Exception {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+
+        JsonNode root = OBJECT_MAPPER.readTree(input);
+        JsonNode schemaRoot = OBJECT_MAPPER.readTree(schemaJson);
+        pruneOptionalNullObjectFields(root, schemaRoot, schemaRoot);
+        return OBJECT_MAPPER.writeValueAsString(root);
+    }
+
+    private static void pruneOptionalNullObjectFields(
+            JsonNode inputNode, JsonNode schemaNode, JsonNode schemaRoot) {
+        if (inputNode == null || schemaNode == null) {
+            return;
+        }
+
+        JsonNode resolvedSchema = resolveSchemaNode(schemaNode, schemaRoot);
+        if (resolvedSchema == null) {
+            return;
+        }
+
+        if (inputNode.isObject()) {
+            ObjectNode objectNode = (ObjectNode) inputNode;
+            JsonNode propertiesNode = resolvedSchema.get("properties");
+            Set<String> requiredFields = getRequiredFields(resolvedSchema);
+            JsonNode additionalPropertiesNode = resolvedSchema.get("additionalProperties");
+            List<String> nullFieldNames = new ArrayList<>();
+            objectNode
+                    .fields()
+                    .forEachRemaining(
+                            entry -> {
+                                JsonNode propertySchema =
+                                        propertiesNode != null
+                                                ? propertiesNode.get(entry.getKey())
+                                                : null;
+                                if (entry.getValue().isNull()
+                                        && propertySchema != null
+                                        && !requiredFields.contains(entry.getKey())) {
+                                    nullFieldNames.add(entry.getKey());
+                                } else {
+                                    JsonNode childSchema = propertySchema;
+                                    if (childSchema == null
+                                            && additionalPropertiesNode != null
+                                            && additionalPropertiesNode.isObject()) {
+                                        childSchema = additionalPropertiesNode;
+                                    }
+                                    if (childSchema != null) {
+                                        pruneOptionalNullObjectFields(
+                                                entry.getValue(), childSchema, schemaRoot);
+                                    }
+                                }
+                            });
+            nullFieldNames.forEach(objectNode::remove);
+            return;
+        }
+
+        if (inputNode.isArray()) {
+            ArrayNode arrayNode = (ArrayNode) inputNode;
+            JsonNode itemsSchema = resolvedSchema.get("items");
+            for (JsonNode item : arrayNode) {
+                if (itemsSchema != null) {
+                    pruneOptionalNullObjectFields(item, itemsSchema, schemaRoot);
+                }
+            }
+        }
+    }
+
+    private static JsonNode resolveSchemaNode(JsonNode schemaNode, JsonNode schemaRoot) {
+        JsonNode current = schemaNode;
+        while (current != null && current.has("$ref")) {
+            String ref = current.get("$ref").asText();
+            if (!ref.startsWith("#/")) {
+                return current;
+            }
+            current = schemaRoot.at(ref.substring(1));
+        }
+        return current;
+    }
+
+    private static Set<String> getRequiredFields(JsonNode schemaNode) {
+        JsonNode requiredNode = schemaNode.get("required");
+        if (requiredNode == null || !requiredNode.isArray()) {
+            return Set.of();
+        }
+
+        Set<String> requiredFields = new HashSet<>();
+        requiredNode.forEach(item -> requiredFields.add(item.asText()));
+        return requiredFields;
     }
 
     // ==================== HITL Validation ====================

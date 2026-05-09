@@ -36,11 +36,16 @@ import io.agentscope.core.formatter.openai.dto.JsonSchema;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import okhttp3.mockwebserver.Dispatcher;
@@ -165,6 +170,21 @@ class DashScopeHttpClientTest {
         assertEquals(
                 DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
                 client.selectEndpoint("qwen3.5-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.6-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi-k2.5", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi-k2.6", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi/kimi-k2.5", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi/kimi-k2.6", EndpointType.AUTO));
     }
 
     @Test
@@ -177,6 +197,7 @@ class DashScopeHttpClientTest {
         assertFalse(client.requiresMultimodalApi("qwen-plus", EndpointType.AUTO));
         assertTrue(client.requiresMultimodalApi("qwen-vl-plus", EndpointType.AUTO));
         assertTrue(client.requiresMultimodalApi("qwen3.5-plus", EndpointType.AUTO));
+        assertTrue(client.requiresMultimodalApi("qwen3.6-plus", EndpointType.AUTO));
     }
 
     @Test
@@ -188,6 +209,16 @@ class DashScopeHttpClientTest {
         assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-397b-a17b"));
         // qwen-3.5-plus (with hyphen before 3.5) does not match
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.5-plus"));
+    }
+
+    @Test
+    void testIsMultimodalModelIncludesQwen36Family() {
+        // Qwen 3.6 family uses multimodal API (prefix-based matching)
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.6-plus"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.6-flash"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("Qwen3.6-Plus"));
+        // qwen-3.6-plus (with hyphen before 3.6) does not match
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.6-plus"));
     }
 
     @Test
@@ -1104,7 +1135,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testDecryptResponse() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1160,12 +1191,11 @@ class DashScopeHttpClientTest {
     @Test
     void testBuildEncryptionHeader() throws Exception {
         // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        KeyPair keyPair = keyGen.generateKeyPair();
+        PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         // Create encrypted client
         DashScopeHttpClient encryptedClient =
@@ -1234,7 +1264,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testCallWithEncryptionFullFlow() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1286,7 +1316,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testStreamWithEncryptionFullFlow() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1444,7 +1474,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testEncryptionHeaderAbsentWhenNoInput() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1486,7 +1516,7 @@ class DashScopeHttpClientTest {
         // This test now validates: if there is no encryption context for this request,
         // encrypted output will be left as-is and deserialized as null output (graceful behavior).
 
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1500,7 +1530,7 @@ class DashScopeHttpClientTest {
 
         // Server returns an encrypted output string, but request has no input -> client has no
         // context
-        javax.crypto.SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
+        SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
         byte[] testIv = DashScopeEncryptionUtils.generateIv();
         String originalOutputJson = "{\"choices\":[]}";
         String encryptedOutput =
@@ -1534,7 +1564,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testDecryptResponseWithNonStringOutput() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1608,8 +1638,8 @@ class DashScopeHttpClientTest {
                 .build();
     }
 
-    private java.security.KeyPair generateRsaKeyPair() throws Exception {
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+    private KeyPair generateRsaKeyPair() throws Exception {
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
         return keyGen.generateKeyPair();
     }
@@ -1619,14 +1649,14 @@ class DashScopeHttpClientTest {
         return Base64.getDecoder().decode(headerMap.get("iv"));
     }
 
-    private SecretKey extractAesKeyFromRequest(
-            RecordedRequest request, java.security.PrivateKey privateKey) throws Exception {
+    private SecretKey extractAesKeyFromRequest(RecordedRequest request, PrivateKey privateKey)
+            throws Exception {
         Map<String, String> headerMap = parseEncryptionHeader(request);
         String encryptedKeyBase64 = headerMap.get("encrypt_key");
         byte[] encryptedKeyBytes = Base64.getDecoder().decode(encryptedKeyBase64);
 
-        javax.crypto.Cipher rsaCipher = javax.crypto.Cipher.getInstance("RSA");
-        rsaCipher.init(javax.crypto.Cipher.DECRYPT_MODE, privateKey);
+        Cipher rsaCipher = Cipher.getInstance("RSA");
+        rsaCipher.init(Cipher.DECRYPT_MODE, privateKey);
         byte[] decrypted = rsaCipher.doFinal(encryptedKeyBytes);
 
         String base64AesKey = new String(decrypted, StandardCharsets.UTF_8);

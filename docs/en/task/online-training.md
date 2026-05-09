@@ -258,7 +258,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 
 // User requests are processed normally (using GPT-4), 10% automatically sampled for training
-Msg response = agent.call(Msg.userMsg("Search for Python tutorials")).block();
+Msg response = agent.call(Msg.builder().textContent("Search for Python tutorials").build()).block();
 
 // 3. Stop when training is complete
 runner.stop();

@@ -1,0 +1,24 @@
+name: "Close stale PRs"
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: 
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/stale@v9
+        with:
+          only-labels: 'wait-for-response'
+          days-before-stale: 7
+          days-before-close: 0
+          stale-pr-message: >
+            Closing due to inactivity. Feel free to reopen when ready.
+          stale-pr-label: 'stale'
+          days-before-issue-stale: -1
+          days-before-issue-close: -1

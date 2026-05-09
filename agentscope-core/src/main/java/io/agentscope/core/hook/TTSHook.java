@@ -22,6 +22,7 @@ import io.agentscope.core.model.tts.DashScopeRealtimeTTSModel;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
@@ -111,7 +112,7 @@ public class TTSHook implements Hook {
      *
      * @return Flux of AudioBlock that emits audio as it's synthesized
      */
-    public reactor.core.publisher.Flux<AudioBlock> getAudioStream() {
+    public Flux<AudioBlock> getAudioStream() {
         return audioSink.asFlux();
     }
 

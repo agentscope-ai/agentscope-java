@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -33,6 +34,8 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
+import io.modelcontextprotocol.spec.McpSchema;
+import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -238,6 +241,89 @@ class ToolkitTest {
         AgentTool tool = toolkit.getTool(toolName);
         assertNotNull(tool, "Tool should still exist after ignored removal");
         assertEquals(initialCount, toolkit.getToolNames().size(), "Tool count should not change");
+    }
+
+    private static AgentTool namedAgentTool(String name) {
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return name;
+            }
+
+            @Override
+            public String getDescription() {
+                return "test";
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                return Map.of("type", "object");
+            }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                return Mono.empty();
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("removeToolIfSame removes when registered instance matches")
+    void removeToolIfSame_removesWhenInstanceMatches() {
+        AgentTool tool = namedAgentTool("remove_if_same_a");
+        toolkit.registerAgentTool(tool);
+        assertTrue(toolkit.removeToolIfSame("remove_if_same_a", tool));
+        assertEquals(null, toolkit.getTool("remove_if_same_a"));
+    }
+
+    @Test
+    @DisplayName("removeToolIfSame does not remove when a newer tool replaced the name")
+    void removeToolIfSame_noOpWhenReplaced() {
+        AgentTool first = namedAgentTool("remove_if_same_b");
+        AgentTool second = namedAgentTool("remove_if_same_b");
+        toolkit.registerAgentTool(first);
+        toolkit.registerAgentTool(second);
+        assertFalse(
+                toolkit.removeToolIfSame("remove_if_same_b", first),
+                "stale instance after replace must return false");
+        assertSame(second, toolkit.getTool("remove_if_same_b"));
+        assertTrue(toolkit.removeToolIfSame("remove_if_same_b", second));
+        assertEquals(null, toolkit.getTool("remove_if_same_b"));
+    }
+
+    @Test
+    @DisplayName("removeToolIfSame returns false when tool name is absent")
+    void removeToolIfSame_falseWhenAbsent() {
+        AgentTool phantom = namedAgentTool("remove_if_same_missing");
+        assertFalse(
+                toolkit.removeToolIfSame("remove_if_same_missing", phantom),
+                "no registration must return false");
+        assertEquals(null, toolkit.getTool("remove_if_same_missing"));
+    }
+
+    @Test
+    @DisplayName("removeToolIfSame returns false when expected is not the registered instance")
+    void removeToolIfSame_falseWhenExpectedNotRegisteredInstance() {
+        AgentTool registered = namedAgentTool("remove_if_same_wrong_ref");
+        AgentTool otherSameName = namedAgentTool("remove_if_same_wrong_ref");
+        toolkit.registerAgentTool(registered);
+        assertFalse(
+                toolkit.removeToolIfSame("remove_if_same_wrong_ref", otherSameName),
+                "non-matching instance must return false and leave registry unchanged");
+        assertSame(registered, toolkit.getTool("remove_if_same_wrong_ref"));
+    }
+
+    @Test
+    @DisplayName("removeToolIfSame returns false when deletion is disabled")
+    void removeToolIfSame_falseWhenDeletionDisabled() {
+        ToolkitConfig config = ToolkitConfig.builder().allowToolDeletion(false).build();
+        Toolkit tk = new Toolkit(config);
+        AgentTool tool = namedAgentTool("remove_if_same_no_delete");
+        tk.registerAgentTool(tool);
+        assertFalse(
+                tk.removeToolIfSame("remove_if_same_no_delete", tool),
+                "allowToolDeletion=false must return false");
+        assertSame(tool, tk.getTool("remove_if_same_no_delete"));
     }
 
     @Test
@@ -588,7 +674,7 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName("Should allow agent parameters to override preset parameters")
+    @DisplayName("Should keep preset parameters authoritative over agent parameters")
     void testPresetParametersOverride() {
         class OverrideTool {
             @Tool(description = "Test tool for parameter override")
@@ -607,7 +693,7 @@ class ToolkitTest {
                         Map.of("param1", "preset_value1", "param2", "preset_value2"));
         toolkit.registration().tool(new OverrideTool()).presetParameters(presetParams).apply();
 
-        // Call with agent providing param1 (should override preset)
+        // Call with agent providing param1 (preset should still win)
         Map<String, Object> overrideInput = Map.of("param1", "agent_value1");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
@@ -620,9 +706,10 @@ class ToolkitTest {
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
         String resultText = getResultText(result);
 
-        // param1 should be overridden by agent, param2 should use preset
+        // Preset values should not be overridden by agent input
         assertTrue(
-                resultText.contains("param1: agent_value1"), "Agent value should override preset");
+                resultText.contains("param1: preset_value1"),
+                "Preset value should override agent input");
         assertTrue(resultText.contains("param2: preset_value2"), "Preset value should be used");
     }
 
@@ -814,6 +901,136 @@ class ToolkitTest {
         }
     }
 
+    // ==================== Nested Object $ref Tests (Issue #893) ====================
+
+    /**
+     * POJO that victools will generate $defs/$ref for when used in a List.
+     */
+    public static class Material {
+        private String key;
+        private String value;
+
+        public Material() {}
+
+        public Material(String key, String value) {
+            this.key = key;
+            this.value = value;
+        }
+
+        public String getKey() {
+            return key;
+        }
+
+        public void setKey(String key) {
+            this.key = key;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(String value) {
+            this.value = value;
+        }
+    }
+
+    /**
+     * Nested request object containing lists of Material,
+     * which triggers victools to produce $defs + $ref in the schema.
+     */
+    public static class CreateRequest {
+        private java.util.List<Material> baseMaterialList;
+        private java.util.List<Material> searchMaterialList;
+
+        public java.util.List<Material> getBaseMaterialList() {
+            return baseMaterialList;
+        }
+
+        public void setBaseMaterialList(java.util.List<Material> baseMaterialList) {
+            this.baseMaterialList = baseMaterialList;
+        }
+
+        public java.util.List<Material> getSearchMaterialList() {
+            return searchMaterialList;
+        }
+
+        public void setSearchMaterialList(java.util.List<Material> searchMaterialList) {
+            this.searchMaterialList = searchMaterialList;
+        }
+    }
+
+    /**
+     * Tool class that uses a nested object parameter, reproducing the scenario in Issue #893.
+     */
+    public static class NestedObjectTool {
+
+        @Tool(name = "createTheme", description = "Create a theme with material lists")
+        public String create(
+                @ToolParam(name = "request", description = "The creation request")
+                        CreateRequest request) {
+            return "Created with "
+                    + (request.getSearchMaterialList() != null
+                            ? request.getSearchMaterialList().size()
+                            : 0)
+                    + " search materials";
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle nested object with $ref in schema (Issue #893)")
+    void testNestedObjectWithRefIssue893() {
+        // Register tool with nested POJO parameter
+        NestedObjectTool nestedTool = new NestedObjectTool();
+        toolkit.registerTool(nestedTool);
+
+        // Verify the tool is registered
+        AgentTool tool = toolkit.getTool("createTheme");
+        assertNotNull(tool, "Tool should be registered");
+
+        // Print the generated schema for debugging
+        Map<String, Object> parameters = tool.getParameters();
+        String schemaJson = JsonUtils.getJsonCodec().toJson(parameters);
+
+        // Verify the schema contains $defs (victools should generate it for Material)
+        assertTrue(
+                schemaJson.contains("$defs") || schemaJson.contains("$ref"),
+                "Schema should contain $defs/$ref for nested Material type");
+
+        // Simulate agent calling the tool with nested object input (matching Issue #893 scenario)
+        Map<String, Object> input =
+                Map.of(
+                        "request",
+                        Map.of(
+                                "searchMaterialList",
+                                List.of(
+                                        Map.of("key", "aaa", "value", "123"),
+                                        Map.of("key", "bbb", "value", "456"))));
+
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("toolu_test_893")
+                        .name("createTheme")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        // This is the bug: callTool triggers ToolValidator.validateInput which fails
+        // with "Schema validation error: Reference /$defs/Material cannot be resolved"
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result, "Result should not be null");
+        assertFalse(
+                isErrorResult(result),
+                "Tool call with nested objects should succeed, but got error: "
+                        + getResultText(result));
+
+        String resultText = getResultText(result);
+        assertTrue(
+                resultText.contains("2 search materials"),
+                "Should have processed 2 search materials. Got: " + resultText);
+    }
+
     // ==================== Converter Tests ====================
 
     /**
@@ -821,7 +1038,7 @@ class ToolkitTest {
      */
     public static class CustomNoArgConverter implements ToolResultConverter {
         @Override
-        public ToolResultBlock convert(Object result, java.lang.reflect.Type returnType) {
+        public ToolResultBlock convert(Object result, Type returnType) {
             return ToolResultBlock.text("[CustomNoArg] " + result);
         }
     }
@@ -837,7 +1054,7 @@ class ToolkitTest {
         }
 
         @Override
-        public ToolResultBlock convert(Object result, java.lang.reflect.Type returnType) {
+        public ToolResultBlock convert(Object result, Type returnType) {
             return ToolResultBlock.text(result + " with config: " + config);
         }
     }
@@ -1007,5 +1224,44 @@ class ToolkitTest {
 
         AgentTool tool = toolkit.getTool("tool_with_default_converter");
         assertNotNull(tool, "Tool should be registered");
+    }
+
+    @Test
+    @DisplayName("Should expose MCP output schema through getToolSchemas")
+    void testGetToolSchemasIncludesMcpOutputSchema() {
+        McpClientWrapper mcpClientWrapper = mock(McpClientWrapper.class);
+        when(mcpClientWrapper.getName()).thenReturn("mcp-client");
+        when(mcpClientWrapper.initialize()).thenReturn(Mono.empty());
+
+        McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
+        when(mcpTool.name()).thenReturn("structured_mcp_tool");
+        when(mcpTool.description()).thenReturn("Returns structured MCP output");
+        when(mcpTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(mcpTool.outputSchema())
+                .thenReturn(
+                        Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of("answer", Map.of("type", "string"))));
+        when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
+
+        toolkit.registerMcpClient(mcpClientWrapper).block();
+
+        ToolSchema schema =
+                toolkit.getToolSchemas().stream()
+                        .filter(s -> "structured_mcp_tool".equals(getToolName(s)))
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(schema);
+        assertNotNull(schema.getOutputSchema());
+        assertEquals("object", schema.getOutputSchema().get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties =
+                (Map<String, Object>) schema.getOutputSchema().get("properties");
+        assertTrue(properties.containsKey("answer"));
     }
 }

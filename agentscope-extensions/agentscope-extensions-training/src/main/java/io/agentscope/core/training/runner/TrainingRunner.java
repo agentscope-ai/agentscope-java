@@ -20,6 +20,7 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.training.backend.TrinityClient;
 import io.agentscope.core.training.backend.dto.CommitRequest;
 import io.agentscope.core.training.reward.RewardCalculator;
+import io.agentscope.core.training.strategy.TrainingSelectionStrategy;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -246,8 +247,7 @@ public class TrainingRunner {
             return this;
         }
 
-        public Builder selectionStrategy(
-                io.agentscope.core.training.strategy.TrainingSelectionStrategy strategy) {
+        public Builder selectionStrategy(TrainingSelectionStrategy strategy) {
             getConfigBuilder().selectionStrategy(strategy);
             return this;
         }

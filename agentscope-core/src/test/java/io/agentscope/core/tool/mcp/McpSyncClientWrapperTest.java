@@ -28,6 +28,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.Version;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.HashMap;
@@ -58,7 +59,7 @@ class McpSyncClientWrapperTest {
     void testInitialize_Success() {
         // Mock initialization with correct constructors
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.11-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -104,7 +105,7 @@ class McpSyncClientWrapperTest {
     @Test
     void testInitialize_AlreadyInitialized() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.11-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -325,7 +326,7 @@ class McpSyncClientWrapperTest {
 
     private void setupSuccessfulInitialization() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.11-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",

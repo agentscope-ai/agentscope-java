@@ -29,13 +29,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentMatchers;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 /**
  * Unit tests for SkillFileSystemHelper.
@@ -124,6 +130,53 @@ class SkillFileSystemHelperTest {
     }
 
     @Test
+    @DisplayName("Should preserve full metadata when saving and loading")
+    void testSaveSkills_PreservesFullMetadata() throws IOException {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "metadata-skill");
+        metadata.put("description", "Metadata Skill");
+        metadata.put("homepage", "https://example.com/docs");
+        metadata.put(
+                "metadata",
+                Map.of(
+                        "clawdbot",
+                        Map.of(
+                                "requires",
+                                Map.of(
+                                        "env", List.of("API_KEY", "API_SECRET"),
+                                        "bins", List.of("jq")))));
+        AgentSkill skill =
+                new AgentSkill(metadata, "Content", Map.of("references/doc.md", "Doc"), null);
+
+        boolean result = SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(skill), false);
+        assertTrue(result);
+
+        String savedSkillMd =
+                Files.readString(
+                        skillsBaseDir.resolve("metadata-skill").resolve("SKILL.md"),
+                        StandardCharsets.UTF_8);
+        assertTrue(savedSkillMd.contains("homepage: https://example.com/docs"));
+        assertTrue(savedSkillMd.contains("metadata:"));
+        assertTrue(savedSkillMd.contains("clawdbot:"));
+
+        AgentSkill loaded =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "metadata-skill", "source");
+        assertEquals(List.copyOf(metadata.keySet()), List.copyOf(loaded.getMetadata().keySet()));
+        assertEquals("https://example.com/docs", loaded.getMetadataValue("homepage"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> loadedMetadata =
+                (Map<String, Object>) loaded.getMetadataValue("metadata");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> clawdbot = (Map<String, Object>) loadedMetadata.get("clawdbot");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> requires = (Map<String, Object>) clawdbot.get("requires");
+
+        assertEquals(List.of("API_KEY", "API_SECRET"), requires.get("env"));
+        assertEquals(List.of("jq"), requires.get("bins"));
+    }
+
+    @Test
     @DisplayName("Should return false when saving empty list")
     void testSaveSkills_EmptyList() {
         assertFalse(SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(), false));
@@ -145,6 +198,72 @@ class SkillFileSystemHelperTest {
 
         AgentSkill loaded = SkillFileSystemHelper.loadSkill(skillsBaseDir, "test-skill", "source");
         assertEquals("Test Skill", loaded.getDescription());
+    }
+
+    @Test
+    @DisplayName(
+            "Should save zero skills and leave file contents unchanged when all exist and force is"
+                    + " false")
+    void testSaveSkills_AllExistingSkills_ForceDisabled_NoSkillsSaved() throws IOException {
+        String originalTestSkill =
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8);
+        String originalAnotherSkill =
+                Files.readString(
+                        skillsBaseDir.resolve("another-skill/SKILL.md"), StandardCharsets.UTF_8);
+
+        AgentSkill skill1 = new AgentSkill("test-skill", "Updated Test", "Updated content 1", null);
+        AgentSkill skill2 =
+                new AgentSkill("another-skill", "Updated Another", "Updated content 2", null);
+
+        boolean result =
+                SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(skill1, skill2), false);
+
+        // 0 out of 2 saved — no coverage at all
+        assertFalse(result);
+        assertEquals(
+                originalTestSkill,
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "test-skill SKILL.md must not be modified");
+        assertEquals(
+                originalAnotherSkill,
+                Files.readString(
+                        skillsBaseDir.resolve("another-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "another-skill SKILL.md must not be modified");
+    }
+
+    @Test
+    @DisplayName("Should save new skills while leaving existing ones unchanged when force is false")
+    void testSaveSkills_MixedSkills_ForceDisabled_NewSavedExistingUnchanged() throws IOException {
+        String originalContent =
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8);
+
+        AgentSkill existingSkill =
+                new AgentSkill("test-skill", "Updated Description", "Updated content", null);
+        AgentSkill newSkill = new AgentSkill("brand-new-skill", "Brand New", "New content", null);
+
+        boolean result =
+                SkillFileSystemHelper.saveSkills(
+                        skillsBaseDir, List.of(existingSkill, newSkill), false);
+
+        // 1 out of 2 saved — not all saved
+        assertFalse(result);
+
+        // existing skill must not be modified
+        assertEquals(
+                originalContent,
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "test-skill SKILL.md must not be modified");
+
+        // new skill must be saved correctly
+        AgentSkill loaded =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "brand-new-skill", "source");
+        assertEquals("brand-new-skill", loaded.getName());
+        assertEquals("Brand New", loaded.getDescription());
+        assertEquals("New content", loaded.getSkillContent());
     }
 
     @Test
@@ -253,6 +372,126 @@ class SkillFileSystemHelperTest {
 
         Path savedText = skillsBaseDir.resolve("binary-save/readme.txt");
         assertEquals("plain text", Files.readString(savedText, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("Should load normal readable files")
+    void shouldLoadNormalResourceFiles() throws IOException {
+        createSampleSkill("normal-skill", "Test Normal", "Test content");
+        Path skillDir = skillsBaseDir.resolve("normal-skill");
+        Path normalFile = skillDir.resolve("normal_resource.txt");
+        Files.writeString(normalFile, "normal", StandardCharsets.UTF_8);
+
+        AgentSkill skill =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "normal-skill", "test-source");
+
+        assertNotNull(skill);
+        assertTrue(
+                skill.getResources().containsKey("normal_resource.txt"),
+                "Normal file should be loaded");
+    }
+
+    @Test
+    @DisplayName("Should filter out unreadable files")
+    void shouldFilterUnreadableFiles() throws IOException {
+        createSampleSkill("unreadable-skill", "Test Unreadable", "Test content");
+        Path skillDir = skillsBaseDir.resolve("unreadable-skill");
+        Path unreadableFile = skillDir.resolve("secret.txt");
+        Files.writeString(unreadableFile, "secret", StandardCharsets.UTF_8);
+
+        try (MockedStatic<Files> mockedFiles =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            mockedFiles
+                    .when(() -> Files.isReadable(ArgumentMatchers.any(Path.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                Path p = invocation.getArgument(0);
+                                if (p.getFileName().toString().equals("secret.txt")) return false;
+                                return invocation.callRealMethod();
+                            });
+
+            AgentSkill skill =
+                    SkillFileSystemHelper.loadSkill(
+                            skillsBaseDir, "unreadable-skill", "test-source");
+            assertFalse(
+                    skill.getResources().containsKey("secret.txt"),
+                    "Unreadable file should be filtered out");
+        }
+    }
+
+    @Test
+    @DisplayName("Should explicitly filter out dot-files and files within dot-directories")
+    void shouldFilterDotFilesAndDirectories() throws IOException {
+        createSampleSkill("dot-skill", "Test Dot Files", "Test content");
+        Path skillDir = skillsBaseDir.resolve("dot-skill");
+
+        Path dotFile = skillDir.resolve(".DS_Store");
+        Files.writeString(dotFile, "garbage", StandardCharsets.UTF_8);
+
+        Path dotDir = skillDir.resolve(".hidden_dir");
+        Files.createDirectories(dotDir);
+        Path dotDirFile = dotDir.resolve("config.txt");
+        Files.writeString(dotDirFile, "hidden config", StandardCharsets.UTF_8);
+
+        AgentSkill skill =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "dot-skill", "test-source");
+
+        assertFalse(skill.getResources().containsKey(".DS_Store"), "Dot file should be filtered");
+        assertFalse(
+                skill.getResources().containsKey(".hidden_dir/config.txt"),
+                "File inside dot directory should be filtered");
+    }
+
+    @Test
+    @DisplayName("Should default to loading the file if isHidden() throws IOException")
+    void shouldHandleIOExceptionDuringAttributeCheck() throws IOException {
+        createSampleSkill("io-exception-skill", "Test IO Exception", "Test content");
+        Path skillDir = skillsBaseDir.resolve("io-exception-skill");
+        Path triggerFile = skillDir.resolve("error_trigger.txt");
+        Files.writeString(triggerFile, "trigger", StandardCharsets.UTF_8);
+
+        try (MockedStatic<Files> mockedFiles =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            mockedFiles
+                    .when(() -> Files.isHidden(ArgumentMatchers.any(Path.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                Path p = invocation.getArgument(0);
+                                if (p.getFileName().toString().equals("error_trigger.txt")) {
+                                    throw new IOException("Simulated IO Exception for testing");
+                                }
+                                return invocation.callRealMethod();
+                            });
+
+            AgentSkill skill =
+                    SkillFileSystemHelper.loadSkill(
+                            skillsBaseDir, "io-exception-skill", "test-source");
+            assertTrue(
+                    skill.getResources().containsKey("error_trigger.txt"),
+                    "File causing IOException should default to being loaded");
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    @DisplayName("Should filter OS-level hidden files on Windows")
+    void shouldFilterOsHiddenFilesOnWindows() throws IOException {
+        createSampleSkill("os-hidden-skill", "Test OS Hidden", "Test content");
+        Path skillDir = skillsBaseDir.resolve("os-hidden-skill");
+
+        Path osHiddenFile = skillDir.resolve("os_hidden_file.txt");
+        Files.writeString(osHiddenFile, "hidden data", StandardCharsets.UTF_8);
+
+        try {
+            Files.setAttribute(osHiddenFile, "dos:hidden", true);
+        } catch (Exception ignored) {
+        }
+
+        AgentSkill skill =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "os-hidden-skill", "test-source");
+        assertFalse(
+                skill.getResources().containsKey("os_hidden_file.txt"),
+                "OS hidden file should be filtered out on Windows");
     }
 
     private void createSampleSkill(String name, String description, String content)

@@ -142,8 +142,7 @@ public class JsonSession implements Session {
 
             // Determine if full rewrite is needed
             boolean needsFullRewrite =
-                    ListHashUtil.needsFullRewrite(
-                            currentHash, storedHash, values.size(), (int) existingCount);
+                    ListHashUtil.needsFullRewrite(values, storedHash, (int) existingCount);
 
             if (needsFullRewrite) {
                 // Full rewrite: delete existing file and write all items
@@ -295,6 +294,15 @@ public class JsonSession implements Session {
         Path sessionDir = getSessionDir(sessionKey);
         if (Files.exists(sessionDir)) {
             deleteDirectory(sessionDir);
+        }
+    }
+
+    @Override
+    public void delete(SessionKey sessionKey, String key) {
+        try {
+            Files.deleteIfExists(getStatePath(sessionKey, key));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to delete state: " + key, e);
         }
     }
 

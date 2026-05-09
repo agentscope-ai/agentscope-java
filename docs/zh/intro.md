@@ -34,15 +34,14 @@ AgentScope 包含生产就绪的工具，解决智能体开发中的常见挑战
 AgentScope 设计为与现有企业基础设施集成，无需大量修改：
 
 - **MCP 协议** - 与任何 MCP 兼容服务器集成，即时扩展智能体能力。连接到不断增长的 MCP 工具和服务生态系统——从文件系统和数据库到 Web 浏览器和代码解释器——无需编写自定义集成代码。
-- **A2A 协议** - 通过标准服务发现实现分布式多智能体协作。将智能体能力注册到 Nacos 或类似注册中心，允许智能体像调用微服务一样自然地发现和调用彼此。
+- **A2A 协议** - 通过扩展模块实现分布式多智能体协作。将智能体能力注册到 Nacos 或类似注册中心（通过 `agentscope-extensions-nacos-a2a` 扩展），允许智能体像调用微服务一样自然地发现和调用彼此。
 
 ### 生产级别
 
 为企业部署需求而构建：
 
-- **高性能** - 基于 Project Reactor 的响应式架构确保非阻塞执行。GraalVM 原生镜像编译实现 200ms 冷启动时间，使 AgentScope 适用于 Serverless 和自动扩缩容环境。
-- **安全沙箱** - AgentScope Runtime 为不受信任的工具代码提供隔离的执行环境。包括用于 GUI 自动化、文件系统操作和移动设备交互的预构建沙箱，防止未授权访问系统资源。
-- **可观测性** - 原生集成 OpenTelemetry，实现整个智能体执行管道的分布式追踪。AgentScope Studio 为开发和生产环境提供可视化调试、实时监控和全面的日志记录。
+- **高性能** - 基于 Project Reactor 的响应式架构确保非阻塞执行。支持通过 Micronaut/Quarkus 等框架进行 GraalVM 原生镜像编译，适用于 Serverless 和自动扩缩容环境。
+- **可观测性** - 提供可插拔的 Tracer SPI，通过扩展模块支持 OpenTelemetry 集成，实现整个智能体执行管道的分布式追踪。AgentScope Studio 为开发和生产环境提供可视化调试、实时监控和全面的日志记录。
 
 ## 系统要求
 
@@ -99,10 +98,10 @@ System.out.println(response.getTextContent());
 - **[内存管理](task/memory.md)** - 管理对话历史和长期内存
 - **[计划](task/plan.md)** - 复杂多步骤任务的计划管理
 - **[智能体配置](task/agent-config.md)** - 高级智能体配置选项
+- **[HarnessAgent](harness/overview.md)** - 具备工作区、持久记忆与子 Agent 编排的生产级运行时
 
 ### 多智能体系统
 - **[管道](multi-agent/pipeline.md)** - 使用顺序和并行执行构建多智能体工作流
-- **[MsgHub](multi-agent/msghub.md)** - 多智能体消息广播机制
 - **[A2A 协议](task/a2a.md)** - Agent2Agent 协议支持
 - **[状态管理](task/state.md)** - 跨会话持久化和恢复智能体状态
 

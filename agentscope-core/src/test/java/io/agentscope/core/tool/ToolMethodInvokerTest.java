@@ -26,9 +26,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for ToolMethodInvoker, focusing on convertFromString and parameter conversion.
@@ -168,29 +170,34 @@ class ToolMethodInvokerTest {
             return String.valueOf(sum);
         }
 
+        public String beanParamMethod(
+                @ToolParam(name = "payload", description = "bean payload") BeanParam payload) {
+            return payload.getRequiredField() + "|" + payload.getOptionalField();
+        }
+
         public String suspendTool(
                 @ToolParam(name = "reason", description = "reason") String reason) {
             throw new ToolSuspendException(reason);
         }
 
-        public java.util.concurrent.CompletableFuture<String> suspendToolAsync(
+        public CompletableFuture<String> suspendToolAsync(
                 @ToolParam(name = "reason", description = "reason") String reason) {
-            return java.util.concurrent.CompletableFuture.supplyAsync(
+            return CompletableFuture.supplyAsync(
                     () -> {
                         throw new ToolSuspendException(reason);
                     });
         }
 
-        public reactor.core.publisher.Mono<String> suspendToolMono(
+        public Mono<String> suspendToolMono(
                 @ToolParam(name = "reason", description = "reason") String reason) {
-            return reactor.core.publisher.Mono.error(new ToolSuspendException(reason));
+            return Mono.error(new ToolSuspendException(reason));
         }
 
         /**
          * CompletableFuture-returning method that throws ToolSuspendException
          * synchronously BEFORE creating the Future.
          */
-        public java.util.concurrent.CompletableFuture<String> suspendToolAsyncSync(
+        public CompletableFuture<String> suspendToolAsyncSync(
                 @ToolParam(name = "reason", description = "reason") String reason) {
             throw new ToolSuspendException(reason);
         }
@@ -199,7 +206,7 @@ class ToolMethodInvokerTest {
          * Mono-returning method that throws ToolSuspendException
          * synchronously BEFORE creating the Mono.
          */
-        public reactor.core.publisher.Mono<String> suspendToolMonoSync(
+        public Mono<String> suspendToolMonoSync(
                 @ToolParam(name = "reason", description = "reason") String reason) {
             throw new ToolSuspendException(reason);
         }
@@ -244,6 +251,27 @@ class ToolMethodInvokerTest {
         @Override
         public int hashCode() {
             return Objects.hash(name, quantity);
+        }
+    }
+
+    static class BeanParam {
+        private String requiredField;
+        private String optionalField;
+
+        public String getRequiredField() {
+            return requiredField;
+        }
+
+        public void setRequiredField(String requiredField) {
+            this.requiredField = requiredField;
+        }
+
+        public String getOptionalField() {
+            return optionalField;
+        }
+
+        public void setOptionalField(String optionalField) {
+            this.optionalField = optionalField;
         }
     }
 
@@ -893,5 +921,42 @@ class ToolMethodInvokerTest {
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
         // Sum of 1+2+3+4+5+6 = 21
         Assertions.assertEquals("\"21\"", ToolTestUtils.extractContent(response));
+    }
+
+    @Test
+    void testBeanParam_WithMissingOptionalField() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("beanParamMethod", BeanParam.class);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("requiredField", "value");
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("payload", payload);
+
+        ToolResultBlock response = invokeWithParam(tools, method, input);
+
+        Assertions.assertNotNull(response);
+        Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
+        Assertions.assertEquals("\"value|null\"", ToolTestUtils.extractContent(response));
+    }
+
+    @Test
+    void testBeanParam_WithExplicitNullOptionalField() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("beanParamMethod", BeanParam.class);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("requiredField", "value");
+        payload.put("optionalField", null);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("payload", payload);
+
+        ToolResultBlock response = invokeWithParam(tools, method, input);
+
+        Assertions.assertNotNull(response);
+        Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
+        Assertions.assertEquals("\"value|null\"", ToolTestUtils.extractContent(response));
     }
 }

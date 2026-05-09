@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -45,12 +46,14 @@ class ToolSchemaGenerator {
      *                      be null or empty)
      * @return JSON Schema map in OpenAI format
      */
+    @SuppressWarnings("unchecked")
     Map<String, Object> generateParameterSchema(Method method, Set<String> excludeParams) {
         Map<String, Object> schema = new HashMap<>();
         schema.put("type", "object");
 
         Map<String, Object> properties = new HashMap<>();
         List<String> required = new ArrayList<>();
+        Map<String, Object> allDefs = new HashMap<>();
 
         Parameter[] parameters = method.getParameters();
         for (Parameter param : parameters) {
@@ -67,6 +70,11 @@ class ToolSchemaGenerator {
                 continue;
             }
 
+            // Hoist $defs from per-parameter schema to the root level so that
+            // $ref pointers like "#/$defs/TypeName" resolve against the document root.
+            hoistDefs(info.schema, "$defs", allDefs);
+            hoistDefs(info.schema, "definitions", allDefs);
+
             properties.put(info.name, info.schema);
             if (info.required) {
                 required.add(info.name);
@@ -77,8 +85,33 @@ class ToolSchemaGenerator {
         if (!required.isEmpty()) {
             schema.put("required", required);
         }
+        if (!allDefs.isEmpty()) {
+            schema.put("$defs", allDefs);
+        }
 
         return schema;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void hoistDefs(
+            Map<String, Object> paramSchema, String key, Map<String, Object> target) {
+        Object raw = paramSchema.remove(key);
+        if (raw instanceof Map<?, ?> defs && !defs.isEmpty()) {
+            Map<String, Object> normalizedDefs = (Map<String, Object>) defs;
+            for (Map.Entry<String, Object> entry : normalizedDefs.entrySet()) {
+                String defKey = entry.getKey();
+                Object incomingDef = entry.getValue();
+                Object existingDef = target.get(defKey);
+                if (existingDef == null) {
+                    target.put(defKey, incomingDef);
+                    continue;
+                }
+                if (!Objects.equals(existingDef, incomingDef)) {
+                    throw new IllegalStateException(
+                            "Conflicting schema definition found for key: " + defKey);
+                }
+            }
+        }
     }
 
     /**

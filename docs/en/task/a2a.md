@@ -160,8 +160,8 @@ ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder()
     .description("Intelligent assistant")
     .version("1.0.0")
     .skills(List.of(
-        new AgentSkill("text-generation", "Text Generation"),
-        new AgentSkill("question-answering", "Q&A")))
+        AgentSkill.builder().name("text-generation").description("Text Generation").skillContent("").build(),
+        AgentSkill.builder().name("question-answering").description("Q&A").skillContent("").build()))
     .build();
 
 AgentScopeA2aServer.builder(agentBuilder)

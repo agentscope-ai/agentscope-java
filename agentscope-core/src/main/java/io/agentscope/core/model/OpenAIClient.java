@@ -24,6 +24,7 @@ import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
+import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.net.URI;
@@ -91,7 +92,7 @@ public class OpenAIClient {
      * the transport.
      */
     public OpenAIClient() {
-        this(io.agentscope.core.model.transport.HttpTransportFactory.getDefault());
+        this(HttpTransportFactory.getDefault());
     }
 
     private static final Pattern VERSION_PATTERN = Pattern.compile(".*/v\\d+$");
@@ -438,13 +439,16 @@ public class OpenAIClient {
                             })
                     .onErrorMap(
                             ex -> {
-                                if (ex instanceof HttpTransportException) {
-                                    return OpenAIException.create(
-                                            ((HttpTransportException) ex).getStatusCode(),
+                                if (ex instanceof HttpTransportException hte) {
+                                    Integer code = hte.getStatusCode();
+                                    String msg =
                                             "HTTP transport error during streaming: "
-                                                    + ex.getMessage(),
-                                            null,
-                                            ((HttpTransportException) ex).getResponseBody());
+                                                    + ex.getMessage();
+                                    if (code != null) {
+                                        return OpenAIException.create(
+                                                code, msg, null, hte.getResponseBody());
+                                    }
+                                    return new OpenAIException(msg, ex);
                                 }
                                 return ex;
                             });

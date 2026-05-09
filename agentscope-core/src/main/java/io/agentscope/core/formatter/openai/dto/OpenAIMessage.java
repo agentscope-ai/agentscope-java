@@ -15,11 +15,13 @@
  */
 package io.agentscope.core.formatter.openai.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 /**
  * OpenAI message DTO.
@@ -75,10 +77,12 @@ public class OpenAIMessage {
     private List<OpenAIToolCall> toolCalls;
 
     /**
-     * Reasoning/thinking content (for o1 and similar reasoning models).
-     * This field contains the model's internal reasoning process.
+     * Reasoning/thinking content from the model.
+     * Accepts both {@code reasoning_content} (commercial APIs like DeepSeek, DashScope) and
+     * {@code reasoning} (vLLM deployments) during deserialization.
      */
     @JsonProperty("reasoning_content")
+    @JsonAlias("reasoning")
     private String reasoningContent;
 
     /**
@@ -92,6 +96,10 @@ public class OpenAIMessage {
      */
     @JsonProperty("refusal")
     private String refusal;
+
+    /** Cache control configuration for prompt caching. */
+    @JsonProperty("cache_control")
+    private Map<String, String> cacheControl;
 
     public OpenAIMessage() {}
 
@@ -157,6 +165,14 @@ public class OpenAIMessage {
 
     public void setRefusal(String refusal) {
         this.refusal = refusal;
+    }
+
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
     }
 
     /**
@@ -256,6 +272,11 @@ public class OpenAIMessage {
 
         public Builder refusal(String refusal) {
             message.setRefusal(refusal);
+            return this;
+        }
+
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            message.setCacheControl(cacheControl);
             return this;
         }
 

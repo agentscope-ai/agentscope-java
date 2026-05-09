@@ -93,8 +93,7 @@ class A2aJsonRpcControllerTest {
                             eq(JsonRpcTransportWrapper.class));
 
             ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-            ArgumentCaptor<java.util.Map<String, String>> headersCaptor =
-                    ArgumentCaptor.forClass(java.util.Map.class);
+            ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
             verify(jsonRpcTransportWrapper)
                     .handleRequest(bodyCaptor.capture(), headersCaptor.capture(), anyMap());
 
@@ -150,12 +149,11 @@ class A2aJsonRpcControllerTest {
             assertEquals(responseBody, result);
 
             // Verify interactions
-            ArgumentCaptor<java.util.Map<String, String>> headersCaptor =
-                    ArgumentCaptor.forClass(java.util.Map.class);
+            ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
             verify(jsonRpcTransportWrapper)
                     .handleRequest(anyString(), headersCaptor.capture(), anyMap());
 
-            java.util.Map<String, String> capturedHeaders = headersCaptor.getValue();
+            Map<String, String> capturedHeaders = headersCaptor.getValue();
             assertEquals("application/json", capturedHeaders.get("Content-Type"));
             assertEquals("Bearer token", capturedHeaders.get("Authorization"));
         }
@@ -180,12 +178,11 @@ class A2aJsonRpcControllerTest {
 
             controller.handleRequest(requestBody, header);
 
-            ArgumentCaptor<java.util.Map<String, String>> headersCaptor =
-                    ArgumentCaptor.forClass(java.util.Map.class);
+            ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
             verify(jsonRpcTransportWrapper)
                     .handleRequest(anyString(), headersCaptor.capture(), anyMap());
 
-            java.util.Map<String, String> capturedHeaders = headersCaptor.getValue();
+            Map<String, String> capturedHeaders = headersCaptor.getValue();
             assertEquals("Value1", capturedHeaders.get("Header1"));
             assertEquals("Value2", capturedHeaders.get("Header2"));
         }
@@ -201,12 +198,11 @@ class A2aJsonRpcControllerTest {
 
             controller.handleRequest(requestBody, headers);
 
-            ArgumentCaptor<java.util.Map<String, String>> headersCaptor =
-                    ArgumentCaptor.forClass(java.util.Map.class);
+            ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
             verify(jsonRpcTransportWrapper)
                     .handleRequest(anyString(), headersCaptor.capture(), anyMap());
 
-            java.util.Map<String, String> capturedHeaders = headersCaptor.getValue();
+            Map<String, String> capturedHeaders = headersCaptor.getValue();
             assertTrue(capturedHeaders.isEmpty());
         }
     }

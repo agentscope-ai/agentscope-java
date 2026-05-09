@@ -17,6 +17,7 @@ package io.agentscope.core.memory.mem0;
 
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -309,7 +310,7 @@ public class Mem0LongTermMemory implements LongTermMemory {
         private String apiBaseUrl;
         private String apiKey;
         private Mem0ApiType apiType;
-        private java.time.Duration timeout = java.time.Duration.ofSeconds(60);
+        private Duration timeout = Duration.ofSeconds(60);
         private Map<String, Object> metadata;
 
         /**
@@ -374,7 +375,7 @@ public class Mem0LongTermMemory implements LongTermMemory {
          * @param timeout The timeout duration
          * @return This builder
          */
-        public Builder timeout(java.time.Duration timeout) {
+        public Builder timeout(Duration timeout) {
             this.timeout = timeout;
             return this;
         }

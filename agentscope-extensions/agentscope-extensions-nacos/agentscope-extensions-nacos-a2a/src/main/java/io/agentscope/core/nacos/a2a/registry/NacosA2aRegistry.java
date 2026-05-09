@@ -19,11 +19,11 @@ package io.agentscope.core.nacos.a2a.registry;
 import com.alibaba.nacos.api.ai.A2aService;
 import com.alibaba.nacos.api.ai.AiFactory;
 import com.alibaba.nacos.api.ai.constant.AiConstants;
-import com.alibaba.nacos.api.ai.model.a2a.AgentCard;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCardDetailInfo;
 import com.alibaba.nacos.api.ai.model.a2a.AgentEndpoint;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
+import io.a2a.spec.AgentCard;
 import io.agentscope.core.nacos.a2a.utils.AgentCardConverterUtil;
 import java.util.Properties;
 import java.util.Set;
@@ -65,9 +65,8 @@ public class NacosA2aRegistry {
      * @param agentCard     the agent card to register
      * @param a2aProperties the properties for A2A registry
      */
-    public void registerAgent(
-            io.a2a.spec.AgentCard agentCard, NacosA2aRegistryProperties a2aProperties) {
-        AgentCard nacosAgentCard = AgentCardConverterUtil.convertToNacosAgentCard(agentCard);
+    public void registerAgent(AgentCard agentCard, NacosA2aRegistryProperties a2aProperties) {
+        var nacosAgentCard = AgentCardConverterUtil.convertToNacosAgentCard(agentCard);
         try {
             tryReleaseAgentCard(nacosAgentCard, a2aProperties);
             registerEndpoint(nacosAgentCard, a2aProperties);
@@ -77,7 +76,9 @@ public class NacosA2aRegistry {
         }
     }
 
-    private void tryReleaseAgentCard(AgentCard agentCard, NacosA2aRegistryProperties a2aProperties)
+    private void tryReleaseAgentCard(
+            com.alibaba.nacos.api.ai.model.a2a.AgentCard agentCard,
+            NacosA2aRegistryProperties a2aProperties)
             throws NacosException {
         if (null != tryGetAgentCardFromNacos(agentCard)) {
             log.warn(
@@ -92,8 +93,8 @@ public class NacosA2aRegistry {
         log.info("Register agent card {} to Nacos successfully.", agentCard.getName());
     }
 
-    private AgentCardDetailInfo tryGetAgentCardFromNacos(AgentCard agentCard)
-            throws NacosException {
+    private AgentCardDetailInfo tryGetAgentCardFromNacos(
+            com.alibaba.nacos.api.ai.model.a2a.AgentCard agentCard) throws NacosException {
         try {
             return a2aService.getAgentCard(agentCard.getName(), agentCard.getVersion());
         } catch (NacosException ignored) {
@@ -101,7 +102,9 @@ public class NacosA2aRegistry {
         }
     }
 
-    private void registerEndpoint(AgentCard agentCard, NacosA2aRegistryProperties a2aProperties)
+    private void registerEndpoint(
+            com.alibaba.nacos.api.ai.model.a2a.AgentCard agentCard,
+            NacosA2aRegistryProperties a2aProperties)
             throws NacosException {
         if (!a2aProperties.enabledRegisterEndpoint()) {
             log.info("Disabled register endpoint(s) to Agent, skip endpoint(s) register step.");

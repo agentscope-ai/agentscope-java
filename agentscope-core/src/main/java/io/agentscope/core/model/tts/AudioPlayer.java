@@ -20,6 +20,7 @@ import io.agentscope.core.message.Base64Source;
 import java.util.Base64;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
@@ -229,7 +230,7 @@ public class AudioPlayer {
     private void playbackLoop() {
         while (running.get()) {
             try {
-                byte[] audioData = audioQueue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                byte[] audioData = audioQueue.poll(100, TimeUnit.MILLISECONDS);
                 if (audioData != null && line != null) {
                     line.write(audioData, 0, audioData.length);
                 }

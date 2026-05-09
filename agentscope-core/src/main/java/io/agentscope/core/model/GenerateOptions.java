@@ -19,6 +19,7 @@ package io.agentscope.core.model;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 /**
  * Immutable generation options for LLM models.
@@ -48,6 +49,7 @@ public class GenerateOptions {
     private final ToolChoice toolChoice;
     private final Integer topK;
     private final Long seed;
+    private final Boolean cacheControl;
     private final Map<String, String> additionalHeaders;
     private final Map<String, Object> additionalBodyParams;
     private final Map<String, String> additionalQueryParams;
@@ -75,6 +77,7 @@ public class GenerateOptions {
         this.toolChoice = builder.toolChoice;
         this.topK = builder.topK;
         this.seed = builder.seed;
+        this.cacheControl = builder.cacheControl;
         this.additionalHeaders =
                 builder.additionalHeaders != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalHeaders))
@@ -299,6 +302,25 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets whether cache control is enabled for prompt caching.
+     *
+     * <p>When true, the formatter will automatically add <code>cache_control:
+     * {"type": "ephemeral"}</code> to system messages and the last message in the request. This
+     * enables prompt
+     * caching on supported providers (e.g., Anthropic, DashScope, OpenAI-compatible APIs) to reduce
+     * latency and cost.
+     *
+     * <p>Users can also manually mark individual messages for caching via {@link
+     * io.agentscope.core.message.MessageMetadataKeys#CACHE_CONTROL} metadata. Manually marked
+     * messages take priority over the automatic strategy.
+     *
+     * @return true if cache control is enabled, false or null if not set
+     */
+    public Boolean getCacheControl() {
+        return cacheControl;
+    }
+
+    /**
      * Gets the additional HTTP headers to include in API requests.
      *
      * <p>These headers will be merged with the default headers when making API calls.
@@ -427,6 +449,8 @@ public class GenerateOptions {
         builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
         builder.topK(primary.topK != null ? primary.topK : fallback.topK);
         builder.seed(primary.seed != null ? primary.seed : fallback.seed);
+        builder.cacheControl(
+                primary.cacheControl != null ? primary.cacheControl : fallback.cacheControl);
 
         // Merge map fields: fallback first, then override with primary
         mergeMaps(fallback.additionalHeaders, primary.additionalHeaders, builder::additionalHeader);
@@ -443,9 +467,7 @@ public class GenerateOptions {
     }
 
     private static <V> void mergeMaps(
-            Map<String, V> fallback,
-            Map<String, V> primary,
-            java.util.function.BiConsumer<String, V> adder) {
+            Map<String, V> fallback, Map<String, V> primary, BiConsumer<String, V> adder) {
         if (fallback != null && !fallback.isEmpty()) {
             for (Map.Entry<String, V> entry : fallback.entrySet()) {
                 adder.accept(entry.getKey(), entry.getValue());
@@ -479,6 +501,7 @@ public class GenerateOptions {
         private ToolChoice toolChoice;
         private Integer topK;
         private Long seed;
+        private Boolean cacheControl;
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
         private Map<String, String> additionalQueryParams;
@@ -714,6 +737,20 @@ public class GenerateOptions {
          */
         public Builder seed(Long seed) {
             this.seed = seed;
+            return this;
+        }
+
+        /**
+         * Sets whether cache control is enabled for prompt caching.
+         *
+         * <p>When true, the formatter will automatically add <code>cache_control:
+         * {"type": "ephemeral"}</code> to system messages and the last message in the request.
+         *
+         * @param cacheControl true to enable cache control, false to disable
+         * @return this builder instance
+         */
+        public Builder cacheControl(Boolean cacheControl) {
+            this.cacheControl = cacheControl;
             return this;
         }
 

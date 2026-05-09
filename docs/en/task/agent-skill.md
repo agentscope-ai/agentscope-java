@@ -59,6 +59,12 @@ skill-name/
 ---
 name: skill-name                    # Required: Skill name (lowercase letters, numbers, underscores)
 description: This skill should be used when...  # Required: Trigger description, explaining when to use
+homepage: https://example.com/docs  # Optional: Additional metadata exposed to the agent prompt
+metadata:
+  clawdbot:
+    requires:
+      env:
+        - API_KEY
 ---
 
 # Skill Name
@@ -79,6 +85,13 @@ description: This skill should be used when...  # Required: Trigger description,
 - `name` - Skill name (lowercase letters, numbers, underscores)
 - `description` - Skill functionality and usage scenarios, helps AI determine when to use
 
+**Metadata Notes:**
+
+- Any additional YAML frontmatter fields are preserved as skill metadata, not limited to predefined fields
+- Nested maps and lists are supported and keep their structure and insertion order
+- Frontmatter is parsed with SnakeYAML `SafeConstructor`; only top-level YAML objects of type `Map` are accepted
+- Invalid frontmatter or frontmatter exceeding the parser limit is ignored and treated as empty metadata
+
 ## Quick Start
 
 ### 1. Create a Skill
@@ -89,6 +102,7 @@ description: This skill should be used when...  # Required: Trigger description,
 AgentSkill skill = AgentSkill.builder()
     .name("data_analysis")
     .description("Use when analyzing data...")
+    .putMetadata("homepage", "https://example.com/docs")
     .skillContent("# Data Analysis\n...")
     .addResource("references/formulas.md", "# Common Formulas\n...")
     .source("custom")
@@ -153,7 +167,7 @@ ReActAgent agent = ReActAgent.builder()
 ## Simplified Integration
 
 ```java
-SkillBox skillBox = new SkillBox();
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 skillBox.registerSkill(dataSkill);
 
@@ -201,7 +215,7 @@ ReActAgent agent = ReActAgent.builder()
 
 ### Feature 2: Code Execution Capabilities
 
-Provides an isolated code execution folder for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern for flexible configuration of required tools.
+Provides an isolated code execution environment for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern to compose tools and configuration on demand.
 
 **Basic Usage**:
 
@@ -216,35 +230,41 @@ skillBox.codeExecution()
     .enable();
 ```
 
+**Configuration Reference**:
+
+- **Tool Selection**: Combine `withShell()`, `withRead()`, `withWrite()` as needed — only explicitly enabled tools are registered
+- **`workDir`**: Shared working directory for all tools. Created automatically when specified; if omitted, a temporary directory `agentscope-code-execution-*` is created lazily and cleaned up on JVM exit
+- **`uploadDir`**: Upload location for Skill resource files; defaults to `workDir/skills`
+- **File Filtering**: Controls which resource files are allowed to upload. Defaults to `scripts/`, `assets/` folders and `.py`, `.js`, `.sh` extensions. Adjust with `includeFolders()`/`includeExtensions()`, or fully customize with `fileFilter()` (the two approaches are mutually exclusive)
+- **Custom Shell**: `withShell(customShellTool)` accepts a custom tool whose `baseDir` is automatically overridden with `workDir` while preserving its security policy
+
 **Custom Configuration**:
 
 ```java
-// Customize working directory and Shell command whitelist
+// Specify directory + custom Shell + file filtering
 ShellCommandTool customShell = new ShellCommandTool(
-    null,  // baseDir will be automatically set to workDir
+    null,  // baseDir will be automatically overridden with workDir
     Set.of("python3", "node", "npm"),
-    command -> askUserApproval(command)  // Optional command approval callback
+    command -> askUserApproval(command)
 );
 
 skillBox.codeExecution()
-    .workDir("/path/to/workdir")  // Specify working directory
-    .withShell(customShell)       // Use custom Shell tool
-    .withRead()                   // Enable file reading
-    .withWrite()                  // Enable file writing
+    .workDir("/data/agent-workspace")              // working directory
+    .uploadDir("/data/agent-workspace/my-skills")  // optional, defaults to workDir/skills
+    .includeFolders(Set.of("scripts/", "data/"))   // optional, customize upload folders
+    .includeExtensions(Set.of(".py", ".json"))      // optional, customize upload extensions
+    .withShell(customShell)
+    .withRead()
+    .withWrite()
     .enable();
 
-// Or enable only file operations, without Shell
+// Or use a fully custom file filter (mutually exclusive with includeFolders/includeExtensions)
 skillBox.codeExecution()
+    .fileFilter(path -> path.endsWith(".py"))  // or SkillFileFilter.acceptAll()
     .withRead()
     .withWrite()
     .enable();
 ```
-
-**Core Features**:
-- **Unified Working Directory**: All tools share the same `workDir`, ensuring file isolation
-- **Selective Enabling**: Flexibly combine Shell, read file, and write file tools as needed
-- **Flexible Configuration**: Supports custom ShellCommandTool to meet customization requirements
-- **Automatic Management**: Automatically creates temporary directory when `workDir` is not specified, with automatic cleanup on program exit
 
 ### Feature 3: Skill Persistence Storage
 
@@ -260,7 +280,25 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-#### MySQL Database Storage (not yet implemented)
+#### MySQL Database Storage
+
+```java
+// Using simple constructor with default database/table names
+DataSource dataSource = createDataSource();
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
+
+// Using Builder for custom configuration
+MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+        .databaseName("my_database")
+        .skillsTableName("my_skills")
+        .resourcesTableName("my_resources")
+        .createIfNotExist(true)
+        .writeable(true)
+        .build();
+
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
+```
 
 #### Git Repository (Read-Only)
 
@@ -315,6 +353,46 @@ try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "name
 
 > Note: Add the `agentscope-extensions-nacos-skill` dependency.
 
+### Feature 4: Custom Skill Prompts
+
+When SkillBox injects a system prompt into the Agent, it generates one XML `<skill>` entry per registered Skill so the LLM can decide when to load which Skill. Metadata is rendered directly from `AgentSkill.getMetadata()`, and `<skill-id>` is always appended for tool loading.
+
+- **`instruction`**: The prompt header, explaining how to use Skills (how to load them, path conventions, etc.). Defaults to a built-in `load_skill_through_path` usage guide
+- **XML metadata rendering**: Scalar metadata becomes a child element, nested maps become nested XML, and lists become repeated `<item>` elements
+- **Metadata exposure control**: `skillBox.setExposeAllSkillMetadata(false)` limits the prompt to `name`, `description`, and `skill-id`; the default is to expose all metadata fields
+
+When code execution is enabled, the section appended after `</available_skills>` can also be customized via `.codeExecutionInstruction()`:
+
+- **`codeExecutionInstruction`**: Template for the code execution section; every `%s` placeholder will be replaced with the `uploadDir` absolute path. Passing `null` or blank uses the built-in default.
+
+Passing `null` or a blank string for `instruction` or `codeExecutionInstruction` uses the built-in default.
+
+**Example**:
+
+```java
+// Customize the instruction header
+String customInstruction = """
+    ## Available Skills
+    When a task matches a skill, load it with load_skill_through_path.
+    """;
+
+SkillBox skillBox = new SkillBox(toolkit, customInstruction);
+
+// Optionally expose only core metadata fields in the prompt
+skillBox.setExposeAllSkillMetadata(false);
+
+// Customize the code execution section (takes effect when code execution is enabled)
+skillBox.codeExecution()
+    .workDir("/data/workspace")
+    .codeExecutionInstruction("""
+        ## Script Execution
+        Skills root directory: %s
+        Always use absolute paths when running scripts.
+        """)
+    .withShell()
+    .enable();
+```
+
 ### Performance Optimization Recommendations
 
 1. **Control SKILL.md Size**: Keep under 5k tokens, recommended 1.5-2k tokens
@@ -327,4 +405,3 @@ try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "name
 - [Claude Agent Skills Official Documentation](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview) - Complete concept and architecture introduction
 - [Tool Usage Guide](./tool.md) - Tool system usage methods
 - [Agent Configuration](./agent.md) - Agent configuration and usage
-

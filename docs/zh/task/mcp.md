@@ -157,9 +157,9 @@ String groupName = "filesystem";
 toolkit.createToolGroup(groupName, "Tools for operating system files", true);
 
 // 将 MCP 工具注册到组中
-toolkit.registration().mcpClient(mcpClient).group("groupName").apply();
+toolkit.registration().mcpClient(mcpClient).group(groupName).apply();
 
-// 创建仅使用特定组的智能体
+// 创建使用工具包的智能体（仅 active 组中的工具可用）
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
@@ -222,7 +222,7 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
-> **注意**：Query 参数仅对 HTTP 传输（SSE 和 HTTP）有效，对 StdIO 传输会被忽略。
+> **注意**：Query 参数和 HTTP 头仅对 HTTP 传输（SSE 和 HTTP）有效，对 StdIO 传输会被静默忽略。
 
 ### 同步 vs 异步客户端
 
@@ -237,6 +237,45 @@ McpClientWrapper asyncClient = McpClientBuilder.create("async-mcp")
 McpClientWrapper syncClient = McpClientBuilder.create("sync-mcp")
         .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
         .buildSync();
+```
+
+### elicitation 支持
+
+MCP中的 elicitation 功能允许调用 MCP 服务端工具过程中，实现交互式信息补充收集。
+
+异步客户端示例
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp-async")
+.stdioTransport("python", "-m", "mcp_server")
+.asyncElicitation(request -> {
+// 处理 elicitation 请求
+System.out.println("Received elicit request: " + request.message());
+        // 返回 Mono<ElicitResult>
+        return Mono.just(
+            ElicitResult.builder()
+                .action(ElicitResult.Action.ACCEPT)
+                .data(Map.of("response", "user input"))
+                .build()
+        );
+    })
+    .buildAsync()
+    .block();
+```
+
+同步客户端示例
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp-sync")
+.stdioTransport("python", "-m", "mcp_server")
+.syncElicitation(request -> {
+// 处理 elicitation 请求
+System.out.println("Received elicit request: " + request.message());
+        // 直接返回 ElicitResult
+        return ElicitResult.builder()
+            .action(ElicitResult.Action.ACCEPT)
+            .data(Map.of("response", "user input"))
+            .build();
+    })
+    .buildSync();
 ```
 
 ## 管理 MCP 客户端

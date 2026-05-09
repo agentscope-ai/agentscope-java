@@ -25,6 +25,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -49,8 +50,8 @@ class ExecutionConfigE2ETest {
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // Slower models that need extended timeout
-    private static final java.util.Set<String> SLOW_MODELS =
-            java.util.Set.of("qwen-omni-turbo", "qwen-omni-turbo-latest");
+    private static final Set<String> SLOW_MODELS =
+            Set.of("qwen-omni-turbo", "qwen-omni-turbo-latest");
 
     /**
      * Get appropriate timeout for the given model.

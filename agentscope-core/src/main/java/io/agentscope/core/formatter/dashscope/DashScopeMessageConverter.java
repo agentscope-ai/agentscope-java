@@ -20,6 +20,7 @@ import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -64,11 +65,17 @@ public class DashScopeMessageConverter {
      * @return The converted DashScopeMessage
      */
     public DashScopeMessage convertToMessage(Msg msg, boolean useMultimodalFormat) {
+        DashScopeMessage result;
         if (useMultimodalFormat) {
-            return convertToMultimodalContent(msg);
+            result = convertToMultimodalContent(msg);
         } else {
-            return convertToSimpleContent(msg);
+            result = convertToSimpleContent(msg);
         }
+
+        // Apply cache_control from message metadata if manually marked
+        applyCacheControlFromMetadata(msg, result);
+
+        return result;
     }
 
     /**
@@ -210,11 +217,10 @@ public class DashScopeMessageConverter {
                 // Assistant with tool calls
                 builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
                 String textContent = extractTextContent(msg);
-                if (textContent.isEmpty()) {
-                    builder.content((String) null);
-                } else {
-                    builder.content(textContent);
-                }
+                // Qwen3 and similar models in thinking mode may produce assistant
+                // messages with reasoning_content + tool_calls but null content.
+                // DashScope API requires the content field to be present.
+                builder.content(textContent.isEmpty() ? "" : textContent);
             } else {
                 builder.content(extractTextContent(msg));
             }
@@ -236,5 +242,21 @@ public class DashScopeMessageConverter {
                 .filter(block -> block instanceof TextBlock)
                 .map(block -> ((TextBlock) block).getText())
                 .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
+    }
+
+    /**
+     * Apply cache_control from Msg metadata to the converted DashScopeMessage.
+     *
+     * @param msg the source message with metadata
+     * @param result the converted DashScope message
+     */
+    private void applyCacheControlFromMetadata(Msg msg, DashScopeMessage result) {
+        if (msg.getMetadata() == null) {
+            return;
+        }
+        Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+        if (Boolean.TRUE.equals(cacheFlag)) {
+            result.setCacheControl(DashScopeChatFormatter.getEphemeralCacheControl());
+        }
     }
 }

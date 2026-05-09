@@ -27,6 +27,8 @@ import io.agentscope.core.nacos.prompt.NacosPromptListener;
 import io.agentscope.spring.boot.nacos.properties.AgentScopeNacosPromptProperties;
 import io.agentscope.spring.boot.nacos.properties.AgentScopeNacosProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,7 +56,7 @@ class AgentscopeNacosPromptAutoConfigurationTest {
     @DisplayName("should create AiService and NacosPromptListener when enabled")
     void shouldCreateBeansWhenEnabled() {
         try (MockedStatic<AiFactory> mocked = Mockito.mockStatic(AiFactory.class)) {
-            mocked.when(() -> AiFactory.createAiService(any(java.util.Properties.class)))
+            mocked.when(() -> AiFactory.createAiService(any(Properties.class)))
                     .thenReturn(mockAiService);
 
             new ApplicationContextRunner()
@@ -94,7 +96,7 @@ class AgentscopeNacosPromptAutoConfigurationTest {
     @DisplayName("should bind prompt properties correctly including version and label")
     void shouldBindProperties() {
         try (MockedStatic<AiFactory> mocked = Mockito.mockStatic(AiFactory.class)) {
-            mocked.when(() -> AiFactory.createAiService(any(java.util.Properties.class)))
+            mocked.when(() -> AiFactory.createAiService(any(Properties.class)))
                     .thenReturn(mockAiService);
 
             new ApplicationContextRunner()
@@ -129,7 +131,7 @@ class AgentscopeNacosPromptAutoConfigurationTest {
         NacosPromptListener customListener = new NacosPromptListener(mockAiService);
 
         try (MockedStatic<AiFactory> mocked = Mockito.mockStatic(AiFactory.class)) {
-            mocked.when(() -> AiFactory.createAiService(any(java.util.Properties.class)))
+            mocked.when(() -> AiFactory.createAiService(any(Properties.class)))
                     .thenReturn(mockAiService);
 
             new ApplicationContextRunner()
@@ -152,7 +154,7 @@ class AgentscopeNacosPromptAutoConfigurationTest {
     @DisplayName("should use prompt-specific Nacos config when both global and prompt config set")
     void shouldUsePromptSpecificNacosConfig() {
         try (MockedStatic<AiFactory> mocked = Mockito.mockStatic(AiFactory.class)) {
-            mocked.when(() -> AiFactory.createAiService(any(java.util.Properties.class)))
+            mocked.when(() -> AiFactory.createAiService(any(Properties.class)))
                     .thenReturn(mockAiService);
 
             new ApplicationContextRunner()
@@ -184,9 +186,8 @@ class AgentscopeNacosPromptAutoConfigurationTest {
     @DisplayName("should not overwrite global server-addr when prompt server-addr is not set")
     void shouldNotOverwriteGlobalServerAddrWhenPromptNotSet() {
         try (MockedStatic<AiFactory> mocked = Mockito.mockStatic(AiFactory.class)) {
-            java.util.concurrent.atomic.AtomicReference<java.util.Properties> capturedProps =
-                    new java.util.concurrent.atomic.AtomicReference<>();
-            mocked.when(() -> AiFactory.createAiService(any(java.util.Properties.class)))
+            AtomicReference<Properties> capturedProps = new AtomicReference<>();
+            mocked.when(() -> AiFactory.createAiService(any(Properties.class)))
                     .thenAnswer(
                             invocation -> {
                                 capturedProps.set(invocation.getArgument(0));

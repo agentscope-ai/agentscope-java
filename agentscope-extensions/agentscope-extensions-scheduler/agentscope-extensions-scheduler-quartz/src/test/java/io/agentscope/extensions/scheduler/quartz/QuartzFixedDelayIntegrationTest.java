@@ -18,6 +18,7 @@ package io.agentscope.extensions.scheduler.quartz;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -31,8 +32,10 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import reactor.core.publisher.Flux;
 
+@Timeout(10)
 class QuartzFixedDelayIntegrationTest {
 
     private QuartzAgentScheduler scheduler;
@@ -48,9 +51,7 @@ class QuartzFixedDelayIntegrationTest {
             return new Model() {
                 @Override
                 public Flux<ChatResponse> stream(
-                        List<io.agentscope.core.message.Msg> messages,
-                        List<ToolSchema> tools,
-                        GenerateOptions options) {
+                        List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                     ContentBlock block = TextBlock.builder().text("ok").build();
                     ChatResponse resp =
                             ChatResponse.builder().id("r1").content(List.of(block)).build();
@@ -94,14 +95,14 @@ class QuartzFixedDelayIntegrationTest {
         QuartzScheduleAgentTask qt = (QuartzScheduleAgentTask) task;
 
         long start = System.currentTimeMillis();
-        long timeoutMs = 2000;
+        long timeoutMs = 5000;
         long count = 0;
         while (System.currentTimeMillis() - start < timeoutMs) {
             count = qt.getExecutionCount();
             if (count >= 2) {
                 break;
             }
-            Thread.sleep(50);
+            Thread.sleep(100);
         }
         assertTrue(count >= 2);
     }

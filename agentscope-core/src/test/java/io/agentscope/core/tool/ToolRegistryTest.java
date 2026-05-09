@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
@@ -26,6 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
@@ -296,5 +298,65 @@ class ToolRegistryTest {
 
         // Assert
         assertEquals(200, registry.getToolNames().size());
+    }
+
+    @Test
+    @DisplayName("Should throw IllegalArgumentException register null name tool")
+    void testRegisterNullNameTool() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> registry.registerTool(null, mockTool1, registered1));
+    }
+
+    @Test
+    @DisplayName("Should throw IllegalArgumentException register empty name tool")
+    void testRegisterEmptyNameTool() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> registry.registerTool("", mockTool1, registered1));
+    }
+
+    @Test
+    @DisplayName("Should throw IllegalArgumentException register blank name tool")
+    void testRegisterBlankNameTool() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> registry.registerTool("  ", mockTool1, registered1));
+    }
+
+    @Test
+    @DisplayName("Should throw IllegalArgumentException remove null name tool")
+    void testRemoveNullNameTool() {
+        assertThrows(IllegalArgumentException.class, () -> registry.removeTool(null));
+    }
+
+    @Test
+    @DisplayName("Should throw IllegalArgumentException remove empty name tool")
+    void testRemoveEmptyNameTool() {
+        assertThrows(IllegalArgumentException.class, () -> registry.removeTool(""));
+    }
+
+    @Test
+    @DisplayName("Should throw IllegalArgumentException remove blank name tool")
+    void testRemoveBlankNameTool() {
+        assertThrows(IllegalArgumentException.class, () -> registry.removeTool("  "));
+    }
+
+    @Test
+    @DisplayName("Should return null get null name tool")
+    void testGetNullNameTool() {
+        assertNull(registry.getTool(null));
+    }
+
+    @Test
+    @DisplayName("Should return null get empty name tool")
+    void testGetEmptyNameTool() {
+        assertNull(registry.getTool(""));
+    }
+
+    @Test
+    @DisplayName("Should return null get blank name tool")
+    void testGetBlankNameTool() {
+        assertNull(registry.getTool("  "));
     }
 }
