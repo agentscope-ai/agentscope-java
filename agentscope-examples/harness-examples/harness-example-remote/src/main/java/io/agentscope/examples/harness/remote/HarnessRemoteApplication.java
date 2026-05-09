@@ -15,10 +15,9 @@
  */
 package io.agentscope.examples.harness.remote;
 
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 
 /**
  * Spring Boot entry for the remote-store Data Agent example.

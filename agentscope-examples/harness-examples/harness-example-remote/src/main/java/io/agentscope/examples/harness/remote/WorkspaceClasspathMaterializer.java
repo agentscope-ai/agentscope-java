@@ -15,6 +15,7 @@
  */
 package io.agentscope.examples.harness.remote;
 
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -23,8 +24,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-
-import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 
 /**
  * Copies {@code classpath:workspace/...} into a temp directory used as the local side of the
