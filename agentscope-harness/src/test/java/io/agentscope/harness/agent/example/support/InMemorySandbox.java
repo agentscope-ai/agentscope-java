@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.example.support;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxState;
@@ -82,7 +83,8 @@ public class InMemorySandbox implements Sandbox {
     }
 
     @Override
-    public ExecResult exec(String command, Integer timeoutSeconds) throws Exception {
+    public ExecResult exec(RuntimeContext runtimeContext, String command, Integer timeoutSeconds)
+            throws Exception {
         int timeout = timeoutSeconds != null ? timeoutSeconds : defaultTimeoutSeconds;
         ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
         pb.directory(workspaceDir.toFile());

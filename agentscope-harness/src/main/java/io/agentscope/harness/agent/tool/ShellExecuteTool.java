@@ -18,7 +18,7 @@ package io.agentscope.harness.agent.tool;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import io.agentscope.harness.agent.filesystem.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 
 /**
@@ -55,7 +55,8 @@ public class ShellExecuteTool {
             effectiveCommand = "cd " + workingDirectory + " && " + command;
         }
 
-        ExecuteResponse result = sandbox.execute(effectiveCommand, timeout > 0 ? timeout : 30);
+        ExecuteResponse result =
+                sandbox.execute(runtimeContext, effectiveCommand, timeout > 0 ? timeout : 30);
 
         StringBuilder sb = new StringBuilder();
         sb.append("Exit code: ").append(result.exitCode()).append("\n");

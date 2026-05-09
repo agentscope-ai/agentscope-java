@@ -13,13 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.sandbox;
+package io.agentscope.harness.agent.filesystem.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.harness.agent.filesystem.BaseSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
+import io.agentscope.harness.agent.sandbox.ExecResult;
+import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAware;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -68,10 +71,11 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     @Override
-    public ExecuteResponse execute(String command, Integer timeoutSeconds) {
+    public ExecuteResponse execute(
+            RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
         Sandbox active = requireSandbox();
         try {
-            ExecResult result = active.exec(command, timeoutSeconds);
+            ExecResult result = active.exec(runtimeContext, command, timeoutSeconds);
             return new ExecuteResponse(
                     result.combinedOutput(), result.exitCode(), result.truncated());
         } catch (SandboxException.ExecTimeoutException e) {
@@ -111,7 +115,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
                                 + "' | base64 -d > "
                                 + escapedPath;
 
-                ExecResult result = active.exec(cmd, null);
+                ExecResult result = active.exec(runtimeContext, cmd, null);
                 if (result.ok()) {
                     results.add(FileUploadResponse.success(path));
                 } else {
@@ -144,7 +148,7 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
                 String escapedPath = shellSingleQuote(path);
                 String cmd = "base64 " + escapedPath;
 
-                ExecResult result = active.exec(cmd, null);
+                ExecResult result = active.exec(runtimeContext, cmd, null);
                 if (result.ok()) {
                     byte[] decoded =
                             Base64.getDecoder()

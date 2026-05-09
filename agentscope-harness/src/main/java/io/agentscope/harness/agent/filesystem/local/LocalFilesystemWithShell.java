@@ -13,9 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.filesystem;
+package io.agentscope.harness.agent.filesystem.local;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -210,7 +212,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     }
 
     @Override
-    public ExecuteResponse execute(String command, Integer timeoutSeconds) {
+    public ExecuteResponse execute(
+            RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
         if (command == null || command.isBlank()) {
             return new ExecuteResponse("Error: Command must be a non-empty string.", 1, false);
         }

@@ -61,5 +61,21 @@
             <artifactId>aliyun-sdk-oss</artifactId>
             <version>3.18.5</version>
         </dependency>
+
+        <!-- Optional sandbox backends (io.agentscope.harness.agent.sandbox.impl.*) -->
+        <dependency>
+            <groupId>io.fabric8</groupId>
+            <artifactId>kubernetes-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.fabric8</groupId>
+            <artifactId>kubernetes-server-mock</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

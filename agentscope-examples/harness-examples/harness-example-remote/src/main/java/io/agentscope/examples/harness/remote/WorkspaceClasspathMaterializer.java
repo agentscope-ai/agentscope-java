@@ -24,9 +24,11 @@ import java.nio.file.StandardCopyOption;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+
 /**
  * Copies {@code classpath:workspace/...} into a temp directory used as the local side of the
- * composite workspace for {@link io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec}.
+ * composite workspace for {@link RemoteFilesystemSpec}.
  */
 public final class WorkspaceClasspathMaterializer {
 

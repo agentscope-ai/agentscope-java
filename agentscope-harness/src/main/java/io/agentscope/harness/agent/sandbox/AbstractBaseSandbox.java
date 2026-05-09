@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -36,7 +37,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Subclasses implement the backend-specific operations:
  * <ul>
- *   <li>{@link #doExec(String, int)} — execute a shell command in the workspace</li>
+ *   <li>{@link #doExec(RuntimeContext, String, int)} — execute a shell command in the workspace</li>
  *   <li>{@link #doPersistWorkspace()} — create a tar archive of the workspace</li>
  *   <li>{@link #doHydrateWorkspace(InputStream)} — extract a tar archive into the workspace</li>
  *   <li>{@link #doSetupWorkspace()} — create the workspace root directory</li>
@@ -166,12 +167,13 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     }
 
     /**
-     * Delegates to {@link #doExec(String, int)} with a fallback timeout.
+     * Delegates to {@link #doExec(RuntimeContext, String, int)} with a fallback timeout.
      */
     @Override
-    public ExecResult exec(String command, Integer timeoutSeconds) throws Exception {
+    public ExecResult exec(RuntimeContext runtimeContext, String command, Integer timeoutSeconds)
+            throws Exception {
         int timeout = timeoutSeconds != null ? timeoutSeconds : getDefaultExecTimeoutSeconds();
-        return doExec(command, timeout);
+        return doExec(runtimeContext, command, timeout);
     }
 
     @Override
@@ -194,7 +196,8 @@ public abstract class AbstractBaseSandbox implements Sandbox {
      */
     protected boolean probeWorkspaceRootForPreservedResume() {
         try {
-            ExecResult result = doExec("test -d " + getWorkspaceRoot(), PROBE_TIMEOUT_SECONDS);
+            ExecResult result =
+                    doExec(null, "test -d " + getWorkspaceRoot(), PROBE_TIMEOUT_SECONDS);
             return result.ok();
         } catch (Exception e) {
             log.warn(
@@ -215,12 +218,14 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     /**
      * Executes a shell command within the workspace.
      *
+     * @param runtimeContext per-call context; may be {@code null} for internal probes
      * @param command shell command string
      * @param timeoutSeconds maximum execution time
      * @return execution result
      * @throws Exception if execution fails
      */
-    protected abstract ExecResult doExec(String command, int timeoutSeconds) throws Exception;
+    protected abstract ExecResult doExec(
+            RuntimeContext runtimeContext, String command, int timeoutSeconds) throws Exception;
 
     /**
      * Creates a tar archive of the current workspace contents.

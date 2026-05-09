@@ -16,12 +16,12 @@
 package io.agentscope.harness.agent.sandbox.impl.docker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -43,13 +43,14 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
         this.objectMapper =
                 new ObjectMapper()
                         .findAndRegisterModules()
-                        .activateDefaultTyping(
-                                BasicPolymorphicTypeValidator.builder()
-                                        .allowIfSubType("io.agentscope.harness")
-                                        .build(),
-                                ObjectMapper.DefaultTyping.NON_FINAL);
+                        .registerModule(new HarnessSandboxJacksonModule());
     }
 
+    /**
+     * Uses the given mapper as-is. For {@link SandboxState} JSON round-trip, register {@link
+     * HarnessSandboxJacksonModule} (and any extra {@code NamedType} for custom state subclasses)
+     * on this mapper before calling {@link #deserializeState}.
+     */
     public DockerSandboxClient(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }

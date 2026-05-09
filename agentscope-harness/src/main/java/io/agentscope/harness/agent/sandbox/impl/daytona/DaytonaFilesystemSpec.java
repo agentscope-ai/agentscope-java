@@ -3,9 +3,8 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,85 +12,79 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.sandbox.filesystem;
+package io.agentscope.harness.agent.sandbox.impl.daytona;
 
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
-import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClientOptions;
+import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
-/**
- * Sandbox filesystem spec for Docker backend.
- */
-public class DockerFilesystemSpec extends SandboxFilesystemSpec {
+/** {@link SandboxFilesystemSpec} for Daytona. */
+public class DaytonaFilesystemSpec extends SandboxFilesystemSpec {
 
     private SandboxClient<?> client;
-    private final DockerSandboxClientOptions options = new DockerSandboxClientOptions();
+    private final DaytonaSandboxClientOptions options = new DaytonaSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
     private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
 
-    public DockerFilesystemSpec client(SandboxClient<?> client) {
+    public DaytonaFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
         return this;
     }
 
-    public DockerFilesystemSpec image(String image) {
-        options.image(image);
+    public DaytonaFilesystemSpec apiKey(String apiKey) {
+        options.setApiKey(apiKey);
         return this;
     }
 
-    public DockerFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.workspaceRoot(workspaceRoot);
+    public DaytonaFilesystemSpec controlPlaneBaseUrl(String url) {
+        options.setControlPlaneBaseUrl(url);
         return this;
     }
 
-    public DockerFilesystemSpec environment(Map<String, String> environment) {
-        options.setEnvironment(
-                environment != null ? new LinkedHashMap<>(environment) : new LinkedHashMap<>());
+    public DaytonaFilesystemSpec toolboxBaseUrl(String url) {
+        options.setToolboxBaseUrl(url);
         return this;
     }
 
-    public DockerFilesystemSpec memorySizeBytes(Long memorySizeBytes) {
-        options.memorySizeBytes(memorySizeBytes);
+    public DaytonaFilesystemSpec image(String image) {
+        options.setImage(image);
         return this;
     }
 
-    public DockerFilesystemSpec cpuCount(Long cpuCount) {
-        options.cpuCount(cpuCount);
+    public DaytonaFilesystemSpec snapshotId(String snapshotId) {
+        options.setSnapshotId(snapshotId);
         return this;
     }
 
-    public DockerFilesystemSpec exposedPorts(int... exposedPorts) {
-        options.exposedPorts(exposedPorts);
+    public DaytonaFilesystemSpec cpu(int cpu) {
+        options.setCpu(cpu);
         return this;
     }
 
-    public DockerFilesystemSpec network(String network) {
-        options.network(network);
+    public DaytonaFilesystemSpec memory(int memoryGiB) {
+        options.setMemory(memoryGiB);
         return this;
     }
 
-    public DockerFilesystemSpec additionalRunArgs(String... additionalRunArgs) {
-        options.additionalRunArgs(additionalRunArgs);
+    public DaytonaFilesystemSpec disk(int diskGiB) {
+        options.setDisk(diskGiB);
         return this;
     }
 
-    public DockerFilesystemSpec additionalRunArgs(List<String> additionalRunArgs) {
-        options.setAdditionalRunArgs(additionalRunArgs);
+    public DaytonaFilesystemSpec workspaceRoot(String workspaceRoot) {
+        options.setWorkspaceRoot(workspaceRoot);
         return this;
     }
 
-    public DockerFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
+    public DaytonaFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;
     }
 
-    public DockerFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
+    public DaytonaFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
         this.defaultWorkspaceSpec = workspaceSpec;
         return this;
     }

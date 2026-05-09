@@ -15,10 +15,14 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.docker;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
+import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
+import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -129,7 +133,8 @@ public class DockerSandbox extends AbstractBaseSandbox {
     }
 
     @Override
-    protected ExecResult doExec(String command, int timeoutSeconds) throws Exception {
+    protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
+            throws Exception {
         String containerId = dockerState.getContainerId();
         String workspaceRoot = dockerState.getWorkspaceRoot();
 
@@ -190,9 +195,19 @@ public class DockerSandbox extends AbstractBaseSandbox {
         String containerId = dockerState.getContainerId();
         String workspaceRoot = dockerState.getWorkspaceRoot();
 
-        ProcessBuilder pb =
-                new ProcessBuilder(
-                        "docker", "exec", containerId, "tar", "-cf", "-", "-C", workspaceRoot, ".");
+        List<String> tarCmd = new ArrayList<>();
+        tarCmd.add("docker");
+        tarCmd.add("exec");
+        tarCmd.add(containerId);
+        tarCmd.add("tar");
+        tarCmd.addAll(
+                WorkspaceMountSupport.tarExcludeArgsForBindMounts(getState().getWorkspaceSpec()));
+        tarCmd.add("-cf");
+        tarCmd.add("-");
+        tarCmd.add("-C");
+        tarCmd.add(workspaceRoot);
+        tarCmd.add(".");
+        ProcessBuilder pb = new ProcessBuilder(tarCmd);
 
         Process process = pb.start();
 
@@ -483,6 +498,27 @@ public class DockerSandbox extends AbstractBaseSandbox {
 
         if (dockerState.getAdditionalRunArgs() != null) {
             cmd.addAll(dockerState.getAdditionalRunArgs());
+        }
+
+        if (getState().getWorkspaceSpec() != null) {
+            for (Map.Entry<String, WorkspaceEntry> e :
+                    getState().getWorkspaceSpec().getEntries().entrySet()) {
+                if (e.getValue() instanceof BindMountEntry bm) {
+                    String host = WorkspaceMountSupport.normalizedHostPath(bm.getHostPath());
+                    if (host.isEmpty()) {
+                        log.warn(
+                                "[sandbox-docker] Skipping bind mount at key {}: blank hostPath",
+                                e.getKey());
+                        continue;
+                    }
+                    String containerPath =
+                            WorkspaceMountSupport.containerMountPath(
+                                    dockerState.getWorkspaceRoot(), e.getKey());
+                    String mode = bm.isReadOnly() ? "ro" : "rw";
+                    cmd.add("-v");
+                    cmd.add(host + ":" + containerPath + ":" + mode);
+                }
+            }
         }
 
         cmd.add(dockerState.getImage());
