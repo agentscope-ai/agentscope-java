@@ -23,6 +23,7 @@ import com.google.genai.types.HttpOptions;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
 import io.agentscope.core.model.test.ModelTestUtils;
+import java.lang.reflect.Field;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -301,6 +302,49 @@ class GeminiChatModelTest {
     }
 
     @Test
+    @DisplayName("Should configure custom base URL")
+    void testBaseUrlConfiguration() throws Exception {
+        String baseUrl = "https://custom-gemini-endpoint.example";
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .baseUrl(baseUrl)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals(baseUrl, getHttpOptions(model).baseUrl().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should override HTTP options base URL while preserving other settings")
+    void testBaseUrlOverridesHttpOptionsBaseUrl() throws Exception {
+        HttpOptions httpOptions =
+                HttpOptions.builder()
+                        .baseUrl("https://original-gemini-endpoint.example")
+                        .apiVersion("v1beta")
+                        .timeout(3210)
+                        .build();
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .httpOptions(httpOptions)
+                        .baseUrl("https://override-gemini-endpoint.example")
+                        .build();
+
+        HttpOptions effectiveHttpOptions = getHttpOptions(model);
+        assertNotNull(effectiveHttpOptions);
+        assertEquals(
+                "https://override-gemini-endpoint.example",
+                effectiveHttpOptions.baseUrl().orElseThrow());
+        assertEquals("v1beta", effectiveHttpOptions.apiVersion().orElseThrow());
+        assertEquals(3210, effectiveHttpOptions.timeout().orElseThrow());
+    }
+
+    @Test
     @DisplayName("Should handle all generation options")
     void testAllGenerateOptions() {
         GenerateOptions fullOptions =
@@ -453,5 +497,11 @@ class GeminiChatModelTest {
 
         assertNotNull(model);
         // Should use default GeminiChatFormatter
+    }
+
+    private static HttpOptions getHttpOptions(GeminiChatModel model) throws Exception {
+        Field httpOptionsField = GeminiChatModel.class.getDeclaredField("httpOptions");
+        httpOptionsField.setAccessible(true);
+        return (HttpOptions) httpOptionsField.get(model);
     }
 }

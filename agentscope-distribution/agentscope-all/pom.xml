@@ -34,7 +34,6 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <maven.javadoc.version>3.10.0</maven.javadoc.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -42,6 +41,13 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
@@ -69,13 +75,6 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-autocontext-memory</artifactId>
-            <scope>compile</scope>
-            <optional>true</optional>
-        </dependency>
-
-        <dependency>
-            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-chat-completions-web</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
@@ -97,7 +96,28 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-mem0</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-reme</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-memory-bailian</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
@@ -133,13 +153,6 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-rag-simple</artifactId>
-            <scope>compile</scope>
-            <optional>true</optional>
-        </dependency>
-
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-reme</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
@@ -295,7 +308,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.2</version>
+                <version>${maven-shade-plugin.version}</version>
                 <executions>
                     <execution>
                         <goals>

@@ -15,6 +15,10 @@
  */
 package io.agentscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.hook.ActingChunkEvent;
@@ -152,6 +156,17 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
     private final StatePersistence statePersistence;
+    private RuntimeContext pendingRuntimeContext;
+
+    /**
+     * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
+     * PreSummaryEvent. It is safe to use an {@link java.util.concurrent.atomic.AtomicReference}
+     * here because {@code AgentBase.acquireExecution()} guarantees that only one {@code call()}
+     * runs concurrently per agent instance, so this reference is effectively owned by a single
+     * logical execution at any time.
+     */
+    private final java.util.concurrent.atomic.AtomicReference<Msg> currentSystemMsg =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     // ==================== Constructor ====================
 
@@ -177,6 +192,91 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 builder.statePersistence != null
                         ? builder.statePersistence
                         : StatePersistence.all();
+    }
+
+    // ==================== RuntimeContext ====================
+
+    @Override
+    protected void beforeAgentExecution(List<Msg> msgs) {
+        RuntimeContext ctx = this.pendingRuntimeContext;
+        this.pendingRuntimeContext = null;
+        if (ctx == null) {
+            ctx = RuntimeContext.empty();
+        }
+        bindRuntimeContextToHooks(ctx);
+        // Reset per-call system message; will be initialised by consumeSystemMsgAfterPreCall
+        currentSystemMsg.set(null);
+    }
+
+    @Override
+    protected Msg seedSystemMsg() {
+        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
+            return Msg.builder()
+                    .name("system")
+                    .role(MsgRole.SYSTEM)
+                    .content(TextBlock.builder().text(sysPrompt).build())
+                    .build();
+        }
+        return null;
+    }
+
+    @Override
+    protected void consumeSystemMsgAfterPreCall(Msg systemMsg) {
+        currentSystemMsg.set(systemMsg);
+    }
+
+    @Override
+    protected void afterAgentExecution() {
+        unbindRuntimeContextFromHooks();
+    }
+
+    private ToolExecutionContext buildMergedToolContext() {
+        RuntimeContext run = getRuntimeContext();
+        if (run == null) {
+            return toolExecutionContext != null
+                    ? toolExecutionContext
+                    : ToolExecutionContext.empty();
+        }
+        return ToolExecutionContext.merge(run.asToolExecutionContext(), toolExecutionContext);
+    }
+
+    /**
+     * Calls the agent with a per-call {@link RuntimeContext} (metadata for hooks and tools, not
+     * persisted).
+     */
+    public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return call(msgs);
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return call(msgs, structuredOutputClass);
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return call(msgs, outputSchema);
+    }
+
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return stream(msgs, options);
+    }
+
+    public Flux<Event> stream(
+            List<Msg> msgs,
+            StreamOptions options,
+            Class<?> structuredModel,
+            RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return stream(msgs, options, structuredModel);
+    }
+
+    public Flux<Event> stream(
+            List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return stream(msgs, options, schema);
     }
 
     // ==================== New StateModule API ====================
@@ -274,9 +374,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
         // Has pending tools but no input -> resume (execute pending tools directly)
         if (msgs == null || msgs.isEmpty()) {
-            return hasPendingToolUse()
-                    ? acting(0, invocationScope)
-                    : executeIteration(0, invocationScope);
+            return acting(0, invocationScope);
         }
 
         // Has pending tools + input -> check if user provided tool results
@@ -472,17 +570,17 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         ReasoningContext context = new ReasoningContext(getName());
 
         return checkInterruptedAsync()
-                .then(notifyPreReasoningEvent(prepareMessages()))
+                .then(notifyPreReasoningEvent(memory.getMessages()))
                 .flatMapMany(
                         event -> {
                             GenerateOptions options =
                                     event.getEffectiveGenerateOptions() != null
                                             ? event.getEffectiveGenerateOptions()
                                             : buildGenerateOptions();
-                            return model.stream(
-                                            event.getInputMessages(),
-                                            toolkit.getToolSchemas(),
-                                            options)
+                            List<Msg> modelInput =
+                                    prependSystemMsg(
+                                            event.getInputMessages(), event.getSystemMessage());
+                            return model.stream(modelInput, toolkit.getToolSchemas(), options)
                                     .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk));
                         })
                 .doOnNext(
@@ -675,7 +773,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                         toolCalls,
                         toolExecutionConfig,
                         this,
-                        toolExecutionContext,
+                        buildMergedToolContext(),
                         invocationScope.metadata())
                 .map(
                         results ->
@@ -770,7 +868,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         return notifyPreSummaryHook(messageList, generateOptions)
                 .flatMap(
                         preSummaryEvent -> {
-                            List<Msg> effectiveMessages = preSummaryEvent.getInputMessages();
+                            List<Msg> effectiveMessages =
+                                    prependSystemMsg(
+                                            preSummaryEvent.getInputMessages(),
+                                            preSummaryEvent.getSystemMessage());
                             GenerateOptions effectiveOptions =
                                     preSummaryEvent.getEffectiveGenerateOptions();
 
@@ -811,7 +912,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private List<Msg> prepareSummaryMessages() {
-        List<Msg> messageList = prepareMessages();
+        List<Msg> messageList = new ArrayList<>(memory.getMessages());
         messageList.add(
                 Msg.builder()
                         .name("user")
@@ -852,20 +953,21 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     // ==================== Helper Methods ====================
 
     /**
-     * Prepare messages for model input.
+     * Prepends the system message to {@code msgs} if non-null.
+     *
+     * <p>Called immediately before each {@code model.stream()} invocation to build the final
+     * LLM input without contaminating the in-memory message list.
      */
-    private List<Msg> prepareMessages() {
-        List<Msg> messages = new ArrayList<>();
-        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
-            messages.add(
-                    Msg.builder()
-                            .name("system")
-                            .role(MsgRole.SYSTEM)
-                            .content(TextBlock.builder().text(sysPrompt).build())
-                            .build());
+    private static List<Msg> prependSystemMsg(List<Msg> msgs, Msg systemMsg) {
+        if (systemMsg == null) {
+            return msgs != null ? msgs : List.of();
         }
-        messages.addAll(memory.getMessages());
-        return messages;
+        List<Msg> result = new ArrayList<>();
+        result.add(systemMsg);
+        if (msgs != null) {
+            result.addAll(msgs);
+        }
+        return result;
     }
 
     /**
@@ -947,7 +1049,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private Mono<PreReasoningEvent> notifyPreReasoningEvent(List<Msg> msgs) {
-        return notifyHooks(new PreReasoningEvent(this, model.getModelName(), null, msgs));
+        PreReasoningEvent event = new PreReasoningEvent(this, model.getModelName(), null, msgs);
+        event.setSystemMessage(currentSystemMsg.get());
+        return notifyHooks(event);
     }
 
     private Mono<PostReasoningEvent> notifyPostReasoning(Msg msg) {
@@ -1017,9 +1121,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     private Mono<PreSummaryEvent> notifyPreSummaryHook(
             List<Msg> msgs, GenerateOptions generateOptions) {
-        return notifyHooks(
+        PreSummaryEvent event =
                 new PreSummaryEvent(
-                        this, model.getModelName(), generateOptions, msgs, maxIters, maxIters));
+                        this, model.getModelName(), generateOptions, msgs, maxIters, maxIters);
+        event.setSystemMessage(currentSystemMsg.get());
+        return notifyHooks(event);
     }
 
     private Mono<PostSummaryEvent> notifyPostSummaryHook(Msg msg, GenerateOptions generateOptions) {
@@ -1156,6 +1262,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         // Long-term memory configuration
         private LongTermMemory longTermMemory;
         private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
+        private boolean longTermMemoryAsyncRecord = false;
 
         // State persistence configuration
         private StatePersistence statePersistence;
@@ -1254,6 +1361,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * @param hook The hook to add, must not be null
          * @return This builder instance for method chaining
          * @see Hook
+         * @see Hook#tools()
          */
         public Builder hook(Hook hook) {
             this.hooks.add(hook);
@@ -1269,6 +1377,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * @param hooks The list of hooks to add, must not be null
          * @return This builder instance for method chaining
          * @see Hook
+         * @see Hook#tools()
          */
         public Builder hooks(List<Hook> hooks) {
             this.hooks.addAll(hooks);
@@ -1409,7 +1518,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * <p>The skill box is used to manage the skills for this agent. It will be used to register the skills to the toolkit.
          * <ul>
          *   <li>Skill loader tools will be automatically registered to the toolkit</li>
-         *   <li>A skill hook will be added to inject skill prompts and manage skill activation</li>
+         *   <li>A skill hook will be added to inject skill prompts on {@link io.agentscope.core.hook.PreCallEvent}
+         *       and manage skill activation</li>
          * </ul>
          * @param skillBox The skill box to use for this agent
          * @return This builder instance for method chaining
@@ -1451,6 +1561,29 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          */
         public Builder longTermMemoryMode(LongTermMemoryMode mode) {
             this.longTermMemoryMode = mode;
+            return this;
+        }
+
+        /**
+         * Sets whether long-term memory recording should be performed asynchronously.
+         *
+         * <p>When enabled, the framework will record memories to long-term storage
+         * in a fire-and-forget manner, without blocking the agent's main execution flow.
+         * This improves response latency but means memory persistence is not guaranteed
+         * before the agent returns its response.
+         *
+         * <p>When disabled (default), the framework waits for the recording operation
+         * to complete before returning the agent's response. This ensures memory
+         * persistence is finalized but may increase response latency.
+         *
+         * <p>Note: This setting only affects the static control mode (STATIC_CONTROL, BOTH).
+         * Agent-controlled recording through tools is always synchronous.
+         *
+         * @param asyncRecord Whether to record memories asynchronously
+         * @return This builder instance for method chaining
+         */
+        public Builder longTermMemoryAsyncRecord(boolean asyncRecord) {
+            this.longTermMemoryAsyncRecord = asyncRecord;
             return this;
         }
 
@@ -1574,6 +1707,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
+            registerToolsFromHooks(agentToolkit);
+
             if (enableMetaTool) {
                 agentToolkit.registerMetaTool();
             }
@@ -1607,6 +1742,26 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
+         * Registers tool objects declared by hooks ({@link Hook#tools()}) on the agent toolkit.
+         *
+         * <p>Runs after {@link Toolkit#copy()} so hook-supplied tools are scoped to this agent
+         * instance without modifying the builder's original toolkit.
+         */
+        private void registerToolsFromHooks(Toolkit agentToolkit) {
+            for (Hook hook : hooks) {
+                List<Object> toolObjects = hook.tools();
+                if (toolObjects == null || toolObjects.isEmpty()) {
+                    continue;
+                }
+                for (Object toolObject : toolObjects) {
+                    if (toolObject != null) {
+                        agentToolkit.registerTool(toolObject);
+                    }
+                }
+            }
+        }
+
+        /**
          * Configures long-term memory based on the selected mode.
          *
          * <p>This method sets up long-term memory integration:
@@ -1627,7 +1782,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             if (longTermMemoryMode == LongTermMemoryMode.STATIC_CONTROL
                     || longTermMemoryMode == LongTermMemoryMode.BOTH) {
                 StaticLongTermMemoryHook hook =
-                        new StaticLongTermMemoryHook(longTermMemory, memory);
+                        new StaticLongTermMemoryHook(
+                                longTermMemory, memory, longTermMemoryAsyncRecord);
                 hooks.add(hook);
             }
         }
@@ -1759,7 +1915,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * <p>This method automatically:
          * <ul>
          *   <li>Registers skill load tool to the toolkit
-         *   <li>Adds the skill hook to inject skill prompts and manage skill activation
+         *   <li>Adds the skill hook to inject skill prompts on {@link io.agentscope.core.hook.PreCallEvent}
+         *       (priority {@link io.agentscope.core.skill.SkillHook#SKILL_HOOK_PRIORITY}) and manage skill
+         *       activation
          *   <li>Uploads skill files to the upload directory if auto upload is enabled
          * </ul>
          */

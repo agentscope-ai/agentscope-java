@@ -21,7 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
@@ -44,8 +47,45 @@ class AgentSkillTest {
         assertEquals("A test skill", skill.getDescription());
         assertEquals("Skill content here", skill.getSkillContent());
         assertEquals("custom", skill.getSource());
+        assertEquals("test_skill", skill.getMetadata().get("name"));
+        assertEquals("A test skill", skill.getMetadata().get("description"));
         assertEquals(2, skill.getResources().size());
         assertEquals("{\"key\": \"value\"}", skill.getResources().get("config.json"));
+    }
+
+    @Test
+    @DisplayName("Should constructor with explicit metadata")
+    void testConstructorWithExplicitMetadata() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "browser_skill");
+        metadata.put("description", "Use browser automation");
+        metadata.put("version", "1.0.0");
+        metadata.put("tags", List.of("web", "automation"));
+
+        AgentSkill skill =
+                new AgentSkill(
+                        metadata, "Browser skill content", Map.of("file.txt", "content"), null);
+
+        assertEquals("browser_skill", skill.getName());
+        assertEquals("Use browser automation", skill.getDescription());
+        assertEquals("1.0.0", skill.getMetadataValue("version"));
+        assertEquals(List.of("web", "automation"), skill.getMetadataValue("tags"));
+    }
+
+    @Test
+    @DisplayName("Should preserve metadata order")
+    void testPreserveMetadataOrder() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "trello");
+        metadata.put("description", "Manage Trello boards");
+        metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
+        metadata.put("metadata", Map.of("emoji", "📋"));
+
+        AgentSkill skill = new AgentSkill(metadata, "Skill content", null, null);
+
+        assertEquals(
+                List.of("name", "description", "homepage", "metadata"),
+                List.copyOf(skill.getMetadata().keySet()));
     }
 
     @Test
@@ -96,6 +136,30 @@ class AgentSkillTest {
     }
 
     @Test
+    @DisplayName("Should constructor validates metadata")
+    void testConstructorValidatesMetadata() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new AgentSkill((Map<String, Object>) null, "content", null, null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new AgentSkill(Map.of("description", "desc"), "content", null, null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new AgentSkill(Map.of("name", "name"), "content", null, null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new AgentSkill(
+                                Map.of("name", 123, "description", "desc"), "content", null, null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new AgentSkill(
+                                Map.of("name", "name", "description", 123), "content", null, null));
+    }
+
+    @Test
     @DisplayName("Should constructor validates content")
     void testConstructorValidatesContent() {
         assertThrows(
@@ -138,6 +202,30 @@ class AgentSkillTest {
     }
 
     @Test
+    @DisplayName("Should metadata immutability")
+    void testMetadataImmutability() {
+        Map<String, Object> originalMetadata = new LinkedHashMap<>();
+        List<String> tags = new ArrayList<>();
+        tags.add("web");
+        originalMetadata.put("name", "name");
+        originalMetadata.put("description", "desc");
+        originalMetadata.put("tags", tags);
+
+        AgentSkill skill = new AgentSkill(originalMetadata, "content", null, null);
+
+        originalMetadata.put("name", "modified");
+        originalMetadata.put("newKey", "newValue");
+
+        assertEquals("name", skill.getName());
+        assertEquals("desc", skill.getDescription());
+        assertEquals(List.of("web"), skill.getMetadataValue("tags"));
+        assertEquals(null, skill.getMetadataValue("newKey"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> skill.getMetadata().put("another", "value"));
+    }
+
+    @Test
     @DisplayName("Should builder create from scratch")
     void testBuilderCreateFromScratch() {
         AgentSkill skill =
@@ -153,7 +241,29 @@ class AgentSkillTest {
         assertEquals("Built with builder", skill.getDescription());
         assertEquals("Builder content", skill.getSkillContent());
         assertEquals("custom_source", skill.getSource());
+        assertEquals("builder_skill", skill.getMetadataValue("name"));
+        assertEquals("Built with builder", skill.getMetadataValue("description"));
         assertEquals(1, skill.getResources().size());
+    }
+
+    @Test
+    @DisplayName("Should builder support metadata")
+    void testBuilderSupportMetadata() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .metadata(
+                                Map.of(
+                                        "name", "builder_skill",
+                                        "description", "Built with metadata",
+                                        "category", "tooling"))
+                        .putMetadata("version", "1.2.3")
+                        .skillContent("Builder content")
+                        .build();
+
+        assertEquals("builder_skill", skill.getName());
+        assertEquals("Built with metadata", skill.getDescription());
+        assertEquals("tooling", skill.getMetadataValue("category"));
+        assertEquals("1.2.3", skill.getMetadataValue("version"));
     }
 
     @Test
@@ -165,11 +275,13 @@ class AgentSkillTest {
         AgentSkill modified =
                 original.toBuilder()
                         .description("Modified description")
+                        .putMetadata("version", "2.0")
                         .addResource("new.txt", "new content")
                         .build();
 
         assertEquals("original", modified.getName()); // Unchanged
         assertEquals("Modified description", modified.getDescription()); // Changed
+        assertEquals("2.0", modified.getMetadataValue("version"));
         assertEquals(2, modified.getResources().size()); // Added resource
     }
 
