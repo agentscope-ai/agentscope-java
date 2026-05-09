@@ -56,6 +56,55 @@ class ListHashUtilTest {
     }
 
     @Test
+    void testComputeHashEquivalentMessageLists() {
+        List<Msg> first =
+                List.of(
+                        Msg.builder()
+                                .id("m-user-1")
+                                .timestamp("2026-05-08 14:00:00.000")
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("hello").build())
+                                .build(),
+                        Msg.builder()
+                                .id("m-assistant-1")
+                                .timestamp("2026-05-08 14:00:01.000")
+                                .role(MsgRole.ASSISTANT)
+                                .content(TextBlock.builder().text("hello").build())
+                                .build());
+
+        List<Msg> second =
+                List.of(
+                        Msg.builder()
+                                .id("m-user-1")
+                                .timestamp("2026-05-08 14:00:00.000")
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("hello").build())
+                                .build(),
+                        Msg.builder()
+                                .id("m-assistant-1")
+                                .timestamp("2026-05-08 14:00:01.000")
+                                .role(MsgRole.ASSISTANT)
+                                .content(TextBlock.builder().text("hello").build())
+                                .build());
+
+        String h1 = ListHashUtil.computeHash(first);
+        String h2 = ListHashUtil.computeHash(second);
+
+        assertEquals(h1, h2);
+    }
+
+    @Test
+    void testComputeHashListWithNullItem() {
+        List<Msg> list = new ArrayList<>();
+        list.add(null);
+
+        String hash1 = ListHashUtil.computeHash(list);
+        String hash2 = ListHashUtil.computeHash(list);
+
+        assertEquals(hash1, hash2);
+    }
+
+    @Test
     void testComputeHashListModifiedDifferentHash() {
         List<Msg> list = createMsgList(5);
 
