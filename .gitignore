@@ -55,3 +55,9 @@ logs/
 **/boba-tea-shop/supervisor-agent/**/static/
 **/boba-tea-shop/**/node_modules/
 **/boba-tea-shop/**/dist/
+
+##agentscope
+.agentscope/
+
+## harness db
+**/*.db
