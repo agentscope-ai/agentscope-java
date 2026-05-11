@@ -391,20 +391,18 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
                         .build());
 
         // Message 4: Tool result
-        String toolResultContent =
-                "- The capital of Japan is Tokyo.\n"
-                        + "- The returned image can be found at: "
-                        + imagePath
-                        + "\n"
-                        + "- The returned audio can be found at: "
-                        + mockAudioPath;
-        DashScopeContentPart toolContent = DashScopeContentPart.text(toolResultContent);
+        List<DashScopeContentPart> toolResultParts =
+                List.of(
+                        DashScopeContentPart.text("The capital of Japan is Tokyo."),
+                        DashScopeContentPart.image(absoluteImagePath),
+                        DashScopeContentPart.audio(
+                                "data:audio/wav;base64," + "ZmFrZSBhdWRpbyBjb250ZW50"));
         groundTruthMultiagent.add(
                 DashScopeMessage.builder()
                         .role("tool")
                         .toolCallId("1")
                         .name("get_capital")
-                        .content(List.of(toolContent))
+                        .content(toolResultParts)
                         .build());
 
         // Message 5: User with assistant response in history
@@ -435,7 +433,7 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
                         .role("tool")
                         .toolCallId("1")
                         .name("get_capital")
-                        .content(List.of(toolContent))
+                        .content(toolResultParts)
                         .build());
 
         // Message 4: User with history
@@ -475,7 +473,7 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
                         .role("tool")
                         .toolCallId("1")
                         .name("get_capital")
-                        .content(List.of(toolContent))
+                        .content(toolResultParts)
                         .build());
 
         // Message 5: User with updated history including second conversation
@@ -508,20 +506,17 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
                         .build());
 
         // Message 7: Second tool result (note: tool_call_id is "2")
-        String toolResultContent2 =
-                "- The capital of South Korea is Seoul.\n"
-                        + "- The returned image can be found at: "
-                        + imagePath
-                        + "\n"
-                        + "- The returned audio can be found at: "
-                        + mockAudioPath;
-        DashScopeContentPart toolContent2 = DashScopeContentPart.text(toolResultContent2);
+        DashScopeContentPart toolContent2 =
+                DashScopeContentPart.text("The capital of South Korea is Seoul.");
+        DashScopeContentPart toolImageContent2 = DashScopeContentPart.image(absoluteImagePath);
+        DashScopeContentPart toolAudioContent2 =
+                DashScopeContentPart.audio("data:audio/wav;base64," + "ZmFrZSBhdWRpbyBjb250ZW50");
         groundTruthMultiagent2.add(
                 DashScopeMessage.builder()
                         .role("tool")
                         .toolCallId("2")
                         .name("get_capital")
-                        .content(List.of(toolContent2))
+                        .content(List.of(toolContent2, toolImageContent2, toolAudioContent2))
                         .build());
 
         // Message 8: Final user with last response in history

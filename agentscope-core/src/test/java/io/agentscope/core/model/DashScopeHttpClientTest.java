@@ -170,6 +170,21 @@ class DashScopeHttpClientTest {
         assertEquals(
                 DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
                 client.selectEndpoint("qwen3.5-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.6-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi-k2.5", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi-k2.6", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi/kimi-k2.5", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi/kimi-k2.6", EndpointType.AUTO));
     }
 
     @Test
@@ -182,6 +197,7 @@ class DashScopeHttpClientTest {
         assertFalse(client.requiresMultimodalApi("qwen-plus", EndpointType.AUTO));
         assertTrue(client.requiresMultimodalApi("qwen-vl-plus", EndpointType.AUTO));
         assertTrue(client.requiresMultimodalApi("qwen3.5-plus", EndpointType.AUTO));
+        assertTrue(client.requiresMultimodalApi("qwen3.6-plus", EndpointType.AUTO));
     }
 
     @Test
@@ -193,6 +209,16 @@ class DashScopeHttpClientTest {
         assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-397b-a17b"));
         // qwen-3.5-plus (with hyphen before 3.5) does not match
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.5-plus"));
+    }
+
+    @Test
+    void testIsMultimodalModelIncludesQwen36Family() {
+        // Qwen 3.6 family uses multimodal API (prefix-based matching)
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.6-plus"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.6-flash"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("Qwen3.6-Plus"));
+        // qwen-3.6-plus (with hyphen before 3.6) does not match
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.6-plus"));
     }
 
     @Test

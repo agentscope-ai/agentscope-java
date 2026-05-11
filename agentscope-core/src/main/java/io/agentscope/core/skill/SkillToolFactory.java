@@ -79,10 +79,13 @@ class SkillToolFactory {
                         + "**Functionality:**\n"
                         + "1. Activates the specified skill (making its tools available)\n"
                         + "2. Returns the requested resource content\n"
-                        + " usage instructions)\n"
-                        + "- 'SKILL.md': The skill's markdown documentation (name, description,"
-                        + "- Other paths: Additional resources like scripts, configs, templates, or"
-                        + " data files";
+                        + "\n"
+                        + "**Path rules:**\n"
+                        + "- Use path=\"SKILL.md\" to load the skill's markdown documentation"
+                        + " (name, description, usage instructions).\n"
+                        + "- Use exact resource paths listed by the skill, such as"
+                        + " \"references/guide.md\" or \"scripts/run.py\".\n"
+                        + "- Do not use '.', './', the skill directory, or an absolute path.";
             }
 
             @Override
@@ -108,9 +111,11 @@ class SkillToolFactory {
                                                         "type",
                                                         "string",
                                                         "description",
-                                                        "The path to the resource file within the"
-                                                                + " skill (e.g., 'SKILL.md,"
-                                                                + " references/references.md')")),
+                                                        "The exact resource path within the skill."
+                                                                + " Use 'SKILL.md' to load the"
+                                                                + " skill instructions. Do not use"
+                                                                + " '.', './', directories, or"
+                                                                + " absolute paths.")),
                         "required", List.of("skillId", "path"));
             }
 
@@ -155,10 +160,11 @@ class SkillToolFactory {
      * @throws IllegalArgumentException if skill doesn't exist or resource not found
      */
     private String loadSkillResourceImpl(String skillId, String path) {
-        AgentSkill skill = validatedActiveSkill(skillId);
+        AgentSkill skill = validateSkillExists(skillId);
 
         // Special handling for SKILL.md - return the skill's markdown content
         if ("SKILL.md".equals(path)) {
+            activateSkill(skillId);
             return buildSkillMarkdownResponse(skillId, skill);
         }
 
@@ -171,6 +177,7 @@ class SkillToolFactory {
         }
 
         String resourceContent = resources.get(path);
+        activateSkill(skillId);
         return buildResourceResponse(skillId, path, resourceContent);
     }
 
@@ -247,13 +254,14 @@ class SkillToolFactory {
     }
 
     /**
-     * Validate skill exists and activate it and its tool group.
+     * Validates that a skill is registered and returns its instance.
      *
      * @param skillId The unique identifier of the skill
-     * @return The skill instance
-     * @throws IllegalArgumentException if skill doesn't exist
+     * @return The registered skill instance
+     * @throws IllegalArgumentException if the skill is not registered
+     * @throws IllegalStateException if the skill cannot be loaded after validation
      */
-    private AgentSkill validatedActiveSkill(String skillId) {
+    private AgentSkill validateSkillExists(String skillId) {
         if (!skillRegistry.exists(skillId)) {
             throw new IllegalArgumentException(
                     String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
@@ -267,7 +275,10 @@ class SkillToolFactory {
                                     + " error.",
                             skillId));
         }
-        // Set skill as active
+        return skill;
+    }
+
+    private void activateSkill(String skillId) {
         skillRegistry.setSkillActive(skillId, true);
         logger.info("Activated skill: {}", skillId);
 
@@ -279,7 +290,5 @@ class SkillToolFactory {
                     toolsGroupName,
                     toolkit.getToolGroup(toolsGroupName).getTools());
         }
-
-        return skill;
     }
 }

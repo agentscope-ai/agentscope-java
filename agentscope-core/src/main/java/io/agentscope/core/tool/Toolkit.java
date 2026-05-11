@@ -377,6 +377,11 @@ public class Toolkit {
                     }
 
                     @Override
+                    public Boolean getStrict() {
+                        return toolAnnotation.strict() ? Boolean.TRUE : null;
+                    }
+
+                    @Override
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         // Pass custom converter to method invoker
                         return methodInvoker.invokeAsync(

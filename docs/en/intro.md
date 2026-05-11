@@ -34,15 +34,14 @@ AgentScope includes production-ready tools that address common challenges in age
 AgentScope is designed to integrate with existing enterprise infrastructure without requiring extensive modifications:
 
 - **MCP Protocol** - Integrate with any MCP-compatible server to instantly extend agent capabilities. Connect to the growing ecosystem of MCP tools and services—from file systems and databases to web browsers and code interpreters—without writing custom integration code.
-- **A2A Protocol** - Enable distributed multi-agent collaboration through standard service discovery. Register agent capabilities to Nacos or similar registries, allowing agents to discover and invoke each other as naturally as calling microservices.
+- **A2A Protocol** - Enable distributed multi-agent collaboration through extension modules. Register agent capabilities to Nacos or similar registries (via `agentscope-extensions-nacos-a2a`), allowing agents to discover and invoke each other as naturally as calling microservices.
 
 ### Production Grade
 
 Built for enterprise deployment requirements:
 
-- **High Performance** - Reactive architecture based on Project Reactor ensures non-blocking execution. GraalVM native image compilation achieves 200ms cold start times, making AgentScope suitable for serverless and auto-scaling environments.
-- **Security Sandbox** - AgentScope Runtime provides isolated execution environments for untrusted tool code. Includes pre-built sandboxes for GUI automation, file system operations, and mobile device interaction, preventing unauthorized access to system resources.
-- **Observability** - Native integration with OpenTelemetry for distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.
+- **High Performance** - Reactive architecture based on Project Reactor ensures non-blocking execution. Supports GraalVM native image compilation through Micronaut/Quarkus, suitable for serverless and auto-scaling environments.
+- **Observability** - Pluggable Tracer SPI with extension module support for OpenTelemetry, enabling distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.
 
 ## Requirements
 

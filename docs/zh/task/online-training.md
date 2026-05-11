@@ -259,7 +259,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 
 // 用户请求正常处理（使用 GPT-4），自动采样10%请求用于训练
-Msg response = agent.call(Msg.userMsg("搜索 Python 教程")).block();
+Msg response = agent.call(Msg.builder().textContent("搜索 Python 教程").build()).block();
 
 // 3. 训练完成后停止
 runner.stop();
