@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter.openai;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
@@ -24,6 +25,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -170,11 +172,15 @@ public abstract class OpenAIBaseFormatter
     }
 
     /**
-     * Apply cache control to OpenAI messages.
+     * Apply cache control to OpenAI messages at the content block level.
      *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
-     * marking) will not be overwritten.
+     * <p>Per the DashScope API specification (which also applies to the OpenAI-compatible protocol),
+     * {@code cache_control} must be placed inside content blocks (within the {@code content} array),
+     * not at the message level. This method converts string content to array format when needed and
+     * sets {@code cache_control} on the last content block of each target message.
+     *
+     * <p>Target messages: all system messages and the last message in the list. Messages whose last
+     * content block already has {@code cache_control} set will not be overwritten.
      *
      * @param messages the list of formatted OpenAI messages
      */
@@ -183,14 +189,48 @@ public abstract class OpenAIBaseFormatter
             return;
         }
         for (OpenAIMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
-                msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+            if ("system".equals(msg.getRole())) {
+                applyCacheControlToContentBlock(msg);
             }
         }
         OpenAIMessage lastMsg = messages.get(messages.size() - 1);
-        if (lastMsg.getCacheControl() == null) {
-            lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        applyCacheControlToContentBlock(lastMsg);
+    }
+
+    /**
+     * Apply ephemeral cache_control to the last content block of the given message.
+     * If content is a plain string, it is first converted to array format.
+     * Skips if the last content block already has cache_control set.
+     */
+    static void applyCacheControlToContentBlock(OpenAIMessage msg) {
+        List<OpenAIContentPart> parts = ensureContentArray(msg);
+        if (parts.isEmpty()) {
+            return;
         }
+        OpenAIContentPart lastPart = parts.get(parts.size() - 1);
+        if (lastPart.getCacheControl() == null) {
+            lastPart.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        }
+    }
+
+    /**
+     * Ensure the message content is in array format ({@code List<OpenAIContentPart>}).
+     * If content is a plain string, converts it to {@code [{"type":"text","text":"..."}]}.
+     *
+     * @return the content part list (never null, may be empty)
+     */
+    @SuppressWarnings("unchecked")
+    static List<OpenAIContentPart> ensureContentArray(OpenAIMessage msg) {
+        Object content = msg.getContent();
+        if (content instanceof List) {
+            return (List<OpenAIContentPart>) content;
+        }
+        List<OpenAIContentPart> parts = new ArrayList<>();
+        if (content instanceof String text) {
+            parts.add(OpenAIContentPart.text(text));
+        }
+        msg.setContent(parts);
+        return parts;
     }
 
     /**

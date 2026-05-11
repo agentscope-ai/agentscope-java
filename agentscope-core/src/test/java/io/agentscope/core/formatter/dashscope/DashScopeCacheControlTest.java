@@ -16,12 +16,17 @@
 package io.agentscope.core.formatter.dashscope;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +38,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Tests for cache_control support in DashScope formatter.
+ * Validates that cache_control is placed at content block level per DashScope API spec.
  */
 class DashScopeCacheControlTest {
 
@@ -45,12 +51,31 @@ class DashScopeCacheControlTest {
         formatter = new DashScopeChatFormatter();
     }
 
+    /** Helper: get the last content part's cacheControl from a message. */
+    private Map<String, String> getLastPartCacheControl(DashScopeMessage msg) {
+        List<DashScopeContentPart> parts = msg.getContentAsList();
+        assertNotNull(parts, "Content should be array format after applyCacheControl");
+        assertTrue(!parts.isEmpty(), "Content parts should not be empty");
+        return parts.get(parts.size() - 1).getCacheControl();
+    }
+
+    /** Helper: assert no content block in the message has cache_control set. */
+    private void assertNoCacheControlOnParts(DashScopeMessage msg) {
+        List<DashScopeContentPart> parts = msg.getContentAsList();
+        if (parts == null) {
+            return;
+        }
+        for (DashScopeContentPart part : parts) {
+            assertNull(part.getCacheControl(), "No content block should have cache_control");
+        }
+    }
+
     @Nested
-    @DisplayName("applyCacheControl - automatic strategy")
+    @DisplayName("applyCacheControl - content block level")
     class ApplyCacheControlTest {
 
         @Test
-        @DisplayName("should add cache_control to system and last message")
+        @DisplayName("should add cache_control to last content block of system and last message")
         void systemAndLastMessage() {
             List<DashScopeMessage> messages = new ArrayList<>();
             messages.add(
@@ -61,10 +86,21 @@ class DashScopeCacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertNull(messages.get(1).getCacheControl());
-            assertNull(messages.get(2).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(3).getCacheControl());
+            // system message: content converted to array, last part has cache_control
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
+            assertNull(
+                    messages.get(0).getCacheControl(),
+                    "Message-level cache_control should be null");
+
+            // middle messages: no cache_control
+            assertNoCacheControlOnParts(messages.get(1));
+            assertNoCacheControlOnParts(messages.get(2));
+
+            // last message: content converted to array, last part has cache_control
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(3)));
+            assertNull(
+                    messages.get(3).getCacheControl(),
+                    "Message-level cache_control should be null");
         }
 
         @Test
@@ -76,8 +112,8 @@ class DashScopeCacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertNull(messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
+            assertNoCacheControlOnParts(messages.get(0));
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(1)));
         }
 
         @Test
@@ -85,14 +121,12 @@ class DashScopeCacheControlTest {
         void emptyList() {
             List<DashScopeMessage> messages = new ArrayList<>();
             formatter.applyCacheControl(messages);
-            // No exception thrown
         }
 
         @Test
         @DisplayName("should handle null list without error")
         void nullList() {
             formatter.applyCacheControl(null);
-            // No exception thrown
         }
 
         @Test
@@ -104,51 +138,51 @@ class DashScopeCacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
         }
 
         @Test
-        @DisplayName("should not overwrite manually marked cache_control")
+        @DisplayName("should not overwrite content block with existing cache_control")
         void manuallyMarkedNotOverridden() {
             Map<String, String> customCacheControl = Map.of("type", "custom");
 
-            List<DashScopeMessage> messages = new ArrayList<>();
-            messages.add(
-                    DashScopeMessage.builder()
-                            .role("system")
-                            .content("System")
+            DashScopeContentPart part =
+                    DashScopeContentPart.builder()
+                            .text("System")
                             .cacheControl(customCacheControl)
-                            .build());
+                            .build();
+            List<DashScopeMessage> messages = new ArrayList<>();
+            messages.add(DashScopeMessage.builder().role("system").content(List.of(part)).build());
             messages.add(DashScopeMessage.builder().role("user").content("User").build());
 
             formatter.applyCacheControl(messages);
 
-            // System message keeps its custom cache_control
-            assertEquals(customCacheControl, messages.get(0).getCacheControl());
-            // Last message gets ephemeral
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
+            // System message keeps its custom cache_control on the content block
+            assertEquals(customCacheControl, getLastPartCacheControl(messages.get(0)));
+            // Last message gets ephemeral on content block
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(1)));
         }
 
         @Test
-        @DisplayName("should not overwrite last message with existing cache_control")
+        @DisplayName("should not overwrite last message content block with existing cache_control")
         void lastMessageManuallyMarkedNotOverridden() {
             Map<String, String> customCacheControl = Map.of("type", "custom");
 
+            DashScopeContentPart part =
+                    DashScopeContentPart.builder()
+                            .text("User")
+                            .cacheControl(customCacheControl)
+                            .build();
             List<DashScopeMessage> messages = new ArrayList<>();
             messages.add(DashScopeMessage.builder().role("system").content("System").build());
-            messages.add(
-                    DashScopeMessage.builder()
-                            .role("user")
-                            .content("User")
-                            .cacheControl(customCacheControl)
-                            .build());
+            messages.add(DashScopeMessage.builder().role("user").content(List.of(part)).build());
 
             formatter.applyCacheControl(messages);
 
             // System message gets ephemeral
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
             // Last message keeps its custom cache_control
-            assertEquals(customCacheControl, messages.get(1).getCacheControl());
+            assertEquals(customCacheControl, getLastPartCacheControl(messages.get(1)));
         }
 
         @Test
@@ -161,9 +195,79 @@ class DashScopeCacheControlTest {
 
             formatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(2).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(1)));
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(2)));
+        }
+
+        @Test
+        @DisplayName("should convert string content to array format")
+        void stringContentConvertedToArray() {
+            List<DashScopeMessage> messages = new ArrayList<>();
+            messages.add(DashScopeMessage.builder().role("system").content("Hello world").build());
+
+            formatter.applyCacheControl(messages);
+
+            // Content should now be array format
+            assertTrue(messages.get(0).isMultimodal(), "Content should be array format");
+            List<DashScopeContentPart> parts = messages.get(0).getContentAsList();
+            assertNotNull(parts);
+            assertEquals(1, parts.size());
+            assertEquals("Hello world", parts.get(0).getText());
+            assertEquals(EPHEMERAL, parts.get(0).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should set cache_control on last part when content is already array")
+        void arrayContentLastPartMarked() {
+            List<DashScopeContentPart> contentParts =
+                    List.of(
+                            DashScopeContentPart.text("First part"),
+                            DashScopeContentPart.text("Second part"),
+                            DashScopeContentPart.text("Third part"));
+            List<DashScopeMessage> messages = new ArrayList<>();
+            messages.add(
+                    DashScopeMessage.builder()
+                            .role("system")
+                            .content(new ArrayList<>(contentParts))
+                            .build());
+
+            formatter.applyCacheControl(messages);
+
+            List<DashScopeContentPart> parts = messages.get(0).getContentAsList();
+            assertNull(parts.get(0).getCacheControl());
+            assertNull(parts.get(1).getCacheControl());
+            assertEquals(EPHEMERAL, parts.get(2).getCacheControl());
+        }
+    }
+
+    @Nested
+    @DisplayName("JSON serialization verification")
+    class JsonSerializationTest {
+
+        @Test
+        @DisplayName("cache_control should appear inside content block, not at message level")
+        void cacheControlInContentBlock() throws Exception {
+            List<DashScopeMessage> messages = new ArrayList<>();
+            messages.add(
+                    DashScopeMessage.builder().role("system").content("You are helpful.").build());
+            messages.add(DashScopeMessage.builder().role("user").content("Hello").build());
+
+            formatter.applyCacheControl(messages);
+
+            JsonCodec jsonCodec = JsonUtils.getJsonCodec();
+            String json = jsonCodec.toJson(messages);
+
+            // cache_control should be within content blocks
+            assertTrue(json.contains("\"cache_control\""), "JSON should contain cache_control");
+            assertTrue(json.contains("\"ephemeral\""), "JSON should contain ephemeral");
+
+            // Verify message-level cache_control is NOT present
+            for (DashScopeMessage msg : messages) {
+                assertNull(
+                        msg.getCacheControl(),
+                        "Message-level cache_control should be null for role: " + msg.getRole());
+            }
         }
     }
 
@@ -172,7 +276,7 @@ class DashScopeCacheControlTest {
     class MetadataMarkingTest {
 
         @Test
-        @DisplayName("should set cache_control from Msg metadata")
+        @DisplayName("should set cache_control on content block from Msg metadata")
         void metadataMarking() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
@@ -186,7 +290,10 @@ class DashScopeCacheControlTest {
             List<DashScopeMessage> result = formatter.format(List.of(msg));
 
             assertEquals(1, result.size());
-            assertEquals(EPHEMERAL, result.get(0).getCacheControl());
+            // cache_control should be on content block, not message
+            assertNull(
+                    result.get(0).getCacheControl(), "Message-level cache_control should be null");
+            assertEquals(EPHEMERAL, getLastPartCacheControl(result.get(0)));
         }
 
         @Test
@@ -219,7 +326,7 @@ class DashScopeCacheControlTest {
         }
 
         @Test
-        @DisplayName("should set cache_control on system message via metadata")
+        @DisplayName("should set cache_control on system message content block via metadata")
         void systemMessageMetadata() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
@@ -234,7 +341,10 @@ class DashScopeCacheControlTest {
             List<DashScopeMessage> result = formatter.format(List.of(systemMsg, userMsg));
 
             assertEquals(2, result.size());
-            assertEquals(EPHEMERAL, result.get(0).getCacheControl());
+            // System message: cache_control on content block
+            assertNull(result.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(result.get(0)));
+            // User message: no cache_control
             assertNull(result.get(1).getCacheControl());
         }
     }
@@ -244,7 +354,7 @@ class DashScopeCacheControlTest {
     class MultiAgentFormatterTest {
 
         @Test
-        @DisplayName("should add cache_control to system and last message")
+        @DisplayName("should add cache_control to content blocks of system and last message")
         void applyCacheControl() {
             DashScopeMultiAgentFormatter multiFormatter = new DashScopeMultiAgentFormatter();
 
@@ -255,8 +365,11 @@ class DashScopeCacheControlTest {
 
             multiFormatter.applyCacheControl(messages);
 
-            assertEquals(EPHEMERAL, messages.get(0).getCacheControl());
-            assertEquals(EPHEMERAL, messages.get(1).getCacheControl());
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(0)));
+            assertEquals(EPHEMERAL, getLastPartCacheControl(messages.get(1)));
+            // message-level should be null
+            assertNull(messages.get(0).getCacheControl());
+            assertNull(messages.get(1).getCacheControl());
         }
     }
 }

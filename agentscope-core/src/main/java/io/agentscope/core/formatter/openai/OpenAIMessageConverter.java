@@ -469,7 +469,9 @@ public class OpenAIMessageConverter {
     }
 
     /**
-     * Apply cache_control from Msg metadata to the converted OpenAIMessage.
+     * Apply cache_control from Msg metadata to the converted OpenAIMessage at content block level.
+     * When the metadata flag is set, this converts the message content to array format (if needed)
+     * and sets cache_control on the last content block.
      *
      * @param msg the source message with metadata
      * @param result the converted OpenAI message
@@ -480,7 +482,7 @@ public class OpenAIMessageConverter {
         }
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
-            result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+            OpenAIBaseFormatter.applyCacheControlToContentBlock(result);
         }
     }
 }
