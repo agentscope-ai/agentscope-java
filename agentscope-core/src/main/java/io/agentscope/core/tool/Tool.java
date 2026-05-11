@@ -87,6 +87,16 @@ public @interface Tool {
     String description() default "";
 
     /**
+     * Whether to enable strict schema mode for this tool.
+     *
+     * <p>When enabled, compatible model providers can enforce stronger adherence to the declared
+     * JSON schema for tool arguments.
+     *
+     * @return true to enable strict mode for this tool
+     */
+    boolean strict() default false;
+
+    /**
      * Custom result converter for this tool.
      *
      * <p>Converters transform tool method return values into {@link io.agentscope.core.message.ToolResultBlock}
