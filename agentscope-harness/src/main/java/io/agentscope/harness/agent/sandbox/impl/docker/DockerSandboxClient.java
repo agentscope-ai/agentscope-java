@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.sandbox.impl.docker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxException;
@@ -43,8 +44,7 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
                 new ObjectMapper()
                         .findAndRegisterModules()
                         .activateDefaultTyping(
-                                com.fasterxml.jackson.databind.jsontype
-                                        .BasicPolymorphicTypeValidator.builder()
+                                BasicPolymorphicTypeValidator.builder()
                                         .allowIfSubType("io.agentscope.harness")
                                         .build(),
                                 ObjectMapper.DefaultTyping.NON_FINAL);
@@ -80,6 +80,8 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
             state.setMemorySizeBytes(options.getMemorySizeBytes());
             state.setCpuCount(options.getCpuCount());
             state.setExposedPorts(options.getExposedPorts());
+            state.setNetwork(options.getNetwork());
+            state.setAdditionalRunArgs(options.getAdditionalRunArgs());
         }
 
         if (snapshotSpec != null) {

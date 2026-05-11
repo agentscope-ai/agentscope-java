@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.sandbox.impl.docker;
 
 import io.agentscope.harness.agent.sandbox.SandboxState;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Serializable state for a Docker-backed {@link io.agentscope.harness.agent.sandbox.Sandbox}.
@@ -53,6 +55,12 @@ public class DockerSandboxState extends SandboxState {
 
     /** Exposed port numbers stored for container recreation on resume. */
     private int[] exposedPorts = {};
+
+    /** Docker network mode or network name passed to {@code docker run --network}. */
+    private String network;
+
+    /** Additional raw arguments appended to {@code docker run} before the image name. */
+    private List<String> additionalRunArgs = new ArrayList<>();
 
     /**
      * Returns the Docker container ID.
@@ -196,5 +204,54 @@ public class DockerSandboxState extends SandboxState {
      */
     public void setExposedPorts(int[] exposedPorts) {
         this.exposedPorts = exposedPorts != null ? exposedPorts : new int[0];
+    }
+
+    /**
+     * Returns the docker network mode or network name.
+     *
+     * @return docker network value, or {@code null} when unset
+     */
+    public String getNetwork() {
+        return network;
+    }
+
+    /**
+     * Sets the docker network mode or network name.
+     *
+     * @param network docker network value
+     */
+    public void setNetwork(String network) {
+        if (network == null) {
+            this.network = null;
+            return;
+        }
+        String trimmed = network.trim();
+        this.network = trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
+     * Returns additional raw arguments appended to {@code docker run}.
+     *
+     * @return additional docker run arguments
+     */
+    public List<String> getAdditionalRunArgs() {
+        return additionalRunArgs;
+    }
+
+    /**
+     * Sets additional raw arguments appended to {@code docker run}.
+     *
+     * @param additionalRunArgs additional docker run arguments
+     */
+    public void setAdditionalRunArgs(List<String> additionalRunArgs) {
+        this.additionalRunArgs = new ArrayList<>();
+        if (additionalRunArgs == null) {
+            return;
+        }
+        for (String additionalRunArg : additionalRunArgs) {
+            if (additionalRunArg != null && !additionalRunArg.isBlank()) {
+                this.additionalRunArgs.add(additionalRunArg);
+            }
+        }
     }
 }

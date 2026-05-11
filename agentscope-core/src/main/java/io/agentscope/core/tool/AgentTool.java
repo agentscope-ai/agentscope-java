@@ -75,6 +75,19 @@ public interface AgentTool {
     Map<String, Object> getParameters();
 
     /**
+     * Gets the optional output schema for this tool in JSON Schema format.
+     *
+     * <p>Most tools do not expose a structured output schema to models, so the default
+     * implementation returns {@code null}. MCP tools can override this to surface the
+     * server-provided {@code outputSchema} definition.
+     *
+     * @return Map representing the JSON Schema for tool outputs, or null if unsupported
+     */
+    default Map<String, Object> getOutputSchema() {
+        return null;
+    }
+
+    /**
      * Execute the tool with the given parameters (asynchronous).
      *
      * <p>This method accepts a {@link ToolCallParam} object containing all necessary context for

@@ -16,35 +16,35 @@
 package io.agentscope.harness.agent.sandbox;
 
 import io.agentscope.core.session.Session;
-import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.RedisSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
-import java.util.Objects;
 
 /**
  * High-level distributed sandbox configuration used by
  * {@link io.agentscope.harness.agent.HarnessAgent.Builder#sandboxDistributed}.
  *
- * <p>This options object intentionally bundles the three pieces required for
- * distributed sandbox restore/sharing:
+ * <p>Bundles the pieces required for distributed sandbox restore/sharing that are not already on
+ * {@link io.agentscope.harness.agent.sandbox.filesystem.SandboxFilesystemSpec}:
+ *
  * <ul>
- *   <li>distributed {@link Session} (for state-store slots)</li>
- *   <li>{@link SandboxSnapshotSpec} (for workspace archive persistence)</li>
- *   <li>{@link IsolationScope} (for sharing granularity)</li>
+ *   <li>distributed {@link Session} (for state-store slots)
+ *   <li>optional {@link SandboxSnapshotSpec} override (workspace archive persistence)
+ *   <li>{@code requireDistributed} — fail-fast when distributed prerequisites are not met
  * </ul>
+ *
+ * <p>Configure {@link io.agentscope.harness.agent.IsolationScope} on {@code SandboxFilesystemSpec}
+ * only; it is not duplicated here.
  */
 public final class SandboxDistributedOptions {
 
     private final Session session;
     private final SandboxSnapshotSpec snapshotSpec;
-    private final IsolationScope isolationScope;
     private final boolean requireDistributed;
 
     private SandboxDistributedOptions(Builder builder) {
         this.session = builder.session;
         this.snapshotSpec = builder.snapshotSpec;
-        this.isolationScope = builder.isolationScope;
         this.requireDistributed = builder.requireDistributed;
     }
 
@@ -52,9 +52,9 @@ public final class SandboxDistributedOptions {
      * Creates a builder with safe distributed defaults.
      *
      * <p>Defaults:
+     *
      * <ul>
-     *   <li>{@code isolationScope = USER}</li>
-     *   <li>{@code requireDistributed = true}</li>
+     *   <li>{@code requireDistributed = true}
      * </ul>
      */
     public static Builder builder() {
@@ -90,13 +90,6 @@ public final class SandboxDistributedOptions {
     }
 
     /**
-     * Returns the isolation scope for sandbox state sharing.
-     */
-    public IsolationScope getIsolationScope() {
-        return isolationScope;
-    }
-
-    /**
      * Whether builder should fail-fast when distributed prerequisites are not met.
      */
     public boolean isRequireDistributed() {
@@ -107,7 +100,6 @@ public final class SandboxDistributedOptions {
 
         private Session session;
         private SandboxSnapshotSpec snapshotSpec;
-        private IsolationScope isolationScope = IsolationScope.USER;
         private boolean requireDistributed = true;
 
         private Builder() {}
@@ -125,14 +117,6 @@ public final class SandboxDistributedOptions {
          */
         public Builder snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
             this.snapshotSpec = snapshotSpec;
-            return this;
-        }
-
-        /**
-         * Sets sandbox isolation scope. Default is {@link IsolationScope#USER}.
-         */
-        public Builder isolationScope(IsolationScope isolationScope) {
-            this.isolationScope = Objects.requireNonNull(isolationScope, "isolationScope");
             return this;
         }
 

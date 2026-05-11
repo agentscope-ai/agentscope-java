@@ -37,9 +37,8 @@ import reactor.core.publisher.Mono;
  *
  * <p>Fires on {@link PostCallEvent} to ensure long-term memories are extracted and
  * persisted after every call, even when conversation compaction was not triggered during
- * that call. When {@link io.agentscope.harness.agent.memory.compaction.CompactionHook}
- * is active, it handles flush/offload for the messages it summarizes; this hook covers
- * the remaining tail of messages that were kept verbatim.
+ * that call. When CompactionHook is active, it handles flush/offload for the messages it summarizes;
+ * this hook covers the remaining tail of messages that were kept verbatim.
  *
  * <p>Priority is 5 — runs early so state is persisted before the session-persistence hook
  * (priority 900) saves the overall agent state.

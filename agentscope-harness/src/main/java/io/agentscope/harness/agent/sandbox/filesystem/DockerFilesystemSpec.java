@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClientOption
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -67,6 +68,21 @@ public class DockerFilesystemSpec extends SandboxFilesystemSpec {
 
     public DockerFilesystemSpec exposedPorts(int... exposedPorts) {
         options.exposedPorts(exposedPorts);
+        return this;
+    }
+
+    public DockerFilesystemSpec network(String network) {
+        options.network(network);
+        return this;
+    }
+
+    public DockerFilesystemSpec additionalRunArgs(String... additionalRunArgs) {
+        options.additionalRunArgs(additionalRunArgs);
+        return this;
+    }
+
+    public DockerFilesystemSpec additionalRunArgs(List<String> additionalRunArgs) {
+        options.setAdditionalRunArgs(additionalRunArgs);
         return this;
     }
 

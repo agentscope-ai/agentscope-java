@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import java.nio.file.Files;
@@ -37,6 +38,8 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class FilesystemDeleteMoveExistsTest {
 
+    private static final RuntimeContext RT = RuntimeContext.empty();
+
     // ================================================================
     // LocalFilesystem — non-virtual mode, relative paths (no leading '/')
     // ================================================================
@@ -46,13 +49,13 @@ class FilesystemDeleteMoveExistsTest {
         LocalFilesystem fs = new LocalFilesystem(tmp);
         Files.writeString(tmp.resolve("file.txt"), "hello");
 
-        assertTrue(fs.exists("file.txt"));
+        assertTrue(fs.exists(RT, "file.txt"));
     }
 
     @Test
     void local_exists_false(@TempDir Path tmp) {
         LocalFilesystem fs = new LocalFilesystem(tmp);
-        assertFalse(fs.exists("nonexistent.txt"));
+        assertFalse(fs.exists(RT, "nonexistent.txt"));
     }
 
     @Test
@@ -60,7 +63,7 @@ class FilesystemDeleteMoveExistsTest {
         LocalFilesystem fs = new LocalFilesystem(tmp);
         Path f = Files.writeString(tmp.resolve("del.txt"), "data");
 
-        WriteResult result = fs.delete("del.txt");
+        WriteResult result = fs.delete(RT, "del.txt");
         assertTrue(result.isSuccess());
         assertFalse(Files.exists(f));
     }
@@ -68,7 +71,7 @@ class FilesystemDeleteMoveExistsTest {
     @Test
     void local_delete_idempotent(@TempDir Path tmp) {
         LocalFilesystem fs = new LocalFilesystem(tmp);
-        WriteResult result = fs.delete("ghost.txt");
+        WriteResult result = fs.delete(RT, "ghost.txt");
         assertTrue(result.isSuccess(), "deleting nonexistent should succeed (idempotent)");
     }
 
@@ -80,7 +83,7 @@ class FilesystemDeleteMoveExistsTest {
         Files.writeString(dir.resolve("a.txt"), "a");
         Files.writeString(dir.resolve("b.txt"), "b");
 
-        WriteResult result = fs.delete("subdir");
+        WriteResult result = fs.delete(RT, "subdir");
         assertTrue(result.isSuccess());
         assertFalse(Files.exists(dir));
     }
@@ -90,7 +93,7 @@ class FilesystemDeleteMoveExistsTest {
         LocalFilesystem fs = new LocalFilesystem(tmp);
         Files.writeString(tmp.resolve("src.txt"), "content");
 
-        WriteResult result = fs.move("src.txt", "dst.txt");
+        WriteResult result = fs.move(RT, "src.txt", "dst.txt");
         assertTrue(result.isSuccess());
         assertFalse(Files.exists(tmp.resolve("src.txt")));
         assertTrue(Files.exists(tmp.resolve("dst.txt")));
@@ -99,7 +102,7 @@ class FilesystemDeleteMoveExistsTest {
     @Test
     void local_move_missingSource(@TempDir Path tmp) {
         LocalFilesystem fs = new LocalFilesystem(tmp);
-        WriteResult result = fs.move("missing.txt", "dst.txt");
+        WriteResult result = fs.move(RT, "missing.txt", "dst.txt");
         assertFalse(result.isSuccess());
     }
 
@@ -118,13 +121,13 @@ class FilesystemDeleteMoveExistsTest {
         InMemoryStore s = storeWith("/file.txt", "hello");
         RemoteFilesystem fs = new RemoteFilesystem(s, List.of("ns"));
 
-        assertTrue(fs.exists("/file.txt"));
+        assertTrue(fs.exists(RT, "/file.txt"));
     }
 
     @Test
     void store_exists_false() {
         RemoteFilesystem fs = new RemoteFilesystem(new InMemoryStore(), List.of("ns"));
-        assertFalse(fs.exists("/nope.txt"));
+        assertFalse(fs.exists(RT, "/nope.txt"));
     }
 
     @Test
@@ -132,7 +135,7 @@ class FilesystemDeleteMoveExistsTest {
         InMemoryStore s = storeWith("/file.txt", "hello");
         RemoteFilesystem fs = new RemoteFilesystem(s, List.of("ns"));
 
-        WriteResult result = fs.delete("/file.txt");
+        WriteResult result = fs.delete(RT, "/file.txt");
         assertTrue(result.isSuccess());
         assertNull(s.get(List.of("ns"), "/file.txt"));
     }
@@ -140,7 +143,7 @@ class FilesystemDeleteMoveExistsTest {
     @Test
     void store_delete_idempotent() {
         RemoteFilesystem fs = new RemoteFilesystem(new InMemoryStore(), List.of("ns"));
-        WriteResult result = fs.delete("/ghost.txt");
+        WriteResult result = fs.delete(RT, "/ghost.txt");
         assertTrue(result.isSuccess());
     }
 
@@ -149,7 +152,7 @@ class FilesystemDeleteMoveExistsTest {
         InMemoryStore s = storeWith("/src.txt", "data");
         RemoteFilesystem fs = new RemoteFilesystem(s, List.of("ns"));
 
-        WriteResult result = fs.move("/src.txt", "/dst.txt");
+        WriteResult result = fs.move(RT, "/src.txt", "/dst.txt");
         assertTrue(result.isSuccess());
         assertNull(s.get(List.of("ns"), "/src.txt"));
         assertNotNull(s.get(List.of("ns"), "/dst.txt"));
@@ -158,7 +161,7 @@ class FilesystemDeleteMoveExistsTest {
     @Test
     void store_move_missingSource() {
         RemoteFilesystem fs = new RemoteFilesystem(new InMemoryStore(), List.of("ns"));
-        WriteResult result = fs.move("/missing.txt", "/dst.txt");
+        WriteResult result = fs.move(RT, "/missing.txt", "/dst.txt");
         assertFalse(result.isSuccess());
     }
 
@@ -174,8 +177,8 @@ class FilesystemDeleteMoveExistsTest {
 
         CompositeFilesystem fs = new CompositeFilesystem(local, Map.of("MEMORY.md", storeFsys));
 
-        assertTrue(fs.exists("MEMORY.md"));
-        assertFalse(fs.exists("notExist.txt"));
+        assertTrue(fs.exists(RT, "MEMORY.md"));
+        assertFalse(fs.exists(RT, "notExist.txt"));
     }
 
     @Test
@@ -186,7 +189,7 @@ class FilesystemDeleteMoveExistsTest {
 
         CompositeFilesystem fs = new CompositeFilesystem(local, Map.of("MEMORY.md", storeFsys));
 
-        WriteResult result = fs.delete("MEMORY.md");
+        WriteResult result = fs.delete(RT, "MEMORY.md");
         assertTrue(result.isSuccess());
         assertNull(s.get(List.of("ns"), "/MEMORY.md"));
     }
@@ -206,7 +209,7 @@ class FilesystemDeleteMoveExistsTest {
         CompositeFilesystem fs = new CompositeFilesystem(local, Map.of("memory/", storeFsys));
 
         // Move from store-routed path to a local-only path
-        WriteResult result = fs.move("memory/2025-01-01.md", "archive/2025-01-01.md");
+        WriteResult result = fs.move(RT, "memory/2025-01-01.md", "archive/2025-01-01.md");
         assertTrue(result.isSuccess(), "cross-backend move should succeed");
         // Source removed from store
         assertNull(s.get(ns, "/2025-01-01.md"), "source should be deleted from store");

@@ -23,12 +23,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.Session;
 import io.agentscope.harness.agent.filesystem.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
@@ -206,6 +208,7 @@ class HarnessAgentTest {
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .filesystem(new RemoteFilesystemSpec(store))
+                        .session(mock(Session.class))
                         .build();
 
         agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "shared-memory");

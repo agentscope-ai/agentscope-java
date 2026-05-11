@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -28,9 +29,9 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.RuntimeContext;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
+import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -89,8 +90,12 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         // First call — no persisted state → create
@@ -119,8 +124,12 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         agent.call(userMsg("call from session-1"), ctx("session-2-1", "alice")).block();
@@ -153,8 +162,12 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         agent.call(userMsg("session A"), ctx("session-a", "alice")).block();
@@ -182,8 +195,12 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         agent.call(userMsg("hi from alice2"), ctx("s1", "alice2")).block();
@@ -215,8 +232,12 @@ class SandboxFilesystemIsolationScopeExampleTest {
                 HarnessAgent.builder()
                         .name("shared-assistant")
                         .model(stubModel("done"))
-                        .workspace(workspace)
+                        .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
                         .build();
 
         // Different users, different sessions — all share one AGENT-scoped sandbox

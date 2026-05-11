@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -51,8 +52,8 @@ import java.util.Map;
  *     localFs,
  *     Map.of("/memories/", storeFs, "/cache/", inMemoryFs)
  * );
- * fs.read("/memories/notes.md", 0, 100);  // → storeFs.read("/notes.md", ...)
- * fs.read("/src/Main.java", 0, 100);      // → localFs.read("/src/Main.java", ...)
+ * fs.read(RuntimeContext.empty(), "/memories/notes.md", 0, 100);  // → storeFs.read(...)
+ * fs.read(RuntimeContext.empty(), "/src/Main.java", 0, 100);      // → localFs.read(...)
  * }</pre>
  */
 public class CompositeFilesystem implements AbstractFilesystem {
@@ -146,11 +147,11 @@ public class CompositeFilesystem implements AbstractFilesystem {
     // ==================== AbstractFilesystem ====================
 
     @Override
-    public LsResult ls(String path) {
+    public LsResult ls(RuntimeContext runtimeContext, String path) {
         RouteResult route = routeForPath(path);
 
         if (route.routePrefix() != null) {
-            LsResult result = route.backend().ls(route.backendPath());
+            LsResult result = route.backend().ls(runtimeContext, route.backendPath());
             if (!result.isSuccess()) {
                 return result;
             }
@@ -163,7 +164,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
         if ("/".equals(path)) {
             List<FileInfo> results = new ArrayList<>();
-            LsResult defaultResult = defaultBackend.ls(path);
+            LsResult defaultResult = defaultBackend.ls(runtimeContext, path);
             if (defaultResult.isSuccess() && defaultResult.entries() != null) {
                 results.addAll(defaultResult.entries());
             }
@@ -179,19 +180,19 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return LsResult.success(results);
         }
 
-        return defaultBackend.ls(path);
+        return defaultBackend.ls(runtimeContext, path);
     }
 
     @Override
-    public ReadResult read(String filePath, int offset, int limit) {
+    public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
         RouteResult route = routeForPath(filePath);
-        return route.backend().read(route.backendPath(), offset, limit);
+        return route.backend().read(runtimeContext, route.backendPath(), offset, limit);
     }
 
     @Override
-    public WriteResult write(String filePath, String content) {
+    public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         RouteResult route = routeForPath(filePath);
-        WriteResult result = route.backend().write(route.backendPath(), content);
+        WriteResult result = route.backend().write(runtimeContext, route.backendPath(), content);
         if (result.isSuccess() && route.routePrefix() != null) {
             return WriteResult.ok(filePath);
         }
@@ -200,10 +201,20 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
     public EditResult edit(
-            String filePath, String oldString, String newString, boolean replaceAll) {
+            RuntimeContext runtimeContext,
+            String filePath,
+            String oldString,
+            String newString,
+            boolean replaceAll) {
         RouteResult route = routeForPath(filePath);
         EditResult result =
-                route.backend().edit(route.backendPath(), oldString, newString, replaceAll);
+                route.backend()
+                        .edit(
+                                runtimeContext,
+                                route.backendPath(),
+                                oldString,
+                                newString,
+                                replaceAll);
         if (result.isSuccess() && route.routePrefix() != null) {
             return EditResult.ok(filePath, result.occurrences());
         }
@@ -211,11 +222,13 @@ public class CompositeFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public GrepResult grep(String pattern, String path, String glob) {
+    public GrepResult grep(
+            RuntimeContext runtimeContext, String pattern, String path, String glob) {
         if (path != null) {
             RouteResult route = routeForPath(path);
             if (route.routePrefix() != null) {
-                GrepResult result = route.backend().grep(pattern, route.backendPath(), glob);
+                GrepResult result =
+                        route.backend().grep(runtimeContext, pattern, route.backendPath(), glob);
                 if (!result.isSuccess()) {
                     return result;
                 }
@@ -229,7 +242,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
         if (path == null || "/".equals(path)) {
             List<GrepMatch> allMatches = new ArrayList<>();
-            GrepResult defaultResult = defaultBackend.grep(pattern, path, glob);
+            GrepResult defaultResult = defaultBackend.grep(runtimeContext, pattern, path, glob);
             if (!defaultResult.isSuccess()) {
                 return defaultResult;
             }
@@ -237,7 +250,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
                 allMatches.addAll(defaultResult.matches());
             }
             for (RouteEntry entry : sortedRoutes) {
-                GrepResult routeResult = entry.backend().grep(pattern, "/", glob);
+                GrepResult routeResult = entry.backend().grep(runtimeContext, pattern, "/", glob);
                 if (!routeResult.isSuccess()) {
                     return routeResult;
                 }
@@ -250,15 +263,15 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return GrepResult.success(allMatches);
         }
 
-        return defaultBackend.grep(pattern, path, glob);
+        return defaultBackend.grep(runtimeContext, pattern, path, glob);
     }
 
     @Override
-    public GlobResult glob(String pattern, String path) {
+    public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
         RouteResult route = routeForPath(path);
 
         if (route.routePrefix() != null) {
-            GlobResult result = route.backend().glob(pattern, route.backendPath());
+            GlobResult result = route.backend().glob(runtimeContext, pattern, route.backendPath());
             if (!result.isSuccess()) {
                 return result;
             }
@@ -270,13 +283,13 @@ public class CompositeFilesystem implements AbstractFilesystem {
         }
 
         List<FileInfo> results = new ArrayList<>();
-        GlobResult defaultResult = defaultBackend.glob(pattern, path);
+        GlobResult defaultResult = defaultBackend.glob(runtimeContext, pattern, path);
         if (defaultResult.isSuccess() && defaultResult.matches() != null) {
             results.addAll(defaultResult.matches());
         }
         for (RouteEntry entry : sortedRoutes) {
             String routePattern = stripRouteFromPattern(pattern, entry.prefix());
-            GlobResult routeResult = entry.backend().glob(routePattern, "/");
+            GlobResult routeResult = entry.backend().glob(runtimeContext, routePattern, "/");
             if (routeResult.isSuccess() && routeResult.matches() != null) {
                 for (FileInfo fi : routeResult.matches()) {
                     results.add(remapFileInfo(fi, entry.prefix()));
@@ -288,7 +301,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public List<FileUploadResponse> uploadFiles(List<Map.Entry<String, byte[]>> files) {
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
         FileUploadResponse[] results = new FileUploadResponse[files.size()];
         Map<AbstractFilesystem, List<IndexedFile>> batches = new HashMap<>();
 
@@ -304,7 +318,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
             for (IndexedFile f : batch.getValue()) {
                 batchFiles.add(Map.entry(f.backendPath(), f.content()));
             }
-            List<FileUploadResponse> responses = batch.getKey().uploadFiles(batchFiles);
+            List<FileUploadResponse> responses =
+                    batch.getKey().uploadFiles(runtimeContext, batchFiles);
             List<IndexedFile> indexed = batch.getValue();
             for (int i = 0; i < responses.size() && i < indexed.size(); i++) {
                 results[indexed.get(i).originalIndex()] =
@@ -316,7 +331,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public List<FileDownloadResponse> downloadFiles(List<String> paths) {
+    public List<FileDownloadResponse> downloadFiles(
+            RuntimeContext runtimeContext, List<String> paths) {
         FileDownloadResponse[] results = new FileDownloadResponse[paths.size()];
         Map<AbstractFilesystem, List<int[]>> batches = new HashMap<>();
         Map<AbstractFilesystem, List<String>> batchPaths = new HashMap<>();
@@ -330,7 +346,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
         }
 
         for (Map.Entry<AbstractFilesystem, List<String>> batch : batchPaths.entrySet()) {
-            List<FileDownloadResponse> responses = batch.getKey().downloadFiles(batch.getValue());
+            List<FileDownloadResponse> responses =
+                    batch.getKey().downloadFiles(runtimeContext, batch.getValue());
             List<int[]> indices = batches.get(batch.getKey());
             for (int i = 0; i < responses.size() && i < indices.size(); i++) {
                 FileDownloadResponse resp = responses.get(i);
@@ -346,10 +363,10 @@ public class CompositeFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public WriteResult delete(String path) {
+    public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
         RouteResult route = routeForPath(path);
-        WriteResult result = route.backend().delete(route.backendPath());
+        WriteResult result = route.backend().delete(runtimeContext, route.backendPath());
         if (result.isSuccess() && route.routePrefix() != null) {
             return WriteResult.ok(path);
         }
@@ -357,7 +374,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public WriteResult move(String fromPath, String toPath) {
+    public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
         AbstractFilesystem.validatePath(fromPath);
         AbstractFilesystem.validatePath(toPath);
         RouteResult srcRoute = routeForPath(fromPath);
@@ -365,7 +382,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
         if (srcRoute.backend() == dstRoute.backend()) {
             WriteResult result =
-                    srcRoute.backend().move(srcRoute.backendPath(), dstRoute.backendPath());
+                    srcRoute.backend()
+                            .move(runtimeContext, srcRoute.backendPath(), dstRoute.backendPath());
             if (result.isSuccess()) {
                 return WriteResult.ok(toPath);
             }
@@ -373,7 +391,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
         }
 
         // Cross-backend move: read → write → delete
-        var readResult = srcRoute.backend().read(srcRoute.backendPath(), 0, 0);
+        var readResult = srcRoute.backend().read(runtimeContext, srcRoute.backendPath(), 0, 0);
         if (!readResult.isSuccess() || readResult.fileData() == null) {
             return WriteResult.fail("Cannot read source for cross-backend move: " + fromPath);
         }
@@ -381,22 +399,23 @@ public class CompositeFilesystem implements AbstractFilesystem {
         if (content == null) {
             content = "";
         }
-        WriteResult writeResult = dstRoute.backend().write(dstRoute.backendPath(), content);
+        WriteResult writeResult =
+                dstRoute.backend().write(runtimeContext, dstRoute.backendPath(), content);
         if (!writeResult.isSuccess()) {
             return WriteResult.fail(
                     "Cross-backend move write failed for '" + toPath + "': " + writeResult.error());
         }
-        srcRoute.backend().delete(srcRoute.backendPath());
+        srcRoute.backend().delete(runtimeContext, srcRoute.backendPath());
         return WriteResult.ok(toPath);
     }
 
     @Override
-    public boolean exists(String path) {
+    public boolean exists(RuntimeContext runtimeContext, String path) {
         if (path == null || path.isBlank()) {
             return false;
         }
         RouteResult route = routeForPath(path);
-        return route.backend().exists(route.backendPath());
+        return route.backend().exists(runtimeContext, route.backendPath());
     }
 
     /** Returns the default backend. */

@@ -359,4 +359,92 @@ class DashScopeDtoSerializationTest {
         assertEquals(0.5, params.getFrequencyPenalty());
         assertEquals(0.3, params.getPresencePenalty());
     }
+
+    @Test
+    void testDashScopeContentPartWithImagePixels() throws Exception {
+        DashScopeContentPart imagePart =
+                DashScopeContentPart.builder()
+                        .image("https://example.com/image.jpg")
+                        .minPixels(256)
+                        .maxPixels(1048576)
+                        .build();
+
+        String json = jsonCodec.toJson(imagePart);
+        assertTrue(json.contains("image"));
+        assertTrue(json.contains("min_pixels"));
+        assertTrue(json.contains("max_pixels"));
+
+        DashScopeContentPart deserialized = jsonCodec.fromJson(json, DashScopeContentPart.class);
+        assertEquals("https://example.com/image.jpg", deserialized.getImage());
+        assertEquals(256, deserialized.getMinPixels());
+        assertEquals(1048576, deserialized.getMaxPixels());
+    }
+
+    @Test
+    void testDashScopeContentPartWithVideoParameters() throws Exception {
+        DashScopeContentPart videoPart =
+                DashScopeContentPart.builder()
+                        .video("https://example.com/video.mp4")
+                        .fps(2.5f)
+                        .maxFrames(32)
+                        .minPixels(128)
+                        .maxPixels(512000)
+                        .totalPixels(8192000)
+                        .build();
+
+        String json = jsonCodec.toJson(videoPart);
+        assertTrue(json.contains("video"));
+        assertTrue(json.contains("fps"));
+        assertTrue(json.contains("max_frames"));
+        assertTrue(json.contains("min_pixels"));
+        assertTrue(json.contains("max_pixels"));
+        assertTrue(json.contains("total_pixels"));
+
+        DashScopeContentPart deserialized = jsonCodec.fromJson(json, DashScopeContentPart.class);
+        assertEquals("https://example.com/video.mp4", deserialized.getVideoAsString());
+        assertEquals(2.5f, deserialized.getFps());
+        assertEquals(32, deserialized.getMaxFrames());
+        assertEquals(128, deserialized.getMinPixels());
+        assertEquals(512000, deserialized.getMaxPixels());
+        assertEquals(8192000, deserialized.getTotalPixels());
+    }
+
+    @Test
+    void testDashScopeContentPartBuilderMethods() {
+        DashScopeContentPart part =
+                DashScopeContentPart.builder()
+                        .text("Hello")
+                        .image("https://example.com/image.png")
+                        .audio("https://example.com/audio.wav")
+                        .video("https://example.com/video.mp4")
+                        .fps(2.0f)
+                        .maxFrames(16)
+                        .minPixels(256)
+                        .maxPixels(512000)
+                        .totalPixels(8192000)
+                        .build();
+
+        assertEquals("Hello", part.getText());
+        assertEquals("https://example.com/image.png", part.getImage());
+        assertEquals("https://example.com/audio.wav", part.getAudio());
+        assertEquals("https://example.com/video.mp4", part.getVideoAsString());
+        assertEquals(2.0f, part.getFps());
+        assertEquals(16, part.getMaxFrames());
+        assertEquals(256, part.getMinPixels());
+        assertEquals(512000, part.getMaxPixels());
+        assertEquals(8192000, part.getTotalPixels());
+    }
+
+    @Test
+    void testDashScopeContentPartNullParameters() {
+        DashScopeContentPart part =
+                DashScopeContentPart.builder().image("https://example.com/image.png").build();
+
+        assertEquals("https://example.com/image.png", part.getImage());
+        assertNull(part.getFps());
+        assertNull(part.getMaxFrames());
+        assertNull(part.getMinPixels());
+        assertNull(part.getMaxPixels());
+        assertNull(part.getTotalPixels());
+    }
 }

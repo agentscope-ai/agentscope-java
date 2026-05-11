@@ -51,14 +51,14 @@ public enum IsolationScope {
      *
      * <p>This is the default behavior. Each distinct session gets its own sandbox state /
      * store namespace.  If no session key is present in the
-     * {@link io.agentscope.harness.agent.RuntimeContext}, state lookup is skipped and a fresh
+     * {@link io.agentscope.core.agent.RuntimeContext}, state lookup is skipped and a fresh
      * sandbox is created (or a default store namespace is used).
      */
     SESSION,
 
     /**
      * Share across all sessions belonging to the same
-     * {@link io.agentscope.harness.agent.RuntimeContext#getUserId() userId}.
+     * {@link io.agentscope.core.agent.RuntimeContext#getUserId() userId}.
      *
      * <p>If {@code userId} is blank, a warning is logged and state lookup / namespace resolution
      * degrades to the default (fresh sandbox create, or an anonymous-user namespace).

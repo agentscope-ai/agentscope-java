@@ -19,6 +19,7 @@ import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
@@ -42,6 +43,7 @@ public abstract class SandboxFilesystemSpec {
 
     private IsolationScope isolationScope;
     private SandboxSnapshotSpec snapshotSpecOverride;
+    private SandboxStateStore sandboxStateStore;
     private boolean workspaceProjectionEnabled = true;
     private List<String> workspaceProjectionRoots = DEFAULT_WORKSPACE_PROJECTION_ROOTS;
 
@@ -69,6 +71,24 @@ public abstract class SandboxFilesystemSpec {
 
     public SandboxSnapshotSpec getSnapshotSpecOverride() {
         return snapshotSpecOverride;
+    }
+
+    /**
+     * Overrides the {@link SandboxStateStore} used to persist and resume sandbox metadata across
+     * calls. When {@code null} (default), {@link io.agentscope.harness.agent.HarnessAgent} uses
+     * {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore} with the effective
+     * {@link io.agentscope.core.session.Session} and agent id at build time.
+     *
+     * @param sandboxStateStore custom store, or {@code null} for the default session-backed store
+     * @return this spec
+     */
+    public SandboxFilesystemSpec sandboxStateStore(SandboxStateStore sandboxStateStore) {
+        this.sandboxStateStore = sandboxStateStore;
+        return this;
+    }
+
+    public SandboxStateStore getSandboxStateStore() {
+        return sandboxStateStore;
     }
 
     public SandboxFilesystemSpec workspaceProjectionEnabled(boolean enabled) {

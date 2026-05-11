@@ -28,9 +28,11 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.Session;
 import io.agentscope.harness.agent.filesystem.LocalFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.sandbox.filesystem.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
+import io.agentscope.harness.agent.store.BaseStore;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -63,7 +65,29 @@ class HarnessAgentDistributedSandboxTest {
     }
 
     @Test
-    void sandboxDistributed_requireDistributed_failsOnLocalDefaults() {
+    void sandboxMode_withLocalSession_failsFastByDefault() {
+        // Mode 2 (SandboxFilesystemSpec) now validates automatically — no sandboxDistributed()
+        // needed.
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                HarnessAgent.builder()
+                                        .name("agent")
+                                        .model(stubModel("ok"))
+                                        .workspace(workspace)
+                                        .filesystem(new DockerFilesystemSpec())
+                                        .build());
+        assertEquals(
+                true,
+                ex.getMessage().contains("distributed Session backend"),
+                "sandbox mode should fail-fast when effective session remains local"
+                        + " WorkspaceSession");
+    }
+
+    @Test
+    void sandboxMode_explicitSandboxDistributed_alsoFailsOnLocalSession() {
+        // Explicit sandboxDistributed() with default requireDistributed=true still fails.
         IllegalStateException ex =
                 assertThrows(
                         IllegalStateException.class,
@@ -83,16 +107,16 @@ class HarnessAgentDistributedSandboxTest {
     }
 
     @Test
-    void sandboxDistributed_appliesIsolationAndSnapshotOverride() {
+    void sandboxDistributed_appliesSnapshotOverride() {
         Session distributedSession = mock(Session.class);
         DockerFilesystemSpec spec = new DockerFilesystemSpec();
+        spec.isolationScope(IsolationScope.AGENT);
         LocalSnapshotSpec snapshotSpec = new LocalSnapshotSpec(workspace.resolve("snapshots"));
 
         SandboxDistributedOptions options =
                 SandboxDistributedOptions.builder()
                         .session(distributedSession)
                         .snapshotSpec(snapshotSpec)
-                        .isolationScope(IsolationScope.AGENT)
                         .build();
 
         assertDoesNotThrow(
@@ -110,7 +134,8 @@ class HarnessAgentDistributedSandboxTest {
     }
 
     @Test
-    void sandboxDistributed_requireDistributedCanBeDisabled() {
+    void sandboxMode_requireDistributedFalse_allowsLocalSession() {
+        // Single-node sandbox use: opt out of distributed validation explicitly.
         assertDoesNotThrow(
                 () ->
                         HarnessAgent.builder()
@@ -122,6 +147,42 @@ class HarnessAgentDistributedSandboxTest {
                                         SandboxDistributedOptions.builder()
                                                 .requireDistributed(false)
                                                 .build())
+                                .build());
+    }
+
+    @Test
+    void remoteFilesystemMode_withLocalSession_failsFast() {
+        // Mode 1 (RemoteFilesystemSpec) always requires a distributed Session.
+        BaseStore store = mock(BaseStore.class);
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                HarnessAgent.builder()
+                                        .name("agent")
+                                        .model(stubModel("ok"))
+                                        .workspace(workspace)
+                                        .filesystem(new RemoteFilesystemSpec(store))
+                                        .build());
+        assertEquals(
+                true,
+                ex.getMessage().contains("RemoteFilesystemSpec"),
+                "Mode 1 should fail-fast when effective session is local WorkspaceSession");
+    }
+
+    @Test
+    void remoteFilesystemMode_withDistributedSession_succeeds() {
+        // Mode 1 with a distributed Session should build successfully.
+        BaseStore store = mock(BaseStore.class);
+        Session distributedSession = mock(Session.class);
+        assertDoesNotThrow(
+                () ->
+                        HarnessAgent.builder()
+                                .name("agent")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .filesystem(new RemoteFilesystemSpec(store))
+                                .session(distributedSession)
                                 .build());
     }
 

@@ -19,10 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.RuntimeContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -86,7 +86,7 @@ class SessionSandboxStateStoreTest {
     }
 
     private static SandboxIsolationKey isolationKey(IsolationScope scope, String value) {
-        return SandboxIsolationKey.resolve(scope, runtimeContext(scope, value).toCore(), AGENT_ID)
+        return SandboxIsolationKey.resolve(scope, runtimeContext(scope, value), AGENT_ID)
                 .orElseThrow();
     }
 

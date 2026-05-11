@@ -59,6 +59,26 @@ public class DashScopeContentPart {
     @JsonProperty("video")
     private Object video;
 
+    /** Frames per second. The value range is [0.1, 10], and the default value is 2.0. */
+    @JsonProperty("fps")
+    private Float fps;
+
+    /** The maximum number of frames captured in the video. */
+    @JsonProperty("max_frames")
+    private Integer maxFrames;
+
+    /** Used to set the minimum pixel threshold for input image or video frames. */
+    @JsonProperty("min_pixels")
+    private Integer minPixels;
+
+    /** Used to set the maximum pixel threshold for input image or video frames. */
+    @JsonProperty("max_pixels")
+    private Integer maxPixels;
+
+    /** Used to limit the total pixels of all frames extracted from the video (single image pixels × total frames). */
+    @JsonProperty("total_pixels")
+    private Integer totalPixels;
+
     public DashScopeContentPart() {}
 
     public String getText() {
@@ -91,6 +111,46 @@ public class DashScopeContentPart {
 
     public void setVideo(Object video) {
         this.video = video;
+    }
+
+    public Float getFps() {
+        return fps;
+    }
+
+    public void setFps(Float fps) {
+        this.fps = fps;
+    }
+
+    public Integer getMaxFrames() {
+        return maxFrames;
+    }
+
+    public void setMaxFrames(Integer maxFrames) {
+        this.maxFrames = maxFrames;
+    }
+
+    public Integer getMinPixels() {
+        return minPixels;
+    }
+
+    public void setMinPixels(Integer minPixels) {
+        this.minPixels = minPixels;
+    }
+
+    public Integer getMaxPixels() {
+        return maxPixels;
+    }
+
+    public void setMaxPixels(Integer maxPixels) {
+        this.maxPixels = maxPixels;
+    }
+
+    public Integer getTotalPixels() {
+        return totalPixels;
+    }
+
+    public void setTotalPixels(Integer totalPixels) {
+        this.totalPixels = totalPixels;
     }
 
     /**
@@ -202,6 +262,31 @@ public class DashScopeContentPart {
 
         public Builder video(Object video) {
             part.setVideo(video);
+            return this;
+        }
+
+        public Builder fps(Float fps) {
+            part.setFps(fps);
+            return this;
+        }
+
+        public Builder maxFrames(Integer maxFrames) {
+            part.setMaxFrames(maxFrames);
+            return this;
+        }
+
+        public Builder minPixels(Integer minPixels) {
+            part.setMinPixels(minPixels);
+            return this;
+        }
+
+        public Builder maxPixels(Integer maxPixels) {
+            part.setMaxPixels(maxPixels);
+            return this;
+        }
+
+        public Builder totalPixels(Integer totalPixels) {
+            part.setTotalPixels(totalPixels);
             return this;
         }
 

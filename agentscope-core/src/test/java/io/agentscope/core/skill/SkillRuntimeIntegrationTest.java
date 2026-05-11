@@ -144,14 +144,17 @@ class SkillRuntimeIntegrationTest {
         PreCallEvent preCallEvent = new PreCallEvent(testAgent, messages);
         PreCallEvent result = skillHook.onEvent(preCallEvent).block();
 
-        // Step 7: Verify skill prompt was injected
+        // Step 7: Verify skill prompt was injected into systemMsg
         assertNotNull(result, "PreCallEvent should be processed");
         assertEquals(
-                2, result.getInputMessages().size(), "Should add skill prompt to input messages");
+                1,
+                result.getInputMessages().size(),
+                "inputMessages should not gain a SYSTEM entry");
+        assertNotNull(result.getSystemMessage(), "systemMsg should be set by SkillHook");
         assertEquals(
                 MsgRole.SYSTEM,
-                result.getInputMessages().get(0).getRole(),
-                "Skill prompt should be SYSTEM message");
+                result.getSystemMessage().getRole(),
+                "systemMsg should be SYSTEM role");
 
         // Step 8: Verify skill and tool group remain active
         assertTrue(skillBox.isSkillActive(skillId), "Skill should remain active");

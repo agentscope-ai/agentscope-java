@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.nio.charset.StandardCharsets;
@@ -30,6 +31,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class RemoteFilesystemSpecTest {
+
+    private static final RuntimeContext RT = RuntimeContext.empty();
 
     @TempDir Path workspace;
 
@@ -45,12 +48,14 @@ class RemoteFilesystemSpecTest {
                         .toFilesystem(workspace, "agent-a", localNs, userRef::get);
 
         fs.uploadFiles(
+                RT,
                 List.of(
                         java.util.Map.entry(
                                 "MEMORY.md", "hello".getBytes(StandardCharsets.UTF_8))));
         assertNotNull(store.get(List.of("agents", "agent-a", "users", "anon"), "/MEMORY.md"));
 
         fs.uploadFiles(
+                RT,
                 List.of(
                         java.util.Map.entry(
                                 "knowledge/notes.md", "local".getBytes(StandardCharsets.UTF_8))));
@@ -67,6 +72,7 @@ class RemoteFilesystemSpecTest {
                         .toFilesystem(workspace, "agent-a", List::of, userRef::get);
 
         fs.uploadFiles(
+                RT,
                 List.of(java.util.Map.entry("MEMORY.md", "v1".getBytes(StandardCharsets.UTF_8))));
         assertNotNull(store.get(List.of("agents", "agent-a", "users", "user-1"), "/MEMORY.md"));
     }

@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -47,6 +48,7 @@ public class FilesystemTool {
                     "Read file content with line numbers. Supports pagination via offset and"
                             + " limit.")
     public String readFile(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File path to read") String path,
             @ToolParam(
                             name = "offset",
@@ -54,7 +56,7 @@ public class FilesystemTool {
                     int offset,
             @ToolParam(name = "limit", description = "Max lines to return. Default: 0 (all lines)")
                     int limit) {
-        ReadResult r = abstractFilesystem.read(path, offset, limit);
+        ReadResult r = abstractFilesystem.read(runtimeContext, path, offset, limit);
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }
@@ -65,9 +67,10 @@ public class FilesystemTool {
             name = "write_file",
             description = "Write content to a new file, creating parent directories if needed.")
     public String writeFile(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
             @ToolParam(name = "content", description = "File content to write") String content) {
-        WriteResult r = abstractFilesystem.write(path, content);
+        WriteResult r = abstractFilesystem.write(runtimeContext, path, content);
         return r.isSuccess() ? "Written to " + r.path() : "Error: " + r.error();
     }
 
@@ -77,6 +80,7 @@ public class FilesystemTool {
                     "Perform exact string replacement in a file. The old_string must be unique"
                             + " unless replace_all is true.")
     public String editFile(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,
             @ToolParam(name = "old_string", description = "Text to find") String oldString,
             @ToolParam(name = "new_string", description = "Replacement text") String newString,
@@ -84,7 +88,8 @@ public class FilesystemTool {
                             name = "replace_all",
                             description = "Replace all occurrences (default: false)")
                     boolean replaceAll) {
-        EditResult r = abstractFilesystem.edit(path, oldString, newString, replaceAll);
+        EditResult r =
+                abstractFilesystem.edit(runtimeContext, path, oldString, newString, replaceAll);
         return r.isSuccess()
                 ? "Edited " + r.path() + " (" + r.occurrences() + " replacement(s))"
                 : "Error: " + r.error();
@@ -92,12 +97,13 @@ public class FilesystemTool {
 
     @Tool(name = "grep_files", description = "Search file contents for a literal text pattern.")
     public String grepFiles(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")
                     String pattern,
             @ToolParam(name = "path", description = "Directory or file to search") String path,
             @ToolParam(name = "glob", description = "Optional file glob filter (e.g., *.java)")
                     String glob) {
-        GrepResult r = abstractFilesystem.grep(pattern, path, glob);
+        GrepResult r = abstractFilesystem.grep(runtimeContext, pattern, path, glob);
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }
@@ -112,10 +118,11 @@ public class FilesystemTool {
 
     @Tool(name = "glob_files", description = "Find files matching a glob pattern.")
     public String globFiles(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")
                     String pattern,
             @ToolParam(name = "path", description = "Base directory to search from") String path) {
-        GlobResult r = abstractFilesystem.glob(pattern, path);
+        GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, path);
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }
@@ -130,8 +137,9 @@ public class FilesystemTool {
 
     @Tool(name = "list_files", description = "List files and directories at the given path.")
     public String listFiles(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Directory path to list") String path) {
-        LsResult r = abstractFilesystem.ls(path);
+        LsResult r = abstractFilesystem.ls(runtimeContext, path);
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }

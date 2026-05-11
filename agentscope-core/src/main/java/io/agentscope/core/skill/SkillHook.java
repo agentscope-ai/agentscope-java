@@ -18,20 +18,18 @@ package io.agentscope.core.skill;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import java.util.ArrayList;
-import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
- * Injects the skill catalog prompt into the first system message on {@link PreCallEvent}.
+ * Injects the skill catalog prompt into the unified system message on {@link PreCallEvent} via
+ * {@link PreCallEvent#appendSystemContent(String)}.
  *
  * <p>Uses priority {@link #SKILL_HOOK_PRIORITY} so that, in typical {@code HarnessAgent} wiring,
  * this hook runs after {@code SubagentsHook} (80) and before {@code WorkspaceContextHook} (900),
  * yielding append order: base prompt → subagents → skills → workspace context.
+ *
+ * <p>The skill prompt is appended to the transient system message and is never stored in
+ * the agent's persistent {@code Memory}.
  */
 public class SkillHook implements Hook {
 
@@ -52,48 +50,10 @@ public class SkillHook implements Hook {
         if (event instanceof PreCallEvent preCallEvent) {
             String skillPrompt = skillBox.getSkillPrompt();
             if (skillPrompt != null && !skillPrompt.isEmpty()) {
-                List<Msg> inputMessages = preCallEvent.getInputMessages();
-                int systemIndex = findFirstSystemMessageIndex(inputMessages);
-                if (systemIndex >= 0) {
-                    // Merge skill prompt into existing system message in-place (structural)
-                    Msg existingSystem = inputMessages.get(systemIndex);
-                    List<ContentBlock> mergedContent = new ArrayList<>(existingSystem.getContent());
-                    mergedContent.add(TextBlock.builder().text(skillPrompt).build());
-                    Msg mergedMsg =
-                            Msg.builder()
-                                    .id(existingSystem.getId())
-                                    .role(MsgRole.SYSTEM)
-                                    .name(existingSystem.getName())
-                                    .content(mergedContent)
-                                    .metadata(existingSystem.getMetadata())
-                                    .timestamp(existingSystem.getTimestamp())
-                                    .build();
-                    List<Msg> newMessages = new ArrayList<>(inputMessages);
-                    newMessages.set(systemIndex, mergedMsg);
-                    preCallEvent.setInputMessages(newMessages);
-                } else {
-                    // No existing system message, add one at the beginning
-                    List<Msg> newMessages = new ArrayList<>(inputMessages.size() + 1);
-                    newMessages.add(
-                            Msg.builder()
-                                    .role(MsgRole.SYSTEM)
-                                    .content(TextBlock.builder().text(skillPrompt).build())
-                                    .build());
-                    newMessages.addAll(inputMessages);
-                    preCallEvent.setInputMessages(newMessages);
-                }
+                preCallEvent.appendSystemContent(skillPrompt);
             }
         }
         return Mono.just(event);
-    }
-
-    private int findFirstSystemMessageIndex(List<Msg> messages) {
-        for (int i = 0; i < messages.size(); i++) {
-            if (messages.get(i).getRole() == MsgRole.SYSTEM) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     @Override

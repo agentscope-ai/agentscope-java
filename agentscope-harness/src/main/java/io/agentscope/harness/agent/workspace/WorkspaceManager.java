@@ -28,6 +28,7 @@ import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SUBAGENT_
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -77,6 +78,8 @@ import org.slf4j.LoggerFactory;
  * </pre>
  */
 public class WorkspaceManager {
+
+    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
     private static final ObjectMapper SESSION_STORE_JSON = new ObjectMapper();
@@ -177,7 +180,7 @@ public class WorkspaceManager {
         Set<String> relativePaths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            GlobResult glob = filesystem.glob("*", KNOWLEDGE_DIR);
+            GlobResult glob = filesystem.glob(DEFAULT_FS_RUNTIME, "*", KNOWLEDGE_DIR);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
@@ -252,13 +255,14 @@ public class WorkspaceManager {
             appendLocalFile(normalized, content);
             return;
         }
-        ReadResult rr = filesystem.read(normalized, 0, 0);
+        ReadResult rr = filesystem.read(DEFAULT_FS_RUNTIME, normalized, 0, 0);
         String existing = "";
         if (rr.isSuccess() && rr.fileData() != null && rr.fileData().content() != null) {
             existing = rr.fileData().content();
         }
         String merged = existing + content;
         filesystem.uploadFiles(
+                DEFAULT_FS_RUNTIME,
                 List.of(Map.entry(normalized, merged.getBytes(StandardCharsets.UTF_8))));
     }
 
@@ -337,6 +341,7 @@ public class WorkspaceManager {
             return;
         }
         filesystem.uploadFiles(
+                DEFAULT_FS_RUNTIME,
                 List.of(Map.entry(normalized, content.getBytes(StandardCharsets.UTF_8))));
     }
 
@@ -370,7 +375,7 @@ public class WorkspaceManager {
         if (filesystem == null) {
             return "";
         }
-        ReadResult r = filesystem.read(filePath, 0, 0);
+        ReadResult r = filesystem.read(DEFAULT_FS_RUNTIME, filePath, 0, 0);
         if (!r.isSuccess() || r.fileData() == null) {
             return "";
         }
@@ -441,11 +446,11 @@ public class WorkspaceManager {
         Set<String> paths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            ReadResult memMd = filesystem.read(MEMORY_MD, 0, 1);
+            ReadResult memMd = filesystem.read(DEFAULT_FS_RUNTIME, MEMORY_MD, 0, 1);
             if (memMd.isSuccess()) {
                 paths.add(MEMORY_MD);
             }
-            GlobResult glob = filesystem.glob("*.md", MEMORY_DIR);
+            GlobResult glob = filesystem.glob(DEFAULT_FS_RUNTIME, "*.md", MEMORY_DIR);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
@@ -482,7 +487,7 @@ public class WorkspaceManager {
         Set<String> paths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            GlobResult glob = filesystem.glob("*.log.jsonl", AGENTS_DIR);
+            GlobResult glob = filesystem.glob(DEFAULT_FS_RUNTIME, "*.log.jsonl", AGENTS_DIR);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {

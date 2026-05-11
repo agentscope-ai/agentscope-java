@@ -23,13 +23,11 @@ import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,13 +43,17 @@ import reactor.core.publisher.Mono;
  *   <li>The prefix is distilled into a structured summary via one LLM call.</li>
  *   <li>The agent's working {@link Memory} is replaced with
  *       {@code [summaryMsg] + preservedTail}.</li>
- *   <li>{@link PreReasoningEvent#setInputMessages} is updated so the LLM sees the
- *       compacted view: {@code systemMsgs + [summaryMsg] + preservedTail}.</li>
+ *   <li>{@link PreReasoningEvent#setInputMessages} is updated to the compacted conversation
+ *       ({@code [summaryMsg] + preservedTail}). The system message is managed separately in
+ *       {@link PreReasoningEvent#getSystemMessage()} and prepended by {@code ReActAgent}
+ *       just before {@code model.stream()}, so this hook no longer splits or re-merges
+ *       SYSTEM messages.</li>
  * </ol>
  *
- * <p>This hook runs at priority 10 — before {@link io.agentscope.harness.agent.hook.WorkspaceContextHook}
- * (priority 900): compaction runs on the conversation portion first; workspace files are merged into
- * the system message afterwards on the same {@link PreReasoningEvent} chain.
+ * <p>This hook runs at priority 10 — before
+ * {@link io.agentscope.harness.agent.hook.WorkspaceContextHook} (priority 900): compaction
+ * runs on the conversation first; the workspace context is then appended to the system message
+ * by {@code WorkspaceContextHook} on the same {@link PreReasoningEvent} chain.
  *
  * <p>{@link RuntimeContext} is bound on each call by {@link io.agentscope.core.ReActAgent}.
  */
@@ -101,17 +103,9 @@ public class CompactionHook implements Hook, RuntimeContextAware {
             return Mono.just(event);
         }
 
-        // Separate system messages (injected by WorkspaceContextHook etc.) from conversation
-        List<Msg> inputMessages = event.getInputMessages();
-        List<Msg> systemMsgs = new ArrayList<>();
-        List<Msg> conversationMsgs = new ArrayList<>();
-        for (Msg m : inputMessages) {
-            if (m.getRole() == MsgRole.SYSTEM) {
-                systemMsgs.add(m);
-            } else {
-                conversationMsgs.add(m);
-            }
-        }
+        // inputMessages contains only conversation messages — SYSTEM is managed separately
+        // via event.getSystemMessage() / event.setSystemMessage()
+        List<Msg> conversationMsgs = event.getInputMessages();
 
         String agentId = event.getAgent().getName();
         String sessionId = sessionId();
@@ -128,7 +122,10 @@ public class CompactionHook implements Hook, RuntimeContextAware {
                             }
                             List<Msg> compacted = optResult.get();
                             applyToMemory(reActAgent.getMemory(), compacted);
-                            applyToEvent(event, systemMsgs, compacted);
+                            event.setInputMessages(compacted);
+                            log.debug(
+                                    "Updated PreReasoningEvent to {} compacted messages",
+                                    compacted.size());
                             return Mono.just(event);
                         })
                 .onErrorResume(
@@ -156,25 +153,6 @@ public class CompactionHook implements Hook, RuntimeContextAware {
         } catch (Exception e) {
             log.warn("Failed to apply compacted messages to memory: {}", e.getMessage());
         }
-    }
-
-    /**
-     * Updates the event's input message list so the LLM sees the compacted view.
-     *
-     * <p>System messages are always placed at the front, followed by the compacted
-     * conversation (summary + preserved tail).
-     */
-    private static void applyToEvent(
-            PreReasoningEvent event, List<Msg> systemMsgs, List<Msg> compacted) {
-        List<Msg> rebuilt = new ArrayList<>(systemMsgs.size() + compacted.size());
-        rebuilt.addAll(systemMsgs);
-        rebuilt.addAll(compacted);
-        event.setInputMessages(rebuilt);
-        log.debug(
-                "Updated PreReasoningEvent: {} system + {} conversation = {} total messages",
-                systemMsgs.size(),
-                compacted.size(),
-                rebuilt.size());
     }
 
     // -------------------------------------------------------------------------

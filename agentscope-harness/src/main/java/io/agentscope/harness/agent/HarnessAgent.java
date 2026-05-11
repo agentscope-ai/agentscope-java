@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -27,6 +28,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.skill.AgentSkill;
@@ -111,9 +113,9 @@ import reactor.core.publisher.Mono;
  * <pre>{@code
  * HarnessAgent agent = HarnessAgent.builder()
  *     .name("MyAgent")
- *     .model(model)
+ *     .model(model) // or .model("openai:gpt-5.5") via {@link ModelRegistry}
  *     .sysPrompt("You are a helpful assistant.")
- *     .workspace(Path.of("/path/to/workspace"))
+ *     .workspace("/path/to/workspace")
  *     .build();
  *
  * Msg response = agent.call(
@@ -176,10 +178,18 @@ public class HarnessAgent implements Agent, StateModule {
         return delegate.stream(msgs, options, coreForDelegate());
     }
 
-    private io.agentscope.core.agent.RuntimeContext coreForDelegate() {
-        return runtimeContext != null
-                ? runtimeContext.toCore()
-                : io.agentscope.core.agent.RuntimeContext.empty();
+    /** Streams with default {@link StreamOptions} and a runtime context. */
+    public Flux<Event> stream(List<Msg> msgs, RuntimeContext ctx) {
+        return stream(msgs, StreamOptions.defaults(), ctx);
+    }
+
+    /** Streams a single message with default {@link StreamOptions} and a runtime context. */
+    public Flux<Event> stream(Msg msg, RuntimeContext ctx) {
+        return stream(List.of(msg), ctx);
+    }
+
+    private RuntimeContext coreForDelegate() {
+        return runtimeContext != null ? runtimeContext : RuntimeContext.empty();
     }
 
     private Mono<Msg> recoverFromOverflow(List<Msg> msgs) {
@@ -232,7 +242,7 @@ public class HarnessAgent implements Agent, StateModule {
 
     private io.agentscope.core.agent.RuntimeContext coreRuntimeForRecovery() {
         return runtimeContext != null
-                ? runtimeContext.toCore()
+                ? runtimeContext
                 : io.agentscope.core.agent.RuntimeContext.empty();
     }
 
@@ -296,11 +306,13 @@ public class HarnessAgent implements Agent, StateModule {
         }
         // Inject default sandbox context if the call doesn't provide one
         SandboxContext sandboxCtx =
-                ctx.getSandboxContext() != null ? ctx.getSandboxContext() : defaultSandboxContext;
+                ctx.get(SandboxContext.class) != null
+                        ? ctx.get(SandboxContext.class)
+                        : defaultSandboxContext;
 
         if (session == ctx.getSession()
                 && sessionKey == ctx.getSessionKey()
-                && sandboxCtx == ctx.getSandboxContext()) {
+                && sandboxCtx == ctx.get(SandboxContext.class)) {
             return ctx;
         }
         return RuntimeContext.builder()
@@ -309,7 +321,7 @@ public class HarnessAgent implements Agent, StateModule {
                 .session(session)
                 .sessionKey(sessionKey)
                 .putAll(ctx.getExtra())
-                .sandboxContext(sandboxCtx)
+                .put(SandboxContext.class, sandboxCtx)
                 .build();
     }
 
@@ -440,7 +452,6 @@ public class HarnessAgent implements Agent, StateModule {
         private String environmentMemory;
         private AbstractFilesystem abstractFilesystem;
         private Session session;
-        private SandboxStateStore sandboxStateStore;
         private SandboxDistributedOptions sandboxDistributedOptions;
 
         /**
@@ -503,6 +514,23 @@ public class HarnessAgent implements Agent, StateModule {
             return this;
         }
 
+        /**
+         * Configures the model from a string id resolved via {@link ModelRegistry}: a named
+         * registration ({@link ModelRegistry#register(String, Model)}) or a built-in pattern such
+         * as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code anthropic:claude-sonnet-4-5},
+         * {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}. API keys for auto-created models
+         * come from standard environment variables ({@code OPENAI_API_KEY}, {@code DASHSCOPE_API_KEY},
+         * etc.).
+         *
+         * @param modelId registry id or {@code provider:model} string
+         * @return this builder
+         * @throws IllegalArgumentException if the id cannot be resolved
+         */
+        public Builder model(String modelId) {
+            this.model = ModelRegistry.resolve(modelId);
+            return this;
+        }
+
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
             return this;
@@ -554,12 +582,17 @@ public class HarnessAgent implements Agent, StateModule {
             return this;
         }
 
-        /** Sets the workspace directory. Defaults to {@code ${cwd}/.agentscope/workspace}. */
+        /**
+         * Sets the workspace directory. Pass {@code null} to use the default
+         * {@code ${cwd}/.agentscope/workspace}.
+         *
+         * @see #workspace(String)
+         */
         public Builder workspace(Path workspace) {
             this.workspace = workspace;
             return this;
         }
-
+      
         /**
          * Sets the project workspace directory exposed to the built-in file tools.
          *
@@ -574,6 +607,29 @@ public class HarnessAgent implements Agent, StateModule {
          */
         public Builder projectWorkspace(Path projectWorkspace) {
             this.projectWorkspace = projectWorkspace;
+            return this;
+        }
+
+        /**
+         * Sets the workspace directory from a filesystem path string (resolved with
+         * {@link Path#of(String, String...)}). Equivalent to {@link #workspace(Path)} with
+         * {@code Path.of(path.strip())}.
+         *
+         * <p>Pass {@code null} for the same default as {@link #workspace(Path)} with a {@code null}
+         * argument. Blank or whitespace-only strings are rejected.
+         *
+         * @param path absolute or relative path string, or {@code null} for the default workspace
+         */
+        public Builder workspace(String path) {
+            if (path == null) {
+                this.workspace = null;
+                return this;
+            }
+            String trimmed = path.strip();
+            if (trimmed.isEmpty()) {
+                throw new IllegalArgumentException("workspace path must not be blank");
+            }
+            this.workspace = Path.of(trimmed);
             return this;
         }
 
@@ -680,26 +736,18 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
-         * Overrides the store used to persist/resume sandbox session state.
-         *
-         * <p>When not set, sandbox mode uses a {@link SessionSandboxStateStore} backed by the
-         * configured {@link #session(Session)} (or the default {@link WorkspaceSession}).
-         */
-        public Builder sandboxStateStore(SandboxStateStore sandboxStateStore) {
-            this.sandboxStateStore = sandboxStateStore;
-            return this;
-        }
-
-        /**
          * Enables high-level distributed sandbox configuration.
          *
-         * <p>This helper bundles three distributed concerns:
+         * <p>Bundles distributed concerns that pair with {@link #filesystem(SandboxFilesystemSpec)}:
+         *
          * <ul>
-         *   <li>distributed {@link Session} for sandbox state slots</li>
-         *   <li>remote/non-noop {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}
-         *       for workspace archive persistence</li>
-         *   <li>{@link IsolationScope} for sharing granularity</li>
+         *   <li>distributed {@link Session} for sandbox state slots
+         *   <li>optional {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}
+         *       override for workspace archive persistence
+         *   <li>{@code requireDistributed} gate for fail-fast validation
          * </ul>
+         *
+         * <p>Configure {@link IsolationScope} on the {@code SandboxFilesystemSpec} only.
          *
          * <p>Requires sandbox mode (i.e. {@link #filesystem(SandboxFilesystemSpec)}).
          */
@@ -768,7 +816,9 @@ public class HarnessAgent implements Agent, StateModule {
 
         /**
          * Sets a resolver for model name strings to {@link Model} instances. Used when spec-based
-         * subagents specify a {@code model} override (e.g. {@code "openai:gpt-4o-mini"}).
+         * subagents specify a {@code model} override (e.g. {@code "openai:gpt-4o-mini"}). When unset,
+         * {@link ModelRegistry#resolve(String)} is used so subagent specs can use the same string ids
+         * as {@link #model(String)}.
          */
         public Builder modelResolver(Function<String, Model> resolver) {
             this.modelResolver = resolver;
@@ -869,6 +919,16 @@ public class HarnessAgent implements Agent, StateModule {
                 effectiveSession = new WorkspaceSession(resolvedWorkspace, resolvedAgentId);
             }
 
+            // Mode 1 (RemoteFilesystemSpec) is inherently distributed: automatically require a
+            // distributed Session so that conversation state is also shared across replicas.
+            if (remoteFilesystemSpec != null && effectiveSession instanceof WorkspaceSession) {
+                throw new IllegalStateException(
+                        "filesystem(RemoteFilesystemSpec) is designed for distributed /"
+                                + " multi-replica deployments, but the effective Session is a local"
+                                + " WorkspaceSession. Configure a distributed Session backend (for"
+                                + " example RedisSession) via .session(...).");
+            }
+
             AtomicReference<String> userIdRef = new AtomicReference<>();
             AtomicReference<String> sessionIdRef = new AtomicReference<>();
             AbstractFilesystem filesystem =
@@ -881,29 +941,27 @@ public class HarnessAgent implements Agent, StateModule {
             SandboxContext defaultSandboxContext = null;
             SandboxBackedFilesystem capturedSandboxFs = null;
             if (sandboxFilesystemSpec != null) {
-                if (sandboxDistributedOptions != null) {
-                    if (sandboxDistributedOptions.getIsolationScope() != null) {
-                        sandboxFilesystemSpec.isolationScope(
-                                sandboxDistributedOptions.getIsolationScope());
-                    }
-                    if (sandboxDistributedOptions.getSnapshotSpec() != null) {
-                        sandboxFilesystemSpec.snapshotSpec(
-                                sandboxDistributedOptions.getSnapshotSpec());
-                    }
+                if (sandboxDistributedOptions != null
+                        && sandboxDistributedOptions.getSnapshotSpec() != null) {
+                    sandboxFilesystemSpec.snapshotSpec(sandboxDistributedOptions.getSnapshotSpec());
                 }
                 capturedSandboxFs = new SandboxBackedFilesystem();
                 capturedSandboxFs.configureNamespace(buildDynamicNamespaceFactory(userIdRef));
                 filesystem = capturedSandboxFs;
 
                 defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
-                if (sandboxDistributedOptions != null
-                        && sandboxDistributedOptions.isRequireDistributed()) {
+                // Mode 2 (SandboxFilesystemSpec) always validates distributed prerequisites unless
+                // the caller explicitly opts out via sandboxDistributed(requireDistributed=false).
+                boolean skipDistributedValidation =
+                        sandboxDistributedOptions != null
+                                && !sandboxDistributedOptions.isRequireDistributed();
+                if (!skipDistributedValidation) {
                     validateDistributedSandboxConfig(effectiveSession, defaultSandboxContext);
                 }
 
                 SandboxStateStore stateStore =
-                        sandboxStateStore != null
-                                ? sandboxStateStore
+                        sandboxFilesystemSpec.getSandboxStateStore() != null
+                                ? sandboxFilesystemSpec.getSandboxStateStore()
                                 : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
                 SandboxManager sandboxManager =
                         new SandboxManager(
@@ -1122,19 +1180,27 @@ public class HarnessAgent implements Agent, StateModule {
 
         private void validateDistributedSandboxConfig(
                 Session effectiveSession, SandboxContext sandboxContext) {
-            if (sandboxStateStore == null && effectiveSession instanceof WorkspaceSession) {
+            if (sandboxFilesystemSpec.getSandboxStateStore() == null
+                    && effectiveSession instanceof WorkspaceSession) {
                 throw new IllegalStateException(
-                        "sandboxDistributed(requireDistributed=true) requires a distributed"
-                                + " Session backend (for example RedisSession)."
-                                + " Current effective session is WorkspaceSession.");
+                        "filesystem(SandboxFilesystemSpec) requires a distributed Session backend"
+                                + " (for example RedisSession) to persist and restore sandbox"
+                                + " state across distributed instances."
+                                + " Configure one via .session(...)."
+                                + " For single-node use, opt out via"
+                                + " .sandboxDistributed(SandboxDistributedOptions.builder()"
+                                + ".requireDistributed(false).build()).");
             }
             if (sandboxContext == null
                     || sandboxContext.getSnapshotSpec() == null
                     || sandboxContext.getSnapshotSpec() instanceof NoopSnapshotSpec) {
                 throw new IllegalStateException(
-                        "sandboxDistributed(requireDistributed=true) requires a non-noop"
-                                + " snapshotSpec to restore workspace archives across"
-                                + " distributed instances.");
+                        "filesystem(SandboxFilesystemSpec) requires a non-noop snapshotSpec to"
+                                + " restore workspace archives across distributed instances."
+                                + " Configure one via SandboxFilesystemSpec.snapshotSpec(...)."
+                                + " For single-node use, opt out via"
+                                + " .sandboxDistributed(SandboxDistributedOptions.builder()"
+                                + ".requireDistributed(false).build()).");
             }
         }
 
@@ -1222,8 +1288,8 @@ public class HarnessAgent implements Agent, StateModule {
         /**
          * Builds a factory for a spec-based subagent. The resulting HarnessAgent is fully
          * independent from the main agent — it uses the spec's own system prompt, workspace,
-         * and configuration. Supports per-subagent model override when a {@code modelResolver}
-         * is configured.
+         * and configuration. Supports per-subagent {@code model} override via an explicit {@code
+         * modelResolver}, or by default {@link ModelRegistry#resolve(String)}.
          */
         private SubagentFactory buildSpecFactory(SubagentSpec spec, Path defaultWorkspace) {
             final Model capturedModel = this.model;
@@ -1237,26 +1303,30 @@ public class HarnessAgent implements Agent, StateModule {
                                 ? Path.of(spec.getWorkspace())
                                 : defaultWorkspace;
 
+                Function<String, Model> effectiveResolver =
+                        capturedResolver != null ? capturedResolver : ModelRegistry::resolve;
+
                 Model effectiveModel = capturedModel;
-                if (spec.getModel() != null
-                        && !spec.getModel().isBlank()
-                        && capturedResolver != null) {
-                    try {
-                        Model resolved = capturedResolver.apply(spec.getModel());
-                        if (resolved != null) {
-                            effectiveModel = resolved;
-                            log.debug(
-                                    "Subagent '{}' using overridden model: {}",
+                if (spec.getModel() != null && !spec.getModel().isBlank()) {
+                    String specModel = spec.getModel().trim();
+                    if (ModelRegistry.canResolve(specModel) || capturedResolver != null) {
+                        try {
+                            Model resolved = effectiveResolver.apply(specModel);
+                            if (resolved != null) {
+                                effectiveModel = resolved;
+                                log.debug(
+                                        "Subagent '{}' using overridden model: {}",
+                                        spec.getName(),
+                                        spec.getModel());
+                            }
+                        } catch (Exception e) {
+                            log.warn(
+                                    "Failed to resolve model '{}' for subagent '{}', falling back"
+                                            + " to parent model: {}",
+                                    spec.getModel(),
                                     spec.getName(),
-                                    spec.getModel());
+                                    e.getMessage());
                         }
-                    } catch (Exception e) {
-                        log.warn(
-                                "Failed to resolve model '{}' for subagent '{}', falling back to"
-                                        + " parent model: {}",
-                                spec.getModel(),
-                                spec.getName(),
-                                e.getMessage());
                     }
                 }
 

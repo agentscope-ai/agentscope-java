@@ -18,12 +18,8 @@ package io.agentscope.harness.agent.hook;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.RuntimeContextAware;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -34,11 +30,15 @@ import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
- * A side-by-side variant of {@link WorkspaceContextHook} for A/B testing prompt layout.
+ * Injects workspace context (session info, AGENTS.md, MEMORY.md, knowledge) into the unified
+ * system message on {@link PreCallEvent}.
  *
- * <p>It keeps the same runtime/session/token-budget behavior as the current hook, but renders
- * workspace files using XML-style {@code <loaded_context>} blocks to compare against markdown
- * sectioning.
+ * <p>Workspace content is added via {@link PreCallEvent#appendSystemContent}.
+ * Because this hook fires only on {@link PreCallEvent} (once per {@code call()}), there
+ * is no risk of accumulation across reasoning iterations.
+ *
+ * <p>Runs at priority 900 — after all other pre-call hooks so that workspace context is
+ * appended after skill and subagent guidance.
  */
 public class WorkspaceContextHook implements Hook, RuntimeContextAware {
 
@@ -125,8 +125,8 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PreReasoningEvent preReasoning) {
-            injectWorkspaceContext(preReasoning);
+        if (event instanceof PreCallEvent preCallEvent) {
+            injectWorkspaceContext(preCallEvent);
         }
         return Mono.just(event);
     }
@@ -136,7 +136,7 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
         return 900;
     }
 
-    private void injectWorkspaceContext(PreReasoningEvent event) {
+    private void injectWorkspaceContext(PreCallEvent event) {
         String agentsContent = workspaceManager.readAgentsMd().strip();
         String memoryContent = workspaceManager.readMemoryMd().strip();
         String knowledgeContent = workspaceManager.readKnowledgeMd().strip();
@@ -163,32 +163,7 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
                         agentsContent, memoryContent, knowledgeBlock, additionalBlock);
         String section = buildWorkspaceSection(sessionContext, guidance, loadedContext);
 
-        List<Msg> msgs = new ArrayList<>(event.getInputMessages());
-        int systemIndex = findFirstSystemMessageIndex(msgs);
-        if (systemIndex >= 0) {
-            Msg existing = msgs.get(systemIndex);
-            List<ContentBlock> mergedContent = new ArrayList<>(existing.getContent());
-            mergedContent.add(TextBlock.builder().text(section).build());
-            Msg merged =
-                    Msg.builder()
-                            .id(existing.getId())
-                            .role(MsgRole.SYSTEM)
-                            .name(existing.getName())
-                            .content(mergedContent)
-                            .metadata(existing.getMetadata())
-                            .timestamp(existing.getTimestamp())
-                            .build();
-            msgs.set(systemIndex, merged);
-        } else {
-            msgs.add(
-                    0,
-                    Msg.builder()
-                            .role(MsgRole.SYSTEM)
-                            .name("workspace_context")
-                            .content(TextBlock.builder().text(section).build())
-                            .build());
-        }
-        event.setInputMessages(msgs);
+        event.appendSystemContent(section);
     }
 
     private String buildWorkspaceSection(
@@ -227,15 +202,6 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
             parts.add(environmentMemory);
         }
         return parts.isEmpty() ? "" : String.join("\n", parts);
-    }
-
-    private static int findFirstSystemMessageIndex(List<Msg> messages) {
-        for (int i = 0; i < messages.size(); i++) {
-            if (messages.get(i).getRole() == MsgRole.SYSTEM) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     /**

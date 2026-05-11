@@ -161,4 +161,3 @@ mvn -pl agentscope-examples/harness-example exec:java \
 - [子 Agent（Subagent）](./subagent.md) — 子 agent 规格与编排
 - [工具（Tool）](./tool.md) — 内置工具参考
 - [会话（Session）](./session.md) — 会话持久化与状态恢复
-- [Roadmap](./roadmap.md) — 已识别的待改进项

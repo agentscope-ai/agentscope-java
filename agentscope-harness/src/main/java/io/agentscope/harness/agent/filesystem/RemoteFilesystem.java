@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
@@ -115,7 +116,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public LsResult ls(String path) {
+    public LsResult ls(RuntimeContext runtimeContext, String path) {
         List<StoreItem> items = searchAllItems();
         List<FileInfo> infos = new ArrayList<>();
         Set<String> subdirs = new LinkedHashSet<>();
@@ -154,7 +155,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public ReadResult read(String filePath, int offset, int limit) {
+    public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
         StoreItem item = store.get(getNamespace(), filePath);
         if (item == null) {
             return ReadResult.fail("File '" + filePath + "' not found");
@@ -200,7 +201,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public WriteResult write(String filePath, String content) {
+    public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         List<String> ns = getNamespace();
         StoreItem existing = store.get(ns, filePath);
         if (existing != null) {
@@ -218,7 +219,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public EditResult edit(
-            String filePath, String oldString, String newString, boolean replaceAll) {
+            RuntimeContext runtimeContext,
+            String filePath,
+            String oldString,
+            String newString,
+            boolean replaceAll) {
         List<String> ns = getNamespace();
         StoreItem item = store.get(ns, filePath);
         if (item == null) {
@@ -247,7 +252,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public GrepResult grep(String pattern, String path, String glob) {
+    public GrepResult grep(
+            RuntimeContext runtimeContext, String pattern, String path, String glob) {
         List<StoreItem> items = searchAllItems();
         String normalizedPath = normalizePath(path);
 
@@ -288,7 +294,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public GlobResult glob(String pattern, String path) {
+    public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
         List<StoreItem> items = searchAllItems();
         String normalizedPath = normalizePath(path);
         String effectivePattern = pattern.startsWith("/") ? pattern.substring(1) : pattern;
@@ -328,7 +334,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public List<FileUploadResponse> uploadFiles(List<Map.Entry<String, byte[]>> files) {
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
         List<String> ns = getNamespace();
         List<FileUploadResponse> responses = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : files) {
@@ -353,7 +360,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public List<FileDownloadResponse> downloadFiles(List<String> paths) {
+    public List<FileDownloadResponse> downloadFiles(
+            RuntimeContext runtimeContext, List<String> paths) {
         List<String> ns = getNamespace();
         List<FileDownloadResponse> responses = new ArrayList<>();
         for (String filePath : paths) {
@@ -381,7 +389,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public WriteResult delete(String path) {
+    public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
         List<String> ns = getNamespace();
         List<StoreItem> items = searchAllItems();
@@ -398,7 +406,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public WriteResult move(String fromPath, String toPath) {
+    public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
         AbstractFilesystem.validatePath(fromPath);
         AbstractFilesystem.validatePath(toPath);
         List<String> ns = getNamespace();
@@ -422,7 +430,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public boolean exists(String path) {
+    public boolean exists(RuntimeContext runtimeContext, String path) {
         if (path == null || path.isBlank()) {
             return false;
         }

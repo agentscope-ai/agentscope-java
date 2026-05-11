@@ -36,7 +36,7 @@ public class RedisRemoteSnapshotClient implements RemoteSnapshotClient {
      *
      * @param jedis initialized jedis client
      * @param keyPrefix redis key prefix (optional)
-     * @param ttlSeconds optional TTL in seconds (null/<=0 means no TTL)
+     * @param ttlSeconds optional TTL in seconds (null or negative means no TTL)
      */
     public RedisRemoteSnapshotClient(UnifiedJedis jedis, String keyPrefix, Integer ttlSeconds) {
         this.jedis = Objects.requireNonNull(jedis, "jedis must not be null");

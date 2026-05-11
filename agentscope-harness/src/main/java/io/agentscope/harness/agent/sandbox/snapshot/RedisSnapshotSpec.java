@@ -27,7 +27,7 @@ public class RedisSnapshotSpec extends RemoteSnapshotSpec {
      *
      * @param jedis initialized jedis client
      * @param keyPrefix redis key prefix (optional)
-     * @param ttlSeconds optional TTL in seconds (null/<=0 means no TTL)
+     * @param ttlSeconds optional TTL in seconds (null or negative means no TTL)
      */
     public RedisSnapshotSpec(UnifiedJedis jedis, String keyPrefix, Integer ttlSeconds) {
         super(new RedisRemoteSnapshotClient(jedis, keyPrefix, ttlSeconds));

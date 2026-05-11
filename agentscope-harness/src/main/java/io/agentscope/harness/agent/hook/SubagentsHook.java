@@ -18,10 +18,6 @@ package io.agentscope.harness.agent.hook;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
@@ -29,7 +25,6 @@ import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,10 +43,11 @@ import reactor.core.publisher.Mono;
  *
  * <ol>
  *   <li>Registers the subagent tool and {@link TaskTool} as agent tools
- *   <li>Injects rich subagent usage guidance into the leading system message at
- *       {@link PreReasoningEvent} time. The injection is per-iteration only — it never enters
- *       the persistent {@code Memory} / {@code Session}, so SYSTEM context cannot accumulate
- *       across calls.
+ *   <li>Injects rich subagent usage guidance into the unified system message at
+ *       {@link PreReasoningEvent} time via {@link PreReasoningEvent#appendSystemContent}.
+ *       Because each {@link PreReasoningEvent} starts from a fresh copy of the frozen base
+ *       system message, calling {@code appendSystemContent} on every iteration is safe —
+ *       content never accumulates across iterations.
  * </ol>
  */
 public class SubagentsHook implements Hook {
@@ -205,41 +201,7 @@ public class SubagentsHook implements Hook {
         String section =
                 String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName, agentList);
 
-        List<Msg> msgs = new ArrayList<>(event.getInputMessages());
-        int systemIndex = findFirstSystemMessageIndex(msgs);
-        if (systemIndex >= 0) {
-            Msg existing = msgs.get(systemIndex);
-            List<ContentBlock> mergedContent = new ArrayList<>(existing.getContent());
-            mergedContent.add(TextBlock.builder().text(section).build());
-            Msg merged =
-                    Msg.builder()
-                            .id(existing.getId())
-                            .role(MsgRole.SYSTEM)
-                            .name(existing.getName())
-                            .content(mergedContent)
-                            .metadata(existing.getMetadata())
-                            .timestamp(existing.getTimestamp())
-                            .build();
-            msgs.set(systemIndex, merged);
-        } else {
-            msgs.add(
-                    0,
-                    Msg.builder()
-                            .role(MsgRole.SYSTEM)
-                            .name("subagent_context")
-                            .content(TextBlock.builder().text(section).build())
-                            .build());
-        }
-        event.setInputMessages(msgs);
-    }
-
-    private static int findFirstSystemMessageIndex(List<Msg> messages) {
-        for (int i = 0; i < messages.size(); i++) {
-            if (messages.get(i).getRole() == MsgRole.SYSTEM) {
-                return i;
-            }
-        }
-        return -1;
+        event.appendSystemContent(section);
     }
 
     private static Map<String, SubagentFactory> buildFactories(List<SubagentEntry> entries) {

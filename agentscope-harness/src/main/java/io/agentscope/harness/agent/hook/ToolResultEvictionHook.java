@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.hook;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
@@ -64,6 +65,8 @@ import reactor.core.publisher.Mono;
  */
 public class ToolResultEvictionHook implements Hook {
 
+    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
+
     private static final Logger log = LoggerFactory.getLogger(ToolResultEvictionHook.class);
 
     private final AbstractFilesystem filesystem;
@@ -108,7 +111,7 @@ public class ToolResultEvictionHook implements Hook {
         String evictionPath = buildEvictionPath(agentName, toolCallId);
 
         try {
-            WriteResult writeResult = filesystem.write(evictionPath, fullText);
+            WriteResult writeResult = filesystem.write(DEFAULT_FS_RUNTIME, evictionPath, fullText);
             if (!writeResult.isSuccess()) {
                 log.warn(
                         "[{}] Failed to evict tool result [tool={}, id={}]: {}",

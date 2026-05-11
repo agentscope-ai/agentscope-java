@@ -210,6 +210,9 @@ public class MemoryFlushManager {
                             workspaceManager.getWorkspace(),
                             workspaceManager.getFilesystem());
             tree.load();
+            // Sync from remote before appending so that entries written by a previous replica
+            // (cross-machine handoff) are included in the merged file pushed to remote.
+            tree.syncFromRemote();
 
             String lastId = null;
             for (Msg msg : messages) {
