@@ -27,13 +27,19 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.Session;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
+import io.agentscope.harness.agent.sandbox.filesystem.DockerFilesystemSpec;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
@@ -217,6 +223,52 @@ class HarnessAgentTest {
                 store.get(List.of("agents", "agent-a", "users", "_default"), "/MEMORY.md") != null);
     }
 
+    @Test
+    void sandboxFilesystemMode_fileToolsUseSandboxBackendByDefault() throws Exception {
+        Files.createDirectories(workspace);
+        Path localTarget = workspace.resolve("should-not-be-local.txt");
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new DockerFilesystemSpec())
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
+                        .build();
+        Map<String, Object> writeInput =
+                Map.of("path", "/should-not-be-local.txt", "content", "sandbox-only");
+
+        ToolResultBlock result =
+                agent.getDelegate()
+                        .getToolkit()
+                        .callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                ToolUseBlock.builder()
+                                                        .id("call-write")
+                                                        .name("write_file")
+                                                        .input(writeInput)
+                                                        .content(
+                                                                JsonUtils.getJsonCodec()
+                                                                        .toJson(writeInput))
+                                                        .build())
+                                        .input(writeInput)
+                                        .build())
+                        .block();
+
+        String text = joinToolResultText(result);
+        assertTrue(
+                text.contains("No active sandbox") || text.contains("sandbox filesystem"),
+                "file tool should use the sandbox proxy outside a sandbox call context: " + text);
+        assertTrue(
+                Files.notExists(localTarget),
+                "sandbox file tool must not fall back to the local workspace");
+    }
+
     private static Msg userText(String text) {
         return Msg.builder()
                 .role(MsgRole.USER)
@@ -226,6 +278,17 @@ class HarnessAgentTest {
 
     private static String joinAllText(List<Msg> msgs) {
         return msgs.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
+    }
+
+    private static String joinToolResultText(ToolResultBlock result) {
+        if (result == null) {
+            return "";
+        }
+        return result.getOutput().stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .collect(Collectors.joining("\n"));
     }
 
     private static Model stubModel(String assistantText) {

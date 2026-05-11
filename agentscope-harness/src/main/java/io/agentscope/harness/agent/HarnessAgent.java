@@ -592,7 +592,7 @@ public class HarnessAgent implements Agent, StateModule {
             this.workspace = workspace;
             return this;
         }
-      
+
         /**
          * Sets the project workspace directory exposed to the built-in file tools.
          *
@@ -933,8 +933,6 @@ public class HarnessAgent implements Agent, StateModule {
             AtomicReference<String> sessionIdRef = new AtomicReference<>();
             AbstractFilesystem filesystem =
                     resolveFilesystem(resolvedWorkspace, resolvedAgentId, userIdRef, sessionIdRef);
-            AbstractFilesystem toolFilesystem =
-                    resolveProjectFilesystem(projectWorkspace, filesystem);
 
             // ---- Sandbox integration ----
             SandboxLifecycleHook sandboxLifecycleHook = null;
@@ -968,6 +966,8 @@ public class HarnessAgent implements Agent, StateModule {
                                 defaultSandboxContext.getClient(), stateStore, resolvedAgentId);
                 sandboxLifecycleHook = new SandboxLifecycleHook(sandboxManager, capturedSandboxFs);
             }
+            AbstractFilesystem toolFilesystem =
+                    resolveProjectFilesystem(projectWorkspace, filesystem);
             WorkspaceManager wsManager = new WorkspaceManager(resolvedWorkspace, filesystem);
             wsManager.validate();
 
@@ -1250,6 +1250,7 @@ public class HarnessAgent implements Agent, StateModule {
             final List<Hook> capturedHooks = List.copyOf(this.hooks);
             final AgentSkillRepository capturedSkillRepo = this.skillRepository;
             final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
+            final Path capturedProjectWorkspace = this.projectWorkspace;
 
             return () -> {
                 Builder sub =
@@ -1266,6 +1267,9 @@ public class HarnessAgent implements Agent, StateModule {
 
                 if (capturedSkillRepo != null) {
                     sub.skillRepository(capturedSkillRepo);
+                }
+                if (capturedProjectWorkspace != null) {
+                    sub.projectWorkspace(capturedProjectWorkspace);
                 }
                 if (capturedBackend != null) {
                     sub.abstractFilesystem(capturedBackend);
