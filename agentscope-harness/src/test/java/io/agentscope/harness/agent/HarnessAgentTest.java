@@ -23,6 +23,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -269,6 +270,46 @@ class HarnessAgentTest {
                 "sandbox file tool must not fall back to the local workspace");
     }
 
+    @Test
+    void generalPurposeSubagent_inheritsProjectWorkspaceForFileTools() throws Exception {
+        Files.createDirectories(workspace);
+        Path projectWorkspace = Files.createTempDirectory("agentscope-project-workspace");
+        Path projectTarget = projectWorkspace.resolve("from-subagent.txt");
+        Path stateWorkspaceTarget = workspace.resolve("from-subagent.txt");
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .projectWorkspace(projectWorkspace)
+                        .buildSubagentEntries(workspace);
+
+        Agent createdAgent =
+                entries.stream()
+                        .filter(entry -> entry.name().equals("general-purpose"))
+                        .findFirst()
+                        .orElseThrow()
+                        .factory()
+                        .create();
+        assertTrue(createdAgent instanceof HarnessAgent);
+        HarnessAgent subagent = (HarnessAgent) createdAgent;
+
+        Map<String, Object> writeInput =
+                Map.of("path", "/from-subagent.txt", "content", "subagent-project");
+        ToolResultBlock result = callTool(subagent, "write_file", writeInput);
+
+        assertTrue(
+                joinToolResultText(result).contains("Written to /from-subagent.txt"),
+                "subagent file tool should write successfully: " + joinToolResultText(result));
+        assertTrue(
+                Files.readString(projectTarget).contains("subagent-project"),
+                "subagent file tool should use inherited projectWorkspace");
+        assertTrue(
+                Files.notExists(stateWorkspaceTarget),
+                "subagent file tool must not write into the Harness state workspace");
+    }
+
     private static Msg userText(String text) {
         return Msg.builder()
                 .role(MsgRole.USER)
@@ -278,6 +319,24 @@ class HarnessAgentTest {
 
     private static String joinAllText(List<Msg> msgs) {
         return msgs.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
+    }
+
+    private static ToolResultBlock callTool(
+            HarnessAgent agent, String toolName, Map<String, Object> input) {
+        return agent.getDelegate()
+                .getToolkit()
+                .callTool(
+                        ToolCallParam.builder()
+                                .toolUseBlock(
+                                        ToolUseBlock.builder()
+                                                .id("call-" + toolName)
+                                                .name(toolName)
+                                                .input(input)
+                                                .content(JsonUtils.getJsonCodec().toJson(input))
+                                                .build())
+                                .input(input)
+                                .build())
+                .block();
     }
 
     private static String joinToolResultText(ToolResultBlock result) {
