@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="模型" href="model.html">
+    <meta property="article:modified_time" content="2026-05-11T02:14:10+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="模型" href="model.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/tool.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -467,6 +467,25 @@
 <div><p><strong>注意</strong>：<code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> 的 <code class="docutils literal notranslate"><span class="pre">name</span></code> 属性必须指定，因为 Java 默认不保留参数名。</p>
 </div></blockquote>
 </section>
+<section id="strict-mode">
+<h3>严格模式（Strict Mode）<a class="headerlink" href="#strict-mode" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">strict</span></code> 用于控制支持严格 Schema 检查的模型提供商是否应严格遵循工具参数 Schema。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;get_weather&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;获取天气&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">strict</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
+<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;city&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;城市名称&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">city</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; 的天气：晴天，25°C&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>配置了严格模式后，AgentScope 在以下所有路径中保留并传播严格模式配置：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&#64;Tool(...,</span> <span class="pre">strict</span> <span class="pre">=</span> <span class="pre">true)</span></code> 注解驱动的工具注册</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AgentTool</span></code> 接口实现（通过 <code class="docutils literal notranslate"><span class="pre">getStrict()</span></code> 方法）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Toolkit#registerSchema(...)</span></code> 和 <code class="docutils literal notranslate"><span class="pre">Toolkit#registerSchemas(...)</span></code> 方式</p></li>
+</ul>
+</section>
 <section id="id5">
 <h3>注册和使用<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
@@ -757,6 +776,9 @@
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Boolean</span><span class="w"> </span><span class="nf">getStrict</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">ToolResultBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">callAsync</span><span class="p">(</span><span class="n">ToolCallParam</span><span class="w"> </span><span class="n">param</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">param</span><span class="p">.</span><span class="na">getInput</span><span class="p">().</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">);</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;结果：&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">query</span><span class="p">));</span>
@@ -867,6 +889,7 @@
 <span class="w">        </span><span class="s">&quot;properties&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sql&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;string&quot;</span><span class="p">)),</span>
 <span class="w">        </span><span class="s">&quot;required&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sql&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">strict</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerSchema</span><span class="p">(</span><span class="n">schema</span><span class="p">);</span>
@@ -943,7 +966,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-04-13</div>
+              Last updated on 2026-05-11</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -982,6 +1005,7 @@
 <li><a class="reference internal" href="#id2">核心特性</a></li>
 <li><a class="reference internal" href="#id3">快速开始</a><ul>
 <li><a class="reference internal" href="#id4">定义工具</a></li>
+<li><a class="reference internal" href="#strict-mode">严格模式（Strict Mode）</a></li>
 <li><a class="reference internal" href="#id5">注册和使用</a></li>
 </ul>
 </li>
