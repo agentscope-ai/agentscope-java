@@ -176,6 +176,63 @@ class AguiModelTest {
 
             assertNull(msg.getContent());
         }
+
+        @Test
+        void testMultimodalContentDetection() {
+            List<Map<String, Object>> parts = List.of(Map.of("type", "text", "text", "Hello"));
+            AguiMessage msg = new AguiMessage("msg-1", "user", parts, null, null);
+
+            assertTrue(msg.isMultimodalContent());
+            assertNull(msg.getContent()); // String content returns null for multimodal
+            assertNotNull(msg.getMultimodalContent());
+            assertEquals(1, msg.getMultimodalContent().size());
+            assertEquals(parts, msg.getContentObject());
+        }
+
+        @Test
+        void testSimpleTextContentIsNotMultimodal() {
+            AguiMessage msg = AguiMessage.userMessage("msg-1", "Hello world");
+
+            assertFalse(msg.isMultimodalContent());
+            assertEquals("Hello world", msg.getContent());
+            assertNull(msg.getMultimodalContent());
+            assertEquals("Hello world", msg.getContentObject());
+        }
+
+        @Test
+        void testNullContentIsNotMultimodal() {
+            AguiMessage msg = new AguiMessage("msg-1", "user", null, null, null);
+
+            assertFalse(msg.isMultimodalContent());
+            assertNull(msg.getContent());
+            assertNull(msg.getMultimodalContent());
+            assertNull(msg.getContentObject());
+        }
+
+        @Test
+        void testMultimodalJsonDeserialization() throws JsonProcessingException {
+            String json =
+                    "{\"id\":\"msg-1\",\"role\":\"user\",\"content\":"
+                            + "[{\"type\":\"text\",\"text\":\"Hello\"}]}";
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertEquals("msg-1", msg.getId());
+            assertEquals("user", msg.getRole());
+            assertTrue(msg.isMultimodalContent());
+            assertNotNull(msg.getMultimodalContent());
+            assertEquals(1, msg.getMultimodalContent().size());
+        }
+
+        @Test
+        void testMultimodalContentEquals() {
+            List<Map<String, Object>> parts = List.of(Map.of("type", "text", "text", "Hello"));
+            AguiMessage msg1 = new AguiMessage("msg-1", "user", parts, null, null);
+            AguiMessage msg2 = new AguiMessage("msg-1", "user", parts, null, null);
+
+            assertEquals(msg1, msg2);
+            assertEquals(msg1.hashCode(), msg2.hashCode());
+        }
     }
 
     @Nested

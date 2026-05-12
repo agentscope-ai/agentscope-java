@@ -17,6 +17,7 @@ package io.agentscope.core.agui.converter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,11 +25,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiToolCall;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -369,5 +376,240 @@ class AguiMessageConverterTest {
         assertNotNull(tub);
         // Invalid JSON should result in empty map
         assertTrue(tub.getInput().isEmpty());
+    }
+
+    // ===== Multimodal content conversion tests =====
+
+    @Test
+    void testConvertMultimodalTextContent() {
+        List<Map<String, Object>> parts =
+                List.of(Map.of("type", "text", "text", "Hello multimodal"));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-1", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals("msg-mm-1", msg.getId());
+        assertEquals(MsgRole.USER, msg.getRole());
+        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertEquals("Hello multimodal", msg.getTextContent());
+    }
+
+    @Test
+    void testConvertMultimodalImageWithUrl() {
+        Map<String, Object> source = Map.of("type", "url", "value", "https://example.com/img.png");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "image", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-2", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.hasContentBlocks(ImageBlock.class));
+        ImageBlock imageBlock = msg.getFirstContentBlock(ImageBlock.class);
+        assertNotNull(imageBlock);
+        assertInstanceOf(URLSource.class, imageBlock.getSource());
+        assertEquals("https://example.com/img.png", ((URLSource) imageBlock.getSource()).getUrl());
+    }
+
+    @Test
+    void testConvertMultimodalImageWithBase64() {
+        Map<String, Object> source =
+                Map.of("type", "data", "value", "iVBORw0KGgo=", "mimeType", "image/png");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "image", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-3", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.hasContentBlocks(ImageBlock.class));
+        ImageBlock imageBlock = msg.getFirstContentBlock(ImageBlock.class);
+        assertNotNull(imageBlock);
+        assertInstanceOf(Base64Source.class, imageBlock.getSource());
+    }
+
+    @Test
+    void testConvertMultimodalVideoWithUrl() {
+        Map<String, Object> source =
+                Map.of("type", "url", "value", "https://example.com/video.mp4");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "video", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-4", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.hasContentBlocks(VideoBlock.class));
+        VideoBlock videoBlock = msg.getFirstContentBlock(VideoBlock.class);
+        assertNotNull(videoBlock);
+        assertInstanceOf(URLSource.class, videoBlock.getSource());
+        assertEquals(
+                "https://example.com/video.mp4", ((URLSource) videoBlock.getSource()).getUrl());
+    }
+
+    @Test
+    void testConvertMultimodalAudioWithUrl() {
+        Map<String, Object> source =
+                Map.of("type", "url", "value", "https://example.com/audio.wav");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "audio", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-5", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.hasContentBlocks(AudioBlock.class));
+        AudioBlock audioBlock = msg.getFirstContentBlock(AudioBlock.class);
+        assertNotNull(audioBlock);
+        assertInstanceOf(URLSource.class, audioBlock.getSource());
+        assertEquals(
+                "https://example.com/audio.wav", ((URLSource) audioBlock.getSource()).getUrl());
+    }
+
+    @Test
+    void testConvertMultimodalDocument() {
+        Map<String, Object> source =
+                Map.of(
+                        "type",
+                        "url",
+                        "value",
+                        "https://example.com/doc.pdf",
+                        "mimeType",
+                        "application/pdf");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "document", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-6", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.hasContentBlocks(TextBlock.class));
+        assertEquals("[Document: application/pdf]", msg.getTextContent());
+    }
+
+    @Test
+    void testConvertMultimodalMixedContent() {
+        Map<String, Object> imgSource =
+                Map.of("type", "url", "value", "https://example.com/img.jpg");
+        List<Map<String, Object>> parts =
+                List.of(
+                        Map.of("type", "text", "text", "Look at this image:"),
+                        Map.of("type", "image", "source", imgSource));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-7", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        List<ContentBlock> blocks = msg.getContent();
+        assertEquals(2, blocks.size());
+        assertInstanceOf(TextBlock.class, blocks.get(0));
+        assertInstanceOf(ImageBlock.class, blocks.get(1));
+    }
+
+    @Test
+    void testConvertMultimodalUnknownType() {
+        List<Map<String, Object>> parts = List.of(Map.of("type", "unknown_type", "data", "xyz"));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-8", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        // Unknown type should be skipped, resulting in no content blocks
+        assertTrue(msg.getContent().isEmpty());
+    }
+
+    @Test
+    void testConvertMultimodalNullType() {
+        List<Map<String, Object>> parts = List.of(Map.of("data", "xyz"));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-9", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.getContent().isEmpty());
+    }
+
+    @Test
+    void testConvertMultimodalImageWithNullSource() {
+        List<Map<String, Object>> parts = List.of(Map.of("type", "image"));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-10", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        // Image without source should be skipped
+        assertFalse(msg.hasContentBlocks(ImageBlock.class));
+    }
+
+    @Test
+    void testConvertMultimodalTextWithNullText() {
+        List<Map<String, Object>> parts = List.of(Map.of("type", "text"));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-11", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        // Text without text value should be skipped
+        assertFalse(msg.hasContentBlocks(TextBlock.class));
+    }
+
+    @Test
+    void testConvertMultimodalBase64SourceMissingMimeType() {
+        Map<String, Object> source = Map.of("type", "data", "value", "iVBORw0KGgo=");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "image", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-12", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        // Base64 source without mimeType should be skipped
+        assertFalse(msg.hasContentBlocks(ImageBlock.class));
+    }
+
+    @Test
+    void testConvertMultimodalUrlSourceMissingValue() {
+        Map<String, Object> source = Map.of("type", "url");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "image", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-13", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        // URL source without value should be skipped
+        assertFalse(msg.hasContentBlocks(ImageBlock.class));
+    }
+
+    @Test
+    void testConvertMultimodalDocumentWithoutSource() {
+        List<Map<String, Object>> parts = List.of(Map.of("type", "document"));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-14", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        // Document without source should be skipped
+        assertFalse(msg.hasContentBlocks(TextBlock.class));
+    }
+
+    @Test
+    void testConvertMultimodalSourceWithUnknownSourceType() {
+        Map<String, Object> source = Map.of("type", "ftp", "value", "ftp://file.dat");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "image", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-15", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        // Unknown source type should be skipped
+        assertFalse(msg.hasContentBlocks(ImageBlock.class));
+    }
+
+    @Test
+    void testConvertMultimodalAudioWithBase64() {
+        Map<String, Object> source =
+                Map.of("type", "data", "value", "AAAA", "mimeType", "audio/wav");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "audio", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-16", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.hasContentBlocks(AudioBlock.class));
+        AudioBlock audioBlock = msg.getFirstContentBlock(AudioBlock.class);
+        assertInstanceOf(Base64Source.class, audioBlock.getSource());
+    }
+
+    @Test
+    void testConvertMultimodalVideoWithBase64() {
+        Map<String, Object> source =
+                Map.of("type", "data", "value", "AAAA", "mimeType", "video/mp4");
+        List<Map<String, Object>> parts = List.of(Map.of("type", "video", "source", source));
+        AguiMessage aguiMsg = new AguiMessage("msg-mm-17", "user", parts, null, null);
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertTrue(msg.hasContentBlocks(VideoBlock.class));
+        VideoBlock videoBlock = msg.getFirstContentBlock(VideoBlock.class);
+        assertInstanceOf(Base64Source.class, videoBlock.getSource());
     }
 }
