@@ -168,9 +168,12 @@ public class DashScopeMessageConverter {
     private DashScopeMessage convertToolRoleMessage(Msg msg) {
         ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
         if (toolResult != null) {
-            String toolResultText = toolResultConverter.apply(toolResult.getOutput());
-            List<DashScopeContentPart> content = new ArrayList<>();
-            content.add(DashScopeContentPart.text(toolResultText));
+            List<DashScopeContentPart> content =
+                    hasMediaContent(toolResult.getOutput())
+                            ? convertContentBlocks(toolResult.getOutput())
+                            : List.of(
+                                    DashScopeContentPart.text(
+                                            toolResultConverter.apply(toolResult.getOutput())));
 
             return DashScopeMessage.builder()
                     .role("tool")
@@ -181,9 +184,10 @@ public class DashScopeMessageConverter {
         }
 
         // Fallback: no ToolResultBlock found, use text content
-        List<DashScopeContentPart> content = new ArrayList<>();
-        content.add(DashScopeContentPart.text(extractTextContent(msg)));
-        return DashScopeMessage.builder().role("tool").content(content).build();
+        return DashScopeMessage.builder()
+                .role("tool")
+                .content(List.of(DashScopeContentPart.text(extractTextContent(msg))))
+                .build();
     }
 
     /**
@@ -258,5 +262,68 @@ public class DashScopeMessageConverter {
         if (Boolean.TRUE.equals(cacheFlag)) {
             result.setCacheControl(DashScopeChatFormatter.getEphemeralCacheControl());
         }
+    }
+
+    /**
+     * Check if blocks contain media content (image, audio, video).
+     *
+     * @param blocks the list of content blocks to check
+     * @return true if any block is ImageBlock, AudioBlock, or VideoBlock
+     */
+    private boolean hasMediaContent(List<ContentBlock> blocks) {
+        if (blocks == null) {
+            return false;
+        }
+        for (ContentBlock block : blocks) {
+            if (block instanceof ImageBlock
+                    || block instanceof AudioBlock
+                    || block instanceof VideoBlock) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Convert content blocks to DashScope content parts for multimodal messages.
+     *
+     * @param blocks the list of content blocks to convert
+     * @return the converted list of DashScopeContentPart
+     */
+    private List<DashScopeContentPart> convertContentBlocks(List<ContentBlock> blocks) {
+        List<DashScopeContentPart> content = new ArrayList<>();
+        for (ContentBlock block : blocks) {
+            if (block instanceof TextBlock tb) {
+                content.add(DashScopeContentPart.text(tb.getText()));
+            } else if (block instanceof ImageBlock ib) {
+                try {
+                    content.add(mediaConverter.convertImageBlockToContentPart(ib));
+                } catch (Exception e) {
+                    log.warn("Failed to process ImageBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Image - processing failed: " + e.getMessage() + "]"));
+                }
+            } else if (block instanceof AudioBlock ab) {
+                try {
+                    content.add(mediaConverter.convertAudioBlockToContentPart(ab));
+                } catch (Exception e) {
+                    log.warn("Failed to process AudioBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Audio - processing failed: " + e.getMessage() + "]"));
+                }
+            } else if (block instanceof VideoBlock vb) {
+                try {
+                    content.add(mediaConverter.convertVideoBlockToContentPart(vb));
+                } catch (Exception e) {
+                    log.warn("Failed to process VideoBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Video - processing failed: " + e.getMessage() + "]"));
+                }
+            }
+        }
+        return content;
     }
 }
