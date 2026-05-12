@@ -16,7 +16,6 @@
 package io.agentscope.core.session;
 
 import io.agentscope.core.state.State;
-import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 
 /**
@@ -89,7 +88,7 @@ public final class ListHashUtil {
 
         for (int idx : sampleIndices) {
             State item = values.get(idx);
-            int itemHash = item != null ? JsonUtils.getJsonCodec().toJson(item).hashCode() : 0;
+            int itemHash = item != null ? item.hashCode() : 0;
             sb.append(idx).append(":").append(itemHash).append(",");
         }
 

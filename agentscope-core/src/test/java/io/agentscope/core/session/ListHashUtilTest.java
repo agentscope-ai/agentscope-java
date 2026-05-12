@@ -20,11 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.openai.dto.OpenAIReasoningDetail;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.model.ChatUsage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -102,6 +107,91 @@ class ListHashUtilTest {
         String hash2 = ListHashUtil.computeHash(list);
 
         assertEquals(hash1, hash2);
+    }
+
+    @Test
+    void testComputeHashEquivalentMessagesWithChatUsage() {
+        List<Msg> first =
+                List.of(
+                        Msg.builder()
+                                .id("m-assistant-usage")
+                                .timestamp("2026-05-08 14:00:01.000")
+                                .role(MsgRole.ASSISTANT)
+                                .content(TextBlock.builder().text("hello").build())
+                                .metadata(
+                                        Map.of(
+                                                MessageMetadataKeys.CHAT_USAGE,
+                                                ChatUsage.builder()
+                                                        .inputTokens(10)
+                                                        .outputTokens(20)
+                                                        .time(1.5)
+                                                        .build()))
+                                .build());
+
+        List<Msg> second =
+                List.of(
+                        Msg.builder()
+                                .id("m-assistant-usage")
+                                .timestamp("2026-05-08 14:00:01.000")
+                                .role(MsgRole.ASSISTANT)
+                                .content(TextBlock.builder().text("hello").build())
+                                .metadata(
+                                        Map.of(
+                                                MessageMetadataKeys.CHAT_USAGE,
+                                                ChatUsage.builder()
+                                                        .inputTokens(10)
+                                                        .outputTokens(20)
+                                                        .time(1.5)
+                                                        .build()))
+                                .build());
+
+        assertEquals(ListHashUtil.computeHash(first), ListHashUtil.computeHash(second));
+    }
+
+    @Test
+    void testComputeHashEquivalentThinkingBlocksWithReasoningDetails() {
+        OpenAIReasoningDetail detail = new OpenAIReasoningDetail();
+        detail.setId("reasoning-1");
+        detail.setType("reasoning.text");
+        detail.setData("encrypted-data");
+        detail.setText("visible reasoning");
+        detail.setFormat("openai-responses-v1");
+        detail.setIndex(0);
+        List<Msg> first =
+                List.of(
+                        Msg.builder()
+                                .id("m-assistant-thinking")
+                                .timestamp("2026-05-08 14:00:01.000")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        ThinkingBlock.builder()
+                                                .thinking("thinking")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_REASONING_DETAILS,
+                                                                List.of(detail)))
+                                                .build())
+                                .build());
+
+        List<Msg> second =
+                List.of(
+                        Msg.builder()
+                                .id("m-assistant-thinking")
+                                .timestamp("2026-05-08 14:00:01.000")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        ThinkingBlock.builder()
+                                                .thinking("thinking")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_REASONING_DETAILS,
+                                                                List.of(detail)))
+                                                .build())
+                                .build());
+
+        assertEquals(ListHashUtil.computeHash(first), ListHashUtil.computeHash(second));
     }
 
     @Test

@@ -109,6 +109,29 @@ public class Msg implements State {
         this.timestamp = timestamp;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        } else if (!(o instanceof Msg)) {
+            return false;
+        } else {
+            Msg that = (Msg) o;
+            return Objects.equals(this.id, that.id)
+                    && Objects.equals(this.name, that.name)
+                    && this.role == that.role
+                    && Objects.equals(this.content, that.content)
+                    && Objects.equals(this.metadata, that.metadata)
+                    && Objects.equals(this.timestamp, that.timestamp);
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                this.id, this.name, this.role, this.content, this.metadata, this.timestamp);
+    }
+
     /**
      * Creates a new message builder with a randomly generated ID.
      *
