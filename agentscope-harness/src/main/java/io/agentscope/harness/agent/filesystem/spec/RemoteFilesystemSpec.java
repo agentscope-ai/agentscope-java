@@ -13,9 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.filesystem;
+package io.agentscope.harness.agent.filesystem.spec;
 
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.nio.file.Path;

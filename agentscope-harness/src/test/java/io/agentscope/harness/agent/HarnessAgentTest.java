@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -31,8 +32,8 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.Session;
-import io.agentscope.harness.agent.filesystem.LocalFilesystem;
-import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -71,6 +72,120 @@ class HarnessAgentTest {
                         .build();
 
         assertTrue(agent.getWorkspaceManager().readAgentsMd().contains(marker));
+    }
+
+    @Test
+    void disableMemoryTools_omitsHarnessMemoryAndSessionTools() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryTools()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("memory_search"));
+        assertFalse(toolNames.contains("memory_get"));
+        assertFalse(toolNames.contains("session_search"));
+    }
+
+    @Test
+    void disableFilesystemTools_omitsFileTools() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableFilesystemTools()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("read_file"));
+        assertFalse(toolNames.contains("list_files"));
+    }
+
+    @Test
+    void disableShellTool_omitsExecuteToolWhenShellBackend() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .disableShellTool()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("execute"));
+    }
+
+    @Test
+    void disableSubagents_omitsSpawnAndTaskTools() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# w\n");
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableSubagents()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("agent_spawn"));
+        assertFalse(toolNames.contains("task_output"));
+    }
+
+    @Test
+    void disableWorkspaceContext_modelStreamDoesNotIncludeAgentsMd() throws Exception {
+        Files.createDirectories(workspace);
+        String marker = "no-workspace-context-hook-xyz";
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), marker);
+
+        Model model = stubModel("assistant-done");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableWorkspaceContext()
+                        .build();
+
+        agent.call(userText("hi"), RuntimeContext.builder().sessionId("s-no-ctx").build()).block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+        String combined =
+                captor.getAllValues().stream()
+                        .map(HarnessAgentTest::joinAllText)
+                        .collect(Collectors.joining("\n"));
+        assertFalse(
+                combined.contains(marker),
+                "AGENTS.md should not be injected when context hook is disabled");
     }
 
     @Test

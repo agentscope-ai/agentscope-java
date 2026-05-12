@@ -15,12 +15,15 @@
  */
 package io.agentscope.harness.agent;
 
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+
 /**
  * Controls how agent state is isolated and shared across calls.
  *
  * <p>This enum is the canonical isolation-scope definition used by both the sandbox filesystem
  * backend ({@link io.agentscope.harness.agent.sandbox.SandboxContext}) and the remote filesystem
- * backend ({@link io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec}).
+ * backend ({@link RemoteFilesystemSpec}).
  *
  * <p><b>Sandbox semantics</b>: the scope determines which key is used when persisting and loading
  * {@code _sandbox.json} state. Calls that resolve to the <em>same</em> scope key will
@@ -28,7 +31,7 @@ package io.agentscope.harness.agent;
  * one).
  *
  * <p><b>Store namespace semantics</b>: the scope determines the namespace prefix used by
- * {@link io.agentscope.harness.agent.filesystem.RemoteFilesystem} when routing files to the shared
+ * {@link RemoteFilesystem} when routing files to the shared
  * key-value store. Different scopes produce different namespace prefixes, controlling which calls
  * share the same view of stored files.
  *

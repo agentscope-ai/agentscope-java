@@ -13,9 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.filesystem;
+package io.agentscope.harness.agent.filesystem.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileData;
@@ -83,7 +84,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     public abstract String id();
 
     @Override
-    public abstract ExecuteResponse execute(String command, Integer timeoutSeconds);
+    public abstract ExecuteResponse execute(
+            RuntimeContext runtimeContext, String command, Integer timeoutSeconds);
 
     @Override
     public abstract List<FileUploadResponse> uploadFiles(
@@ -104,7 +106,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + "  elif [ -f \"$f\" ]; then echo \"FILE:$f\"; fi; "
                         + "done 2>/dev/null";
 
-        ExecuteResponse result = execute(cmd, null);
+        ExecuteResponse result = execute(runtimeContext, cmd, null);
         List<FileInfo> entries = new ArrayList<>();
 
         if (result.output() != null && !result.output().isBlank()) {
@@ -128,7 +130,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
         if (!"text".equals(fileType)) {
             String cmd = "base64 " + escapedPath + " 2>/dev/null";
-            ExecuteResponse result = execute(cmd, null);
+            ExecuteResponse result = execute(runtimeContext, cmd, null);
             if (result.exitCode() != null && result.exitCode() != 0) {
                 return ReadResult.fail("File '" + filePath + "': file_not_found");
             }
@@ -153,7 +155,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + escapedPath
                         + "; fi";
 
-        ExecuteResponse result = execute(cmd, null);
+        ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output() : "";
 
         if (output.strip().equals("__NOT_FOUND__")) {
@@ -182,7 +184,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + escapedPath
                         + ")\" 2>&1";
 
-        ExecuteResponse checkResult = execute(checkCmd, null);
+        ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
         if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
             if (checkResult.output() != null && checkResult.output().contains("EXISTS")) {
                 return WriteResult.fail(
@@ -261,7 +263,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + payloadB64
                         + "\n__EDIT_EOF__\n";
 
-        ExecuteResponse result = execute(cmd, null);
+        ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
 
         if (output.contains("\"error\"")) {
@@ -322,7 +324,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + searchPath
                         + " 2>/dev/null || true";
 
-        ExecuteResponse result = execute(cmd, null);
+        ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
 
         if (output.isEmpty()) {
@@ -353,7 +355,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String cmd =
                 "find " + escapedPath + " -type f -name " + escapedPattern + " 2>/dev/null | sort";
 
-        ExecuteResponse result = execute(cmd, null);
+        ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
 
         if (output.isEmpty()) {
@@ -376,7 +378,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String effectivePath = namespacedPath(path);
         String escapedPath = FilesystemUtils.shellQuote(effectivePath);
         String cmd = "rm -rf " + escapedPath;
-        ExecuteResponse result = execute(cmd, null);
+        ExecuteResponse result = execute(runtimeContext, cmd, null);
         if (result.exitCode() != 0) {
             return WriteResult.fail("Error deleting '" + path + "': " + result.output());
         }
@@ -392,7 +394,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String escapedFrom = FilesystemUtils.shellQuote(from);
         String escapedTo = FilesystemUtils.shellQuote(to);
         String cmd = "mkdir -p $(dirname " + escapedTo + ") && mv " + escapedFrom + " " + escapedTo;
-        ExecuteResponse result = execute(cmd, null);
+        ExecuteResponse result = execute(runtimeContext, cmd, null);
         if (result.exitCode() != 0) {
             return WriteResult.fail(
                     "Error moving '" + fromPath + "' to '" + toPath + "': " + result.output());
@@ -408,7 +410,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String effectivePath = namespacedPath(path);
         String escapedPath = FilesystemUtils.shellQuote(effectivePath);
         ExecuteResponse result =
-                execute("test -e " + escapedPath + " && echo yes || echo no", null);
+                execute(runtimeContext, "test -e " + escapedPath + " && echo yes || echo no", null);
         return result.output() != null && result.output().strip().startsWith("yes");
     }
 

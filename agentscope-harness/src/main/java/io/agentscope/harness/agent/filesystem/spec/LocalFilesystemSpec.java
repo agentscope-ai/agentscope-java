@@ -13,8 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.filesystem;
+package io.agentscope.harness.agent.filesystem.spec;
 
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;

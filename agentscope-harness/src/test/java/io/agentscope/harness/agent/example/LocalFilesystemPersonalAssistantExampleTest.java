@@ -30,7 +30,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.filesystem.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;

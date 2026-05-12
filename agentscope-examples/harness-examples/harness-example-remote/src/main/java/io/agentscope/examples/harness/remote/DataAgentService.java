@@ -24,7 +24,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.harness.remote.data.SqliteTool;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import jakarta.annotation.PostConstruct;
 import java.io.InputStream;

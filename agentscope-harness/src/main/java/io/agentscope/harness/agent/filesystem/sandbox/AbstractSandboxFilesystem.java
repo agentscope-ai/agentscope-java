@@ -13,8 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.filesystem;
+package io.agentscope.harness.agent.filesystem.sandbox;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 
 /**
@@ -34,10 +36,11 @@ public interface AbstractSandboxFilesystem extends AbstractFilesystem {
     /**
      * Execute a shell command in the environment backing this filesystem.
      *
+     * @param runtimeContext per-call agent context; may be {@code null} when unavailable
      * @param command full shell command string to execute
      * @param timeoutSeconds maximum time in seconds to wait for the command to complete;
      *                       {@code null} uses the filesystem's default timeout
      * @return ExecuteResponse with combined output, exit code, and truncation flag
      */
-    ExecuteResponse execute(String command, Integer timeoutSeconds);
+    ExecuteResponse execute(RuntimeContext runtimeContext, String command, Integer timeoutSeconds);
 }

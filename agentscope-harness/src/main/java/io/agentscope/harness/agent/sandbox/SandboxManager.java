@@ -27,6 +27,15 @@ import org.slf4j.LoggerFactory;
  * <p>Acquire priority: {@link SandboxContext#getExternalSandbox()} &gt; {@link
  * SandboxContext#getExternalSandboxState()} &gt; persisted {@link SandboxState} &gt; {@link
  * SandboxClient#create}.
+ *
+ * <p>When a {@link SandboxExecutionGuard} is configured, the manager acquires an execution
+ * {@link SandboxLease} before sandbox resume/create for isolation keys that are present. The
+ * lease is carried by the {@link SandboxAcquireResult} and closed by the caller
+ * ({@link io.agentscope.harness.agent.hook.SandboxLifecycleHook}) after {@link #release},
+ * ensuring the full call window is covered.
+ *
+ * <p>Priority 1 (external sandbox) and Priority 2 (external sandbox state) bypass the guard,
+ * since the caller is managing that sandbox externally.
  */
 public class SandboxManager {
 
@@ -35,15 +44,27 @@ public class SandboxManager {
     private final SandboxClient<?> client;
     private final SandboxStateStore stateStore;
     private final String agentId;
+    private final SandboxExecutionGuard executionGuard;
 
     public SandboxManager(SandboxClient<?> client, SandboxStateStore stateStore, String agentId) {
+        this(client, stateStore, agentId, SandboxExecutionGuard.noop());
+    }
+
+    public SandboxManager(
+            SandboxClient<?> client,
+            SandboxStateStore stateStore,
+            String agentId,
+            SandboxExecutionGuard executionGuard) {
         this.client = Objects.requireNonNull(client, "client must not be null");
         this.stateStore = Objects.requireNonNull(stateStore, "stateStore must not be null");
         this.agentId = Objects.requireNonNull(agentId, "agentId must not be null");
+        this.executionGuard =
+                executionGuard != null ? executionGuard : SandboxExecutionGuard.noop();
     }
 
     public SandboxAcquireResult acquire(
             SandboxContext sandboxContext, RuntimeContext runtimeContext) throws Exception {
+        // Priority 1: user-supplied sandbox — guard does not apply
         if (sandboxContext.getExternalSandbox() != null) {
             Sandbox external = sandboxContext.getExternalSandbox();
             log.debug(
@@ -52,6 +73,7 @@ public class SandboxManager {
             return SandboxAcquireResult.userManaged(external);
         }
 
+        // Priority 2: user-supplied state — guard does not apply
         if (sandboxContext.getExternalSandboxState() != null) {
             Sandbox sandbox = client.resume(sandboxContext.getExternalSandboxState());
             log.debug(
@@ -60,43 +82,60 @@ public class SandboxManager {
             return SandboxAcquireResult.selfManaged(sandbox);
         }
 
+        // Priority 3 / 4: harness-managed — apply guard when a scope key is present
         Optional<SandboxIsolationKey> scopeKey =
                 SandboxIsolationKey.resolve(
                         sandboxContext.getIsolationScope(), runtimeContext, agentId);
+
+        SandboxLease lease = SandboxLease.noop();
         if (scopeKey.isPresent()) {
-            try {
-                Optional<String> stateJson = stateStore.load(scopeKey.get());
-                if (stateJson.isPresent()) {
-                    log.debug(
-                            "[sandbox] Priority 3: resuming from persisted state (scope={})",
-                            scopeKey.get());
-                    SandboxState state = client.deserializeState(stateJson.get());
-                    Sandbox sandbox = client.resume(state);
-                    return SandboxAcquireResult.selfManaged(sandbox);
-                }
-            } catch (Exception e) {
-                log.warn(
-                        "[sandbox] Failed to load persisted state for scope {}, falling through"
-                                + " to fresh create: {}",
-                        scopeKey.get(),
-                        e.getMessage(),
-                        e);
-            }
+            log.debug("[sandbox] Acquiring execution guard for scope {}", scopeKey.get());
+            lease = executionGuard.tryEnter(scopeKey.get());
         }
 
-        log.debug("[sandbox] Priority 4: creating new sandbox");
-        WorkspaceSpec spec =
-                sandboxContext.getWorkspaceSpec() != null
-                        ? sandboxContext.getWorkspaceSpec().copy()
-                        : new WorkspaceSpec();
+        try {
+            if (scopeKey.isPresent()) {
+                try {
+                    Optional<String> stateJson = stateStore.load(scopeKey.get());
+                    if (stateJson.isPresent()) {
+                        log.debug(
+                                "[sandbox] Priority 3: resuming from persisted state (scope={})",
+                                scopeKey.get());
+                        SandboxState state = client.deserializeState(stateJson.get());
+                        Sandbox sandbox = client.resume(state);
+                        return SandboxAcquireResult.selfManaged(sandbox, lease);
+                    }
+                } catch (Exception e) {
+                    log.warn(
+                            "[sandbox] Failed to load persisted state for scope {}, falling through"
+                                    + " to fresh create: {}",
+                            scopeKey.get(),
+                            e.getMessage(),
+                            e);
+                }
+            }
 
-        @SuppressWarnings("unchecked")
-        SandboxClient<SandboxClientOptions> typedClient =
-                (SandboxClient<SandboxClientOptions>) client;
-        Sandbox sandbox =
-                typedClient.create(
-                        spec, sandboxContext.getSnapshotSpec(), sandboxContext.getClientOptions());
-        return SandboxAcquireResult.selfManaged(sandbox);
+            log.debug("[sandbox] Priority 4: creating new sandbox");
+            WorkspaceSpec spec =
+                    sandboxContext.getWorkspaceSpec() != null
+                            ? sandboxContext.getWorkspaceSpec().copy()
+                            : new WorkspaceSpec();
+
+            @SuppressWarnings("unchecked")
+            SandboxClient<SandboxClientOptions> typedClient =
+                    (SandboxClient<SandboxClientOptions>) client;
+            Sandbox sandbox =
+                    typedClient.create(
+                            spec,
+                            sandboxContext.getSnapshotSpec(),
+                            sandboxContext.getClientOptions());
+            return SandboxAcquireResult.selfManaged(sandbox, lease);
+
+        } catch (Exception e) {
+            // Guard must be released if acquire fails — the caller won't see the result
+            lease.close();
+            throw e;
+        }
     }
 
     public void release(SandboxAcquireResult result) {
