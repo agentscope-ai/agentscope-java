@@ -37,6 +37,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = LocalDirEntry.class, name = "local_dir"),
     @JsonSubTypes.Type(value = GitRepoEntry.class, name = "git_repo"),
     @JsonSubTypes.Type(value = WorkspaceProjectionEntry.class, name = "workspace_projection"),
+    @JsonSubTypes.Type(value = BindMountEntry.class, name = "bind_mount"),
 })
 public abstract class WorkspaceEntry {
 

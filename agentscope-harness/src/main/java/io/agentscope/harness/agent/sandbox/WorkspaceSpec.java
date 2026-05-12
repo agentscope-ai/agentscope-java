@@ -26,7 +26,9 @@ import java.util.Map;
  * <p>Fields:
  * <ul>
  *   <li>{@code root} — workspace path inside the sandbox (default: {@code /workspace})
- *   <li>{@code entries} — files and directories to materialize at startup
+ *   <li>{@code entries} — files, directories, and optional {@code bind_mount} entries to apply at
+ *       startup (bind mounts are enforced by Docker/Kubernetes backends, not materialized as
+ *       copied files)
  *   <li>{@code environment} — environment variables to inject into every exec command
  * </ul>
  *

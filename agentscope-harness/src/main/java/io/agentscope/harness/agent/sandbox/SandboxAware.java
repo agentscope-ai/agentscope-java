@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+
 /**
  * Marks a filesystem that can have its backing {@link Sandbox} injected at runtime.
  *

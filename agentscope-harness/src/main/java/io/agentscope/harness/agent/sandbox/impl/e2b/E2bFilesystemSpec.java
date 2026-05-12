@@ -13,85 +13,89 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.sandbox.filesystem;
+package io.agentscope.harness.agent.sandbox.impl.e2b;
 
+import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
-import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
-/**
- * Sandbox filesystem spec for Docker backend.
- */
-public class DockerFilesystemSpec extends SandboxFilesystemSpec {
+/** {@link SandboxFilesystemSpec} for E2B cloud sandboxes. */
+public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     private SandboxClient<?> client;
-    private final DockerSandboxClientOptions options = new DockerSandboxClientOptions();
+    private final E2bSandboxClientOptions options = new E2bSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
     private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
 
-    public DockerFilesystemSpec client(SandboxClient<?> client) {
+    public E2bFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
         return this;
     }
 
-    public DockerFilesystemSpec image(String image) {
-        options.image(image);
+    public E2bFilesystemSpec apiKey(String apiKey) {
+        options.setApiKey(apiKey);
         return this;
     }
 
-    public DockerFilesystemSpec workspaceRoot(String workspaceRoot) {
-        options.workspaceRoot(workspaceRoot);
+    public E2bFilesystemSpec apiBaseUrl(String apiBaseUrl) {
+        options.setApiBaseUrl(apiBaseUrl);
         return this;
     }
 
-    public DockerFilesystemSpec environment(Map<String, String> environment) {
-        options.setEnvironment(
-                environment != null ? new LinkedHashMap<>(environment) : new LinkedHashMap<>());
+    public E2bFilesystemSpec domain(String domain) {
+        options.setDomain(domain);
         return this;
     }
 
-    public DockerFilesystemSpec memorySizeBytes(Long memorySizeBytes) {
-        options.memorySizeBytes(memorySizeBytes);
+    public E2bFilesystemSpec templateId(String templateId) {
+        options.setTemplateId(templateId);
         return this;
     }
 
-    public DockerFilesystemSpec cpuCount(Long cpuCount) {
-        options.cpuCount(cpuCount);
+    public E2bFilesystemSpec workspaceRoot(String workspaceRoot) {
+        options.setWorkspaceRoot(workspaceRoot);
         return this;
     }
 
-    public DockerFilesystemSpec exposedPorts(int... exposedPorts) {
-        options.exposedPorts(exposedPorts);
+    public E2bFilesystemSpec sandboxTimeoutSeconds(int sandboxTimeoutSeconds) {
+        options.setSandboxTimeoutSeconds(sandboxTimeoutSeconds);
         return this;
     }
 
-    public DockerFilesystemSpec network(String network) {
-        options.network(network);
+    public E2bFilesystemSpec runUser(String runUser) {
+        options.setRunUser(runUser);
         return this;
     }
 
-    public DockerFilesystemSpec additionalRunArgs(String... additionalRunArgs) {
-        options.additionalRunArgs(additionalRunArgs);
+    public E2bFilesystemSpec persistenceMode(E2bPersistenceMode persistenceMode) {
+        options.setPersistenceMode(persistenceMode);
         return this;
     }
 
-    public DockerFilesystemSpec additionalRunArgs(List<String> additionalRunArgs) {
-        options.setAdditionalRunArgs(additionalRunArgs);
+    public E2bFilesystemSpec connectTimeoutSeconds(int connectTimeoutSeconds) {
+        options.setConnectTimeoutSeconds(connectTimeoutSeconds);
         return this;
     }
 
-    public DockerFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
+    public E2bFilesystemSpec readTimeoutSeconds(int readTimeoutSeconds) {
+        options.setReadTimeoutSeconds(readTimeoutSeconds);
+        return this;
+    }
+
+    public E2bFilesystemSpec maxRetries(int maxRetries) {
+        options.setMaxRetries(maxRetries);
+        return this;
+    }
+
+    public E2bFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;
     }
 
-    public DockerFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
+    public E2bFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
         this.defaultWorkspaceSpec = workspaceSpec;
         return this;
     }

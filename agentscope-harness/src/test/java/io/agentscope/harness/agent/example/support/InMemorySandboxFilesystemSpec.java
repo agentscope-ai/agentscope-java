@@ -15,10 +15,10 @@
  */
 package io.agentscope.harness.agent.example.support;
 
+import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
-import io.agentscope.harness.agent.sandbox.filesystem.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 
 /**

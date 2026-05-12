@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.sandbox;
 
 import io.agentscope.core.session.Session;
+import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.RedisSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
@@ -25,7 +26,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
  * {@link io.agentscope.harness.agent.HarnessAgent.Builder#sandboxDistributed}.
  *
  * <p>Bundles the pieces required for distributed sandbox restore/sharing that are not already on
- * {@link io.agentscope.harness.agent.sandbox.filesystem.SandboxFilesystemSpec}:
+ * {@link SandboxFilesystemSpec}:
  *
  * <ul>
  *   <li>distributed {@link Session} (for state-store slots)

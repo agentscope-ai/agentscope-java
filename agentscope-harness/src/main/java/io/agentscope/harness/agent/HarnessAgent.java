@@ -23,12 +23,19 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.LongTermMemory;
+import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.rag.Knowledge;
+import io.agentscope.core.rag.RAGMode;
+import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.skill.AgentSkill;
@@ -38,13 +45,16 @@ import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.StateModule;
+import io.agentscope.core.state.StatePersistence;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.AbstractSandboxFilesystem;
-import io.agentscope.harness.agent.filesystem.LocalFilesystemSpec;
-import io.agentscope.harness.agent.filesystem.LocalFilesystemWithShell;
-import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.hook.AgentTraceHook;
 import io.agentscope.harness.agent.hook.CompactionHook;
 import io.agentscope.harness.agent.hook.MemoryFlushHook;
@@ -60,13 +70,12 @@ import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
-import io.agentscope.harness.agent.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
-import io.agentscope.harness.agent.sandbox.filesystem.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
 import io.agentscope.harness.agent.store.NamespaceFactory;
@@ -106,6 +115,12 @@ import reactor.core.publisher.Mono;
  *   <li>Pluggable file-system backend (local, sandbox, composite)
  *   <li>Memory search/get tools
  * </ul>
+ *
+ * <p>Advanced users can skip individual built-in tools or hooks via {@link HarnessAgent.Builder#disableFilesystemTools()},
+ * {@link HarnessAgent.Builder#disableShellTool()}, {@link HarnessAgent.Builder#disableMemoryTools()},
+ * {@link HarnessAgent.Builder#disableMemoryHooks()}, {@link HarnessAgent.Builder#disableSessionPersistence()},
+ * {@link HarnessAgent.Builder#disableWorkspaceContext()}, and {@link HarnessAgent.Builder#disableSubagents()},
+ * then register replacements on the {@link Toolkit} or {@link Hook} list.
  *
  * <p>Usage:
  *
@@ -426,6 +441,63 @@ public class HarnessAgent implements Agent, StateModule {
         return new Builder();
     }
 
+    /**
+     * Creates a {@link Builder} pre-populated with the observable properties of an existing
+     * {@link ReActAgent}, making it easy to migrate to {@link HarnessAgent} with minimal changes.
+     *
+     * <p>The following properties are copied from {@code agent}:
+     * <ul>
+     *   <li>{@code name}, {@code description}, {@code sysPrompt}
+     *   <li>{@code model}, {@code maxIters}, {@code generateOptions}
+     *   <li>{@code planNotebook}
+     *   <li>{@code toolkit} — a defensive copy; all custom tools are preserved, and
+     *       HarnessAgent's built-in tools (filesystem, memory-search, etc.) are added on top unless
+     *       disabled via {@link HarnessAgent.Builder#disableFilesystemTools()} and related {@code disable*}
+     *       methods
+     * </ul>
+     *
+     * <p>Properties that are intentionally <b>not</b> copied:
+     * <ul>
+     *   <li>{@code memory} — HarnessAgent always manages its own fresh in-memory conversation
+     *       store backed by workspace persistence
+     *   <li>hooks — already compiled into the existing agent and not accessible via public API;
+     *       add new harness hooks via {@link Builder#hook(Hook)} if needed
+     *   <li>long-term memory, RAG, statePersistence, structuredOutputReminder — not
+     *       accessible via public API on a built agent; re-configure via the returned builder
+     * </ul>
+     *
+     * <p>Example migration:
+     * <pre>{@code
+     * // Before
+     * ReActAgent agent = ReActAgent.builder()
+     *     .name("my-agent")
+     *     .model(model)
+     *     .toolkit(myToolkit)
+     *     .build();
+     *
+     * // After — minimal change
+     * HarnessAgent agent = HarnessAgent.from(existingReActAgent)
+     *     .workspace("/my/workspace")
+     *     .build();
+     * }</pre>
+     *
+     * @param agent the existing {@link ReActAgent} to migrate; must not be null
+     * @return a new {@link Builder} pre-populated with the agent's observable configuration
+     */
+    public static Builder from(ReActAgent agent) {
+        Builder b = new Builder();
+        b.name = agent.getName();
+        b.description = agent.getDescription();
+        b.sysPrompt = agent.getSysPrompt();
+        b.model = agent.getModel();
+        b.maxIters = agent.getMaxIters();
+        b.generateOptions = agent.getGenerateOptions();
+        b.planNotebook = agent.getPlanNotebook();
+        // Defensive copy so HarnessAgent's build() does not mutate the original agent's toolkit
+        b.toolkit = agent.getToolkit().copy();
+        return b;
+    }
+
     public static class Builder {
 
         // Core ReActAgent params
@@ -444,6 +516,27 @@ public class HarnessAgent implements Agent, StateModule {
         private AgentSkillRepository skillRepository;
 
         private ToolExecutionContext toolExecutionContext;
+
+        // Long-term memory configuration
+        private LongTermMemory longTermMemory;
+        private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
+        private boolean longTermMemoryAsyncRecord = false;
+
+        // Plan configuration
+        private PlanNotebook planNotebook;
+
+        // RAG configuration
+        private final List<Knowledge> knowledgeBases = new ArrayList<>();
+        private RAGMode ragMode = RAGMode.GENERIC;
+        private RetrieveConfig retrieveConfig =
+                RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
+
+        // Additional delegate params
+        private StatePersistence statePersistence;
+        private StructuredOutputReminder structuredOutputReminder;
+        private boolean enableMetaTool = false;
+        private boolean enablePendingToolRecovery = false;
+        private boolean checkRunning = true;
 
         // Harness-specific params
         private Path workspace;
@@ -486,6 +579,35 @@ public class HarnessAgent implements Agent, StateModule {
         private final List<String> additionalContextFiles = new ArrayList<>();
         private int maxContextTokens = 8000;
         private boolean useLegacyXmlWorkspaceContext = false;
+
+        /** When {@code true}, {@link FilesystemTool} is not registered. */
+        private boolean disableFilesystemTools = false;
+
+        /** When {@code true}, {@link ShellExecuteTool} is not registered (sandbox / local-shell modes only). */
+        private boolean disableShellTool = false;
+
+        /**
+         * When {@code true}, {@link MemorySearchTool}, {@link MemoryGetTool}, and {@link SessionSearchTool}
+         * are not registered.
+         */
+        private boolean disableMemoryTools = false;
+
+        /**
+         * When {@code true}, {@link MemoryFlushHook} and {@link MemoryMaintenanceHook} are not registered.
+         */
+        private boolean disableMemoryHooks = false;
+
+        /** When {@code true}, {@link SessionPersistenceHook} is not registered. */
+        private boolean disableSessionPersistence = false;
+
+        /** When {@code true}, {@link WorkspaceContextHook} is not registered. */
+        private boolean disableWorkspaceContext = false;
+
+        /**
+         * When {@code true}, {@link SubagentsHook} is not registered on this agent. Spawned leaf
+         * subagents omit this hook regardless.
+         */
+        private boolean disableSubagents = false;
 
         // Filesystem mode configuration (at most one of these three is set)
         private SandboxFilesystemSpec sandboxFilesystemSpec;
@@ -577,6 +699,179 @@ public class HarnessAgent implements Agent, StateModule {
 
         public Builder toolExecutionContext(ToolExecutionContext ctx) {
             this.toolExecutionContext = ctx;
+            return this;
+        }
+
+        /**
+         * Adds a knowledge base for RAG (Retrieval-Augmented Generation) on the delegate
+         * {@link ReActAgent}.
+         *
+         * @param knowledge the knowledge base to add
+         * @return this builder instance
+         */
+        public Builder knowledge(Knowledge knowledge) {
+            if (knowledge != null) {
+                this.knowledgeBases.add(knowledge);
+            }
+            return this;
+        }
+
+        /**
+         * Adds multiple knowledge bases for RAG (Retrieval-Augmented Generation) on the delegate
+         * {@link ReActAgent}.
+         *
+         * @param knowledges the list of knowledge bases to add
+         * @return this builder instance
+         */
+        public Builder knowledges(List<Knowledge> knowledges) {
+            if (knowledges != null) {
+                this.knowledgeBases.addAll(knowledges);
+            }
+            return this;
+        }
+
+        /**
+         * Sets the RAG mode on the delegate {@link ReActAgent}.
+         *
+         * @param mode the RAG mode (GENERIC, AGENTIC, or NONE)
+         * @return this builder instance
+         */
+        public Builder ragMode(RAGMode mode) {
+            if (mode != null) {
+                this.ragMode = mode;
+            }
+            return this;
+        }
+
+        /**
+         * Sets the retrieve configuration for RAG on the delegate {@link ReActAgent}.
+         *
+         * @param config the retrieve configuration
+         * @return this builder instance
+         */
+        public Builder retrieveConfig(RetrieveConfig config) {
+            if (config != null) {
+                this.retrieveConfig = config;
+            }
+            return this;
+        }
+
+        /**
+         * Sets the {@link PlanNotebook} for plan-based task execution on the delegate
+         * {@link ReActAgent}.
+         *
+         * <p>Plan management tools will be automatically registered to the toolkit and a hook
+         * will be added to inject plan hints before each reasoning step.
+         *
+         * @param planNotebook the configured PlanNotebook instance
+         * @return this builder instance
+         */
+        public Builder planNotebook(PlanNotebook planNotebook) {
+            this.planNotebook = planNotebook;
+            return this;
+        }
+
+        /**
+         * Enables plan functionality with default configuration on the delegate
+         * {@link ReActAgent}. Equivalent to {@code planNotebook(PlanNotebook.builder().build())}.
+         *
+         * @return this builder instance
+         */
+        public Builder enablePlan() {
+            this.planNotebook = PlanNotebook.builder().build();
+            return this;
+        }
+
+        /**
+         * Sets the long-term memory for the delegate {@link ReActAgent}.
+         *
+         * @param longTermMemory the long-term memory implementation
+         * @return this builder instance
+         */
+        public Builder longTermMemory(LongTermMemory longTermMemory) {
+            this.longTermMemory = longTermMemory;
+            return this;
+        }
+
+        /**
+         * Sets the long-term memory mode for the delegate {@link ReActAgent}.
+         *
+         * @param mode the long-term memory mode
+         * @return this builder instance
+         */
+        public Builder longTermMemoryMode(LongTermMemoryMode mode) {
+            if (mode != null) {
+                this.longTermMemoryMode = mode;
+            }
+            return this;
+        }
+
+        /**
+         * Sets whether long-term memory recording should be performed asynchronously on the
+         * delegate {@link ReActAgent}.
+         *
+         * @param asyncRecord whether to record memories asynchronously
+         * @return this builder instance
+         */
+        public Builder longTermMemoryAsyncRecord(boolean asyncRecord) {
+            this.longTermMemoryAsyncRecord = asyncRecord;
+            return this;
+        }
+
+        /**
+         * Sets the state persistence configuration for the delegate {@link ReActAgent}.
+         *
+         * @param statePersistence the state persistence configuration
+         * @return this builder instance
+         */
+        public Builder statePersistence(StatePersistence statePersistence) {
+            this.statePersistence = statePersistence;
+            return this;
+        }
+
+        /**
+         * Sets the structured output enforcement mode for the delegate {@link ReActAgent}.
+         *
+         * @param reminder the structured output reminder mode
+         * @return this builder instance
+         */
+        public Builder structuredOutputReminder(StructuredOutputReminder reminder) {
+            this.structuredOutputReminder = reminder;
+            return this;
+        }
+
+        /**
+         * Enables or disables the meta-tool functionality for the delegate {@link ReActAgent}.
+         *
+         * @param enableMetaTool true to enable the meta-tool
+         * @return this builder instance
+         */
+        public Builder enableMetaTool(boolean enableMetaTool) {
+            this.enableMetaTool = enableMetaTool;
+            return this;
+        }
+
+        /**
+         * Enables or disables automatic recovery from orphaned pending tool calls on the delegate
+         * {@link ReActAgent}.
+         *
+         * @param enable true to enable auto-recovery
+         * @return this builder instance
+         */
+        public Builder enablePendingToolRecovery(boolean enable) {
+            this.enablePendingToolRecovery = enable;
+            return this;
+        }
+
+        /**
+         * Enables or disables the concurrent-execution guard on the delegate
+         * {@link ReActAgent}. Defaults to {@code true}.
+         *
+         * @param checkRunning true to enable the guard
+         * @return this builder instance
+         */
+        public Builder checkRunning(boolean checkRunning) {
+            this.checkRunning = checkRunning;
             return this;
         }
 
@@ -674,6 +969,68 @@ public class HarnessAgent implements Agent, StateModule {
          */
         public Builder enableAgentTracingLog(boolean enabled) {
             this.agentTracingLogEnabled = enabled;
+            return this;
+        }
+
+        /**
+         * Skips registration of {@link FilesystemTool} ({@code read_file}, {@code write_file}, etc.).
+         * Use when supplying a custom filesystem tool or a stricter wrapper on the {@link Toolkit}.
+         */
+        public Builder disableFilesystemTools() {
+            this.disableFilesystemTools = true;
+            return this;
+        }
+
+        /**
+         * Skips registration of {@link ShellExecuteTool}. Only applies when the resolved filesystem is an
+         * {@link AbstractSandboxFilesystem} (sandbox mode or default local workspace with shell).
+         */
+        public Builder disableShellTool() {
+            this.disableShellTool = true;
+            return this;
+        }
+
+        /**
+         * Skips registration of {@link MemorySearchTool}, {@link MemoryGetTool}, and {@link SessionSearchTool}.
+         */
+        public Builder disableMemoryTools() {
+            this.disableMemoryTools = true;
+            return this;
+        }
+
+        /**
+         * Skips registration of {@link MemoryFlushHook} and {@link MemoryMaintenanceHook} (workspace-backed
+         * memory maintenance around model calls).
+         */
+        public Builder disableMemoryHooks() {
+            this.disableMemoryHooks = true;
+            return this;
+        }
+
+        /**
+         * Skips registration of {@link SessionPersistenceHook}. Only use when you persist agent state
+         * through another mechanism.
+         */
+        public Builder disableSessionPersistence() {
+            this.disableSessionPersistence = true;
+            return this;
+        }
+
+        /**
+         * Skips registration of {@link WorkspaceContextHook}, so AGENTS.md / workspace context is not
+         * injected into the system message.
+         */
+        public Builder disableWorkspaceContext() {
+            this.disableWorkspaceContext = true;
+            return this;
+        }
+
+        /**
+         * Skips registration of {@link SubagentsHook} on this agent (no {@code agent_spawn} / task tools
+         * from harness subagent orchestration).
+         */
+        public Builder disableSubagents() {
+            this.disableSubagents = true;
             return this;
         }
 
@@ -942,9 +1299,16 @@ public class HarnessAgent implements Agent, StateModule {
                         sandboxFilesystemSpec.getSandboxStateStore() != null
                                 ? sandboxFilesystemSpec.getSandboxStateStore()
                                 : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
+                SandboxExecutionGuard executionGuard =
+                        sandboxFilesystemSpec.getExecutionGuard() != null
+                                ? sandboxFilesystemSpec.getExecutionGuard()
+                                : SandboxExecutionGuard.noop();
                 SandboxManager sandboxManager =
                         new SandboxManager(
-                                defaultSandboxContext.getClient(), stateStore, resolvedAgentId);
+                                defaultSandboxContext.getClient(),
+                                stateStore,
+                                resolvedAgentId,
+                                executionGuard);
                 sandboxLifecycleHook = new SandboxLifecycleHook(sandboxManager, capturedSandboxFs);
             }
             WorkspaceManager wsManager = new WorkspaceManager(resolvedWorkspace, filesystem);
@@ -964,22 +1328,24 @@ public class HarnessAgent implements Agent, StateModule {
                 allHooks.add(new AgentTraceHook());
             }
 
-            WorkspaceContextHook markdownHook =
-                    new WorkspaceContextHook(
-                            wsManager,
-                            name != null ? name : "HarnessAgent",
-                            environmentMemory,
-                            maxContextTokens);
-            markdownHook.setAdditionalContextFiles(additionalContextFiles);
-            allHooks.add(markdownHook);
+            if (!disableWorkspaceContext) {
+                WorkspaceContextHook markdownHook =
+                        new WorkspaceContextHook(
+                                wsManager,
+                                name != null ? name : "HarnessAgent",
+                                environmentMemory,
+                                maxContextTokens);
+                markdownHook.setAdditionalContextFiles(additionalContextFiles);
+                allHooks.add(markdownHook);
+            }
 
             MemoryFlushHook memoryFlushHook = null;
-            if (model != null) {
+            if (model != null && !disableMemoryHooks) {
                 memoryFlushHook = new MemoryFlushHook(wsManager, model);
                 allHooks.add(memoryFlushHook);
             }
 
-            if (model != null) {
+            if (model != null && !disableMemoryHooks) {
                 MemoryConsolidator consolidator = new MemoryConsolidator(wsManager, model);
                 allHooks.add(new MemoryMaintenanceHook(wsManager, consolidator));
             }
@@ -994,10 +1360,11 @@ public class HarnessAgent implements Agent, StateModule {
                 allHooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
             }
 
-            SessionPersistenceHook sessionPersistenceHook = new SessionPersistenceHook();
-            allHooks.add(sessionPersistenceHook);
+            if (!disableSessionPersistence) {
+                allHooks.add(new SessionPersistenceHook());
+            }
 
-            if (!leafSubagent && model != null) {
+            if (!leafSubagent && !disableSubagents && model != null) {
                 SubagentsHook subagentsHook =
                         buildSubagentsHook(wsManager, resolvedWorkspace, capturedSandboxFs);
                 if (subagentsHook != null) {
@@ -1008,16 +1375,17 @@ public class HarnessAgent implements Agent, StateModule {
             // ---- Toolkit ----
             Toolkit agentToolkit = toolkit;
 
-            MemorySearchTool searchTool = new MemorySearchTool(wsManager);
-            MemoryGetTool getTool = new MemoryGetTool(wsManager);
+            if (!disableMemoryTools) {
+                agentToolkit.registerTool(new MemorySearchTool(wsManager));
+                agentToolkit.registerTool(new MemoryGetTool(wsManager));
+                agentToolkit.registerTool(new SessionSearchTool(wsManager));
+            }
 
-            agentToolkit.registerTool(searchTool);
-            agentToolkit.registerTool(getTool);
-            agentToolkit.registerTool(new SessionSearchTool(wsManager));
+            if (!disableFilesystemTools) {
+                agentToolkit.registerTool(new FilesystemTool(filesystem));
+            }
 
-            agentToolkit.registerTool(new FilesystemTool(filesystem));
-
-            if (filesystem instanceof AbstractSandboxFilesystem sandbox) {
+            if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
 
@@ -1052,6 +1420,31 @@ public class HarnessAgent implements Agent, StateModule {
             if (toolExecutionContext != null) {
                 reactBuilder.toolExecutionContext(toolExecutionContext);
             }
+            if (!knowledgeBases.isEmpty()) {
+                reactBuilder
+                        .knowledges(knowledgeBases)
+                        .ragMode(ragMode)
+                        .retrieveConfig(retrieveConfig);
+            }
+            if (planNotebook != null) {
+                reactBuilder.planNotebook(planNotebook);
+            }
+            if (longTermMemory != null) {
+                reactBuilder
+                        .longTermMemory(longTermMemory)
+                        .longTermMemoryMode(longTermMemoryMode)
+                        .longTermMemoryAsyncRecord(longTermMemoryAsyncRecord);
+            }
+            if (statePersistence != null) {
+                reactBuilder.statePersistence(statePersistence);
+            }
+            if (structuredOutputReminder != null) {
+                reactBuilder.structuredOutputReminder(structuredOutputReminder);
+            }
+            reactBuilder
+                    .enableMetaTool(enableMetaTool)
+                    .enablePendingToolRecovery(enablePendingToolRecovery)
+                    .checkRunning(checkRunning);
 
             ReActAgent delegate = reactBuilder.build();
 
@@ -1060,7 +1453,7 @@ public class HarnessAgent implements Agent, StateModule {
                     name,
                     resolvedWorkspace,
                     filesystem.getClass().getSimpleName(),
-                    !leafSubagent && model != null);
+                    !leafSubagent && !disableSubagents && model != null);
 
             return new HarnessAgent(
                     delegate,
@@ -1221,6 +1614,12 @@ public class HarnessAgent implements Agent, StateModule {
             final List<Hook> capturedHooks = List.copyOf(this.hooks);
             final AgentSkillRepository capturedSkillRepo = this.skillRepository;
             final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
+            final boolean capturedDisableFilesystemTools = this.disableFilesystemTools;
+            final boolean capturedDisableShellTool = this.disableShellTool;
+            final boolean capturedDisableMemoryTools = this.disableMemoryTools;
+            final boolean capturedDisableMemoryHooks = this.disableMemoryHooks;
+            final boolean capturedDisableSessionPersistence = this.disableSessionPersistence;
+            final boolean capturedDisableWorkspaceContext = this.disableWorkspaceContext;
 
             return () -> {
                 Builder sub =
@@ -1234,6 +1633,25 @@ public class HarnessAgent implements Agent, StateModule {
                                 .maxIters(capturedMaxIters)
                                 .environmentMemory(capturedEnvMemory)
                                 .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext);
+
+                if (capturedDisableFilesystemTools) {
+                    sub.disableFilesystemTools();
+                }
+                if (capturedDisableShellTool) {
+                    sub.disableShellTool();
+                }
+                if (capturedDisableMemoryTools) {
+                    sub.disableMemoryTools();
+                }
+                if (capturedDisableMemoryHooks) {
+                    sub.disableMemoryHooks();
+                }
+                if (capturedDisableSessionPersistence) {
+                    sub.disableSessionPersistence();
+                }
+                if (capturedDisableWorkspaceContext) {
+                    sub.disableWorkspaceContext();
+                }
 
                 if (capturedSkillRepo != null) {
                     sub.skillRepository(capturedSkillRepo);

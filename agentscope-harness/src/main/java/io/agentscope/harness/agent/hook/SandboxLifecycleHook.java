@@ -22,9 +22,9 @@ import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.RuntimeContextAware;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
-import io.agentscope.harness.agent.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import java.util.concurrent.atomic.AtomicReference;
@@ -147,6 +147,7 @@ public class SandboxLifecycleHook implements Hook, RuntimeContextAware {
                                             releaseErr.getMessage(),
                                             releaseErr);
                                 }
+                                result.getLease().close();
                                 throw e;
                             }
                             return event;
@@ -195,6 +196,9 @@ public class SandboxLifecycleHook implements Hook, RuntimeContextAware {
                                 e.getMessage(),
                                 e);
                     }
+
+                    // Release the execution guard lease — always runs after release()
+                    result.getLease().close();
 
                     // Clear the session reference from the filesystem proxy
                     filesystemProxy.setSandbox(null);

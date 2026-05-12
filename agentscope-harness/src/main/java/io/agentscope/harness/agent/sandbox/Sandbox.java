@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import io.agentscope.core.agent.RuntimeContext;
 import java.io.InputStream;
 
 /**
@@ -60,7 +61,15 @@ public interface Sandbox extends AutoCloseable {
      */
     SandboxState getState();
 
-    ExecResult exec(String command, Integer timeoutSeconds) throws Exception;
+    /**
+     * Runs a shell command in the sandbox workspace.
+     *
+     * @param runtimeContext per-call agent context (session, user, attributes); may be {@code null}
+     * @param command shell command
+     * @param timeoutSeconds max wait; {@code null} for implementation default
+     */
+    ExecResult exec(RuntimeContext runtimeContext, String command, Integer timeoutSeconds)
+            throws Exception;
 
     InputStream persistWorkspace() throws Exception;
 

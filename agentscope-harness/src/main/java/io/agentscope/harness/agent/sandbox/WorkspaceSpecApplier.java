@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
 import io.agentscope.harness.agent.sandbox.layout.DirEntry;
 import io.agentscope.harness.agent.sandbox.layout.FileEntry;
 import io.agentscope.harness.agent.sandbox.layout.GitRepoEntry;
@@ -129,6 +130,11 @@ public class WorkspaceSpecApplier {
         } else if (entry instanceof WorkspaceProjectionEntry) {
             log.debug(
                     "WorkspaceProjectionEntry is applied by sandbox lifecycle, skipping: {}", dest);
+        } else if (entry instanceof BindMountEntry) {
+            log.debug(
+                    "BindMountEntry is applied by the sandbox backend at container start, skipping:"
+                            + " {}",
+                    dest);
         }
     }
 

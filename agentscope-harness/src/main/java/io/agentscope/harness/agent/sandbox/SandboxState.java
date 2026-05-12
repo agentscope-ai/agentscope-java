@@ -16,9 +16,7 @@
 package io.agentscope.harness.agent.sandbox;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxState;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 
 /**
@@ -27,9 +25,13 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
  *
  * <p>The {@link #workspaceRootReady} flag drives the 4-branch start logic: it records whether
  * the workspace was fully initialized at the last stop.
+ *
+ * <p>Concrete subtypes are registered for Jackson via {@link
+ * io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule} (and optional {@link
+ * com.fasterxml.jackson.databind.ObjectMapper#registerSubtypes} for extension types), not via
+ * {@code @JsonSubTypes} on this class.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
-@JsonSubTypes({@JsonSubTypes.Type(value = DockerSandboxState.class, name = "docker")})
 public abstract class SandboxState {
 
     private String sessionId;

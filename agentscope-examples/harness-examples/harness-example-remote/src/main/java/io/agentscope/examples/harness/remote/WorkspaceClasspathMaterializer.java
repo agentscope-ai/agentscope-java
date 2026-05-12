@@ -15,6 +15,7 @@
  */
 package io.agentscope.examples.harness.remote;
 
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -26,7 +27,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 /**
  * Copies {@code classpath:workspace/...} into a temp directory used as the local side of the
- * composite workspace for {@link io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec}.
+ * composite workspace for {@link RemoteFilesystemSpec}.
  */
 public final class WorkspaceClasspathMaterializer {
 

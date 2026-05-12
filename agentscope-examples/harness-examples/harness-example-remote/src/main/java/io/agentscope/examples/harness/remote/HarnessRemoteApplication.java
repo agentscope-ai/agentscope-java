@@ -15,6 +15,7 @@
  */
 package io.agentscope.examples.harness.remote;
 
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -23,7 +24,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *
  * <p>Set {@code DASHSCOPE_API_KEY}. Default port {@code 8788} (see {@code application.properties}).
  *
- * <p>This module demonstrates {@link io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec}
+ * <p>This module demonstrates {@link RemoteFilesystemSpec}
  * ({@code docs/zh/harness/filesystem.md} <strong>模式一</strong>). Sandbox (<strong>模式二</strong>)
  * is {@code harness-example-sandbox}.
  */

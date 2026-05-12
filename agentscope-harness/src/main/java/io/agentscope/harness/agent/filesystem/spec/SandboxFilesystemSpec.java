@@ -13,12 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.sandbox.filesystem;
+package io.agentscope.harness.agent.filesystem.spec;
 
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
@@ -44,6 +45,7 @@ public abstract class SandboxFilesystemSpec {
     private IsolationScope isolationScope;
     private SandboxSnapshotSpec snapshotSpecOverride;
     private SandboxStateStore sandboxStateStore;
+    private SandboxExecutionGuard executionGuard;
     private boolean workspaceProjectionEnabled = true;
     private List<String> workspaceProjectionRoots = DEFAULT_WORKSPACE_PROJECTION_ROOTS;
 
@@ -89,6 +91,27 @@ public abstract class SandboxFilesystemSpec {
 
     public SandboxStateStore getSandboxStateStore() {
         return sandboxStateStore;
+    }
+
+    /**
+     * Sets a {@link SandboxExecutionGuard} that serialises concurrent executions on the same
+     * isolation slot.
+     *
+     * <p>Only relevant for {@link io.agentscope.harness.agent.IsolationScope#AGENT} and
+     * {@link io.agentscope.harness.agent.IsolationScope#GLOBAL} scopes, where multiple callers
+     * could otherwise race on the same persistent state. When {@code null} (default), no guard is
+     * applied and the existing no-lock behaviour is preserved.
+     *
+     * @param executionGuard the guard to apply, or {@code null} for no guard
+     * @return this spec
+     */
+    public SandboxFilesystemSpec executionGuard(SandboxExecutionGuard executionGuard) {
+        this.executionGuard = executionGuard;
+        return this;
+    }
+
+    public SandboxExecutionGuard getExecutionGuard() {
+        return executionGuard;
     }
 
     public SandboxFilesystemSpec workspaceProjectionEnabled(boolean enabled) {

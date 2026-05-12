@@ -31,7 +31,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.session.Session;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
