@@ -38,9 +38,12 @@ public class ThinkingBlockConverter implements BlockEventConverter<ThinkingBlock
             return;
         }
 
-        String thinking = block.getThinking();
         String msgId = event.getMessage().getId();
+        if (ctx.isReasoningFinished(msgId)) {
+            return;
+        }
 
+        String thinking = block.getThinking();
         if (thinking != null && !thinking.isBlank()) {
             if (!ctx.isReasoningActive(msgId)) {
                 ctx.flushAllActiveReasonings();

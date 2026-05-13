@@ -17,6 +17,7 @@ package io.agentscope.core.agui.adapter;
 
 import io.agentscope.core.agui.event.AguiEvent;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,6 +50,9 @@ public class StreamContext {
     private final Set<String> activeTextIds = new LinkedHashSet<>();
     private final Set<String> activeReasoningIds = new LinkedHashSet<>();
     private final Set<String> activeToolIds = new LinkedHashSet<>();
+
+    private final Set<String> finishedTextIds = new HashSet<>();
+    private final Set<String> finishedReasoningIds = new HashSet<>();
 
     // Fallback ID for tool results that might lack an explicit ID
     private String lastActiveToolId = null;
@@ -148,9 +152,15 @@ public class StreamContext {
         List<AguiEvent> remaining = new ArrayList<>(deferredEndEvents.values());
 
         deferredEndEvents.clear();
+
         activeTextIds.clear();
         activeReasoningIds.clear();
         activeToolIds.clear();
+
+        finishedTextIds.clear();
+        finishedReasoningIds.clear();
+
+        lastActiveToolId = null;
 
         return remaining;
     }
@@ -189,6 +199,11 @@ public class StreamContext {
 
     public void removeActiveText(String id) {
         activeTextIds.remove(id);
+        finishedTextIds.add(id);
+    }
+
+    public boolean isTextFinished(String id) {
+        return finishedTextIds.contains(id);
     }
 
     // --- Reasoning State Management ---
@@ -203,6 +218,11 @@ public class StreamContext {
 
     public void removeActiveReasoning(String id) {
         activeReasoningIds.remove(id);
+        finishedReasoningIds.add(id);
+    }
+
+    public boolean isReasoningFinished(String id) {
+        return finishedReasoningIds.contains(id);
     }
 
     // --- Tool State Management ---

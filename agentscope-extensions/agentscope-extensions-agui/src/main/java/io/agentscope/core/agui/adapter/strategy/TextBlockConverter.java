@@ -33,9 +33,12 @@ public class TextBlockConverter implements BlockEventConverter<TextBlock> {
 
     @Override
     public void convert(TextBlock block, Event event, StreamContext ctx) {
-        String text = block.getText();
         String msgId = event.getMessage().getId();
+        if (ctx.isTextFinished(msgId)) {
+            return;
+        }
 
+        String text = block.getText();
         if (text != null && !text.isBlank()) {
             if (!ctx.isTextActive(msgId)) {
                 ctx.flushAllActiveTexts();
