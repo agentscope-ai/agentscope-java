@@ -808,6 +808,135 @@ class AutoContextMemoryTest {
 
     @Test
     @DisplayName(
+            "Should keep plain current round compression as a single summary message when no"
+                    + " tool interaction exists")
+    void testMergeAndCompressCurrentRoundMessagesWithoutToolInteraction()
+            throws ReflectiveOperationException {
+        TestModel model = new TestModel("Plain current round summary");
+        AutoContextMemory mem = new AutoContextMemory(config, model);
+
+        List<Msg> currentRoundMessages =
+                new ArrayList<>(
+                        List.of(
+                                createTextMessage("User asks a plain question", MsgRole.USER),
+                                createTextMessage(
+                                        "Assistant answers without tools", MsgRole.ASSISTANT)));
+
+        Method method =
+                AutoContextMemory.class.getDeclaredMethod(
+                        "mergeAndCompressCurrentRoundMessages", List.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        List<Msg> compressedMessages = (List<Msg>) method.invoke(mem, currentRoundMessages);
+
+        assertNotNull(compressedMessages, "Compression should return a summary message list");
+        assertEquals(
+                1,
+                compressedMessages.size(),
+                "Plain current round compression should stay as a single summary message");
+        assertEquals(
+                MsgRole.ASSISTANT,
+                compressedMessages.get(0).getRole(),
+                "Summary message should remain an assistant message");
+        assertTrue(
+                compressedMessages.get(0).getTextContent().contains("Plain current round summary"),
+                "Summary text should come from the compression model");
+
+        assertEquals(
+                1, mem.getOffloadContext().size(), "Original messages should still be offloaded");
+        assertEquals(
+                2,
+                mem.getOffloadContext().values().iterator().next().size(),
+                "Offload context should retain the original current-round messages");
+    }
+
+    @Test
+    @DisplayName(
+            "Should fall back to summary text when tool-aware compression only sees tool results")
+    void testBuildToolAwareCurrentRoundCompressionWithToolResultsOnly()
+            throws ReflectiveOperationException {
+        AutoContextMemory mem = new AutoContextMemory(config, testModel);
+        List<Msg> toolOnlyMessages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .name("tool")
+                                .content(
+                                        ToolResultBlock.of(
+                                                "call_only",
+                                                null,
+                                                TextBlock.builder().text("raw tool output").build(),
+                                                Map.of("source", "tool-only-test")))
+                                .build());
+        Msg summaryMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(TextBlock.builder().text("Tool-only summary").build())
+                        .build();
+
+        Method method =
+                AutoContextMemory.class.getDeclaredMethod(
+                        "buildToolAwareCurrentRoundCompression",
+                        List.class,
+                        Msg.class,
+                        String.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        List<Msg> compressedMessages =
+                (List<Msg>) method.invoke(mem, toolOnlyMessages, summaryMsg, null);
+
+        assertEquals(
+                2,
+                compressedMessages.size(),
+                "Tool-only current round should still emit assistant and tool messages");
+
+        Msg assistantMsg = compressedMessages.get(0);
+        assertEquals(
+                MsgRole.ASSISTANT,
+                assistantMsg.getRole(),
+                "First compressed message should be assistant");
+        assertEquals(
+                "Tool-only summary",
+                assistantMsg.getTextContent(),
+                "Assistant fallback should keep the summary text when no tool-use blocks exist");
+        assertFalse(
+                assistantMsg.hasContentBlocks(ToolUseBlock.class),
+                "Tool-only fallback should not fabricate ToolUseBlock content");
+        assertTrue(
+                assistantMsg.getMetadata().isEmpty(),
+                "Assistant metadata should stay empty when summary metadata is absent");
+
+        Msg toolMsg = compressedMessages.get(1);
+        assertEquals(
+                MsgRole.TOOL, toolMsg.getRole(), "Second compressed message should be tool role");
+        ToolResultBlock resultBlock = toolMsg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(
+                resultBlock, "Compressed tool message should preserve ToolResultBlock structure");
+        assertEquals("call_only", resultBlock.getId(), "Tool result id should be preserved");
+        assertNull(
+                resultBlock.getName(), "Null tool names should stay null on the preserved block");
+        assertEquals(
+                "Tool result for tool is summarized in the paired assistant compression message.",
+                resultBlock.getOutput().stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .findFirst()
+                        .orElse(""),
+                "Placeholder should fall back to the generic tool label without an offload tag");
+        assertTrue(
+                toolMsg.getMetadata().containsKey("_compress_meta"),
+                "Compressed tool message should still include compression metadata wrapper");
+        assertTrue(
+                ((Map<?, ?>) toolMsg.getMetadata().get("_compress_meta")).isEmpty(),
+                "Compression metadata should stay empty when no offload uuid is provided");
+    }
+
+    @Test
+    @DisplayName(
             "Should skip tool message compression when token count is below"
                     + " minCompressionTokenThreshold")
     void testSummaryToolsMessagesSkipWhenBelowTokenThreshold() {
