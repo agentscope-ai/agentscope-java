@@ -98,6 +98,7 @@ System.out.println(response.getTextContent());
 - **[内存管理](task/memory.md)** - 管理对话历史和长期内存
 - **[计划](task/plan.md)** - 复杂多步骤任务的计划管理
 - **[智能体配置](task/agent-config.md)** - 高级智能体配置选项
+- **[HarnessAgent](harness/overview.md)** - 具备工作区、持久记忆与子 Agent 编排的生产级运行时
 
 ### 多智能体系统
 - **[管道](multi-agent/pipeline.md)** - 使用顺序和并行执行构建多智能体工作流

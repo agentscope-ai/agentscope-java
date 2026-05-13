@@ -15,6 +15,11 @@
  */
 package io.agentscope.core.hook;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
+import java.util.Collections;
+import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
@@ -140,6 +145,24 @@ public interface Hook {
      * @return Mono containing the potentially modified event
      */
     <T extends HookEvent> Mono<T> onEvent(T event);
+
+    /**
+     * Optional tools installed together with this hook.
+     *
+     * <p>During {@link ReActAgent.Builder#build()}, the framework copies the builder {@link
+     * Toolkit} and then registers each non-null element from every hook's {@code tools()} list on
+     * the agent-local copy using {@link Toolkit#registerTool(Object)}.
+     *
+     * <p>Return {@link AgentTool} instances and/or objects that declare {@code @Tool} methods.
+     * The default implementation returns an empty list so existing hooks need no change.
+     *
+     * <p>If this method returns {@code null}, it is treated as an empty list.
+     *
+     * @return tool instances to register for this hook (may be immutable)
+     */
+    default List<Object> tools() {
+        return Collections.emptyList();
+    }
 
     /**
      * The priority of this hook (lower value = higher priority).
