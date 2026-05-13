@@ -49,9 +49,11 @@ public class TextBlockConverter implements BlockEventConverter<TextBlock> {
                 ctx.addActiveText(msgId);
             }
 
-            ctx.emit(
-                    new AguiEvent.TextMessageContent(
-                            ctx.getThreadId(), ctx.getRunId(), msgId, text));
+            if (!event.isLast()) {
+                ctx.emit(
+                        new AguiEvent.TextMessageContent(
+                                ctx.getThreadId(), ctx.getRunId(), msgId, text));
+            }
         }
 
         if (event.isLast() && ctx.isTextActive(msgId)) {

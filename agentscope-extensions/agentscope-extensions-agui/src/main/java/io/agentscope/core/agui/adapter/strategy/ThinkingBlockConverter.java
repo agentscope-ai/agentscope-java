@@ -55,9 +55,11 @@ public class ThinkingBlockConverter implements BlockEventConverter<ThinkingBlock
                 ctx.addActiveReasoning(msgId);
             }
 
-            ctx.emit(
-                    new AguiEvent.ReasoningMessageContent(
-                            ctx.getThreadId(), ctx.getRunId(), msgId, thinking));
+            if (!event.isLast()) {
+                ctx.emit(
+                        new AguiEvent.ReasoningMessageContent(
+                                ctx.getThreadId(), ctx.getRunId(), msgId, thinking));
+            }
         }
 
         if (event.isLast() && ctx.isReasoningActive(msgId)) {

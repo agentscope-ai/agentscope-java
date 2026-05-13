@@ -270,7 +270,7 @@ class AguiAgentAdapterTest {
 
         long contentCount =
                 events.stream().filter(e -> e instanceof AguiEvent.TextMessageContent).count();
-        assertEquals(3, contentCount, "Should stream summary chunks as text deltas");
+        assertEquals(2, contentCount, "Should stream summary chunks as text deltas");
 
         long startCount =
                 events.stream().filter(e -> e instanceof AguiEvent.TextMessageStart).count();
@@ -821,9 +821,8 @@ class AguiAgentAdapterTest {
         // Verify the event sequence
         assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
         assertInstanceOf(AguiEvent.TextMessageStart.class, events.get(1));
-        assertInstanceOf(AguiEvent.TextMessageContent.class, events.get(2));
-        assertInstanceOf(AguiEvent.TextMessageEnd.class, events.get(3));
-        assertInstanceOf(AguiEvent.RunFinished.class, events.get(4));
+        assertInstanceOf(AguiEvent.TextMessageEnd.class, events.get(2));
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(3));
     }
 
     @Test
