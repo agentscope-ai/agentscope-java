@@ -42,6 +42,8 @@ public class TextBlockConverter implements BlockEventConverter<TextBlock> {
         if (text != null && !text.isBlank()) {
             if (!ctx.isTextActive(msgId)) {
                 ctx.flushAllActiveTexts();
+                // When the text is output, it signifies that the "reasoning" has end
+                ctx.flushAllActiveReasonings();
 
                 ctx.emit(
                         new AguiEvent.TextMessageStart(
