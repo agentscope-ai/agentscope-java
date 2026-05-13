@@ -150,13 +150,6 @@ class ListHashUtilTest {
 
     @Test
     void testComputeHashEquivalentThinkingBlocksWithReasoningDetails() {
-        OpenAIReasoningDetail detail = new OpenAIReasoningDetail();
-        detail.setId("reasoning-1");
-        detail.setType("reasoning.text");
-        detail.setData("encrypted-data");
-        detail.setText("visible reasoning");
-        detail.setFormat("openai-responses-v1");
-        detail.setIndex(0);
         List<Msg> first =
                 List.of(
                         Msg.builder()
@@ -170,7 +163,7 @@ class ListHashUtilTest {
                                                         Map.of(
                                                                 ThinkingBlock
                                                                         .METADATA_REASONING_DETAILS,
-                                                                List.of(detail)))
+                                                                List.of(createReasoningDetail())))
                                                 .build())
                                 .build());
 
@@ -187,7 +180,7 @@ class ListHashUtilTest {
                                                         Map.of(
                                                                 ThinkingBlock
                                                                         .METADATA_REASONING_DETAILS,
-                                                                List.of(detail)))
+                                                                List.of(createReasoningDetail())))
                                                 .build())
                                 .build());
 
@@ -343,5 +336,16 @@ class ListHashUtilTest {
                             .build());
         }
         return list;
+    }
+
+    private OpenAIReasoningDetail createReasoningDetail() {
+        OpenAIReasoningDetail detail = new OpenAIReasoningDetail();
+        detail.setId("reasoning-1");
+        detail.setType("reasoning.text");
+        detail.setData("encrypted-data");
+        detail.setText("visible reasoning");
+        detail.setFormat("openai-responses-v1");
+        detail.setIndex(0);
+        return detail;
     }
 }
