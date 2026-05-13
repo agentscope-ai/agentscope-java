@@ -125,6 +125,13 @@ public class WorkspaceTaskRepository implements TaskRepository {
                             updateStatus(sessionId, taskId, TaskStatus.RUNNING, null, null);
                             try {
                                 String result = taskExecution.get();
+                                Optional<TaskRecord> afterRun =
+                                        workspaceManager.readTaskRecord(
+                                                parentAgentId, sessionId, taskId);
+                                if (afterRun.isPresent() && afterRun.get().isCancelRequested()) {
+                                    markCancelled(sessionId, taskId);
+                                    return null;
+                                }
                                 updateStatus(sessionId, taskId, TaskStatus.COMPLETED, result, null);
                                 return result;
                             } catch (Exception e) {

@@ -258,14 +258,16 @@ class WorkspaceTaskRepositoryTest {
 
         boolean cancelled = repo.cancelTask(session, taskId);
         assertTrue(cancelled);
-        release.countDown();
 
-        // After cancelTask returns synchronously, cancelRequested must be persisted
+        // Read workspace before releasing the worker: once the latch opens, the async path
+        // may persist COMPLETED and would race this assertion under full-suite load.
         Optional<TaskRecord> record =
                 workspaceManager.readTaskRecord("test-agent", session, taskId);
         assertTrue(record.isPresent());
         assertTrue(record.get().isCancelRequested());
         assertEquals(TaskStatus.CANCELLED, record.get().getStatus());
+
+        release.countDown();
     }
 
     // ------------------------------------------------------------------
