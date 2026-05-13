@@ -88,6 +88,26 @@ parts:
   - file: en/multi-agent/multiagent-debate
     title: Multi-Agent Debate
 
+- caption: Harness
+  chapters:
+  - file: en/harness/overview
+    title: Overview
+
+- caption: Integration
+  chapters:
+  - file: en/integration/overview
+    title: Overview
+
+- caption: Blogs
+  chapters:
+  - file: en/blogs/index
+    title: Blogs
+
+- caption: Community
+  chapters:
+  - file: en/community/overview
+    title: Community
+
 - caption: 快速开始
   chapters:
   - file: zh/intro
@@ -162,3 +182,43 @@ parts:
     title: Handoffs
   - file: zh/multi-agent/multiagent-debate
     title: 多智能体辩论
+
+- caption: 集成
+  chapters:
+  - file: zh/integration/overview
+    title: 概览
+
+- caption: 博客
+  chapters:
+  - file: zh/blogs/index
+    title: 博客
+
+- caption: 社区
+  chapters:
+  - file: zh/community/overview
+    title: 社区
+
+- caption: Harness
+  chapters:
+  - file: zh/harness/overview
+    title: 概览
+  - file: zh/harness/quickstart/index
+    title: 快速开始
+  - file: zh/harness/architecture
+    title: 架构
+  - file: zh/harness/workspace
+    title: 工作区
+  - file: zh/harness/filesystem
+    title: 文件系统
+  - file: zh/harness/session
+    title: 会话
+  - file: zh/harness/memory
+    title: 记忆
+  - file: zh/harness/sandbox/index
+    title: 沙箱
+  - file: zh/harness/example/index
+    title: 示例
+  - file: zh/harness/tool
+    title: 工具
+  - file: zh/harness/subagent
+    title: 子 Agent

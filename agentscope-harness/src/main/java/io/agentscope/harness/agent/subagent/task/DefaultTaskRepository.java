@@ -27,8 +27,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
- * Default in-memory {@link TaskRepository} backed by a cached daemon thread pool. Each submitted
- * task runs asynchronously via {@link CompletableFuture#supplyAsync}.
+ * In-memory {@link TaskRepository} backed by a cached daemon thread pool.
+ *
+ * <p>Session IDs are ignored — all tasks share a single flat map. This is suitable for
+ * single-node local deployments and testing. For distributed durability, prefer
+ * {@code WorkspaceTaskRepository}.
  */
 public class DefaultTaskRepository implements TaskRepository {
 
@@ -58,20 +61,21 @@ public class DefaultTaskRepository implements TaskRepository {
     }
 
     @Override
-    public BackgroundTask getTask(String taskId) {
+    public BackgroundTask getTask(String sessionId, String taskId) {
         return tasks.get(taskId);
     }
 
     @Override
-    public BackgroundTask putTask(String taskId, String agentId, Supplier<String> taskExecution) {
+    public BackgroundTask putTask(
+            String taskId, String subAgentId, String sessionId, Supplier<String> taskExecution) {
         CompletableFuture<String> future = CompletableFuture.supplyAsync(taskExecution, executor);
-        BackgroundTask task = new BackgroundTask(taskId, agentId, future);
+        BackgroundTask task = new BackgroundTask(taskId, subAgentId, future);
         tasks.put(taskId, task);
         return task;
     }
 
     @Override
-    public void removeTask(String taskId) {
+    public void removeTask(String sessionId, String taskId) {
         tasks.remove(taskId);
     }
 
@@ -81,7 +85,7 @@ public class DefaultTaskRepository implements TaskRepository {
     }
 
     @Override
-    public Collection<BackgroundTask> listTasks(TaskStatus filter) {
+    public Collection<BackgroundTask> listTasks(String sessionId, TaskStatus filter) {
         if (filter == null) {
             return List.copyOf(tasks.values());
         }
@@ -95,7 +99,7 @@ public class DefaultTaskRepository implements TaskRepository {
     }
 
     @Override
-    public boolean cancelTask(String taskId) {
+    public boolean cancelTask(String sessionId, String taskId) {
         BackgroundTask task = tasks.get(taskId);
         if (task == null) {
             return false;

@@ -39,6 +39,7 @@ build/
 
 ### Docs
 docs/_build
+.venv/
 
 
 # vibe coding

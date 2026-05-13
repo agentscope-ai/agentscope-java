@@ -24,25 +24,35 @@ import static io.agentscope.harness.agent.workspace.WorkspaceConstants.MEMORY_MD
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_STORE;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SKILLS_DIR;
-import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SUBAGENT_YML;
+import static io.agentscope.harness.agent.workspace.WorkspaceConstants.TASKS_DIR;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,8 +60,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Stateless accessor for workspace content using a two-layer read architecture.
  *
- * <p><strong>Read path:</strong> For every read (AGENTS.md, MEMORY.md, knowledge, subagent.yml,
- * etc.), the {@link AbstractFilesystem} is queried first. If it returns non-empty content, that
+ * <p><strong>Read path:</strong> For every read (AGENTS.md, MEMORY.md, knowledge, etc.),
+ * the {@link AbstractFilesystem} is queried first. If it returns non-empty content, that
  * content is used (filesystem overrides). Otherwise, the local workspace disk is read as a
  * fallback. The filesystem layer applies user/session scoping transparently via
  * {@link NamespaceFactory}.
@@ -72,9 +82,10 @@ import org.slf4j.LoggerFactory;
  * ├── skills/&lt;skill-name&gt;/SKILL.md
  * ├── knowledge/KNOWLEDGE.md
  * ├── knowledge/*
+ * ├── subagents/&lt;id&gt;.md                     (subagent declarations)
+ * ├── agents/&lt;agentId&gt;/workspace/           (isolated subagent runtime root, auto-created)
  * ├── agents/&lt;agentId&gt;/sessions/sessions.json
- * ├── agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.log.jsonl
- * └── subagent.yml
+ * └── agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.log.jsonl
  * </pre>
  */
 public class WorkspaceManager {
@@ -83,6 +94,18 @@ public class WorkspaceManager {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
     private static final ObjectMapper SESSION_STORE_JSON = new ObjectMapper();
+    private static final ObjectMapper TASK_RECORD_JSON =
+            new ObjectMapper()
+                    .registerModule(new JavaTimeModule())
+                    .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    private static final TypeReference<Map<String, TaskRecord>> TASK_MAP_TYPE =
+            new TypeReference<>() {};
+
+    /**
+     * Per-path locks for task record files to prevent concurrent read-modify-write races.
+     * Keyed by workspace-relative path (e.g. {@code agents/X/tasks/Y.json}).
+     */
+    private final Map<String, ReentrantLock> taskFileLocks = new ConcurrentHashMap<>();
 
     private final Path workspace;
     private final AbstractFilesystem filesystem;
@@ -156,11 +179,6 @@ public class WorkspaceManager {
             return "";
         }
         return readWithOverride(normalized);
-    }
-
-    /** Reads subagent.yml content (two-layer: filesystem override, local fallback). */
-    public String readSubagentYml() {
-        return readWithOverride(SUBAGENT_YML);
     }
 
     public Path getMemoryDir() {
@@ -291,6 +309,93 @@ public class WorkspaceManager {
             writeUtf8WorkspaceRelative(rel, serialized);
         } catch (IOException e) {
             log.warn("Failed to write session store {}: {}", rel, e.getMessage());
+        }
+    }
+
+    // ==================== Task record methods ====================
+
+    /**
+     * Upserts a {@link TaskRecord} in {@code agents/<agentId>/tasks/<sessionId>.json}.
+     *
+     * <p>Reads the existing map, merges or inserts the record keyed by {@code taskId}, then
+     * writes the updated map back. Acquires a per-file {@link ReentrantLock} to prevent
+     * concurrent read-modify-write races when multiple tasks share the same session file.
+     */
+    public void writeTaskRecord(String agentId, String sessionId, TaskRecord record) {
+        if (agentId == null
+                || agentId.isBlank()
+                || sessionId == null
+                || sessionId.isBlank()
+                || record == null
+                || record.getTaskId() == null) {
+            return;
+        }
+        String rel = taskRecordPath(agentId, sessionId);
+        ReentrantLock lock = taskFileLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            Map<String, TaskRecord> map = readTaskMap(rel);
+            record.touch();
+            map.put(record.getTaskId(), record);
+            persistTaskMap(rel, map);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Reads a single {@link TaskRecord} by task ID, or {@link Optional#empty()} if not found.
+     */
+    public Optional<TaskRecord> readTaskRecord(String agentId, String sessionId, String taskId) {
+        if (agentId == null
+                || agentId.isBlank()
+                || sessionId == null
+                || sessionId.isBlank()
+                || taskId == null
+                || taskId.isBlank()) {
+            return Optional.empty();
+        }
+        String rel = taskRecordPath(agentId, sessionId);
+        Map<String, TaskRecord> map = readTaskMap(rel);
+        return Optional.ofNullable(map.get(taskId));
+    }
+
+    /**
+     * Returns all {@link TaskRecord}s for the given agent and session, in insertion order.
+     */
+    public Collection<TaskRecord> listTaskRecords(String agentId, String sessionId) {
+        if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
+            return Collections.emptyList();
+        }
+        String rel = taskRecordPath(agentId, sessionId);
+        return List.copyOf(readTaskMap(rel).values());
+    }
+
+    private String taskRecordPath(String agentId, String sessionId) {
+        return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/" + sessionId + ".json";
+    }
+
+    private Map<String, TaskRecord> readTaskMap(String rel) {
+        String json = readWritableWorkspaceRelativeUtf8(rel);
+        if (json == null || json.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            Map<String, TaskRecord> map = TASK_RECORD_JSON.readValue(json, TASK_MAP_TYPE);
+            return map != null ? new LinkedHashMap<>(map) : new LinkedHashMap<>();
+        } catch (IOException e) {
+            log.warn("Corrupt task record store {}, reinitializing: {}", rel, e.getMessage());
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private void persistTaskMap(String rel, Map<String, TaskRecord> map) {
+        try {
+            String serialized =
+                    TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+            writeUtf8WorkspaceRelative(rel, serialized);
+        } catch (IOException e) {
+            log.warn("Failed to write task record store {}: {}", rel, e.getMessage());
         }
     }
 

@@ -50,6 +50,9 @@ sphinx:
     - sphinx.ext.autosummary
     - sphinx_llms_txt
     - sphinx_sitemap
+  # Patches root index.html redirect stub so docs_site_notice appears on "/".
+  local_extensions:
+    root_index_notice: ./_sphinx_extensions
   config:
     # Sitemap Configuration
     html_baseurl: "https://java.agentscope.io/"
@@ -103,15 +106,141 @@ sphinx:
     templates_path: ["./_templates"]
     html_static_path:
       - "_static"
+    html_css_files:
+      - custom.css
     use_multitoc_numbering: false
     html_js_files:
+      - tabs.js
       - language.js
+      - notice-bar.js
+    html_context:
+      docs_top_tabs:
+        # Order: Home → Harness → Agent → Integration → Blogs → Community
+        - id: home
+          label_en: Home
+          label_zh: 首页
+          href_en: en/intro
+          href_zh: zh/intro
+          mirror_paths: true
+          prefixes_en:
+            - en/intro
+          prefixes_zh:
+            - zh/intro
+          sections_en: []
+          sections_zh: []
+          languages:
+            - en
+            - zh
+        - id: harness
+          label_en: Harness
+          label_zh: Harness
+          href_en: en/harness/overview
+          href_zh: zh/harness/overview
+          mirror_paths: false
+          prefixes_en:
+            - en/harness/
+          prefixes_zh:
+            - zh/harness/
+          sections_en:
+            - Harness
+          sections_zh:
+            - Harness
+          languages:
+            - en
+            - zh
+        - id: agent
+          label_en: Agent
+          label_zh: Agent
+          href_en: en/quickstart/installation
+          href_zh: zh/quickstart/installation
+          mirror_paths: true
+          prefixes_en:
+            - en/quickstart/
+            - en/task/
+            - en/multi-agent/
+          prefixes_zh:
+            - zh/quickstart/
+            - zh/task/
+            - zh/multi-agent/
+          sections_en:
+            - Quick Start
+            - Features
+            - Multi Agent
+          sections_zh:
+            - 快速开始
+            - 功能指南
+            - 多智能体
+          languages:
+            - en
+            - zh
+        - id: integration
+          label_en: Integration
+          label_zh: 集成
+          href_en: en/integration/overview
+          href_zh: zh/integration/overview
+          mirror_paths: true
+          prefixes_en:
+            - en/integration/
+          prefixes_zh:
+            - zh/integration/
+          sections_en:
+            - Integration
+          sections_zh:
+            - 集成
+          languages:
+            - en
+            - zh
+        - id: blogs
+          label_en: Blogs
+          label_zh: 博客
+          href_en: en/blogs/index
+          href_zh: zh/blogs/index
+          mirror_paths: true
+          prefixes_en:
+            - en/blogs/
+          prefixes_zh:
+            - zh/blogs/
+          sections_en:
+            - Blogs
+          sections_zh:
+            - 博客
+          languages:
+            - en
+            - zh
+        - id: community
+          label_en: Community
+          label_zh: 社区
+          href_en: en/community/overview
+          href_zh: zh/community/overview
+          mirror_paths: true
+          prefixes_en:
+            - en/community/
+          prefixes_zh:
+            - zh/community/
+          sections_en:
+            - Community
+          sections_zh:
+            - 社区
+          languages:
+            - en
+            - zh
+      # Top notice bar (ADK-style). Set enabled: true and non-empty id + message_* to show.
+      # Bump id when you change copy so users who dismissed the bar see the new notice.
+      # If the bar does not show: (1) open en/intro.html not only index.html before rebuild;
+      # (2) change id or clear localStorage key "agentscope-docs-site-notice".
+      docs_site_notice:
+        enabled: false
+        id: ""
+        variant: "brand"
+        message_en: ""
+        message_zh: ""
+        link_en: ""
+        link_text_en: ""
+        link_zh: ""
+        link_text_zh: ""
     html_sidebars:
       "**":
         - "sidebar/scroll-start.html"
-        - "sidebar/brand.html"
-        - "language-switch.html"
-        - "sidebar/search.html"
         - "sidebar/navigation.html"
         - "sidebar/ethical-ads.html"
         - "sidebar/scroll-end.html"

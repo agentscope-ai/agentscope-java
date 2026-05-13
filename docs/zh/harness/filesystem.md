@@ -8,7 +8,7 @@
 
 1. **工具面**：`FilesystemTool`（及可选的 `ShellExecuteTool`）只认一个 `AbstractFilesystem` 实例；所有路径与执行都经此出口，便于替换实现。
 2. **工作区读写的物理落点**：`WorkspaceManager` 读时「优先走 filesystem、未命中再回退本地」；写与上传一律走 filesystem。因此**长期记忆、日流水账、会话日志**等最终落在哪个介质上，由你选的 **模式** 决定。
-3. **多租户与隔离**：`NamespaceFactory` 在每次操作中从 `RuntimeContext.userId` 等来源拼出路径前缀，使同一套代码在**用户 / 会话 / 全局**之间切换存储分片；`RemoteFilesystemSpec` 与 `SandboxFilesystemSpec` 还把 **IsolationScope** 接到「共享 KV」或「沙箱状态键」上，与 [Sandbox](./sandbox.md) 的隔离叙事一致。
+3. **多租户与隔离**：`NamespaceFactory` 在每次操作中从 `RuntimeContext.userId` 等来源拼出路径前缀，使同一套代码在**用户 / 会话 / 全局**之间切换存储分片；`RemoteFilesystemSpec` 与 `SandboxFilesystemSpec` 还把 **IsolationScope** 接到「共享 KV」或「沙箱状态键」上，与 [Sandbox](./sandbox/index.md) 的隔离叙事一致。
 
 ## 三种声明式模式
 
@@ -17,7 +17,7 @@
 | 模式 | 配置方法 | 典型产物 | Shell | 适用场景 |
 |------|----------|----------|-------|----------|
 | **1 — 复合 + 共享存储** | `filesystem(RemoteFilesystemSpec)` | `CompositeFilesystem`：工作区根上 **无 shell 的** `LocalFilesystem` + 按前缀路由的 `RemoteFilesystem` | 否 | 多副本要共享 `MEMORY.md`、`memory/`、会话落盘等；**不在宿主执行**不受信 shell |
-| **2 — 沙箱** | `filesystem(SandboxFilesystemSpec)` | `SandboxBackedFilesystem` + 生命周期由 [Sandbox](./sandbox.md) 描述 | 是（在沙箱内） | 隔离执行、可恢复沙箱会话、可选快照与分布式 Session |
+| **2 — 沙箱** | `filesystem(SandboxFilesystemSpec)` | `SandboxBackedFilesystem` + 生命周期由 [Sandbox](./sandbox/index.md) 描述 | 是（在沙箱内） | 隔离执行、可恢复沙箱会话、可选快照与分布式 Session |
 | **3 — 本机 + shell** | `filesystem(LocalFilesystemSpec)` 或**不显式配 filesystem** | `LocalFilesystemWithShell` | 是（宿主 `sh -c`） | 单进程/本机、信任环境、简单脚本与测试 |
 
 **默认未调用任何 `filesystem(...)` 时** 与 **显式 `filesystem(new LocalFilesystemSpec())`** 等价，即模式 3，根目录为 `workspace`、在宿主上提供 shell。
@@ -31,7 +31,7 @@
 
 ### 模式二：沙箱（`SandboxFilesystemSpec`）
 
-- 见 [沙箱（Sandbox）](./sandbox.md)。要点：对外仍是 `AbstractFilesystem` + 可选 `ShellExecuteTool`（经 `AbstractSandboxFilesystem`），但真实 IO/进程在 `SandboxClient` 侧；`SandboxLifecycleHook` 在每次 `call` 周围 acquire/persist/release。
+- 见 [沙箱（Sandbox）](./sandbox/index.md)。要点：对外仍是 `AbstractFilesystem` + 可选 `ShellExecuteTool`（经 `AbstractSandboxFilesystem`），但真实 IO/进程在 `SandboxClient` 侧；`SandboxLifecycleHook` 在每次 `call` 周围 acquire/persist/release。
 
 ### 模式三：本机 + shell（`LocalFilesystemSpec` 或默认）
 
@@ -147,7 +147,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 相关文档
 
-- [沙箱（Sandbox）](./sandbox.md) — 沙箱模式原理、`SandboxStateStore`、分布式
+- [沙箱（Sandbox）](./sandbox/index.md) — 沙箱模式原理、`SandboxStateStore`、分布式
 - [工具](./tool.md) — `FilesystemTool` / `ShellExecuteTool` 入参
 - [工作区](./workspace.md) — `WorkspaceManager` 与两层读
 - [架构](./architecture.md) — 与 Hook、RuntimeContext 的协作

@@ -72,10 +72,20 @@ public final class DefaultAgentManager {
     /**
      * Invokes an agent with a user prompt. Handles both plain {@link Agent} and {@link
      * HarnessAgent} (injects {@link RuntimeContext} for the latter).
+     *
+     * <p>For {@link HarnessAgent} children, {@code userId} is propagated so that isolation-key
+     * resolution (e.g. {@code USER}-scoped sandbox slots) works correctly. A fresh {@code
+     * sessionId} is always assigned independently of the parent session.
+     *
+     * @param agent the agent to invoke
+     * @param sessionId a new, child-specific session id
+     * @param userId the parent's user-id (may be {@code null})
+     * @param prompt the user message to send
      */
-    public Mono<Msg> invokeAgent(Agent agent, String sessionId, String prompt) {
+    public Mono<Msg> invokeAgent(Agent agent, String sessionId, String userId, String prompt) {
         if (agent instanceof HarnessAgent harness) {
-            RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
+            RuntimeContext ctx =
+                    RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
             return harness.call(userMessage(prompt), ctx);
         }
         return agent.call(List.of(userMessage(prompt)));

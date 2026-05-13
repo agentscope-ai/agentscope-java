@@ -15,7 +15,9 @@
  */
 package io.agentscope.harness.agent;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -35,7 +37,11 @@ import io.agentscope.core.session.Session;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.harness.agent.subagent.AgentSpecLoader;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -225,19 +231,18 @@ class HarnessAgentTest {
     void subagentMarkdown_registersIdsAndSubagentTools() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# workspace\n");
-        String specId = "markdown-subagent-id-77";
+        // The filename (without .md) becomes the subagent name
+        String specId = "from-md";
         Path subagents = workspace.resolve("subagents");
         Files.createDirectories(subagents);
         Files.writeString(
-                subagents.resolve("from-md.md"),
+                subagents.resolve(specId + ".md"),
                 """
                 ---
-                name: %s
                 description: From subagents/*.md for tests
                 ---
                 You only reply OK.
-                """
-                        .formatted(specId));
+                """);
 
         Model model = stubModel("done");
         HarnessAgent agent =
@@ -273,31 +278,30 @@ class HarnessAgentTest {
                 combined.contains("## Subagents"), "subagent hook should inject Subagents section");
         assertTrue(
                 combined.contains("`" + specId + "`"),
-                "Markdown subagent id should appear in prompt");
+                "Markdown subagent id (from filename) should appear in prompt");
         assertTrue(
                 combined.contains("general-purpose"),
                 "built-in general-purpose entry should be listed");
     }
 
     @Test
-    void subagentsDir_loadsMarkdownSpecs() throws Exception {
+    void subagentsDir_loadsMarkdownDeclarations() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# w\n");
         Path subagents = workspace.resolve("subagents");
         Files.createDirectories(subagents);
-        String mdId = "md-frontmatter-agent-88";
+        // Name is derived from the filename, not the front matter
+        String expectedName = "helper";
         Files.writeString(
-                subagents.resolve("helper.md"),
+                subagents.resolve(expectedName + ".md"),
                 """
                 ---
-                name: %s
                 description: Loaded from subagents/*.md
                 maxIters: 3
                 ---
 
                 You are a test subagent from markdown.
-                """
-                        .formatted(mdId));
+                """);
 
         List<SubagentEntry> entries =
                 HarnessAgent.builder()
@@ -308,7 +312,8 @@ class HarnessAgentTest {
         List<String> names = entries.stream().map(SubagentEntry::name).collect(Collectors.toList());
         assertTrue(names.contains("general-purpose"));
         assertTrue(
-                names.contains(mdId), "subagents/*.md with front matter should produce an entry");
+                names.contains(expectedName),
+                "subagents/*.md declaration should use filename as name");
     }
 
     @Test
@@ -341,6 +346,377 @@ class HarnessAgentTest {
 
     private static String joinAllText(List<Msg> msgs) {
         return msgs.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
+    }
+
+    // =========================================================================
+    // Decision table — five workspace/sysPrompt resolution paths
+    // =========================================================================
+
+    /** Row 1: isolated + workspace.path → runtime root = workspacePath. */
+    @Test
+    void decisionTable_row1_isolatedWithPath_runtimeRootIsWorkspacePath() throws Exception {
+        Files.createDirectories(workspace);
+        Path defWorkspace = workspace.resolve("defs/reviewer");
+        Files.createDirectories(defWorkspace);
+        Files.writeString(defWorkspace.resolve("AGENTS.md"), "reviewer-agents-md");
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("reviewer")
+                        .description("code reviewer")
+                        .workspace(defWorkspace)
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry entry =
+                entries.stream().filter(e -> "reviewer".equals(e.name())).findFirst().orElseThrow();
+        HarnessAgent child = (HarnessAgent) entry.factory().create();
+
+        assertEquals(
+                defWorkspace.normalize(),
+                child.getWorkspaceManager().getWorkspace().normalize(),
+                "isolated+path: runtime workspace must be the definition workspace");
+    }
+
+    /** Row 2: isolated + no path → runtime root is auto-created agents/&lt;name&gt;/workspace. */
+    @Test
+    void decisionTable_row2_isolatedNoPath_autoCreatesAgentSubdir() throws Exception {
+        Files.createDirectories(workspace);
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("isolated-auto")
+                        .description("auto-isolated subagent")
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .inlineAgentsBody("You are an isolated subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry entry =
+                entries.stream()
+                        .filter(e -> "isolated-auto".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        HarnessAgent child = (HarnessAgent) entry.factory().create();
+
+        Path expected = workspace.resolve("agents/isolated-auto/workspace").normalize();
+        assertEquals(
+                expected,
+                child.getWorkspaceManager().getWorkspace().normalize(),
+                "isolated+no-path: runtime workspace must be auto agents/<name>/workspace");
+        assertTrue(
+                Files.isDirectory(expected),
+                "isolated auto workspace directory should be created on the filesystem");
+    }
+
+    /** Row 3: shared + workspace.path → runtime root = mainWorkspace. */
+    @Test
+    void decisionTable_row3_sharedWithPath_runtimeRootIsMainWorkspace() throws Exception {
+        Files.createDirectories(workspace);
+        Path defWorkspace = workspace.resolve("defs/shared-def");
+        Files.createDirectories(defWorkspace);
+        Files.writeString(defWorkspace.resolve("AGENTS.md"), "shared-def-agents");
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("shared-ext")
+                        .description("shared subagent with def workspace")
+                        .workspace(defWorkspace)
+                        .workspaceMode(WorkspaceMode.SHARED)
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry entry =
+                entries.stream()
+                        .filter(e -> "shared-ext".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        HarnessAgent child = (HarnessAgent) entry.factory().create();
+
+        assertEquals(
+                workspace.normalize(),
+                child.getWorkspaceManager().getWorkspace().normalize(),
+                "shared+path: runtime workspace must be mainWorkspace, not the def path");
+    }
+
+    /** Row 4: shared + no path → runtime root = mainWorkspace. */
+    @Test
+    void decisionTable_row4_sharedNoPath_runtimeRootIsMainWorkspace() throws Exception {
+        Files.createDirectories(workspace);
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("shared-inline")
+                        .description("inline shared subagent")
+                        .workspaceMode(WorkspaceMode.SHARED)
+                        .inlineAgentsBody("You share the main workspace.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry entry =
+                entries.stream()
+                        .filter(e -> "shared-inline".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        HarnessAgent child = (HarnessAgent) entry.factory().create();
+
+        assertEquals(
+                workspace.normalize(),
+                child.getWorkspaceManager().getWorkspace().normalize(),
+                "shared+no-path: runtime workspace must be mainWorkspace");
+    }
+
+    /** Row 5 (built-in general-purpose): runtime root = mainWorkspace. */
+    @Test
+    void decisionTable_row5_generalPurpose_runtimeRootIsMainWorkspace() throws Exception {
+        Files.createDirectories(workspace);
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry gp =
+                entries.stream()
+                        .filter(e -> "general-purpose".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        HarnessAgent child = (HarnessAgent) gp.factory().create();
+
+        assertEquals(
+                workspace.normalize(),
+                child.getWorkspaceManager().getWorkspace().normalize(),
+                "general-purpose must share mainWorkspace");
+    }
+
+    // =========================================================================
+    // general-purpose mirroring
+    // =========================================================================
+
+    @Test
+    void generalPurpose_mirrorDisableFilesystemTools() throws Exception {
+        Files.createDirectories(workspace);
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .disableFilesystemTools()
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create();
+        List<String> toolNames =
+                child.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("read_file"), "disableFilesystemTools should be mirrored");
+    }
+
+    @Test
+    void generalPurpose_mirrorCompactionConfig() throws Exception {
+        Files.createDirectories(workspace);
+        CompactionConfig cfg = CompactionConfig.builder().triggerMessages(5).build();
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .compaction(cfg)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create();
+        assertNotNull(child.getCompactionHook(), "CompactionHook should be mirrored to GP child");
+    }
+
+    // =========================================================================
+    // Multiple declarations → same definition workspace
+    // =========================================================================
+
+    @Test
+    void multipleDeclarations_sameDefinitionWorkspace_bothResolveSamePath() throws Exception {
+        Files.createDirectories(workspace);
+        Path defWorkspace = workspace.resolve("defs/shared-def");
+        Files.createDirectories(defWorkspace);
+        Files.writeString(defWorkspace.resolve("AGENTS.md"), "shared definition");
+
+        SubagentDeclaration decl1 =
+                SubagentDeclaration.builder()
+                        .name("agent-a")
+                        .description("first alias")
+                        .workspace(defWorkspace)
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .build();
+        SubagentDeclaration decl2 =
+                SubagentDeclaration.builder()
+                        .name("agent-b")
+                        .description("second alias")
+                        .workspace(defWorkspace)
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagent(decl1)
+                        .subagent(decl2)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent childA =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "agent-a".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create();
+        HarnessAgent childB =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "agent-b".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create();
+
+        assertEquals(
+                defWorkspace.normalize(), childA.getWorkspaceManager().getWorkspace().normalize());
+        assertEquals(
+                defWorkspace.normalize(),
+                childB.getWorkspaceManager().getWorkspace().normalize(),
+                "Both declarations point to the same definition workspace");
+    }
+
+    // =========================================================================
+    // Tools allowlist
+    // =========================================================================
+
+    @Test
+    void toolsAllowlist_narrowsChildToolkit() throws Exception {
+        Files.createDirectories(workspace);
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("narrow")
+                        .description("narrowed toolkit")
+                        .inlineAgentsBody("Only read files.")
+                        .tools(List.of("read_file"))
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "narrow".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create();
+        List<String> toolNames =
+                child.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("read_file"), "allowed tool should remain");
+        assertFalse(toolNames.contains("list_files"), "non-allowlisted tool should be removed");
+        assertFalse(toolNames.contains("memory_search"), "non-allowlisted tool should be removed");
+    }
+
+    // =========================================================================
+    // AgentSpecLoader — markdown declaration parsing
+    // =========================================================================
+
+    @Test
+    void agentSpecLoader_markdownDeclaration_isolatedWithWorkspacePath() throws Exception {
+        Files.createDirectories(workspace);
+        Path defPath = workspace.resolve("defs/myagent");
+        String markdown =
+                """
+                ---
+                description: My agent description
+                workspace:
+                  mode: isolated
+                  path: defs/myagent
+                model: test-model
+                maxIters: 7
+                tools: [read_file, grep_files]
+                ---
+                """;
+        SubagentDeclaration decl = AgentSpecLoader.parse(markdown, "my-agent", workspace);
+        assertNotNull(decl);
+        assertEquals("my-agent", decl.getName());
+        assertEquals("My agent description", decl.getDescription());
+        assertEquals(WorkspaceMode.ISOLATED, decl.getWorkspaceMode());
+        assertEquals(defPath.normalize(), decl.getWorkspacePath().normalize());
+        assertEquals("test-model", decl.getModel());
+        assertEquals(7, decl.getMaxIters());
+        assertEquals(List.of("read_file", "grep_files"), decl.getTools());
+    }
+
+    @Test
+    void agentSpecLoader_markdownDeclaration_sharedMode_noPath_inlineBody() throws Exception {
+        Files.createDirectories(workspace);
+        String markdown =
+                """
+                ---
+                description: Inline shared agent
+                workspace:
+                  mode: shared
+                ---
+
+                You are the inline sysPrompt.
+                """;
+        SubagentDeclaration decl = AgentSpecLoader.parse(markdown, "inline-shared", null);
+        assertNotNull(decl);
+        assertEquals("inline-shared", decl.getName());
+        assertEquals(WorkspaceMode.SHARED, decl.getWorkspaceMode());
+        assertFalse(decl.hasDefinitionWorkspace());
+        assertTrue(
+                decl.getInlineAgentsBody().contains("inline sysPrompt"),
+                "body should be inline agents body when no workspace.path");
     }
 
     private static Model stubModel(String assistantText) {

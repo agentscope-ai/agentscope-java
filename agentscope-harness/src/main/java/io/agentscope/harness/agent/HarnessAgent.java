@@ -32,6 +32,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.RAGMode;
@@ -80,10 +81,12 @@ import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
-import io.agentscope.harness.agent.subagent.SubagentSpec;
+import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.FilesystemTool;
 import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
@@ -414,6 +417,14 @@ public class HarnessAgent implements Agent, StateModule {
         return workspaceManager;
     }
 
+    /**
+     * Returns the {@link CompactionHook} instance if compaction was configured, or {@code null}.
+     * Exposed for testing to verify compaction mirroring in child agents.
+     */
+    public CompactionHook getCompactionHook() {
+        return compactionHook;
+    }
+
     public RuntimeContext getRuntimeContext() {
         return runtimeContext;
     }
@@ -571,7 +582,7 @@ public class HarnessAgent implements Agent, StateModule {
          */
         private ToolResultEvictionConfig toolResultEvictionConfig = null;
 
-        private final List<SubagentSpec> subagentSpecs = new ArrayList<>();
+        private final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
         private final List<SubagentFactoryEntry> customSubagentFactories = new ArrayList<>();
         private TaskRepository taskRepository;
         private Object externalSubagentTool;
@@ -1094,14 +1105,17 @@ public class HarnessAgent implements Agent, StateModule {
             return this;
         }
 
-        /** Adds a subagent spec (programmatic; workspace specs come from {@code subagents/*.md}). */
-        public Builder subagent(SubagentSpec spec) {
-            this.subagentSpecs.add(spec);
+        /**
+         * Adds a subagent declaration (programmatic; workspace declarations come from
+         * {@code subagents/*.md}).
+         */
+        public Builder subagent(SubagentDeclaration declaration) {
+            this.subagentDeclarations.add(declaration);
             return this;
         }
 
-        public Builder subagents(List<SubagentSpec> specs) {
-            this.subagentSpecs.addAll(specs);
+        public Builder subagents(List<SubagentDeclaration> declarations) {
+            this.subagentDeclarations.addAll(declarations);
             return this;
         }
 
@@ -1177,17 +1191,19 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
-         * Builds the subagent entries from programmatic specs, {@code workspace/subagents/*.md},
-         * and custom factories. Useful for callers (e.g. {@code AgentBootstrap}) that need to
-         * extract agent factories before building the full agent.
+         * Builds the subagent entries from programmatic declarations,
+         * {@code workspace/subagents/*.md}, and custom factories. Useful for callers (e.g.
+         * {@code AgentBootstrap}) that need to extract agent factories before building the full
+         * agent.
          */
         public List<SubagentEntry> buildSubagentEntries(
                 Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
-            List<SubagentSpec> allSpecs = new ArrayList<>(subagentSpecs);
+            List<SubagentDeclaration> allDeclarations = new ArrayList<>(subagentDeclarations);
 
             Path subagentsDir = resolvedWorkspace.resolve("subagents");
             if (Files.isDirectory(subagentsDir)) {
-                allSpecs.addAll(AgentSpecLoader.loadFromDirectory(subagentsDir));
+                allDeclarations.addAll(
+                        AgentSpecLoader.loadFromDirectory(subagentsDir, resolvedWorkspace));
             }
 
             List<SubagentEntry> entries = new ArrayList<>();
@@ -1199,16 +1215,12 @@ public class HarnessAgent implements Agent, StateModule {
                                     + " Use for any isolated task that can be fully delegated.",
                             buildGeneralPurposeFactory(resolvedWorkspace, sandboxFs)));
 
-            for (SubagentSpec spec : allSpecs) {
-                if (spec.getName() != null) {
-                    entries.add(
-                            new SubagentEntry(
-                                    spec.getName(),
-                                    spec.getDescription() != null
-                                            ? spec.getDescription()
-                                            : spec.getName(),
-                                    buildSpecFactory(spec, resolvedWorkspace)));
-                }
+            for (SubagentDeclaration decl : allDeclarations) {
+                entries.add(
+                        new SubagentEntry(
+                                decl.getName(),
+                                decl.getDescription(),
+                                buildDeclaredFactory(decl, resolvedWorkspace, sandboxFs)));
             }
 
             for (SubagentFactoryEntry custom : customSubagentFactories) {
@@ -1366,7 +1378,8 @@ public class HarnessAgent implements Agent, StateModule {
 
             if (!leafSubagent && !disableSubagents && model != null) {
                 SubagentsHook subagentsHook =
-                        buildSubagentsHook(wsManager, resolvedWorkspace, capturedSandboxFs);
+                        buildSubagentsHook(
+                                wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
                 if (subagentsHook != null) {
                     allHooks.add(subagentsHook);
                 }
@@ -1584,25 +1597,44 @@ public class HarnessAgent implements Agent, StateModule {
         // -----------------------------------------------------------------
 
         private SubagentsHook buildSubagentsHook(
-                WorkspaceManager wsManager, Path workspace, SandboxBackedFilesystem sandboxFs) {
+                WorkspaceManager wsManager,
+                Path workspace,
+                SandboxBackedFilesystem sandboxFs,
+                AtomicReference<String> userIdRef) {
             List<SubagentEntry> entries = buildSubagentEntries(workspace, sandboxFs);
-            TaskRepository repo =
-                    taskRepository != null ? taskRepository : new DefaultTaskRepository();
+            TaskRepository repo;
+            if (taskRepository != null) {
+                repo = taskRepository;
+            } else if (wsManager != null) {
+                String resolvedName = name != null ? name : "HarnessAgent";
+                repo = new WorkspaceTaskRepository(wsManager, resolvedName);
+            } else {
+                repo = new DefaultTaskRepository();
+            }
 
             if (externalSubagentTool != null) {
                 return new SubagentsHook(entries, externalSubagentTool, repo);
             }
-            return new SubagentsHook(entries, repo, wsManager);
+            return new SubagentsHook(entries, repo, wsManager, userIdRef::get);
         }
 
         /**
-         * Builds a factory for the general-purpose subagent. It creates a new HarnessAgent that
-         * mirrors the main agent's configuration (same model, workspace, file system, user hooks)
-         * but disables subagent support to prevent recursive spawning.
+         * Builds a factory for the built-in general-purpose subagent.
+         *
+         * <p>The general-purpose subagent always runs in {@link WorkspaceMode#SHARED} mode: it
+         * uses the same workspace root and filesystem backend as the main agent, and inherits all
+         * capability settings (hooks, tool disable flags, skills, execution config, additional
+         * context files, compaction, etc.) so that its effective capability profile is identical to
+         * the main agent. The only intentional differences are:
+         * <ol>
+         *   <li>{@link Builder#asLeafSubagent()} — prevents recursive subagent spawning.
+         *   <li>An independent child session-id, assigned at invoke time.
+         *   <li>The system prompt is the Subagent Context section only (no base prompt); the
+         *       workspace {@code AGENTS.md} is injected automatically by {@link WorkspaceContextHook}.
+         * </ol>
          */
         private SubagentFactory buildGeneralPurposeFactory(
                 Path workspace, SandboxBackedFilesystem sandboxFs) {
-            // Capture builder state for the closure
             final Model capturedModel = this.model;
             final AbstractFilesystem capturedBackend =
                     sandboxFs != null ? sandboxFs : this.abstractFilesystem;
@@ -1620,54 +1652,47 @@ public class HarnessAgent implements Agent, StateModule {
             final boolean capturedDisableMemoryHooks = this.disableMemoryHooks;
             final boolean capturedDisableSessionPersistence = this.disableSessionPersistence;
             final boolean capturedDisableWorkspaceContext = this.disableWorkspaceContext;
+            final CompactionConfig capturedCompactionConfig = this.compactionConfig;
+            final ToolResultEvictionConfig capturedToolResultEvictionConfig =
+                    this.toolResultEvictionConfig;
+            final boolean capturedAgentTracingLogEnabled = this.agentTracingLogEnabled;
+            final List<String> capturedAdditionalContextFiles =
+                    List.copyOf(this.additionalContextFiles);
+            final int capturedMaxContextTokens = this.maxContextTokens;
 
             return () -> {
                 Builder sub =
                         HarnessAgent.builder()
                                 .name("general-purpose-subagent")
                                 .description("General-purpose subagent for isolated task execution")
-                                .sysPrompt(buildSubagentSysPrompt(GENERAL_PURPOSE_BASE_PROMPT))
+                                .sysPrompt(buildSubagentSysPrompt(null))
                                 .model(capturedModel)
                                 .workspace(workspace)
                                 .asLeafSubagent()
                                 .maxIters(capturedMaxIters)
                                 .environmentMemory(capturedEnvMemory)
-                                .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext);
+                                .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
+                                .enableAgentTracingLog(capturedAgentTracingLogEnabled)
+                                .maxContextTokens(capturedMaxContextTokens);
 
-                if (capturedDisableFilesystemTools) {
-                    sub.disableFilesystemTools();
-                }
-                if (capturedDisableShellTool) {
-                    sub.disableShellTool();
-                }
-                if (capturedDisableMemoryTools) {
-                    sub.disableMemoryTools();
-                }
-                if (capturedDisableMemoryHooks) {
-                    sub.disableMemoryHooks();
-                }
-                if (capturedDisableSessionPersistence) {
-                    sub.disableSessionPersistence();
-                }
-                if (capturedDisableWorkspaceContext) {
-                    sub.disableWorkspaceContext();
-                }
+                capturedAdditionalContextFiles.forEach(sub::additionalContextFile);
 
-                if (capturedSkillRepo != null) {
-                    sub.skillRepository(capturedSkillRepo);
-                }
-                if (capturedBackend != null) {
-                    sub.abstractFilesystem(capturedBackend);
-                }
-                if (capturedModelExec != null) {
-                    sub.modelExecutionConfig(capturedModelExec);
-                }
-                if (capturedToolExec != null) {
-                    sub.toolExecutionConfig(capturedToolExec);
-                }
-                if (capturedGenOpts != null) {
-                    sub.generateOptions(capturedGenOpts);
-                }
+                if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
+                if (capturedDisableShellTool) sub.disableShellTool();
+                if (capturedDisableMemoryTools) sub.disableMemoryTools();
+                if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+                if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
+                if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
+
+                if (capturedSkillRepo != null) sub.skillRepository(capturedSkillRepo);
+                if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
+                if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
+                if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
+                if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
+                if (capturedCompactionConfig != null) sub.compaction(capturedCompactionConfig);
+                if (capturedToolResultEvictionConfig != null)
+                    sub.toolResultEviction(capturedToolResultEvictionConfig);
+
                 sub.hooks(capturedHooks);
 
                 return sub.build();
@@ -1675,68 +1700,192 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
-         * Builds a factory for a spec-based subagent. The resulting HarnessAgent is fully
-         * independent from the main agent — it uses the spec's own system prompt, workspace,
-         * and configuration. Supports per-subagent {@code model} override via an explicit {@code
-         * modelResolver}, or by default {@link ModelRegistry#resolve(String)}.
+         * Builds a factory for a user-declared subagent from a {@link SubagentDeclaration}.
+         *
+         * <p>Workspace and system-prompt resolution follows the five-row decision table in
+         * {@link WorkspaceMode}. When the mode is {@link WorkspaceMode#SHARED}, the parent's
+         * filesystem backend is reused; when {@link WorkspaceMode#ISOLATED}, a fresh
+         * {@link io.agentscope.harness.agent.filesystem.local.LocalFilesystem} is created on the
+         * resolved workspace path. The tools allowlist (if non-empty) is applied after the toolkit
+         * is assembled.
          */
-        private SubagentFactory buildSpecFactory(SubagentSpec spec, Path defaultWorkspace) {
+        private SubagentFactory buildDeclaredFactory(
+                SubagentDeclaration decl, Path mainWorkspace, SandboxBackedFilesystem sandboxFs) {
             final Model capturedModel = this.model;
             final Function<String, Model> capturedResolver = this.modelResolver;
-            final AgentSkillRepository capturedSkillRepo = this.skillRepository;
+            final AbstractFilesystem capturedSharedBackend =
+                    sandboxFs != null ? sandboxFs : this.abstractFilesystem;
             final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
+            final boolean capturedDisableFilesystemTools = this.disableFilesystemTools;
+            final boolean capturedDisableShellTool = this.disableShellTool;
+            final boolean capturedDisableMemoryTools = this.disableMemoryTools;
+            final boolean capturedDisableMemoryHooks = this.disableMemoryHooks;
+            final boolean capturedDisableSessionPersistence = this.disableSessionPersistence;
 
             return () -> {
-                Path specWorkspace =
-                        (spec.getWorkspace() != null && !spec.getWorkspace().isBlank())
-                                ? Path.of(spec.getWorkspace())
-                                : defaultWorkspace;
+                // ---- Resolve workspace root ----
+                Path runtimeWorkspace = resolveDeclaredWorkspace(decl, mainWorkspace);
 
-                Function<String, Model> effectiveResolver =
-                        capturedResolver != null ? capturedResolver : ModelRegistry::resolve;
+                // ---- Resolve system prompt ----
+                String sysPromptBase = resolveDeclaredSysPromptBase(decl);
 
-                Model effectiveModel = capturedModel;
-                if (spec.getModel() != null && !spec.getModel().isBlank()) {
-                    String specModel = spec.getModel().trim();
-                    if (ModelRegistry.canResolve(specModel) || capturedResolver != null) {
-                        try {
-                            Model resolved = effectiveResolver.apply(specModel);
-                            if (resolved != null) {
-                                effectiveModel = resolved;
-                                log.debug(
-                                        "Subagent '{}' using overridden model: {}",
-                                        spec.getName(),
-                                        spec.getModel());
-                            }
-                        } catch (Exception e) {
-                            log.warn(
-                                    "Failed to resolve model '{}' for subagent '{}', falling back"
-                                            + " to parent model: {}",
-                                    spec.getModel(),
-                                    spec.getName(),
-                                    e.getMessage());
-                        }
-                    }
-                }
+                // ---- Resolve model ----
+                Model effectiveModel =
+                        resolveModel(
+                                decl.getModel(), capturedModel, capturedResolver, decl.getName());
 
+                // ---- Build child agent ----
                 Builder sub =
                         HarnessAgent.builder()
-                                .name(spec.getName())
-                                .description(
-                                        spec.getDescription() != null ? spec.getDescription() : "")
+                                .name(decl.getName())
+                                .description(decl.getDescription())
                                 .model(effectiveModel)
-                                .workspace(specWorkspace)
-                                .maxIters(spec.getMaxIters())
+                                .workspace(runtimeWorkspace)
+                                .maxIters(decl.getMaxIters())
                                 .asLeafSubagent()
-                                .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext);
+                                .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
+                                .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
 
-                if (capturedSkillRepo != null) {
-                    sub.skillRepository(capturedSkillRepo);
+                // Shared mode reuses the parent's filesystem backend so MEMORY/sessions are
+                // namespaced identically; isolated mode gets a plain LocalFilesystem on its own
+                // workspace root.
+                if (decl.getWorkspaceMode() == WorkspaceMode.SHARED
+                        && capturedSharedBackend != null) {
+                    sub.abstractFilesystem(capturedSharedBackend);
                 }
-                sub.sysPrompt(buildSubagentSysPrompt(spec.getSysPrompt()));
 
-                return sub.build();
+                // Propagate disable flags so the declared subagent respects the same capability
+                // restrictions as the main agent.
+                if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
+                if (capturedDisableShellTool) sub.disableShellTool();
+                if (capturedDisableMemoryTools) sub.disableMemoryTools();
+                if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+                if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
+
+                // Apply tools allowlist: retain only the requested tool names.
+                if (!decl.getTools().isEmpty()) {
+                    sub.toolkit(new Toolkit());
+                }
+
+                HarnessAgent child = sub.build();
+
+                if (!decl.getTools().isEmpty()) {
+                    applyToolsAllowlist(child, decl.getTools());
+                }
+
+                return child;
             };
+        }
+
+        /**
+         * Resolves the runtime workspace root for a declared subagent according to the five-row
+         * decision table. Creates the auto-generated isolated directory when needed.
+         */
+        private static Path resolveDeclaredWorkspace(SubagentDeclaration decl, Path mainWorkspace) {
+            if (decl.getWorkspacePath() != null) {
+                if (decl.getWorkspaceMode() == WorkspaceMode.SHARED) {
+                    return mainWorkspace;
+                }
+                return decl.getWorkspacePath();
+            }
+            if (decl.getWorkspaceMode() == WorkspaceMode.SHARED) {
+                return mainWorkspace;
+            }
+            // ISOLATED + no path → auto-create agents/<name>/workspace/
+            Path isolated =
+                    mainWorkspace.resolve("agents").resolve(decl.getName()).resolve("workspace");
+            try {
+                Files.createDirectories(isolated);
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to create isolated workspace for subagent '{}' at {}: {}",
+                        decl.getName(),
+                        isolated,
+                        e.getMessage());
+            }
+            return isolated;
+        }
+
+        /**
+         * Resolves the system-prompt <em>base</em> for a declared subagent.
+         *
+         * <ul>
+         *   <li>Definition workspace present: reads {@code AGENTS.md} from the definition
+         *       directory. Falls back to an empty string if the file is absent.
+         *   <li>Inline: returns {@link SubagentDeclaration#getInlineAgentsBody()}.
+         * </ul>
+         *
+         * <p>The returned string is later combined with {@link #SUBAGENT_CONTEXT_SECTION} via
+         * {@link #buildSubagentSysPrompt(String)}.
+         */
+        private static String resolveDeclaredSysPromptBase(SubagentDeclaration decl) {
+            if (decl.getWorkspacePath() != null) {
+                Path agentsMd = decl.getWorkspacePath().resolve("AGENTS.md");
+                if (Files.isRegularFile(agentsMd)) {
+                    try {
+                        return Files.readString(agentsMd, java.nio.charset.StandardCharsets.UTF_8);
+                    } catch (Exception e) {
+                        log.warn(
+                                "Failed to read AGENTS.md for subagent '{}' from {}: {}",
+                                decl.getName(),
+                                agentsMd,
+                                e.getMessage());
+                    }
+                }
+                return "";
+            }
+            String inline = decl.getInlineAgentsBody();
+            return (inline != null) ? inline : "";
+        }
+
+        /**
+         * Resolves the effective {@link Model} for a subagent, applying the optional per-subagent
+         * model override.
+         */
+        private static Model resolveModel(
+                String modelOverride,
+                Model parentModel,
+                Function<String, Model> resolver,
+                String subagentName) {
+            if (modelOverride == null || modelOverride.isBlank()) {
+                return parentModel;
+            }
+            Function<String, Model> effectiveResolver =
+                    resolver != null ? resolver : ModelRegistry::resolve;
+            if (ModelRegistry.canResolve(modelOverride) || resolver != null) {
+                try {
+                    Model resolved = effectiveResolver.apply(modelOverride);
+                    if (resolved != null) {
+                        log.debug(
+                                "Subagent '{}' using overridden model: {}",
+                                subagentName,
+                                modelOverride);
+                        return resolved;
+                    }
+                } catch (Exception e) {
+                    log.warn(
+                            "Failed to resolve model '{}' for subagent '{}', falling back to"
+                                    + " parent model: {}",
+                            modelOverride,
+                            subagentName,
+                            e.getMessage());
+                }
+            }
+            return parentModel;
+        }
+
+        /**
+         * Applies a tool allowlist to an already-built {@link HarnessAgent} by removing any tools
+         * whose names are not in the allowlist.
+         */
+        private static void applyToolsAllowlist(HarnessAgent agent, List<String> allowlist) {
+            Toolkit toolkit = agent.getDelegate().getToolkit();
+            List<String> toRemove =
+                    toolkit.getToolSchemas().stream()
+                            .map(ToolSchema::getName)
+                            .filter(name -> !allowlist.contains(name))
+                            .toList();
+            toRemove.forEach(toolkit::removeTool);
         }
 
         // -----------------------------------------------------------------

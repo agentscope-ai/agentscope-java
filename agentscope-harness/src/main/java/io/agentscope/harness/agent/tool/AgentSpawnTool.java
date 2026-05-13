@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -25,6 +26,7 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +41,10 @@ import org.slf4j.LoggerFactory;
  *
  * <p>No sessions, no lanes, no run registry, no announce dispatch. Just "create agent, invoke,
  * return result". Uses {@link DefaultAgentManager} for agent creation and invocation only.
+ *
+ * <p>Async tasks ({@code timeout_seconds=0}) are submitted to the {@link TaskRepository} scoped
+ * by the current session ID from {@link RuntimeContext}. This makes task state visible in
+ * workspace storage for cross-node retrieval and recovery after compaction.
  */
 public class AgentSpawnTool {
 
@@ -52,13 +58,15 @@ public class AgentSpawnTool {
             """
             status: accepted
             task_id: %s
-            Use task_output(task_id='%s') to retrieve the result, \
-            task_cancel(task_id='%s') to cancel, or task_list() to see all tasks.\
+            Use task_output(task_id='%s', block=false) to check status, \
+            task_cancel(task_id='%s') to cancel, or task_list() to see all tasks. \
+            Do NOT call task_output immediately — the task has just started.\
             """;
 
     private final DefaultAgentManager agentManager;
     private final TaskRepository taskRepository;
     private final int parentSpawnDepth;
+    private final Supplier<String> userIdSupplier;
 
     private record SpawnedAgent(
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
@@ -66,11 +74,23 @@ public class AgentSpawnTool {
     private final ConcurrentHashMap<String, SpawnedAgent> agentsByKey = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> labelToKey = new ConcurrentHashMap<>();
 
+    /**
+     * Creates an {@code AgentSpawnTool} with a supplier for the parent agent's current user-id.
+     *
+     * @param agentManager factory and invoker for subagents
+     * @param taskRepository background task store
+     * @param parentSpawnDepth current spawn-depth of the parent (0 for top-level main agent)
+     * @param userIdSupplier provides the parent's current user-id at spawn time (may return null)
+     */
     public AgentSpawnTool(
-            DefaultAgentManager agentManager, TaskRepository taskRepository, int parentSpawnDepth) {
+            DefaultAgentManager agentManager,
+            TaskRepository taskRepository,
+            int parentSpawnDepth,
+            Supplier<String> userIdSupplier) {
         this.agentManager = Objects.requireNonNull(agentManager, "agentManager");
         this.taskRepository = taskRepository;
         this.parentSpawnDepth = parentSpawnDepth;
+        this.userIdSupplier = userIdSupplier != null ? userIdSupplier : () -> null;
     }
 
     @Tool(
@@ -84,6 +104,7 @@ public class AgentSpawnTool {
                     async (timeout_seconds=0) adds task_id for task_output — task_id is NOT agent_key.\
                     """)
     public String agentSpawn(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "agent_id", description = "Subagent identifier to instantiate")
                     String agentId,
             @ToolParam(
@@ -123,6 +144,7 @@ public class AgentSpawnTool {
         Agent agent = agentManager.createAgent(agentId);
         String key = "agent:" + agentId + ":" + UUID.randomUUID();
         String sessionId = "sub-" + UUID.randomUUID();
+        String currentUserId = userIdSupplier.get();
 
         SpawnedAgent spawned =
                 new SpawnedAgent(key, agentId, sessionId, canonLabel, agent, nextDepth);
@@ -139,6 +161,7 @@ public class AgentSpawnTool {
         }
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
 
         if (timeoutMs == 0) {
             String taskId = "task_" + UUID.randomUUID();
@@ -146,11 +169,13 @@ public class AgentSpawnTool {
             taskRepository.putTask(
                     taskId,
                     agentId,
+                    parentSessionId,
                     () -> {
                         try {
                             Msg reply =
                                     agentManager
-                                            .invokeAgent(agent, sessionId, capturedTask)
+                                            .invokeAgent(
+                                                    agent, sessionId, currentUserId, capturedTask)
                                             .block();
                             return reply != null ? reply.getTextContent() : "";
                         } catch (RuntimeException e) {
@@ -166,7 +191,7 @@ public class AgentSpawnTool {
         try {
             Msg reply =
                     agentManager
-                            .invokeAgent(agent, sessionId, task.trim())
+                            .invokeAgent(agent, sessionId, currentUserId, task.trim())
                             .block(Duration.ofMillis(timeoutMs));
             String text = reply != null ? reply.getTextContent() : "";
             return spawnInfo + "\nstatus: ok\nreply:\n" + text;
@@ -187,6 +212,7 @@ public class AgentSpawnTool {
                     timeout_seconds=0 returns task_id for task_output.\
                     """)
     public String agentSend(
+            RuntimeContext runtimeContext,
             @ToolParam(
                             name = "agent_key",
                             description =
@@ -242,18 +268,24 @@ public class AgentSpawnTool {
         }
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        String currentUserId = userIdSupplier.get();
+        String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
 
         if (timeoutMs == 0) {
             String taskId = "task_" + UUID.randomUUID();
             taskRepository.putTask(
                     taskId,
                     spawned.agentId(),
+                    parentSessionId,
                     () -> {
                         try {
                             Msg reply =
                                     agentManager
                                             .invokeAgent(
-                                                    spawned.agent(), spawned.sessionId(), message)
+                                                    spawned.agent(),
+                                                    spawned.sessionId(),
+                                                    currentUserId,
+                                                    message)
                                             .block();
                             return reply != null ? reply.getTextContent() : "";
                         } catch (RuntimeException e) {
@@ -269,7 +301,11 @@ public class AgentSpawnTool {
         try {
             Msg reply =
                     agentManager
-                            .invokeAgent(spawned.agent(), spawned.sessionId(), message.trim())
+                            .invokeAgent(
+                                    spawned.agent(),
+                                    spawned.sessionId(),
+                                    currentUserId,
+                                    message.trim())
                             .block(Duration.ofMillis(timeoutMs));
             String text = reply != null ? reply.getTextContent() : "";
             return "agent_key: " + key + "\nstatus: ok\nreply:\n" + text;

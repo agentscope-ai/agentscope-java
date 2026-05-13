@@ -1,0 +1,59 @@
+{#
+  Site-wide notice strip (above docs-site-header). Configure under sphinx.config.html_context.docs_site_notice
+  in _config.yml. Bump `id` when changing copy so returning visitors see the update again.
+#}
+{% if docs_site_notice is defined and docs_site_notice.get("enabled") and docs_site_notice.get("id") %}
+  {% set nid = docs_site_notice.id %}
+  {% set is_zh = pagename is defined and pagename.startswith("zh/") %}
+  {% set msg = docs_site_notice.get("message_zh") if is_zh and docs_site_notice.get("message_zh") else docs_site_notice.get("message_en", "") %}
+  {% if msg %}
+    {% set variant_raw = docs_site_notice.get("variant", "brand") %}
+    {% if variant_raw == "neutral" %}
+      {% set variant = "neutral" %}
+    {% elif variant_raw == "accent" %}
+      {% set variant = "accent" %}
+    {% else %}
+      {% set variant = "brand" %}
+    {% endif %}
+    {% set href = docs_site_notice.get("link_zh") if is_zh and docs_site_notice.get("link_zh") else docs_site_notice.get("link_en") %}
+    {% set link_text = docs_site_notice.get("link_text_zh") if is_zh and docs_site_notice.get("link_text_zh") else docs_site_notice.get("link_text_en", "") %}
+    <script>
+      (function () {
+        try {
+          var id = "{{ nid|e }}";
+          if (localStorage.getItem("agentscope-docs-site-notice") === id) {
+            document.documentElement.classList.add("docs-site-notice-dismissed");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <div
+      class="docs-site-notice docs-site-notice--{{ variant }}"
+      data-notice-id="{{ nid|e }}"
+      role="region"
+      aria-label="{{ _('Site notice') }}"
+    >
+      <div class="docs-site-notice__inner">
+        <p class="docs-site-notice__text">{{ msg|e }}</p>
+        {% if href and link_text %}
+          {% set is_external = href.startswith("http://") or href.startswith("https://") %}
+          <a
+            class="docs-site-notice__link"
+            {% if is_external %}
+              href="{{ href|e }}"
+            {% else %}
+              href="{{ pathto(href) }}"
+            {% endif %}
+            {% if is_external %}
+              rel="noopener noreferrer"
+              target="_blank"
+            {% endif %}
+          >{{ link_text|e }}</a>
+        {% endif %}
+        <button type="button" class="docs-site-notice__close" aria-label="{{ _('Dismiss') }}" data-notice-dismiss>
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+    </div>
+  {% endif %}
+{% endif %}

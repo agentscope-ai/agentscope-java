@@ -143,6 +143,7 @@ public class RemoteFilesystemSpec {
         routes.put("MEMORY.md", shared);
         routes.put("memory/", shared);
         routes.put("agents/" + effectiveAgentId + "/sessions/", shared);
+        routes.put("agents/" + effectiveAgentId + "/tasks/", shared);
         for (String extra : extraSharedPrefixes) {
             routes.put(extra, shared);
         }
