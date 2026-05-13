@@ -59,6 +59,18 @@ public final class MessageMetadataKeys {
     public static final String STRUCTURED_OUTPUT_REMINDER = "_structured_output_reminder";
 
     /**
+     * Metadata key for the type of structured output reminder.
+     *
+     * <p>Stores the {@link io.agentscope.core.model.StructuredOutputReminder} mode
+     * (e.g., TOOL_CHOICE, PROMPT) used when creating reminder messages. This allows
+     * the hook to apply mode-specific behavior.
+     *
+     * <p><b>Type:</b> String (StructuredOutputReminder enum name)
+     * <p><b>Internal use only</b>
+     */
+    public static final String STRUCTURED_OUTPUT_REMINDER_TYPE = "_structured_output_reminder_type";
+
+    /**
      * Metadata key for chat usage statistics.
      *
      * <p>Contains token usage information (input tokens, output tokens, and time)
@@ -93,4 +105,30 @@ public final class MessageMetadataKeys {
      * }</pre>
      */
     public static final String STRUCTURED_OUTPUT = "_structured_output";
+
+    /**
+     * Metadata key to mark a message for prompt caching.
+     *
+     * <p>When set to {@code true}, the formatter will add <code>cache_control:
+     * {"type": "ephemeral"}</code> to this message during formatting. This allows users to manually
+     * mark specific
+     * messages for caching, independent of the automatic cache control strategy configured via
+     * {@link io.agentscope.core.model.GenerateOptions#getCacheControl()}.
+     *
+     * <p>Manually marked messages take priority over the automatic strategy — they will not be
+     * overwritten.
+     *
+     * <p><b>Type:</b> Boolean
+     * <p><b>Example:</b>
+     * <pre>{@code
+     * Map<String, Object> metadata = new HashMap<>();
+     * metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
+     * Msg msg = Msg.builder()
+     *     .role(MsgRole.USER)
+     *     .textContent("Important context to cache...")
+     *     .metadata(metadata)
+     *     .build();
+     * }</pre>
+     */
+    public static final String CACHE_CONTROL = "_cache_control";
 }

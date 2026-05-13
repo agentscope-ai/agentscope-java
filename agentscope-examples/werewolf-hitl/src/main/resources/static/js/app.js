@@ -24,6 +24,13 @@ let currentInputType = null;
 let selectedRole = 'RANDOM';
 let isSpectatorMode = false;
 
+// Audio state
+let audioContext = null;
+const playerAudioPlayers = new Map(); // Map<playerName, audioPlayer>
+// Global audio playback coordination (single speaker at a time)
+let currentSpeakingPlayer = null;
+const pendingSpeakingPlayers = []; // Queue of player names waiting to speak
+
 // Role icons mapping
 const roleIcons = {
     'VILLAGER': '👤',
@@ -341,6 +348,9 @@ function handleEvent(event) {
             break;
         case 'USER_INPUT_RECEIVED':
             handleUserInputReceived(data.inputType, data.content);
+            break;
+        case 'AUDIO_CHUNK':
+            handleAudioChunk(data.player, data.audio);
             break;
     }
 }
@@ -786,3 +796,220 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
     renderPlayers();
 });
+
+// ==================== Audio Functions ====================
+/**
+ * Initialize audio context on first user interaction.
+ */
+function initAudio() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+    }
+}
+
+/**
+ * Handle audio chunk event from backend.
+ *  
+ * @param {string} playerName - The name of the speaking player
+ * @param {string} audioBase64 - Base64 encoded audio data
+ */
+function handleAudioChunk(playerName, audioBase64) {
+    if (!audioBase64) return;
+
+    // Initialize audio context
+    initAudio();
+
+    // Get or create audio player for this player
+    let audioPlayer = playerAudioPlayers.get(playerName);
+    if (!audioPlayer) {
+        audioPlayer = createAudioPlayerForPlayer(playerName);
+        playerAudioPlayers.set(playerName, audioPlayer);
+    }
+
+    // Decode and add to playback queue
+    const audioData = base64ToArrayBuffer(audioBase64);
+    addAudioChunk(audioPlayer, audioData);
+
+    // Global coordination: only one player speaks at a time.
+    if (!currentSpeakingPlayer) {
+        // No one is speaking, start this player immediately
+        currentSpeakingPlayer = playerName;
+        if (!audioPlayer.isPlaying) {
+            playAudio(audioPlayer, playerName);
+        }
+    } else if (currentSpeakingPlayer === playerName) {
+        // Same player is already speaking, its queue will continue in playAudio
+    } else {
+        // Another player is speaking, enqueue this player if not already queued
+        if (!pendingSpeakingPlayers.includes(playerName)) {
+            pendingSpeakingPlayers.push(playerName);
+        }
+    }
+}
+
+/**
+ * Create an audio player for a specific player.
+ *
+ * @param {string} playerName - Player name
+ * @returns {object} Audio player object
+ */
+function createAudioPlayerForPlayer(playerName) {
+    return {
+        chunks: [],      // Queue of audio chunks
+        sources: [],     // Active audio sources
+        isPlaying: false,
+        currentIndex: 0  // Current playback position
+    };
+}
+
+/**
+ * Add audio chunk to player's queue.
+ *
+ * @param {object} audioPlayer - Audio player object
+ * @param {ArrayBuffer} audioData - Audio data
+ */
+function addAudioChunk(audioPlayer, audioData) {
+    audioPlayer.chunks.push(audioData);
+}
+
+/**
+ * Play audio from queue.
+ *
+ * @param {object} audioPlayer - Audio player object  
+ * @param {string} playerName - Player name for visual feedback
+ */
+async function playAudio(audioPlayer, playerName) {
+    if (audioPlayer.isPlaying || audioPlayer.chunks.length === 0) {
+        return;
+    }
+
+    audioPlayer.isPlaying = true;
+    highlightPlayer(playerName);
+
+    // Play chunks from current index to end
+    while (audioPlayer.currentIndex < audioPlayer.chunks.length && audioPlayer.isPlaying) {
+        const chunk = audioPlayer.chunks[audioPlayer.currentIndex];
+        audioPlayer.currentIndex++;
+        await playAudioChunk(chunk, audioPlayer);
+
+        if (!audioPlayer.isPlaying) {
+            break;
+        }
+    }
+
+    // Playback completed
+    audioPlayer.isPlaying = false;
+    audioPlayer.currentIndex = 0; // Reset index
+    audioPlayer.chunks = []; // Clear processed chunks
+    unhighlightPlayer(playerName);
+
+    // Mark current speaker finished
+    if (currentSpeakingPlayer === playerName) {
+        currentSpeakingPlayer = null;
+    }
+
+    // Start next waiting player if any
+    while (pendingSpeakingPlayers.length > 0) {
+        const nextPlayerName = pendingSpeakingPlayers.shift();
+        const nextAudioPlayer = playerAudioPlayers.get(nextPlayerName);
+        if (nextAudioPlayer && nextAudioPlayer.chunks.length > 0) {
+            currentSpeakingPlayer = nextPlayerName;
+            if (!nextAudioPlayer.isPlaying) {
+                // Fire-and-forget, chaining will continue when this playback finishes
+                playAudio(nextAudioPlayer, nextPlayerName);
+            }
+            break;
+        }
+    }
+}
+
+/**
+ * Play a single audio chunk.
+ *
+ * @param {ArrayBuffer} audioData - Audio data
+ * @param {object} audioPlayer - Audio player object
+ * @returns {Promise} Promise that resolves when chunk finishes playing
+ */
+async function playAudioChunk(audioData, audioPlayer) {
+    return new Promise((resolve, reject) => {
+        if (!audioPlayer.isPlaying) {
+            resolve();
+            return;
+        }
+
+        try {
+            // Try to decode as PCM
+            playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
+/**
+ * Play raw PCM audio data.
+ *
+ * @param {ArrayBuffer} data - PCM audio data
+ * @param {object} audioPlayer - Audio player object
+ * @returns {Promise} Promise that resolves when playback finishes
+ */
+async function playRawPCM(data, audioPlayer) {
+    return new Promise((resolve, reject) => {
+        if (!audioPlayer.isPlaying) {
+            resolve();
+            return;
+        }
+
+        try {
+            const pcmData = new Int16Array(data);
+            const floatData = new Float32Array(pcmData.length);
+            for (let i = 0; i < pcmData.length; i++) {
+                floatData[i] = pcmData[i] / 32768.0;
+            }
+
+            const audioBuffer = audioContext.createBuffer(1, floatData.length, 24000);
+            audioBuffer.getChannelData(0).set(floatData);
+
+            if (!audioPlayer.isPlaying) {
+                resolve();
+                return;
+            }
+
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            audioPlayer.sources.push(source);
+
+            source.onended = () => {
+                const index = audioPlayer.sources.indexOf(source);
+                if (index > -1) {
+                    audioPlayer.sources.splice(index, 1);
+                }
+                resolve();
+            };
+
+            if (audioPlayer.isPlaying) {
+                source.start();
+            } else {
+                resolve();
+            }
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
+/**
+ * Convert base64 string to ArrayBuffer.
+ *
+ * @param {string} base64 - Base64 encoded string
+ * @returns {ArrayBuffer} Decoded array buffer
+ */
+function base64ToArrayBuffer(base64) {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+}

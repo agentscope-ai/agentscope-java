@@ -60,6 +60,11 @@ public enum AguiEventType {
     TOOL_CALL_END,
 
     /**
+     * Contains the result of a tool call.
+     */
+    TOOL_CALL_RESULT,
+
+    /**
      * Contains a snapshot of the current state.
      */
     STATE_SNAPSHOT,
@@ -72,5 +77,39 @@ public enum AguiEventType {
     /**
      * A raw event with custom data.
      */
-    RAW
+    RAW,
+
+    /**
+     * A custom event with structured data.
+     */
+    CUSTOM,
+    /**
+     * Indicates the start of a reasoning/thinking phase.
+     */
+    REASONING_START,
+
+    /**
+     * Signals the start of a reasoning message.
+     */
+    REASONING_MESSAGE_START,
+
+    /**
+     * Contains a chunk of content in a streaming reasoning message.
+     */
+    REASONING_MESSAGE_CONTENT,
+
+    /**
+     * Signals the end of a reasoning message.
+     */
+    REASONING_MESSAGE_END,
+
+    /**
+     * A convenience event to auto start/close reasoning messages.
+     */
+    REASONING_MESSAGE_CHUNK,
+
+    /**
+     * Indicates the end of a reasoning/thinking phase.
+     */
+    REASONING_END
 }

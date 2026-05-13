@@ -86,6 +86,30 @@ See `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickst
 
 ## Configuration Options
 
+### User Confirmation (needUserConfirm)
+
+Controls whether the agent needs to wait for user confirmation before starting execution after creating a plan.
+
+**Default Value**: `true` (user confirmation required)
+
+When enabled, the agent will display the plan content and ask the user whether to proceed (e.g., "Should I proceed with this plan?") after creating a plan. It will only start executing subtasks after the user explicitly confirms (e.g., replying "yes", "go ahead"). If the user's message already implies execution intent (e.g., "execute the plan"), confirmation is skipped and execution begins directly.
+
+When disabled, the agent will immediately start executing after creating the plan, without waiting for user confirmation.
+
+```java
+// Require user confirmation (default behavior)
+PlanNotebook planNotebook = PlanNotebook.builder()
+        .needUserConfirm(true)
+        .build();
+
+// No confirmation needed, execute immediately after creating plan
+PlanNotebook planNotebook = PlanNotebook.builder()
+        .needUserConfirm(false)
+        .build();
+```
+
+> **Note**: When subtasks are already in execution (status is `in_progress`), confirmation rule hints will not be injected regardless of the `needUserConfirm` setting.
+
 ### Limit Subtask Count
 
 ```java

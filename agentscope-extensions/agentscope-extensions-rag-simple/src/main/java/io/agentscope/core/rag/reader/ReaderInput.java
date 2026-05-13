@@ -96,6 +96,39 @@ public class ReaderInput {
     }
 
     /**
+     * Creates a ReaderInput from a File path string.
+     *
+     * @param path the file path string
+     * @return a ReaderInput instance
+     * @throws IllegalArgumentException if the path is invalid
+     */
+    public static ReaderInput fromPath(String path) {
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("File path cannot be null");
+        }
+        return fromPath(Path.of(path));
+    }
+
+    /**
+     * Creates a ReaderInput from a File path.
+     *
+     * @param path the file path
+     * @return a ReaderInput instance
+     * @throws IllegalArgumentException if the path is invalid
+     */
+    public static ReaderInput fromPath(Path path) {
+        if (path == null) {
+            throw new IllegalArgumentException("File path cannot be null");
+        }
+
+        if (!Files.exists(path)) {
+            throw new IllegalArgumentException("File does not exist: " + path);
+        }
+
+        return new ReaderInput(path.toAbsolutePath().toString(), InputType.FILE);
+    }
+
+    /**
      * Gets the input content as a string.
      *
      * @return the content string

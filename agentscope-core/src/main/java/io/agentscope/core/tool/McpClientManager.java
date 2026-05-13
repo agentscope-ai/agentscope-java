@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.mcp.McpTool;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -160,6 +161,12 @@ class McpClientManager {
                                     mcpClientWrapper.getName(),
                                     groupName);
 
+                            // Get preset parameters for this specific tool
+                            Map<String, Object> toolPresetParams =
+                                    presetParametersMapping != null
+                                            ? presetParametersMapping.get(mcpTool.name())
+                                            : null;
+
                             McpTool agentTool =
                                     new McpTool(
                                             mcpTool.name(),
@@ -167,14 +174,16 @@ class McpClientManager {
                                                     ? mcpTool.description()
                                                     : "",
                                             McpTool.convertMcpSchemaToParameters(
-                                                    mcpTool.inputSchema()),
-                                            mcpClientWrapper);
-
-                            // Get preset parameters for this specific tool
-                            Map<String, Object> toolPresetParams =
-                                    presetParametersMapping != null
-                                            ? presetParametersMapping.get(mcpTool.name())
-                                            : null;
+                                                    mcpTool.inputSchema(),
+                                                    toolPresetParams != null
+                                                            ? toolPresetParams.keySet()
+                                                            : Collections.emptySet()),
+                                            mcpTool.outputSchema() != null
+                                                    ? new ConcurrentHashMap<>(
+                                                            mcpTool.outputSchema())
+                                                    : null,
+                                            mcpClientWrapper,
+                                            null);
 
                             // Register with group, MCP client name, and preset parameters via
                             // callback

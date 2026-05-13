@@ -15,7 +15,7 @@ AgentScope Java 使用**统一事件模型**，所有 Hook 都需要实现 `onEv
 
 | 事件类型              | 时机                      | 可修改 | 描述                                     |
 |-----------------------|---------------------------|--------|------------------------------------------|
-| PreCallEvent          | 智能体调用前              | ❌     | 智能体开始处理之前（仅通知）             |
+| PreCallEvent          | 智能体调用前              | ✅     | 智能体开始处理之前（可修改输入消息）     |
 | PostCallEvent         | 智能体调用后              | ✅     | 智能体完成响应之后（可修改最终消息）     |
 | PreReasoningEvent     | 推理前                    | ✅     | LLM 推理之前（可修改输入消息）           |
 | PostReasoningEvent    | 推理后                    | ✅     | LLM 推理完成之后（可修改推理结果）       |
@@ -23,6 +23,9 @@ AgentScope Java 使用**统一事件模型**，所有 Hook 都需要实现 `onEv
 | PreActingEvent        | 工具执行前                | ✅     | 工具执行之前（可修改工具参数）           |
 | PostActingEvent       | 工具执行后                | ✅     | 工具执行之后（可修改工具结果）           |
 | ActingChunkEvent      | 工具流式期间              | ❌     | 工具执行进度块（仅通知）                 |
+| PreSummaryEvent       | 摘要生成前                | ✅     | 达到最大迭代次数时，摘要生成之前         |
+| PostSummaryEvent      | 摘要生成后                | ✅     | 摘要生成完成之后（可修改摘要结果）       |
+| SummaryChunkEvent     | 摘要流式期间              | ❌     | 摘要流式生成的每个块（仅通知）           |
 | ErrorEvent            | 发生错误时                | ❌     | 发生错误时（仅通知）                     |
 
 ## 创建 Hook
@@ -206,3 +209,42 @@ public class ErrorHandlingHook implements Hook {
 cd agentscope-examples/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.HookExample"
 ```
+
+## 内置 JSONL 跟踪导出器
+
+为了便于本地调试和离线排障，AgentScope Java 提供了一个内置的 JSONL 导出器：
+
+> **警告**：JSONL 跟踪导出器会将完整的 prompt、消息、工具输入以及错误堆栈
+> 写入本地文件。这些记录可能包含敏感用户数据、凭据或其他机密信息，
+> 因此只能在受信任的环境中启用，并应将输出文件按敏感数据处理。
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.hook.recorder.JsonlTraceExporter;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+
+public class JsonlTraceExample {
+
+    public void run(Model model, Toolkit toolkit) throws IOException {
+        try (JsonlTraceExporter exporter =
+                JsonlTraceExporter.builder(Path.of("logs", "agentscope-trace.jsonl"))
+                        .includeReasoningChunks(true) // 可选
+                        .includeActingChunks(true)    // 可选
+                        .build()) {
+            ReActAgent agent = ReActAgent.builder()
+                    .name("Assistant")
+                    .model(model)
+                    .toolkit(toolkit)
+                    .hooks(List.of(exporter))
+                    .build();
+
+            // 在 exporter 关闭前使用 agent
+        }
+    }
+}
+```
+

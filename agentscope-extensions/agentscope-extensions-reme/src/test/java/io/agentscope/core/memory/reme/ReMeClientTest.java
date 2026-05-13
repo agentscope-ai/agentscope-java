@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.util.JsonException;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -508,7 +509,7 @@ class ReMeClientTest {
                 new MockResponse()
                         .setBody("{\"status\":\"success\"}")
                         .setResponseCode(200)
-                        .setBodyDelay(1000, java.util.concurrent.TimeUnit.MILLISECONDS));
+                        .setBodyDelay(1000, TimeUnit.MILLISECONDS));
 
         ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
         ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();

@@ -19,6 +19,7 @@ package io.agentscope.core.model;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 /**
  * Immutable generation options for LLM models.
@@ -31,6 +32,7 @@ public class GenerateOptions {
     // Connection-level configuration
     private final String apiKey;
     private final String baseUrl;
+    private final String endpointPath;
     private final String modelName;
     private final Boolean stream;
 
@@ -38,6 +40,7 @@ public class GenerateOptions {
     private final Double temperature;
     private final Double topP;
     private final Integer maxTokens;
+    private final Integer maxCompletionTokens;
     private final Double frequencyPenalty;
     private final Double presencePenalty;
     private final Integer thinkingBudget;
@@ -46,6 +49,7 @@ public class GenerateOptions {
     private final ToolChoice toolChoice;
     private final Integer topK;
     private final Long seed;
+    private final Boolean cacheControl;
     private final Map<String, String> additionalHeaders;
     private final Map<String, Object> additionalBodyParams;
     private final Map<String, String> additionalQueryParams;
@@ -58,11 +62,13 @@ public class GenerateOptions {
     private GenerateOptions(Builder builder) {
         this.apiKey = builder.apiKey;
         this.baseUrl = builder.baseUrl;
+        this.endpointPath = builder.endpointPath;
         this.modelName = builder.modelName;
         this.stream = builder.stream;
         this.temperature = builder.temperature;
         this.topP = builder.topP;
         this.maxTokens = builder.maxTokens;
+        this.maxCompletionTokens = builder.maxCompletionTokens;
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
@@ -71,6 +77,7 @@ public class GenerateOptions {
         this.toolChoice = builder.toolChoice;
         this.topK = builder.topK;
         this.seed = builder.seed;
+        this.cacheControl = builder.cacheControl;
         this.additionalHeaders =
                 builder.additionalHeaders != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalHeaders))
@@ -107,6 +114,21 @@ public class GenerateOptions {
      */
     public String getBaseUrl() {
         return baseUrl;
+    }
+
+    /**
+     * Gets the endpoint path for the API request.
+     *
+     * <p>This is the API endpoint path (e.g., "/v1/chat/completions").
+     * When null, the model's default endpoint path will be used.
+     *
+     * <p>This allows customization for OpenAI-compatible APIs that use different
+     * endpoint paths than the standard OpenAI API.
+     *
+     * @return the endpoint path, or null if not set
+     */
+    public String getEndpointPath() {
+        return endpointPath;
     }
 
     /**
@@ -165,6 +187,20 @@ public class GenerateOptions {
      */
     public Integer getMaxTokens() {
         return maxTokens;
+    }
+
+    /**
+     * Gets the maximum number of completion tokens to generate.
+     *
+     * <p>This is an alternative to {@link #getMaxTokens()} for OpenAI-compatible APIs that support
+     * {@code max_completion_tokens}. Some providers/models treat {@code max_tokens} and
+     * {@code max_completion_tokens} as mutually exclusive; this SDK does not enforce exclusivity
+     * and will forward exactly what the caller sets.
+     *
+     * @return the maximum completion tokens limit, or null if not set
+     */
+    public Integer getMaxCompletionTokens() {
+        return maxCompletionTokens;
     }
 
     /**
@@ -266,6 +302,25 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets whether cache control is enabled for prompt caching.
+     *
+     * <p>When true, the formatter will automatically add <code>cache_control:
+     * {"type": "ephemeral"}</code> to system messages and the last message in the request. This
+     * enables prompt
+     * caching on supported providers (e.g., Anthropic, DashScope, OpenAI-compatible APIs) to reduce
+     * latency and cost.
+     *
+     * <p>Users can also manually mark individual messages for caching via {@link
+     * io.agentscope.core.message.MessageMetadataKeys#CACHE_CONTROL} metadata. Manually marked
+     * messages take priority over the automatic strategy.
+     *
+     * @return true if cache control is enabled, false or null if not set
+     */
+    public Boolean getCacheControl() {
+        return cacheControl;
+    }
+
+    /**
      * Gets the additional HTTP headers to include in API requests.
      *
      * <p>These headers will be merged with the default headers when making API calls.
@@ -363,12 +418,18 @@ public class GenerateOptions {
         Builder builder = builder();
         builder.apiKey(primary.apiKey != null ? primary.apiKey : fallback.apiKey);
         builder.baseUrl(primary.baseUrl != null ? primary.baseUrl : fallback.baseUrl);
+        builder.endpointPath(
+                primary.endpointPath != null ? primary.endpointPath : fallback.endpointPath);
         builder.modelName(primary.modelName != null ? primary.modelName : fallback.modelName);
         builder.stream(primary.stream != null ? primary.stream : fallback.stream);
         builder.temperature(
                 primary.temperature != null ? primary.temperature : fallback.temperature);
         builder.topP(primary.topP != null ? primary.topP : fallback.topP);
         builder.maxTokens(primary.maxTokens != null ? primary.maxTokens : fallback.maxTokens);
+        builder.maxCompletionTokens(
+                primary.maxCompletionTokens != null
+                        ? primary.maxCompletionTokens
+                        : fallback.maxCompletionTokens);
         builder.frequencyPenalty(
                 primary.frequencyPenalty != null
                         ? primary.frequencyPenalty
@@ -388,6 +449,8 @@ public class GenerateOptions {
         builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
         builder.topK(primary.topK != null ? primary.topK : fallback.topK);
         builder.seed(primary.seed != null ? primary.seed : fallback.seed);
+        builder.cacheControl(
+                primary.cacheControl != null ? primary.cacheControl : fallback.cacheControl);
 
         // Merge map fields: fallback first, then override with primary
         mergeMaps(fallback.additionalHeaders, primary.additionalHeaders, builder::additionalHeader);
@@ -404,9 +467,7 @@ public class GenerateOptions {
     }
 
     private static <V> void mergeMaps(
-            Map<String, V> fallback,
-            Map<String, V> primary,
-            java.util.function.BiConsumer<String, V> adder) {
+            Map<String, V> fallback, Map<String, V> primary, BiConsumer<String, V> adder) {
         if (fallback != null && !fallback.isEmpty()) {
             for (Map.Entry<String, V> entry : fallback.entrySet()) {
                 adder.accept(entry.getKey(), entry.getValue());
@@ -423,6 +484,7 @@ public class GenerateOptions {
         // Connection-level configuration
         private String apiKey;
         private String baseUrl;
+        private String endpointPath;
         private String modelName;
         private Boolean stream;
 
@@ -430,6 +492,7 @@ public class GenerateOptions {
         private Double temperature;
         private Double topP;
         private Integer maxTokens;
+        private Integer maxCompletionTokens;
         private Double frequencyPenalty;
         private Double presencePenalty;
         private Integer thinkingBudget;
@@ -438,6 +501,7 @@ public class GenerateOptions {
         private ToolChoice toolChoice;
         private Integer topK;
         private Long seed;
+        private Boolean cacheControl;
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
         private Map<String, String> additionalQueryParams;
@@ -461,6 +525,21 @@ public class GenerateOptions {
          */
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
+            return this;
+        }
+
+        /**
+         * Sets the endpoint path for the API request.
+         *
+         * <p>This allows customization for OpenAI-compatible APIs that use different
+         * endpoint paths than the standard OpenAI API (e.g., "/v4/chat/completions",
+         * "/api/v1/llm/chat", etc.). When null, the default endpoint path will be used.
+         *
+         * @param endpointPath the endpoint path (e.g., "/v1/chat/completions")
+         * @return this builder instance
+         */
+        public Builder endpointPath(String endpointPath) {
+            this.endpointPath = endpointPath;
             return this;
         }
 
@@ -522,6 +601,22 @@ public class GenerateOptions {
          */
         public Builder maxTokens(Integer maxTokens) {
             this.maxTokens = maxTokens;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of completion tokens to generate.
+         *
+         * <p>This is an alternative to {@link #maxTokens(Integer)} for OpenAI-compatible APIs that
+         * support {@code max_completion_tokens}. This builder does not enforce exclusivity with
+         * {@code maxTokens}; both may be set and will be forwarded as-is by formatters that support
+         * both fields.
+         *
+         * @param maxCompletionTokens the maximum completion tokens limit
+         * @return this builder instance
+         */
+        public Builder maxCompletionTokens(Integer maxCompletionTokens) {
+            this.maxCompletionTokens = maxCompletionTokens;
             return this;
         }
 
@@ -642,6 +737,20 @@ public class GenerateOptions {
          */
         public Builder seed(Long seed) {
             this.seed = seed;
+            return this;
+        }
+
+        /**
+         * Sets whether cache control is enabled for prompt caching.
+         *
+         * <p>When true, the formatter will automatically add <code>cache_control:
+         * {"type": "ephemeral"}</code> to system messages and the last message in the request.
+         *
+         * @param cacheControl true to enable cache control, false to disable
+         * @return this builder instance
+         */
+        public Builder cacheControl(Boolean cacheControl) {
+            this.cacheControl = cacheControl;
             return this;
         }
 

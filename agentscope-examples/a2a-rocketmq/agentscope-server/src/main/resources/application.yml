@@ -1,0 +1,52 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A2A Protocol Example Application Server Configuration for RocketMQ Transport
+server:
+  port: 8080
+# Spring application settings
+spring:
+  application:
+    name: agentscope-demo
+# AgentScope configuration
+agentscope:
+  # LLM provider API configuration
+  dashscope:
+    api-key: ${apiKey:}  # DashScope API key for model access
+  # Agent identity settings
+  agent:
+    name: my-assistant
+    modelName: qwen-plus
+  # A2A (Agent-to-Agent) protocol configuration
+  a2a:
+    server:
+      enabled: true
+      card:
+        name: My Assistant
+        description: An intelligent assistant based on AgentScope
+      transports:
+        # RocketMQ transport for asynchronous message communication
+        rocketmq:
+          enabled: true
+          rocketMQEndpoint: ${rocketMQEndpoint:}              # RocketMQ Server endpoint
+          rocketMQNamespace: ${rocketMQNamespace:}            # RocketMQ namespace isolation
+          biz-topic: ${bizTopic:LLM_TOPIC}                                 # Business message topic name
+          biz-consumer-group: ${bizConsumerGroup:LLM_CID}                         # Consumer group for business messages
+          workAgentResponseTopic: ${workAgentResponseTopic:WorkerAgentResponseServer}          # Topic for receiving sticky agent requests (lightweight topic)
+          workAgentResponseGroupId: ${workAgentResponseGroupId:CID_HOST_AGENT_LITE_SERVER}  # Consumer group for agent responses
+          accessKey: ${rocketMQAK:}                   # Authentication access key
+          secret-key: ${rocketMQSK:}                  # Authentication secret key
+        # JSON-RPC transport for synchronous HTTP communication
+        jsonrpc:
+          enabled: true

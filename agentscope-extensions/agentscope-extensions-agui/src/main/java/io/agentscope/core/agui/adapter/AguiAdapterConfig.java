@@ -29,6 +29,7 @@ public class AguiAdapterConfig {
     private final ToolMergeMode toolMergeMode;
     private final boolean emitStateEvents;
     private final boolean emitToolCallArgs;
+    private final boolean enableReasoning;
     private final Duration runTimeout;
     private final String defaultAgentId;
 
@@ -36,6 +37,7 @@ public class AguiAdapterConfig {
         this.toolMergeMode = builder.toolMergeMode;
         this.emitStateEvents = builder.emitStateEvents;
         this.emitToolCallArgs = builder.emitToolCallArgs;
+        this.enableReasoning = builder.enableReasoning;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
     }
@@ -65,6 +67,19 @@ public class AguiAdapterConfig {
      */
     public boolean isEmitToolCallArgs() {
         return emitToolCallArgs;
+    }
+
+    /**
+     * Check if reasoning/thinking content should be emitted.
+     *
+     * <p>When enabled, ThinkingBlock content will be converted to REASONING_* events
+     * according to the AG-UI Reasoning draft specification. When disabled (default),
+     * ThinkingBlock content is ignored and no reasoning events are emitted.
+     *
+     * @return true if reasoning events should be emitted
+     */
+    public boolean isEnableReasoning() {
+        return enableReasoning;
     }
 
     /**
@@ -111,6 +126,7 @@ public class AguiAdapterConfig {
         private ToolMergeMode toolMergeMode = ToolMergeMode.MERGE_FRONTEND_PRIORITY;
         private boolean emitStateEvents = true;
         private boolean emitToolCallArgs = true;
+        private boolean enableReasoning = false;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
 
@@ -144,6 +160,21 @@ public class AguiAdapterConfig {
          */
         public Builder emitToolCallArgs(boolean emitToolCallArgs) {
             this.emitToolCallArgs = emitToolCallArgs;
+            return this;
+        }
+
+        /**
+         * Set whether to enable reasoning/thinking content output.
+         *
+         * <p>When enabled, ThinkingBlock content will be converted to REASONING_* events
+         * according to the AG-UI Reasoning draft specification. Default is false to ensure
+         * backward compatibility and privacy compliance.
+         *
+         * @param enableReasoning true to enable reasoning events
+         * @return This builder
+         */
+        public Builder enableReasoning(boolean enableReasoning) {
+            this.enableReasoning = enableReasoning;
             return this;
         }
 

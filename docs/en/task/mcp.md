@@ -157,9 +157,9 @@ String groupName = "filesystem";
 toolkit.createToolGroup(groupName, "Tools for operating system files", true);
 
 // Register MCP tools in a group
-toolkit.registration().mcpClient(mcpClient).group("groupName").apply();
+toolkit.registration().mcpClient(mcpClient).group(groupName).apply();
 
-// Create agent that only uses specific groups
+// Create agent with toolkit (only active group tools available)
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
@@ -222,7 +222,7 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
-> **Note**: Query parameters only apply to HTTP transports (SSE and HTTP). They are ignored for StdIO transport.
+> **Note**: Query parameters and HTTP headers only apply to HTTP transports (SSE and HTTP). They are silently ignored for StdIO transport.
 
 ### Synchronous vs Asynchronous Clients
 
@@ -237,6 +237,45 @@ McpClientWrapper asyncClient = McpClientBuilder.create("async-mcp")
 McpClientWrapper syncClient = McpClientBuilder.create("sync-mcp")
         .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
         .buildSync();
+```
+
+### elicitation support
+
+The elicitation feature in MCP enables interactive information collection during the invocation of MCP server-side tools.
+
+Asynchronous client example
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp-async")
+.stdioTransport("python", "-m", "mcp_server")
+.asyncElicitation(request -> {
+// Handle elicitation request
+System.out.println("Received elicit request: " + request.message());
+        // Return Mono<ElicitResult>
+        return Mono.just(
+            ElicitResult.builder()
+                .action(ElicitResult.Action.ACCEPT)
+                .data(Map.of("response", "user input"))
+                .build()
+        );
+    })
+    .buildAsync()
+    .block();
+```
+
+Synchronous client example
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp-sync")
+.stdioTransport("python", "-m", "mcp_server")
+.syncElicitation(request -> {
+// Handle elicitation request
+System.out.println("Received elicit request: " + request.message());
+        // return ElicitResult directly
+        return ElicitResult.builder()
+            .action(ElicitResult.Action.ACCEPT)
+            .data(Map.of("response", "user input"))
+            .build();
+    })
+    .buildSync();
 ```
 
 ## Managing MCP Clients

@@ -15,8 +15,10 @@
  */
 package io.agentscope.core.formatter.dashscope.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.agentscope.core.model.EndpointType;
 
 /**
  * DashScope API request DTO.
@@ -53,12 +55,23 @@ public class DashScopeRequest {
     @JsonProperty("parameters")
     private DashScopeParameters parameters;
 
-    public DashScopeRequest() {}
+    /**
+     * The endpoint type for endpoint selection (not serialized to JSON).
+     *
+     * <p>This is an internal field used to determine which DashScope API endpoint to use.
+     * It does not get sent to the API.
+     */
+    @JsonIgnore private EndpointType endpointType;
+
+    public DashScopeRequest() {
+        this.endpointType = EndpointType.AUTO;
+    }
 
     public DashScopeRequest(String model, DashScopeInput input, DashScopeParameters parameters) {
         this.model = model;
         this.input = input;
         this.parameters = parameters;
+        this.endpointType = EndpointType.AUTO;
     }
 
     public String getModel() {
@@ -85,6 +98,24 @@ public class DashScopeRequest {
         this.parameters = parameters;
     }
 
+    /**
+     * Gets the endpoint type for endpoint selection.
+     *
+     * @return the endpoint type (defaults to AUTO)
+     */
+    public EndpointType getEndpointType() {
+        return endpointType;
+    }
+
+    /**
+     * Sets the endpoint type for endpoint selection.
+     *
+     * @param endpointType the endpoint type
+     */
+    public void setEndpointType(EndpointType endpointType) {
+        this.endpointType = endpointType;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -93,6 +124,7 @@ public class DashScopeRequest {
         private String model;
         private DashScopeInput input;
         private DashScopeParameters parameters;
+        private EndpointType endpointType = EndpointType.AUTO;
 
         public Builder model(String model) {
             this.model = model;
@@ -109,8 +141,21 @@ public class DashScopeRequest {
             return this;
         }
 
+        /**
+         * Sets the endpoint type for endpoint selection.
+         *
+         * @param endpointType the endpoint type
+         * @return this builder
+         */
+        public Builder endpointType(EndpointType endpointType) {
+            this.endpointType = endpointType;
+            return this;
+        }
+
         public DashScopeRequest build() {
-            return new DashScopeRequest(model, input, parameters);
+            DashScopeRequest request = new DashScopeRequest(model, input, parameters);
+            request.setEndpointType(endpointType);
+            return request;
         }
     }
 }

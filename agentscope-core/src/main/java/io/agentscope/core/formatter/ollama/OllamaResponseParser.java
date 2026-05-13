@@ -24,6 +24,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -66,10 +67,16 @@ public class OllamaResponseParser {
                         // AgentScope requirement.
                         String callId = UUID.randomUUID().toString();
 
+                        // Convert input to JSON string for validation in ToolExecutor
+                        // For tools with no parameters, input will be null or an empty map {}
+                        String argumentsJson;
+                        if (input == null || input.isEmpty()) {
+                            argumentsJson = "{}";
+                        } else {
+                            argumentsJson = JsonUtils.getJsonCodec().toJson(input);
+                        }
                         contentBlocks.add(
-                                new ToolUseBlock(
-                                        callId, fn.getName(), input, null // raw content
-                                        ));
+                                new ToolUseBlock(callId, fn.getName(), input, argumentsJson, null));
                     }
                 }
             }

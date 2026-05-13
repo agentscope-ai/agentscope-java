@@ -16,6 +16,8 @@
 package io.agentscope.core.pipeline;
 
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.exception.CompositeAgentException;
 import io.agentscope.core.message.Msg;
 import java.util.ArrayList;
@@ -225,6 +227,131 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
     @Override
     public String getDescription() {
         return description;
+    }
+
+    // ==================== Streaming API ====================
+
+    /**
+     * Stream execution events from all agents with default options.
+     *
+     * <p>Events from multiple agents are merged (concurrent mode) or concatenated
+     * (sequential mode) based on the pipeline configuration.
+     *
+     * @param input Input message to distribute to all agents
+     * @return Flux of events emitted during execution from all agents
+     */
+    public Flux<Event> stream(Msg input) {
+        return stream(input, StreamOptions.defaults());
+    }
+
+    /**
+     * Stream execution events from all agents with specified options.
+     *
+     * <p>Events from multiple agents are merged (concurrent mode) or concatenated
+     * (sequential mode) based on the pipeline configuration.
+     *
+     * @param input Input message to distribute to all agents
+     * @param options Stream configuration options
+     * @return Flux of events emitted during execution from all agents
+     */
+    public Flux<Event> stream(Msg input, StreamOptions options) {
+        return stream(input, options, null);
+    }
+
+    /**
+     * Stream execution events from all agents with structured output support.
+     *
+     * <p>Events from multiple agents are merged (concurrent mode) or concatenated
+     * (sequential mode) based on the pipeline configuration.
+     *
+     * @param input Input message to distribute to all agents
+     * @param options Stream configuration options
+     * @param structuredOutputClass The class type for structured output (optional)
+     * @return Flux of events emitted during execution from all agents
+     */
+    public Flux<Event> stream(Msg input, StreamOptions options, Class<?> structuredOutputClass) {
+        if (agents.isEmpty()) {
+            return Flux.empty();
+        }
+
+        StreamOptions effectiveOptions = options != null ? options : StreamOptions.defaults();
+
+        return enableConcurrent
+                ? streamConcurrent(input, effectiveOptions, structuredOutputClass)
+                : streamSequential(input, effectiveOptions, structuredOutputClass);
+    }
+
+    /**
+     * Stream events from all agents concurrently.
+     *
+     * <p>All agents execute in parallel and their events are merged into a single stream.
+     * Events may arrive interleaved from different agents.
+     *
+     * @param input Input message to distribute to all agents
+     * @param options Stream configuration options
+     * @param structuredOutputClass The class type for structured output (optional)
+     * @return Flux of merged events from all agents
+     */
+    private Flux<Event> streamConcurrent(
+            Msg input, StreamOptions options, Class<?> structuredOutputClass) {
+        List<CompositeAgentException.AgentExceptionInfo> errors =
+                Collections.synchronizedList(new ArrayList<>());
+
+        List<Flux<Event>> agentFluxes =
+                agents.stream()
+                        .map(
+                                agent -> {
+                                    Flux<Event> flux =
+                                            structuredOutputClass != null
+                                                    ? agent.stream(
+                                                            input, options, structuredOutputClass)
+                                                    : agent.stream(input, options);
+
+                                    return flux.subscribeOn(scheduler)
+                                            .doOnError(
+                                                    throwable ->
+                                                            errors.add(
+                                                                    new CompositeAgentException
+                                                                            .AgentExceptionInfo(
+                                                                            agent.getAgentId(),
+                                                                            agent.getName(),
+                                                                            throwable)))
+                                            .onErrorResume(e -> Flux.empty());
+                                })
+                        .toList();
+
+        return Flux.merge(agentFluxes)
+                .doOnComplete(
+                        () -> {
+                            if (!errors.isEmpty()) {
+                                throw new CompositeAgentException(
+                                        "Multiple agent streaming failures occurred", errors);
+                            }
+                        });
+    }
+
+    /**
+     * Stream events from all agents sequentially.
+     *
+     * <p>Agents execute one after another. Events from each agent are emitted
+     * in order before the next agent starts.
+     *
+     * @param input Input message to distribute to all agents
+     * @param options Stream configuration options
+     * @param structuredOutputClass The class type for structured output (optional)
+     * @return Flux of concatenated events from all agents
+     */
+    private Flux<Event> streamSequential(
+            Msg input, StreamOptions options, Class<?> structuredOutputClass) {
+        List<Flux<Event>> chain = new ArrayList<>();
+        for (AgentBase agent : agents) {
+            Flux<Event> flux =
+                    structuredOutputClass != null
+                            ? agent.stream(input, options, structuredOutputClass)
+                            : agent.stream(input, options);
+            chain.add(flux);
+        }
+        return Flux.concat(chain);
     }
 
     @Override

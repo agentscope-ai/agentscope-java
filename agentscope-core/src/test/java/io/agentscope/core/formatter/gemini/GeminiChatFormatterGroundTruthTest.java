@@ -27,6 +27,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -205,7 +206,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
      * @return Map representation
      */
     private Map<String, Object> contentToMap(Content content) {
-        Map<String, Object> map = new java.util.LinkedHashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
 
         // Add role
         if (content.role().isPresent()) {
@@ -216,7 +217,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
         if (content.parts().isPresent()) {
             List<Map<String, Object>> partsList = new ArrayList<>();
             for (var part : content.parts().get()) {
-                Map<String, Object> partMap = new java.util.LinkedHashMap<>();
+                Map<String, Object> partMap = new LinkedHashMap<>();
 
                 // Text part
                 if (part.text().isPresent()) {
@@ -226,7 +227,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
                 // Inline data (image/audio)
                 if (part.inlineData().isPresent()) {
                     var inlineData = part.inlineData().get();
-                    Map<String, Object> inlineDataMap = new java.util.LinkedHashMap<>();
+                    Map<String, Object> inlineDataMap = new LinkedHashMap<>();
 
                     if (inlineData.data().isPresent()) {
                         inlineDataMap.put("data", inlineData.data().get());
@@ -241,7 +242,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
                 // Function call
                 if (part.functionCall().isPresent()) {
                     var functionCall = part.functionCall().get();
-                    Map<String, Object> functionCallMap = new java.util.LinkedHashMap<>();
+                    Map<String, Object> functionCallMap = new LinkedHashMap<>();
 
                     if (functionCall.id().isPresent()) {
                         functionCallMap.put("id", functionCall.id().get());
@@ -259,7 +260,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
                 // Function response
                 if (part.functionResponse().isPresent()) {
                     var functionResponse = part.functionResponse().get();
-                    Map<String, Object> functionResponseMap = new java.util.LinkedHashMap<>();
+                    Map<String, Object> functionResponseMap = new LinkedHashMap<>();
 
                     if (functionResponse.id().isPresent()) {
                         functionResponseMap.put("id", functionResponse.id().get());

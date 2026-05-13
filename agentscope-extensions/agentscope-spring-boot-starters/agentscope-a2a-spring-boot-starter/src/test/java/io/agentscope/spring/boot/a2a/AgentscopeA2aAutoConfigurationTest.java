@@ -171,6 +171,52 @@ class AgentscopeA2aAutoConfigurationTest {
     }
 
     @Test
+    void shouldIncludeContextPathInAgentCardUrl() {
+        WebApplicationContextRunner contextRunner =
+                new WebApplicationContextRunner()
+                        .withConfiguration(
+                                AutoConfigurations.of(AgentscopeA2aAutoConfiguration.class))
+                        .withBean(
+                                ReActAgent.class,
+                                () -> ReActAgent.builder().name("mockAgent").build())
+                        .withPropertyValues(
+                                "server.address=192.168.1.100",
+                                "server.port=8081",
+                                "server.servlet.context-path=/api");
+        contextRunner.run(
+                context -> {
+                    assertThat(context).hasNotFailed();
+                    AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
+                    AgentCard agentCard = server.getAgentCard();
+                    Assertions.assertEquals("http://192.168.1.100:8081/api", agentCard.url());
+                    // Verify additional interfaces also contain the context-path
+                    assertThat(agentCard.additionalInterfaces()).isNotEmpty();
+                    assertThat(agentCard.additionalInterfaces().get(0).url())
+                            .isEqualTo("http://192.168.1.100:8081/api");
+                });
+    }
+
+    @Test
+    void shouldGenerateCorrectUrlWithContextPath() {
+        WebApplicationContextRunner contextRunner =
+                new WebApplicationContextRunner()
+                        .withConfiguration(
+                                AutoConfigurations.of(AgentscopeA2aAutoConfiguration.class))
+                        .withBean(
+                                ReActAgent.class,
+                                () -> ReActAgent.builder().name("mockAgent").build())
+                        .withPropertyValues("server.servlet.context-path=/myapp/v1");
+        contextRunner.run(
+                context -> {
+                    assertThat(context).hasNotFailed();
+                    AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
+                    AgentCard agentCard = server.getAgentCard();
+                    // URL should contain the context-path
+                    assertThat(agentCard.url()).contains("/myapp/v1");
+                });
+    }
+
+    @Test
     void shouldCallbackServerReadyListener() {
         AgentScopeA2aServer mockServer = mock(AgentScopeA2aServer.class);
         WebApplicationContextRunner contextRunner =

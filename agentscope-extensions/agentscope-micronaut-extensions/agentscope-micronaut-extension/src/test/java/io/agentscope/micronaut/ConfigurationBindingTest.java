@@ -162,4 +162,27 @@ class ConfigurationBindingTest {
             assertEquals(false, props.getAnthropic().isStream());
         }
     }
+
+    @Test
+    void testOpenAIEndpointPathBinding() {
+        try (ApplicationContext ctx =
+                ApplicationContext.run(
+                        Map.of(
+                                "agentscope.openai.enabled",
+                                "true",
+                                "agentscope.openai.api-key",
+                                "test-key",
+                                "agentscope.openai.model-name",
+                                "gpt-4",
+                                "agentscope.openai.endpoint-path",
+                                "/v4/chat/completions"))) {
+
+            AgentscopeProperties props = ctx.getBean(AgentscopeProperties.class);
+            assertNotNull(props.getOpenai());
+            assertTrue(props.getOpenai().isEnabled());
+            assertEquals("test-key", props.getOpenai().getApiKey());
+            assertEquals("gpt-4", props.getOpenai().getModelName());
+            assertEquals("/v4/chat/completions", props.getOpenai().getEndpointPath());
+        }
+    }
 }

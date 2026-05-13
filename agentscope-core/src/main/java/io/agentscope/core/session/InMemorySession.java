@@ -170,6 +170,15 @@ public class InMemorySession implements Session {
         sessions.remove(sessionKeyStr);
     }
 
+    @Override
+    public void delete(SessionKey sessionKey, String key) {
+        String sessionKeyStr = serializeSessionKey(sessionKey);
+        SessionData data = sessions.get(sessionKeyStr);
+        if (data != null) {
+            data.removeSingleState(key);
+        }
+    }
+
     /**
      * List all session keys.
      *
@@ -222,6 +231,10 @@ public class InMemorySession implements Session {
 
         State getSingleState(String key) {
             return singleStates.get(key);
+        }
+
+        void removeSingleState(String key) {
+            singleStates.remove(key);
         }
 
         void setListState(String key, List<? extends State> values) {

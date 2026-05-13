@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 
 class HigressMcpClientWrapperTest {
@@ -287,7 +288,7 @@ class HigressMcpClientWrapperTest {
         when(mockDelegateClient.initialize()).thenReturn(Mono.empty());
         RuntimeException error = new RuntimeException("Close failed");
         // Mockito will throw the error when close() is called
-        org.mockito.Mockito.doThrow(error).when(mockDelegateClient).close();
+        Mockito.doThrow(error).when(mockDelegateClient).close();
 
         HigressMcpClientWrapper wrapper = createWrapper(false, null, 10);
         wrapper.initialize().block();

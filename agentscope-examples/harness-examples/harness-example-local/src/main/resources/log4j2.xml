@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Log4j2 configuration for the harness-example Text-to-SQL demo.
+  Override io.agentscope log level at runtime: AGENTSCOPE_LOG_LEVEL=DEBUG
+-->
+<Configuration status="INFO">
+    <Properties>
+        <Property name="AGENTSCOPE_LEVEL">${env:AGENTSCOPE_LOG_LEVEL:-INFO}</Property>
+        <Property name="CONSOLE_PATTERN">%d{HH:mm:ss.SSS} %-5level %-36.36c{1.} : %m%n%throwable</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="${CONSOLE_PATTERN}" charset="UTF-8"/>
+        </Console>
+    </Appenders>
+
+    <Loggers>
+        <!-- AgentScope libraries (core, harness, example) -->
+        <Logger name="io.agentscope" level="${AGENTSCOPE_LEVEL}" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
+
+        <Logger name="io.netty" level="WARN"/>
+        <Logger name="reactor.netty" level="WARN"/>
+        <Logger name="io.projectreactor" level="WARN"/>
+        <Logger name="okhttp3" level="WARN"/>
+        <Logger name="com.alibaba" level="WARN"/>
+
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+        </Root>
+    </Loggers>
+</Configuration>

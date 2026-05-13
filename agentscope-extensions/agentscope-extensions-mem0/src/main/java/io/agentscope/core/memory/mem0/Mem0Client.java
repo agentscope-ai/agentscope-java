@@ -56,6 +56,7 @@ public class Mem0Client {
     private final OkHttpClient httpClient;
     private final String apiBaseUrl;
     private final String apiKey;
+    private final Mem0ApiType apiType;
     private final JsonCodec jsonCodec;
     private final String addEndpoint;
     private final String searchEndpoint;
@@ -98,6 +99,7 @@ public class Mem0Client {
                         ? apiBaseUrl.substring(0, apiBaseUrl.length() - 1)
                         : apiBaseUrl;
         this.apiKey = apiKey;
+        this.apiType = apiType != null ? apiType : Mem0ApiType.PLATFORM;
         this.jsonCodec = JsonUtils.getJsonCodec();
         this.httpClient =
                 new OkHttpClient.Builder()
@@ -106,11 +108,8 @@ public class Mem0Client {
                         .writeTimeout(Duration.ofSeconds(30))
                         .build();
 
-        // Determine API type (default to PLATFORM if null)
-        Mem0ApiType resolvedApiType = apiType != null ? apiType : Mem0ApiType.PLATFORM;
-
         // Select endpoints based on API type
-        if (resolvedApiType == Mem0ApiType.SELF_HOSTED) {
+        if (this.apiType == Mem0ApiType.SELF_HOSTED) {
             this.addEndpoint = SELF_HOSTED_MEMORIES_ENDPOINT;
             this.searchEndpoint = SELF_HOSTED_SEARCH_ENDPOINT;
         } else {
@@ -148,7 +147,11 @@ public class Mem0Client {
 
                             // Add Authorization header only if apiKey is provided
                             if (apiKey != null && !apiKey.isEmpty()) {
-                                requestBuilder.addHeader("Authorization", "Token " + apiKey);
+                                if (apiType == Mem0ApiType.SELF_HOSTED) {
+                                    requestBuilder.addHeader("X-API-Key", apiKey);
+                                } else {
+                                    requestBuilder.addHeader("Authorization", "Token " + apiKey);
+                                }
                             }
 
                             Request httpRequest = requestBuilder.build();
@@ -227,14 +230,17 @@ public class Mem0Client {
      * memories relevant to the query string. Results are ordered by relevance score
      * (highest first).
      *
-     * <p>The v2 API returns a direct array of results, which this method wraps
-     * into a Mem0SearchResponse object for consistency with the existing API.
+     * <p>Automatically compatible with two Mem0 API response formats:
+     * <ul>
+     *   <li><b>format v1.1</b> — response is a JSON object with a {@code results} field
+     *       (e.g. {@code {"results": [...]}}), deserialized directly into
+     *       {@link Mem0SearchResponse}.</li>
+     *   <li><b>format v1.0</b> — response is a direct JSON array (e.g. {@code [...]}),
+     *       parsed as a list of results and wrapped into a {@link Mem0SearchResponse}.</li>
+     * </ul>
      *
      * <p>The metadata filters (agent_id, user_id, run_id) in the request ensure
      * that only memories from the specified context are returned.
-     *
-     * <p>The operation is performed asynchronously on the bounded elastic scheduler
-     * to avoid blocking the caller thread.
      *
      * @param request The search request containing query and filters
      * @return A Mono emitting the search response with relevant memories
@@ -243,25 +249,20 @@ public class Mem0Client {
         return executePostRaw(searchEndpoint, request, "search request")
                 .map(
                         responseBody -> {
-                            // Platform Mem0 uses /v2/memories/search/ endpoint and returns
-                            // direct array
-                            // Self-hosted Mem0 uses /search endpoint and returns wrapped format
-                            if (searchEndpoint.contains("/v2/")) {
-                                // Platform Mem0 returns direct array
+                            // Support both response formats: direct array or object with results
+                            String trimmed = responseBody != null ? responseBody.trim() : "";
+                            if (trimmed.startsWith("[")) {
+                                // Response is a JSON array: parse as list and wrap in results
                                 List<Mem0SearchResult> results =
                                         jsonCodec.fromJson(
                                                 responseBody,
                                                 new TypeReference<List<Mem0SearchResult>>() {});
-
-                                // Wrap in Mem0SearchResponse for consistency
                                 Mem0SearchResponse searchResponse = new Mem0SearchResponse();
                                 searchResponse.setResults(results);
                                 return searchResponse;
-                            } else {
-                                // Self-hosted Mem0 returns response wrapped in {"results":
-                                // [...]}
-                                return jsonCodec.fromJson(responseBody, Mem0SearchResponse.class);
                             }
+                            // Response is an object (e.g. {"results": [...]})
+                            return jsonCodec.fromJson(responseBody, Mem0SearchResponse.class);
                         });
     }
 

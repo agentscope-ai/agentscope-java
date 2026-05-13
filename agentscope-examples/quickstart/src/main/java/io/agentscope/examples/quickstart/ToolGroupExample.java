@@ -45,9 +45,6 @@ public class ToolGroupExample {
         // Configure tool groups
         Toolkit toolkit = configureToolGroups();
 
-        // Register meta-tool for autonomous tool group management
-        toolkit.registerMetaTool();
-
         System.out.println("\n=== Meta Tool Registered ===");
         System.out.println(
                 "The agent now has access to 'reset_equipped_tools' meta-tool to autonomously");
@@ -66,6 +63,7 @@ public class ToolGroupExample {
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(toolkit)
+                        .enableMetaTool(true)
                         .memory(new InMemoryMemory())
                         .build();
 

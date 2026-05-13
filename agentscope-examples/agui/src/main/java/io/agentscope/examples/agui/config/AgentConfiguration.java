@@ -17,13 +17,13 @@ package io.agentscope.examples.agui.config;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.agui.tools.ExampleTools;
-import org.springframework.beans.factory.annotation.Autowired;
+import io.agentscope.spring.boot.agui.common.AguiAgentRegistryCustomizer;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -40,24 +40,29 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class AgentConfiguration {
 
-    @Autowired
-    public void configureAgents(AguiAgentRegistry registry) {
-        // Register a factory for the default agent
-        // Using a factory ensures each request gets a fresh agent instance
-        registry.registerFactory("default", this::createDefaultAgent);
+    @Bean
+    public AguiAgentRegistryCustomizer aguiAgentRegistryCustomizer() {
+        AguiAgentRegistryCustomizer aguiAgentRegistryCustomizer =
+                registry -> {
+                    // Register a factory for the default agent
+                    // Using a factory ensures each request gets a fresh agent instance
+                    registry.registerFactory("default", this::createDefaultAgent);
 
-        // Register additional agents with different IDs
-        // Example: a simple chat agent without tools
-        registry.registerFactory("chat", this::createChatAgent);
+                    // Register additional agents with different IDs
+                    // Example: a simple chat agent without tools
+                    registry.registerFactory("chat", this::createChatAgent);
 
-        // Example: an agent specialized for calculations
-        registry.registerFactory("calculator", this::createCalculatorAgent);
+                    // Example: an agent specialized for calculations
+                    registry.registerFactory("calculator", this::createCalculatorAgent);
+                };
 
         System.out.println("Registered agents with AG-UI registry: default, chat, calculator");
         System.out.println("Access agents via:");
         System.out.println("  - POST /agui/run (uses default-agent-id from config)");
         System.out.println("  - POST /agui/run/chat (uses 'chat' agent)");
         System.out.println("  - POST /agui/run with X-Agent-Id header");
+
+        return aguiAgentRegistryCustomizer;
     }
 
     /**

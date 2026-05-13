@@ -37,6 +37,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Unit tests for AgentBase class.
@@ -175,6 +176,30 @@ class AgentBaseTest {
                 TestConstants.TEST_AGENT_NAME,
                 response.getName(),
                 "Response should be from the agent");
+    }
+
+    @Test
+    @DisplayName("Should not trigger concurrency conflict")
+    void testConcurrencyConflict() {
+        Msg message = TestUtils.createUserMessage("User", "First message");
+        // Get response
+        Msg responseMsg =
+                agent.call(message)
+                        .subscribeOn(Schedulers.boundedElastic()) // mock chat model
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // no IllegalStateException throw
+        Msg response2 =
+                agent.call(message).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(responseMsg, "Response should not be null");
+        assertEquals(
+                TestConstants.TEST_AGENT_NAME,
+                responseMsg.getName(),
+                "Response should be from the agent");
+
+        assertNotNull(response2, "Response should not be null");
     }
 
     @Test

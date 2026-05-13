@@ -24,415 +24,710 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class MarkdownSkillParserTest {
 
-    @Test
-    @DisplayName("Should parse with valid frontmatter")
-    void testParseWithValidFrontmatter() {
-        String markdown =
-                "---\n"
-                        + "name: test_skill\n"
-                        + "description: A test skill\n"
-                        + "version: 1.0.0\n"
-                        + "---\n"
-                        + "# Test Content\n"
-                        + "This is the skill content.";
+    @Nested
+    @DisplayName("Basic Parse Tests")
+    class BasicParseTests {
 
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+        @Test
+        @DisplayName("Should parse with valid frontmatter")
+        void testParseWithValidFrontmatter() {
+            String markdown =
+                    "---\n"
+                            + "name: test_skill\n"
+                            + "description: A test skill\n"
+                            + "version: 1.0.0\n"
+                            + "---\n"
+                            + "# Test Content\n"
+                            + "This is the skill content.";
 
-        assertNotNull(parsed);
-        assertTrue(parsed.hasFrontmatter());
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
-        Map<String, Object> metadata = parsed.getMetadata();
-        assertEquals("test_skill", metadata.get("name"));
-        assertEquals("A test skill", metadata.get("description"));
-        assertEquals("1.0.0", metadata.get("version"));
+            assertNotNull(parsed);
+            assertTrue(parsed.hasFrontmatter());
+            Map<String, Object> metadata = parsed.getMetadata();
+            assertEquals("test_skill", metadata.get("name"));
+            assertEquals("A test skill", metadata.get("description"));
+            assertEquals("1.0.0", metadata.get("version"));
+            assertTrue(parsed.getContent().contains("# Test Content"));
+        }
 
-        String content = parsed.getContent();
-        assertTrue(content.contains("# Test Content"));
-        assertTrue(content.contains("This is the skill content."));
+        @Test
+        @DisplayName("Should parse without frontmatter")
+        void testParseWithoutFrontmatter() {
+            String markdown = "# Just Content\nNo frontmatter here.";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertFalse(parsed.hasFrontmatter());
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals(markdown, parsed.getContent());
+        }
+
+        @Test
+        @DisplayName("Should parse null and empty strings")
+        void testParseNullAndEmpty() {
+            ParsedMarkdown parsedNull = MarkdownSkillParser.parse(null);
+            ParsedMarkdown parsedEmpty = MarkdownSkillParser.parse("");
+
+            assertFalse(parsedNull.hasFrontmatter());
+            assertFalse(parsedEmpty.hasFrontmatter());
+            assertEquals("", parsedNull.getContent());
+            assertEquals("", parsedEmpty.getContent());
+        }
+
+        @Test
+        @DisplayName("Should parse empty frontmatter")
+        void testParseEmptyFrontmatter() {
+            String markdown = "---\n---\n# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertFalse(parsed.hasFrontmatter());
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals("# Content", parsed.getContent());
+            assertFalse(parsed.getContent().contains("---"));
+        }
+
+        @Test
+        @DisplayName("Should parse with only frontmatter")
+        void testParseWithOnlyFrontmatter() {
+            String markdown = "---\nname: test\n---";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("test", parsed.getMetadata().get("name"));
+            assertEquals("", parsed.getContent());
+        }
+
+        @Test
+        @DisplayName("Should parse with whitespace in frontmatter")
+        void testParseWithWhitespaceInFrontmatter() {
+            String markdown = "---  \n\nname: test\n\n---  \n\nContent";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("test", parsed.getMetadata().get("name"));
+            assertEquals("Content", parsed.getContent());
+        }
+
+        @Test
+        @DisplayName("Should parse with frontmatter not at start")
+        void testParseWithFrontmatterNotAtStart() {
+            String markdown = "Some text\n---\nname: test\n---\nContent";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertFalse(parsed.hasFrontmatter());
+            assertEquals(markdown, parsed.getContent());
+        }
+
+        @Test
+        @DisplayName("Should parse with multiple frontmatter sections")
+        void testParseWithMultipleFrontmatterSections() {
+            String markdown = "---\nname: first\n---\nContent\n---\nname: second\n---";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("first", parsed.getMetadata().get("name"));
+            assertTrue(parsed.getContent().contains("Content"));
+        }
     }
 
-    @Test
-    @DisplayName("Should parse without frontmatter")
-    void testParseWithoutFrontmatter() {
-        String markdown = "# Just Content\nNo frontmatter here.";
+    @Nested
+    @DisplayName("Line Ending Tests")
+    class LineEndingTests {
 
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+        @Test
+        @DisplayName("Should parse with different line endings")
+        void testParseWithDifferentLineEndings() {
+            // Unix LF
+            ParsedMarkdown parsedLF = MarkdownSkillParser.parse("---\nname: unix\n---\nContent");
+            assertEquals("unix", parsedLF.getMetadata().get("name"));
 
-        assertNotNull(parsed);
-        assertFalse(parsed.hasFrontmatter());
-        assertTrue(parsed.getMetadata().isEmpty());
-        assertEquals(markdown, parsed.getContent());
+            // Windows CRLF
+            ParsedMarkdown parsedCRLF =
+                    MarkdownSkillParser.parse("---\r\nname: windows\r\n---\r\nContent");
+            assertEquals("windows", parsedCRLF.getMetadata().get("name"));
+
+            // Old Mac CR
+            ParsedMarkdown parsedCR = MarkdownSkillParser.parse("---\rname: mac\r---\rContent");
+            assertEquals("mac", parsedCR.getMetadata().get("name"));
+        }
+
+        @Test
+        @DisplayName("Should parse with mixed line endings")
+        void testParseMixedLineEndings() {
+            String markdown =
+                    "---\r\nname: mixed\n" + "description: test\r\n" + "---\n" + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("mixed", parsed.getMetadata().get("name"));
+            assertEquals("test", parsed.getMetadata().get("description"));
+        }
+
+        @Test
+        @DisplayName("Should parse with empty lines in frontmatter")
+        void testParseWithEmptyLines() {
+            String markdown =
+                    "---\r\n" + "\r\n" + "name: spaced\r\n" + "\r\n" + "---\r\n" + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("spaced", parsed.getMetadata().get("name"));
+        }
+
+        @Test
+        @DisplayName("Should parse multiline content")
+        void testParseMultilineContent() {
+            String markdown = "---\nname: multiline\n---\nLine 1\nLine 2\nLine 3\n\nLine 5";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            String content = parsed.getContent();
+            assertTrue(content.contains("Line 1"));
+            assertTrue(content.contains("Line 5"));
+        }
     }
 
-    @Test
-    @DisplayName("Should parse empty string")
-    void testParseEmptyString() {
-        ParsedMarkdown parsed = MarkdownSkillParser.parse("");
+    @Nested
+    @DisplayName("Quoted Value Tests")
+    class QuotedValueTests {
 
-        assertNotNull(parsed);
-        assertFalse(parsed.hasFrontmatter());
-        assertTrue(parsed.getMetadata().isEmpty());
-        assertEquals("", parsed.getContent());
+        @Test
+        @DisplayName("Should parse double and single quoted values")
+        void testParseQuotedValues() {
+            String markdown =
+                    "---\n"
+                            + "double: \"quoted value\"\n"
+                            + "single: 'single quoted'\n"
+                            + "---\n"
+                            + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("quoted value", parsed.getMetadata().get("double"));
+            assertEquals("single quoted", parsed.getMetadata().get("single"));
+        }
+
+        @Test
+        @DisplayName("Should parse escaped characters in double quotes")
+        void testParseEscapedCharacters() {
+            String markdown =
+                    "---\n"
+                            + "path: \"C:\\\\Users\\\\test\\\\file.txt\"\n"
+                            + "message: \"Line 1\\n"
+                            + "Line 2\\tTabbed\"\n"
+                            + "---\n"
+                            + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("C:\\Users\\test\\file.txt", parsed.getMetadata().get("path"));
+            assertEquals("Line 1\nLine 2\tTabbed", parsed.getMetadata().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should parse Windows path without quotes")
+        void testParseWindowsPath() {
+            String markdown = "---\npath: C:\\Users\\test\\file.txt\n---\nContent";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("C:\\Users\\test\\file.txt", parsed.getMetadata().get("path"));
+        }
     }
 
-    @Test
-    @DisplayName("Should parse null string")
-    void testParseNullString() {
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(null);
+    @Nested
+    @DisplayName("Comment and Special Character Tests")
+    class CommentAndSpecialTests {
 
-        assertNotNull(parsed);
-        assertFalse(parsed.hasFrontmatter());
-        assertTrue(parsed.getMetadata().isEmpty());
-        assertEquals("", parsed.getContent());
+        @Test
+        @DisplayName("Should parse with comments in frontmatter")
+        void testParseWithComments() {
+            String markdown =
+                    "---\n# This is a comment\nname: test\n# Another comment\n---\nContent";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("test", parsed.getMetadata().get("name"));
+            assertEquals(1, parsed.getMetadata().size());
+        }
+
+        @Test
+        @DisplayName("Should parse with unicode characters")
+        void testParseUnicodeCharacters() {
+            String markdown = "---\nname: 测试技能\ndescription: テスト\n---\n内容: 한국어";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("测试技能", parsed.getMetadata().get("name"));
+            assertEquals("テスト", parsed.getMetadata().get("description"));
+            assertTrue(parsed.getContent().contains("한국어"));
+        }
     }
 
-    @Test
-    @DisplayName("Should parse empty frontmatter")
-    void testParseEmptyFrontmatter() {
-        String markdown = "---\n---\n# Content";
+    @Nested
+    @DisplayName("Error Handling Tests")
+    class ErrorHandlingTests {
 
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+        @Test
+        @DisplayName("Should return empty metadata for invalid YAML frontmatter")
+        void testInvalidYaml() {
+            String markdown = "---\nname: test\nthis is not a valid line\n---\nContent";
 
-        assertNotNull(parsed);
-        // Empty frontmatter is still recognized as frontmatter structure
-        // but results in empty metadata
-        assertFalse(parsed.hasFrontmatter());
-        assertTrue(parsed.getMetadata().isEmpty());
-        // Content should not include the frontmatter delimiters
-        assertEquals("# Content", parsed.getContent());
-        assertFalse(parsed.getContent().contains("---"));
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertTrue(metadata.isEmpty());
+            assertEquals("Content", parsed.getContent());
+        }
+
+        @Test
+        @DisplayName("Should return empty metadata for invalid list-style frontmatter")
+        void testListFormat() {
+            String markdown = "---\nname: test_skill\n- item1\n- item2\n---\nContent";
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertTrue(metadata.isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should keep flat scalar metadata and preserve complex YAML structures")
+        void testParseAndIgnoreComplexMetadata() {
+            String markdown =
+                    """
+                    ---
+                    name: Agent Browser
+                    description: A fast Rust-based headless browser automation CLI
+                    read_when:
+                      - Automating web interactions
+                      - Extracting structured data from pages
+                    metadata: {"clawdbot":{"emoji":"🌐"}}
+                    allowed-tools: Bash(agent-browser:*)
+                    ---
+
+                    # Content
+                    This is the content.\
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertEquals("Agent Browser", metadata.get("name"));
+            assertEquals(
+                    "A fast Rust-based headless browser automation CLI",
+                    metadata.get("description"));
+            assertEquals("Bash(agent-browser:*)", metadata.get("allowed-tools"));
+            assertEquals(Map.of("clawdbot", Map.of("emoji", "🌐")), metadata.get("metadata"));
+            assertEquals(
+                    List.of("Automating web interactions", "Extracting structured data from pages"),
+                    metadata.get("read_when"));
+
+            assertTrue(parsed.getContent().contains("# Content"));
+        }
+
+        @Test
+        @DisplayName("Should parse block-style scalar values")
+        void testParseBlockStyleModifiers() {
+            String markdown =
+                    """
+                    ---
+                    name: test_skill
+                    description: |
+                      This is a multi-line description.
+                      It should be ignored by the simple parser.
+                    summary: >
+                      This is a folded multi-line summary.
+                      It should also be ignored.
+                    version: "1.0"
+                    ---
+                    Content\
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertEquals("test_skill", metadata.get("name"));
+            assertEquals("1.0", metadata.get("version"));
+            assertEquals(
+                    "This is a multi-line description.\n"
+                            + "It should be ignored by the simple parser.\n",
+                    metadata.get("description"));
+            assertEquals(
+                    "This is a folded multi-line summary. It should also be ignored.\n",
+                    metadata.get("summary"));
+        }
+
+        @Test
+        @DisplayName("Should return empty metadata when frontmatter exceeds size limit")
+        void testFrontmatterSizeLimit() {
+            String largeValue = "x".repeat(17_000);
+            String markdown = "---\nname: " + largeValue + "\ndescription: desc\n---\nContent";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals("Content", parsed.getContent());
+        }
     }
 
-    @Test
-    @DisplayName("Should parse with whitespace in frontmatter")
-    void testParseWithWhitespaceInFrontmatter() {
-        String markdown = "---  \n\nname: test\n\n---  \n\nContent";
+    @Nested
+    @DisplayName("Generate Tests")
+    class GenerateTests {
 
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+        @Test
+        @DisplayName("Should generate with metadata and content")
+        void testGenerateBasic() {
+            Map<String, Object> metadata = Map.of("name", "test_skill", "description", "Test");
+            String content = "# Skill Content";
 
-        assertNotNull(parsed);
-        assertTrue(parsed.hasFrontmatter());
-        assertEquals("test", parsed.getMetadata().get("name"));
-        assertEquals("Content", parsed.getContent());
+            String generated = MarkdownSkillParser.generate(metadata, content);
+
+            assertTrue(generated.startsWith("---\n"));
+            assertTrue(generated.contains("name: test_skill"));
+            assertTrue(generated.contains("description: Test"));
+            assertTrue(generated.contains("# Skill Content"));
+        }
+
+        @Test
+        @DisplayName("Should generate with null or empty inputs")
+        void testGenerateNullOrEmpty() {
+            // Empty metadata
+            String gen1 = MarkdownSkillParser.generate(Map.of(), "Just content");
+            assertFalse(gen1.contains("---"));
+            assertEquals("Just content", gen1);
+
+            // Null metadata
+            String gen2 = MarkdownSkillParser.generate(null, "Just content");
+            assertFalse(gen2.contains("---"));
+
+            // Null content
+            String gen3 = MarkdownSkillParser.generate(Map.of("name", "test"), null);
+            assertTrue(gen3.contains("---"));
+            assertTrue(gen3.contains("name: test"));
+
+            // Empty content
+            String gen4 = MarkdownSkillParser.generate(Map.of("name", "test"), "");
+            assertTrue(gen4.contains("---"));
+        }
+
+        @Test
+        @DisplayName("Should generate with special characters in content")
+        void testGenerateSpecialContent() {
+            Map<String, Object> metadata = Map.of("name", "special");
+            String content = "Content with special chars: @#$%^&*(){}[]|\\:;\"'<>?,./";
+
+            String generated = MarkdownSkillParser.generate(metadata, content);
+
+            assertTrue(generated.contains(content));
+        }
+
+        @Test
+        @DisplayName("Should generate and quote values with special characters")
+        void testGenerateQuotingSpecialChars() {
+            Map<String, Object> metadata =
+                    Map.of(
+                            "colon", "http://example.com:8080",
+                            "hash", "#important",
+                            "newline", "Line 1\nLine 2",
+                            "tab", "Col1\tCol2");
+
+            String generated = MarkdownSkillParser.generate(metadata, "Content");
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
+
+            assertEquals("http://example.com:8080", parsed.getMetadata().get("colon"));
+            assertEquals("#important", parsed.getMetadata().get("hash"));
+            assertEquals("Line 1\nLine 2", parsed.getMetadata().get("newline"));
+            assertEquals("Col1\tCol2", parsed.getMetadata().get("tab"));
+        }
+
+        @Test
+        @DisplayName("Should generate and quote values with whitespace")
+        void testGenerateQuotingWhitespace() {
+            Map<String, Object> metadata = Map.of("leading", "  spaces", "trailing", "spaces  ");
+
+            String generated = MarkdownSkillParser.generate(metadata, "Content");
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
+
+            assertEquals("  spaces", parsed.getMetadata().get("leading"));
+            assertEquals("spaces  ", parsed.getMetadata().get("trailing"));
+        }
+
+        @Test
+        @DisplayName("Should generate and quote values starting with YAML special chars")
+        void testGenerateQuotingYAMLChars() {
+            Map<String, Object> metadata =
+                    Map.of(
+                            "quote", "\"starts with quote",
+                            "bracket", "[array",
+                            "brace", "{object",
+                            "pipe", "|multiline",
+                            "star", "*anchor",
+                            "amp", "&reference",
+                            "exclaim", "!tag",
+                            "percent", "%directive",
+                            "at", "@symbol",
+                            "backtick", "`code");
+
+            String generated = MarkdownSkillParser.generate(metadata, "Content");
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
+
+            assertEquals("\"starts with quote", parsed.getMetadata().get("quote"));
+            assertEquals("[array", parsed.getMetadata().get("bracket"));
+            assertEquals("{object", parsed.getMetadata().get("brace"));
+            assertEquals("|multiline", parsed.getMetadata().get("pipe"));
+            assertEquals("*anchor", parsed.getMetadata().get("star"));
+            assertEquals("&reference", parsed.getMetadata().get("amp"));
+            assertEquals("!tag", parsed.getMetadata().get("exclaim"));
+            assertEquals("%directive", parsed.getMetadata().get("percent"));
+            assertEquals("@symbol", parsed.getMetadata().get("at"));
+            assertEquals("`code", parsed.getMetadata().get("backtick"));
+        }
+
+        @Test
+        @DisplayName("Should generate with empty value")
+        void testGenerateEmptyValue() {
+            Map<String, Object> metadata = Map.of("empty", "");
+
+            String generated = MarkdownSkillParser.generate(metadata, "Content");
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
+
+            assertEquals("", parsed.getMetadata().get("empty"));
+        }
     }
 
-    @Test
-    @DisplayName("Should parse with nested yaml")
-    void testParseWithNestedYaml() {
-        String markdown =
-                "---\n"
-                        + "name: complex_skill\n"
-                        + "metadata:\n"
-                        + "  author: John Doe\n"
-                        + "  tags:\n"
-                        + "    - ai\n"
-                        + "    - ml\n"
-                        + "---\n"
-                        + "Content";
+    @Nested
+    @DisplayName("Round Trip Tests")
+    class RoundTripTests {
 
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+        @Test
+        @DisplayName("Should round trip with basic frontmatter")
+        void testRoundTripBasic() {
+            String original =
+                    "---\n"
+                            + "name: roundtrip\n"
+                            + "description: Test roundtrip\n"
+                            + "---\n"
+                            + "# Content\n"
+                            + "Test content";
 
-        assertNotNull(parsed);
-        assertTrue(parsed.hasFrontmatter());
-        assertEquals("complex_skill", parsed.getMetadata().get("name"));
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(original);
+            String regenerated =
+                    MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
+            ParsedMarkdown reparsed = MarkdownSkillParser.parse(regenerated);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> metadata = (Map<String, Object>) parsed.getMetadata().get("metadata");
-        assertNotNull(metadata);
-        assertEquals("John Doe", metadata.get("author"));
+            assertEquals(parsed.getMetadata().get("name"), reparsed.getMetadata().get("name"));
+            assertEquals(
+                    parsed.getMetadata().get("description"),
+                    reparsed.getMetadata().get("description"));
+            assertEquals(parsed.getContent().trim(), reparsed.getContent().trim());
+        }
+
+        @Test
+        @DisplayName("Should round trip with special characters")
+        void testRoundTripSpecialCharacters() {
+            Map<String, Object> original =
+                    Map.of(
+                            "url", "http://example.com:8080",
+                            "tag", "#important",
+                            "path", "C:\\Users\\test",
+                            "message", "Line 1\nLine 2");
+
+            String generated = MarkdownSkillParser.generate(original, "Content");
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
+
+            assertEquals(original.get("url"), parsed.getMetadata().get("url"));
+            assertEquals(original.get("tag"), parsed.getMetadata().get("tag"));
+            assertEquals(original.get("path"), parsed.getMetadata().get("path"));
+            assertEquals(original.get("message"), parsed.getMetadata().get("message"));
+        }
+
+        @Test
+        @DisplayName("Should preserve metadata order for parse and generate")
+        void testPreserveMetadataOrder() {
+            String original =
+                    "---\n"
+                            + "name: trello\n"
+                            + "description: Manage Trello boards\n"
+                            + "homepage: https://developer.atlassian.com/cloud/trello/rest/\n"
+                            + "metadata:\n"
+                            + "  clawdbot:\n"
+                            + "    emoji: 📋\n"
+                            + "    requires:\n"
+                            + "      bins:\n"
+                            + "        - jq\n"
+                            + "      env:\n"
+                            + "        - TRELLO_API_KEY\n"
+                            + "        - TRELLO_TOKEN\n"
+                            + "---\n"
+                            + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(original);
+
+            assertEquals(
+                    List.of("name", "description", "homepage", "metadata"),
+                    List.copyOf(parsed.getMetadata().keySet()));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> nestedMetadata =
+                    (Map<String, Object>) parsed.getMetadata().get("metadata");
+            assertEquals(List.of("clawdbot"), List.copyOf(nestedMetadata.keySet()));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> clawdbotMetadata =
+                    (Map<String, Object>) nestedMetadata.get("clawdbot");
+            assertEquals(List.of("emoji", "requires"), List.copyOf(clawdbotMetadata.keySet()));
+
+            String generated =
+                    MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
+            int nameIndex = generated.indexOf("name: trello");
+            int descriptionIndex = generated.indexOf("description: Manage Trello boards");
+            int homepageIndex =
+                    generated.indexOf(
+                            "homepage: https://developer.atlassian.com/cloud/trello/rest/");
+            int metadataIndex = generated.indexOf("metadata:");
+
+            assertTrue(nameIndex < descriptionIndex);
+            assertTrue(descriptionIndex < homepageIndex);
+            assertTrue(homepageIndex < metadataIndex);
+        }
+
+        @Test
+        @DisplayName("Should reject non-string required metadata values")
+        void testRejectNonStringRequiredMetadataValues() {
+            String skillMd =
+                    "---\n"
+                            + "name:\n"
+                            + "  - a\n"
+                            + "  - b\n"
+                            + "description: valid description\n"
+                            + "---\n"
+                            + "Content";
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
+        }
+
+        @Test
+        @DisplayName("Should align parser code point limit with frontmatter limit")
+        void testFrontmatterAtConfiguredCodePointLimit() {
+            String value = "a".repeat(16_360);
+            String markdown =
+                    "---\n" + "name: test\n" + "description: " + value + "\n---\n" + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("test", parsed.getMetadata().get("name"));
+            assertEquals(value, parsed.getMetadata().get("description"));
+        }
+
+        @Test
+        @DisplayName("Should keep generated document unchanged after parse and regenerate")
+        void testParseThenGenerateKeepsDocumentStable() {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("name", "trello");
+            metadata.put("description", "Manage Trello boards, lists, and cards.");
+            metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
+            metadata.put(
+                    "metadata",
+                    Map.of(
+                            "clawdbot",
+                            Map.of(
+                                    "emoji",
+                                    "📋",
+                                    "requires",
+                                    Map.of(
+                                            "bins", List.of("jq"),
+                                            "env", List.of("TRELLO_API_KEY", "TRELLO_TOKEN")))));
+
+            String original = MarkdownSkillParser.generate(metadata, "# Content\nBody");
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(original);
+            String regenerated =
+                    MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
+
+            assertEquals(original, regenerated);
+        }
     }
 
-    @Test
-    @DisplayName("Should parse invalid yaml throws exception")
-    void testParseInvalidYamlThrowsException() {
-        String markdown = "---\nname: test\n  invalid: yaml: syntax\n---\nContent";
+    @Nested
+    @DisplayName("ParsedMarkdown Tests")
+    class ParsedMarkdownTests {
 
-        assertThrows(IllegalArgumentException.class, () -> MarkdownSkillParser.parse(markdown));
-    }
+        @Test
+        @DisplayName("Should provide correct getters")
+        void testGetters() {
+            Map<String, Object> metadata = Map.of("key", "value");
+            ParsedMarkdown parsed = new ParsedMarkdown(metadata, "content");
 
-    @Test
-    @DisplayName("Should parse non map yaml throws exception")
-    void testParseNonMapYamlThrowsException() {
-        String markdown = "---\n- item1\n- item2\n---\nContent";
+            assertEquals("value", parsed.getMetadata().get("key"));
+            assertEquals("content", parsed.getContent());
+            assertTrue(parsed.hasFrontmatter());
+        }
 
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class, () -> MarkdownSkillParser.parse(markdown));
-        assertTrue(exception.getMessage().contains("must be a map"));
-    }
+        @Test
+        @DisplayName("Should maintain immutability")
+        void testImmutability() {
+            Map<String, Object> originalMetadata = new HashMap<>();
+            originalMetadata.put("key", "value");
 
-    @Test
-    @DisplayName("Should parse with different line endings")
-    void testParseWithDifferentLineEndings() {
-        // Test with \r\n (Windows)
-        String markdownCRLF = "---\r\nname: test\r\n---\r\nContent";
-        ParsedMarkdown parsedCRLF = MarkdownSkillParser.parse(markdownCRLF);
-        assertTrue(parsedCRLF.hasFrontmatter());
-        assertEquals("test", parsedCRLF.getMetadata().get("name"));
+            ParsedMarkdown parsed = new ParsedMarkdown(originalMetadata, "content");
 
-        // Test with \r (old Mac)
-        String markdownCR = "---\rname: test\r---\rContent";
-        ParsedMarkdown parsedCR = MarkdownSkillParser.parse(markdownCR);
-        assertTrue(parsedCR.hasFrontmatter());
-        assertEquals("test", parsedCR.getMetadata().get("name"));
-    }
+            originalMetadata.put("key", "modified");
+            originalMetadata.put("newkey", "newvalue");
 
-    @Test
-    @DisplayName("Should parse with multiline content")
-    void testParseWithMultilineContent() {
-        String markdown =
-                "---\n"
-                        + "name: multiline\n"
-                        + "---\n"
-                        + "Line 1\n"
-                        + "Line 2\n"
-                        + "Line 3\n"
-                        + "\n"
-                        + "Line 5";
+            assertEquals("value", parsed.getMetadata().get("key"));
+            assertNull(parsed.getMetadata().get("newkey"));
+        }
 
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+        @Test
+        @DisplayName("Should handle null inputs")
+        void testNullInputs() {
+            ParsedMarkdown parsed = new ParsedMarkdown(null, null);
 
-        assertNotNull(parsed);
-        String content = parsed.getContent();
-        assertTrue(content.contains("Line 1"));
-        assertTrue(content.contains("Line 5"));
-    }
+            assertNotNull(parsed.getMetadata());
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals("", parsed.getContent());
+            assertFalse(parsed.hasFrontmatter());
+        }
 
-    @Test
-    @DisplayName("Should generate with metadata and content")
-    void testGenerateWithMetadataAndContent() {
-        Map<String, Object> metadata = Map.of("name", "test_skill", "description", "Test");
-        String content = "# Skill Content";
+        @Test
+        @DisplayName("Should provide meaningful toString")
+        void testToString() {
+            Map<String, Object> metadata = Map.of("name", "test");
+            String content = "This is a very long content that should be truncated in toString";
 
-        String generated = MarkdownSkillParser.generate(metadata, content);
+            ParsedMarkdown parsed = new ParsedMarkdown(metadata, content);
+            String toString = parsed.toString();
 
-        assertNotNull(generated);
-        assertTrue(generated.startsWith("---\n"));
-        assertTrue(generated.contains("name: test_skill"));
-        assertTrue(generated.contains("description: Test"));
-        assertTrue(generated.contains("---\n"));
-        assertTrue(generated.contains("# Skill Content"));
-    }
+            assertTrue(toString.contains("ParsedMarkdown"));
+            assertTrue(toString.contains("metadata"));
+            assertTrue(toString.contains("content"));
+        }
 
-    @Test
-    @DisplayName("Should generate with empty metadata")
-    void testGenerateWithEmptyMetadata() {
-        Map<String, Object> metadata = Map.of();
-        String content = "Just content";
+        @Test
+        @DisplayName("Should keep metadata immutable")
+        void testMetadataImmutable() {
+            ParsedMarkdown parsed = new ParsedMarkdown(Map.of("name", "test"), "content");
 
-        String generated = MarkdownSkillParser.generate(metadata, content);
-
-        assertNotNull(generated);
-        assertFalse(generated.contains("---"));
-        assertEquals("Just content", generated);
-    }
-
-    @Test
-    @DisplayName("Should generate with null metadata")
-    void testGenerateWithNullMetadata() {
-        String content = "Just content";
-
-        String generated = MarkdownSkillParser.generate(null, content);
-
-        assertNotNull(generated);
-        assertFalse(generated.contains("---"));
-        assertEquals("Just content", generated);
-    }
-
-    @Test
-    @DisplayName("Should generate with null content")
-    void testGenerateWithNullContent() {
-        Map<String, Object> metadata = Map.of("name", "test");
-
-        String generated = MarkdownSkillParser.generate(metadata, null);
-
-        assertNotNull(generated);
-        assertTrue(generated.contains("---"));
-        assertTrue(generated.contains("name: test"));
-    }
-
-    @Test
-    @DisplayName("Should generate with empty content")
-    void testGenerateWithEmptyContent() {
-        Map<String, Object> metadata = Map.of("name", "test");
-
-        String generated = MarkdownSkillParser.generate(metadata, "");
-
-        assertNotNull(generated);
-        assertTrue(generated.contains("---"));
-        assertTrue(generated.contains("name: test"));
-    }
-
-    @Test
-    @DisplayName("Should generate with nested metadata")
-    void testGenerateWithNestedMetadata() {
-        Map<String, Object> metadata =
-                Map.of(
-                        "name",
-                        "complex",
-                        "config",
-                        Map.of("timeout", 30, "retries", 3),
-                        "tags",
-                        java.util.List.of("ai", "ml"));
-
-        String content = "Content";
-
-        String generated = MarkdownSkillParser.generate(metadata, content);
-
-        assertNotNull(generated);
-        assertTrue(generated.contains("name: complex"));
-        assertTrue(generated.contains("config:"));
-        assertTrue(generated.contains("timeout: 30"));
-        assertTrue(generated.contains("tags:"));
-    }
-
-    @Test
-    @DisplayName("Should parse and generate round trip")
-    void testParseAndGenerateRoundTrip() {
-        String original =
-                "---\n"
-                        + "name: roundtrip\n"
-                        + "description: Test roundtrip\n"
-                        + "---\n"
-                        + "# Content\n"
-                        + "Test content";
-
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(original);
-        String regenerated =
-                MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
-
-        // Parse again to compare
-        ParsedMarkdown reparsed = MarkdownSkillParser.parse(regenerated);
-
-        assertEquals(parsed.getMetadata().get("name"), reparsed.getMetadata().get("name"));
-        assertEquals(
-                parsed.getMetadata().get("description"), reparsed.getMetadata().get("description"));
-        assertEquals(parsed.getContent().trim(), reparsed.getContent().trim());
-    }
-
-    @Test
-    @DisplayName("Should parsed markdown getters")
-    void testParsedMarkdownGetters() {
-        Map<String, Object> metadata = Map.of("key", "value");
-        String content = "content";
-
-        ParsedMarkdown parsed = new ParsedMarkdown(metadata, content);
-
-        assertEquals("value", parsed.getMetadata().get("key"));
-        assertEquals("content", parsed.getContent());
-        assertTrue(parsed.hasFrontmatter());
-    }
-
-    @Test
-    @DisplayName("Should parsed markdown immutability")
-    void testParsedMarkdownImmutability() {
-        Map<String, Object> originalMetadata = new java.util.HashMap<>();
-        originalMetadata.put("key", "value");
-
-        ParsedMarkdown parsed = new ParsedMarkdown(originalMetadata, "content");
-
-        // Modify original map
-        originalMetadata.put("key", "modified");
-        originalMetadata.put("newkey", "newvalue");
-
-        // Parsed metadata should not be affected
-        assertEquals("value", parsed.getMetadata().get("key"));
-        assertNull(parsed.getMetadata().get("newkey"));
-    }
-
-    @Test
-    @DisplayName("Should parsed markdown to string")
-    void testParsedMarkdownToString() {
-        Map<String, Object> metadata = Map.of("name", "test");
-        String content = "This is a very long content that should be truncated in toString";
-
-        ParsedMarkdown parsed = new ParsedMarkdown(metadata, content);
-        String toString = parsed.toString();
-
-        assertNotNull(toString);
-        assertTrue(toString.contains("ParsedMarkdown"));
-        assertTrue(toString.contains("metadata"));
-        assertTrue(toString.contains("content"));
-    }
-
-    @Test
-    @DisplayName("Should parsed markdown with null inputs")
-    void testParsedMarkdownWithNullInputs() {
-        ParsedMarkdown parsed = new ParsedMarkdown(null, null);
-
-        assertNotNull(parsed.getMetadata());
-        assertTrue(parsed.getMetadata().isEmpty());
-        assertEquals("", parsed.getContent());
-        assertFalse(parsed.hasFrontmatter());
-    }
-
-    @Test
-    @DisplayName("Should parse with only frontmatter")
-    void testParseWithOnlyFrontmatter() {
-        String markdown = "---\nname: test\n---";
-
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
-
-        assertNotNull(parsed);
-        assertTrue(parsed.hasFrontmatter());
-        assertEquals("test", parsed.getMetadata().get("name"));
-        assertEquals("", parsed.getContent());
-    }
-
-    @Test
-    @DisplayName("Should parse with frontmatter not at start")
-    void testParseWithFrontmatterNotAtStart() {
-        String markdown = "Some text\n---\nname: test\n---\nContent";
-
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
-
-        // Should not recognize frontmatter if not at start
-        assertFalse(parsed.hasFrontmatter());
-        assertEquals(markdown, parsed.getContent());
-    }
-
-    @Test
-    @DisplayName("Should parse with multiple frontmatter sections")
-    void testParseWithMultipleFrontmatterSections() {
-        String markdown = "---\nname: first\n---\nContent\n---\nname: second\n---";
-
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
-
-        // Should only parse the first frontmatter
-        assertTrue(parsed.hasFrontmatter());
-        assertEquals("first", parsed.getMetadata().get("name"));
-        assertTrue(parsed.getContent().contains("Content"));
-    }
-
-    @Test
-    @DisplayName("Should generate with special characters in content")
-    void testGenerateWithSpecialCharactersInContent() {
-        Map<String, Object> metadata = Map.of("name", "special");
-        String content = "Content with special chars: @#$%^&*(){}[]|\\:;\"'<>?,./";
-
-        String generated = MarkdownSkillParser.generate(metadata, content);
-
-        assertNotNull(generated);
-        assertTrue(generated.contains(content));
-    }
-
-    @Test
-    @DisplayName("Should parse with unicode characters")
-    void testParseWithUnicodeCharacters() {
-        String markdown = "---\nname: 测试技能\ndescription: テスト\n---\n内容: 한국어";
-
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
-
-        assertNotNull(parsed);
-        assertTrue(parsed.hasFrontmatter());
-        assertEquals("测试技能", parsed.getMetadata().get("name"));
-        assertEquals("テスト", parsed.getMetadata().get("description"));
-        assertTrue(parsed.getContent().contains("한국어"));
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> parsed.getMetadata().put("description", "desc"));
+        }
     }
 }

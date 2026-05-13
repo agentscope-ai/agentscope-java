@@ -24,6 +24,7 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.Source;
@@ -75,16 +76,23 @@ public class OpenAIMessageConverter {
      */
     public OpenAIMessage convertToMessage(Msg msg, boolean hasMediaContent) {
         // Check if SYSTEM message contains tool result - treat as TOOL role
+        OpenAIMessage result;
         if (msg.getRole() == MsgRole.SYSTEM && msg.hasContentBlocks(ToolResultBlock.class)) {
-            return convertToolMessage(msg);
+            result = convertToolMessage(msg);
+        } else {
+            result =
+                    switch (msg.getRole()) {
+                        case SYSTEM -> convertSystemMessage(msg);
+                        case USER -> convertUserMessage(msg, hasMediaContent);
+                        case ASSISTANT -> convertAssistantMessage(msg);
+                        case TOOL -> convertToolMessage(msg);
+                    };
         }
 
-        return switch (msg.getRole()) {
-            case SYSTEM -> convertSystemMessage(msg);
-            case USER -> convertUserMessage(msg, hasMediaContent);
-            case ASSISTANT -> convertAssistantMessage(msg);
-            case TOOL -> convertToolMessage(msg);
-        };
+        // Apply cache_control from message metadata if manually marked
+        applyCacheControlFromMetadata(msg, result);
+
+        return result;
     }
 
     /**
@@ -257,8 +265,15 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("assistant");
 
         String textContent = textExtractor.apply(msg);
+        // Qwen3 and similar models in thinking mode may produce assistant messages with
+        // reasoning_content + tool_calls but null content. Due to @JsonInclude(NON_NULL),
+        // a null content would be omitted from the JSON, causing strict OpenAI-compatible
+        // APIs (e.g. vLLM) to reject with "Field required: input.messages.N.content".
+        // Always ensure content is present — use the actual text or fall back to "".
         if (textContent != null && !textContent.isEmpty()) {
             builder.content(textContent);
+        } else {
+            builder.content("");
         }
 
         // Handle ThinkingBlock for reasoning models (e.g. Gemini via OpenRouter)
@@ -322,23 +337,7 @@ public class OpenAIMessageConverter {
                     continue;
                 }
 
-                // Prioritize using content field (raw arguments string), fallback to input map
-                // serialization
-                String argsJson;
-                if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
-                    argsJson = toolUse.getContent();
-                } else {
-                    try {
-                        argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
-                    } catch (Exception e) {
-                        String errorMsg =
-                                e.getMessage() != null
-                                        ? e.getMessage()
-                                        : e.getClass().getSimpleName();
-                        log.warn("Failed to serialize tool call arguments: {}", errorMsg);
-                        argsJson = "{}";
-                    }
-                }
+                String argsJson = JsonUtils.resolveToolCallArgsJson(toolUse);
 
                 // Add thought signature if present in metadata (required for Gemini)
                 String signature = null;
@@ -467,5 +466,21 @@ public class OpenAIMessageConverter {
      */
     private String detectAudioFormat(String mediaType) {
         return OpenAIConverterUtils.detectAudioFormat(mediaType);
+    }
+
+    /**
+     * Apply cache_control from Msg metadata to the converted OpenAIMessage.
+     *
+     * @param msg the source message with metadata
+     * @param result the converted OpenAI message
+     */
+    private void applyCacheControlFromMetadata(Msg msg, OpenAIMessage result) {
+        if (msg.getMetadata() == null) {
+            return;
+        }
+        Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+        if (Boolean.TRUE.equals(cacheFlag)) {
+            result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+        }
     }
 }

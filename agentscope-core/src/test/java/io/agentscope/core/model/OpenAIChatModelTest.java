@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -129,9 +130,7 @@ class OpenAIChatModelTest {
                             assertNotNull(response.getContent());
                             assertEquals(
                                     "Hello! How can I help you?",
-                                    ((io.agentscope.core.message.TextBlock)
-                                                    response.getContent().get(0))
-                                            .getText());
+                                    ((TextBlock) response.getContent().get(0)).getText());
                             assertNotNull(response.getUsage());
                             assertEquals(10, response.getUsage().getInputTokens());
                             assertEquals(20, response.getUsage().getOutputTokens());
@@ -247,5 +246,224 @@ class OpenAIChatModelTest {
     @DisplayName("Should return model name")
     void testGetModelName() {
         assertEquals("gpt-4", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should build model with custom endpoint path")
+    void testBuildModelWithEndpointPath() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        // Build model with custom endpoint path
+        OpenAIChatModel customPathModel =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .endpointPath("/v4/chat/completions")
+                        .formatter(new OpenAIChatFormatter())
+                        .httpTransport(transport)
+                        .build();
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        StepVerifier.create(customPathModel.stream(messages, null, null))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses custom endpoint path
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertTrue(
+                request.getPath().contains("/v4/chat/completions"),
+                "Path should contain custom endpoint path: " + request.getPath());
+    }
+
+    @Test
+    @DisplayName("Should apply cache_control to request when cacheControl option is enabled")
+    void testCacheControlApplied() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        GenerateOptions options = GenerateOptions.builder().cacheControl(true).build();
+
+        StepVerifier.create(model.stream(messages, null, options))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        String body = request.getBody().readUtf8();
+        assertTrue(
+                body.contains("\"cache_control\""),
+                "Request body should contain cache_control: " + body);
+        assertTrue(
+                body.contains("\"ephemeral\""),
+                "Request body should contain ephemeral cache type: " + body);
+    }
+
+    @Test
+    @DisplayName("Should NOT apply cache_control when cacheControl option is not enabled")
+    void testCacheControlNotAppliedWhenDisabled() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        StepVerifier.create(model.stream(messages, null, null))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        String body = request.getBody().readUtf8();
+        assertFalse(
+                body.contains("\"cache_control\""),
+                "Request body should NOT contain cache_control when disabled: " + body);
+    }
+
+    @Test
+    @DisplayName("Should build model with default endpoint path when not specified")
+    void testBuildModelWithDefaultEndpointPath() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        // Build model without endpoint path - should use default
+        OpenAIChatModel defaultPathModel =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .formatter(new OpenAIChatFormatter())
+                        .httpTransport(transport)
+                        .build();
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        StepVerifier.create(defaultPathModel.stream(messages, null, null))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses default endpoint path
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertTrue(
+                request.getPath().endsWith("/chat/completions")
+                        || request.getPath().contains("/v1/chat/completions"),
+                "Path should contain default endpoint path: " + request.getPath());
     }
 }

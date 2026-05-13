@@ -83,6 +83,10 @@ public enum ModelProviderType {
                 builder.baseUrl(openai.getBaseUrl());
             }
 
+            if (openai.getEndpointPath() != null && !openai.getEndpointPath().isEmpty()) {
+                builder.endpointPath(openai.getEndpointPath());
+            }
+
             return builder.build();
         }
     },

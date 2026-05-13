@@ -2,9 +2,6 @@
 
 set -e
 
-shopt -s expand_aliases
-alias docker='podman'
-
 # Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'

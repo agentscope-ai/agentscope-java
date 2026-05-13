@@ -7,9 +7,10 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 | Provider   | Class                   | Streaming | Tools | Vision | Reasoning |
 |------------|-------------------------|-----------|-------|--------|-----------|
 | DashScope  | `DashScopeChatModel`    | ✅        | ✅    | ✅     | ✅        |
-| OpenAI     | `OpenAIChatModel`       | ✅        | ✅    | ✅     |           |
+| OpenAI     | `OpenAIChatModel`       | ✅        | ✅    | ✅     | ✅        |
 | Anthropic  | `AnthropicChatModel`    | ✅        | ✅    | ✅     | ✅        |
 | Gemini     | `GeminiChatModel`       | ✅        | ✅    | ✅     | ✅        |
+| Ollama     | `OllamaChatModel`       | ✅        | ✅    | ✅     | ✅        |
 
 > **Note**:
 > - `OpenAIChatModel` is compatible with OpenAI API specification, works with vLLM, DeepSeek, etc.
@@ -24,6 +25,86 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 | Anthropic | [Anthropic Console](https://console.anthropic.com/settings/keys) | `ANTHROPIC_API_KEY` |
 | Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
 | DeepSeek | [DeepSeek Platform](https://platform.deepseek.com/api_keys) | - |
+
+## ModelRegistry
+
+[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java) (`io.agentscope.core.model.ModelRegistry`) resolves a `Model` from a **string id**, so you do not have to call each vendor’s `*ChatModel.builder()` for simple setups. With Harness, use `HarnessAgent.builder().model(String)`; anywhere else that needs a `Model`, call `ModelRegistry.resolve(...)` and pass the result into `ReActAgent` or other builders.
+
+### API summary
+
+| Method | Description |
+|--------|-------------|
+| `register(String name, Model model)` | Registers a **named** model; `resolve(name)` returns that instance. |
+| `registerFactory(String regex, ModelFactory factory)` | Registers a custom factory for ids matching the regex; **later** registrations take precedence over earlier user factories and over built-in rules. |
+| `resolve(String modelId)` | Returns a `Model`; throws `IllegalArgumentException` if the id cannot be resolved or creation fails. |
+| `canResolve(String modelId)` | Returns whether the id can be resolved (does not create a model). |
+| `reset()` | Clears named registrations, user factories, and the resolve cache; built-in rules stay. Intended for tests or in-process reset. |
+
+`ModelFactory` is a functional interface: `Model create(String modelId)` with the full id string.
+
+### Built-in id formats and environment variables
+
+With the right environment variables set, you can use these id forms (with `resolve` or `HarnessAgent.Builder.model(String)`, for example):
+
+| Example id | Environment variable | Notes |
+|------------|----------------------|-------|
+| `openai:gpt-4o-mini` | `OPENAI_API_KEY` | OpenAI-compatible HTTP model |
+| `dashscope:qwen-max` | `DASHSCOPE_API_KEY` | Alibaba DashScope / Bailian |
+| Any id starting with `qwen-`, e.g. `qwen-max` | `DASHSCOPE_API_KEY` | Uses the whole string as the DashScope `modelName` |
+| `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` (optional; SDK may read from the environment) | Anthropic Claude |
+| `gemini:gemini-2.5-flash` | `GEMINI_API_KEY` | Google Gemini API |
+| `ollama:llama3` | `OLLAMA_BASE_URL` (optional, default `http://localhost:11434`) | Local Ollama |
+
+Within one process, repeated `resolve` of the **same** factory-based id returns a **cached** `Model` instance. **Named** registrations are not cached that way.
+
+### Example: named registration (reuse a tuned model)
+
+Build once with full control, then register under a name:
+
+```java
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.harness.agent.HarnessAgent;
+
+Model tuned = OpenAIChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o")
+        .generateOptions(GenerateOptions.builder().temperature(0.2).build())
+        .build();
+ModelRegistry.register("my-gpt4o", tuned);
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("demo")
+        .model("my-gpt4o")
+        .workspace(workspace)
+        .build();
+```
+
+### Example: built-in prefix (default connection settings)
+
+```java
+import io.agentscope.harness.agent.HarnessAgent;
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("demo")
+        .model("dashscope:qwen-max")
+        .workspace(workspace)
+        .build();
+```
+
+### Example: custom factory
+
+```java
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
+
+ModelRegistry.registerFactory(
+        "my-llm:.+",
+        id -> myModelFactory(id.substring("my-llm:".length())));
+
+Model m = ModelRegistry.resolve("my-llm:prod");
+```
 
 ## DashScope
 
@@ -46,6 +127,31 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 | `stream` | Enable streaming, default `true` |
 | `enableThinking` | Enable thinking mode to show reasoning process |
 | `enableSearch` | Enable web search for real-time information |
+| `endpointType` | API endpoint type (default `AUTO` auto-detect), options: `TEXT` (force text API) or `MULTIMODAL` (force multimodal API) |
+| `defaultOptions` | Default generation options (temperature, maxTokens, etc.) |
+| `formatter` | Message formatter (default `DashScopeChatFormatter`) |
+
+### Endpoint Type (endpointType)
+
+DashScope models support both text and multimodal API endpoints. By default, the framework automatically detects the appropriate endpoint type based on the model name (e.g., `qwen-vl-*` and `qwen3.5` series automatically use the multimodal endpoint).
+
+When auto-detection is inaccurate (e.g., using custom model names or compatible APIs), you can manually specify the endpoint type:
+
+```java
+// Force multimodal API (suitable for scenarios with images, audio, etc.)
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("custom-model")
+        .endpointType(EndpointType.MULTIMODAL)
+        .build();
+
+// Force text API
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("custom-model")
+        .endpointType(EndpointType.TEXT)
+        .build();
+```
 
 ### Thinking Mode
 
@@ -58,6 +164,18 @@ DashScopeChatModel model = DashScopeChatModel.builder()
                 .thinkingBudget(5000)  // Token budget for thinking
                 .build())
         .build();
+
+
+OllamaChatModel model =
+        OllamaChatModel.builder()
+                .modelName("qwen3-max")
+                .baseUrl("http://localhost:11434")
+                .defaultOptions(OllamaOptions.builder()
+                        .thinkOption(ThinkOption.ThinkBoolean.ENABLED)
+                        .temperature(0.8)
+                        .build())
+                .build();
+
 ```
 
 ## OpenAI
@@ -91,6 +209,7 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 | `modelName` | Model name, e.g., `gpt-4o`, `gpt-4o-mini` |
 | `baseUrl` | Custom API endpoint (optional) |
 | `stream` | Enable streaming, default `true` |
+| `generateOptions` | Default generation options (note: OpenAI uses `.generateOptions()` instead of `.defaultOptions()`) |
 
 ## Anthropic
 
@@ -122,6 +241,7 @@ Google's Gemini series models, supporting both Gemini API and Vertex AI.
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
         .modelName("gemini-2.5-flash")  // Default
+        .baseUrl("https://your-gateway.example")  // Optional
         .build();
 ```
 
@@ -142,12 +262,116 @@ GeminiChatModel model = GeminiChatModel.builder()
 | Option | Description |
 |--------|-------------|
 | `apiKey` | Gemini API key |
+| `baseUrl` | Custom Gemini API endpoint (optional) |
 | `modelName` | Model name, default `gemini-2.5-flash` |
 | `project` | GCP project ID (Vertex AI) |
 | `location` | GCP region (Vertex AI) |
 | `vertexAI` | Whether to use Vertex AI |
 | `credentials` | GCP credentials (Vertex AI) |
 | `streamEnabled` | Enable streaming, default `true` |
+
+For endpoint override, use `baseUrl(...)`. For more advanced transport or proxy setup, continue to use `httpOptions(...)` or `clientOptions(...)`.
+
+## Ollama
+
+Self-hosted open-source LLM platform supporting various models.
+
+```java
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")  // Default
+        .build();
+```
+
+### Configuration
+
+| Option | Description                                                         |
+|--------|---------------------------------------------------------------------|
+| `modelName` | Model name, e.g., `qwen3-max`,`llama3.2`, `mistral`, `phi3`              |
+| `baseUrl` | Ollama server endpoint (optional, default `http://localhost:11434`) |
+| `defaultOptions` | Default generation options                                          |
+| `formatter` | Message formatter (optional)                                        |
+| `httpTransport` | HTTP transport configuration (optional)                             |
+
+### Advanced Configuration
+
+For advanced model loading and generation parameters:
+
+```java
+OllamaOptions options = OllamaOptions.builder()
+        .numCtx(4096)           // Context window size
+        .temperature(0.7)       // Generation randomness
+        .topK(40)               // Top-K sampling
+        .topP(0.9)              // Nucleus sampling
+        .repeatPenalty(1.1)     // Repetition penalty
+        .build();
+
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(options)
+        .build();
+```
+
+### GenerateOptions Support
+
+Ollama also supports `GenerateOptions` for standard configuration:
+
+```java
+GenerateOptions options = GenerateOptions.builder()
+        .temperature(0.7)           // Maps to Ollama's temperature
+        .topP(0.9)                  // Maps to Ollama's top_p
+        .topK(40)                   // Maps to Ollama's top_k
+        .maxTokens(2000)            // Maps to Ollama's num_predict
+        .seed(42L)                  // Maps to Ollama's seed
+        .frequencyPenalty(0.5)      // Maps to Ollama's frequency_penalty
+        .presencePenalty(0.5)       // Maps to Ollama's presence_penalty
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_CTX.getKey(), 4096)      // Context window size
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_GPU.getKey(), -1)        // Offload all layers to GPU
+        .additionalBodyParam(OllamaOptions.ParamKey.REPEAT_PENALTY.getKey(), 1.1) // Repetition penalty
+        .additionalBodyParam(OllamaOptions.ParamKey.MAIN_GPU.getKey(), 0)        // Main GPU index
+        .additionalBodyParam(OllamaOptions.ParamKey.LOW_VRAM.getKey(), false)    // Low VRAM mode
+        .additionalBodyParam(OllamaOptions.ParamKey.F16_KV.getKey(), true)       // 16-bit KV cache
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_THREAD.getKey(), 8)      // Number of CPU threads
+        .build();
+
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(OllamaOptions.fromGenerateOptions(options))  // Will be converted to OllamaOptions internally
+        .build();
+```
+
+### Available Parameters
+
+Ollama supports over 40 parameters for fine-tuning:
+
+#### Model Loading Parameters
+- `numCtx`: Context window size (default: 2048)
+- `numBatch`: Batch size for prompt processing (default: 512)
+- `numGPU`: Number of layers to offload to GPU (-1 for all)
+- `lowVRAM`: Enable low VRAM mode for limited GPU memory
+- `useMMap`: Use memory mapping for model loading
+- `useMLock`: Lock model in memory to prevent swapping
+
+#### Generation Parameters
+- `temperature`: Generation randomness (0.0-2.0)
+- `topK`: Top-K sampling (standard: 40)
+- `topP`: Nucleus sampling (standard: 0.9)
+- `minP`: Minimum probability threshold (default: 0.0)
+- `numPredict`: Max tokens to generate (-1 for infinite)
+- `repeatPenalty`: Penalty for repetitions (default: 1.1)
+- `presencePenalty`: Penalty based on token presence
+- `frequencyPenalty`: Penalty based on token frequency
+- `seed`: Random seed for reproducible results
+- `stop`: Strings that stop generation immediately
+
+#### Sampling Strategies
+- `mirostat`: Mirostat sampling (0=disabled, 1=Mirostat v1, 2=Mirostat v2)
+- `mirostatTau`: Target entropy for Mirostat (default: 5.0)
+- `mirostatEta`: Learning rate for Mirostat (default: 0.1)
+- `tfsZ`: Tail-free sampling (default: 1.0 disables)
+- `typicalP`: Typical probability sampling (default: 1.0)
 
 ## Generation Options
 
@@ -160,13 +384,19 @@ GenerateOptions options = GenerateOptions.builder()
         .topK(40)                   // Top-K sampling
         .maxTokens(2000)            // Maximum output tokens
         .seed(42L)                  // Random seed
-        .toolChoice(new ToolChoice.auto())  // Tool choice strategy
+        .toolChoice(new ToolChoice.Auto())  // Tool choice strategy
         .build();
 
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
         .defaultOptions(options)
+        .build();
+
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(OllamaOptions.fromGenerateOptions(options))
         .build();
 ```
 
@@ -178,17 +408,21 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 | `topP` | Double | Nucleus sampling threshold, 0.0-1.0 |
 | `topK` | Integer | Limits candidate tokens |
 | `maxTokens` | Integer | Maximum tokens to generate |
+| `maxCompletionTokens` | Integer | Maximum completion tokens |
 | `thinkingBudget` | Integer | Token budget for thinking |
+| `reasoningEffort` | String | Reasoning effort level (e.g., `low`, `medium`, `high`) |
+| `frequencyPenalty` | Double | Frequency penalty, -2.0-2.0 |
+| `presencePenalty` | Double | Presence penalty, -2.0-2.0 |
 | `seed` | Long | Random seed |
 | `toolChoice` | ToolChoice | Tool choice strategy |
 
 ### Tool Choice Strategy
 
 ```java
-ToolChoice.auto()              // Model decides (default)
-ToolChoice.none()              // Disable tool calling
-ToolChoice.required()          // Force tool calling
-ToolChoice.specific("tool_name")  // Force specific tool
+new ToolChoice.Auto()              // Model decides (default)
+new ToolChoice.None()              // Disable tool calling
+new ToolChoice.Required()          // Force tool calling
+new ToolChoice.Specific("tool_name")  // Force specific tool
 ```
 
 ### Additional Parameters
@@ -229,6 +463,7 @@ Formatter converts AgentScope's unified message format to each LLM provider's AP
 | OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
 | Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
 | Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
+| Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |
 
 ### Default Behavior
 
@@ -267,6 +502,12 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
         .formatter(new GeminiMultiAgentFormatter())
+        .build();
+
+// Ollama multi-agent
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .formatter(new OllamaMultiAgentFormatter())
         .build();
 ```
 

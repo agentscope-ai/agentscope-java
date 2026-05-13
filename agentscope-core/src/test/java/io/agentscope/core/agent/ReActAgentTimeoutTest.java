@@ -38,6 +38,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -264,8 +265,7 @@ class ReActAgentTimeoutTest {
      */
     private Model createModelWithToolCallThenResponse() {
         return new Model() {
-            private final java.util.concurrent.atomic.AtomicBoolean firstCall =
-                    new java.util.concurrent.atomic.AtomicBoolean(true);
+            private final AtomicBoolean firstCall = new AtomicBoolean(true);
 
             @Override
             public Flux<ChatResponse> stream(

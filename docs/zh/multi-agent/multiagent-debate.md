@@ -355,6 +355,8 @@ Msg finalAnswer = synthesizer.call(summaryMessage).block();
 
 ## 相关文档
 
-- [MsgHub](./msghub.md) - 多智能体对话的消息广播
+- [MsgHub](../task/msghub.md) - 多智能体对话的消息广播
 - [Pipeline](./pipeline.md) - 顺序和并行智能体执行
+- [Handoffs](./handoffs.md) - 状态驱动路由与智能体间交接
+- [Routing](./routing.md) - 分类并路由到专家智能体
 - [结构化输出](../task/structured-output.md) - 从智能体响应中提取结构化数据

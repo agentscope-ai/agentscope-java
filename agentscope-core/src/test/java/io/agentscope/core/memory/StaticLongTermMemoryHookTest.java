@@ -38,6 +38,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -138,7 +140,7 @@ class StaticLongTermMemoryHookTest {
                         resultEvent -> {
                             List<Msg> messages = resultEvent.getInputMessages();
                             assertEquals(2, messages.size());
-                            assertEquals(MsgRole.SYSTEM, messages.get(1).getRole());
+                            assertEquals(MsgRole.USER, messages.get(1).getRole());
                             assertTrue(
                                     messages.get(1)
                                             .getTextContent()
@@ -250,5 +252,90 @@ class StaticLongTermMemoryHookTest {
         PostCallEvent event = new PostCallEvent(mockAgent, replyMsg);
 
         StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
+    }
+
+    @Test
+    void testOnEventWithPostCallEventAsyncRecord() throws InterruptedException {
+        List<Msg> allMessages = new ArrayList<>();
+        allMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("User message").build())
+                        .build());
+        allMessages.add(
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Assistant reply").build())
+                        .build());
+
+        CountDownLatch latch = new CountDownLatch(1);
+
+        when(mockMemory.getMessages()).thenReturn(allMessages);
+        when(mockLongTermMemory.record(anyList()))
+                .thenAnswer(
+                        invocation -> {
+                            latch.countDown();
+                            return Mono.empty();
+                        });
+
+        StaticLongTermMemoryHook asyncHook =
+                new StaticLongTermMemoryHook(mockLongTermMemory, mockMemory, true);
+
+        Msg replyMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Reply").build())
+                        .build();
+        PostCallEvent event = new PostCallEvent(mockAgent, replyMsg);
+
+        // Should return immediately without waiting for record
+        StepVerifier.create(asyncHook.onEvent(event)).expectNext(event).verifyComplete();
+
+        // Verify record was still called (async)
+        assertTrue(latch.await(1, TimeUnit.SECONDS), "Async record should have been called");
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mockLongTermMemory, times(1)).record(captor.capture());
+        assertEquals(2, captor.getValue().size());
+    }
+
+    @Test
+    void testOnEventWithPostCallEventAsyncRecordError() throws InterruptedException {
+        List<Msg> messages = List.of(Msg.builder().role(MsgRole.USER).build());
+        CountDownLatch latch = new CountDownLatch(1);
+
+        when(mockMemory.getMessages()).thenReturn(messages);
+        when(mockLongTermMemory.record(anyList()))
+                .thenAnswer(
+                        invocation -> {
+                            latch.countDown();
+                            return Mono.error(new RuntimeException("Async record error"));
+                        });
+
+        StaticLongTermMemoryHook asyncHook =
+                new StaticLongTermMemoryHook(mockLongTermMemory, mockMemory, true);
+
+        Msg replyMsg = Msg.builder().role(MsgRole.ASSISTANT).build();
+        PostCallEvent event = new PostCallEvent(mockAgent, replyMsg);
+
+        // Should still return the event (error is logged, not thrown)
+        StepVerifier.create(asyncHook.onEvent(event)).expectNext(event).verifyComplete();
+
+        // Verify record was attempted
+        assertTrue(latch.await(1, TimeUnit.SECONDS), "Async record should have been called");
+    }
+
+    @Test
+    void testOnEventWithPostCallEventAsyncRecordEmptyMemory() {
+        when(mockMemory.getMessages()).thenReturn(new ArrayList<>());
+
+        StaticLongTermMemoryHook asyncHook =
+                new StaticLongTermMemoryHook(mockLongTermMemory, mockMemory, true);
+
+        Msg replyMsg = Msg.builder().role(MsgRole.ASSISTANT).build();
+        PostCallEvent event = new PostCallEvent(mockAgent, replyMsg);
+
+        StepVerifier.create(asyncHook.onEvent(event)).expectNext(event).verifyComplete();
+
+        verify(mockLongTermMemory, never()).record(anyList());
     }
 }

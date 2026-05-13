@@ -25,6 +25,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonException;
@@ -46,9 +47,18 @@ import reactor.core.publisher.Flux;
  *
  * <p><b>Event Mapping:</b>
  * <ul>
- *   <li>AgentScope REASONING events → AG-UI TEXT_MESSAGE_* events</li>
+ *   <li>AgentScope REASONING/SUMMARY events → AG-UI TEXT_MESSAGE_* events (for TextBlock)</li>
+ *   <li>AgentScope REASONING/SUMMARY events → AG-UI REASONING_* events (for
+ *       ThinkingBlock, when enabled)</li>
  *   <li>AgentScope TOOL_RESULT events → AG-UI TOOL_CALL_END events</li>
  *   <li>ToolUseBlock content → AG-UI TOOL_CALL_START events</li>
+ * </ul>
+ *
+ * <p><b>Reasoning Support:</b>
+ * <ul>
+ *   <li>ThinkingBlock content is converted to REASONING_* events according to AG-UI Reasoning draft</li>
+ *   <li>Reasoning output is disabled by default (enableReasoning=false) for backward compatibility</li>
+ *   <li>Set enableReasoning=true in AguiAdapterConfig to enable reasoning events</li>
  * </ul>
  */
 public class AguiAgentAdapter {
@@ -79,40 +89,49 @@ public class AguiAgentAdapter {
      * @return A Flux of AG-UI events
      */
     public Flux<AguiEvent> run(RunAgentInput input) {
-        String threadId = input.getThreadId();
-        String runId = input.getRunId();
+        return Flux.defer(
+                () -> {
+                    String threadId = input.getThreadId();
+                    String runId = input.getRunId();
 
-        // Convert AG-UI messages to AgentScope messages
-        List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
+                    // Convert AG-UI messages to AgentScope messages
+                    List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
 
-        // Create stream options - use incremental mode for true streaming
-        StreamOptions options =
-                StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
+                    // Create stream options - use incremental mode for true streaming
+                    StreamOptions options =
+                            StreamOptions.builder()
+                                    .eventTypes(EventType.ALL)
+                                    .incremental(true)
+                                    .build();
 
-        // Track state for event conversion
-        EventConversionState state = new EventConversionState(threadId, runId);
+                    // Track state for event conversion
+                    EventConversionState state = new EventConversionState(threadId, runId);
 
-        return Flux.concat(
-                        // Emit RUN_STARTED
-                        Flux.just(new AguiEvent.RunStarted(threadId, runId)),
-                        // Stream agent events and convert to AG-UI events
-                        // Use concatMapIterable to preserve strict event ordering
-                        agent.stream(msgs, options)
-                                .concatMapIterable(event -> convertEvent(event, state)),
-                        // Emit any pending end events and RUN_FINISHED
-                        Flux.defer(() -> finishRun(state)))
-                .onErrorResume(
-                        error -> {
-                            // On error, emit RawEvent with error info followed by RunFinished
-                            String errorMessage =
-                                    error.getMessage() != null
-                                            ? error.getMessage()
-                                            : error.getClass().getSimpleName();
-                            return Flux.just(
-                                    new AguiEvent.Raw(
-                                            threadId, runId, Map.of("error", errorMessage)),
-                                    new AguiEvent.RunFinished(threadId, runId));
-                        });
+                    return Flux.concat(
+                                    // Emit RUN_STARTED
+                                    Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                    // Stream agent events and convert to AG-UI events
+                                    // Use concatMapIterable to preserve strict event ordering
+                                    agent.stream(msgs, options)
+                                            .concatMapIterable(event -> convertEvent(event, state)),
+                                    // Emit any pending end events and RUN_FINISHED
+                                    Flux.defer(() -> finishRun(state)))
+                            .onErrorResume(
+                                    error -> {
+                                        // On error, emit RawEvent with error info followed by
+                                        // RunFinished
+                                        String errorMessage =
+                                                error.getMessage() != null
+                                                        ? error.getMessage()
+                                                        : error.getClass().getSimpleName();
+                                        return Flux.just(
+                                                new AguiEvent.Raw(
+                                                        threadId,
+                                                        runId,
+                                                        Map.of("error", errorMessage)),
+                                                new AguiEvent.RunFinished(threadId, runId));
+                                    });
+                });
     }
 
     /**
@@ -127,8 +146,8 @@ public class AguiAgentAdapter {
         Msg msg = event.getMessage();
         EventType type = event.getType();
 
-        if (type == EventType.REASONING) {
-            // Handle reasoning events - convert to text messages and tool calls
+        if (type == EventType.REASONING || type == EventType.SUMMARY) {
+            // Handle reasoning/summary events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
                     String text = textBlock.getText();
@@ -150,12 +169,49 @@ public class AguiAgentAdapter {
                                             state.threadId, state.runId, messageId, text));
                         } else {
                             // End message if this is the last event
-                            events.add(
-                                    new AguiEvent.TextMessageEnd(
-                                            state.threadId, state.runId, messageId));
-                            state.endMessage(messageId);
+                            if (!state.hasEndedMessage(messageId)) {
+                                events.add(
+                                        new AguiEvent.TextMessageEnd(
+                                                state.threadId, state.runId, messageId));
+                                state.endMessage(messageId);
+                            }
                         }
                     }
+                } else if (block instanceof ThinkingBlock thinkingBlock) {
+                    // Handle thinking blocks - convert to REASONING_* events (only if enabled)
+                    // According to AG-UI Reasoning draft: https://docs.ag-ui.com/drafts/reasoning
+                    if (config.isEnableReasoning()) {
+                        String thinking = thinkingBlock.getThinking();
+                        if (thinking != null && !thinking.isEmpty()) {
+                            String messageId = msg.getId();
+
+                            // Start reasoning message if not started
+                            if (!state.hasStartedReasoningMessage(messageId)) {
+                                events.add(
+                                        new AguiEvent.ReasoningMessageStart(
+                                                state.threadId,
+                                                state.runId,
+                                                messageId,
+                                                "reasoning"));
+                                state.startReasoningMessage(messageId);
+                            }
+
+                            if (!event.isLast()) {
+                                // In incremental mode, thinking is already the delta
+                                events.add(
+                                        new AguiEvent.ReasoningMessageContent(
+                                                state.threadId, state.runId, messageId, thinking));
+                            } else {
+                                // End reasoning message if this is the last event
+                                events.add(
+                                        new AguiEvent.ReasoningMessageEnd(
+                                                state.threadId, state.runId, messageId));
+                                state.endReasoningMessage(messageId);
+                            }
+                        }
+                    }
+                    // If reasoning is disabled, ThinkingBlock content is ignored (backward
+                    // compatibility)
                 } else if (block instanceof ToolUseBlock toolUse) {
                     // End any active text message before starting tool call
                     if (state.hasActiveTextMessage()) {
@@ -164,6 +220,15 @@ public class AguiAgentAdapter {
                                 new AguiEvent.TextMessageEnd(
                                         state.threadId, state.runId, activeMessageId));
                         state.endMessage(activeMessageId);
+                    }
+
+                    // End any active reasoning message before starting tool call
+                    if (state.hasActiveReasoningMessage()) {
+                        String activeReasoningMessageId = state.getCurrentReasoningMessageId();
+                        events.add(
+                                new AguiEvent.ReasoningMessageEnd(
+                                        state.threadId, state.runId, activeReasoningMessageId));
+                        state.endReasoningMessage(activeReasoningMessageId);
                     }
 
                     // Emit tool call start
@@ -180,27 +245,53 @@ public class AguiAgentAdapter {
                                         toolCallId,
                                         toolUse.getName()));
                         state.startToolCall(toolCallId);
+                    }
 
-                        // Emit tool call args if enabled
-                        if (config.isEmitToolCallArgs()) {
-                            String argsJson = serializeToolArgs(toolUse.getInput());
+                    // Emit tool call args if enabled
+                    if (config.isEmitToolCallArgs() && !event.isLast()) {
+                        String args = toolUse.getContent();
+                        if (args != null && !args.isEmpty()) {
                             events.add(
                                     new AguiEvent.ToolCallArgs(
-                                            state.threadId, state.runId, toolCallId, argsJson));
+                                            state.threadId, state.runId, toolCallId, args));
                         }
                     }
                 }
             }
-        } else if (type == EventType.TOOL_RESULT) {
+        } else if (type == EventType.TOOL_RESULT && event.isLast()) {
             // Handle tool results
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof ToolResultBlock toolResult) {
                     String toolCallId = toolResult.getId();
+                    if (toolCallId == null) {
+                        toolCallId = UUID.randomUUID().toString();
+                    }
+
                     String result = extractToolResultText(toolResult);
 
+                    boolean hasStarted = state.hasStartedToolCall(toolCallId);
+                    if (!hasStarted) {
+                        String toolName = toolResult.getName();
+                        if (toolName == null || toolName.isBlank()) {
+                            toolName = "unknown";
+                        }
+                        events.add(
+                                new AguiEvent.ToolCallStart(
+                                        state.threadId, state.runId, toolCallId, toolName));
+                        state.startToolCall(toolCallId);
+                    }
+
+                    // Ensure ToolCallEnd is emitted to close arguments phase
+                    events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+
                     events.add(
-                            new AguiEvent.ToolCallEnd(
-                                    state.threadId, state.runId, toolCallId, result));
+                            new AguiEvent.ToolCallResult(
+                                    state.threadId,
+                                    state.runId,
+                                    toolCallId,
+                                    result,
+                                    "tool",
+                                    msg.getId()));
                     state.endToolCall(toolCallId);
                 }
             }
@@ -228,8 +319,15 @@ public class AguiAgentAdapter {
         // End any tool calls that weren't properly ended
         for (String toolCallId : state.getStartedToolCalls()) {
             if (!state.hasEndedToolCall(toolCallId)) {
+                events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+            }
+        }
+
+        // End any reasoning messages that weren't properly ended
+        for (String messageId : state.getStartedReasoningMessages()) {
+            if (!state.hasEndedReasoningMessage(messageId)) {
                 events.add(
-                        new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId, null));
+                        new AguiEvent.ReasoningMessageEnd(state.threadId, state.runId, messageId));
             }
         }
 
@@ -253,14 +351,14 @@ public class AguiAgentAdapter {
         StringBuilder sb = new StringBuilder();
         for (ContentBlock output : toolResult.getOutput()) {
             if (output instanceof TextBlock textBlock) {
-                if (sb.length() > 0) {
+                if (!sb.isEmpty()) {
                     sb.append("\n");
                 }
                 sb.append(textBlock.getText());
             }
         }
 
-        return sb.length() > 0 ? sb.toString() : null;
+        return !sb.isEmpty() ? sb.toString() : null;
     }
 
     /**
@@ -291,7 +389,10 @@ public class AguiAgentAdapter {
         private final Set<String> endedMessages = new LinkedHashSet<>();
         private final Set<String> startedToolCalls = new LinkedHashSet<>();
         private final Set<String> endedToolCalls = new LinkedHashSet<>();
+        private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
+        private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
         private String currentTextMessageId = null;
+        private String currentReasoningMessageId = null;
 
         EventConversionState(String threadId, String runId) {
             this.threadId = threadId;
@@ -309,7 +410,7 @@ public class AguiAgentAdapter {
 
         void endMessage(String messageId) {
             endedMessages.add(messageId);
-            if (messageId.equals(currentTextMessageId)) {
+            if (Objects.equals(messageId, currentTextMessageId)) {
                 currentTextMessageId = null;
             }
         }
@@ -348,6 +449,39 @@ public class AguiAgentAdapter {
 
         Set<String> getStartedToolCalls() {
             return startedToolCalls;
+        }
+
+        boolean hasStartedReasoningMessage(String messageId) {
+            return startedReasoningMessages.contains(messageId);
+        }
+
+        void startReasoningMessage(String messageId) {
+            startedReasoningMessages.add(messageId);
+            currentReasoningMessageId = messageId;
+        }
+
+        void endReasoningMessage(String messageId) {
+            endedReasoningMessages.add(messageId);
+            if (Objects.equals(messageId, currentReasoningMessageId)) {
+                currentReasoningMessageId = null;
+            }
+        }
+
+        boolean hasEndedReasoningMessage(String messageId) {
+            return endedReasoningMessages.contains(messageId);
+        }
+
+        String getCurrentReasoningMessageId() {
+            return currentReasoningMessageId;
+        }
+
+        boolean hasActiveReasoningMessage() {
+            return currentReasoningMessageId != null
+                    && !hasEndedReasoningMessage(currentReasoningMessageId);
+        }
+
+        Set<String> getStartedReasoningMessages() {
+            return startedReasoningMessages;
         }
     }
 }

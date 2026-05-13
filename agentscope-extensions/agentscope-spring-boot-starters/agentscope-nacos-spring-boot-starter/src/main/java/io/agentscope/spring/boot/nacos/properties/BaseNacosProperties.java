@@ -166,33 +166,24 @@ public class BaseNacosProperties {
     }
 
     /**
-     * Build a {@link Properties} instance for configuring the Nacos client.
+     * Build a {@link Properties} instance containing only the explicitly configured fields.
      *
-     * <p>This method merges the advanced {@link #properties} with the basic fields such as
-     * {@link #serverAddr}, {@link #namespace}, {@link #username}, {@link #password},
-     * {@link #accessKey}, and {@link #secretKey}. If both the corresponding field and any
-     * pre-configured property are {@code null}, the default values
-     * {@link #DEFAULT_ADDRESS} and {@link #DEFAULT_NAMESPACE} are applied to the returned
-     * {@link Properties} instance without modifying this object's state.
+     * <p>Unlike {@link #getNacosProperties()}, this method does NOT apply default values
+     * for {@code serverAddr} and {@code namespace}. This is useful for overlay/merge scenarios
+     * where default values should not overwrite a parent configuration.
      *
-     * @return a {@link Properties} instance containing all resolved Nacos configuration
+     * @return a {@link Properties} instance containing only explicitly set Nacos configuration
      */
-    public Properties getNacosProperties() {
+    public Properties getExplicitNacosProperties() {
         Properties result = new Properties();
         if (null != properties && !properties.isEmpty()) {
             result.putAll(properties);
         }
-        // Resolve server address: prefer explicit field, otherwise use default if none present
         if (null != serverAddr) {
             result.put(PropertyKeyConst.SERVER_ADDR, serverAddr);
-        } else {
-            result.putIfAbsent(PropertyKeyConst.SERVER_ADDR, DEFAULT_ADDRESS);
         }
-        // Resolve namespace: prefer explicit field, otherwise use default if none present
         if (null != namespace) {
             result.put(PropertyKeyConst.NAMESPACE, namespace);
-        } else {
-            result.putIfAbsent(PropertyKeyConst.NAMESPACE, DEFAULT_NAMESPACE);
         }
         if (null != username) {
             result.put(PropertyKeyConst.USERNAME, username);
@@ -206,6 +197,22 @@ public class BaseNacosProperties {
         if (null != secretKey) {
             result.put(PropertyKeyConst.SECRET_KEY, secretKey);
         }
+        return result;
+    }
+
+    /**
+     * Build a {@link Properties} instance for configuring the Nacos client.
+     *
+     * <p>This method builds on {@link #getExplicitNacosProperties()} and additionally applies
+     * default values ({@link #DEFAULT_ADDRESS} and {@link #DEFAULT_NAMESPACE}) when the
+     * corresponding fields are not explicitly configured.
+     *
+     * @return a {@link Properties} instance containing all resolved Nacos configuration
+     */
+    public Properties getNacosProperties() {
+        Properties result = getExplicitNacosProperties();
+        result.putIfAbsent(PropertyKeyConst.SERVER_ADDR, DEFAULT_ADDRESS);
+        result.putIfAbsent(PropertyKeyConst.NAMESPACE, DEFAULT_NAMESPACE);
         return result;
     }
 }

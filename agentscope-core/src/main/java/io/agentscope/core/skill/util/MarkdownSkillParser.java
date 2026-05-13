@@ -16,10 +16,17 @@
 
 package io.agentscope.core.skill.util;
 
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -59,24 +66,22 @@ import org.yaml.snakeyaml.representer.Representer;
  */
 public class MarkdownSkillParser {
 
+    private static final int FRONTMATTER_CODE_POINT_LIMIT = 16_384;
+
+    private static final Logger logger = LoggerFactory.getLogger(MarkdownSkillParser.class);
+
+    private static final Pattern FRONTMATTER_PATTERN =
+            Pattern.compile(
+                    "^---\\s*[\\r\\n]+(.*?)[\\r\\n]*---(?:\\s*[\\r\\n]+)?(.*)", Pattern.DOTALL);
+
+    private static final LoaderOptions LOADER_OPTIONS = createLoaderOptions();
+
+    private static final DumperOptions DUMPER_OPTIONS = createDumperOptions();
+
     /**
      * Private constructor to prevent instantiation.
      */
     private MarkdownSkillParser() {}
-
-    // Pattern to match frontmatter: starts with ---, ends with ---
-    // Pattern explanation:
-    // ^---          : frontmatter starts with --- at the beginning of the string
-    // \\s*          : optional whitespace after opening ---
-    // [\\r\\n]+     : one or more line breaks (handles \n, \r\n, \r)
-    // (.*?)         : captured group - frontmatter content (non-greedy, can be empty)
-    // [\\r\\n]*     : zero or more line breaks before closing ---
-    // ---           : closing --- delimiter
-    // (?:\\s*[\\r\\n]+)? : optional whitespace and line breaks after closing ---
-    // (.*)          : captured group - remaining content (greedy)
-    private static final Pattern FRONTMATTER_PATTERN =
-            Pattern.compile(
-                    "^---\\s*[\\r\\n]+(.*?)[\\r\\n]*---(?:\\s*[\\r\\n]+)?(.*)", Pattern.DOTALL);
 
     /**
      * Parse markdown content with YAML frontmatter.
@@ -86,7 +91,6 @@ public class MarkdownSkillParser {
      *
      * @param markdown Markdown content (may or may not have frontmatter)
      * @return ParsedMarkdown containing metadata and content
-     * @throws IllegalArgumentException if YAML syntax is invalid
      */
     public static ParsedMarkdown parse(String markdown) {
         if (markdown == null || markdown.isEmpty()) {
@@ -96,7 +100,6 @@ public class MarkdownSkillParser {
         Matcher matcher = FRONTMATTER_PATTERN.matcher(markdown);
 
         if (!matcher.matches()) {
-            // No frontmatter found, treat entire content as markdown
             return new ParsedMarkdown(Map.of(), markdown);
         }
 
@@ -107,32 +110,7 @@ public class MarkdownSkillParser {
             return new ParsedMarkdown(Map.of(), markdownContent);
         }
 
-        try {
-            Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
-            Object loaded = yaml.load(yamlContent);
-
-            if (loaded == null) {
-                return new ParsedMarkdown(Map.of(), markdownContent);
-            }
-
-            if (!(loaded instanceof Map)) {
-                throw new IllegalArgumentException(
-                        "YAML frontmatter must be a map, not a "
-                                + loaded.getClass().getSimpleName());
-            }
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> metadata = (Map<String, Object>) loaded;
-
-            return new ParsedMarkdown(metadata, markdownContent);
-
-        } catch (IllegalArgumentException e) {
-            // Re-throw our own IllegalArgumentException
-            throw e;
-        } catch (RuntimeException e) {
-            // Only catch YAML parsing related runtime exceptions
-            throw new IllegalArgumentException("Invalid YAML frontmatter syntax", e);
-        }
+        return new ParsedMarkdown(parseYamlMetadata(yamlContent), markdownContent);
     }
 
     /**
@@ -148,33 +126,13 @@ public class MarkdownSkillParser {
     public static String generate(Map<String, Object> metadata, String content) {
         StringBuilder sb = new StringBuilder();
 
-        // Add frontmatter if metadata exists
         if (metadata != null && !metadata.isEmpty()) {
             sb.append("---\n");
-
-            DumperOptions options = new DumperOptions();
-            options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-            options.setPrettyFlow(true);
-            options.setIndent(2);
-
-            Representer representer = new Representer(options);
-            representer.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-
-            Yaml yaml = new Yaml(representer, options);
-            String yamlContent = yaml.dump(metadata);
-
-            sb.append(yamlContent);
-
-            // Ensure frontmatter ends properly
-            if (!yamlContent.endsWith("\n")) {
-                sb.append("\n");
-            }
+            sb.append(createDumperYaml().dump(metadata));
             sb.append("---\n");
         }
 
-        // Add content
         if (content != null && !content.isEmpty()) {
-            // Add a blank line between frontmatter and content if frontmatter exists
             if (metadata != null && !metadata.isEmpty()) {
                 sb.append("\n");
             }
@@ -182,6 +140,121 @@ public class MarkdownSkillParser {
         }
 
         return sb.toString();
+    }
+
+    private static Map<String, Object> parseYamlMetadata(String yamlContent) {
+        if (yamlContent.codePointCount(0, yamlContent.length()) > FRONTMATTER_CODE_POINT_LIMIT) {
+            logger.debug(
+                    "Skipping YAML frontmatter because it exceeds the code point limit: {}",
+                    FRONTMATTER_CODE_POINT_LIMIT);
+            return Map.of();
+        }
+
+        Object loaded;
+        try {
+            loaded = createParserYaml().load(yamlContent);
+        } catch (RuntimeException e) {
+            logger.debug("Failed to parse YAML frontmatter, returning empty metadata", e);
+            return Map.of();
+        }
+
+        if (loaded == null) {
+            return Map.of();
+        }
+
+        if (!(loaded instanceof Map<?, ?> rawMap)) {
+            logger.debug(
+                    "Skipping YAML frontmatter because top-level object is not a map: {}",
+                    loaded.getClass());
+            return Map.of();
+        }
+
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            Object key = entry.getKey();
+            if (!(key instanceof String stringKey)) {
+                logger.debug("Skipping YAML metadata entry with non-string key: {}", key);
+                continue;
+            }
+
+            metadata.put(stringKey, normalizeMetadataValue(entry.getValue()));
+        }
+        return metadata;
+    }
+
+    private static LoaderOptions createLoaderOptions() {
+        LoaderOptions options = new LoaderOptions();
+        options.setAllowDuplicateKeys(false);
+        options.setMaxAliasesForCollections(10);
+        options.setNestingDepthLimit(10);
+        options.setCodePointLimit(FRONTMATTER_CODE_POINT_LIMIT);
+        return options;
+    }
+
+    private static DumperOptions createDumperOptions() {
+        DumperOptions options = new DumperOptions();
+        options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+        options.setPrettyFlow(true);
+        options.setSplitLines(false);
+        return options;
+    }
+
+    private static Yaml createParserYaml() {
+        return new Yaml(new SafeConstructor(LOADER_OPTIONS));
+    }
+
+    private static Yaml createDumperYaml() {
+        return new Yaml(new Representer(DUMPER_OPTIONS), DUMPER_OPTIONS);
+    }
+
+    /**
+     * Normalizes YAML parser output into a stable metadata tree.
+     *
+     * <p>Why: {@link SafeConstructor} keeps parsing safe, but it still returns broad container
+     * types like {@code Map<?, ?>}, arbitrary {@link Collection} implementations, and arrays.
+     * The rest of the skill pipeline needs a predictable shape so nested metadata can be preserved
+     * and later rendered as XML without losing structure.
+     *
+     * <p>How: this method recursively rewrites nested values into three forms only:
+     * <ul>
+     *   <li>scalar values are kept as-is</li>
+     *   <li>maps become {@code Map<String, Object>}</li>
+     *   <li>collections and arrays become {@code List<Object>}</li>
+     * </ul>
+     */
+    private static Object normalizeMetadataValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+
+        if (value instanceof Map<?, ?> rawMap) {
+            LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                Object key = entry.getKey();
+                String normalizedKey = key instanceof String ? (String) key : String.valueOf(key);
+                normalized.put(normalizedKey, normalizeMetadataValue(entry.getValue()));
+            }
+            return normalized;
+        }
+
+        if (value instanceof Collection<?> collection) {
+            List<Object> normalized = new ArrayList<>(collection.size());
+            for (Object item : collection) {
+                normalized.add(normalizeMetadataValue(item));
+            }
+            return normalized;
+        }
+
+        if (value.getClass().isArray()) {
+            int length = Array.getLength(value);
+            List<Object> normalized = new ArrayList<>(length);
+            for (int i = 0; i < length; i++) {
+                normalized.add(normalizeMetadataValue(Array.get(value, i)));
+            }
+            return normalized;
+        }
+
+        return value;
     }
 
     /**
@@ -201,7 +274,9 @@ public class MarkdownSkillParser {
          */
         public ParsedMarkdown(Map<String, Object> metadata, String content) {
             this.metadata =
-                    metadata != null ? new LinkedHashMap<>(metadata) : new LinkedHashMap<>();
+                    metadata != null
+                            ? Collections.unmodifiableMap(new LinkedHashMap<>(metadata))
+                            : Collections.emptyMap();
             this.content = content != null ? content : "";
         }
 
@@ -211,7 +286,7 @@ public class MarkdownSkillParser {
          * @return Metadata map (never null, can be empty)
          */
         public Map<String, Object> getMetadata() {
-            return new LinkedHashMap<>(metadata);
+            return metadata;
         }
 
         /**

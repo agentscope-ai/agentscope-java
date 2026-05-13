@@ -23,6 +23,7 @@ import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.chat.completions.model.ToolCall;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -99,9 +100,13 @@ public class ChatCompletionsResponseBuilder {
         ChatMessage message = convertMsgToChatMessage(reply);
         choice.setMessage(message);
 
-        // Set finish_reason based on whether there are tool calls
-        if (message.getToolCalls() != null && !message.getToolCalls().isEmpty()) {
+        // Set finish_reason based on GenerateReason or tool calls
+        GenerateReason generateReason = reply != null ? reply.getGenerateReason() : null;
+        if (generateReason == GenerateReason.TOOL_SUSPENDED
+                || (message.getToolCalls() != null && !message.getToolCalls().isEmpty())) {
             choice.setFinishReason("tool_calls");
+        } else if (generateReason == GenerateReason.MAX_ITERATIONS) {
+            choice.setFinishReason("length");
         } else {
             choice.setFinishReason("stop");
         }
@@ -207,11 +212,29 @@ public class ChatCompletionsResponseBuilder {
     /**
      * Convert a ToolUseBlock to a ToolCall, serializing the input Map to JSON string.
      *
+     * <p>Prioritizes the content field (raw JSON string) over the input Map, as some providers
+     * like DashScope store arguments in the content field.
+     *
      * @param block The ToolUseBlock to convert
      * @return The OpenAI-compatible ToolCall
      */
     private ToolCall convertToolUseBlockToToolCall(ToolUseBlock block) {
-        String argumentsJson = serializeMapToJson(block.getInput());
+        // Prioritize content field (raw JSON string) over input map
+        // DashScope and some providers store arguments in content field
+        String argumentsJson;
+        String content = block.getContent();
+        Map<String, Object> input = block.getInput();
+
+        if (content != null && !content.isEmpty()) {
+            argumentsJson = content;
+        } else if (input != null && !input.isEmpty()) {
+            // Only serialize input if it's not empty
+            argumentsJson = serializeMapToJson(input);
+        } else {
+            // Both content and input are empty - use empty object for non-streaming
+            argumentsJson = "{}";
+        }
+
         return new ToolCall(block.getId(), block.getName(), argumentsJson);
     }
 

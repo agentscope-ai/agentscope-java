@@ -16,10 +16,12 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.formatter.openai.OpenAIBaseFormatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
+import io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportFactory;
@@ -29,6 +31,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * OpenAI Chat Model using native HTTP API.
@@ -122,8 +125,7 @@ public class OpenAIChatModel extends ChatModelBase {
         // This ensures token usage information is available in the final response chunk
         // Required by OpenAI-compatible APIs like DashScope, Bailian, etc.
         if (stream) {
-            requestBuilder.streamOptions(
-                    new io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions(true));
+            requestBuilder.streamOptions(new OpenAIStreamOptions(true));
         }
 
         OpenAIRequest request = requestBuilder.build();
@@ -141,6 +143,12 @@ public class OpenAIChatModel extends ChatModelBase {
             formatter.applyToolChoice(request, effectiveOptions.getToolChoice());
         }
 
+        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
+        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())
+                && formatter instanceof OpenAIBaseFormatter openAIFormatter) {
+            openAIFormatter.applyCacheControl(request.getMessages());
+        }
+
         // Make the API call
         if (stream) {
             // Streaming mode
@@ -150,21 +158,23 @@ public class OpenAIChatModel extends ChatModelBase {
         } else {
             // Non-streaming mode: make a single call and return as Flux
             return Flux.defer(
-                    () -> {
-                        try {
-                            OpenAIResponse response =
-                                    client.call(apiKey, baseUrl, request, effectiveOptions);
-                            ChatResponse chatResponse = formatter.parseResponse(response, start);
-                            return Flux.just(chatResponse);
-                        } catch (Exception e) {
-                            return Flux.error(
-                                    new ModelException(
-                                            "Failed to call OpenAI API: " + e.getMessage(),
-                                            e,
-                                            modelName,
-                                            "openai"));
-                        }
-                    });
+                            () -> {
+                                try {
+                                    OpenAIResponse response =
+                                            client.call(apiKey, baseUrl, request, effectiveOptions);
+                                    ChatResponse chatResponse =
+                                            formatter.parseResponse(response, start);
+                                    return Flux.just(chatResponse);
+                                } catch (Exception e) {
+                                    return Flux.error(
+                                            new ModelException(
+                                                    "Failed to call OpenAI API: " + e.getMessage(),
+                                                    e,
+                                                    modelName,
+                                                    "openai"));
+                                }
+                            })
+                    .subscribeOn(Schedulers.boundedElastic());
         }
     }
 
@@ -196,9 +206,10 @@ public class OpenAIChatModel extends ChatModelBase {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private Boolean stream;
+        private boolean stream = true;
         private GenerateOptions defaultOptions;
         private String baseUrl;
+        private String endpointPath;
         private Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
         private HttpTransport httpTransport;
 
@@ -258,6 +269,21 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets a custom endpoint path for the API request.
+         *
+         * <p>This allows customization for OpenAI-compatible APIs that use different
+         * endpoint paths than the standard OpenAI API (e.g., "/v4/chat/completions",
+         * "/api/v1/llm/chat", etc.). When null, the default endpoint path will be used.
+         *
+         * @param endpointPath the endpoint path (e.g., "/v1/chat/completions")
+         * @return this builder instance
+         */
+        public Builder endpointPath(String endpointPath) {
+            this.endpointPath = endpointPath;
+            return this;
+        }
+
+        /**
          * Sets the message formatter to use.
          *
          * <p>Use provider-specific formatters for different providers:
@@ -297,13 +323,18 @@ public class OpenAIChatModel extends ChatModelBase {
             Objects.requireNonNull(modelName, "modelName must be set");
 
             // Build options from builder fields (these take precedence)
-            GenerateOptions builderOptions =
+            GenerateOptions.Builder optionsBuilder =
                     GenerateOptions.builder()
                             .apiKey(apiKey)
                             .baseUrl(baseUrl)
                             .modelName(modelName)
-                            .stream(stream)
-                            .build();
+                            .stream(stream);
+
+            if (endpointPath != null) {
+                optionsBuilder.endpointPath(endpointPath);
+            }
+
+            GenerateOptions builderOptions = optionsBuilder.build();
 
             // Merge with defaultOptions (builder fields take precedence)
             GenerateOptions mergedOptions =

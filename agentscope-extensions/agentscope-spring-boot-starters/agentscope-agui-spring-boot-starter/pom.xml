@@ -38,8 +38,8 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <optional>true</optional>
             <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
 
         <!-- AG-UI Core -->
@@ -82,6 +82,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
+            <optional>true</optional>
         </dependency>
     </dependencies>
 

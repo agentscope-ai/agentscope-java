@@ -17,7 +17,7 @@
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
     "ant-design-vue": "^4.0.8",
-    "axios": "^1.6.2",
+    "axios": "^1.13.5",
     "dayjs": "^1.11.10",
     "dompurify": "^3.2.6",
     "highlight.js": "^11.11.1",

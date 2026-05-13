@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
+import io.quarkus.runtime.annotations.Recorder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -70,8 +71,6 @@ class AgentScopeRecorderTest {
     @Test
     void testRecorderHasRecorderAnnotation() {
         // Verify the class has the @Recorder annotation
-        assertTrue(
-                AgentScopeRecorder.class.isAnnotationPresent(
-                        io.quarkus.runtime.annotations.Recorder.class));
+        assertTrue(AgentScopeRecorder.class.isAnnotationPresent(Recorder.class));
     }
 }

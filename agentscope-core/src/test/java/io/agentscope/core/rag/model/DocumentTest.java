@@ -112,6 +112,19 @@ class DocumentTest {
     }
 
     @Test
+    @DisplayName("Should set and get vector name")
+    void testSetGetVectorName() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
+        Document document = new Document(metadata);
+
+        String vectorName = "test-vector";
+        document.setVectorName(vectorName);
+
+        assertEquals(vectorName, document.getVectorName());
+    }
+
+    @Test
     @DisplayName("Should generate valid UUID ID")
     void testDocumentIdFormat() {
         TextBlock content = TextBlock.builder().text("Test content").build();
@@ -133,11 +146,13 @@ class DocumentTest {
         DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document document = new Document(metadata);
         document.setScore(0.95);
+        document.setVectorName("test-vector");
 
         String str = document.toString();
-        assertEquals(true, str.contains("Document"));
-        assertEquals(true, str.contains("Test content"));
-        assertEquals(true, str.contains("0.950"));
+        assertTrue(str.contains("Document"));
+        assertTrue(str.contains("Test content"));
+        assertTrue(str.contains("0.950"));
+        assertTrue(str.contains("test-vector"));
     }
 
     // ==================== Payload Tests ====================

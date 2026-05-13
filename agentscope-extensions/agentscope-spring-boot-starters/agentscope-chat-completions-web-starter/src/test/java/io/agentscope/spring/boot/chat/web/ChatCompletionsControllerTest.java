@@ -27,6 +27,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
+import io.agentscope.core.chat.completions.converter.OpenAIToolConverter;
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.chat.completions.model.ChatMessage;
@@ -61,6 +62,7 @@ class ChatCompletionsControllerTest {
     private ChatMessageConverter messageConverter;
     private ChatCompletionsResponseBuilder responseBuilder;
     private ChatCompletionsStreamingService streamingService;
+    private OpenAIToolConverter toolConverter;
     private ReActAgent mockAgent;
 
     @SuppressWarnings("unchecked")
@@ -70,6 +72,7 @@ class ChatCompletionsControllerTest {
         messageConverter = mock(ChatMessageConverter.class);
         responseBuilder = mock(ChatCompletionsResponseBuilder.class);
         streamingService = mock(ChatCompletionsStreamingService.class);
+        toolConverter = mock(OpenAIToolConverter.class);
         mockAgent = mock(ReActAgent.class);
 
         // Default: agentProvider returns mockAgent
@@ -77,7 +80,11 @@ class ChatCompletionsControllerTest {
 
         controller =
                 new ChatCompletionsController(
-                        agentProvider, messageConverter, responseBuilder, streamingService);
+                        agentProvider,
+                        messageConverter,
+                        responseBuilder,
+                        streamingService,
+                        toolConverter);
     }
 
     @Nested

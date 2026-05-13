@@ -24,6 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.ToolCallParam;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -778,6 +783,751 @@ class ShellCommandToolTest {
 
             latch.await();
             assertEquals(threadCount, successCount.get());
+        }
+    }
+
+    @Nested
+    @DisplayName("Buffer Deadlock Fix Tests (Issue #617)")
+    class BufferDeadlockTests {
+
+        @Test
+        @DisplayName("Should handle large output without deadlock using seq command")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void reproducePipeBufferDeadlockWithSeq() {
+            // Generate ~8KB output using seq command, which exceeds typical pipe buffer
+            // (4-8KB)
+            // This command completes in milliseconds with the fix (Apache Commons Exec's
+            // PumpStreamHandler)
+            String command = "seq 1 20000"; // Approximately 8000 bytes
+
+            // Set a reasonable timeout - should complete quickly now
+            Mono<ToolResultBlock> result = tool.executeShellCommand(command, 60);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                // Expected: Should complete successfully without timeout
+                                // The fix uses PumpStreamHandler to consume output in separate
+                                // threads
+                                assertFalse(
+                                        text.contains("TimeoutError"),
+                                        "Should not timeout with Apache Commons Exec fix, but got: "
+                                                + text);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Expected successful execution");
+                                assertTrue(
+                                        text.contains("20000"),
+                                        "Expected output to contain the last number");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should handle large file cat without deadlock")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void reproduceLargeFileCatDeadlock() throws Exception {
+            // Create a temporary large file
+            Path tempFile = Files.createTempFile("test_large_", ".txt");
+            try {
+                // Write 20KB of data (far exceeds typical pipe buffer size)
+                StringBuilder content = new StringBuilder();
+                for (int i = 0; i < 2000; i++) {
+                    content.append("Line ")
+                            .append(i)
+                            .append(": ")
+                            .append("Some test content to fill the buffer\n");
+                }
+                Files.writeString(tempFile, content.toString());
+
+                String command = "cat " + tempFile.toString();
+
+                // Set a reasonable timeout - should complete quickly with the fix
+                Mono<ToolResultBlock> result = tool.executeShellCommand(command, 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    // Expected: Should complete successfully and return the file
+                                    // content
+                                    assertFalse(
+                                            text.contains("TimeoutError"),
+                                            "Should not timeout with Apache Commons Exec fix, but"
+                                                    + " got: "
+                                                    + text);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Expected successful execution");
+                                    assertTrue(
+                                            text.contains("Line 1999"),
+                                            "Expected output to contain last line");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(tempFile);
+            }
+        }
+
+        @Test
+        @DisplayName("Should handle pre-created large test file without deadlock")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void reproduceLargeFileCatDeadlockWithTestResource() {
+            // Use the pre-created test resource file (20KB)
+            String resourcePath =
+                    getClass().getClassLoader().getResource("large_output_test.txt").getPath();
+            String command = "cat " + resourcePath;
+
+            // Set a reasonable timeout - should complete quickly with the fix
+            Mono<ToolResultBlock> result = tool.executeShellCommand(command, 10);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                // Expected: Should complete successfully and return the file
+                                // content
+                                assertFalse(
+                                        text.contains("TimeoutError"),
+                                        "Should not timeout with Apache Commons Exec fix, but got: "
+                                                + text);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Expected successful execution");
+                                assertTrue(
+                                        text.contains("This is test content"),
+                                        "Expected output to contain file content");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should handle yes command piped to head without deadlock")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void reproducePipeBufferDeadlockWithYesCommand() {
+            // Generate large output using yes command
+            // This produces continuous output that will definitely fill the buffer
+            String command = "yes 'This is a test line with some content' | head -n 1000";
+
+            // Set a reasonable timeout - should complete quickly with the fix
+            Mono<ToolResultBlock> result = tool.executeShellCommand(command, 10);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                // Expected: Should complete successfully without timeout
+                                // PumpStreamHandler consumes output in separate threads
+                                assertFalse(
+                                        text.contains("TimeoutError"),
+                                        "Should not timeout with Apache Commons Exec fix, but got: "
+                                                + text);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Expected successful execution");
+                                assertTrue(
+                                        text.contains("This is a test line"),
+                                        "Expected output to contain the repeated line");
+                            })
+                    .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("Getter Methods")
+    class GetterMethodsTests {
+
+        @Test
+        @DisplayName("Should return unmodifiable allowed commands set")
+        void testGetAllowedCommandsReturnsUnmodifiable() {
+            Set<String> original = new HashSet<>(Set.of("python", "node"));
+            ShellCommandTool tool = new ShellCommandTool(original);
+
+            Set<String> retrieved = tool.getAllowedCommands();
+
+            // Verify it's unmodifiable
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> retrieved.add("malicious"),
+                    "Should not be able to modify returned set");
+
+            // Verify it contains the expected commands
+            assertEquals(2, retrieved.size());
+            assertTrue(retrieved.contains("python"));
+            assertTrue(retrieved.contains("node"));
+        }
+
+        @Test
+        @DisplayName("Should return approval callback")
+        void testGetApprovalCallback() {
+            Function<String, Boolean> callback = cmd -> true;
+            ShellCommandTool tool = new ShellCommandTool(null, callback);
+
+            Function<String, Boolean> retrieved = tool.getApprovalCallback();
+
+            assertEquals(callback, retrieved, "Should return the same callback instance");
+        }
+
+        @Test
+        @DisplayName("Should return null approval callback when not set")
+        void testGetApprovalCallbackNull() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Function<String, Boolean> retrieved = tool.getApprovalCallback();
+
+            assertEquals(null, retrieved, "Should return null when callback not set");
+        }
+
+        @Test
+        @DisplayName("Should return command validator")
+        void testGetCommandValidator() {
+            CommandValidator validator = new UnixCommandValidator();
+            ShellCommandTool tool = new ShellCommandTool(null, null, validator);
+
+            CommandValidator retrieved = tool.getCommandValidator();
+
+            assertEquals(validator, retrieved, "Should return the same validator instance");
+        }
+
+        @Test
+        @DisplayName("Should return default command validator when not set")
+        void testGetCommandValidatorDefault() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            CommandValidator retrieved = tool.getCommandValidator();
+
+            assertNotNull(retrieved, "Should return default validator");
+            // Verify it's the correct platform-specific validator
+            String os = System.getProperty("os.name").toLowerCase();
+            if (os.contains("win")) {
+                assertTrue(
+                        retrieved instanceof WindowsCommandValidator,
+                        "Should be WindowsCommandValidator on Windows");
+            } else {
+                assertTrue(
+                        retrieved instanceof UnixCommandValidator,
+                        "Should be UnixCommandValidator on Unix/Linux/Mac");
+            }
+        }
+
+        @Test
+        @DisplayName("Should return base directory")
+        void testGetBaseDir() {
+            String baseDirStr = "/tmp/test";
+            ShellCommandTool tool = new ShellCommandTool(baseDirStr, null, null);
+
+            Path expectedPath = Paths.get(baseDirStr).toAbsolutePath().normalize();
+            Path retrieved = tool.getBaseDir();
+
+            assertEquals(expectedPath, retrieved, "Should return the normalized base directory");
+        }
+
+        @Test
+        @DisplayName("Should return null base directory when not set")
+        void testGetBaseDirNull() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Path retrieved = tool.getBaseDir();
+
+            assertEquals(null, retrieved, "Should return null when baseDir not set");
+        }
+    }
+
+    @Nested
+    @DisplayName("Base Directory Enforcement Tests")
+    class BaseDirectoryEnforcementTests {
+
+        // Test 1: baseDir sets working directory (Unix/Mac)
+        @Test
+        @DisplayName("Should set working directory to baseDir (Unix)")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testBaseDirSetsWorkingDirectoryUnix() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path testFile = tempDir.resolve("test.txt");
+            Files.writeString(testFile, "test content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("ls", "pwd"), null);
+
+                // Verify baseDir is set
+                assertEquals(
+                        tempDir.toAbsolutePath().normalize(),
+                        tool.getBaseDir(),
+                        "Base directory should be set");
+
+                // Verify ls lists files in baseDir
+                Mono<ToolResultBlock> lsResult = tool.executeShellCommand("ls", 10);
+                StepVerifier.create(lsResult)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "ls should execute successfully");
+                                    assertTrue(
+                                            text.contains("test.txt"),
+                                            "ls should list test.txt in baseDir");
+                                })
+                        .verifyComplete();
+
+                // Verify pwd shows baseDir
+                Mono<ToolResultBlock> pwdResult = tool.executeShellCommand("pwd", 10);
+                StepVerifier.create(pwdResult)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "pwd should execute successfully");
+                                    assertTrue(
+                                            text.contains(
+                                                    tempDir.toAbsolutePath()
+                                                            .normalize()
+                                                            .toString()),
+                                            "pwd should show baseDir path");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(testFile);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 1: baseDir sets working directory (Windows)
+        @Test
+        @DisplayName("Should set working directory to baseDir (Windows)")
+        @EnabledOnOs(OS.WINDOWS)
+        void testBaseDirSetsWorkingDirectoryWindows() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path testFile = tempDir.resolve("test.txt");
+            Files.writeString(testFile, "test content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("dir", "cd"), null);
+
+                assertEquals(
+                        tempDir.toAbsolutePath().normalize(),
+                        tool.getBaseDir(),
+                        "Base directory should be set");
+
+                // dir lists files
+                Mono<ToolResultBlock> dirResult = tool.executeShellCommand("dir", 10);
+                StepVerifier.create(dirResult)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "dir should execute successfully");
+                                    assertTrue(
+                                            text.contains("test.txt"),
+                                            "dir should list test.txt in baseDir");
+                                })
+                        .verifyComplete();
+
+                // cd (no args) shows current directory
+                Mono<ToolResultBlock> cdResult = tool.executeShellCommand("cd", 10);
+                StepVerifier.create(cdResult)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "cd should execute successfully");
+                                    String expectedPath =
+                                            tempDir.toAbsolutePath().normalize().toString();
+                                    assertTrue(
+                                            text.contains(expectedPath),
+                                            "cd should show baseDir path");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(testFile);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 2: Relative path resolution (Unix/Mac)
+        @Test
+        @DisplayName("Should resolve relative paths from baseDir (Unix)")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testRelativePathResolutionUnix() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path restrictedDir = tempDir.resolve("restricted");
+            Files.createDirectories(restrictedDir);
+
+            Path secretFile = tempDir.resolve("secret.txt");
+            Files.writeString(secretFile, "secret content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(restrictedDir.toString(), Set.of("cat"), null);
+
+                // Access parent directory file using relative path
+                Mono<ToolResultBlock> result = tool.executeShellCommand("cat ../secret.txt", 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Relative path should resolve from baseDir");
+                                    assertTrue(
+                                            text.contains("secret content"),
+                                            "Should access parent directory file");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(secretFile);
+                Files.deleteIfExists(restrictedDir);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 2: Relative path resolution (Windows)
+        @Test
+        @DisplayName("Should resolve relative paths from baseDir (Windows)")
+        @EnabledOnOs(OS.WINDOWS)
+        void testRelativePathResolutionWindows() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path restrictedDir = tempDir.resolve("restricted");
+            Files.createDirectories(restrictedDir);
+
+            Path secretFile = tempDir.resolve("secret.txt");
+            Files.writeString(secretFile, "secret content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(restrictedDir.toString(), Set.of("type"), null);
+
+                // Windows uses backslash for relative paths
+                Mono<ToolResultBlock> result = tool.executeShellCommand("type ..\\secret.txt", 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Relative path should resolve from baseDir");
+                                    assertTrue(
+                                            text.contains("secret content"),
+                                            "Should access parent directory file");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(secretFile);
+                Files.deleteIfExists(restrictedDir);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 3: Absolute paths with baseDir (Unix/Mac)
+        @Test
+        @DisplayName("Should handle absolute paths with baseDir set (Unix)")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testAbsolutePathsWithBaseDirUnix() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path testFile = tempDir.resolve("test.txt");
+            Files.writeString(testFile, "test content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("cat"), null);
+
+                // Access file using absolute path
+                String absolutePath = testFile.toAbsolutePath().toString();
+                Mono<ToolResultBlock> result = tool.executeShellCommand("cat " + absolutePath, 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Absolute path should work with baseDir");
+                                    assertTrue(
+                                            text.contains("test content"),
+                                            "Should read file with absolute path");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(testFile);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 3: Absolute paths with baseDir (Windows)
+        @Test
+        @DisplayName("Should handle absolute paths with baseDir set (Windows)")
+        @EnabledOnOs(OS.WINDOWS)
+        void testAbsolutePathsWithBaseDirWindows() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path testFile = tempDir.resolve("test.txt");
+            Files.writeString(testFile, "test content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("type"), null);
+
+                // Access file using absolute path
+                String absolutePath = testFile.toAbsolutePath().toString();
+                Mono<ToolResultBlock> result = tool.executeShellCommand("type " + absolutePath, 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Absolute path should work with baseDir");
+                                    assertTrue(
+                                            text.contains("test content"),
+                                            "Should read file with absolute path");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(testFile);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 4: baseDir persistence across executions (Unix/Mac)
+        @Test
+        @DisplayName("Should maintain baseDir across multiple executions (Unix)")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testBaseDirPersistenceUnix() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("pwd"), null);
+
+                String expectedPath = tempDir.toAbsolutePath().normalize().toString();
+
+                // Execute pwd multiple times - should always show same baseDir
+                for (int i = 0; i < 3; i++) {
+                    Mono<ToolResultBlock> result = tool.executeShellCommand("pwd", 10);
+
+                    StepVerifier.create(result)
+                            .assertNext(
+                                    block -> {
+                                        String text = extractText(block);
+                                        assertTrue(
+                                                text.contains("<returncode>0</returncode>"),
+                                                "Command should execute successfully");
+                                        assertTrue(
+                                                text.contains(expectedPath),
+                                                "Each execution should use same baseDir");
+                                    })
+                            .verifyComplete();
+                }
+            } finally {
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 4: baseDir persistence across executions (Windows)
+        @Test
+        @DisplayName("Should maintain baseDir across multiple executions (Windows)")
+        @EnabledOnOs(OS.WINDOWS)
+        void testBaseDirPersistenceWindows() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("cd"), null);
+
+                String expectedPath = tempDir.toAbsolutePath().normalize().toString();
+
+                // Execute cd multiple times - should always show same baseDir
+                for (int i = 0; i < 3; i++) {
+                    Mono<ToolResultBlock> result = tool.executeShellCommand("cd", 10);
+
+                    StepVerifier.create(result)
+                            .assertNext(
+                                    block -> {
+                                        String text = extractText(block);
+                                        assertTrue(
+                                                text.contains("<returncode>0</returncode>"),
+                                                "Command should execute successfully");
+                                        assertTrue(
+                                                text.contains(expectedPath),
+                                                "Each execution should use same baseDir");
+                                    })
+                            .verifyComplete();
+                }
+            } finally {
+                Files.deleteIfExists(tempDir);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Charset Configuration Tests")
+    class CharsetConfigurationTests {
+
+        @Test
+        @DisplayName("Should use UTF-8 as default charset")
+        void testDefaultCharset() {
+            ShellCommandTool tool = new ShellCommandTool();
+            assertEquals(
+                    StandardCharsets.UTF_8, tool.getCharset(), "Default charset should be UTF-8");
+        }
+
+        @Test
+        @DisplayName("Should accept custom charset in constructor")
+        void testCustomCharsetInConstructor() {
+            ShellCommandTool tool =
+                    new ShellCommandTool(
+                            null,
+                            null,
+                            null,
+                            createDefaultValidator(),
+                            StandardCharsets.ISO_8859_1);
+            assertEquals(
+                    StandardCharsets.ISO_8859_1, tool.getCharset(), "Charset should be ISO-8859-1");
+        }
+
+        @Test
+        @DisplayName("Should use GBK charset when specified")
+        void testGBKCharset() {
+            Charset gbk = Charset.forName("GBK");
+            ShellCommandTool tool =
+                    new ShellCommandTool(null, null, null, createDefaultValidator(), gbk);
+            assertEquals(gbk, tool.getCharset(), "Charset should be GBK");
+        }
+
+        @Test
+        @DisplayName("Should fall back to UTF-8 when null charset is provided")
+        void testNullCharsetFallback() {
+            ShellCommandTool tool =
+                    new ShellCommandTool(null, null, null, createDefaultValidator(), null);
+            assertEquals(
+                    StandardCharsets.UTF_8,
+                    tool.getCharset(),
+                    "Charset should fall back to UTF-8 when null");
+        }
+
+        @Test
+        @DisplayName("Should include charset in parameters schema")
+        void testCharsetInParameterSchema() {
+            ShellCommandTool tool = new ShellCommandTool();
+            Map<String, Object> params = tool.getParameters();
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> properties = (Map<String, Object>) params.get("properties");
+
+            assertTrue(properties.containsKey("charset"), "Parameters should include charset");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> charsetProp = (Map<String, Object>) properties.get("charset");
+            assertTrue(charsetProp.containsKey("description"), "charset should have description");
+            assertTrue(
+                    ((String) charsetProp.get("description")).contains("UTF-8"),
+                    "charset description should mention UTF-8");
+        }
+
+        @Test
+        @DisplayName("Should execute command with custom charset via callAsync")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testExecuteWithCustomCharsetViaCallAsync() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Map<String, Object> input = new HashMap<>();
+            input.put("command", "echo 'Hello World'");
+            input.put("charset", "UTF-8");
+
+            ToolCallParam param = ToolCallParam.builder().input(input).build();
+
+            Mono<ToolResultBlock> result = tool.callAsync(param);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Command should execute successfully");
+                                assertTrue(
+                                        text.contains("Hello World"),
+                                        "Output should contain the echoed text");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should handle invalid charset name gracefully")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testInvalidCharsetNameFallsBackToDefault() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Map<String, Object> input = new HashMap<>();
+            input.put("command", "echo test");
+            input.put("charset", "INVALID-CHARSET-NAME");
+
+            ToolCallParam param = ToolCallParam.builder().input(input).build();
+
+            // Should not throw, should fall back to default charset
+            Mono<ToolResultBlock> result = tool.callAsync(param);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Command should still execute with default charset");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should execute with GBK charset override")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testExecuteWithGBKCharsetOverride() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            // Execute with GBK charset override
+            Charset gbk = Charset.forName("GBK");
+            Mono<ToolResultBlock> result = tool.executeShellCommand("echo '测试中文'", 10, gbk);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Command should execute successfully");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should maintain charset across multiple executions")
+        void testCharsetPersistence() {
+            Charset iso88591 = StandardCharsets.ISO_8859_1;
+            ShellCommandTool tool =
+                    new ShellCommandTool(
+                            null, Set.of("echo"), null, createDefaultValidator(), iso88591);
+
+            // Charset should remain the same
+            assertEquals(
+                    iso88591, tool.getCharset(), "Charset should remain ISO-8859-1 after creation");
+            assertEquals(
+                    iso88591, tool.getCharset(), "Charset should remain ISO-8859-1 after check");
+        }
+
+        private CommandValidator createDefaultValidator() {
+            String os = System.getProperty("os.name").toLowerCase();
+            if (os.contains("win")) {
+                return new WindowsCommandValidator();
+            } else {
+                return new UnixCommandValidator();
+            }
         }
     }
 }

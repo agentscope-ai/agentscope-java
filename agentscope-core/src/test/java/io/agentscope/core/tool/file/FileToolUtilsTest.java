@@ -251,4 +251,165 @@ class FileToolUtilsTest {
                 },
                 "Should throw NullPointerException for null input");
     }
+
+    // ==================== validatePath Tests ====================
+
+    @Test
+    @DisplayName("Should validate relative path with baseDir")
+    void testValidatePath_RelativePathWithBaseDir() throws IOException {
+        Path baseDir = tempDir;
+        Path subDir = tempDir.resolve("subdir");
+        Files.createDirectories(subDir);
+
+        // Relative path should be resolved relative to baseDir
+        Path result = FileToolUtils.validatePath("subdir/test.txt", baseDir);
+
+        assertNotNull(result);
+        assertTrue(result.isAbsolute(), "Result should be absolute");
+        assertTrue(result.startsWith(baseDir), "Result should be within baseDir");
+        assertEquals(subDir.resolve("test.txt"), result, "Should resolve to correct path");
+    }
+
+    @Test
+    @DisplayName("Should validate simple relative path with baseDir")
+    void testValidatePath_SimpleRelativePathWithBaseDir() throws IOException {
+        Path baseDir = tempDir;
+
+        Path result = FileToolUtils.validatePath("test.txt", baseDir);
+
+        assertNotNull(result);
+        assertTrue(result.isAbsolute(), "Result should be absolute");
+        assertTrue(result.startsWith(baseDir), "Result should be within baseDir");
+        assertEquals(baseDir.resolve("test.txt"), result, "Should resolve to correct path");
+    }
+
+    @Test
+    @DisplayName("Should reject path traversal attack with baseDir")
+    void testValidatePath_PathTraversalAttackWithBaseDir() {
+        Path baseDir = tempDir;
+
+        // Try to escape baseDir using ../
+        IOException exception =
+                assertThrows(
+                        IOException.class,
+                        () -> FileToolUtils.validatePath("../../etc/passwd", baseDir),
+                        "Should reject path traversal attack");
+
+        assertTrue(
+                exception.getMessage().contains("Access denied"),
+                "Error message should indicate access denied");
+        assertTrue(
+                exception.getMessage().contains("outside the allowed base directory"),
+                "Error message should mention base directory restriction");
+    }
+
+    @Test
+    @DisplayName("Should validate absolute path within baseDir")
+    void testValidatePath_AbsolutePathWithinBaseDir() throws IOException {
+        Path baseDir = tempDir;
+        Path targetFile = tempDir.resolve("test.txt");
+
+        Path result = FileToolUtils.validatePath(targetFile.toString(), baseDir);
+
+        assertNotNull(result);
+        assertTrue(result.isAbsolute(), "Result should be absolute");
+        assertEquals(targetFile, result, "Should return the same absolute path");
+    }
+
+    @Test
+    @DisplayName("Should reject absolute path outside baseDir")
+    void testValidatePath_AbsolutePathOutsideBaseDir() {
+        Path baseDir = tempDir;
+        Path outsidePath = tempDir.getParent().resolve("outside.txt");
+
+        IOException exception =
+                assertThrows(
+                        IOException.class,
+                        () -> FileToolUtils.validatePath(outsidePath.toString(), baseDir),
+                        "Should reject path outside baseDir");
+
+        assertTrue(
+                exception.getMessage().contains("Access denied"),
+                "Error message should indicate access denied");
+    }
+
+    @Test
+    @DisplayName("Should validate relative path without baseDir")
+    void testValidatePath_RelativePathWithoutBaseDir() throws IOException {
+        // Without baseDir, relative path should be converted to absolute
+        Path result = FileToolUtils.validatePath("test.txt", null);
+
+        assertNotNull(result);
+        assertTrue(result.isAbsolute(), "Result should be absolute");
+        assertTrue(result.toString().endsWith("test.txt"), "Result should end with the file name");
+    }
+
+    @Test
+    @DisplayName("Should validate absolute path without baseDir")
+    void testValidatePath_AbsolutePathWithoutBaseDir() throws IOException {
+        Path absolutePath = tempDir.resolve("test.txt");
+
+        Path result = FileToolUtils.validatePath(absolutePath.toString(), null);
+
+        assertNotNull(result);
+        assertTrue(result.isAbsolute(), "Result should be absolute");
+        assertEquals(absolutePath, result, "Should return the same absolute path");
+    }
+
+    @Test
+    @DisplayName("Should reject null file path")
+    void testValidatePath_NullFilePath() {
+        IOException exception =
+                assertThrows(
+                        IOException.class,
+                        () -> FileToolUtils.validatePath(null, tempDir),
+                        "Should reject null file path");
+
+        assertTrue(
+                exception.getMessage().contains("cannot be null or empty"),
+                "Error message should mention null or empty");
+    }
+
+    @Test
+    @DisplayName("Should reject empty file path")
+    void testValidatePath_EmptyFilePath() {
+        IOException exception =
+                assertThrows(
+                        IOException.class,
+                        () -> FileToolUtils.validatePath("", tempDir),
+                        "Should reject empty file path");
+
+        assertTrue(
+                exception.getMessage().contains("cannot be null or empty"),
+                "Error message should mention null or empty");
+    }
+
+    @Test
+    @DisplayName("Should reject whitespace-only file path")
+    void testValidatePath_WhitespaceFilePath() {
+        IOException exception =
+                assertThrows(
+                        IOException.class,
+                        () -> FileToolUtils.validatePath("   ", tempDir),
+                        "Should reject whitespace-only file path");
+
+        assertTrue(
+                exception.getMessage().contains("cannot be null or empty"),
+                "Error message should mention null or empty");
+    }
+
+    @Test
+    @DisplayName("Should handle path with . and .. correctly within baseDir")
+    void testValidatePath_DotPathWithinBaseDir() throws IOException {
+        Path baseDir = tempDir;
+        Path subDir = tempDir.resolve("subdir");
+        Files.createDirectories(subDir);
+
+        // ./subdir/../test.txt should normalize to test.txt in baseDir
+        Path result = FileToolUtils.validatePath("./subdir/../test.txt", baseDir);
+
+        assertNotNull(result);
+        assertTrue(result.startsWith(baseDir), "Result should be within baseDir");
+        assertEquals(baseDir.resolve("test.txt"), result, "Should normalize correctly");
+    }
 }

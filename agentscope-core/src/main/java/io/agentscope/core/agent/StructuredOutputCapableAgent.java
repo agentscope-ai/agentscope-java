@@ -18,11 +18,14 @@ package io.agentscope.core.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.AgentTool;
@@ -30,6 +33,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -170,15 +174,24 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                                         // Extract result from hook's output
                                         Msg hookResult = hook.getResultMsg();
                                         if (hookResult != null) {
-                                            return Mono.just(extractStructuredResult(hookResult));
+                                            Msg extracted = extractStructuredResult(hookResult);
+                                            // Merge aggregated metadata from reasoning rounds
+                                            if (extracted != null) {
+                                                extracted =
+                                                        mergeCollectedMetadata(
+                                                                extracted,
+                                                                hook.getAggregatedUsage(),
+                                                                hook.getAggregatedThinking());
+                                            }
+                                            return Mono.just(extracted);
                                         }
                                         return Mono.just(result);
                                     })
                             .doFinally(
                                     signal -> {
-                                        // Cleanup: remove hook and unregister tool
                                         removeHook(hook);
-                                        toolkit.removeTool(STRUCTURED_OUTPUT_TOOL_NAME);
+                                        toolkit.removeToolIfSame(
+                                                STRUCTURED_OUTPUT_TOOL_NAME, structuredOutputTool);
                                     });
                 });
     }
@@ -204,8 +217,19 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
             public Map<String, Object> getParameters() {
                 Map<String, Object> params = new HashMap<>();
                 params.put("type", "object");
-                params.put("properties", Map.of("response", schema));
+
+                // Shallow-copy the inner schema so we can safely hoist $defs to the
+                // outer params root without mutating the shared `schema` instance.
+                Map<String, Object> innerSchema = new HashMap<>(schema);
+                Map<String, Object> hoistedDefs = new HashMap<>();
+                hoistDefsKey(innerSchema, "$defs", hoistedDefs);
+                hoistDefsKey(innerSchema, "definitions", hoistedDefs);
+
+                params.put("properties", Map.of("response", innerSchema));
                 params.put("required", List.of("response"));
+                if (!hoistedDefs.isEmpty()) {
+                    params.put("$defs", hoistedDefs);
+                }
                 return params;
             }
 
@@ -283,9 +307,10 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
         if (responseMsg.getMetadata() != null
                 && responseMsg.getMetadata().containsKey("response")) {
             Object responseData = responseMsg.getMetadata().get("response");
-            // Store structured output under dedicated key to avoid conflicts with other metadata
-            Map<String, Object> metadata = new HashMap<>();
+            // Preserve all original metadata and add structured output under dedicated key
+            Map<String, Object> metadata = new HashMap<>(responseMsg.getMetadata());
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, responseData);
+            metadata.remove("response"); // Remove temp key, use standard key
             return Msg.builder()
                     .name(responseMsg.getName())
                     .role(responseMsg.getRole())
@@ -294,5 +319,55 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                     .build();
         }
         return responseMsg;
+    }
+
+    /**
+     * Merge collected metadata (ChatUsage and ThinkingBlock) into the message.
+     */
+    private Msg mergeCollectedMetadata(Msg msg, ChatUsage chatUsage, ThinkingBlock thinking) {
+        // Merge ChatUsage into metadata
+        Map<String, Object> metadata =
+                new HashMap<>(msg.getMetadata() != null ? msg.getMetadata() : Map.of());
+        if (chatUsage != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+        }
+
+        // Merge ThinkingBlock into content
+        List<ContentBlock> newContent;
+        if (thinking != null) {
+            newContent = new ArrayList<>();
+            newContent.add(thinking); // ThinkingBlock first
+            if (msg.getContent() != null) {
+                newContent.addAll(msg.getContent());
+            }
+        } else {
+            newContent = msg.getContent();
+        }
+
+        return Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .content(newContent)
+                .metadata(metadata)
+                .timestamp(msg.getTimestamp())
+                .build();
+    }
+
+    /**
+     * Move the entries under {@code key} from {@code innerSchema} up into {@code target}.
+     *
+     * <p>When a class-level JSON Schema is nested under {@code properties.response}, any
+     * {@code $defs}/{@code definitions} it carries would end up at
+     * {@code properties.response.$defs}. References like {@code #/$defs/Foo} are resolved
+     * from the document root though, so we hoist them to the outer parameters root.
+     */
+    @SuppressWarnings("unchecked")
+    private static void hoistDefsKey(
+            Map<String, Object> innerSchema, String key, Map<String, Object> target) {
+        Object raw = innerSchema.remove(key);
+        if (raw instanceof Map<?, ?> defs && !defs.isEmpty()) {
+            target.putAll((Map<String, Object>) defs);
+        }
     }
 }

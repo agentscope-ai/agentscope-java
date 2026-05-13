@@ -25,6 +25,7 @@ import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.UrlImageSource;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
@@ -171,5 +172,5 @@ class AnthropicMediaConverterTest extends AnthropicFormatterTestBase {
     }
 
     // Custom source type for testing unsupported sources
-    private static class CustomSource extends io.agentscope.core.message.Source {}
+    private static class CustomSource extends Source {}
 }

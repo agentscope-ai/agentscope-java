@@ -33,6 +33,8 @@
 
     <modules>
         <module>agentscope-extensions-nacos-a2a</module>
+        <module>agentscope-extensions-nacos-prompt</module>
+        <module>agentscope-extensions-nacos-skill</module>
     </modules>
 
 </project>

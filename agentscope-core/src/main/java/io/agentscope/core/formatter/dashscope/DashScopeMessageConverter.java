@@ -20,6 +20,7 @@ import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -64,11 +65,17 @@ public class DashScopeMessageConverter {
      * @return The converted DashScopeMessage
      */
     public DashScopeMessage convertToMessage(Msg msg, boolean useMultimodalFormat) {
+        DashScopeMessage result;
         if (useMultimodalFormat) {
-            return convertToMultimodalContent(msg);
+            result = convertToMultimodalContent(msg);
         } else {
-            return convertToSimpleContent(msg);
+            result = convertToSimpleContent(msg);
         }
+
+        // Apply cache_control from message metadata if manually marked
+        applyCacheControlFromMetadata(msg, result);
+
+        return result;
     }
 
     /**
@@ -161,9 +168,12 @@ public class DashScopeMessageConverter {
     private DashScopeMessage convertToolRoleMessage(Msg msg) {
         ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
         if (toolResult != null) {
-            String toolResultText = toolResultConverter.apply(toolResult.getOutput());
-            List<DashScopeContentPart> content = new ArrayList<>();
-            content.add(DashScopeContentPart.text(toolResultText));
+            List<DashScopeContentPart> content =
+                    hasMediaContent(toolResult.getOutput())
+                            ? convertContentBlocks(toolResult.getOutput())
+                            : List.of(
+                                    DashScopeContentPart.text(
+                                            toolResultConverter.apply(toolResult.getOutput())));
 
             return DashScopeMessage.builder()
                     .role("tool")
@@ -174,9 +184,10 @@ public class DashScopeMessageConverter {
         }
 
         // Fallback: no ToolResultBlock found, use text content
-        List<DashScopeContentPart> content = new ArrayList<>();
-        content.add(DashScopeContentPart.text(extractTextContent(msg)));
-        return DashScopeMessage.builder().role("tool").content(content).build();
+        return DashScopeMessage.builder()
+                .role("tool")
+                .content(List.of(DashScopeContentPart.text(extractTextContent(msg))))
+                .build();
     }
 
     /**
@@ -210,11 +221,10 @@ public class DashScopeMessageConverter {
                 // Assistant with tool calls
                 builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
                 String textContent = extractTextContent(msg);
-                if (textContent.isEmpty()) {
-                    builder.content((String) null);
-                } else {
-                    builder.content(textContent);
-                }
+                // Qwen3 and similar models in thinking mode may produce assistant
+                // messages with reasoning_content + tool_calls but null content.
+                // DashScope API requires the content field to be present.
+                builder.content(textContent.isEmpty() ? "" : textContent);
             } else {
                 builder.content(extractTextContent(msg));
             }
@@ -236,5 +246,84 @@ public class DashScopeMessageConverter {
                 .filter(block -> block instanceof TextBlock)
                 .map(block -> ((TextBlock) block).getText())
                 .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
+    }
+
+    /**
+     * Apply cache_control from Msg metadata to the converted DashScopeMessage.
+     *
+     * @param msg the source message with metadata
+     * @param result the converted DashScope message
+     */
+    private void applyCacheControlFromMetadata(Msg msg, DashScopeMessage result) {
+        if (msg.getMetadata() == null) {
+            return;
+        }
+        Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+        if (Boolean.TRUE.equals(cacheFlag)) {
+            result.setCacheControl(DashScopeChatFormatter.getEphemeralCacheControl());
+        }
+    }
+
+    /**
+     * Check if blocks contain media content (image, audio, video).
+     *
+     * @param blocks the list of content blocks to check
+     * @return true if any block is ImageBlock, AudioBlock, or VideoBlock
+     */
+    private boolean hasMediaContent(List<ContentBlock> blocks) {
+        if (blocks == null) {
+            return false;
+        }
+        for (ContentBlock block : blocks) {
+            if (block instanceof ImageBlock
+                    || block instanceof AudioBlock
+                    || block instanceof VideoBlock) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Convert content blocks to DashScope content parts for multimodal messages.
+     *
+     * @param blocks the list of content blocks to convert
+     * @return the converted list of DashScopeContentPart
+     */
+    private List<DashScopeContentPart> convertContentBlocks(List<ContentBlock> blocks) {
+        List<DashScopeContentPart> content = new ArrayList<>();
+        for (ContentBlock block : blocks) {
+            if (block instanceof TextBlock tb) {
+                content.add(DashScopeContentPart.text(tb.getText()));
+            } else if (block instanceof ImageBlock ib) {
+                try {
+                    content.add(mediaConverter.convertImageBlockToContentPart(ib));
+                } catch (Exception e) {
+                    log.warn("Failed to process ImageBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Image - processing failed: " + e.getMessage() + "]"));
+                }
+            } else if (block instanceof AudioBlock ab) {
+                try {
+                    content.add(mediaConverter.convertAudioBlockToContentPart(ab));
+                } catch (Exception e) {
+                    log.warn("Failed to process AudioBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Audio - processing failed: " + e.getMessage() + "]"));
+                }
+            } else if (block instanceof VideoBlock vb) {
+                try {
+                    content.add(mediaConverter.convertVideoBlockToContentPart(vb));
+                } catch (Exception e) {
+                    log.warn("Failed to process VideoBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Video - processing failed: " + e.getMessage() + "]"));
+                }
+            }
+        }
+        return content;
     }
 }

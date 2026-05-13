@@ -14,3 +14,5 @@
 # limitations under the License.
 #
 io.agentscope.spring.boot.nacos.AgentscopeA2aNacosAutoConfiguration
+io.agentscope.spring.boot.nacos.AgentscopeNacosPromptAutoConfiguration
+io.agentscope.spring.boot.nacos.AgentscopeNacosReActAgentAutoConfiguration

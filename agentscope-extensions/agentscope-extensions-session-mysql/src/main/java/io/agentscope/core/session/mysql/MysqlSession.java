@@ -79,17 +79,24 @@ public class MysqlSession implements Session {
     private static final int SINGLE_STATE_INDEX = 0;
 
     /**
-     * Pattern for validating database and table names. Only allows alphanumeric characters and
-     * underscores, must start with letter or underscore. This prevents SQL injection attacks
-     * through malicious database/table names.
+     * Pattern for validating database and table names. Only allows alphanumeric characters,
+     * underscores, and hyphens, must start with letter or underscore. This prevents SQL injection
+     * attacks through malicious database/table names.
+     *
+     * <p>Note: Identifiers containing hyphens require backtick escaping in SQL queries.
      */
-    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_-]*$");
 
     private static final int MAX_IDENTIFIER_LENGTH = 64; // MySQL identifier length limit
 
     private final DataSource dataSource;
     private final String databaseName;
     private final String tableName;
+
+    @FunctionalInterface
+    private interface SqlOperation {
+        void execute() throws Exception;
+    }
 
     /**
      * Create a MysqlSession with default settings.
@@ -175,13 +182,14 @@ public class MysqlSession implements Session {
      * Create the database if it doesn't exist.
      *
      * <p>Creates the database with UTF-8 (utf8mb4) character set and unicode collation for proper
-     * internationalization support.
+     * internationalization support. Uses backticks to escape the database name for safe handling of
+     * special characters like hyphens.
      */
     private void createDatabaseIfNotExist() {
         String createDatabaseSql =
-                "CREATE DATABASE IF NOT EXISTS "
+                "CREATE DATABASE IF NOT EXISTS `"
                         + databaseName
-                        + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
+                        + "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(createDatabaseSql)) {
@@ -193,16 +201,17 @@ public class MysqlSession implements Session {
 
     /**
      * Create the sessions table if it doesn't exist.
+     *
+     * <p>Uses backtick escaping for the table name to safely handle identifiers with special
+     * characters like hyphens.
      */
     private void createTableIfNotExist() {
         String createTableSql =
                 "CREATE TABLE IF NOT EXISTS "
-                        + databaseName
-                        + "."
-                        + tableName
+                        + getFullTableName()
                         + " (session_id VARCHAR(255) NOT NULL, state_key VARCHAR(255) NOT NULL,"
                         + " item_index INT NOT NULL DEFAULT 0, state_data LONGTEXT NOT NULL,"
-                        + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
+                        + " created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME"
                         + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY"
                         + " (session_id, state_key, item_index)) DEFAULT CHARACTER SET utf8mb4"
                         + " COLLATE utf8mb4_unicode_ci";
@@ -270,12 +279,47 @@ public class MysqlSession implements Session {
     }
 
     /**
-     * Get the full table name with database prefix.
+     * Get the full table name with database prefix, properly escaped with backticks.
      *
-     * @return The full table name (database.table)
+     * <p>Uses backticks to escape identifiers that may contain special characters like hyphens,
+     * which is required by MySQL for identifiers containing characters outside the standard set.
+     *
+     * @return The full table name with backtick escaping (`database`.`table`)
      */
     private String getFullTableName() {
-        return databaseName + "." + tableName;
+        return "`" + databaseName + "`.`" + tableName + "`";
+    }
+
+    /**
+     * Execute a write operation in an explicit transaction.
+     *
+     * <p>MysqlSession obtains and owns a fresh JDBC connection for each write method call. This
+     * helper makes write semantics consistent even when the underlying DataSource defaults to
+     * {@code autoCommit=false}, and restores the connection's original auto-commit mode before
+     * returning it to the pool.
+     */
+    private void executeInWriteTransaction(Connection conn, SqlOperation operation)
+            throws Exception {
+        boolean originalAutoCommit = conn.getAutoCommit();
+        if (originalAutoCommit) {
+            conn.setAutoCommit(false);
+        }
+
+        try {
+            operation.execute();
+            conn.commit();
+        } catch (Exception e) {
+            try {
+                conn.rollback();
+            } catch (SQLException rollbackException) {
+                e.addSuppressed(rollbackException);
+            }
+            throw e;
+        } finally {
+            if (conn.getAutoCommit() != originalAutoCommit) {
+                conn.setAutoCommit(originalAutoCommit);
+            }
+        }
     }
 
     @Override
@@ -291,18 +335,21 @@ public class MysqlSession implements Session {
                         + " VALUES (?, ?, ?, ?)"
                         + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data)";
 
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(upsertSql)) {
+        try (Connection conn = dataSource.getConnection()) {
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        try (PreparedStatement stmt = conn.prepareStatement(upsertSql)) {
+                            String json = JsonUtils.getJsonCodec().toJson(value);
 
-            String json = JsonUtils.getJsonCodec().toJson(value);
+                            stmt.setString(1, sessionId);
+                            stmt.setString(2, key);
+                            stmt.setInt(3, SINGLE_STATE_INDEX);
+                            stmt.setString(4, json);
 
-            stmt.setString(1, sessionId);
-            stmt.setString(2, key);
-            stmt.setInt(3, SINGLE_STATE_INDEX);
-            stmt.setString(4, json);
-
-            stmt.executeUpdate();
-
+                            stmt.executeUpdate();
+                        }
+                    });
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
         }
@@ -337,42 +384,34 @@ public class MysqlSession implements Session {
         String hashKey = key + HASH_KEY_SUFFIX;
 
         try (Connection conn = dataSource.getConnection()) {
-            // Compute current hash
-            String currentHash = ListHashUtil.computeHash(values);
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        // Compute current hash
+                        String currentHash = ListHashUtil.computeHash(values);
 
-            // Get stored hash
-            String storedHash = getStoredHash(conn, sessionId, hashKey);
+                        // Get stored hash
+                        String storedHash = getStoredHash(conn, sessionId, hashKey);
 
-            // Get existing count
-            int existingCount = getListCount(conn, sessionId, key);
+                        // Get existing count
+                        int existingCount = getListCount(conn, sessionId, key);
 
-            // Determine if full rewrite is needed
-            boolean needsFullRewrite =
-                    ListHashUtil.needsFullRewrite(
-                            currentHash, storedHash, values.size(), existingCount);
+                        // Determine if full rewrite is needed
+                        boolean needsFullRewrite =
+                                ListHashUtil.needsFullRewrite(values, storedHash, existingCount);
 
-            if (needsFullRewrite) {
-                // Transaction: delete all + insert all
-                conn.setAutoCommit(false);
-                try {
-                    deleteListItems(conn, sessionId, key);
-                    insertAllItems(conn, sessionId, key, values);
-                    saveHash(conn, sessionId, hashKey, currentHash);
-                    conn.commit();
-                } catch (Exception e) {
-                    conn.rollback();
-                    throw e;
-                } finally {
-                    conn.setAutoCommit(true);
-                }
-            } else if (values.size() > existingCount) {
-                // Incremental append
-                List<? extends State> newItems = values.subList(existingCount, values.size());
-                insertItems(conn, sessionId, key, newItems, existingCount);
-                saveHash(conn, sessionId, hashKey, currentHash);
-            }
-            // else: no change, skip
-
+                        if (needsFullRewrite) {
+                            deleteListItems(conn, sessionId, key);
+                            insertAllItems(conn, sessionId, key, values);
+                            saveHash(conn, sessionId, hashKey, currentHash);
+                        } else if (values.size() > existingCount) {
+                            List<? extends State> newItems =
+                                    values.subList(existingCount, values.size());
+                            insertItems(conn, sessionId, key, newItems, existingCount);
+                            saveHash(conn, sessionId, hashKey, currentHash);
+                        }
+                        // else: no change, skip
+                    });
         } catch (Exception e) {
             throw new RuntimeException("Failed to save list: " + key, e);
         }
@@ -619,13 +658,16 @@ public class MysqlSession implements Session {
 
         String deleteSql = "DELETE FROM " + getFullTableName() + " WHERE session_id = ?";
 
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(deleteSql)) {
-
-            stmt.setString(1, sessionId);
-            stmt.executeUpdate();
-
-        } catch (SQLException e) {
+        try (Connection conn = dataSource.getConnection()) {
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        try (PreparedStatement stmt = conn.prepareStatement(deleteSql)) {
+                            stmt.setString(1, sessionId);
+                            stmt.executeUpdate();
+                        }
+                    });
+        } catch (Exception e) {
             throw new RuntimeException("Failed to delete session: " + sessionId, e);
         }
     }
@@ -692,17 +734,51 @@ public class MysqlSession implements Session {
      * Clear all sessions from the database (for testing or cleanup).
      *
      * @return Number of rows deleted
+     * @deprecated Use {@link #truncateAllSessions()} instead
      */
+    @Deprecated
     public int clearAllSessions() {
         String clearSql = "DELETE FROM " + getFullTableName();
 
+        try (Connection conn = dataSource.getConnection()) {
+            int[] deletedRows = new int[1];
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        try (PreparedStatement stmt = conn.prepareStatement(clearSql)) {
+                            deletedRows[0] = stmt.executeUpdate();
+                        }
+                    });
+            return deletedRows[0];
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to clear sessions", e);
+        }
+    }
+
+    /**
+     * Truncate session table from the database (for testing or cleanup).
+     *
+     * <p>This method clears all session records by executing a TRUNCATE TABLE statement on the
+     * sessions table. TRUNCATE is faster than DELETE as it resets the table without logging
+     * individual row deletions and reclaims storage space immediately.
+     *
+     * <p><strong>Note:</strong> In MySQL, {@code TRUNCATE TABLE} is DDL, triggers an implicit
+     * commit, and is not rollbackable. For that reason, this method executes the statement
+     * directly instead of routing it through {@link #executeInWriteTransaction(Connection,
+     * SqlOperation)}.
+     *
+     * <p><strong>Note:</strong> The TRUNCATE operation requires DROP privileges in MySQL.
+     *
+     * @return typically 0 if successful
+     */
+    public int truncateAllSessions() {
+        String clearSql = "TRUNCATE TABLE " + getFullTableName();
+
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(clearSql)) {
-
             return stmt.executeUpdate();
-
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to clear sessions", e);
+            throw new RuntimeException("Failed to truncate sessions", e);
         }
     }
 
@@ -742,9 +818,9 @@ public class MysqlSession implements Session {
     /**
      * Validate a database or table identifier to prevent SQL injection.
      *
-     * <p>This method ensures that identifiers only contain safe characters (alphanumeric and
-     * underscores) and start with a letter or underscore. This is critical for security since
-     * database and table names cannot be parameterized in prepared statements.
+     * <p>This method ensures that identifiers only contain safe characters (alphanumeric,
+     * underscores, and hyphens) and start with a letter or underscore. This is critical for
+     * security since database and table names cannot be parameterized in prepared statements.
      *
      * @param identifier The identifier to validate (database name or table name)
      * @param identifierType Description of the identifier type for error messages
@@ -761,9 +837,9 @@ public class MysqlSession implements Session {
         if (!IDENTIFIER_PATTERN.matcher(identifier).matches()) {
             throw new IllegalArgumentException(
                     identifierType
-                            + " contains invalid characters. Only alphanumeric characters and"
-                            + " underscores are allowed, and it must start with a letter or"
-                            + " underscore. Invalid value: "
+                            + " contains invalid characters. Only alphanumeric characters,"
+                            + " underscores, and hyphens are allowed, and it must start with a"
+                            + " letter or underscore. Invalid value: "
                             + identifier);
         }
     }

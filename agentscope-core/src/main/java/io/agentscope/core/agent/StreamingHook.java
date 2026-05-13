@@ -20,7 +20,9 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -90,9 +92,28 @@ class StreamingHook implements Hook {
         } else if (event instanceof ActingChunkEvent) {
             ActingChunkEvent e = (ActingChunkEvent) event;
             // Intermediate tool chunk
-            if (options.shouldStream(EventType.TOOL_RESULT)) {
+            if (options.shouldStream(EventType.TOOL_RESULT) && options.isIncludeActingChunk()) {
                 Msg toolMsg = createToolMessage(e.getChunk());
                 emitEvent(EventType.TOOL_RESULT, toolMsg, false);
+            }
+            return Mono.just(event);
+        } else if (event instanceof PostSummaryEvent) {
+            PostSummaryEvent e = (PostSummaryEvent) event;
+            // Summary generation completed
+            if (options.shouldStream(EventType.SUMMARY)
+                    && options.shouldIncludeSummaryEmission(false)) {
+                emitEvent(EventType.SUMMARY, e.getSummaryMessage(), true);
+            }
+            return Mono.just(event);
+        } else if (event instanceof SummaryChunkEvent) {
+            SummaryChunkEvent e = (SummaryChunkEvent) event;
+            // Intermediate summary chunk
+            if (options.shouldStream(EventType.SUMMARY)
+                    && options.shouldIncludeSummaryEmission(true)) {
+                // Use incremental or accumulated based on StreamOptions
+                Msg msgToEmit =
+                        options.isIncremental() ? e.getIncrementalChunk() : e.getAccumulated();
+                emitEvent(EventType.SUMMARY, msgToEmit, false);
             }
             return Mono.just(event);
         }

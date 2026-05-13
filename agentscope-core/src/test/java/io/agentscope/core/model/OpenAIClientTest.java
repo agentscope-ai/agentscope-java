@@ -25,9 +25,13 @@ import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.model.exception.OpenAIException;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -37,6 +41,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 /**
  * Unit tests for OpenAIClient.
@@ -427,10 +432,8 @@ class OpenAIClientTest {
                                                 .build()))
                         .build();
 
-        java.util.List<java.util.concurrent.Future<OpenAIResponse>> futures =
-                new java.util.ArrayList<>();
-        java.util.concurrent.ExecutorService executor =
-                java.util.concurrent.Executors.newFixedThreadPool(5);
+        List<Future<OpenAIResponse>> futures = new ArrayList<>();
+        ExecutorService executor = Executors.newFixedThreadPool(5);
 
         for (int i = 0; i < 5; i++) {
             futures.add(
@@ -444,12 +447,12 @@ class OpenAIClientTest {
                             }));
         }
 
-        for (java.util.concurrent.Future<OpenAIResponse> future : futures) {
+        for (Future<OpenAIResponse> future : futures) {
             assertNotNull(future.get());
         }
 
         executor.shutdown();
-        executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        executor.awaitTermination(5, TimeUnit.SECONDS);
 
         assertEquals(5, mockServer.getRequestCount());
     }
@@ -740,5 +743,380 @@ class OpenAIClientTest {
         RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(recordedRequest);
         assertEquals("custom-value", recordedRequest.getHeader("X-Custom-Header"));
+    }
+
+    @Test
+    @DisplayName("Should handle custom endpoint path from options")
+    void testCustomEndpointPathFromOptions() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // Use custom endpoint path
+        GenerateOptions options =
+                GenerateOptions.builder().endpointPath("/v4/chat/completions").build();
+
+        client.call(TEST_API_KEY, baseUrl, request, options);
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertTrue(
+                recordedRequest.getPath().contains("/v4/chat/completions"),
+                "Path should contain custom endpoint path: " + recordedRequest.getPath());
+    }
+
+    @Test
+    @DisplayName("Should use default endpoint path when not specified in options")
+    void testDefaultEndpointPathWhenNotSpecified() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // No endpoint path specified - should use default
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        client.call(TEST_API_KEY, baseUrl, request, options);
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertTrue(
+                recordedRequest.getPath().endsWith("/chat/completions")
+                        || recordedRequest.getPath().contains("/v1/chat/completions"),
+                "Path should contain default endpoint path: " + recordedRequest.getPath());
+    }
+
+    @Test
+    @DisplayName("Should handle custom endpoint path in stream call")
+    void testCustomEndpointPathInStreamCall() throws Exception {
+        String sseResponse =
+                "data:"
+                    + " {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n"
+                    + "data:"
+                    + " {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n"
+                    + "data:"
+                    + " {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                    + "data: [DONE]\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // Use custom endpoint path for stream call
+        GenerateOptions options =
+                GenerateOptions.builder().endpointPath("/v4/chat/completions").build();
+
+        client.stream(TEST_API_KEY, baseUrl, request, options).collectList().block();
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertTrue(
+                recordedRequest.getPath().contains("/v4/chat/completions"),
+                "Stream path should contain custom endpoint path: " + recordedRequest.getPath());
+    }
+
+    @Test
+    @DisplayName("Should throw OpenAIException when handle custom endpoint path in stream call")
+    void testThrowOpenAIExceptionWhenCustomEndpointPathInStreamCall() {
+        String sseResponse = "";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(sseResponse)
+                        .setResponseCode(301)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // Use custom endpoint path for stream call
+        GenerateOptions options =
+                GenerateOptions.builder().endpointPath("/v4/chat/completions").build();
+
+        assertThrows(
+                OpenAIException.class,
+                () -> client.stream(TEST_API_KEY, baseUrl, request, options).collectList().block());
+    }
+
+    @Test
+    @DisplayName("Should handle non-standard rate limit error in sync response body")
+    void testNonStandardErrorInResponseBody() {
+        String errorResponse =
+                """
+                {
+                    "code": "429",
+                    "message": "The request has triggered the maximum tokens per minute limit.",
+                    "status": "error"
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        OpenAIException exception =
+                assertThrows(
+                        OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
+
+        assertNotNull(exception);
+        assertEquals(429, exception.getStatusCode());
+        assertEquals("429", exception.getErrorCode());
+        assertTrue(exception.getMessage().contains("maximum tokens per minute"));
+    }
+
+    @Test
+    @DisplayName("Should handle non-standard rate limit error in streaming chunk")
+    void testNonStandardErrorInStreamChunk() {
+        String chunk1 =
+                "data:"
+                    + " {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"}}]}\n\n";
+        String chunk2 =
+                "data: {\"code\":\"429\",\"message\":\"MAX_TPM limit"
+                        + " exceeded\",\"status\":\"error\"}\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(chunk1 + chunk2)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        List<OpenAIResponse> responses = new ArrayList<>();
+        Throwable[] capturedError = new Throwable[1];
+
+        client.stream(TEST_API_KEY, baseUrl, request, options)
+                .doOnNext(responses::add)
+                .doOnError(e -> capturedError[0] = e)
+                .onErrorResume(e -> Flux.empty())
+                .blockLast();
+
+        assertEquals(1, responses.size());
+        assertEquals("chatcmpl-123", responses.get(0).getId());
+
+        assertNotNull(capturedError[0]);
+        assertTrue(capturedError[0] instanceof OpenAIException);
+
+        OpenAIException exception = (OpenAIException) capturedError[0];
+        assertEquals(429, exception.getStatusCode());
+        assertEquals("429", exception.getErrorCode());
+        assertTrue(exception.getMessage().contains("MAX_TPM limit exceeded"));
+    }
+
+    @Test
+    @DisplayName("Should resolve standard OpenAI rate limit string to 429 status code")
+    void testStandardRateLimitStringCode() {
+        String errorResponse =
+                """
+                {
+                    "error": {
+                        "message": "Rate limit reached",
+                        "type": "requests",
+                        "code": "rate_limit_exceeded"
+                    }
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        OpenAIException exception =
+                assertThrows(
+                        OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
+
+        assertEquals(429, exception.getStatusCode());
+        assertEquals("rate_limit_exceeded", exception.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("Should intelligently resolve complex 429 string codes to trigger retry")
+    void testComplexRateLimitStringCode() {
+        String errorResponse =
+                """
+                {
+                    "code": "HTTP 429 Too Many Requests",
+                    "status": "error"
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        OpenAIException exception =
+                assertThrows(
+                        OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
+
+        // Matches RATE_LIMIT_PATTERN (\b429\b) and resolves to 429 status code
+        assertEquals(429, exception.getStatusCode());
+        assertEquals("HTTP 429 Too Many Requests", exception.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("Should not falsely resolve string codes containing 429 as rate limit error")
+    void testFalsePositiveRateLimitStringError() {
+        String errorResponse =
+                """
+                {
+                    "code": "err_4291_token",
+                    "message": "Token limit error, not a rate limit",
+                    "status": "error"
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        OpenAIException exception =
+                assertThrows(
+                        OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
+
+        // Cannot accurately match word boundary 429, so fallback to default 400
+        assertEquals(400, exception.getStatusCode());
+        assertEquals("err_4291_token", exception.getErrorCode());
     }
 }

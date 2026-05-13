@@ -52,9 +52,36 @@ class ToolCallTest {
 
             assertEquals("call-123", toolCall.getId());
             assertEquals("function", toolCall.getType());
+            assertNull(toolCall.getIndex());
             assertNotNull(toolCall.getFunction());
             assertEquals("get_weather", toolCall.getFunction().getName());
             assertEquals("{\"city\":\"Hangzhou\"}", toolCall.getFunction().getArguments());
+        }
+
+        @Test
+        @DisplayName("Should create tool call with index for streaming")
+        void shouldCreateToolCallWithIndexForStreaming() {
+            ToolCall toolCall =
+                    new ToolCall(0, "call-123", "get_weather", "{\"city\":\"Hangzhou\"}");
+
+            assertEquals(0, toolCall.getIndex());
+            assertEquals("call-123", toolCall.getId());
+            assertEquals("function", toolCall.getType());
+            assertNotNull(toolCall.getFunction());
+            assertEquals("get_weather", toolCall.getFunction().getName());
+            assertEquals("{\"city\":\"Hangzhou\"}", toolCall.getFunction().getArguments());
+        }
+
+        @Test
+        @DisplayName("Should create tool call with multiple indices")
+        void shouldCreateToolCallWithMultipleIndices() {
+            ToolCall toolCall1 = new ToolCall(0, "call-1", "tool1", "{}");
+            ToolCall toolCall2 = new ToolCall(1, "call-2", "tool2", "{}");
+            ToolCall toolCall3 = new ToolCall(2, "call-3", "tool3", "{}");
+
+            assertEquals(0, toolCall1.getIndex());
+            assertEquals(1, toolCall2.getIndex());
+            assertEquals(2, toolCall3.getIndex());
         }
     }
 
@@ -104,10 +131,12 @@ class ToolCallTest {
 
             toolCall.setId("custom-id");
             toolCall.setType("custom-type");
+            toolCall.setIndex(5);
             toolCall.setFunction(new ToolCall.FunctionCall("func", "{}"));
 
             assertEquals("custom-id", toolCall.getId());
             assertEquals("custom-type", toolCall.getType());
+            assertEquals(5, toolCall.getIndex());
             assertNotNull(toolCall.getFunction());
             assertEquals("func", toolCall.getFunction().getName());
         }

@@ -26,6 +26,7 @@ import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
 import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
+import io.agentscope.core.tool.ToolSchemaModule;
 import java.lang.reflect.Type;
 import java.util.Map;
 
@@ -56,6 +57,8 @@ import java.util.Map;
  */
 public class JsonSchemaUtils {
 
+    private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = false;
+
     private static final SchemaGenerator schemaGenerator;
 
     static {
@@ -63,10 +66,17 @@ public class JsonSchemaUtils {
         JacksonModule jacksonModule =
                 new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
 
+        ToolSchemaModule toolSchemaModule =
+                PROPERTY_REQUIRED_BY_DEFAULT
+                        ? new ToolSchemaModule()
+                        : new ToolSchemaModule(
+                                ToolSchemaModule.Option.PROPERTY_REQUIRED_FALSE_BY_DEFAULT);
+
         SchemaGeneratorConfigBuilder configBuilder =
                 new SchemaGeneratorConfigBuilder(
                                 SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
                         .with(jacksonModule)
+                        .with(toolSchemaModule)
                         .with(Option.PLAIN_DEFINITION_KEYS)
                         .without(Option.SCHEMA_VERSION_INDICATOR);
         SchemaGeneratorConfig config = configBuilder.build();

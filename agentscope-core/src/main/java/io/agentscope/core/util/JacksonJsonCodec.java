@@ -19,8 +19,10 @@ package io.agentscope.core.util;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import java.lang.reflect.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,6 +137,16 @@ public class JacksonJsonCodec implements JsonCodec {
             return objectMapper.convertValue(from, toTypeRef);
         } catch (IllegalArgumentException e) {
             throw new JsonException("Failed to convert value", e);
+        }
+    }
+
+    @Override
+    public Object convertValue(Object from, Type toType) {
+        try {
+            JavaType javaType = objectMapper.getTypeFactory().constructType(toType);
+            return objectMapper.convertValue(from, javaType);
+        } catch (IllegalArgumentException e) {
+            throw new JsonException("Failed to convert value to " + toType.getTypeName(), e);
         }
     }
 }

@@ -54,6 +54,13 @@ public class OpenAIException extends RuntimeException {
         this.responseBody = responseBody;
     }
 
+    public OpenAIException(String message, String errorCode, String responseBody) {
+        super(message);
+        this.statusCode = null;
+        this.errorCode = errorCode;
+        this.responseBody = responseBody;
+    }
+
     /**
      * Factory method to create appropriate exception subclass based on status code.
      *
@@ -64,7 +71,10 @@ public class OpenAIException extends RuntimeException {
      * @return Appropriate exception subclass
      */
     public static OpenAIException create(
-            int statusCode, String message, String errorCode, String responseBody) {
+            Integer statusCode, String message, String errorCode, String responseBody) {
+        if (null == statusCode) {
+            return new OpenAIException(message, errorCode, responseBody);
+        }
         return switch (statusCode) {
             case 400 -> new BadRequestException(message, errorCode, responseBody);
             case 401 -> new AuthenticationException(message, errorCode, responseBody);

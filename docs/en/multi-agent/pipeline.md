@@ -1,286 +1,376 @@
 # Pipeline
 
-Pipelines provide composition patterns for multi-agent workflows in AgentScope. They serve as syntax sugar for chaining agents together, simplifying complex orchestration logic.
+The pipeline example uses **Spring AI Alibaba** flow agents (**SequentialAgent**, **ParallelAgent**, **LoopAgent**) with **AgentScopeAgent** sub-agents and AgentScope **DashScopeChatModel** (`Model`). Each pipeline is built from ReActAgent-based AgentScopeAgents and invoked via `PipelineService`.
 
-## Overview
+**Location**: `agentscope-examples/multiagent-patterns/pipeline/`
 
-AgentScope provides two main pipeline types:
+## Prerequisites
 
-- **SequentialPipeline**: Agents execute in order, each receiving the previous agent's output
-- **FanoutPipeline**: Multiple agents process the same input (in parallel or sequentially)
+- JDK 17+
+- Maven 3.6+
+- **DashScope API key**: `export AI_DASHSCOPE_API_KEY=your-key` or set `spring.ai.dashscope.api-key` in `application.yml`
 
-Additionally, the `Pipelines` utility class provides static factory methods for quick pipeline creation.
+## Model configuration
 
-## SequentialPipeline
-
-SequentialPipeline executes agents one by one, where the output of the previous agent becomes the input of the next agent.
-
-```
-Input → Agent1 → Agent2 → Agent3 → Output
-```
-
-### Basic Usage
-
-Use the `Pipelines.sequential()` static method for quick execution:
+The example uses a single `Model` bean (DashScopeChatModel) shared by all pipeline sub-agents:
 
 ```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
+package com.alibaba.cloud.ai.examples.multiagents.pipeline;
+
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.pipeline.Pipelines;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class PipelineModelConfig {
+
+	@Bean
+	public Model dashScopeChatModel() {
+		String key = System.getenv("AI_DASHSCOPE_API_KEY");
+		return DashScopeChatModel.builder()
+				.apiKey(key)
+				.modelName("qwen-plus")
+				.build();
+	}
+}
+```
+
+## 1. SequentialAgent: natural language → SQL → score
+
+**Scenario:** User describes a query in natural language. The pipeline (1) **SQL Generator** converts it to MySQL SQL, (2) **SQL Rater** scores how well the SQL matches user intent (0–1). Sub-agents run in sequence; each output feeds the next.
+
+**Example input:** "List all orders from the last 30 days with total amount greater than 500."
+
+### Implementation
+
+```java
+package com.alibaba.cloud.ai.examples.multiagents.pipeline.sequential;
+
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.graph.agent.flow.agent.SequentialAgent;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
-// Create model
-DashScopeChatModel model = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen3-max")
-        .build();
+@Configuration
+public class SequentialPipelineConfig {
 
-// Create agents for different stages
-ReActAgent researcher = ReActAgent.builder()
-        .name("Researcher")
-        .sysPrompt("You are a researcher. Analyze the topic and provide key findings.")
-        .model(model)
-        .build();
+	private static final String SQL_GENERATOR_PROMPT = """
+			You are a MySQL database expert. Given the user's natural language request, output the corresponding SQL statement.
+			Only output valid MySQL SQL. Do not include explanations.
+			""";
 
-ReActAgent writer = ReActAgent.builder()
-        .name("Writer")
-        .sysPrompt("You are a writer. Based on the research findings, write a concise summary.")
-        .model(model)
-        .build();
+	private static final String SQL_RATER_PROMPT = """
+			You are a SQL quality reviewer. Given the user's natural language request and the generated SQL,
+			output a single float score between 0 and 1. The score indicates how well the SQL matches the user intent.
+			Output ONLY the number, no other text. Example: 0.85
+			""";
 
-ReActAgent editor = ReActAgent.builder()
-        .name("Editor")
-        .sysPrompt("You are an editor. Polish and finalize the summary.")
-        .model(model)
-        .build();
+	@Bean("sequentialSqlAgent")
+	public SequentialAgent sequentialSqlAgent(Model dashScopeChatModel) {
+		ReActAgent.Builder sqlGenBuilder = ReActAgent.builder()
+				.name("sql_generator")
+				.model(dashScopeChatModel)
+				.description("Converts natural language to MySQL SQL")
+				.sysPrompt(SQL_GENERATOR_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent sqlGenerateAgent = AgentScopeAgent.fromBuilder(sqlGenBuilder)
+				.name("sql_generator")
+				.description("Converts natural language to MySQL SQL")
+				.instruction("{input}")
+				.includeContents(false)
+				.outputKey("sql")
+				.build();
 
-// Create input message
-Msg input = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(TextBlock.builder().text("Artificial Intelligence in Healthcare").build())
-        .build();
+		ReActAgent.Builder sqlRaterBuilder = ReActAgent.builder()
+				.name("sql_rater")
+				.model(dashScopeChatModel)
+				.description("Scores SQL against user intent")
+				.sysPrompt(SQL_RATER_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent sqlRatingAgent = AgentScopeAgent.fromBuilder(sqlRaterBuilder)
+				.name("sql_rater")
+				.description("Scores SQL against user intent")
+				.instruction("Here's the generated SQL:\n {sql}.\n\n Here's the original user request:\n {input}.")
+				.includeContents(false)
+				.outputKey("score")
+				.build();
 
-// Execute sequential pipeline
-// Researcher → Writer → Editor
-Msg result = Pipelines.sequential(List.of(researcher, writer, editor), input).block();
-
-System.out.println("Final result: " + result.getTextContent());
-```
-
-### Using Builder Pattern
-
-For reusable pipelines, use `SequentialPipeline.builder()`:
-
-```java
-import io.agentscope.core.pipeline.SequentialPipeline;
-
-// Create a reusable pipeline
-SequentialPipeline pipeline = SequentialPipeline.builder()
-        .addAgent(researcher)
-        .addAgent(writer)
-        .addAgent(editor)
-        .build();
-
-// Execute the pipeline
-Msg result1 = pipeline.execute(input).block();
-
-// Reuse with different input
-Msg anotherInput = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(TextBlock.builder().text("Climate Change Solutions").build())
-        .build();
-
-Msg result2 = pipeline.execute(anotherInput).block();
-```
-
-### Structured Output Support
-
-The last agent in the pipeline can produce structured output:
-
-```java
-// Define output structure
-public class ArticleSummary {
-    public String title;
-    public String summary;
-    public List<String> keyPoints;
-}
-
-// Execute with structured output (only applies to the last agent)
-Msg result = pipeline.execute(input, ArticleSummary.class).block();
-
-// Extract structured data
-ArticleSummary article = result.getStructuredData(ArticleSummary.class);
-System.out.println("Title: " + article.title);
-System.out.println("Summary: " + article.summary);
-```
-
-## FanoutPipeline
-
-FanoutPipeline distributes the same input to multiple agents and collects all their responses. This is useful when you want to gather different perspectives or expertise on the same topic.
-
-```
-         ┌→ Agent1 → Output1
-Input →──┼→ Agent2 → Output2
-         └→ Agent3 → Output3
-```
-
-### Basic Usage
-
-Use the `Pipelines.fanout()` static method for concurrent execution:
-
-```java
-import io.agentscope.core.pipeline.Pipelines;
-
-// Create agents with different perspectives
-ReActAgent optimist = ReActAgent.builder()
-        .name("Optimist")
-        .sysPrompt("You are an optimist. Analyze the positive aspects of the topic.")
-        .model(model)
-        .build();
-
-ReActAgent pessimist = ReActAgent.builder()
-        .name("Pessimist")
-        .sysPrompt("You are a pessimist. Analyze the potential risks and challenges.")
-        .model(model)
-        .build();
-
-ReActAgent realist = ReActAgent.builder()
-        .name("Realist")
-        .sysPrompt("You are a realist. Provide a balanced analysis.")
-        .model(model)
-        .build();
-
-// Execute fanout pipeline (concurrent by default)
-List<Msg> results = Pipelines.fanout(
-        List.of(optimist, pessimist, realist),
-        input
-).block();
-
-// Process all results
-for (Msg result : results) {
-    System.out.println(result.getName() + ": " + result.getTextContent());
+		return SequentialAgent.builder()
+				.name("sequential_sql_agent")
+				.description("Natural language to SQL pipeline: generates SQL and scores its quality")
+				.subAgents(List.of(sqlGenerateAgent, sqlRatingAgent))
+				.build();
+	}
 }
 ```
 
-### Concurrent vs Sequential Execution
+- **SQL Generator**: `instruction("{input}")`, `outputKey("sql")` — receives user input, writes generated SQL into state key `sql`.
+- **SQL Rater**: `instruction("... {sql} ... {input} ...")`, `outputKey("score")` — receives previous `sql` and original `input`, writes score into state key `score`.
 
-FanoutPipeline supports two execution modes:
+## 2. ParallelAgent: multi-angle research
 
-| Mode | Method | Behavior | Use Case |
-|------|--------|----------|----------|
-| **Concurrent** | `fanout()` | All agents run in parallel using `boundedElastic()` scheduler | Better performance for I/O-bound operations |
-| **Sequential** | `fanoutSequential()` | Agents run one by one | Predictable ordering, resource control |
+**Scenario:** User provides a topic; the pipeline researches it from three angles **in parallel**: technology, finance/business, and market/industry. Results are merged into a single report (`research_report`).
 
-```java
-// Concurrent execution (default) - better for API calls
-List<Msg> concurrent = Pipelines.fanout(agents, input).block();
+**Example input:** "Research the current state of large language models." (Demo uses "AI agents in enterprise software".)
 
-// Sequential execution - predictable order
-List<Msg> sequential = Pipelines.fanoutSequential(agents, input).block();
-```
-
-### Using Builder Pattern
+### Implementation
 
 ```java
-import io.agentscope.core.pipeline.FanoutPipeline;
+package com.alibaba.cloud.ai.examples.multiagents.pipeline.parallel;
 
-// Create concurrent fanout pipeline
-FanoutPipeline concurrentPipeline = FanoutPipeline.builder()
-        .addAgent(optimist)
-        .addAgent(pessimist)
-        .addAgent(realist)
-        .concurrent()  // Default mode
-        .build();
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.graph.agent.flow.agent.ParallelAgent;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-// Create sequential fanout pipeline
-FanoutPipeline sequentialPipeline = FanoutPipeline.builder()
-        .addAgent(optimist)
-        .addAgent(pessimist)
-        .addAgent(realist)
-        .sequential()
-        .build();
+import java.util.List;
 
-// Execute
-List<Msg> results = concurrentPipeline.execute(input).block();
-```
+@Configuration
+public class ParallelPipelineConfig {
 
-## Pipelines Utility Class
+	private static final String TECH_RESEARCH_PROMPT = """
+			You are a technology analyst. Research the given topic from a technology perspective.
+			Provide a concise 2-3 paragraph analysis covering: key technologies, trends, and innovations.
+			Focus on technical aspects only.
+			""";
 
-The `Pipelines` class provides static factory methods for quick pipeline operations:
+	private static final String FINANCE_RESEARCH_PROMPT = """
+			You are a financial analyst. Research the given topic from a finance and business perspective.
+			Provide a concise 2-3 paragraph analysis covering: market size, investment trends, business models.
+			Focus on financial and business aspects only.
+			""";
 
-### Method Reference
+	private static final String MARKET_RESEARCH_PROMPT = """
+			You are a market analyst. Research the given topic from an industry and market perspective.
+			Provide a concise 2-3 paragraph analysis covering: competitive landscape, growth drivers, challenges.
+			Focus on market and industry aspects only.
+			""";
 
-| Method | Return Type | Description |
-|--------|-------------|-------------|
-| `sequential(agents, input)` | `Mono<Msg>` | Execute agents sequentially with input |
-| `sequential(agents)` | `Mono<Msg>` | Execute agents sequentially without input |
-| `sequential(agents, input, outputClass)` | `Mono<Msg>` | Sequential with structured output |
-| `fanout(agents, input)` | `Mono<List<Msg>>` | Execute agents concurrently |
-| `fanout(agents)` | `Mono<List<Msg>>` | Execute agents concurrently without input |
-| `fanoutSequential(agents, input)` | `Mono<List<Msg>>` | Execute agents sequentially (same input) |
-| `createSequential(agents)` | `SequentialPipeline` | Create reusable sequential pipeline |
-| `createFanout(agents)` | `FanoutPipeline` | Create reusable concurrent fanout pipeline |
-| `createFanoutSequential(agents)` | `FanoutPipeline` | Create reusable sequential fanout pipeline |
+	@Bean("parallelResearchAgent")
+	public ParallelAgent parallelResearchAgent(Model dashScopeChatModel) {
+		ReActAgent.Builder techBuilder = ReActAgent.builder()
+				.name("tech_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from technology perspective")
+				.sysPrompt(TECH_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent techResearcher = AgentScopeAgent.fromBuilder(techBuilder)
+				.name("tech_researcher")
+				.description("Researches from technology perspective")
+				.instruction("Research the following topic: {input}.")
+				.includeContents(false)
+				.outputKey("tech_analysis")
+				.build();
 
-### Pipeline Composition
+		ReActAgent.Builder financeBuilder = ReActAgent.builder()
+				.name("finance_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from finance perspective")
+				.sysPrompt(FINANCE_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent financeResearcher = AgentScopeAgent.fromBuilder(financeBuilder)
+				.name("finance_researcher")
+				.description("Researches from finance perspective")
+				.instruction("Research the following topic: {input}.")
+				.includeContents(false)
+				.outputKey("finance_analysis")
+				.build();
 
-You can compose multiple pipelines:
+		ReActAgent.Builder marketBuilder = ReActAgent.builder()
+				.name("market_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from market perspective")
+				.sysPrompt(MARKET_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent marketResearcher = AgentScopeAgent.fromBuilder(marketBuilder)
+				.name("market_researcher")
+				.description("Researches from market perspective")
+				.instruction("Research the following topic: {input}.")
+				.outputKey("market_analysis")
+				.build();
 
-```java
-// Create two sequential pipelines
-SequentialPipeline research = Pipelines.createSequential(List.of(researcher, analyst));
-SequentialPipeline writing = Pipelines.createSequential(List.of(writer, editor));
-
-// Compose them into a larger pipeline
-Pipeline<Msg> combined = Pipelines.compose(research, writing);
-
-// Execute the combined pipeline
-Msg result = combined.execute(input).block();
-```
-
-## Combining Pipeline with MsgHub
-
-For complex workflows, you can combine Pipeline with MsgHub:
-
-```java
-import io.agentscope.core.pipeline.MsgHub;
-
-// Stage 1: Parallel analysis using FanoutPipeline
-List<Msg> analyses = Pipelines.fanout(List.of(optimist, pessimist, realist), input).block();
-
-// Stage 2: Group discussion using MsgHub
-try (MsgHub hub = MsgHub.builder()
-        .participants(optimist, pessimist, realist)
-        .build()) {
-
-    hub.enter().block();
-
-    // Broadcast all analyses
-    hub.broadcast(analyses).block();
-
-    // Each agent responds to others' analyses
-    optimist.call().block();
-    pessimist.call().block();
-    realist.call().block();
+		return ParallelAgent.builder()
+				.name("parallel_research_agent")
+				.description("Multi-topic research: analyzes a topic from tech, finance, and market angles in parallel")
+				.subAgents(List.of(techResearcher, financeResearcher, marketResearcher))
+				.mergeStrategy(new ParallelAgent.DefaultMergeStrategy())
+				.mergeOutputKey("research_report")
+				.maxConcurrency(3)
+				.build();
+	}
 }
+```
 
-// Stage 3: Final synthesis using SequentialPipeline
-ReActAgent synthesizer = ReActAgent.builder()
-        .name("Synthesizer")
-        .sysPrompt("Synthesize all perspectives into a final conclusion.")
-        .model(model)
-        .build();
+- Each sub-agent has `instruction("Research the following topic: {input}.")` and its own `outputKey` (`tech_analysis`, `finance_analysis`, `market_analysis`).
+- **DefaultMergeStrategy** merges sub-agent outputs into one; merged result is written to **mergeOutputKey** `research_report`.
 
-Msg conclusion = synthesizer.call(input).block();
+## 3. LoopAgent: SQL refinement until quality threshold
+
+**Scenario:** Generate SQL from natural language and **iteratively refine** until the quality score exceeds 0.5. Each iteration runs an inner **SequentialAgent**: SQL Generator → SQL Rater. Loop continues until score > 0.5 or max iterations.
+
+**Example input:** "Find customers who placed more than 3 orders in 2024."
+
+### Implementation
+
+`LoopPipelineConfig` builds the same SQL Generator and SQL Rater AgentScopeAgents as `SequentialPipelineConfig` (same prompts, `instruction`, `outputKey`). It then wraps them in a **SequentialAgent** and that in a **LoopAgent** with a condition-based loop strategy:
+
+```java
+SequentialAgent sqlAgent = SequentialAgent.builder()
+		.name("sql_agent")
+		.description("Generates SQL and scores its quality")
+		.subAgents(List.of(sqlGenerateAgent, sqlRatingAgent))
+		.build();
+
+return LoopAgent.builder()
+		.name("loop_sql_refinement_agent")
+		.description("Iteratively refines SQL until quality score exceeds " + QUALITY_THRESHOLD)
+		.subAgent(sqlAgent)
+		.loopStrategy(LoopMode.condition(messages -> {
+			if (messages == null || messages.isEmpty()) return false;
+			String text = messages.get(messages.size() - 1).getText();
+			if (text == null || text.isBlank()) return false;
+			try {
+				double score = Double.parseDouble(text.trim());
+				return score > QUALITY_THRESHOLD;
+			} catch (NumberFormatException e) {
+				return false;
+			}
+		}))
+		.build();
+```
+
+- **LoopAgent** wraps a single **SequentialAgent** (`sql_agent`) that runs SQL Generator then SQL Rater each iteration.
+- **loopStrategy**: `LoopMode.condition(...)` — receives the last turn’s messages, reads the last message (rater output), parses it as a number; returns `true` when score > 0.5 to stop the loop.
+
+## Invoking pipelines: PipelineService
+
+`PipelineService` is wired with the three agents and exposes `runSequential`, `runParallel`, and `runLoop`. Each method invokes the corresponding agent with a string input and returns a result record.
+
+```java
+// Inject in your code
+@Autowired
+PipelineService pipelineService;
+
+// Sequential: natural language → SQL → score
+PipelineService.SequentialResult seq = pipelineService.runSequential(
+		"List all orders from the last 30 days with total amount greater than 500");
+// seq.input(), seq.sql(), seq.score()
+
+// Parallel: one topic → merged research report
+PipelineService.ParallelResult par = pipelineService.runParallel(
+		"AI agents in enterprise software");
+// par.input(), par.researchReport()
+
+// Loop: SQL refinement until score > 0.5
+PipelineService.LoopResult loop = pipelineService.runLoop(
+		"Find customers who placed more than 3 orders in 2024");
+// loop.input(), loop.sql(), loop.score()
+```
+
+**Result types:**
+
+| Method | Return type | Keys used |
+|--------|-------------|-----------|
+| `runSequential(input)` | `SequentialResult(input, sql, score)` | `sql`, `score` from `OverAllState` |
+| `runParallel(input)` | `ParallelResult(input, researchReport)` | `research_report` from `OverAllState` |
+| `runLoop(input)` | `LoopResult(input, sql, score)` | `sql`, `score` from `OverAllState` |
+
+Service implementation (extract of how results are read from state):
+
+```java
+public SequentialResult runSequential(String userInput) throws GraphRunnerException {
+	Optional<OverAllState> resultOpt = sequentialSqlAgent.invoke(userInput);
+	if (resultOpt.isEmpty()) {
+		return new SequentialResult(userInput, null, null);
+	}
+	OverAllState state = resultOpt.get();
+	String sql = extractText(state.value(SQL_KEY));
+	String score = extractText(state.value(SCORE_KEY));
+	return new SequentialResult(userInput, sql, score);
+}
+```
+
+## Optional demo runner
+
+When `pipeline.runner.enabled=true`, `PipelineCommandRunner` runs a demo for each pipeline on startup with sample inputs and logs the results:
+
+```java
+@Component
+@ConditionalOnProperty(name = "pipeline.runner.enabled", havingValue = "true")
+public class PipelineCommandRunner implements ApplicationRunner {
+
+	private final PipelineService pipelineService;
+
+	@Override
+	public void run(ApplicationArguments args) throws Exception {
+		runSequentialDemo();  // "List all orders from the last 30 days..."
+		runParallelDemo();    // "AI agents in enterprise software"
+		runLoopDemo();        // "Find customers who placed more than 3 orders in 2024"
+	}
+	// ...
+}
+```
+
+## Build and run
+
+From the repo root:
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline -am -B package -DskipTests
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
+```
+
+**With demo runner:**
+
+```bash
+export pipeline.runner.enabled=true
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
+```
+
+Or in `application.yml`: `pipeline.runner.enabled: true`.
+
+## Configuration
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `spring.ai.dashscope.api-key` | (env `AI_DASHSCOPE_API_KEY`) | DashScope API key for the model |
+| `pipeline.runner.enabled` | `false` | If `true`, run Sequential, Parallel, and Loop demos on startup |
+
+## Project layout
+
+```
+agentscope-examples/multiagent-patterns/pipeline/
+├── README.md
+├── pom.xml
+└── src/main/
+    ├── java/.../pipeline/
+    │   ├── PipelineApplication.java
+    │   ├── PipelineModelConfig.java        # Model (DashScopeChatModel) bean
+    │   ├── PipelineService.java            # runSequential, runParallel, runLoop
+    │   ├── PipelineCommandRunner.java      # optional demo (pipeline.runner.enabled)
+    │   ├── PipelineRunnerConfig.java       # PipelineService bean
+    │   ├── sequential/
+    │   │   └── SequentialPipelineConfig.java
+    │   ├── parallel/
+    │   │   └── ParallelPipelineConfig.java
+    │   └── loop/
+    │       └── LoopPipelineConfig.java
+    └── resources/
+        └── application.yml
 ```
 
 ## Related Documentation
 
-- [MsgHub](./msghub.md) - Message broadcasting for multi-agent conversations
+- [Routing](./routing.md) - Classify and route to specialist agents
+- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
+- [Handoffs](./handoffs.md) - State-driven routing and transfer between agents
 - [Multi-Agent Debate](./multiagent-debate.md) - Debate workflow pattern

@@ -16,15 +16,22 @@
 package io.agentscope.core.formatter.openai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import io.agentscope.core.formatter.ResponseFormat;
+import io.agentscope.core.formatter.openai.dto.JsonSchema;
+import io.agentscope.core.formatter.openai.dto.OpenAIChoice;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.formatter.openai.dto.OpenAITool;
 import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
+import io.agentscope.core.formatter.openai.dto.OpenAIUsage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -33,6 +40,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.util.JsonSchemaUtils;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -282,8 +290,7 @@ class OpenAIChatFormatterTest {
         response.setCreated(1677652280L);
         response.setModel("gpt-4");
 
-        io.agentscope.core.formatter.openai.dto.OpenAIChoice choice =
-                new io.agentscope.core.formatter.openai.dto.OpenAIChoice();
+        OpenAIChoice choice = new OpenAIChoice();
         choice.setIndex(0);
         OpenAIMessage message =
                 OpenAIMessage.builder().role("assistant").content("Hello! How can I help?").build();
@@ -291,8 +298,7 @@ class OpenAIChatFormatterTest {
         choice.setFinishReason("stop");
         response.setChoices(List.of(choice));
 
-        io.agentscope.core.formatter.openai.dto.OpenAIUsage usage =
-                new io.agentscope.core.formatter.openai.dto.OpenAIUsage();
+        OpenAIUsage usage = new OpenAIUsage();
         usage.setPromptTokens(10);
         usage.setCompletionTokens(20);
         usage.setTotalTokens(30);
@@ -304,9 +310,7 @@ class OpenAIChatFormatterTest {
         assertNotNull(chatResponse);
         assertNotNull(chatResponse.getContent());
         assertEquals(
-                "Hello! How can I help?",
-                ((io.agentscope.core.message.TextBlock) chatResponse.getContent().get(0))
-                        .getText());
+                "Hello! How can I help?", ((TextBlock) chatResponse.getContent().get(0)).getText());
         assertNotNull(chatResponse.getUsage());
         assertEquals(10, chatResponse.getUsage().getInputTokens());
         assertEquals(20, chatResponse.getUsage().getOutputTokens());
@@ -492,6 +496,42 @@ class OpenAIChatFormatterTest {
         }
 
         @Test
+        @DisplayName("Should apply response_format parameter with ResponseFormat class")
+        void testApplyResponseFormatWithClass() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromType(User.class);
+            ResponseFormat responseFormat =
+                    ResponseFormat.jsonSchema(
+                            JsonSchema.builder()
+                                    .name("user_info")
+                                    .description("The user information")
+                                    .strict(true)
+                                    .schema(schema)
+                                    .build());
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("response_format", responseFormat)
+                            .build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertNotNull(request.getResponseFormat());
+            assertInstanceOf(ResponseFormat.class, request.getResponseFormat());
+            ResponseFormat format = (ResponseFormat) request.getResponseFormat();
+            assertEquals("json_schema", format.getType());
+            assertEquals("user_info", format.getJsonSchema().getName());
+            assertEquals("The user information", format.getJsonSchema().getDescription());
+            assertTrue(format.getJsonSchema().getStrict());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> properties =
+                    (Map<String, Object>) format.getJsonSchema().getSchema().get("properties");
+            assertTrue(properties.containsKey("name"));
+            assertTrue(properties.containsKey("age"));
+        }
+
+        @Test
         @DisplayName("Should add unknown parameters to extraParams")
         void testApplyUnknownParams() {
             OpenAIRequest request =
@@ -541,6 +581,16 @@ class OpenAIChatFormatterTest {
             // Should not throw, request should remain unchanged
             assertNull(request.getReasoningEffort());
         }
+
+        private record User(
+                @JsonPropertyDescription("The user name")
+                        @JsonProperty(value = "name", required = true)
+                        String name,
+                @JsonPropertyDescription("The user age")
+                        @JsonProperty(value = "age", required = true)
+                        int age,
+                @JsonPropertyDescription("The user email address") @JsonProperty("email")
+                        String email) {}
     }
 
     @Nested

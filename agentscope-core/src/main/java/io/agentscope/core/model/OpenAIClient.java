@@ -16,7 +16,6 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.Version;
-import io.agentscope.core.formatter.openai.dto.OpenAIError;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.model.exception.OpenAIException;
@@ -24,6 +23,7 @@ import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
+import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.net.URI;
@@ -91,10 +91,11 @@ public class OpenAIClient {
      * the transport.
      */
     public OpenAIClient() {
-        this(io.agentscope.core.model.transport.HttpTransportFactory.getDefault());
+        this(HttpTransportFactory.getDefault());
     }
 
     private static final Pattern VERSION_PATTERN = Pattern.compile(".*/v\\d+$");
+    private static final Pattern RATE_LIMIT_PATTERN = Pattern.compile(".*\\b429\\b.*");
 
     /**
      * Normalize the base URL by removing trailing slashes.
@@ -255,7 +256,7 @@ public class OpenAIClient {
         String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
         String effectiveApiKey = getEffectiveApiKey(apiKey);
 
-        // Allow options to override apiKey and baseUrl
+        // Allow options to override apiKey, baseUrl, and endpointPath
         if (options != null) {
             if (options.getApiKey() != null) {
                 effectiveApiKey = options.getApiKey();
@@ -265,7 +266,13 @@ public class OpenAIClient {
             }
         }
 
-        String apiUrl = buildApiUrl(effectiveBaseUrl, CHAT_COMPLETIONS_ENDPOINT);
+        // Get endpoint path from options or use default
+        String endpointPath = CHAT_COMPLETIONS_ENDPOINT;
+        if (options != null && options.getEndpointPath() != null) {
+            endpointPath = options.getEndpointPath();
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, endpointPath);
         String url = buildUrl(apiUrl, options);
 
         try {
@@ -326,22 +333,11 @@ public class OpenAIClient {
             }
 
             if (response.isError()) {
-                OpenAIError error = response.getError();
-                if (error == null) {
-                    throw new OpenAIException(
-                            "OpenAI API returned error but error details are null",
-                            400,
-                            "unknown_error",
-                            responseBody);
-                }
-                String errorMessage =
-                        error.getMessage() != null ? error.getMessage() : "Unknown error";
-                String errorCode = error.getCode() != null ? error.getCode() : "unknown_error";
+                String errorMessage = response.getEffectiveErrorMessage();
+                String errorCode = response.getEffectiveErrorCode();
+                int statusCode = resolveErrorStatusCode(httpResponse.getStatusCode(), errorCode);
                 throw OpenAIException.create(
-                        httpResponse.getStatusCode(),
-                        "OpenAI API error: " + errorMessage,
-                        errorCode,
-                        responseBody);
+                        statusCode, "OpenAI API error: " + errorMessage, errorCode, responseBody);
             }
 
             return response;
@@ -366,7 +362,7 @@ public class OpenAIClient {
         String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
         String effectiveApiKey = getEffectiveApiKey(apiKey);
 
-        // Allow options to override apiKey and baseUrl
+        // Allow options to override apiKey, baseUrl, and endpointPath
         if (options != null) {
             if (options.getApiKey() != null) {
                 effectiveApiKey = options.getApiKey();
@@ -376,7 +372,13 @@ public class OpenAIClient {
             }
         }
 
-        String apiUrl = buildApiUrl(effectiveBaseUrl, CHAT_COMPLETIONS_ENDPOINT);
+        // Get endpoint path from options or use default
+        String endpointPath = CHAT_COMPLETIONS_ENDPOINT;
+        if (options != null && options.getEndpointPath() != null) {
+            endpointPath = options.getEndpointPath();
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, endpointPath);
         String url = buildUrl(apiUrl, options);
 
         try {
@@ -402,22 +404,16 @@ public class OpenAIClient {
                                 if (response != null) {
                                     // Check for error in streaming response chunk
                                     if (response.isError()) {
-                                        OpenAIError error = response.getError();
-                                        String errorMessage =
-                                                error != null && error.getMessage() != null
-                                                        ? error.getMessage()
-                                                        : "Unknown error in streaming response";
-                                        String errorCode =
-                                                error != null && error.getCode() != null
-                                                        ? error.getCode()
-                                                        : null;
+                                        String errorMessage = response.getEffectiveErrorMessage();
+                                        String errorCode = response.getEffectiveErrorCode();
+                                        int statusCode = resolveErrorStatusCode(200, errorCode);
                                         sink.error(
                                                 OpenAIException.create(
-                                                        400,
+                                                        statusCode,
                                                         "OpenAI API error in streaming response: "
                                                                 + errorMessage,
                                                         errorCode,
-                                                        null));
+                                                        data));
                                         return;
                                     }
                                     sink.next(response);
@@ -426,13 +422,16 @@ public class OpenAIClient {
                             })
                     .onErrorMap(
                             ex -> {
-                                if (ex instanceof HttpTransportException) {
-                                    return OpenAIException.create(
-                                            ((HttpTransportException) ex).getStatusCode(),
+                                if (ex instanceof HttpTransportException hte) {
+                                    Integer code = hte.getStatusCode();
+                                    String msg =
                                             "HTTP transport error during streaming: "
-                                                    + ex.getMessage(),
-                                            null,
-                                            ((HttpTransportException) ex).getResponseBody());
+                                                    + ex.getMessage();
+                                    if (code != null) {
+                                        return OpenAIException.create(
+                                                code, msg, null, hte.getResponseBody());
+                                    }
+                                    return new OpenAIException(msg, ex);
                                 }
                                 return ex;
                             });
@@ -440,6 +439,43 @@ public class OpenAIClient {
             return Flux.error(
                     new OpenAIException("Failed to initialize request: " + e.getMessage(), e));
         }
+    }
+
+    /**
+     * Resolve the actual HTTP error status code when the API returns 200 OK
+     * but contains an error payload.
+     *
+     * @param httpStatusCode the original HTTP status code
+     * @param errorCode the error code extracted from the response body
+     * @return a valid HTTP error status code (4xx or 5xx)
+     */
+    private int resolveErrorStatusCode(int httpStatusCode, String errorCode) {
+        if (httpStatusCode >= 400) {
+            return httpStatusCode;
+        }
+
+        // Handling HTTP 200 with Body containing errors
+        if (errorCode != null) {
+            // Use a regex to ensure "429" appears as a standalone word
+            // For example, "HTTP 429 Too Many Requests"
+            // And compatible with OpenAI's standard strings
+            if (RATE_LIMIT_PATTERN.matcher(errorCode).matches()
+                    || "rate_limit_exceeded".equalsIgnoreCase(errorCode)) {
+                return 429;
+            }
+
+            try {
+                int parsedCode = Integer.parseInt(errorCode);
+                if (parsedCode >= 400 && parsedCode <= 599) {
+                    return parsedCode;
+                }
+            } catch (NumberFormatException e) {
+                // Ignore error codes of non numeric types
+            }
+        }
+
+        // Extraction failed, return to default
+        return 400;
     }
 
     /**

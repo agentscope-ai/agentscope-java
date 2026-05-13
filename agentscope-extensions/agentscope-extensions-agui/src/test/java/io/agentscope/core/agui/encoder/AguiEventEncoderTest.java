@@ -129,14 +129,25 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeToolCallEndEvent() {
-        AguiEvent.ToolCallEnd event =
-                new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", "Success");
+        AguiEvent.ToolCallEnd event = new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1");
 
         String sse = encoder.encode(event);
 
         assertNotNull(sse);
         assertTrue(sse.contains("\"type\":\"TOOL_CALL_END\""));
-        assertTrue(sse.contains("\"result\":\"Success\""));
+    }
+
+    @Test
+    void testEncodeToolCallResultEvent() {
+        AguiEvent.ToolCallResult event =
+                new AguiEvent.ToolCallResult(
+                        "thread-1", "run-1", "tc-1", "Success", "tool", "msg-1");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TOOL_CALL_RESULT\""));
+        assertTrue(sse.contains("\"content\":\"Success\""));
     }
 
     @Test
@@ -204,17 +215,6 @@ class AguiEventEncoderTest {
         String keepAlive = encoder.keepAlive();
 
         assertEquals(": keep-alive\n\n", keepAlive);
-    }
-
-    @Test
-    void testEncodeEventWithNullResult() {
-        AguiEvent.ToolCallEnd event = new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", null);
-
-        String sse = encoder.encode(event);
-
-        assertNotNull(sse);
-        assertTrue(sse.contains("\"type\":\"TOOL_CALL_END\""));
-        assertTrue(sse.contains("\"result\":null"));
     }
 
     @Test

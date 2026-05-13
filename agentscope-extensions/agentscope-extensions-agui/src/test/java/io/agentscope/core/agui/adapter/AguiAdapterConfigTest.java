@@ -38,6 +38,7 @@ class AguiAdapterConfigTest {
         assertEquals(ToolMergeMode.MERGE_FRONTEND_PRIORITY, config.getToolMergeMode());
         assertTrue(config.isEmitStateEvents());
         assertTrue(config.isEmitToolCallArgs());
+        assertFalse(config.isEnableReasoning()); // Default should be false
         assertEquals(Duration.ofMinutes(10), config.getRunTimeout());
         assertNull(config.getDefaultAgentId());
     }
@@ -131,6 +132,7 @@ class AguiAdapterConfigTest {
                         .toolMergeMode(ToolMergeMode.AGENT_ONLY)
                         .emitStateEvents(false)
                         .emitToolCallArgs(false)
+                        .enableReasoning(true)
                         .runTimeout(Duration.ofHours(1))
                         .defaultAgentId("my-agent")
                         .build();
@@ -138,6 +140,7 @@ class AguiAdapterConfigTest {
         assertEquals(ToolMergeMode.AGENT_ONLY, config.getToolMergeMode());
         assertFalse(config.isEmitStateEvents());
         assertFalse(config.isEmitToolCallArgs());
+        assertTrue(config.isEnableReasoning());
         assertEquals(Duration.ofHours(1), config.getRunTimeout());
         assertEquals("my-agent", config.getDefaultAgentId());
     }

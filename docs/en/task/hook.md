@@ -15,7 +15,7 @@ AgentScope Java uses a **unified event model** where all hooks implement the `on
 
 | Event Type            | Timing                    | Modifiable | Description                              |
 |-----------------------|---------------------------|------------|------------------------------------------|
-| PreCallEvent          | Before agent call         | ❌         | Before agent starts processing (notification-only)           |
+| PreCallEvent          | Before agent call         | ✅         | Before agent starts processing (modifiable input messages)           |
 | PostCallEvent         | After agent call          | ✅         | After agent completes response (can modify final message)           |
 | PreReasoningEvent     | Before reasoning          | ✅         | Before LLM reasoning (can modify input messages)          |
 | PostReasoningEvent    | After reasoning           | ✅         | After LLM reasoning (can modify reasoning result)            |
@@ -23,6 +23,9 @@ AgentScope Java uses a **unified event model** where all hooks implement the `on
 | PreActingEvent        | Before tool execution     | ✅         | Before tool execution (can modify tool parameters)                    |
 | PostActingEvent       | After tool execution      | ✅         | After tool execution (can modify tool result)                |
 | ActingChunkEvent      | During tool stream        | ❌         | Tool execution progress chunks (notification-only)    |
+| PreSummaryEvent       | Before summary            | ✅         | Before summary generation when max iterations reached         |
+| PostSummaryEvent      | After summary             | ✅         | After summary generation (can modify summary result)       |
+| SummaryChunkEvent     | During summary stream     | ❌         | Each chunk of streaming summary (notification-only)           |
 | ErrorEvent            | On error                  | ❌         | When errors occur (notification-only)                        |
 
 ## Creating Hooks
@@ -129,6 +132,44 @@ ReActAgent agent = ReActAgent.builder()
 ```
 
 Hooks are immutable after agent construction.
+
+## Built-in JSONL Trace Exporter
+
+For local debugging and offline troubleshooting, AgentScope Java provides a built-in JSONL exporter:
+
+> Warning: the JSONL trace exporter writes full prompts, messages, tool inputs, and error stack
+> traces to local files. These records may contain sensitive user data, credentials, or other
+> secrets, so only enable it in trusted environments and handle the output file as sensitive data.
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.hook.recorder.JsonlTraceExporter;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+
+public class JsonlTraceExample {
+
+    public void run(Model model, Toolkit toolkit) throws IOException {
+        try (JsonlTraceExporter exporter =
+                JsonlTraceExporter.builder(Path.of("logs", "agentscope-trace.jsonl"))
+                        .includeReasoningChunks(true) // optional
+                        .includeActingChunks(true)    // optional
+                        .build()) {
+            ReActAgent agent = ReActAgent.builder()
+                    .name("Assistant")
+                    .model(model)
+                    .toolkit(toolkit)
+                    .hooks(List.of(exporter))
+                    .build();
+
+            // Use the agent while the exporter is still open
+        }
+    }
+}
+```
 
 ## Hook Examples
 

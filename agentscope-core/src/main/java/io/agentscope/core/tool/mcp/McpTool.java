@@ -21,7 +21,9 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -59,6 +61,7 @@ public class McpTool implements AgentTool {
     private final String name;
     private final String description;
     private final Map<String, Object> parameters;
+    private final Map<String, Object> outputSchema;
     private final McpClientWrapper clientWrapper;
     private final Map<String, Object> presetArguments;
 
@@ -75,7 +78,7 @@ public class McpTool implements AgentTool {
             String description,
             Map<String, Object> parameters,
             McpClientWrapper clientWrapper) {
-        this(name, description, parameters, clientWrapper, null);
+        this(name, description, parameters, null, clientWrapper, null);
     }
 
     /**
@@ -93,9 +96,30 @@ public class McpTool implements AgentTool {
             Map<String, Object> parameters,
             McpClientWrapper clientWrapper,
             Map<String, Object> presetArguments) {
+        this(name, description, parameters, null, clientWrapper, presetArguments);
+    }
+
+    /**
+     * Constructs a new McpTool with an optional output schema and preset arguments.
+     *
+     * @param name the tool name
+     * @param description the tool description
+     * @param parameters the JSON schema for tool parameters
+     * @param outputSchema the JSON schema for tool outputs (can be null)
+     * @param clientWrapper the MCP client wrapper
+     * @param presetArguments preset arguments to merge with each call (can be null)
+     */
+    public McpTool(
+            String name,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments) {
         this.name = name;
         this.description = description;
         this.parameters = parameters;
+        this.outputSchema = outputSchema != null ? new HashMap<>(outputSchema) : null;
         this.clientWrapper = clientWrapper;
         this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
     }
@@ -128,6 +152,11 @@ public class McpTool implements AgentTool {
     @Override
     public Map<String, Object> getParameters() {
         return parameters;
+    }
+
+    @Override
+    public Map<String, Object> getOutputSchema() {
+        return outputSchema != null ? new HashMap<>(outputSchema) : null;
     }
 
     /**
@@ -206,7 +235,7 @@ public class McpTool implements AgentTool {
      * @return parameters map in AgentScope format
      */
     public static Map<String, Object> convertMcpSchemaToParameters(
-            McpSchema.JsonSchema inputSchema) {
+            McpSchema.JsonSchema inputSchema, Set<String> excludeParams) {
         Map<String, Object> parameters = new HashMap<>();
 
         if (inputSchema == null) {
@@ -215,17 +244,36 @@ public class McpTool implements AgentTool {
             parameters.put("required", new ArrayList<>());
             return parameters;
         }
+        Map<String, Object> properties =
+                inputSchema.properties() != null
+                        ? new HashMap<>(inputSchema.properties())
+                        : new HashMap<>();
+        List<String> required =
+                inputSchema.required() != null
+                        ? new ArrayList<>(inputSchema.required())
+                        : new ArrayList<>();
+
+        // Exclude preset parameters from the schema
+        if (excludeParams != null) {
+            required.removeAll(excludeParams);
+            properties.keySet().removeAll(excludeParams);
+        }
 
         parameters.put("type", inputSchema.type() != null ? inputSchema.type() : "object");
-        parameters.put(
-                "properties",
-                inputSchema.properties() != null ? inputSchema.properties() : new HashMap<>());
-        parameters.put(
-                "required",
-                inputSchema.required() != null ? inputSchema.required() : new ArrayList<>());
+        parameters.put("properties", properties);
+        parameters.put("required", required);
 
         if (inputSchema.additionalProperties() != null) {
             parameters.put("additionalProperties", inputSchema.additionalProperties());
+        }
+
+        // Preserve $defs and definitions for $ref resolution
+        if (inputSchema.defs() != null && !inputSchema.defs().isEmpty()) {
+            parameters.put("$defs", new HashMap<>(inputSchema.defs()));
+        }
+
+        if (inputSchema.definitions() != null && !inputSchema.definitions().isEmpty()) {
+            parameters.put("definitions", new HashMap<>(inputSchema.definitions()));
         }
 
         return parameters;

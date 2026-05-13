@@ -177,7 +177,6 @@ public class RAGExample {
                         .ragMode(RAGMode.GENERIC)
                         .retrieveConfig(
                                 RetrieveConfig.builder().limit(3).scoreThreshold(0.3).build())
-                        .enableOnlyForUserQueries(true)
                         .build();
 
         System.out.println("Generic mode agent created. Try asking:");

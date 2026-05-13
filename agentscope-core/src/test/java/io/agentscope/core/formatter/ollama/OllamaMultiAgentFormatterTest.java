@@ -613,7 +613,7 @@ class OllamaMultiAgentFormatterTest {
                 new ToolResultBlock(
                         "call123",
                         "calc",
-                        java.util.List.of(TextBlock.builder().text("Result: 42").build()),
+                        List.of(TextBlock.builder().text("Result: 42").build()),
                         null);
         Msg toolMsg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
         List<Msg> msgs = Arrays.asList(toolMsg);

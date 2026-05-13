@@ -25,6 +25,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Base formatter for OpenAI Chat Completion HTTP API.
@@ -40,6 +41,8 @@ import java.util.List;
  */
 public abstract class OpenAIBaseFormatter
         extends AbstractBaseFormatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> {
+
+    private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
 
     protected final OpenAIMessageConverter messageConverter;
     protected final OpenAIResponseParser responseParser;
@@ -164,5 +167,38 @@ public abstract class OpenAIBaseFormatter
         }
 
         return request;
+    }
+
+    /**
+     * Apply cache control to OpenAI messages.
+     *
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
+     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
+     * marking) will not be overwritten.
+     *
+     * @param messages the list of formatted OpenAI messages
+     */
+    public void applyCacheControl(List<OpenAIMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        for (OpenAIMessage msg : messages) {
+            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
+                msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+            }
+        }
+        OpenAIMessage lastMsg = messages.get(messages.size() - 1);
+        if (lastMsg.getCacheControl() == null) {
+            lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        }
+    }
+
+    /**
+     * Get the ephemeral cache control constant.
+     *
+     * @return unmodifiable map representing ephemeral cache control
+     */
+    static Map<String, String> getEphemeralCacheControl() {
+        return EPHEMERAL_CACHE_CONTROL;
     }
 }

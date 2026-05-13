@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -228,7 +229,7 @@ class HigressToolSearchResultTest {
         validTool.put("title", "Valid Tool");
 
         // Use Arrays.asList to allow null elements
-        List<Object> toolsList = new java.util.ArrayList<>();
+        List<Object> toolsList = new ArrayList<>();
         toolsList.add(validTool);
         toolsList.add("invalid");
         toolsList.add(123);

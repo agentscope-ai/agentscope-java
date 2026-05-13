@@ -97,6 +97,89 @@ public class ChatCompletionsWebApplication {
                 """);
         System.out.println("\nNote: Accept: text/event-stream header is optional when stream=true");
         System.out.println("===================================================");
+        System.out.println("\nChat completion with Tool Schema (Tool Suspend).\n");
+        System.out.println(
+                """
+                curl -N -X POST http://localhost:8080/v1/chat/completions \\
+                  -H 'Content-Type: application/json' \\
+                  -d '{
+                    "model": "qwen3-max",
+                    "stream": true,
+                    "messages": [
+                      { "role": "user", "content": "What is the weather in Hangzhou?" }
+                    ],
+                    "tools": [
+                      {
+                        "type": "function",
+                        "function": {
+                          "name": "get_weather",
+                          "description": "Get the current weather for a city",
+                          "parameters": {
+                            "type": "object",
+                            "properties": {
+                              "city": {
+                                "type": "string",
+                                "description": "The city name"
+                              }
+                            },
+                            "required": ["city"]
+                          }
+                        }
+                      }
+                    ]
+                  }'
+                """);
+        System.out.println("\nNote: Tools are registered as schema-only tools, triggering tool");
+        System.out.println("      suspension. The response will include tool_calls with");
+        System.out.println("      finish_reason='tool_calls'. Execute tools externally, then");
+        System.out.println("      send tool results in the next request:");
+        System.out.println(
+                """
+
+                curl -N -X POST http://localhost:8080/v1/chat/completions \\
+                  -H 'Content-Type: application/json' \\
+                  -d '{
+                    "model": "qwen3-max",
+                    "stream": true,
+                    "messages": [
+                      { "role": "user", "content": "What is the weather in Hangzhou?" },
+                      {
+                        "role": "assistant",
+                        "tool_calls": [{
+                          "id": "call_abc123",
+                          "type": "function",
+                          "function": {
+                            "name": "get_weather",
+                            "arguments": "{\\"city\\":\\"Hangzhou\\"}"
+                          }
+                        }]
+                      },
+                      {
+                        "role": "tool",
+                        "tool_call_id": "call_abc123",
+                        "name": "get_weather",
+                        "content": "Sunny, 25°C"
+                      }
+                    ],
+                    "tools": [
+                      {
+                        "type": "function",
+                        "function": {
+                          "name": "get_weather",
+                          "description": "Get the current weather for a city",
+                          "parameters": {
+                            "type": "object",
+                            "properties": {
+                              "city": { "type": "string", "description": "The city name" }
+                            },
+                            "required": ["city"]
+                          }
+                        }
+                      }
+                    ]
+                  }'
+                """);
+        System.out.println("===================================================");
         System.out.println(
                 "\n⚠️  Important: stream=false with Accept: text/event-stream will return error");
         System.out.println(

@@ -17,6 +17,7 @@ package io.agentscope.core.memory.autocontext;
 
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -206,16 +207,23 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         int toolIters = 5;
         boolean toolCompressed = false;
         int compressionCount = 0;
+        int cursorStartIndex = 0;
         while (toolIters > 0) {
             toolIters--;
             List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
             Pair<Integer, Integer> toolMsgIndices =
-                    extractPrevToolMsgsForCompress(currentMsgs, autoContextConfig.getLastKeep());
+                    extractPrevToolMsgsForCompress(
+                            currentMsgs, autoContextConfig.getLastKeep(), cursorStartIndex);
             if (toolMsgIndices != null) {
-                summaryToolsMessages(currentMsgs, toolMsgIndices);
-                replaceWorkingMessage(currentMsgs);
-                toolCompressed = true;
-                compressionCount++;
+                boolean actuallyCompressed = summaryToolsMessages(currentMsgs, toolMsgIndices);
+                if (actuallyCompressed) {
+                    replaceWorkingMessage(currentMsgs);
+                    toolCompressed = true;
+                    compressionCount++;
+                    cursorStartIndex = toolMsgIndices.first() + 1;
+                } else {
+                    cursorStartIndex = toolMsgIndices.second() + 1;
+                }
             } else {
                 break;
             }
@@ -225,7 +233,9 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
             return true;
         } else {
-            log.info("Strategy 1: SKIPPED - No compressible tool invocations found");
+            log.info(
+                    "Strategy 1: SKIPPED - No compressible tool invocations found (or skipped due"
+                            + " to low tokens)");
         }
 
         // Strategy 2: Offload previous round large messages (with lastKeep protection)
@@ -500,7 +510,15 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             String textContent = msg.getTextContent();
 
             // Check if message content exceeds threshold
-            if (textContent == null || textContent.length() <= threshold) {
+            // Use calculateMessageCharCount for accurate size check across all block types
+            // (including ToolResultBlock output which getTextContent() doesn't cover)
+            if ((textContent == null || textContent.isEmpty())
+                    && MsgUtils.calculateMessageCharCount(msg) <= threshold) {
+                continue;
+            }
+            if (textContent != null
+                    && !textContent.isEmpty()
+                    && textContent.length() <= threshold) {
                 continue;
             }
 
@@ -512,7 +530,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             log.info(
                     "Offloaded current round large message: index={}, size={} chars, uuid={}",
                     i,
-                    textContent.length(),
+                    MsgUtils.calculateMessageCharCount(msg),
                     uuid);
 
             // Step 5: Generate summary using LLM
@@ -551,18 +569,77 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
     /**
      * Generate a summary of a large message using the model.
      *
+     * <p>For messages containing ToolUseBlock (e.g., ReAct ASSISTANT messages with reasoning +
+     * tool call), only the TextBlock content is sent to the model for summarization (to avoid
+     * triggering model's tool detection), and the compressed result preserves the ToolUseBlock
+     * structure while replacing TextBlock with the LLM summary.
+     *
+     * <p>For messages containing ToolResultBlock (e.g., TOOL messages), the text content inside
+     * ToolResultBlock's output is extracted for summarization, and the compressed result preserves
+     * the ToolResultBlock structure (id, name, metadata) while replacing output with the summary.
+     *
      * @param message the message to summarize
      * @param offloadUuid the UUID of offloaded message
      * @return a summary message preserving the original role and name
      */
     private Msg generateLargeMessageSummary(Msg message, String offloadUuid) {
-        GenerateOptions options = GenerateOptions.builder().build();
-        ReasoningContext context = new ReasoningContext("large_message_summary");
+        boolean hasToolUse = message.hasContentBlocks(ToolUseBlock.class);
+        boolean hasToolResult = message.hasContentBlocks(ToolResultBlock.class);
 
+        // Step 1: Call model to generate summary
+        Msg block = callModelForSummary(message, hasToolUse, hasToolResult);
+
+        // Step 2: Build summary text with optional offload hint
+        String summaryContent = block != null ? block.getTextContent() : "";
         String offloadHint =
                 offloadUuid != null
                         ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
                         : "";
+        String finalContent = offloadHint.isEmpty() ? summaryContent : summaryContent + offloadHint;
+
+        // Step 3: Build metadata
+        Map<String, Object> metadata = buildCompressionMetadata(message, offloadUuid, block);
+
+        // Step 4: Build result message content blocks
+        List<ContentBlock> contentBlocks;
+        if (hasToolUse) {
+            contentBlocks = buildToolUsePreservingBlocks(message, finalContent);
+        } else if (hasToolResult) {
+            contentBlocks = buildToolResultPreservingBlocks(message, finalContent);
+        } else {
+            contentBlocks = List.of(TextBlock.builder().text(finalContent).build());
+        }
+
+        return Msg.builder()
+                .role(message.getRole())
+                .name(message.getName())
+                .content(contentBlocks)
+                .metadata(metadata)
+                .build();
+    }
+
+    /**
+     * Call model to generate a summary of the message content.
+     *
+     * <p>For messages with ToolUseBlock, only TextBlock content is extracted and sent to the model
+     * to avoid triggering tool detection mechanism. For messages with ToolResultBlock, the text
+     * content inside ToolResultBlock's output is extracted for summarization.
+     */
+    private Msg callModelForSummary(Msg message, boolean hasToolUse, boolean hasToolResult) {
+        GenerateOptions options = GenerateOptions.builder().build();
+        ReasoningContext context = new ReasoningContext("large_message_summary");
+
+        // Build the message to send for compression
+        Msg messageForCompression = message;
+        String textForCompression = extractTextForCompression(message, hasToolUse, hasToolResult);
+        if (textForCompression != null && !textForCompression.isEmpty()) {
+            messageForCompression =
+                    Msg.builder()
+                            .role(message.getRole())
+                            .name(message.getName())
+                            .content(TextBlock.builder().text(textForCompression).build())
+                            .build();
+        }
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -576,7 +653,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                         customPrompt))
                                         .build())
                         .build());
-        newMessages.add(message);
+        newMessages.add(messageForCompression);
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -586,7 +663,6 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                         .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
-        // Insert plan-aware hint message at the end to leverage recency effect
         addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
@@ -602,34 +678,109 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     block.getChatUsage().getInputTokens(),
                     block.getChatUsage().getOutputTokens());
         }
+        return block;
+    }
 
-        // Build metadata with compression information
+    /** Build compression metadata including offload UUID and chat usage. */
+    private Map<String, Object> buildCompressionMetadata(
+            Msg message, String offloadUuid, Msg block) {
         Map<String, Object> compressMeta = new HashMap<>();
         if (offloadUuid != null) {
             compressMeta.put("offloaduuid", offloadUuid);
         }
 
-        Map<String, Object> metadata = new HashMap<>();
+        // Preserve original message metadata
+        Map<String, Object> metadata =
+                message.getMetadata() != null
+                        ? new HashMap<>(message.getMetadata())
+                        : new HashMap<>();
         metadata.put("_compress_meta", compressMeta);
 
-        // Preserve _chat_usage from the block if available
         if (block != null && block.getChatUsage() != null) {
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
+        return metadata;
+    }
 
-        // Create summary message preserving original role and name
-        String summaryContent = block != null ? block.getTextContent() : "";
-        String finalContent = summaryContent;
-        if (!offloadHint.isEmpty()) {
-            finalContent = summaryContent + "\n" + offloadHint;
+    /**
+     * Extract text content for compression based on the message's content block types.
+     *
+     * @return extracted text content, or null if no special extraction is needed
+     */
+    private String extractTextForCompression(
+            Msg message, boolean hasToolUse, boolean hasToolResult) {
+        if (hasToolUse) {
+            // Extract only top-level TextBlock content to avoid triggering model's tool detection
+            return message.getTextContent();
+        }
+        if (hasToolResult) {
+            // Extract text from ToolResultBlock's output since Msg.getTextContent() only
+            // extracts top-level TextBlocks and returns empty for ToolResultBlock content
+            return message.getContent().stream()
+                    .filter(ToolResultBlock.class::isInstance)
+                    .map(ToolResultBlock.class::cast)
+                    .flatMap(trb -> trb.getOutput().stream())
+                    .filter(TextBlock.class::isInstance)
+                    .map(TextBlock.class::cast)
+                    .map(TextBlock::getText)
+                    .collect(Collectors.joining("\n"));
+        }
+        return null;
+    }
+
+    /**
+     * Build content blocks that preserve ToolUseBlock structure while replacing TextBlock with
+     * compressed summary.
+     */
+    private List<ContentBlock> buildToolUsePreservingBlocks(Msg message, String summaryText) {
+        List<ContentBlock> blocks = new ArrayList<>();
+        boolean hasTextBlock = false;
+
+        for (ContentBlock originalBlock : message.getContent()) {
+            if (originalBlock instanceof ToolUseBlock) {
+                blocks.add(originalBlock);
+            } else if (originalBlock instanceof TextBlock) {
+                if (!hasTextBlock) {
+                    blocks.add(TextBlock.builder().text(summaryText).build());
+                    hasTextBlock = true;
+                }
+            } else {
+                blocks.add(originalBlock);
+            }
         }
 
-        return Msg.builder()
-                .role(message.getRole())
-                .name(message.getName())
-                .content(TextBlock.builder().text(finalContent).build())
-                .metadata(metadata)
-                .build();
+        // Defensive: if no TextBlock existed, still add the summary
+        if (!hasTextBlock && !summaryText.isEmpty()) {
+            blocks.add(0, TextBlock.builder().text(summaryText).build());
+        }
+        return blocks;
+    }
+
+    /**
+     * Build content blocks that preserve ToolResultBlock structure (id, name, metadata) while
+     * replacing its output with the compressed summary.
+     */
+    private List<ContentBlock> buildToolResultPreservingBlocks(Msg message, String summaryText) {
+        List<ContentBlock> blocks = new ArrayList<>();
+        boolean hasReplacedToolResult = false;
+
+        for (ContentBlock originalBlock : message.getContent()) {
+            if (originalBlock instanceof ToolResultBlock toolResult) {
+                if (!hasReplacedToolResult) {
+                    // Replace output with compressed summary, preserve id/name/metadata
+                    blocks.add(
+                            ToolResultBlock.of(
+                                    toolResult.getId(),
+                                    toolResult.getName(),
+                                    TextBlock.builder().text(summaryText).build(),
+                                    toolResult.getMetadata()));
+                    hasReplacedToolResult = true;
+                }
+            } else {
+                blocks.add(originalBlock);
+            }
+        }
+        return blocks;
     }
 
     /**
@@ -803,9 +954,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * Summarize current round of conversation messages.
      *
      * @param rawMessages the list of messages to process
+     * @param toolMsgIndices the pair of start and end indices
      * @return true if summary was actually performed, false otherwise
      */
-    private void summaryToolsMessages(
+    private boolean summaryToolsMessages(
             List<Msg> rawMessages, Pair<Integer, Integer> toolMsgIndices) {
         int startIndex = toolMsgIndices.first();
         int endIndex = toolMsgIndices.second();
@@ -831,7 +983,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             + " ({})",
                     originalTokens,
                     threshold);
-            return;
+            return false;
         }
 
         log.info(
@@ -863,6 +1015,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 metadata);
 
         MsgUtils.replaceMsg(rawMessages, startIndex, endIndex, toolsSummary);
+
+        return true;
     }
 
     /**
@@ -1216,6 +1370,99 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             Msg msg = rawMessages.get(i);
             String textContent = msg.getTextContent();
 
+            // ASSISTANT messages with ToolUseBlock (tool_calls) must NOT be offloaded as a plain
+            // text stub. Doing so strips the ToolUseBlock, leaving the subsequent TOOL result
+            // messages without a preceding tool_calls assistant message, which violates the API
+            // constraint: "messages with role 'tool' must be a response to a preceding message
+            // with 'tool_calls'". These pairs are handled exclusively by Strategy 1.
+            if (MsgUtils.isToolUseMessage(msg)) {
+                continue;
+            }
+
+            // TOOL result messages can have their output content offloaded, but the
+            // ToolResultBlock structure (id, name) MUST be preserved so that the API formatter
+            // can still emit the correct tool_call_id / name fields. We handle them separately.
+            if (MsgUtils.isToolResultMessage(msg)) {
+                ToolResultBlock originalResult = msg.getFirstContentBlock(ToolResultBlock.class);
+                if (originalResult != null) {
+                    // Use the ToolResultBlock output text for size checking, because
+                    // Msg.getTextContent() only extracts top-level TextBlocks and returns
+                    // empty string for TOOL messages whose content is a ToolResultBlock.
+                    String outputText =
+                            originalResult.getOutput().stream()
+                                    .filter(TextBlock.class::isInstance)
+                                    .map(TextBlock.class::cast)
+                                    .map(TextBlock::getText)
+                                    .collect(Collectors.joining("\n"));
+                    if (outputText.length() > threshold) {
+                        String toolResultUuid = UUID.randomUUID().toString();
+                        List<Msg> offloadMsg = new ArrayList<>();
+                        offloadMsg.add(msg);
+                        offload(toolResultUuid, offloadMsg);
+                        log.info(
+                                "Offloaded large tool result message: index={}, size={} chars,"
+                                        + " uuid={}",
+                                i,
+                                outputText.length(),
+                                toolResultUuid);
+
+                        String preview =
+                                outputText.length() > autoContextConfig.offloadSinglePreview
+                                        ? outputText.substring(
+                                                        0, autoContextConfig.offloadSinglePreview)
+                                                + "..."
+                                        : outputText;
+                        String offloadHint =
+                                preview
+                                        + "\n"
+                                        + String.format(
+                                                Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, toolResultUuid);
+
+                        // Preserve ToolResultBlock structure (id, name, metadata) so the API
+                        // formatter can emit the correct tool_call_id / name, and downstream
+                        // consumers retain semantic flags (e.g. agentscope_suspended) after
+                        // offloading.  Only the output text is replaced with the offload hint.
+                        ToolResultBlock compressedResult =
+                                ToolResultBlock.of(
+                                        originalResult.getId(),
+                                        originalResult.getName(),
+                                        TextBlock.builder().text(offloadHint).build(),
+                                        originalResult.getMetadata());
+
+                        Map<String, Object> trCompressMeta = new HashMap<>();
+                        trCompressMeta.put("offloaduuid", toolResultUuid);
+                        Map<String, Object> trMetadata = new HashMap<>();
+                        trMetadata.put("_compress_meta", trCompressMeta);
+
+                        Msg replacementToolMsg =
+                                Msg.builder()
+                                        .role(msg.getRole())
+                                        .name(msg.getName())
+                                        .content(compressedResult)
+                                        .metadata(trMetadata)
+                                        .build();
+
+                        int tokenBefore = TokenCounterUtil.calculateToken(List.of(msg));
+                        int tokenAfter =
+                                TokenCounterUtil.calculateToken(List.of(replacementToolMsg));
+                        Map<String, Object> trEventMetadata = new HashMap<>();
+                        trEventMetadata.put("inputToken", tokenBefore);
+                        trEventMetadata.put("outputToken", tokenAfter);
+                        trEventMetadata.put("time", 0.0);
+
+                        String eventType =
+                                lastKeep
+                                        ? CompressionEvent.LARGE_MESSAGE_OFFLOAD_WITH_PROTECTION
+                                        : CompressionEvent.LARGE_MESSAGE_OFFLOAD;
+                        recordCompressionEvent(eventType, i, i, rawMessages, null, trEventMetadata);
+
+                        rawMessages.set(i, replacementToolMsg);
+                        hasOffloaded = true;
+                    }
+                }
+                continue;
+            }
+
             String uuid = null;
             // Check if message content exceeds threshold
             if (textContent != null && textContent.length() > threshold) {
@@ -1299,22 +1546,27 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * Extract tool messages from raw messages for compression.
      *
      * <p>This method finds consecutive tool invocation messages in historical conversations
-     * that can be compressed. It searches for sequences of more than  consecutive tool messages
-     * before the latest assistant message.
+     * that can be compressed. It searches, using a cursor-based {@code searchStartIndex},
+     * for sequences of more than a minimum number of consecutive tool messages that appear
+     * before the latest assistant message that should be preserved.
      *
      * <p>Strategy:
-     * 1. If rawMessages has less than lastKeep messages, return null
-     * 2. Find the latest assistant message and protect it and all messages after it
-     * 3. Search from the beginning for the oldest consecutive tool messages (more than minConsecutiveToolMessages consecutive)
-     *    that can be compressed
-     * 4. If no assistant message is found, protect the last N messages (lastKeep)
+     * 1. If {@code rawMessages} has less than {@code lastKeep} messages, return {@code null}.
+     * 2. Identify the latest assistant message and treat it and all messages after it as
+     *    protected content that will not be compressed.
+     * 3. Starting from {@code searchStartIndex}, search for the oldest range of consecutive
+     *    tool messages (more than {@code minConsecutiveToolMessages} consecutive) that lies
+     *    entirely before the protected region and can be compressed.
+     * 4. If no eligible assistant message or compressible tool-message sequence is found
+     *    in the searchable range, return {@code null}.
      *
      * @param rawMessages all raw messages
      * @param lastKeep number of recent messages to keep uncompressed
-     * @return Pair containing startIndex and endIndex (inclusive) of compressible tool messages, or null if none found
+     * @param searchStartIndex the index to start searching from (used as a cursor)
+     * @return Pair containing startIndex and endIndex (inclusive) of compressible tool messages, or {@code null} if none found
      */
     private Pair<Integer, Integer> extractPrevToolMsgsForCompress(
-            List<Msg> rawMessages, int lastKeep) {
+            List<Msg> rawMessages, int lastKeep, int searchStartIndex) {
         if (rawMessages == null || rawMessages.isEmpty()) {
             return null;
         }
@@ -1348,8 +1600,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         int consecutiveCount = 0;
         int startIndex = -1;
         int endIndex = -1;
-
-        for (int i = 0; i < searchEndIndex; i++) {
+        int actualStart = Math.max(0, searchStartIndex);
+        for (int i = actualStart; i < searchEndIndex; i++) {
             Msg msg = rawMessages.get(i);
             if (MsgUtils.isToolMessage(msg)) {
                 if (consecutiveCount == 0) {

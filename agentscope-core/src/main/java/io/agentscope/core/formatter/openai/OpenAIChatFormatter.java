@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.openai;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAITool;
@@ -100,13 +101,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             request.setPresencePenalty(presencePenalty);
         }
 
-        // Apply max tokens
-        Integer maxTokens =
-                getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens);
-        if (maxTokens != null) {
-            request.setMaxCompletionTokens(maxTokens);
-            request.setMaxTokens(maxTokens);
-        }
+        applyMaxTokens(request, options, defaultOptions);
 
         // Apply seed
         Long seed = getOptionOrDefault(options, defaultOptions, GenerateOptions::getSeed);
@@ -120,6 +115,22 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         // Apply additional body params (must be last to allow overriding)
         applyAdditionalBodyParams(request, defaultOptions);
         applyAdditionalBodyParams(request, options);
+    }
+
+    protected void applyMaxTokens(
+            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
+        Integer maxTokens =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens);
+        if (maxTokens != null) {
+            request.setMaxTokens(maxTokens);
+        }
+
+        Integer maxCompletionTokens =
+                getOptionOrDefault(
+                        options, defaultOptions, GenerateOptions::getMaxCompletionTokens);
+        if (maxCompletionTokens != null) {
+            request.setMaxCompletionTokens(maxCompletionTokens);
+        }
     }
 
     @Override
@@ -240,6 +251,11 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                             Map<String, Object> formatMap = (Map<String, Object>) value;
                             request.setResponseFormat(formatMap);
                         }
+
+                        if (value instanceof ResponseFormat responseFormat) {
+                            request.setResponseFormat(responseFormat);
+                        }
+
                         break;
                     default:
                         // Add unknown parameters to extraParams

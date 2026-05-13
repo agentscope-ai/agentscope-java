@@ -246,11 +246,11 @@ class DifyRAGClientTest {
         assertEquals(true, retrievalModel.get("reranking_enable"));
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> rerankingMode =
-                (Map<String, Object>) retrievalModel.get("reranking_mode");
-        assertNotNull(rerankingMode);
-        assertEquals("cohere", rerankingMode.get("reranking_provider_name"));
-        assertEquals("rerank-english-v2.0", rerankingMode.get("reranking_model_name"));
+        Map<String, Object> rerankingModel =
+                (Map<String, Object>) retrievalModel.get("reranking_model");
+        assertNotNull(rerankingModel);
+        assertEquals("cohere", rerankingModel.get("reranking_provider_name"));
+        assertEquals("rerank-english-v2.0", rerankingModel.get("reranking_model_name"));
     }
 
     @Test

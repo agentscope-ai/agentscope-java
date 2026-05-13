@@ -268,4 +268,46 @@ class OllamaResponseParserTest {
         // Assert
         assertEquals("stop", chatResponse.getFinishReason());
     }
+
+    @Test
+    @DisplayName("Should parse tool call with no parameters (empty arguments map)")
+    void testParseToolCallWithNoParameters() {
+        // Arrange - This reproduces the bug from issue #569
+        // Ollama returns empty map {} for tools with no parameters
+        OllamaResponse response = new OllamaResponse();
+        response.setModel("test-model");
+
+        OllamaMessage message = new OllamaMessage("assistant", "");
+
+        OllamaToolCall toolCall = new OllamaToolCall();
+        OllamaFunction function = new OllamaFunction();
+        function.setName("getTime");
+        function.setArguments(Map.of()); // Empty map for no parameters
+        toolCall.setFunction(function);
+
+        message.setToolCalls(Arrays.asList(toolCall));
+        response.setMessage(message);
+
+        // Act
+        ChatResponse chatResponse = parser.parseResponse(response);
+
+        // Assert
+        assertNotNull(chatResponse);
+        List<ContentBlock> content = chatResponse.getContent();
+        assertEquals(1, content.size());
+        assertTrue(content.get(0) instanceof ToolUseBlock);
+
+        ToolUseBlock toolBlock = (ToolUseBlock) content.get(0);
+        assertEquals("getTime", toolBlock.getName());
+        assertTrue(toolBlock.getInput().isEmpty(), "Input should be empty map");
+
+        // Verify that getContent() returns "{}" (not null) for no-parameter tools
+        assertNotNull(
+                toolBlock.getContent(),
+                "ToolUseBlock content should not be null for validation in ToolExecutor");
+        assertEquals(
+                "{}",
+                toolBlock.getContent(),
+                "ToolUseBlock content should be empty JSON object string for no-parameter tools");
+    }
 }

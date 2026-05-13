@@ -60,51 +60,62 @@
     </developers>
 
     <properties>
-        <revision>1.0.7-SNAPSHOT</revision>
+        <revision>1.0.13-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
 
-        <opentelemetry.version>1.57.0</opentelemetry.version>
+        <opentelemetry.version>1.61.0</opentelemetry.version>
         <okhttp.version>5.3.2</okhttp.version>
-        <reactor-bom.version>2025.0.1</reactor-bom.version>
-        <jackson.version>2.20.1</jackson.version>
-        <mockito.version>5.21.0</mockito.version>
+        <reactor-bom.version>2025.0.2</reactor-bom.version>
+        <jackson.version>2.21.1</jackson.version>
+        <mockito.version>5.23.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
-        <google-genai.version>1.32.0</google-genai.version>
-        <dashscope-sdk-java.version>2.22.5</dashscope-sdk-java.version>
-        <bailian.version>2.6.2</bailian.version>
-        <openai-java.version>4.14.0</openai-java.version>
-        <anthropic.version>2.11.1</anthropic.version>
+        <google-genai.version>1.45.0</google-genai.version>
+        <dashscope-sdk-java.version>2.22.9</dashscope-sdk-java.version>
+        <bailian.version>2.8.2</bailian.version>
+        <openai-java.version>4.28.0</openai-java.version>
+        <anthropic.version>2.14.0</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
-        <qdrant.version>1.16.2</qdrant.version>
-        <milvus.version>2.6.11</milvus.version>
-        <pdfbox.version>3.0.6</pdfbox.version>
+        <qdrant.version>1.17.0</qdrant.version>
+        <milvus.version>2.6.17</milvus.version>
+        <httpclient5.version>5.6.1</httpclient5.version>
+        <elasticsearch.version>9.3.3</elasticsearch.version>
+        <postgresql.version>42.7.9</postgresql.version>
+        <pgvector.version>0.1.6</pgvector.version>
+        <pdfbox.version>3.0.7</pdfbox.version>
         <poi.version>5.5.1</poi.version>
+        <tika.version>3.3.0</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
-        <mysql.version>9.5.0</mysql.version>
-        <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
-        <opentelemetry-semconv-incubating.version>1.37.0-alpha</opentelemetry-semconv-incubating.version>
-        <redisson.version>4.1.0</redisson.version>
+        <mysql.version>9.6.0</mysql.version>
+        <opentelemetry-reactor.version>2.27.0-alpha</opentelemetry-reactor.version>
+        <opentelemetry-semconv-incubating.version>1.40.0-alpha</opentelemetry-semconv-incubating.version>
+        <redisson.version>4.2.0</redisson.version>
         <a2a-client.version>0.3.3.Final</a2a-client.version>
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
-        <jedis.version>7.2.0</jedis.version>
+        <jedis.version>7.4.1</jedis.version>
+        <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
-        <spring.version>7.0.2</spring.version>
-        <spring-boot.version>4.0.1</spring-boot.version>
-        <nacos-client.version>3.1.1</nacos-client.version>
-        <json-schema-validator.version>3.0.0</json-schema-validator.version>
+        <spring.version>7.0.7</spring.version>
+        <spring-boot.version>4.0.4</spring-boot.version>
+        <nacos-client.version>3.2.1-2026.03.30</nacos-client.version>
+        <json-schema-validator.version>2.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
-        <snakeyaml.version>2.5</snakeyaml.version>
+        <snakeyaml.version>2.6</snakeyaml.version>
+        <commons-lang3.version>3.20.0</commons-lang3.version>
+        <kotlin.version>1.9.24</kotlin.version>
+        <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
+        <jgit.version>7.6.0.202603022253-r</jgit.version>
+        <fabric8.kubernetes-client.version>6.13.4</fabric8.kubernetes-client.version>
+        <protobuf.java.version>4.29.3</protobuf.java.version>
 
-
-        <spotless.version>3.1.0</spotless.version>
+        <spotless.version>3.4.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
@@ -131,6 +142,21 @@
                 <version>${okhttp.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Fabric8 Kubernetes client -->
+            <dependency>
+                <groupId>io.fabric8</groupId>
+                <artifactId>kubernetes-client-bom</artifactId>
+                <version>${fabric8.kubernetes-client.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>${protobuf.java.version}</version>
             </dependency>
 
             <!-- Reactor -->
@@ -232,11 +258,52 @@
                 <version>${qdrant.version}</version>
             </dependency>
 
+            <!-- Apache HTTP Client 5 -->
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>${httpclient5.version}</version>
+            </dependency>
+
+            <!-- Elasticsearch Java SDK -->
+            <dependency>
+                <groupId>co.elastic.clients</groupId>
+                <artifactId>elasticsearch-java</artifactId>
+                <version>${elasticsearch.version}</version>
+            </dependency>
+
+            <!-- Kotlin Coroutines -->
+            <dependency>
+                <groupId>org.jetbrains.kotlinx</groupId>
+                <artifactId>kotlinx-coroutines-core</artifactId>
+                <version>${kotlin.coroutines.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.jetbrains.kotlinx</groupId>
+                <artifactId>kotlinx-coroutines-reactor</artifactId>
+                <version>${kotlin.coroutines.version}</version>
+            </dependency>
+
             <!-- Milvus Java SDK -->
             <dependency>
                 <groupId>io.milvus</groupId>
                 <artifactId>milvus-sdk-java</artifactId>
                 <version>${milvus.version}</version>
+            </dependency>
+
+            <!-- PostgreSQL JDBC Driver -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+
+            <!-- pgvector Java SDK for PostgreSQL vector extension -->
+            <dependency>
+                <groupId>com.pgvector</groupId>
+                <artifactId>pgvector</artifactId>
+                <version>${pgvector.version}</version>
             </dependency>
 
             <!-- Apache PDFBox for PDF document processing -->
@@ -251,6 +318,18 @@
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
                 <version>${poi.version}</version>
+            </dependency>
+
+            <!-- Apache Tika for document processing -->
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-core</artifactId>
+                <version>${tika.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-parsers-standard-package</artifactId>
+                <version>${tika.version}</version>
             </dependency>
 
             <!-- Socket.IO Client for WebSocket communication -->
@@ -317,6 +396,13 @@
                 <version>${jedis.version}</version>
             </dependency>
 
+            <!-- Lettuce client for Redis-based session implementation -->
+            <dependency>
+                <groupId>io.lettuce</groupId>
+                <artifactId>lettuce-core</artifactId>
+                <version>${lettuce.version}</version>
+            </dependency>
+
             <!-- XXL-JOB Core -->
             <dependency>
                 <groupId>com.xuxueli</groupId>
@@ -371,6 +457,12 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-generator</artifactId>
                 <version>${jsonschema-generator.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>com.fasterxml.jackson.core</groupId>
+                        <artifactId>jackson-core</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <!-- Victools JSON Schema Module for Jackson annotations support -->
@@ -378,6 +470,20 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-module-jackson</artifactId>
                 <version>${jsonschema-generator.version}</version>
+            </dependency>
+
+            <!-- Apache Commons Lang3 -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
+            </dependency>
+
+            <!-- JGit for Git repository operations -->
+            <dependency>
+                <groupId>org.eclipse.jgit</groupId>
+                <artifactId>org.eclipse.jgit</artifactId>
+                <version>${jgit.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

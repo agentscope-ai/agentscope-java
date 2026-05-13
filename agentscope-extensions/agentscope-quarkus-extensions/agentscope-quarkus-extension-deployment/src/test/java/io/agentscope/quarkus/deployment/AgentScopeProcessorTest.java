@@ -24,11 +24,16 @@ import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import io.agentscope.quarkus.runtime.AgentScopeConfig;
+import io.agentscope.quarkus.runtime.AgentScopeRecorder;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.deployment.annotations.BuildProducer;
+import io.quarkus.deployment.annotations.BuildStep;
+import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -62,7 +67,7 @@ class AgentScopeProcessorTest {
     void testFeatureMethodHasBuildStepAnnotation() throws NoSuchMethodException {
         Method method = AgentScopeProcessor.class.getDeclaredMethod("feature");
 
-        assertTrue(method.isAnnotationPresent(io.quarkus.deployment.annotations.BuildStep.class));
+        assertTrue(method.isAnnotationPresent(BuildStep.class));
     }
 
     @Test
@@ -97,7 +102,7 @@ class AgentScopeProcessorTest {
                 AgentScopeProcessor.class.getDeclaredMethod(
                         "registerForReflection", BuildProducer.class);
 
-        assertTrue(method.isAnnotationPresent(io.quarkus.deployment.annotations.BuildStep.class));
+        assertTrue(method.isAnnotationPresent(BuildStep.class));
     }
 
     @Test
@@ -131,16 +136,14 @@ class AgentScopeProcessorTest {
         Method method =
                 AgentScopeProcessor.class.getDeclaredMethod("addDependencies", BuildProducer.class);
 
-        assertTrue(method.isAnnotationPresent(io.quarkus.deployment.annotations.BuildStep.class));
+        assertTrue(method.isAnnotationPresent(BuildStep.class));
     }
 
     @Test
     void testInitializeAgentScopeMethodExists() throws NoSuchMethodException {
         Method method =
                 AgentScopeProcessor.class.getDeclaredMethod(
-                        "initializeAgentScope",
-                        io.agentscope.quarkus.runtime.AgentScopeRecorder.class,
-                        io.agentscope.quarkus.runtime.AgentScopeConfig.class);
+                        "initializeAgentScope", AgentScopeRecorder.class, AgentScopeConfig.class);
 
         assertNotNull(method);
     }
@@ -149,12 +152,10 @@ class AgentScopeProcessorTest {
     void testInitializeAgentScopeMethodHasRecordAnnotation() throws NoSuchMethodException {
         Method method =
                 AgentScopeProcessor.class.getDeclaredMethod(
-                        "initializeAgentScope",
-                        io.agentscope.quarkus.runtime.AgentScopeRecorder.class,
-                        io.agentscope.quarkus.runtime.AgentScopeConfig.class);
+                        "initializeAgentScope", AgentScopeRecorder.class, AgentScopeConfig.class);
 
-        assertTrue(method.isAnnotationPresent(io.quarkus.deployment.annotations.Record.class));
-        assertTrue(method.isAnnotationPresent(io.quarkus.deployment.annotations.BuildStep.class));
+        assertTrue(method.isAnnotationPresent(Record.class));
+        assertTrue(method.isAnnotationPresent(BuildStep.class));
     }
 
     @Test
@@ -163,13 +164,13 @@ class AgentScopeProcessorTest {
         int buildStepCount = 0;
 
         for (Method method : methods) {
-            if (java.lang.reflect.Modifier.isPublic(method.getModifiers())
+            if (Modifier.isPublic(method.getModifiers())
                     || method.getName().equals("feature")
                     || method.getName().equals("registerForReflection")
                     || method.getName().equals("addDependencies")
                     || method.getName().equals("initializeAgentScope")) {
                 // Count methods that should have BuildStep
-                if (method.isAnnotationPresent(io.quarkus.deployment.annotations.BuildStep.class)) {
+                if (method.isAnnotationPresent(BuildStep.class)) {
                     buildStepCount++;
                 }
             }

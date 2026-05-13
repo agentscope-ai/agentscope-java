@@ -24,13 +24,16 @@ import io.agentscope.core.session.mysql.MysqlSession;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Logger;
 import javax.sql.DataSource;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -160,6 +163,83 @@ class MysqlSessionE2ETest {
     }
 
     @Test
+    @DisplayName("Save persists when DataSource connections default to auto-commit false")
+    void testSavePersistsWithAutoCommitDisabledConnections() {
+        System.out.println("\n=== Test: Save With Auto-Commit Disabled Connections ===");
+
+        DataSource baseDataSource = createH2DataSource();
+        dataSource = baseDataSource;
+        String schemaName = generateSafeIdentifier("AGENTSCOPE_E2E").toUpperCase();
+        String tableName = generateSafeIdentifier("AGENTSCOPE_SESSIONS").toUpperCase();
+        createdSchemaName = schemaName;
+
+        initSchemaAndTable(baseDataSource, schemaName, tableName);
+
+        MysqlSession session =
+                new MysqlSession(
+                        wrapWithAutoCommit(baseDataSource, false), schemaName, tableName, false);
+
+        SessionKey sessionKey =
+                SimpleSessionKey.of("mysql_e2e_autocommit_off_" + UUID.randomUUID());
+
+        session.save(sessionKey, "moduleA", new TestState("hello", 1));
+        session.save(
+                sessionKey,
+                "stateList",
+                List.of(new TestState("item1", 1), new TestState("item2", 2)));
+
+        assertTrue(session.exists(sessionKey));
+
+        Optional<TestState> loadedState = session.get(sessionKey, "moduleA", TestState.class);
+        assertTrue(loadedState.isPresent());
+        assertEquals("hello", loadedState.get().value());
+
+        List<TestState> loadedList = session.getList(sessionKey, "stateList", TestState.class);
+        assertEquals(2, loadedList.size());
+        assertEquals("item1", loadedList.get(0).value());
+        assertEquals("item2", loadedList.get(1).value());
+    }
+
+    @Test
+    @DisplayName(
+            "Delete and cleanup persist when DataSource connections default to auto-commit false")
+    void testDeleteAndCleanupPersistWithAutoCommitDisabledConnections() {
+        System.out.println(
+                "\n=== Test: Delete And Cleanup With Auto-Commit Disabled Connections ===");
+
+        DataSource baseDataSource = createH2DataSource();
+        dataSource = baseDataSource;
+        String schemaName = generateSafeIdentifier("AGENTSCOPE_E2E").toUpperCase();
+        String tableName = generateSafeIdentifier("AGENTSCOPE_SESSIONS").toUpperCase();
+        createdSchemaName = schemaName;
+
+        initSchemaAndTable(baseDataSource, schemaName, tableName);
+
+        MysqlSession session =
+                new MysqlSession(
+                        wrapWithAutoCommit(baseDataSource, false), schemaName, tableName, false);
+
+        SessionKey sessionKey1 = SimpleSessionKey.of("mysql_e2e_delete_" + UUID.randomUUID());
+        SessionKey sessionKey2 = SimpleSessionKey.of("mysql_e2e_clear_" + UUID.randomUUID());
+
+        session.save(sessionKey1, "moduleA", new TestState("hello", 1));
+        session.save(sessionKey2, "moduleA", new TestState("world", 2));
+
+        session.delete(sessionKey1);
+        assertFalse(session.exists(sessionKey1));
+        assertTrue(session.exists(sessionKey2));
+
+        session.clearAllSessions();
+        assertTrue(session.listSessionKeys().isEmpty());
+
+        session.save(sessionKey1, "moduleA", new TestState("hello_again", 3));
+        assertTrue(session.exists(sessionKey1));
+
+        session.truncateAllSessions();
+        assertTrue(session.listSessionKeys().isEmpty());
+    }
+
+    @Test
     @DisplayName("Session does not exist should return false")
     void testSessionNotExists() {
         System.out.println("\n=== Test: Session Not Exists ===");
@@ -215,6 +295,59 @@ class MysqlSessionE2ETest {
         ds.setUser("sa");
         ds.setPassword("");
         return ds;
+    }
+
+    private static DataSource wrapWithAutoCommit(DataSource delegate, boolean autoCommit) {
+        return new DataSource() {
+            @Override
+            public Connection getConnection() throws SQLException {
+                Connection conn = delegate.getConnection();
+                conn.setAutoCommit(autoCommit);
+                return conn;
+            }
+
+            @Override
+            public Connection getConnection(String username, String password) throws SQLException {
+                Connection conn = delegate.getConnection(username, password);
+                conn.setAutoCommit(autoCommit);
+                return conn;
+            }
+
+            @Override
+            public PrintWriter getLogWriter() throws SQLException {
+                return delegate.getLogWriter();
+            }
+
+            @Override
+            public void setLogWriter(PrintWriter out) throws SQLException {
+                delegate.setLogWriter(out);
+            }
+
+            @Override
+            public void setLoginTimeout(int seconds) throws SQLException {
+                delegate.setLoginTimeout(seconds);
+            }
+
+            @Override
+            public int getLoginTimeout() throws SQLException {
+                return delegate.getLoginTimeout();
+            }
+
+            @Override
+            public Logger getParentLogger() throws SQLFeatureNotSupportedException {
+                return delegate.getParentLogger();
+            }
+
+            @Override
+            public <T> T unwrap(Class<T> iface) throws SQLException {
+                return delegate.unwrap(iface);
+            }
+
+            @Override
+            public boolean isWrapperFor(Class<?> iface) throws SQLException {
+                return delegate.isWrapperFor(iface);
+            }
+        };
     }
 
     /** Generates a safe MySQL identifier (letters/numbers/underscore) and keeps it <= 64 chars. */

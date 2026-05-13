@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import reactor.util.retry.Retry;
 
 /**
  * Unit tests for EmbeddingUtils.
@@ -109,7 +110,7 @@ class EmbeddingUtilsTest {
                                     return new double[] {0.1, 0.2};
                                 })
                         .retryWhen(
-                                reactor.util.retry.Retry.backoff(2, Duration.ofMillis(10))
+                                Retry.backoff(2, Duration.ofMillis(10))
                                         .filter(error -> error instanceof RuntimeException));
 
         Mono<double[]> result =
