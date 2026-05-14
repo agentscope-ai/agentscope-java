@@ -853,18 +853,13 @@ public class PlanNotebook implements StateModule {
 
         currentPlan.finish(state, outcome);
 
+        String message =
+                String.format("The current plan is finished successfully as '%s'.", stateStr);
+
         return storage.addPlan(currentPlan)
-                .then(
-                        Mono.defer(
-                                () -> {
-                                    currentPlan = null;
-                                    return triggerPlanChangeHooks()
-                                            .thenReturn(
-                                                    String.format(
-                                                            "The current plan is finished"
-                                                                    + " successfully as '%s'.",
-                                                            stateStr));
-                                }));
+                .then(triggerPlanChangeHooks())
+                .then(Mono.fromRunnable(() -> currentPlan = null))
+                .thenReturn(message);
     }
 
     /** View the historical plans. */
