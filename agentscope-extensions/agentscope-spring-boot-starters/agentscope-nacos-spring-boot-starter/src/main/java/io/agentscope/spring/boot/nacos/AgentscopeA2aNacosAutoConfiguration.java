@@ -81,7 +81,7 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
             AgentScopeA2aNacosProperties a2aNacosProperties)
             throws NacosException {
         Properties nacosClientProperties = nacosProperties.getNacosProperties();
-        nacosClientProperties.putAll(a2aNacosProperties.getNacosProperties());
+        nacosClientProperties.putAll(a2aNacosProperties.getExplicitNacosProperties());
         return AiFactory.createAiService(nacosClientProperties);
     }
 
