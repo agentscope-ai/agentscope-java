@@ -15,69 +15,68 @@
  */
 package io.agentscope.core.tool;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/** Tests for DefaultToolEmitter. */
+@DisplayName("DefaultToolEmitter Tests")
 class DefaultToolEmitterTest {
 
-    @Test
-    void testGetToolUseBlock() {
-        ToolUseBlock toolUseBlock =
-                ToolUseBlock.builder()
-                        .id("call_test")
-                        .name("test_tool")
-                        .input(Map.of())
-                        .content("{}")
-                        .build();
+    private final ToolUseBlock testToolUseBlock =
+            ToolUseBlock.builder()
+                    .id("call_test")
+                    .name("test_tool")
+                    .input(Map.of())
+                    .content("{}")
+                    .build();
 
-        DefaultToolEmitter emitter = new DefaultToolEmitter(toolUseBlock, null);
+    @Test
+    @DisplayName("getToolUseBlock() should return the ToolUseBlock with tool call ID")
+    void testGetToolUseBlock() {
+        DefaultToolEmitter emitter = new DefaultToolEmitter(testToolUseBlock, null);
 
         assertNotNull(emitter.getToolUseBlock());
+        assertSame(testToolUseBlock, emitter.getToolUseBlock());
         assertEquals("call_test", emitter.getToolUseBlock().getId());
         assertEquals("test_tool", emitter.getToolUseBlock().getName());
     }
 
     @Test
-    void testEmitWithNullCallbackDoesNotThrow() {
-        ToolUseBlock toolUseBlock =
-                ToolUseBlock.builder().id("x").name("y").input(Map.of()).content("{}").build();
-
-        DefaultToolEmitter emitter = new DefaultToolEmitter(toolUseBlock, null);
-        emitter.emit(ToolResultBlock.text("should not throw"));
+    @DisplayName("emit() should not throw when callback is null")
+    void testEmitWithNullCallback() {
+        DefaultToolEmitter emitter = new DefaultToolEmitter(testToolUseBlock, null);
+        assertDoesNotThrow(() -> emitter.emit(ToolResultBlock.text("test")));
     }
 
     @Test
-    void testEmitWithCallback() {
-        ToolUseBlock toolUseBlock =
-                ToolUseBlock.builder().id("x").name("y").input(Map.of()).content("{}").build();
-
-        String[] captured = {null};
+    @DisplayName("emit() should not throw when chunk is null")
+    void testEmitWithNullChunk() {
         DefaultToolEmitter emitter =
                 new DefaultToolEmitter(
-                        toolUseBlock,
-                        (useBlock, chunk) -> captured[0] = useBlock.getId());
-
-        emitter.emit(ToolResultBlock.text("hello"));
-        assertEquals("x", captured[0]);
-    }
-
-    @Test
-    void testEmitNullChunkDoesNotThrow() {
-        ToolUseBlock toolUseBlock =
-                ToolUseBlock.builder().id("x").name("y").input(Map.of()).content("{}").build();
-
-        DefaultToolEmitter emitter =
-                new DefaultToolEmitter(
-                        toolUseBlock,
+                        testToolUseBlock,
                         (useBlock, chunk) -> {
                             throw new RuntimeException("should not be called");
                         });
+        assertDoesNotThrow(() -> emitter.emit(null));
+    }
 
-        emitter.emit(null);
+    @Test
+    @DisplayName("emit() should invoke callback with correct ToolUseBlock")
+    void testEmitWithCallback() {
+        ToolUseBlock[] captured = {null};
+        DefaultToolEmitter emitter =
+                new DefaultToolEmitter(
+                        testToolUseBlock, (useBlock, chunk) -> captured[0] = useBlock);
+
+        emitter.emit(ToolResultBlock.text("hello"));
+        assertSame(testToolUseBlock, captured[0]);
     }
 }
