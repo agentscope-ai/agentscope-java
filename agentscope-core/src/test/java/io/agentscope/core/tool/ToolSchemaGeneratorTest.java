@@ -19,12 +19,14 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -82,5 +84,126 @@ class ToolSchemaGeneratorTest {
         assertEquals(1, target.size());
         assertEquals(definition, target.get("Material"));
         assertFalse(paramSchema.containsKey("$defs"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    @DisplayName("Should inject additionalProperties=false recursively into nested structures")
+    void testAddAdditionalPropertiesFalseRecursively() throws Exception {
+        Method recMethod =
+                ToolSchemaGenerator.class.getDeclaredMethod(
+                        "addAdditionalPropertiesFalseRecursively", Map.class);
+        recMethod.setAccessible(true);
+
+        // Object with items
+        Map<String, Object> schemaWithItems = new HashMap<>();
+        schemaWithItems.put("type", "object");
+        Map<String, Object> itemsObj = new HashMap<>();
+        itemsObj.put("type", "object");
+        schemaWithItems.put("items", itemsObj);
+
+        recMethod.invoke(generator, schemaWithItems);
+
+        assertEquals(false, schemaWithItems.get("additionalProperties"));
+        assertEquals(false, itemsObj.get("additionalProperties"));
+
+        // Object with oneOf
+        Map<String, Object> schemaWithOneOf = new HashMap<>();
+        schemaWithOneOf.put("type", "object");
+        Map<String, Object> oneOfItem = new HashMap<>();
+        oneOfItem.put("type", "object");
+        schemaWithOneOf.put("oneOf", List.of(oneOfItem));
+
+        recMethod.invoke(generator, schemaWithOneOf);
+
+        assertEquals(false, schemaWithOneOf.get("additionalProperties"));
+        assertEquals(false, oneOfItem.get("additionalProperties"));
+
+        // Object with anyOf and allOf
+        Map<String, Object> schemaWithAnyOf = new HashMap<>();
+        schemaWithAnyOf.put("type", "object");
+        Map<String, Object> anyOfItem = new HashMap<>();
+        anyOfItem.put("type", "object");
+        Map<String, Object> allOfItem = new HashMap<>();
+        allOfItem.put("type", "object");
+        schemaWithAnyOf.put("anyOf", List.of(anyOfItem));
+        schemaWithAnyOf.put("allOf", List.of(allOfItem));
+
+        recMethod.invoke(generator, schemaWithAnyOf);
+
+        assertEquals(false, anyOfItem.get("additionalProperties"));
+        assertEquals(false, allOfItem.get("additionalProperties"));
+
+        // Object with $defs
+        Map<String, Object> schemaWithDefs = new HashMap<>();
+        schemaWithDefs.put("type", "object");
+        Map<String, Object> defEntry = new HashMap<>();
+        defEntry.put("type", "object");
+        schemaWithDefs.put("$defs", Map.of("MyType", defEntry));
+
+        recMethod.invoke(generator, schemaWithDefs);
+
+        assertEquals(false, defEntry.get("additionalProperties"));
+
+        // Object with definitions (legacy key)
+        Map<String, Object> schemaWithDefinitions = new HashMap<>();
+        schemaWithDefinitions.put("type", "object");
+        Map<String, Object> defEntry2 = new HashMap<>();
+        defEntry2.put("type", "object");
+        schemaWithDefinitions.put("definitions", Map.of("LegacyType", defEntry2));
+
+        recMethod.invoke(generator, schemaWithDefinitions);
+
+        assertEquals(false, defEntry2.get("additionalProperties"));
+    }
+
+    @Test
+    @DisplayName("Should skip when additionalProperties already set")
+    void testSkipWhenAdditionalPropertiesAlreadySet() throws Exception {
+        Method recMethod =
+                ToolSchemaGenerator.class.getDeclaredMethod(
+                        "addAdditionalPropertiesFalseRecursively", Map.class);
+        recMethod.setAccessible(true);
+
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("additionalProperties", true);
+
+        recMethod.invoke(generator, schema);
+
+        assertEquals(true, schema.get("additionalProperties"));
+    }
+
+    @Test
+    @DisplayName("Should skip non-object schemas")
+    void testSkipNonObjectSchemas() throws Exception {
+        Method recMethod =
+                ToolSchemaGenerator.class.getDeclaredMethod(
+                        "addAdditionalPropertiesFalseRecursively", Map.class);
+        recMethod.setAccessible(true);
+
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "string");
+
+        recMethod.invoke(generator, schema);
+
+        assertNull(schema.get("additionalProperties"));
+    }
+
+    @Test
+    @DisplayName("Should handle properties with non-Map values")
+    void testPropertiesWithNonMapValues() throws Exception {
+        Method recMethod =
+                ToolSchemaGenerator.class.getDeclaredMethod(
+                        "addAdditionalPropertiesFalseRecursively", Map.class);
+        recMethod.setAccessible(true);
+
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of("simple", "not-a-map"));
+
+        recMethod.invoke(generator, schema);
+
+        assertEquals(false, schema.get("additionalProperties"));
     }
 }

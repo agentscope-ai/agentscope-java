@@ -130,4 +130,18 @@ public @interface Tool {
      * @see DefaultToolResultConverter
      */
     Class<? extends ToolResultConverter> converter() default DefaultToolResultConverter.class;
+
+    /**
+     * Whether to allow additional properties beyond those defined in the schema.
+     *
+     * <p>Corresponds to the {@code additionalProperties} keyword in JSON Schema. When set to
+     * {@code false}, any extra parameters passed by the LLM that are not defined in the schema will
+     * cause a validation error, preventing the LLM from hallucinating undefined parameters.
+     *
+     * <p>This setting is applied recursively to all nested objects within the generated schema.
+     *
+     * @return {@code true} to allow additional properties (default, backward compatible), {@code
+     *     false} to disallow
+     */
+    boolean additionalProperties() default true;
 }

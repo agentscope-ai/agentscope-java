@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.tool;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.tool.test.SampleTools;
@@ -141,5 +144,105 @@ class ToolAnnotationTest {
         // So registered count might be less than or equal to total methods
         assertTrue(
                 registeredTools <= methods.length, "Should not register more tools than methods");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    @DisplayName("Should include additionalProperties=false in schema when set")
+    void testAdditionalPropertiesFalseInSchema() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(
+                            name = "query_data",
+                            description = "Query data",
+                            additionalProperties = false)
+                    public String queryData(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+
+        assertTrue(
+                schema.containsKey("additionalProperties"),
+                "Schema should contain additionalProperties key");
+        assertEquals(
+                false, schema.get("additionalProperties"), "additionalProperties should be false");
+
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        assertFalse(
+                properties.containsKey("additionalProperties"),
+                "additionalProperties should NOT be inside properties map");
+    }
+
+    @Test
+    @DisplayName("Should not include additionalProperties when default (true)")
+    void testAdditionalPropertiesDefaultNotInSchema() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "query_data", description = "Query data")
+                    public String queryData(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+
+        assertFalse(
+                schema.containsKey("additionalProperties"),
+                "Default behavior should NOT add additionalProperties to schema");
+    }
+
+    @Test
+    @DisplayName("Should reject hallucinated params when additionalProperties=false")
+    void testRejectHallucinatedParamsWhenStrict() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(
+                            name = "query_data",
+                            description = "Query data",
+                            additionalProperties = false)
+                    public String queryData(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+        String hallucinatedInput = "{\"keyword\": \"test\", \"owners\": [\"admin\"]}";
+
+        String validationError = ToolValidator.validateInput(hallucinatedInput, schema);
+
+        assertNotNull(
+                validationError,
+                "ToolValidator should reject hallucinated params when "
+                        + "additionalProperties=false");
+        assertTrue(
+                validationError.contains("owners"),
+                "Error message should mention the hallucinated param");
+    }
+
+    @Test
+    @DisplayName("Should allow extra params by default (backward compatible)")
+    void testAllowExtraParamsByDefault() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "query_data", description = "Query data")
+                    public String queryData(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+        String hallucinatedInput = "{\"keyword\": \"test\", \"owners\": [\"admin\"]}";
+
+        String validationError = ToolValidator.validateInput(hallucinatedInput, schema);
+
+        assertNull(
+                validationError,
+                "Default behavior should allow extra params (backward compatible)");
     }
 }

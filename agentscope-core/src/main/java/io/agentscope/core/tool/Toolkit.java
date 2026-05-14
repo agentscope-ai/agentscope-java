@@ -373,7 +373,8 @@ public class Toolkit {
                                 presetParameters != null
                                         ? presetParameters.keySet()
                                         : Collections.emptySet();
-                        return schemaGenerator.generateParameterSchema(method, excludeParams);
+                        return schemaGenerator.generateParameterSchema(
+                                method, excludeParams, toolAnnotation.additionalProperties());
                     }
 
                     @Override
