@@ -1,10 +1,8 @@
 # AgentScope Java
 
-> Build Production-Ready AI Agents in Java
-
 ## Docs
 
-- [AgentScope Java](https://java.agentscope.io/_sources/en/intro.md)
+- [<no title>](https://java.agentscope.io/_sources/en/intro.md)
 - [Installation](https://java.agentscope.io/_sources/en/quickstart/installation.md)
 - [Key Concepts](https://java.agentscope.io/_sources/en/quickstart/key-concepts.md)
 - [Create ReAct Agent](https://java.agentscope.io/_sources/en/quickstart/agent.md)
@@ -14,6 +12,7 @@
 - [Agent as Tool](https://java.agentscope.io/_sources/en/task/agent-as-tool.md)
 - [Agent Skills](https://java.agentscope.io/_sources/en/task/agent-skill.md)
 - [RAG (Retrieval-Augmented Generation)](https://java.agentscope.io/_sources/en/task/rag.md)
+- [Streaming](https://java.agentscope.io/_sources/en/task/streaming.md)
 - [Hook](https://java.agentscope.io/_sources/en/task/hook.md)
 - [Human-in-the-Loop](https://java.agentscope.io/_sources/en/task/hitl.md)
 - [Memory](https://java.agentscope.io/_sources/en/task/memory.md)
@@ -37,3 +36,10 @@
 - [Supervisor](https://java.agentscope.io/_sources/en/multi-agent/supervisor.md)
 - [Handoffs](https://java.agentscope.io/_sources/en/multi-agent/handoffs.md)
 - [Multi-Agent Debate](https://java.agentscope.io/_sources/en/multi-agent/multiagent-debate.md)
+- [Harness runtime](https://java.agentscope.io/_sources/en/harness/overview.md)
+- [Subagent Streaming](https://java.agentscope.io/_sources/en/harness/streaming.md)
+- [Integration](https://java.agentscope.io/_sources/en/integration/overview.md)
+- [Blog](https://java.agentscope.io/_sources/en/blogs/index.md)
+- [AgentScope Java 1.1 · Harness](https://java.agentscope.io/_sources/en/blogs/agentscope-v1-harness.md)
+- [Community](https://java.agentscope.io/_sources/en/community/overview.md)
+- [Core contributors](https://java.agentscope.io/_sources/en/community/contributors.md)

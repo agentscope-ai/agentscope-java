@@ -1,0 +1,1212 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta property="article:modified_time" content="2026-05-15T08:44:29+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工作区（Workspace）" href="workspace.html"><link rel="prev" title="Harness 概览" href="overview.html">
+        <link rel="canonical" href="https://java.agentscope.io/zh/harness/architecture.html">
+        <link rel="prefetch" href="../../_static/logo.svg" as="image">
+
+    <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
+        <title>Harness 架构 - AgentScope Java</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=f6f0bbea" />
+    <link rel="stylesheet" type="text/css" href="../../_static/homepage.css?v=8a098e07" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f0f0f0;
+  --color-code-foreground: black;
+  --color-brand-primary: #2196f3;
+  --color-brand-content: #2196f3;
+  --color-admonition-background: #f8f9fa;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+  
+
+  <!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+
+<div class="docs-site-header" role="banner">
+  <div class="docs-site-header__inner">
+    <div class="docs-site-header__start">
+      <a class="docs-site-header__brand" href="../../en/intro.html">
+        <img class="docs-site-header__logo" src="../../_static/logo.svg" alt="" width="44" height="44" />
+        <span class="docs-site-header__title"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></span>
+      </a>
+      <div class="docs-site-header__nav-shell">
+        
+  
+  <nav
+    class="docs-top-tabs"
+    aria-label="Documentation sections"
+    data-current-page="zh/harness/architecture"
+    data-current-lang="zh"
+  >
+    <div class="docs-top-tabs__list">
+      
+        
+        
+          
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../intro.html"
+              data-tab-id="home"
+              data-mirror-paths="true"
+              data-href-en="en/intro"
+              data-href-zh="zh/intro"
+              data-url-en="../../en/intro.html"
+              data-url-zh="../intro.html"
+              data-prefixes-en="en/intro"
+              data-prefixes-zh="zh/intro"
+              data-sections-en=""
+              data-sections-zh=""
+            >
+              首页
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="overview.html"
+              data-tab-id="harness"
+              data-mirror-paths="false"
+              data-href-en="en/harness/overview"
+              data-href-zh="zh/harness/overview"
+              data-url-en="../../en/harness/overview.html"
+              data-url-zh="overview.html"
+              data-prefixes-en="en/harness/"
+              data-prefixes-zh="zh/harness/"
+              data-sections-en="Harness (English)"
+              data-sections-zh="Harness"
+            >
+              Harness
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../quickstart/installation.html"
+              data-tab-id="agent"
+              data-mirror-paths="true"
+              data-href-en="en/quickstart/installation"
+              data-href-zh="zh/quickstart/installation"
+              data-url-en="../../en/quickstart/installation.html"
+              data-url-zh="../quickstart/installation.html"
+              data-prefixes-en="en/quickstart/|en/task/|en/multi-agent/"
+              data-prefixes-zh="zh/quickstart/|zh/task/|zh/multi-agent/"
+              data-sections-en="Quick Start|Features|Multi Agent"
+              data-sections-zh="快速开始|功能指南|多智能体"
+            >
+              Agent
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../integration/overview.html"
+              data-tab-id="integration"
+              data-mirror-paths="true"
+              data-href-en="en/integration/overview"
+              data-href-zh="zh/integration/overview"
+              data-url-en="../../en/integration/overview.html"
+              data-url-zh="../integration/overview.html"
+              data-prefixes-en="en/integration/"
+              data-prefixes-zh="zh/integration/"
+              data-sections-en="Integration"
+              data-sections-zh="集成"
+            >
+              集成
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../blogs/index.html"
+              data-tab-id="blogs"
+              data-mirror-paths="true"
+              data-href-en="en/blogs/index"
+              data-href-zh="zh/blogs/index"
+              data-url-en="../../en/blogs/index.html"
+              data-url-zh="../blogs/index.html"
+              data-prefixes-en="en/blogs/"
+              data-prefixes-zh="zh/blogs/"
+              data-sections-en="Blogs"
+              data-sections-zh="博客"
+            >
+              博客
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../community/overview.html"
+              data-tab-id="community"
+              data-mirror-paths="true"
+              data-href-en="en/community/overview"
+              data-href-zh="zh/community/overview"
+              data-url-en="../../en/community/overview.html"
+              data-url-zh="../community/overview.html"
+              data-prefixes-en="en/community/"
+              data-prefixes-zh="zh/community/"
+              data-sections-en="Community"
+              data-sections-zh="社区"
+            >
+              社区
+            </a>
+          
+        
+      
+    </div>
+  </nav>
+
+      </div>
+    </div>
+    <div class="docs-site-header__actions" aria-label="Site actions">
+      <form class="docs-header-search" method="get" action="../../search.html" role="search">
+        <input class="docs-header-search__input" type="search" name="q" placeholder="Search" aria-label="Search" autocomplete="off" />
+        <input type="hidden" name="check_keywords" value="yes" />
+        <input type="hidden" name="area" value="default" />
+        <button class="docs-header-search__submit" type="submit" aria-label="Search">
+          <svg class="docs-header-search__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      </form>
+      <div id="searchbox" class="docs-header-searchbox"></div>
+      <div class="docs-site-header__theme theme-toggle-container">
+        <button class="theme-toggle" type="button" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<div class="language-switch">
+    <div class="language-selector">
+        <button class="language-button" type="button" onclick="return toggleLanguageMenu()" aria-haspopup="true" aria-expanded="false">
+            <span id="current-lang">English</span>
+        </button>
+        <div class="language-menu" id="language-menu">
+            <a href="#" class="language-option" onclick="return switchLanguage('en')">English</a>
+            <a href="#" class="language-option" onclick="return switchLanguage('zh')">中文</a>
+        </div>
+    </div>
+</div>
+    </div>
+  </div>
+</div>
+  
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../en/intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">Agent</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-skill.html">Agent Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/streaming.html">Streaming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/state.html">State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/session.html">Session Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/multimodal.html">Multimodal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/structured-output.html">Structured Output</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/observability.html">Observability &amp; Studio</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/a2a.html">A2A Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/ai-coding.html">Coding with AI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/online-training.html">Online Training</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/workflow.html">Custom Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Harness (English)</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/streaming.html">Subagent Streaming</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Integration</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/integration/overview.html">Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Blogs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/blogs/index.html">Article index</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Community</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/community/overview.html">Community</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/community/contributors.html">Contributors</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">智能体</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">MCP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/agent-skill.html">Agent Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/streaming.html">流式输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/memory.html">记忆管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/state.html">状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/session.html">会话管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/multimodal.html">多模态</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/structured-output.html">结构化输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/observability.html">可观测与调试</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/a2a.html">A2A 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/ai-coding.html">使用 AI 编程</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/online-training.html">在线训练</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/overview.html">概览</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/workflow.html">自定义工作流</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/multiagent-debate.html">多智能体辩论</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">集成</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../integration/overview.html">概览</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">博客</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../blogs/index.html">全部文章</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">社区</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../community/overview.html">社区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../community/contributors.html">核心贡献者</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Harness</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">概览</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">架构</a></li>
+<li class="toctree-l1"><a class="reference internal" href="workspace.html">工作区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="filesystem.html">文件系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="session.html">会话</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">记忆</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="subagent.html">子 Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="streaming.html">子 Agent 流式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart/index.html">快速开始</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sandbox/index.html">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example/index.html">示例</a></li>
+</ul>
+
+</div>
+</div>
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/harness/architecture.md?plain=true" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div><div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="harness">
+<h1>Harness 架构<a class="headerlink" href="#harness" title="Link to this heading">¶</a></h1>
+<p><a class="reference internal" href="overview.html"><span class="std std-doc">Overview</span></a> 把 harness 的能力按”解决了什么问题”组织。本文换一个视角：把每个组件的<strong>定义、行为、触发时机、协作对象</strong>讲清楚，最后用时序图说明这些组件在一次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 里如何协同。</p>
+<blockquote>
+<div><p>本文聚焦使用者视角的中粒度——讲清”是谁、什么时候、做什么、跟谁协作”，不展开调用栈与实现细节；那些放在各子文档（<a class="reference internal" href="memory.html"><span class="std std-doc">memory</span></a>、<a class="reference internal" href="workspace.html"><span class="std std-doc">workspace</span></a>、<a class="reference internal" href="filesystem.html"><span class="std std-doc">filesystem</span></a>、<a class="reference internal" href="sandbox/index.html"><span class="std std-doc">sandbox</span></a>、<a class="reference internal" href="subagent.html"><span class="std std-doc">subagent</span></a>、<a class="reference internal" href="session.html"><span class="std std-doc">session</span></a>、<a class="reference internal" href="tool.html"><span class="std std-doc">tool</span></a>）。</p>
+</div></blockquote>
+<section id="id1">
+<h2>1. 顶层结构<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 不是一个新的推理循环，它是 <code class="docutils literal notranslate"><span class="pre">Agent</span></code> + <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> 的薄包装，内部持有一个 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span> <span class="pre">delegate</span></code>，所有 <code class="docutils literal notranslate"><span class="pre">call</span></code> / <code class="docutils literal notranslate"><span class="pre">stream</span></code> / <code class="docutils literal notranslate"><span class="pre">observe</span></code> / <code class="docutils literal notranslate"><span class="pre">saveTo</span></code> / <code class="docutils literal notranslate"><span class="pre">loadFrom</span></code> 都转发过去。所有 harness 能力都通过 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 已有的三个扩展点装配：</p>
+<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>flowchart TD
+    HA[&quot;&lt;b&gt;HarnessAgent&lt;/b&gt;&lt;br/&gt;Agent + StateModule，对外 API&quot;]
+    HA --&gt; SHARED[&quot;&lt;b&gt;共享对象&lt;/b&gt;&quot;]
+    HA --&gt; DEL[&quot;&lt;b&gt;delegate: ReActAgent&lt;/b&gt;&quot;]
+
+    SHARED --&gt; WM[&quot;WorkspaceManager&lt;br/&gt;&lt;i&gt;谁来读写工作区&lt;/i&gt;&quot;]
+    SHARED --&gt; AFS[&quot;AbstractFilesystem&lt;br/&gt;&lt;i&gt;本地 / 沙箱 / 远端 / 组合&lt;/i&gt;&quot;]
+    SHARED --&gt; RC[&quot;RuntimeContext&lt;br/&gt;&lt;i&gt;sessionId / userId / session / extra&lt;/i&gt;&quot;]
+
+    DEL --&gt; HK[&quot;hooks&lt;br/&gt;&lt;i&gt;按 priority 排序&lt;/i&gt;&quot;]
+    DEL --&gt; TK[&quot;toolkit&lt;br/&gt;&lt;i&gt;用户 + harness 内置 + SubagentsHook 注入的 task 工具&lt;/i&gt;&quot;]
+    DEL --&gt; SB[&quot;skillBox&lt;br/&gt;&lt;i&gt;AgentSkillRepository 或 workspace/skills/&lt;/i&gt;&quot;]
+    DEL --&gt; MEM[&quot;memory&lt;br/&gt;&lt;i&gt;InMemoryMemory（通过 Session 持久化）&lt;/i&gt;&quot;]
+</pre></div>
+</div>
+<p><strong>注入发生在 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.Builder.build()</span></code></strong>：构造完三个共享对象后，按固定顺序串好 hook 列表、向用户 toolkit 追加内置工具、根据工作区/repo 装配 skillBox，最后交给 <code class="docutils literal notranslate"><span class="pre">ReActAgent.builder()</span></code>。</p>
+<p>每次 <code class="docutils literal notranslate"><span class="pre">agent.call(msg,</span> <span class="pre">ctx)</span></code> 开头由 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.bindRuntimeContext(ctx)</span></code> 把当次的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 分发给所有实现了 <code class="docutils literal notranslate"><span class="pre">RuntimeContextAwareHook</span></code> 的 hook（workspace context、memory flush、compaction、session persistence），并按需从 <code class="docutils literal notranslate"><span class="pre">Session</span></code> 自动恢复状态。</p>
+</section>
+<section id="id2">
+<h2>2. 三个共享对象<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>这三个对象是 hook 之间协作的通用语言。理解它们就理解了 harness 的”耦合方式”。</p>
+<section id="runtimecontext">
+<h3>2.1 RuntimeContext<a class="headerlink" href="#runtimecontext" title="Link to this heading">¶</a></h3>
+<p>当次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 的身份载体：不持久化，每次 <code class="docutils literal notranslate"><span class="pre">call</span></code> 重新分发给 <code class="docutils literal notranslate"><span class="pre">RuntimeContextAwareHook</span></code>。</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">sessionId</span></code></strong> —— 决定持久化路径、JSONL 文件名</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">userId</span></code></strong> —— 透传 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem.NamespaceFactory</span></code> 实现多租户隔离</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">session</span></code> + <code class="docutils literal notranslate"><span class="pre">sessionKey</span></code></strong> —— 显式指定或默认 <code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span> <span class="pre">+</span> <span class="pre">SimpleSessionKey.of(sessionId)</span></code></p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">extra</span></code></strong> —— 自定义键值，工具/hook 通过 <code class="docutils literal notranslate"><span class="pre">ctx.get(key)</span></code> 读取</p></li>
+</ul>
+</section>
+<section id="workspacemanager">
+<h3>2.2 WorkspaceManager<a class="headerlink" href="#workspacemanager" title="Link to this heading">¶</a></h3>
+<p>工作区无状态访问器。<strong>两层语义</strong>：读优先 filesystem 命中、否则回退本地；写一律走 filesystem；列表合并去重。期望布局：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>workspace/
+├── AGENTS.md / MEMORY.md
+├── memory/YYYY-MM-DD.md / .consolidation_state / archive/
+├── memory_index.db                # SQLite FTS5
+├── knowledge/KNOWLEDGE.md / **/*
+├── skills/&lt;skill&gt;/SKILL.md
+├── subagents/*.md                 # YAML front matter + body
+└── agents/&lt;agentId&gt;/
+    ├── context/&lt;sessionId&gt;/{key}.json     # WorkspaceSession 写入
+    └── sessions/&lt;sessionId&gt;.log.jsonl     # MemoryFlushManager 卸载
+</pre></div>
+</div>
+</section>
+<section id="abstractfilesystem">
+<h3>2.3 AbstractFilesystem<a class="headerlink" href="#abstractfilesystem" title="Link to this heading">¶</a></h3>
+<p>工作区的物理后端，可插拔。基础接口 <code class="docutils literal notranslate"><span class="pre">ls/read/write/edit/grep/glob/upload/download</span></code>；继承接口 <code class="docutils literal notranslate"><span class="pre">AbstractSandboxFilesystem</span></code> 追加 <code class="docutils literal notranslate"><span class="pre">execute/id</span></code>。</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>实现</p></th>
+<th class="head"><p>用途</p></th>
+<th class="head"><p>关键特性</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystem</span></code></p></td>
+<td><p>本地磁盘</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">virtualMode</span></code> 锚定 <code class="docutils literal notranslate"><span class="pre">rootDir</span></code> 阻止穿越；无 shell</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystemWithShell</span></code></p></td>
+<td><p>本地 + 宿主 shell</p></td>
+<td><p>声明式下对应 <code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code> 与<strong>无 <code class="docutils literal notranslate"><span class="pre">filesystem</span></code> 的默认</strong>；<code class="docutils literal notranslate"><span class="pre">instanceof</span> <span class="pre">AbstractSandboxFilesystem</span></code> 时注册 <code class="docutils literal notranslate"><span class="pre">shell_execute</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">BaseSandboxFilesystem</span></code> / <code class="docutils literal notranslate"><span class="pre">SandboxBackedFilesystem</span></code></p></td>
+<td><p>沙箱后端</p></td>
+<td><p>文件与命令在沙箱内；见 <a class="reference internal" href="sandbox/index.html"><span class="std std-doc">Sandbox</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystem</span></code></p></td>
+<td><p>KV store</p></td>
+<td><p>在 <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> 下与 <code class="docutils literal notranslate"><span class="pre">LocalFilesystem</span></code> 经 <code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code> 路由；无 shell</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code></p></td>
+<td><p>按前缀路由</p></td>
+<td><p>仅实现 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>（<strong>不</strong>实现 <code class="docutils literal notranslate"><span class="pre">AbstractSandboxFilesystem</span></code>），<strong>不</strong>触发 <code class="docutils literal notranslate"><span class="pre">ShellExecuteTool</span></code>；最长前缀优先</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<div><p><strong>多租户与隔离</strong>：<code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> 在每次操作时被调用；<code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> / <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> 还可配 <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>（与沙箱/共享存储命名一致）。<strong>三种声明式模式</strong>以何者注册 <code class="docutils literal notranslate"><span class="pre">ShellExecuteTool</span></code> 为准，见 <a class="reference internal" href="filesystem.html#三种声明式模式"><span class="std std-ref">filesystem</span></a>。</p>
+</div></blockquote>
+</section>
+</section>
+<section id="hook">
+<h2>3. Hook 列表<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h2>
+<p>下列为 <code class="docutils literal notranslate"><span class="pre">Builder.build()</span></code> 中常见的 harness 内置 hook（<strong>沙箱模式</strong>下会加入 <code class="docutils literal notranslate"><span class="pre">SandboxLifecycleHook</span></code>，见 <a class="reference internal" href="sandbox/index.html"><span class="std std-doc">Sandbox</span></a>）。<code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 按 <code class="docutils literal notranslate"><span class="pre">priority()</span></code> <strong>升序</strong>执行，同优先级时保留装配顺序。</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Hook</p></th>
+<th class="head"><p>优先级</p></th>
+<th class="head"><p>监听事件</p></th>
+<th class="head"><p>默认开启</p></th>
+<th class="head"><p>关键依赖</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AgentTraceHook</span></code></p></td>
+<td><p>0</p></td>
+<td><p>全部</p></td>
+<td><p>✓（默认；可 <code class="docutils literal notranslate"><span class="pre">.agentTracing(false)</span></code> 关闭）</p></td>
+<td><p>—</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">MemoryFlushHook</span></code></p></td>
+<td><p>5</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PostCallEvent</span></code></p></td>
+<td><p>✓（需 <code class="docutils literal notranslate"><span class="pre">model</span></code>）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code>、<code class="docutils literal notranslate"><span class="pre">Model</span></code>、<code class="docutils literal notranslate"><span class="pre">MemoryFlushManager</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MemoryMaintenanceHook</span></code></p></td>
+<td><p>6</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PostCallEvent</span></code>（有节流）</p></td>
+<td><p>✓（需 <code class="docutils literal notranslate"><span class="pre">model</span></code>）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MemoryConsolidator</span></code>、<code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">CompactionHook</span></code></p></td>
+<td><p>10</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code></p></td>
+<td><p>✗（需显式 <code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code>）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code>、<code class="docutils literal notranslate"><span class="pre">Model</span></code>、<code class="docutils literal notranslate"><span class="pre">CompactionConfig</span></code>、<code class="docutils literal notranslate"><span class="pre">MemoryFlushManager</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SandboxLifecycleHook</span></code></p></td>
+<td><p>50</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PreCall</span></code> / <code class="docutils literal notranslate"><span class="pre">PostCall</span></code> / <code class="docutils literal notranslate"><span class="pre">Error</span></code></p></td>
+<td><p>仅当 <code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SandboxManager</span></code>、<code class="docutils literal notranslate"><span class="pre">SandboxBackedFilesystem</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ToolResultEvictionHook</span></code></p></td>
+<td><p>50</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PostActingEvent</span></code></p></td>
+<td><p>✗（需显式 <code class="docutils literal notranslate"><span class="pre">.toolResultEviction(...)</span></code>）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>、<code class="docutils literal notranslate"><span class="pre">ToolResultEvictionConfig</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code></p></td>
+<td><p>80</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code> + <code class="docutils literal notranslate"><span class="pre">tools()</span></code></p></td>
+<td><p>✓（非 leaf 且有 <code class="docutils literal notranslate"><span class="pre">model</span></code>）</p></td>
+<td><p>子 agent 列表、<code class="docutils literal notranslate"><span class="pre">TaskRepository</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceContextHook</span></code></p></td>
+<td><p>900</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code></p></td>
+<td><p>✓</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code>、<code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>、token 预算</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SessionPersistenceHook</span></code></p></td>
+<td><p>900</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PostCallEvent</span></code> + <code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code></p></td>
+<td><p>✓</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<div><p>实现 <code class="docutils literal notranslate"><span class="pre">RuntimeContextAwareHook</span></code> 接口的 hook（workspace context、memory flush、compaction、session persistence）会在每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 通过 <code class="docutils literal notranslate"><span class="pre">bindRuntimeContext</span></code> 被重新注入当次的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>。</p>
+</div></blockquote>
+<p>下面分组详解每个 hook 在它的事件回调里<strong>做了什么</strong>。</p>
+<section id="workspacecontexthook-priority-900">
+<h3>3.1 上下文注入：<code class="docutils literal notranslate"><span class="pre">WorkspaceContextHook</span></code>（priority 900）<a class="headerlink" href="#workspacecontexthook-priority-900" title="Link to this heading">¶</a></h3>
+<p><strong>作用</strong>：每轮推理前把工作区文件以 <code class="docutils literal notranslate"><span class="pre">&lt;loaded_context&gt;</span></code> XML 块合并进第一条 SYSTEM 消息。</p>
+<p><strong>触发</strong>：<code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code>。优先级 900 让它跑在压缩、子 agent 之后，叠加在最终 system prompt 上。</p>
+<p><strong>关键逻辑</strong>：读 AGENTS / MEMORY / KNOWLEDGE（含目录列表）+ 用户指定的 <code class="docutils literal notranslate"><span class="pre">additionalContextFiles</span></code> → 估 token（chars/4）后按 <code class="docutils literal notranslate"><span class="pre">maxContextTokens</span></code> 预算保留固定区段、剩余给 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> 并在超额时尾部截断 + 提示 <code class="docutils literal notranslate"><span class="pre">memory_search</span></code>。</p>
+</section>
+<section id="memoryflushhook">
+<h3>3.2 记忆管理：<code class="docutils literal notranslate"><span class="pre">MemoryFlushHook</span></code> + 后台<a class="headerlink" href="#memoryflushhook" title="Link to this heading">¶</a></h3>
+<p><strong>作用</strong>：<code class="docutils literal notranslate"><span class="pre">MemoryFlushHook</span></code>（priority 5）在 <code class="docutils literal notranslate"><span class="pre">PostCallEvent</span></code> 把当前 memory 全量交给 <code class="docutils literal notranslate"><span class="pre">MemoryFlushManager</span></code>，做两件事：</p>
+<ul class="simple">
+<li><p><strong>flushMemories</strong>：LLM 提炼事实 → append 到 <code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code>（日流水账）→ 增量更新 FTS5</p></li>
+<li><p><strong>offloadMessages</strong>：原始消息序列写到 <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/sessions/&lt;sessionId&gt;.log.jsonl</span></code></p></li>
+</ul>
+<p>整体由四个组件分工：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>组件</p></th>
+<th class="head"><p>负责</p></th>
+<th class="head"><p>频率</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MemoryFlushManager</span></code></p></td>
+<td><p>第一层：日流水账 + JSONL</p></td>
+<td><p>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 末尾 + 每次压缩前</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">MemoryConsolidator</span></code></p></td>
+<td><p>第二层：curated <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></p></td>
+<td><p>6 小时周期 / opportunistic（30min 节流）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MemoryIndex</span></code></p></td>
+<td><p>SQLite FTS5 索引 <code class="docutils literal notranslate"><span class="pre">memory_index.db</span></code></p></td>
+<td><p>增量（写入时）+ 全量（维护周期）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">MemoryMaintenanceScheduler</span></code></p></td>
+<td><p>调度 + 旧文件归档/清理</p></td>
+<td><p>守护线程 6 小时周期</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<div><p><strong>双层语义</strong>：日流水账只 append、永不修改；<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> 由 consolidator 整体重写（输出完整新版本，不是 diff）。第一层是事实流，第二层是 curated 视图。与 <code class="docutils literal notranslate"><span class="pre">CompactionHook</span></code> 不重叠：压缩管被压缩的 prefix，本 hook 管保留尾部。</p>
+</div></blockquote>
+</section>
+<section id="compactionhook">
+<h3>3.3 上下文长度控制：<code class="docutils literal notranslate"><span class="pre">CompactionHook</span></code> + 溢出兜底<a class="headerlink" href="#compactionhook" title="Link to this heading">¶</a></h3>
+<p><strong>作用</strong>：<code class="docutils literal notranslate"><span class="pre">CompactionHook</span></code>（priority 10）在 <code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code> 委托 <code class="docutils literal notranslate"><span class="pre">ConversationCompactor.compactIfNeeded</span></code> 压缩对话。</p>
+<p><strong>触发条件</strong>：消息数 ≥ <code class="docutils literal notranslate"><span class="pre">triggerMessages</span></code> 或 token 数 ≥ <code class="docutils literal notranslate"><span class="pre">triggerTokens</span></code>（默认 50 / 80K）。</p>
+<p><strong>触发后</strong>：先 <code class="docutils literal notranslate"><span class="pre">flushMemories(prefix)</span></code> 提炼事实、<code class="docutils literal notranslate"><span class="pre">offloadMessages(整段)</span></code> 卸载 JSONL，再用结构化 prompt（SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS）让 LLM distill 成 summary，得到 <code class="docutils literal notranslate"><span class="pre">[summaryMsg</span> <span class="pre">+</span> <span class="pre">tail]</span></code> 同时写回 <code class="docutils literal notranslate"><span class="pre">Memory</span></code> 与 <code class="docutils literal notranslate"><span class="pre">event.setInputMessages</span></code>。<code class="docutils literal notranslate"><span class="pre">tail</span></code> 长度由 <code class="docutils literal notranslate"><span class="pre">keepMessages</span></code> / <code class="docutils literal notranslate"><span class="pre">keepTokens</span></code> 控制（默认 20 条）。</p>
+<p><strong>溢出兜底</strong>：<code class="docutils literal notranslate"><span class="pre">HarnessAgent.call()</span></code> 捕获模型 <code class="docutils literal notranslate"><span class="pre">ContextOverflow</span></code> 类异常 → <code class="docutils literal notranslate"><span class="pre">forceCompactAndRetry</span></code> 强制最激进压缩 → 重试一次 <code class="docutils literal notranslate"><span class="pre">delegate.call()</span></code>。这是阈值配置不当时的最后防线。</p>
+</section>
+<section id="toolresultevictionhook-priority-50">
+<h3>3.4 工具结果卸载：<code class="docutils literal notranslate"><span class="pre">ToolResultEvictionHook</span></code>（priority 50）<a class="headerlink" href="#toolresultevictionhook-priority-50" title="Link to this heading">¶</a></h3>
+<p><strong>作用</strong>：单条工具结果太大时落盘，上下文里只留 head+tail 预览 + 占位符。</p>
+<p><strong>触发</strong>：<code class="docutils literal notranslate"><span class="pre">PostActingEvent</span></code>（先于 memory 写入，下游只看到占位符）。</p>
+<p><strong>关键逻辑</strong>：超过 <code class="docutils literal notranslate"><span class="pre">maxResultChars</span></code>（默认 80K chars ≈ 20K tokens）→ 写到 <code class="docutils literal notranslate"><span class="pre">{evictionPath}/{agent}/{toolCallId}</span></code> → 用 <code class="docutils literal notranslate"><span class="pre">Tool</span> <span class="pre">output</span> <span class="pre">too</span> <span class="pre">large,</span> <span class="pre">saved</span> <span class="pre">to</span> <span class="pre">...</span></code> + head 2K + tail 2K 替换。<code class="docutils literal notranslate"><span class="pre">excludedToolNames</span></code>（read/write/edit、grep/glob/ls、memory/session 搜索）跳过卸载——这些工具自带分页或回读会循环。</p>
+<blockquote>
+<div><p>与压缩独立：压缩管深度（消息累计长度），卸载管宽度（单条消息长度）。</p>
+</div></blockquote>
+</section>
+<section id="sessionpersistencehook-workspacesession">
+<h3>3.5 会话持久化：<code class="docutils literal notranslate"><span class="pre">SessionPersistenceHook</span></code> + <code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code><a class="headerlink" href="#sessionpersistencehook-workspacesession" title="Link to this heading">¶</a></h3>
+<p><strong>作用</strong>：<code class="docutils literal notranslate"><span class="pre">SessionPersistenceHook</span></code>（priority 900）在 <code class="docutils literal notranslate"><span class="pre">PostCallEvent</span></code> 与 <code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code> 都尝试 <code class="docutils literal notranslate"><span class="pre">agent.saveTo(session,</span> <span class="pre">sessionKey)</span></code>（<code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 实现 <code class="docutils literal notranslate"><span class="pre">StateModule</span></code>）。优先级 900 让 <code class="docutils literal notranslate"><span class="pre">MemoryFlushHook</span></code> (5) 先把记忆写完再快照。</p>
+<p><strong><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code></strong> 是 <code class="docutils literal notranslate"><span class="pre">JsonSession</span></code> 子类，把 baseDir 锁到 <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/agents/&lt;agentId&gt;/context/</span></code>，最终落盘 <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/agents/&lt;agentId&gt;/context/&lt;sessionId&gt;/{key}.json</span></code>。</p>
+<p>下次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 开头 <code class="docutils literal notranslate"><span class="pre">bindRuntimeContext</span></code> 调 <code class="docutils literal notranslate"><span class="pre">loadIfExists</span></code> 还原 memory——这就是”同一 sessionId 跨调用记忆”的来源。</p>
+</section>
+<section id="agent-subagentshook-taskrepository">
+<h3>3.6 子 agent 编排：<code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code> + <code class="docutils literal notranslate"><span class="pre">TaskRepository</span></code><a class="headerlink" href="#agent-subagentshook-taskrepository" title="Link to this heading">¶</a></h3>
+<p><strong>作用</strong>：<code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code>（priority 80）双角色——通过 <code class="docutils literal notranslate"><span class="pre">tools()</span></code> 注册 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span> <span class="pre">/</span> <span class="pre">agent_send</span> <span class="pre">/</span> <span class="pre">agent_list</span> <span class="pre">/</span> <span class="pre">task_output</span> <span class="pre">/</span> <span class="pre">task_cancel</span> <span class="pre">/</span> <span class="pre">task_list</span></code>，并在 <code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code> 注入子 agent 名+描述列表的 system prompt 段。</p>
+<ul class="simple">
+<li><p><strong>同步路径</strong> <code class="docutils literal notranslate"><span class="pre">agent_send</span></code>：阻塞执行子 agent 并回填结果</p></li>
+<li><p><strong>后台路径</strong> <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code>：通过 <code class="docutils literal notranslate"><span class="pre">TaskRepository.putTask</span></code> 提交到 executor 拿 <code class="docutils literal notranslate"><span class="pre">taskId</span></code>；父 agent 后续轮用 <code class="docutils literal notranslate"><span class="pre">task_output(taskId)</span></code> 拉结果</p></li>
+</ul>
+<p><strong>子 agent 来源</strong>（<code class="docutils literal notranslate"><span class="pre">Builder.buildSubagentEntries</span></code>）：工作区 <code class="docutils literal notranslate"><span class="pre">subagents/*.md</span></code>（<code class="docutils literal notranslate"><span class="pre">AgentSpecLoader</span></code> 解析为 <code class="docutils literal notranslate"><span class="pre">SubagentDeclaration</span></code>）/ 编程式 <code class="docutils literal notranslate"><span class="pre">.subagent(SubagentDeclaration)</span></code> / 自定义 <code class="docutils literal notranslate"><span class="pre">.subagentFactory</span></code>。每个子 agent 都是 leaf <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>（<code class="docutils literal notranslate"><span class="pre">asLeafSubagent()</span></code>，不注册 <code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code>）；workspace / filesystem / sysPrompt 由声明与五行判定表决定，见 <a class="reference internal" href="subagent.html"><span class="std std-doc">子 Agent</span></a>。</p>
+<p><strong><code class="docutils literal notranslate"><span class="pre">TaskRepository</span></code></strong> 是任务编排接口（<code class="docutils literal notranslate"><span class="pre">putTask</span></code> / <code class="docutils literal notranslate"><span class="pre">getTask</span></code> / <code class="docutils literal notranslate"><span class="pre">listTasks(filter)</span></code> / <code class="docutils literal notranslate"><span class="pre">cancelTask</span></code>）；默认 <code class="docutils literal notranslate"><span class="pre">DefaultTaskRepository</span></code> 内部用线程池 + <code class="docutils literal notranslate"><span class="pre">CompletableFuture&lt;String&gt;</span></code> + <code class="docutils literal notranslate"><span class="pre">BackgroundTask</span></code> 包装状态机（PENDING/RUNNING/COMPLETED/FAILED/CANCELLED）。</p>
+</section>
+<section id="agenttracehook-priority-0">
+<h3>3.7 追踪日志：<code class="docutils literal notranslate"><span class="pre">AgentTraceHook</span></code>（priority 0）<a class="headerlink" href="#agenttracehook-priority-0" title="Link to this heading">¶</a></h3>
+<p>监听全部事件，输出 <code class="docutils literal notranslate"><span class="pre">[&lt;agent&gt;]</span> <span class="pre">PRE_REASONING</span> <span class="pre">|</span> <span class="pre">model=...,</span> <span class="pre">messages=...</span></code> 风格 INFO 日志（DEBUG 打详细内容）；不修改事件。</p>
+</section>
+</section>
+<section id="call">
+<h2>4. <code class="docutils literal notranslate"><span class="pre">call()</span></code> 生命周期时序<a class="headerlink" href="#call" title="Link to this heading">¶</a></h2>
+<p>下图展示一次完整 <code class="docutils literal notranslate"><span class="pre">agent.call(msg,</span> <span class="pre">ctx)</span></code> 中各组件的协作顺序。<strong>hook 在同一事件上按 priority 升序触发</strong>——这就是它们能彼此叠加而不打架的原因。</p>
+<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>sequenceDiagram
+    autonumber
+    actor User
+    participant HA as HarnessAgent
+    participant RA as delegate&lt;br/&gt;(ReActAgent)
+    participant H as Hooks&lt;br/&gt;(按 priority)
+    participant M as Model
+    participant T as Toolkit
+    participant FS as Filesystem&lt;br/&gt;+ Memory/JSONL
+
+    User-&gt;&gt;HA: call(msg, ctx)
+    HA-&gt;&gt;HA: bindRuntimeContext(ctx)
+    Note over HA: 分发给 RuntimeContextAwareHook&lt;br/&gt;loadIfExists(session, key) 恢复状态
+    HA-&gt;&gt;RA: delegate.call(...)
+
+    RA-&gt;&gt;H: PreCallEvent
+    Note over H: AgentTraceHook(0) 记日志
+
+    loop ReAct 推理循环
+        RA-&gt;&gt;H: PreReasoningEvent
+        Note over H,FS: CompactionHook(10) 阈值达到则:&lt;br/&gt;① flushMemories(prefix) → memory/*.md&lt;br/&gt;② offload(整段) → sessions/*.jsonl&lt;br/&gt;③ LLM distill prefix → summaryMsg&lt;br/&gt;④ memory.clear() + add(summary + tail)&lt;br/&gt;⑤ event.setInputMessages(...)&lt;br/&gt;&lt;br/&gt;SubagentsHook(80) 注入子 agent prompt&lt;br/&gt;WorkspaceContextHook(900) 注入 workspace 文件
+        RA-&gt;&gt;M: Model.stream(messages)
+        M--&gt;&gt;RA: ChatResponse
+        RA-&gt;&gt;H: PostReasoningEvent
+        Note over H: AgentTraceHook(0) 记 text 或 tool_calls
+
+        alt 含 tool_calls
+            loop 每个 tool_call
+                RA-&gt;&gt;H: PreActingEvent
+                RA-&gt;&gt;T: Toolkit.invoke(toolCall)
+                T--&gt;&gt;RA: ToolResult
+                RA-&gt;&gt;H: PostActingEvent
+                Note over H,FS: ToolResultEvictionHook(50) 超阈值则:&lt;br/&gt;① 写到 filesystem evictionPath&lt;br/&gt;② head+tail 占位符替换 result
+            end
+        else 无 tool_call (文本响应)
+            Note over RA: 跳出循环
+        end
+    end
+
+    RA-&gt;&gt;H: PostCallEvent
+    Note over H,FS: MemoryFlushHook(5):&lt;br/&gt;① flushMemories → memory/YYYY-MM-DD.md&lt;br/&gt;② offloadMessages → sessions/*.jsonl&lt;br/&gt;③ requestConsolidation 通知后台&lt;br/&gt;&lt;br/&gt;SessionPersistenceHook(900) saveTo(session, key)
+    RA--&gt;&gt;HA: final Msg
+    HA--&gt;&gt;User: final Msg
+
+    Note over HA: 失败路径: throw → ErrorEvent → SessionPersistenceHook 仍然 saveTo&lt;br/&gt;ContextOverflow → forceCompactAndRetry → delegate.call 重试
+</pre></div>
+</div>
+</section>
+<section id="id3">
+<h2>5. 后台维护时序<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">MemoryMaintenanceScheduler.start()</span></code> 在 <code class="docutils literal notranslate"><span class="pre">Builder.build()</span></code> 末尾被触发；它持有一个守护线程的 <code class="docutils literal notranslate"><span class="pre">ScheduledExecutorService</span></code>。</p>
+<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>flowchart LR
+    subgraph CYCLE[&quot;周期触发（默认每 6 小时）&quot;]
+        direction TB
+        T0[&quot;runMaintenance()&quot;] --&gt; S1[&quot;1. expireDailyFiles&lt;br/&gt;memory/*.md 文件名 YYYY-MM-DD&lt;br/&gt;且 &amp;lt; cutoff（默认 90 天）&lt;br/&gt;→ archive/&quot;]
+        S1 --&gt; S2[&quot;2. consolidateMemory&lt;br/&gt;读 .consolidation_state 水位&lt;br/&gt;列出 mtime &amp;gt; 水位的日文件&lt;br/&gt;LLM 合并 → 覆盖 MEMORY.md → 推进水位&quot;]
+        S2 --&gt; S3[&quot;3. pruneOldSessions&lt;br/&gt;workspace/agents/&amp;lt;id&amp;gt;/sessions/*&lt;br/&gt;mtime &amp;lt; cutoff（默认 180 天）的非 sessions.json 删除&quot;]
+        S3 --&gt; S4[&quot;4. reindex&lt;br/&gt;MemoryIndex.indexAllFromWorkspace&lt;br/&gt;DELETE + INSERT 重建 FTS5&quot;]
+    end
+
+    subgraph OPP[&quot;opportunistic 路径&quot;]
+        direction TB
+        F[&quot;MemoryFlushManager.flushMemories()&lt;br/&gt;每次 flush 成功&quot;] --&gt; R[&quot;scheduler.requestConsolidation()&quot;]
+        R -- &quot;距上次 &amp;lt; 30min&quot; --&gt; SK[&quot;跳过&quot;]
+        R -- &quot;否则&quot; --&gt; SUB[&quot;submit consolidateMemory&lt;br/&gt;（走 executor，不阻塞 agent）&quot;]
+    end
+</pre></div>
+</div>
+</section>
+<section id="id4">
+<h2>6. 几个典型协作场景<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<p>最后用四个具体路径把组件串起来，看它们是怎么真正协作的。</p>
+<section id="a-system-prompt">
+<h3>场景 A — 工作区文件变成模型看到的 system prompt<a class="headerlink" href="#a-system-prompt" title="Link to this heading">¶</a></h3>
+<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>sequenceDiagram
+    participant RA as ReActAgent
+    participant Hook as WorkspaceContextHook&lt;br/&gt;(priority 900)
+    participant WM as WorkspaceManager
+    participant FS as AbstractFilesystem
+    participant LD as 本地磁盘
+    participant M as Model
+
+    RA-&gt;&gt;Hook: PreReasoningEvent(messages)
+    Note over WM: readAgentsMd / readMemoryMd / readKnowledgeMd
+    Hook-&gt;&gt;WM: 读取工作区文件
+    WM-&gt;&gt;FS: read(...) 优先
+    alt FS 命中非空
+        FS--&gt;&gt;WM: 内容（多租户透明）
+    else 否则
+        WM-&gt;&gt;LD: Files.readString(workspace/AGENTS.md)
+        LD--&gt;&gt;WM: 内容（兜底）
+    end
+    WM--&gt;&gt;Hook: AGENTS / MEMORY / KNOWLEDGE / extra
+    Note over Hook: 包入 loaded_context XML 块&lt;br&gt;合并到第一条 SYSTEM 消息&lt;br&gt;event.setInputMessages(...)
+    Hook--&gt;&gt;RA: 返回修改后的 event（含新 messages）
+    RA-&gt;&gt;M: Model.stream(messages)
+</pre></div>
+</div>
+</section>
+<section id="b-memory-md">
+<h3>场景 B — 长会话里事实如何沉淀进 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code><a class="headerlink" href="#b-memory-md" title="Link to this heading">¶</a></h3>
+<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>flowchart TD
+    A[&quot;对话累积 → 触发 CompactionHook 阈值&quot;] --&gt; B[&quot;ConversationCompactor.compactIfNeeded&quot;]
+    B --&gt; C[&quot;MemoryFlushManager&lt;br/&gt;.flushMemories(prefix)&quot;]
+    B --&gt; D[&quot;offloadMessages&lt;br/&gt;→ sessions/&amp;lt;sessionId&amp;gt;.log.jsonl&quot;]
+    B --&gt; E[&quot;distill summary&lt;br/&gt;→ 替换 memory + setInputMessages&quot;]
+
+    C --&gt; C1[&quot;memory/YYYY-MM-DD.md (append)&quot;]
+    C --&gt; C2[&quot;MemoryIndex.indexFromString&lt;br/&gt;(FTS5 增量)&quot;]
+    C --&gt; C3[&quot;scheduler.requestConsolidation&quot;]
+
+    C3 -- &quot;throttle 30min&quot; --&gt; C4[&quot;submit consolidateMemory&quot;]
+    C4 --&gt; C5[&quot;MemoryConsolidator + LLM&quot;]
+    C5 --&gt; C6[&quot;覆盖 MEMORY.md&quot;]
+    C6 --&gt; C7[&quot;下一次 reindex 反映到 FTS5&quot;]
+
+    C7 --&gt; NEXT[&quot;&lt;b&gt;下一次 call&lt;/b&gt;&quot;]
+    NEXT --&gt; N1[&quot;WorkspaceContextHook 读 MEMORY.md&lt;br/&gt;→ 注入 system prompt&quot;]
+    NEXT --&gt; N2[&quot;memory_search 工具走 FTS5&lt;br/&gt;查得旧事实&quot;]
+</pre></div>
+</div>
+</section>
+<section id="c-call">
+<h3>场景 C — 第二轮 <code class="docutils literal notranslate"><span class="pre">call</span></code> 如何”想起”第一轮<a class="headerlink" href="#c-call" title="Link to this heading">¶</a></h3>
+<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>flowchart LR
+    subgraph T1[&quot;turn 1&quot;]
+        direction TB
+        T1A[&quot;call(msg1, ctx{sess=A})&quot;] --&gt; T1B[&quot;bindRuntimeContext&quot;]
+        T1B --&gt; T1C[&quot;ReAct 循环&quot;]
+        T1C --&gt; T1D[&quot;PostCallEvent&quot;]
+        T1D --&gt; T1E[&quot;MemoryFlushHook&lt;br/&gt;flush + offload&quot;]
+        T1D --&gt; T1F[&quot;SessionPersistenceHook&lt;br/&gt;saveTo(session, key)&lt;br/&gt;→ 写盘&quot;]
+    end
+
+    subgraph T2[&quot;turn 2&quot;]
+        direction TB
+        T2A[&quot;call(msg2, ctx{sess=A})&quot;] --&gt; T2B[&quot;bindRuntimeContext&quot;]
+        T2B --&gt; T2B1[&quot;loadIfExists&lt;br/&gt;读 context/A/{key}.json&lt;br/&gt;memory 恢复 turn1 对话&quot;]
+        T2B1 --&gt; T2C[&quot;ReAct 循环&lt;br/&gt;(内存已含 turn1)&quot;]
+        T2C --&gt; T2D[&quot;PostCallEvent&quot;]
+        T2D --&gt; T2E[&quot;...&quot;]
+        T2D --&gt; T2F[&quot;SessionPersistenceHook&lt;br/&gt;saveTo (覆盖) → 写盘&quot;]
+    end
+
+    T1F -. 持久化到磁盘 .-&gt; T2B1
+</pre></div>
+</div>
+</section>
+<section id="d-agent">
+<h3>场景 D — 子 agent 的同步与后台两条委派路径<a class="headerlink" href="#d-agent" title="Link to this heading">¶</a></h3>
+<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>sequenceDiagram
+    participant Parent as 父 agent
+    participant Hook as SubagentsHook
+    participant Sub as 子 HarnessAgent (leaf)
+    participant Repo as TaskRepository
+    participant Exec as Executor
+
+    Note over Parent: reasoning 选了 SubagentsHook 注入的工具
+
+    rect rgb(238, 248, 255)
+    Note over Parent,Sub: 同步路径
+    Parent-&gt;&gt;Hook: agent_send(name, message)
+    Hook-&gt;&gt;Sub: factory.create()
+    Hook-&gt;&gt;Sub: sub.call(msg).block()
+    Sub--&gt;&gt;Hook: reply
+    Hook--&gt;&gt;Parent: ToolResultBlock(reply)
+    end
+
+    rect rgb(255, 245, 238)
+    Note over Parent,Exec: 后台路径
+    Parent-&gt;&gt;Hook: agent_spawn(name, message)
+    Hook-&gt;&gt;Repo: putTask(id, name, supplier)
+    Repo-&gt;&gt;Exec: submit(supplier)
+    Repo--&gt;&gt;Hook: taskId
+    Hook--&gt;&gt;Parent: ToolResultBlock(taskId)
+
+    Note over Parent: 父 agent 后续轮
+    Parent-&gt;&gt;Hook: task_output(taskId)
+    Hook-&gt;&gt;Repo: getTask(taskId).getResult()
+    Repo--&gt;&gt;Hook: result / null
+    Hook--&gt;&gt;Parent: ToolResultBlock(result/状态)
+    end
+</pre></div>
+</div>
+</section>
+</section>
+<section id="id5">
+<h2>延伸阅读<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">Workspace</span></a> — 工作区目录结构、<code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code> 两层读取细节</p></li>
+<li><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a> — 双层记忆模型、压缩配置、FTS5 检索、消息格式细节</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a> — <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> 各实现的取舍与组合方式</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">Subagent</span></a> — 子 agent 规格格式、<code class="docutils literal notranslate"><span class="pre">TaskRepository</span></code> 自定义、嵌套 harness 的注意事项</p></li>
+<li><p><a class="reference internal" href="session.html"><span class="std std-doc">Session</span></a> — <code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> / <code class="docutils literal notranslate"><span class="pre">JsonSession</span></code> 的序列化协议与版本兼容</p></li>
+<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tool</span></a> — 内置工具参考与自定义工具的注册方式</p></li>
+<li><p><a class="reference internal" href="#./roadmap.md"><span class="xref myst">Roadmap</span></a> — 已识别的设计权衡与待改进项</p></li>
+</ul>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./zh/harness"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="workspace.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">工作区（Workspace）</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="overview.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Harness 概览</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Tongyi Lab, Alibaba Inc.
+            </div>
+            Made with 
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            <div class="last-updated">
+              Last updated on 2026-05-15</div>
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://github.com/agentscope-ai/agentscope-java" aria-label="GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://discord.gg/eYMpfnkG8h" aria-label="Discord"><svg stroke="currentColor" fill="currentColor" stroke-width="0" t="1753331148815" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5721" width="200" height="200">
+    <path d="M723.903423 359.138018c-69.65045-52.952793-136.256577-51.476757-136.256576-51.476757l-6.088649 7.564685c83.027027 25.738378 121.127207 62.085766 121.127207 62.085766a387.459459 387.459459 0 0 0-145.297297-46.956397 418.179459 418.179459 0 0 0-98.340901 1.752793 73.801802 73.801802 0 0 1-7.564684 1.476036 357.385225 357.385225 0 0 0-110.702703 30.258739 278.786306 278.786306 0 0 0-28.782703 13.653333S353.049369 339.488288 440.873514 313.657658l-4.612613-6.088649s-66.513874-1.476036-136.164324 51.476757A654.252973 654.252973 0 0 0 230.630631 642.167928s40.867748 71.126486 148.341621 73.801802c0 0 16.697658-22.694054 31.827027-40.867748-62.085766-18.45045-84.77982-57.565405-84.77982-57.565405a130.998198 130.998198 0 0 0 13.653334 7.564684s0 1.568288 1.476036 1.568289c1.476036 1.476036 3.044324 1.476036 4.52036 3.044324a238.748829 238.748829 0 0 0 34.779099 16.605405 513.199279 513.199279 0 0 0 71.218739 21.218018 350.558559 350.558559 0 0 0 125.555315 0 329.894054 329.894054 0 0 0 69.650451-21.218018A247.328288 247.328288 0 0 0 702.685405 618.09009s-24.262342 39.391712-87.824144 57.565405c13.653333 18.45045 31.827027 39.299459 31.827027 39.29946 107.473874-2.952072 148.341622-73.801802 146.773334-72.602523a654.990991 654.990991 0 0 0-69.558199-283.214414zM421.131532 596.77982a54.705586 54.705586 0 0 1 0-109.042162 54.705586 54.705586 0 0 1 0 109.042162z m177.124324 0a54.705586 54.705586 0 1 1 49.908468-54.521081 52.491532 52.491532 0 0 1-49.908468 54.521081z" p-id="5722"></path><path d="M512 1024A512 512 0 1 1 1024 512 512.645766 512.645766 0 0 1 512 1024z m0-972.892252a461.261261 461.261261 0 1 0 461.261261 461.261261 461.261261 461.261261 0 0 0-461.261261-461.261261z" p-id="5723"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11" aria-label="DingTalk"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+    <path d="M512 0C229.205333 0 0 229.205333 0 512s229.205333 512 512 512 512-229.205333 512-512S794.794667 0 512 0z m237.312 480.810667c-1.109333 4.48-3.712 11.093333-7.424 18.986666h0.128l-0.426667 0.682667c-21.504 46.037333-77.610667 136.106667-77.610666 136.106667l-0.298667-0.597334-16.384 28.501334h79.018667l-150.912 200.917333 34.304-136.533333h-62.208l21.589333-90.282667c-17.493333 4.224-38.101333 10.026667-62.592 17.92 0 0-33.109333 19.370667-95.317333-37.333333 0 0-41.984-36.992-17.578667-46.165334 10.410667-3.925333 50.304-8.917333 81.706667-13.226666 42.410667-5.674667 68.48-8.789333 68.48-8.789334s-130.773333 2.005333-161.792-2.901333c-30.976-4.906667-70.4-56.704-78.805334-102.186667 0 0-12.970667-25.002667 27.904-13.226666 40.917333 11.818667 210.005333 46.08 210.005334 46.08S321.109333 411.434667 306.517333 394.922667c-14.634667-16.469333-43.093333-89.770667-39.424-134.869334 0 0 1.621333-11.221333 13.098667-8.192 0 0 162.602667 74.282667 273.792 114.986667 111.104 40.704 207.786667 61.397333 195.328 114.005333z" opacity=".65" p-id="6077"></path>
+</svg>
+</a>
+              
+            </div>
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Harness 架构</a><ul>
+<li><a class="reference internal" href="#id1">1. 顶层结构</a></li>
+<li><a class="reference internal" href="#id2">2. 三个共享对象</a><ul>
+<li><a class="reference internal" href="#runtimecontext">2.1 RuntimeContext</a></li>
+<li><a class="reference internal" href="#workspacemanager">2.2 WorkspaceManager</a></li>
+<li><a class="reference internal" href="#abstractfilesystem">2.3 AbstractFilesystem</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#hook">3. Hook 列表</a><ul>
+<li><a class="reference internal" href="#workspacecontexthook-priority-900">3.1 上下文注入：<code class="docutils literal notranslate"><span class="pre">WorkspaceContextHook</span></code>（priority 900）</a></li>
+<li><a class="reference internal" href="#memoryflushhook">3.2 记忆管理：<code class="docutils literal notranslate"><span class="pre">MemoryFlushHook</span></code> + 后台</a></li>
+<li><a class="reference internal" href="#compactionhook">3.3 上下文长度控制：<code class="docutils literal notranslate"><span class="pre">CompactionHook</span></code> + 溢出兜底</a></li>
+<li><a class="reference internal" href="#toolresultevictionhook-priority-50">3.4 工具结果卸载：<code class="docutils literal notranslate"><span class="pre">ToolResultEvictionHook</span></code>（priority 50）</a></li>
+<li><a class="reference internal" href="#sessionpersistencehook-workspacesession">3.5 会话持久化：<code class="docutils literal notranslate"><span class="pre">SessionPersistenceHook</span></code> + <code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code></a></li>
+<li><a class="reference internal" href="#agent-subagentshook-taskrepository">3.6 子 agent 编排：<code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code> + <code class="docutils literal notranslate"><span class="pre">TaskRepository</span></code></a></li>
+<li><a class="reference internal" href="#agenttracehook-priority-0">3.7 追踪日志：<code class="docutils literal notranslate"><span class="pre">AgentTraceHook</span></code>（priority 0）</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#call">4. <code class="docutils literal notranslate"><span class="pre">call()</span></code> 生命周期时序</a></li>
+<li><a class="reference internal" href="#id3">5. 后台维护时序</a></li>
+<li><a class="reference internal" href="#id4">6. 几个典型协作场景</a><ul>
+<li><a class="reference internal" href="#a-system-prompt">场景 A — 工作区文件变成模型看到的 system prompt</a></li>
+<li><a class="reference internal" href="#b-memory-md">场景 B — 长会话里事实如何沉淀进 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></a></li>
+<li><a class="reference internal" href="#c-call">场景 C — 第二轮 <code class="docutils literal notranslate"><span class="pre">call</span></code> 如何”想起”第一轮</a></li>
+<li><a class="reference internal" href="#d-agent">场景 D — 子 agent 的同步与后台两条委派路径</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id5">延伸阅读</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div>
+<script src="../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script src="../../_static/tabs.js?v=7ce5a780"></script>
+    <script src="../../_static/language.js?v=26e4e812"></script>
+    <script src="../../_static/notice-bar.js?v=6a544133"></script>
+    </body>
+</html>
