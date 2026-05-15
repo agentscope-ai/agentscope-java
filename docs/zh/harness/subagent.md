@@ -2,216 +2,246 @@
 
 ## 作用
 
-让父 agent 能把"独立、重上下文、可并行"的子任务交出去，不打扰主线。子 agent 是**临时**的 `HarnessAgent` 实例：独立会话、不共享父对话历史，仅返回一条结果作为 `tool_result`；同时支持同步 / 异步两种调用。
+Subagent 让主 agent 把「可独立处理、上下文重、可并行」的任务委派出去，避免主线程膨胀。  
+每个 subagent 都是一个临时 `HarnessAgent`（或 remote stub）实例，拥有独立子会话，最终通过工具结果回传。
 
-## 声明 / 定义 / 运行时三层模型
+---
 
-```
-声明（Declaration）          定义（Definition）              运行时（Runtime root）
-─────────────────────        ────────────────────────        ────────────────────────────
-mainWorkspace/               一个普通 workspace 目录          subagent 实际工作的目录根
-  subagents/<id>.md          （含 AGENTS.md 等）               由五行判定表确定
-（front matter + 可选 body） 可在仓库内/外/独立项目          ├─ 可以是 defWorkspace
-                             多个声明可指向同一 definition     ├─ 可以是 mainWorkspace
-                                                             └─ 可以是自动创建的隔离目录
-```
+## 何时启用
 
-**声明**负责"父 agent 需要知道什么"（名字、描述、调度参数）；**定义**是 subagent 的能力来源；**运行时**是 subagent 实际读写的目录。
+当 `HarnessAgent.build()` 满足以下条件时，才会装载 subagent 能力：
 
-## 触发
+- 当前 agent **不是** leaf subagent
+- 没有 `disableSubagents()`
+- 已配置 `model`
 
-| 时机 | 动作 |
-|------|------|
-| `HarnessAgent.build()` | 非 leaf 且有 model 时注册 `SubagentsHook`（priority 80）与 `AgentSpawnTool` / `TaskTool` |
-| `PreReasoningEvent` | `SubagentsHook` 拼的"Subagents"指南段 + 所有可用 agent_id + **当前 session 最近 async task 摘要** 注入每轮 SYSTEM 消息 |
-| reasoning 选中子 agent 工具 | `agent_spawn` / `agent_send` / `agent_list` 走同步路径；`timeout_seconds=0` 走异步，写 `TaskRecord` + 返 `task_id` |
-| 后续轮次 | `task_output` / `task_cancel` / `task_list` 优先读 workspace `TaskRecord`（真源），本节点 in-memory future 作加速层 |
+满足后会注册 `SubagentsHook`（priority=80），并通过 hook 暴露：
+
+- `agent_spawn` / `agent_send` / `agent_list`
+- `task_output` / `task_cancel` / `task_list`
+
+在每轮 `PreReasoningEvent`，`SubagentsHook` 会向 SYSTEM 注入：
+
+- 子 agent 使用规则
+- 当前可用 `agent_id` 列表
+- 当前 session 的异步任务摘要（最多 10 条）
+
+---
 
 ## 声明来源
 
-```mermaid
-flowchart LR
-    Built[内置 general-purpose<br/>SHARED 模式，严格镜像父配置] --> Entries[buildSubagentEntries]
-    Decl[编程 SubagentDeclaration<br/>builder.subagent] --> Entries
-    MD[workspace/subagents/*.md<br/>AgentSpecLoader] --> Entries
-    Custom[builder.subagentFactory<br/>name to Function] --> Entries
-    Entries --> Hook[SubagentsHook]
-    Hook --> Spawn[AgentSpawnTool]
-    Hook --> TaskT[TaskTool]
-```
+`buildSubagentEntries(...)` 会合并四类来源：
 
-## 五行判定表
+1. 内置 `general-purpose`
+2. 编程声明：`builder.subagent(SubagentDeclaration)`
+3. 文件声明：`workspace/subagents/*.md`（`AgentSpecLoader` 非递归加载）
+4. 自定义工厂：`builder.subagentFactory(name, factory)`
 
-workspace 根与 sysPrompt 来源由以下规则确定：
+---
 
-| 情形 | sysPrompt 来源 | 运行时 workspace 根 |
+## 声明模型（SubagentDeclaration）
+
+`SubagentDeclaration` 支持 3 种互斥来源模式：
+
+1. **Definition workspace 模式**
+   - `workspace(path)` 指向定义目录（通常含 `AGENTS.md`）
+2. **Inline 模式**
+   - `inlineAgentsBody(...)` 直接作为系统提示词 base
+3. **Remote HTTP 模式**
+   - `url(...)` + 可选 `headers(...)`，通过 task protocol 走远端执行
+
+互斥约束（`build()` 校验）：
+
+- `url` 不能与 `workspace` 或非空 `inlineAgentsBody` 同时出现
+- `workspace` 与非空 `inlineAgentsBody` 不能同时出现
+
+---
+
+## 运行时工作区五行判定表
+
+`WorkspaceMode` 决定 runtime workspace root：
+
+| 情形 | sysPrompt base 来源 | runtime workspace |
 |---|---|---|
-| 内置 `general-purpose`（强制 SHARED） | mainWorkspace 的 `AGENTS.md` | mainWorkspace |
-| 声明含 `workspace.path` + ISOLATED | 外部 def 的 `AGENTS.md` | 该外部 path |
-| 声明含 `workspace.path` + SHARED | 外部 def 的 `AGENTS.md` | mainWorkspace |
-| 无 `workspace.path` + ISOLATED（默认） | 声明 body（内联 sysPrompt） | `mainWorkspace/agents/<id>/workspace/`（自动创建） |
-| 无 `workspace.path` + SHARED | 声明 body（内联 sysPrompt） | mainWorkspace |
+| 内置 `general-purpose`（固定共享） | 无额外 base（只拼 Subagent Context；`AGENTS.md` 仍会由 WorkspaceContextHook 注入） | `mainWorkspace` |
+| `workspace.path` + `ISOLATED` | `<workspace.path>/AGENTS.md`（无则空） | `workspace.path` |
+| `workspace.path` + `SHARED` | `<workspace.path>/AGENTS.md`（无则空） | `mainWorkspace` |
+| 无 `workspace.path` + `ISOLATED`（默认） | `inlineAgentsBody` / markdown body | `mainWorkspace/agents/<name>/workspace`（自动创建） |
+| 无 `workspace.path` + `SHARED` | `inlineAgentsBody` / markdown body | `mainWorkspace` |
 
-补充约束：
-- **SHARED 模式**下 definition workspace 自带的 `skills/` / `knowledge/` / `MEMORY.md` **一律忽略**
-- `tools` 是 **allowlist 过滤器**，只能收窄父 toolkit，不能扩权
-- `workspace.path` 相对路径相对于 mainWorkspace；不允许 `..` 跳出（绝对路径开发者自负）
-- 同一 definition workspace 允许被多个声明引用
+补充：
+
+- `tools` 是**继承工具的 allowlist**：仅过滤父 toolkit，不影响子 agent 后续自动注册的本地工具
+- 同一个 definition workspace 可被多个声明复用
+- `workspace.path` 相对路径会按 `mainWorkspace.resolve(...).normalize()` 解析
+
+---
 
 ## 声明文件（`workspace/subagents/<id>.md`）
 
-文件名（去 `.md`）= subagent `name` / agent-id，不在 front matter 里写 `name`。
+文件名（去掉 `.md`）就是 `agent_id`，不从 front matter 读取 `name`。
 
 ```markdown
 ---
-description: 代码评审专家，识别安全/性能/可读性问题。
+description: 代码评审专家
 workspace:
-  mode: isolated          # isolated | shared，默认 isolated
-  path: ./defs/code-reviewer   # 可选；相对 mainWorkspace 或绝对路径
-model: qwen3-max          # 可选覆写
-maxIters: 12              # 可选（默认 10）
-tools: [read_file, grep_files, edit_file]   # 可选 allowlist
+  mode: isolated               # isolated | shared，默认 isolated
+  path: ./defs/reviewer        # 可选；相对 mainWorkspace 或绝对路径
+model: openai:gpt-4o-mini      # 可选
+maxIters: 8                    # 可选，默认 10
+tools: [read_file, grep_files] # 可选
 ---
 
-仅在 front matter 不含 workspace.path 时，本 body 作为 sysPrompt（轻量内联模式）。
+你是一个专注代码评审的子 agent。
 ```
 
-**规则**：
-- `workspace.path` 有值时 body **必须为空**，sysPrompt 从 `workspace.path/AGENTS.md` 读取
-- `workspace.path` 为空时 body 作为 inline sysPrompt（轻量内联模式）
+解析规则（`AgentSpecLoader`）：
 
-## 编程式 API
+- 必填：`description`
+- 仅扫描 `subagents/` 目录**第一层** `.md` 文件（非递归）
+- 如果配置了 `workspace.path` 且 body 非空：会记录 warning，body 被忽略
+- markdown 声明当前不解析 `url/headers`（remote 声明建议走编程 API）
+
+---
+
+## 编程式配置
 
 ```java
 HarnessAgent.builder()
+    .name("orchestrator")
+    .model(model)
+    .workspace(workspace)
     .subagent(SubagentDeclaration.builder()
-        .name("code-reviewer")
-        .description("审查安全、性能和可读性问题")
-        .workspace(Path.of("./defs/code-reviewer"))   // 与 inlineAgentsBody 互斥
-        // 或者：.inlineAgentsBody("你是代码评审专家……")
-        .workspaceMode(WorkspaceMode.ISOLATED)         // 默认
-        .model("qwen3-max")
-        .maxIters(12)
-        .tools(List.of("read_file", "grep_files"))
-        .build())
-    .build();
-```
-
-- `.workspace(Path)` 对应声明 `workspace.path`
-- `.inlineAgentsBody(...)` 对应轻量内联模式（body 当 sysPrompt）
-- 两者互斥；`builder.build()` 阶段校验
-
-## 内置 `general-purpose`
-
-- 不写入 `subagents/` 目录，由 `HarnessAgent.Builder` 内部自动注册
-- 等价于"SHARED 模式 + 无外部 definition"的内置声明
-- **完全镜像** main agent 的 hooks / 工具启用/禁用 / skills / workspace context / execution config / compaction / tool-result-eviction / additionalContextFiles
-- 仅保留两个必要差异：
-  1. `asLeafSubagent()` — 禁止递归 spawn
-  2. 独立 child sessionId
-- sysPrompt = Subagent Context 段（identity + rules）；`AGENTS.md` 通过 `WorkspaceContextHook` 自动注入
-
-## 防递归 + 防超深
-
-- 所有 subagent（无论来源）都调了 `Builder.asLeafSubagent()`：`leafSubagent=true` 时 `build()` 不注册 `SubagentsHook`，因此子 agent 无法再 spawn
-- `AgentSpawnTool` 额外限制：`MAX_SPAWN_DEPTH = 3` 作为动态保险
-
-## RuntimeContext 透传
-
-`AgentSpawnTool` 在生成子 agent 时会从父 agent 的 `userIdRef` 读取当前 `userId`，并通过 `DefaultAgentManager.invokeAgent(agent, sessionId, userId, prompt)` 传递给子 agent 的 `RuntimeContext`。子 agent 获得独立 `sessionId`（`sub-<uuid>`），但 `userId` 与父一致，确保 `USER` 作用域的 isolation key 一致。
-
-## Async Task 生命周期
-
-```
-putTask()
-  │  1. 写 TaskRecord(PENDING) → workspace (agents/<agentId>/tasks/<sessionId>.json)
-  │  2. supplyAsync → executor thread
-  │  3. 存 BackgroundTask → localTasks["<sessionId>:<taskId>"]
-  │
-  ▼  executor thread
-  [check cancelRequested flag]
-  → updateStatus(RUNNING) → workspace
-  → taskExecution.get()
-  → updateStatus(COMPLETED/FAILED) → workspace
-```
-
-**存储层次**
-
-| 层次 | 载体 | 作用域 | 持久化 |
-|------|------|--------|--------|
-| `localTasks` Map | `WorkspaceTaskRepository` | 单 JVM 进程 | ✗ 重启丢失 |
-| `agents/<agentId>/tasks/<sessionId>.json` | `WorkspaceManager` → `AbstractFilesystem` | 所有节点 | ✔ |
-
-**分布式行为**
-
-- 任务执行 sticky 在创建节点；任何节点均可通过 workspace 读取状态
-- `task_output(block=true)` 在非原始节点降级为"读 workspace 终态"，返回 `note: possibly on another node`
-- `task_cancel` 同步写 `cancelRequested=true` 到 workspace；原始节点执行器在下一次入口检查此 flag 并中止
-
-**与 Filesystem 模式的关系**
-
-| 模式 | `agents/<agentId>/tasks/` 路由 | 分布式可见性 |
-|------|-------------------------------|-------------|
-| `RemoteFilesystemSpec`（Mode 1） | 自动路由到 `RemoteFilesystem`（BaseStore） | ✔ 全节点可见 |
-| `SandboxFilesystemSpec`（Mode 2） | 写入沙箱 VFS，通过 `SandboxStateStore` 跨调用持久化 | 单沙箱可见 |
-| `LocalFilesystemSpec`（Mode 3） | 写本地磁盘 | 单机可见 |
-
-**模型使用 async task 的关键规则**
-
-1. 启动后立即返回给用户，**不要**立刻调 `task_output` 轮询
-2. 对话历史里的任务状态是**过时的**，必须用 `task_output(block=false)` 或 `task_list()` 获取最新状态
-3. compaction 后先调 `task_list()` 恢复所有任务 ID 和状态
-4. `SubagentsHook` 每轮把当前 session 的 async task 摘要注入 SYSTEM，模型无需记忆 task_id
-
-## 调用工具
-
-| 工具 | 作用 | 关键参数 |
-|------|------|---------|
-| `agent_spawn` | 生成一个子 agent 跑一件任务 | `agent_id`（必填）、`task`（可选）、`label`（可选别名）、`timeout_seconds` 默认 30s，`0` 走后台 |
-| `agent_send` | 给已存在的子 agent 补一条话 | `agent_key`（spawn 返回的句柄）或 `label`；`message`；`timeout_seconds` |
-| `agent_list` | 列当前活跃子 agent | 无 |
-| `task_output` | 取后台任务结果（优先读 live future，否则读 workspace 终态） | `task_id`、`block`（**推荐 false**）、`timeout` 默认 30s |
-| `task_cancel` | 取消任务（写 cancelRequested flag 到 workspace） | `task_id` |
-| `task_list` | 列当前 session 全量任务（从 workspace 读，compaction 后仍准确） | `status_filter` |
-
-## 配置示例
-
-```java
-HarnessAgent orchestrator = HarnessAgent.builder()
-    .name("orchestrator").model(model).workspace(workspace)
-    // (1) 编程声明（isolated + 外部 def workspace）
-    .subagent(SubagentDeclaration.builder()
-        .name("code-reviewer")
+        .name("reviewer")
         .description("代码审查专家")
         .workspace(Path.of("./defs/reviewer"))
         .workspaceMode(WorkspaceMode.ISOLATED)
+        .model("qwen3-max")
+        .maxIters(8)
+        .tools(List.of("read_file", "grep_files"))
         .build())
-    // (2) 编程声明（shared + 内联）
     .subagent(SubagentDeclaration.builder()
-        .name("analyst")
-        .description("数据分析，与主 agent 共享 workspace")
-        .workspaceMode(WorkspaceMode.SHARED)
-        .inlineAgentsBody("你是数据分析师...")
-        .tools(List.of("read_file", "memory_search"))
+        .name("remote-researcher")
+        .description("远端调研子 agent")
+        .url("http://agent-task-server:8080")
+        .headers(Map.of("Authorization", "Bearer xxx"))
         .build())
-    // (3) 自定义工厂
-    .subagentFactory("my-specialist", id ->
-        HarnessAgent.builder().name(id).model(specialModel)
-            .workspace(Path.of("./specialist-workspace"))
-            .build())
-    // 默认使用 WorkspaceTaskRepository（workspace 存储 + in-memory 加速层）
-    // 无 workspace 时自动降级为 DefaultTaskRepository（in-memory）
-    // 自定义：.taskRepository(new DefaultTaskRepository())   // 纯内存，仅限单机测试
     .build();
-// (4) workspace/subagents/*.md 会被自动扫描（文件名=agent_id）
-// (5) 内置 general-purpose 总是在位
 ```
 
-编排 prompt 中子 agent 如何被选中完全依赖 `description`，尽量明确"何时用 / 何时不用 / 输出形式"。同时 `maxIters` 宜比父 agent 小，避免子任务贪吃 token。
+---
+
+## 内置 `general-purpose`
+
+内置 `general-purpose` 不需要写声明文件，会始终加入 entry 列表。  
+它的目标是「能力镜像主 agent」，核心行为：
+
+- 共享主 workspace（`SHARED` 语义）
+- 继承并镜像主 agent 的：
+  - toolkit（父工具）
+  - hooks
+  - execution config
+  - compaction / toolResultEviction
+  - additional context files / maxContextTokens
+  - 各类 disable 开关
+- 固定是 leaf subagent（不能继续 spawn）
+
+---
+
+## 防递归与深度保护
+
+双保险：
+
+1. 所有通过声明/内置生成的子 agent 都会 `asLeafSubagent()`，leaf 不再注册 `SubagentsHook`
+2. `AgentSpawnTool` 还有动态深度上限 `MAX_SPAWN_DEPTH = 3`
+
+---
+
+## RuntimeContext 透传
+
+`agent_spawn` / `agent_send` 调用子 agent 时：
+
+- 子会话 `session_id` 为新值（`sub-<uuid>`）
+- `userId` 从父 `RuntimeContext` 透传给子 `RuntimeContext`
+
+这样可保持 USER 维度隔离键一致（例如 namespace/sandbox 隔离依赖 userId 的场景）。
+
+---
+
+## 调用工具与关键参数
+
+| 工具 | 作用 | 关键参数 |
+|---|---|---|
+| `agent_spawn` | 生成子 agent，可同步/异步执行首条任务 | `agent_id` 必填；`task` 可选；`label` 可选；`timeout_seconds` 默认 30，`0`=后台，最大 600 |
+| `agent_send` | 给已有子 agent 发后续消息 | `agent_key` 或 `label` 二选一；`message` 必填；`timeout_seconds` 规则同上 |
+| `agent_list` | 列当前活跃子 agent | 无 |
+| `task_output` | 查询/等待后台任务结果 | `task_id`、`block`（默认 true，建议查状态用 false）、`timeout` 默认 30000ms，最大 600000ms |
+| `task_cancel` | 取消任务 | `task_id` |
+| `task_list` | 列当前 session 任务 | `status_filter`（running/completed/failed/cancelled/all） |
+
+注意：
+
+- `agent_send` 的 `agent_key` 必须使用 `agent_spawn` 返回值中的完整 `agent_key: ...`（不是 `agent_id` / `session_id` / `task_id`）
+- 异步任务刚创建时不要立即轮询；优先先返回用户，再用 `task_output(block=false)` 或 `task_list` 查最新状态
+
+---
+
+## 异步任务生命周期与存储
+
+默认情况下，主 agent 使用 `WorkspaceTaskRepository`（除非显式 `taskRepository(...)` 覆盖）。
+
+生命周期（简化）：
+
+1. `putTask(...)` 写入 `TaskRecord(PENDING)` 到 workspace
+2. 提交本地执行 future（local 或 remote）
+3. 执行中更新为 `RUNNING`
+4. 结束写入 `COMPLETED / FAILED / CANCELLED`
+
+存储分层：
+
+- 内存层：`localTasks`（本节点加速句柄，重启丢失）
+- 持久层：`agents/<parentAgentId>/tasks/<sessionId>.json`（状态真源）
+
+---
+
+## 分布式语义
+
+- 任务执行粘在创建节点，但任意节点都可通过 workspace 读取状态
+- `task_output(block=true)` 在跨节点场景下会优雅降级，不会无休止阻塞
+- `task_cancel` 会把 `cancelRequested=true` 持久化；执行节点轮询该标记后中止
+- orphan sweeper 会把长时间无心跳的本地任务标记为 `FAILED`（remote transport 任务不走该判定）
+
+与 filesystem 模式关系：
+
+| 模式 | 任务路径 `agents/<agentId>/tasks/` 可见性 |
+|---|---|
+| `RemoteFilesystemSpec` | 路由到共享远端存储，多节点可见 |
+| `SandboxFilesystemSpec` | 走沙箱文件系统与沙箱状态持久化 |
+| `LocalFilesystemSpec` / 默认本地 | 本机本地可见 |
+
+---
+
+## Remote subagent 行为
+
+当声明配置 `url(...)` 时：
+
+- 工厂返回 `RemoteSubagentStub`（占位，不做本地真实推理）
+- 实际执行通过 `TaskRunSpec.RemoteTaskRunSpec` + `AgentProtocolTaskClient` 委派到远端 task HTTP 服务
+- 可同步（`timeout_seconds>0`）或异步（`timeout_seconds=0`）
+
+---
+
+## 实践建议
+
+1. `description` 要写清「何时使用 / 输出格式 / 禁止事项」，这是主模型是否委派的关键依据
+2. 子 agent `maxIters` 通常设得比主 agent 小，避免子线程吞噬过多 token
+3. 会话压缩或恢复后，先用 `task_list()` 恢复任务全量状态，再做单任务查询
+
+---
 
 ## 相关文档
 
-- [工具](./tool.md) — `agent_spawn` / `agent_send` / `agent_list` / `task_*` 的完整参数表
-- [工作区](./workspace.md) — `workspace/subagents/` 与自动发现
-- [架构](./architecture.md) — SubagentsHook 在生命周期中的位置与同步 / 后台两条委派路径的时序图
-- [流式输出](./streaming.md) — `stream()` 模式下子 agent 事件实时转发与 `EventSource` 字段说明
+- [工具](./tool.md)
+- [工作区](./workspace.md)
+- [架构](./architecture.md)
+- [流式输出](./streaming.md)

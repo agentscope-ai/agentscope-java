@@ -50,10 +50,14 @@ sphinx:
     - sphinx.ext.autosummary
     - sphinx_llms_txt
     - sphinx_sitemap
+    - sphinxcontrib.mermaid
   # Patches root index.html redirect stub so docs_site_notice appears on "/".
   local_extensions:
     root_index_notice: ./_sphinx_extensions
   config:
+    # Mermaid Configuration (CDN client-side rendering, no Node.js required)
+    mermaid_version: "11"
+
     # Sitemap Configuration
     html_baseurl: "https://java.agentscope.io/"
     sitemap_url_scheme: "{link}"
@@ -114,6 +118,7 @@ sphinx:
       - tabs.js
       - language.js
       - notice-bar.js
+      - mermaid-zoom.js
     html_context:
       docs_top_tabs:
         # Order: Home → Harness → Agent → Integration → Blogs → Community

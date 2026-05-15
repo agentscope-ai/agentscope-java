@@ -10,10 +10,10 @@ hide-toc: true
 <!-- Hero -->
 <div class="hs-hero">
   <div>
-    <h1 class="hs-hero__headline">Build production agents, <br><span class="hs-hero__accent">not prototypes.</span></h1>
+    <h1 class="hs-hero__headline">Harness framework for <span class="hs-hero__accent">distributed, enterprise-grade</span> agents.</h1>
     <p class="hs-hero__desc">AgentScope Java is the open-source agent framework for the JVM. ReAct reasoning, Harness engineering infrastructure, multi-agent orchestration, and MCP/A2A protocol support — from local prototype to enterprise-scale deployment.</p>
     <div class="hs-hero__actions">
-      <a href="quickstart/installation.html" class="hs-btn hs-btn--primary">Get started →</a>
+      <a href="harness/overview.html" class="hs-btn hs-btn--primary">Get started →</a>
       <a href="https://github.com/agentscope-ai/agentscope-java" class="hs-btn hs-btn--secondary">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.09.682-.217.682-.48 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.577.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
         GitHub
@@ -34,11 +34,11 @@ hide-toc: true
           <div class="hs-window__dot hs-window__dot--g"></div>
         </div>
         <div class="hs-window__tabs">
-          <div class="hs-tab active" data-panel="en-react">Core Agent</div>
-          <div class="hs-tab" data-panel="en-harness">Harness Agent</div>
+          <div class="hs-tab active" data-panel="en-harness">HarnessAgent</div>
+          <div class="hs-tab" data-panel="en-react">ReActAgent</div>
         </div>
       </div>
-      <div class="hs-code-panel" id="en-react"><pre><span class="kw">import</span> io.agentscope.core.*;
+      <div class="hs-code-panel" id="en-react" style="display:none"><pre><span class="kw">import</span> io.agentscope.core.*;
 <span class="kw">var</span> agent = <span class="ty">ReActAgent</span>.builder()
     .name(<span class="str">"assistant"</span>)
     .model(<span class="kw">new</span> <span class="ty">QwenConfig</span>(<span class="str">"qwen-plus"</span>))
@@ -46,7 +46,7 @@ hide-toc: true
     .build();
 <span class="cm">// Autonomous reasoning + tool calling</span>
 agent.call(messages).block();</pre></div>
-      <div class="hs-code-panel" id="en-harness" style="display:none"><pre><span class="kw">import</span> io.agentscope.harness.*;
+      <div class="hs-code-panel" id="en-harness"><pre><span class="kw">import</span> io.agentscope.harness.*;
 <span class="kw">var</span> agent = <span class="ty">HarnessAgent</span>.builder()
     .name(<span class="str">"coder"</span>)
     .model(<span class="kw">new</span> <span class="ty">QwenConfig</span>(<span class="str">"qwen-plus"</span>))
@@ -57,8 +57,8 @@ agent.call(messages).block();</pre></div>
 agent.call(messages, <span class="ty">RuntimeContext</span>.builder()
     .sessionId(<span class="str">"user-123"</span>).build()).block();</pre></div>
       <div class="hs-install">
-        <code>&lt;artifactId&gt;agentscope&lt;/artifactId&gt;</code>
-        <button class="hs-copy-btn" data-copy="&lt;dependency&gt;&#10;  &lt;groupId&gt;io.agentscope&lt;/groupId&gt;&#10;  &lt;artifactId&gt;agentscope&lt;/artifactId&gt;&#10;  &lt;version&gt;1.1.0&lt;/version&gt;&#10;&lt;/dependency&gt;">Copy Maven</button>
+        <code>io.agentscope:agentscope-harness</code>
+        <button class="hs-copy-btn" data-copy="io.agentscope:agentscope-harness">Copy Maven</button>
       </div>
     </div>
   </div>
@@ -135,22 +135,27 @@ agent.call(messages, <span class="ty">RuntimeContext</span>.builder()
             <div class="hs-window__dot hs-window__dot--y"></div>
             <div class="hs-window__dot hs-window__dot--g"></div>
           </div>
-          <span class="hs-visual__bar-title">supervisor → subagents</span>
+          <span class="hs-visual__bar-title">multi-agent runtime architecture</span>
         </div>
-        <div class="hs-code-panel" style="display:block"><pre><span class="cm">// workspace/subagents/researcher.md</span>
-<span class="cm">## researcher</span>
-<span class="cm">- model: qwen-plus</span>
-<span class="cm">- tools: [web_search, read_file]</span>
-<span class="cm">// workspace/subagents/coder.md</span>
-<span class="cm">## coder</span>
-<span class="cm">- model: qwen-coder-plus</span>
-<span class="cm">- filesystem: sandbox</span>
-<span class="cm">// Delegate synchronously or asynchronously</span>
-<span class="ty">String</span> report = agent
-    .delegate(<span class="str">"researcher"</span>, <span class="str">"analyze competitors"</span>)
-    .block();
-agent.delegateAsync(<span class="str">"coder"</span>, <span class="str">"implement feature"</span>)
-     .subscribe(result -> log.info(result));</pre></div>
+        <div class="hs-code-panel" style="display:block"><pre><span class="cm">+------------------------------------------------------------+</span>
+<span class="cm">|                 Supervisor (HarnessAgent)                  |</span>
+<span class="cm">|  - plans tasks / dispatches agents / aggregates results    |</span>
+<span class="cm">+---------------------------+--------------------------------+</span>
+<span class="cm">                            |</span>
+<span class="cm">          +-----------------+------------------+</span>
+<span class="cm">          |                                    |</span>
+<span class="cm">+---------v---------+                +---------v---------+</span>
+<span class="cm">| researcher Agent  |                |   coder Agent     |</span>
+<span class="cm">| - web_search      |                | - filesystem/tool |</span>
+<span class="cm">| - read_file       |                | - code execution  |</span>
+<span class="cm">+---------+---------+                +---------+---------+</span>
+<span class="cm">          |                                    |</span>
+<span class="cm">          +-----------------+------------------+</span>
+<span class="cm">                            |</span>
+<span class="cm">+---------------------------v--------------------------------+</span>
+<span class="cm">|           Shared Runtime Infrastructure                    |</span>
+<span class="cm">|  Session (Redis) · Workspace · Memory · MCP · A2A         |</span>
+<span class="cm">+------------------------------------------------------------+</span></pre></div>
       </div>
     </div>
     <div class="hs-split__text">
@@ -163,7 +168,7 @@ agent.delegateAsync(<span class="str">"coder"</span>, <span class="str">"impleme
         <li>A2A protocol for cross-process and cross-machine agent calls</li>
         <li>Sub-agents can independently inherit or override Harness config</li>
       </ul>
-      <a href="task/multi-agent.html" class="hs-btn hs-btn--secondary" style="margin-top:4px">Learn about multi-agent →</a>
+      <a href="harness/subagent.html" class="hs-btn hs-btn--secondary" style="margin-top:4px">Learn about multi-agent →</a>
     </div>
   </div>
 </div>

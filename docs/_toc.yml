@@ -95,8 +95,28 @@ parts:
   chapters:
   - file: en/harness/overview
     title: Overview
+  - file: en/harness/architecture
+    title: Architecture
+  - file: en/harness/workspace
+    title: Workspace
+  - file: en/harness/filesystem
+    title: Filesystem
+  - file: en/harness/session
+    title: Session
+  - file: en/harness/memory
+    title: Memory
+  - file: en/harness/tool
+    title: Tooling
+  - file: en/harness/subagent
+    title: Subagent
   - file: en/harness/streaming
     title: Subagent Streaming
+  - file: en/harness/quickstart/index
+    title: Quick Start
+  - file: en/harness/sandbox/index
+    title: Sandbox
+  - file: en/harness/example/index
+    title: Examples
 
 - caption: Integration
   chapters:

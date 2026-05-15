@@ -6,7 +6,7 @@ Technical articles, release highlights, and team notes. Below is the **article i
 
 | Article | Summary |
 |---------|---------|
-| [AgentScope Java 1.1 · Harness (English stub)](agentscope-v1-harness.md) | Short landing page; full long-form article is published in Chinese. |
+| [AgentScope Java 1.1 · Harness](agentscope-v1-harness.md) | English edition covering motivation, architecture, deployment patterns, and quick start for Harness in v1.1. |
 
 ```{tip}
 When adding posts: place Markdown under `en/blogs/`, add a `chapters` entry under **`caption: Blogs`** in `docs/_toc.yml`, and extend this table with a one-line summary.
