@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Agent as Tool" href="agent-as-tool.html"><link rel="prev" title="Tool" href="tool.html">
+    <meta property="article:modified_time" content="2026-05-15T09:32:37+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Agent as Tool" href="agent-as-tool.html"><link rel="prev" title="Tool" href="tool.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/mcp.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -904,6 +904,29 @@
 </section>
 <section id="managing-mcp-clients">
 <h2>Managing MCP Clients<a class="headerlink" href="#managing-mcp-clients" title="Link to this heading">¶</a></h2>
+<section id="protocol-version-configuration">
+<h3>Protocol Version Configuration<a class="headerlink" href="#protocol-version-configuration" title="Link to this heading">¶</a></h3>
+<p>By default, the MCP client only supports protocol version <code class="docutils literal notranslate"><span class="pre">2024-11-05</span></code>. If the MCP server responds with a different protocol version during initialization (e.g., <code class="docutils literal notranslate"><span class="pre">2025-03-26</span></code>), the connection will fail with “Unsupported protocol version”.</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">protocolVersions()</span></code> to declare support for additional protocol versions:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Support multiple protocol versions</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;server.py&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">&quot;2024-11-05&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-03-26&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+
+<span class="c1">// Works with any transport type</span>
+<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">protocolVersions</span><span class="p">(</span><span class="s">&quot;2024-11-05&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-03-26&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2025-06-18&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>Note</strong>: This is useful when connecting to third-party MCP servers that may use newer protocol versions. The MCP specification defines protocol version negotiation as a client-server handshake where the server may respond with a different version than the client requested.</p>
+</div></blockquote>
+</section>
 <section id="list-tools-from-mcp-server">
 <h3>List Tools from MCP Server<a class="headerlink" href="#list-tools-from-mcp-server" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// After registration, tools appear in toolkit</span>
@@ -1040,7 +1063,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-04-13</div>
+              Last updated on 2026-05-15</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1106,6 +1129,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </ul>
 </li>
 <li><a class="reference internal" href="#managing-mcp-clients">Managing MCP Clients</a><ul>
+<li><a class="reference internal" href="#protocol-version-configuration">Protocol Version Configuration</a></li>
 <li><a class="reference internal" href="#list-tools-from-mcp-server">List Tools from MCP Server</a></li>
 <li><a class="reference internal" href="#remove-mcp-client">Remove MCP Client</a></li>
 </ul>
