@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-15T08:44:29+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Subagent Streaming" href="streaming.html"><link rel="prev" title="Multi-Agent Debate" href="../multi-agent/multiagent-debate.html">
+    <meta property="article:modified_time" content="2026-05-15T12:47:50+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Harness Architecture" href="architecture.html"><link rel="prev" title="Multi-Agent Debate" href="../multi-agent/multiagent-debate.html">
         <link rel="canonical" href="https://java.agentscope.io/en/harness/overview.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>Harness runtime - AgentScope Java</title>
+        <title>Harness Overview - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
@@ -18,7 +18,7 @@
     <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
     <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=f6f0bbea" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=0bcf34c1" />
     <link rel="stylesheet" type="text/css" href="../../_static/homepage.css?v=8a098e07" />
     
     
@@ -427,7 +427,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
       </label>
     </div>
@@ -481,7 +481,17 @@
 <p class="caption" role="heading"><span class="caption-text">Harness (English)</span></p>
 <ul class="current">
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="workspace.html">Workspace</a></li>
+<li class="toctree-l1"><a class="reference internal" href="filesystem.html">Filesystem</a></li>
+<li class="toctree-l1"><a class="reference internal" href="session.html">Session</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">Memory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tool.html">Tooling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="streaming.html">Subagent Streaming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sandbox/index.html">Sandbox</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example/index.html">Examples</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Integration</span></p>
 <ul>
@@ -598,19 +608,169 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="harness-runtime">
-<h1>Harness runtime<a class="headerlink" href="#harness-runtime" title="Link to this heading">¶</a></h1>
-<p>The <strong>Harness</strong> agent workspace, sandbox, memory, and tooling documentation is maintained in <strong>Chinese</strong> first. Use the link below for the full guide; this page keeps you in the <strong>English</strong> locale of the site.</p>
-<p><strong><a href="../../zh/harness/overview.html">Open full Harness documentation (中文)</a></strong></p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>If you are translating or need an English edition of Harness, track progress in the repository; the English sidebar only lists this hub page for now.</p>
+          <section id="harness-overview">
+<h1>Harness Overview<a class="headerlink" href="#harness-overview" title="Link to this heading">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code> builds a production-grade runtime infrastructure on top of <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code>’s <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>, through two extension channels: <strong>Hooks</strong> and <strong>Toolkits</strong>. Your entry point is one class: <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>.</p>
+<p>A bare <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> handles a single request–reason–tool–reply cycle. Harness answers a different set of questions: <strong>what happens on the next turn, what happens the next day, what happens when context overflows, what happens when state is lost, what happens when a task is too heavy</strong>. It does not replace the reasoning loop — it injects hooks at critical lifecycle points and provides a baseline set of tools, packaging the default engineering answers to these questions.</p>
+<section id="quick-start">
+<h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
+<p>Add the dependency:</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-harness<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
 </div>
+<p>The example below demonstrates three core values of Harness: <strong>workspace-driven persona</strong>, <strong>session persistence</strong> (a second turn with the same <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> remembers the first), and <strong>explicit conversation compaction</strong>. On first run, <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> is generated under <code class="docutils literal notranslate"><span class="pre">${cwd}/.agentscope/workspace/</span></code>; subsequent runs reuse it.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">QuickstartExample</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// 1. Prepare workspace: generate AGENTS.md on first run, reuse afterwards</span>
+<span class="w">        </span><span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">initWorkspaceIfAbsent</span><span class="p">(</span><span class="n">workspace</span><span class="p">);</span>
+
+<span class="w">        </span><span class="c1">// 2. Build model</span>
+<span class="w">        </span><span class="n">Model</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-max&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// 3. Build HarnessAgent: workspace injection, session persistence, and trace logging</span>
+<span class="w">        </span><span class="c1">//    are enabled by default; compaction is explicitly configured here</span>
+<span class="w">        </span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;quickstart-agent&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a note-taking assistant.&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">flushBeforeCompact</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">   </span><span class="c1">// extract facts to daily log before compacting</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// 4. Two conversation turns with the same RuntimeContext</span>
+<span class="w">        </span><span class="c1">//    Same sessionId → turn 2 auto-restores state from turn 1</span>
+<span class="w">        </span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;demo-session&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">turn1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span>
+<span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;My name is Alice, and I&#39;m preparing a tech talk on ReAct today.&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[turn1] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn1</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+
+<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">turn2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span>
+<span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What is my name? What am I doing today?&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[turn2] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn2</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">initWorkspaceIfAbsent</span><span class="p">(</span><span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Files</span><span class="p">.</span><span class="na">createDirectories</span><span class="p">(</span><span class="n">workspace</span><span class="p">);</span>
+<span class="w">        </span><span class="n">Path</span><span class="w"> </span><span class="n">agentsMd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">workspace</span><span class="p">.</span><span class="na">resolve</span><span class="p">(</span><span class="s">&quot;AGENTS.md&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Files</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">agentsMd</span><span class="p">))</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">        </span><span class="n">Files</span><span class="p">.</span><span class="na">writeString</span><span class="p">(</span><span class="n">agentsMd</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">                # Note-taking Assistant</span>
+
+<span class="s">                You are an assistant that helps users organize notes and knowledge.</span>
+
+<span class="s">                ## Behavior Guidelines</span>
+<span class="s">                - Actively record key facts the user mentions (names, plans, preferences, etc.)</span>
+<span class="s">                - Reply concisely, using bullet lists when helpful</span>
+<span class="s">                - For uncertain information, say so clearly rather than guessing</span>
+<span class="s">                &quot;&quot;&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Full runnable version: <a class="reference internal" href="#../../../agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java"><span class="xref myst"><code class="docutils literal notranslate"><span class="pre">agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java</span></code></span></a></p>
+<p>Run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">DASHSCOPE_API_KEY</span><span class="o">=</span>your_key_here
+
+<span class="c1"># First run: install dependency modules to local repo (skip javadoc and spotless)</span>
+mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/harness-example<span class="w"> </span>-am<span class="w"> </span>install<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DskipTests<span class="w"> </span>-Dspotless.check.skip<span class="o">=</span><span class="nb">true</span><span class="w"> </span>-Dmaven.javadoc.skip<span class="o">=</span><span class="nb">true</span><span class="w"> </span>-q
+
+<span class="c1"># Execute main</span>
+mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/harness-example<span class="w"> </span>exec:java<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Dexec.mainClass<span class="o">=</span>io.agentscope.harness.example.QuickstartExample<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Dspotless.check.skip<span class="o">=</span><span class="nb">true</span><span class="w"> </span>-q
+</pre></div>
+</div>
+<p><strong>What to observe after running</strong>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">.agentscope/workspace/AGENTS.md</span></code> is auto-created — this is the source of the agent’s persona</p></li>
+<li><p>Turn 2 “What is my name?” gets the right answer because the second <code class="docutils literal notranslate"><span class="pre">call()</span></code> with the same <code class="docutils literal notranslate"><span class="pre">sessionId=demo-session</span></code> auto-restored turn 1’s state via <code class="docutils literal notranslate"><span class="pre">bindRuntimeContext</span></code> at the start</p></li>
+<li><p>After a few more turns that trigger compaction (≥30 messages), you can see LLM-extracted facts in <code class="docutils literal notranslate"><span class="pre">workspace/memory/YYYY-MM-DD.md</span></code>; the background <code class="docutils literal notranslate"><span class="pre">MemoryMaintenanceScheduler</span></code> will continue merging these into <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></p></li>
+<li><p>On the next process restart, as long as <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> is unchanged, the agent still remembers everything</p></li>
+</ul>
+<p><strong>About <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></strong>: it is the identity carrier for the current <code class="docutils literal notranslate"><span class="pre">call()</span></code>. <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> determines the storage path and log archive location; <code class="docutils literal notranslate"><span class="pre">userId</span></code> determines the default filesystem namespace (natural multi-tenant isolation). It is <strong>not persisted</strong> — it is only shared between hooks and tools within the current call.</p>
+<p><strong>Extension directions</strong>: place <code class="docutils literal notranslate"><span class="pre">KNOWLEDGE.md</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/*/SKILL.md</span></code>, or <code class="docutils literal notranslate"><span class="pre">subagents/*.md</span></code> in the workspace to enable domain knowledge injection, skill loading, and subagent orchestration respectively. Add <code class="docutils literal notranslate"><span class="pre">.toolResultEviction(ToolResultEvictionConfig.defaults())</span></code> to enable large-result offloading. Use <a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem — Three Declarative Modes</span></a> to choose between <strong>shared storage, sandbox, or local+shell</strong> for where files and commands land. For isolated execution prefer <code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> (see <a class="reference internal" href="sandbox/index.html"><span class="std std-doc">Sandbox</span></a>); <code class="docutils literal notranslate"><span class="pre">abstractFilesystem</span></code> is only an escape hatch for self-managed backends.</p>
+</section>
+<section id="core-capabilities">
+<h2>Core Capabilities<a class="headerlink" href="#core-capabilities" title="Link to this heading">¶</a></h2>
+<p>Each capability answers <strong>one problem → one component</strong>:</p>
+<ul class="simple">
+<li><p><strong>Workspace context injection</strong> — answers <em>where does the agent’s identity come from</em>. Before every reasoning turn, <code class="docutils literal notranslate"><span class="pre">WorkspaceContextHook</span></code> injects <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>, <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, today’s memory, and <code class="docutils literal notranslate"><span class="pre">KNOWLEDGE.md</span></code> into the system prompt. The workspace is the agent’s “persona and knowledge base”.</p></li>
+<li><p><strong>Two-layer persistent memory</strong> — answers <em>how do conversation facts persist across sessions</em>. <code class="docutils literal notranslate"><span class="pre">MemoryFlushHook</span></code> uses an LLM to distill conversation into a daily fact log before compaction; <code class="docutils literal notranslate"><span class="pre">MemoryConsolidator</span></code> runs in the background to merge and deduplicate daily logs into the long-term <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>. Still available on next startup.</p></li>
+<li><p><strong>Compaction and overflow recovery</strong> — answers <em>what to do when history gets too long</em>. <code class="docutils literal notranslate"><span class="pre">CompactionHook</span></code> summarizes history and keeps a recent tail when message/token thresholds are exceeded; when the model actually reports a context overflow, <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> catches the error, forces compaction, and retries automatically.</p></li>
+<li><p><strong>Large tool result offloading</strong> — answers <em>what to do when a single tool call returns too much</em>. <code class="docutils literal notranslate"><span class="pre">ToolResultEvictionHook</span></code> writes oversized results to the filesystem and keeps only a head+tail preview with a placeholder in context; the agent can re-read on demand.</p></li>
+<li><p><strong>Session persistence</strong> — answers <em>how to preserve state across processes</em>. <code class="docutils literal notranslate"><span class="pre">SessionPersistenceHook</span></code> writes agent state to the workspace by <code class="docutils literal notranslate"><span class="pre">sessionId</span></code>; the next call automatically resumes from where it left off.</p></li>
+<li><p><strong>Subagent orchestration</strong> — answers <em>how to decompose complex tasks</em>. <code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code> injects <code class="docutils literal notranslate"><span class="pre">task</span></code> / <code class="docutils literal notranslate"><span class="pre">task_output</span></code> tools; the parent agent can delegate synchronously or in the background. Subagents can be declared via workspace spec files, programmatic specs, or custom factories.</p></li>
+<li><p><strong>Pluggable filesystem</strong> — answers <em>how to isolate and control the agent’s environment</em>. All file tools go through <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>. Choose from <a class="reference internal" href="filesystem.html"><span class="std std-doc">three declarative modes</span></a> (local+shell, composite+store, sandbox) or <code class="docutils literal notranslate"><span class="pre">abstractFilesystem</span></code> for self-managed backends. Multi-tenant / session-level isolation is handled via <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> and <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>.</p></li>
+</ul>
+<p>Additionally, several infrastructure components support the above: <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> threads through the entire call, <code class="docutils literal notranslate"><span class="pre">MemoryMaintenanceScheduler</span></code> runs background merges and index maintenance, <code class="docutils literal notranslate"><span class="pre">AgentTraceHook</span></code> provides unified trace logging, and <code class="docutils literal notranslate"><span class="pre">AgentSkillRepository</span></code> auto-wires <code class="docutils literal notranslate"><span class="pre">SkillBox</span></code>.</p>
+</section>
+<section id="how-capabilities-work-together">
+<h2>How Capabilities Work Together<a class="headerlink" href="#how-capabilities-work-together" title="Link to this heading">¶</a></h2>
+<p>These capabilities collectively support three pillars of “stable continuous operation”:</p>
+<ul class="simple">
+<li><p><strong>Identity continuity</strong> — <em>workspace context injection</em> re-feeds persona and knowledge to the model each turn; <em>two-layer persistent memory</em> distills valuable facts from conversation back into the workspace; <em>skill auto-loading</em> keeps reusable capabilities tied to the workspace. The agent’s persona and knowledge do not disappear when a single call ends — they accumulate in the workspace over time.</p></li>
+<li><p><strong>Bounded context</strong> — <em>conversation compaction</em> controls depth, <em>tool result offloading</em> controls width, and <em>overflow recovery</em> is the final safety net. Together they ensure that even in arbitrarily long sessions, the context never overwhelms the model — and if it does, recovery is seamless.</p></li>
+<li><p><strong>Recoverable state</strong> — <em>session persistence</em> ensures a process restart can continue from where it left off; <em>RuntimeContext</em> threads the call’s identity (<code class="docutils literal notranslate"><span class="pre">sessionId</span></code>/<code class="docutils literal notranslate"><span class="pre">userId</span></code>) through all hooks and tools; <em>pluggable filesystem</em> makes “where state actually lives” (local disk, sandbox, remote) a configuration choice.</p></li>
+</ul>
+<p>The three pillars are connected by three shared objects: <code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code> (who reads/writes the workspace), <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> (where the workspace lives physically), and <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> (who is speaking in this call). Each hook does only its own job and collaborates with others through these three objects — this is how Harness assembles independent capabilities into one “stably running agent”.</p>
+</section>
+<section id="how-capabilities-are-injected">
+<h2>How Capabilities Are Injected<a class="headerlink" href="#how-capabilities-are-injected" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> is a thin wrapper around <code class="docutils literal notranslate"><span class="pre">Agent</span></code> + <code class="docutils literal notranslate"><span class="pre">StateModule</span></code>, internally holding a <code class="docutils literal notranslate"><span class="pre">ReActAgent</span> <span class="pre">delegate</span></code>. All capability injection happens in <code class="docutils literal notranslate"><span class="pre">HarnessAgent.Builder.build()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Hook channel</strong>: hooks are assembled in <code class="docutils literal notranslate"><span class="pre">priority</span></code> order and passed to <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> (including <code class="docutils literal notranslate"><span class="pre">SandboxLifecycleHook</span></code> in sandbox mode, see <a class="reference internal" href="architecture.html"><span class="std std-doc">Architecture</span></a>)</p></li>
+<li><p><strong>Toolkit channel</strong>: <code class="docutils literal notranslate"><span class="pre">filesystem</span></code>, <code class="docutils literal notranslate"><span class="pre">memory_search</span></code>, <code class="docutils literal notranslate"><span class="pre">memory_get</span></code>, <code class="docutils literal notranslate"><span class="pre">session_search</span></code> are appended to the user’s <code class="docutils literal notranslate"><span class="pre">Toolkit</span></code>; sandbox backends additionally add <code class="docutils literal notranslate"><span class="pre">shell_execute</span></code>; <code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code> itself registers <code class="docutils literal notranslate"><span class="pre">task</span></code> / <code class="docutils literal notranslate"><span class="pre">task_output</span></code></p></li>
+<li><p><strong>SkillBox channel</strong>: <code class="docutils literal notranslate"><span class="pre">SkillBox</span></code> is auto-constructed from <code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> or a custom <code class="docutils literal notranslate"><span class="pre">AgentSkillRepository</span></code></p></li>
+</ul>
+<p>At the start of each <code class="docutils literal notranslate"><span class="pre">call()</span></code>, <code class="docutils literal notranslate"><span class="pre">bindRuntimeContext</span></code> distributes the current <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> to all hooks implementing <code class="docutils literal notranslate"><span class="pre">RuntimeContextAwareHook</span></code>, and restores state from <code class="docutils literal notranslate"><span class="pre">Session</span></code> as needed.</p>
+<blockquote>
+<div><p>Detailed behavior, trigger timing, and sequence diagrams for each component are in <a class="reference internal" href="architecture.html"><span class="std std-doc">Architecture</span></a>.</p>
+</div></blockquote>
+</section>
+<section id="related-pages">
+<h2>Related Pages<a class="headerlink" href="#related-pages" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">Architecture</span></a> — component definitions, lifecycle sequence diagrams, collaboration relationships</p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">Workspace</span></a> — workspace directory structure and context injection</p></li>
+<li><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a> — two-layer memory, compaction configuration, and full-text search</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">Filesystem</span></a> — three declarative modes and the <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> hierarchy</p></li>
+<li><p><a class="reference internal" href="sandbox/index.html"><span class="std std-doc">Sandbox</span></a> — isolated execution, sandbox state, and distributed options</p></li>
+<li><p><a class="reference internal" href="subagent.html"><span class="std std-doc">Subagent</span></a> — subagent specs and orchestration</p></li>
+<li><p><a class="reference internal" href="streaming.html"><span class="std std-doc">Subagent Streaming</span></a> — <code class="docutils literal notranslate"><span class="pre">stream()</span></code> mode child-agent event forwarding, <code class="docutils literal notranslate"><span class="pre">EventSource</span></code> fields, and multi-level nesting</p></li>
+<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tooling</span></a> — built-in tool reference</p></li>
+<li><p><a class="reference internal" href="session.html"><span class="std std-doc">Session</span></a> — session persistence and state recovery</p></li>
+</ul>
+</section>
 </section>
 
     <script type="text/x-thebe-config">
@@ -637,12 +797,12 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="streaming.html">
+          <a class="next-page" href="architecture.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Subagent Streaming</div>
+                <div class="title">Harness Architecture</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -689,8 +849,31 @@
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Harness Overview</a><ul>
+<li><a class="reference internal" href="#quick-start">Quick Start</a></li>
+<li><a class="reference internal" href="#core-capabilities">Core Capabilities</a></li>
+<li><a class="reference internal" href="#how-capabilities-work-together">How Capabilities Work Together</a></li>
+<li><a class="reference internal" href="#how-capabilities-are-injected">How Capabilities Are Injected</a></li>
+<li><a class="reference internal" href="#related-pages">Related Pages</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>
@@ -716,5 +899,6 @@
     <script src="../../_static/tabs.js?v=7ce5a780"></script>
     <script src="../../_static/language.js?v=26e4e812"></script>
     <script src="../../_static/notice-bar.js?v=6a544133"></script>
+    <script src="../../_static/mermaid-zoom.js?v=16ea82f7"></script>
     </body>
 </html>

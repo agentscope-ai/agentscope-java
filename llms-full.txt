@@ -10,10 +10,10 @@ hide-toc: true
 <!-- Hero -->
 <div class="hs-hero">
   <div>
-    <h1 class="hs-hero__headline">Build production agents, <br><span class="hs-hero__accent">not prototypes.</span></h1>
+    <h1 class="hs-hero__headline">Harness framework for <span class="hs-hero__accent">distributed, enterprise-grade</span> agents.</h1>
     <p class="hs-hero__desc">AgentScope Java is the open-source agent framework for the JVM. ReAct reasoning, Harness engineering infrastructure, multi-agent orchestration, and MCP/A2A protocol support — from local prototype to enterprise-scale deployment.</p>
     <div class="hs-hero__actions">
-      <a href="quickstart/installation.html" class="hs-btn hs-btn--primary">Get started →</a>
+      <a href="harness/overview.html" class="hs-btn hs-btn--primary">Get started →</a>
       <a href="https://github.com/agentscope-ai/agentscope-java" class="hs-btn hs-btn--secondary">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.09.682-.217.682-.48 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.577.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
         GitHub
@@ -34,11 +34,11 @@ hide-toc: true
           <div class="hs-window__dot hs-window__dot--g"></div>
         </div>
         <div class="hs-window__tabs">
-          <div class="hs-tab active" data-panel="en-react">Core Agent</div>
-          <div class="hs-tab" data-panel="en-harness">Harness Agent</div>
+          <div class="hs-tab active" data-panel="en-harness">HarnessAgent</div>
+          <div class="hs-tab" data-panel="en-react">ReActAgent</div>
         </div>
       </div>
-      <div class="hs-code-panel" id="en-react"><pre><span class="kw">import</span> io.agentscope.core.*;
+      <div class="hs-code-panel" id="en-react" style="display:none"><pre><span class="kw">import</span> io.agentscope.core.*;
 <span class="kw">var</span> agent = <span class="ty">ReActAgent</span>.builder()
     .name(<span class="str">"assistant"</span>)
     .model(<span class="kw">new</span> <span class="ty">QwenConfig</span>(<span class="str">"qwen-plus"</span>))
@@ -46,7 +46,7 @@ hide-toc: true
     .build();
 <span class="cm">// Autonomous reasoning + tool calling</span>
 agent.call(messages).block();</pre></div>
-      <div class="hs-code-panel" id="en-harness" style="display:none"><pre><span class="kw">import</span> io.agentscope.harness.*;
+      <div class="hs-code-panel" id="en-harness"><pre><span class="kw">import</span> io.agentscope.harness.*;
 <span class="kw">var</span> agent = <span class="ty">HarnessAgent</span>.builder()
     .name(<span class="str">"coder"</span>)
     .model(<span class="kw">new</span> <span class="ty">QwenConfig</span>(<span class="str">"qwen-plus"</span>))
@@ -57,8 +57,8 @@ agent.call(messages).block();</pre></div>
 agent.call(messages, <span class="ty">RuntimeContext</span>.builder()
     .sessionId(<span class="str">"user-123"</span>).build()).block();</pre></div>
       <div class="hs-install">
-        <code>&lt;artifactId&gt;agentscope&lt;/artifactId&gt;</code>
-        <button class="hs-copy-btn" data-copy="&lt;dependency&gt;&#10;  &lt;groupId&gt;io.agentscope&lt;/groupId&gt;&#10;  &lt;artifactId&gt;agentscope&lt;/artifactId&gt;&#10;  &lt;version&gt;1.1.0&lt;/version&gt;&#10;&lt;/dependency&gt;">Copy Maven</button>
+        <code>io.agentscope:agentscope-harness</code>
+        <button class="hs-copy-btn" data-copy="io.agentscope:agentscope-harness">Copy Maven</button>
       </div>
     </div>
   </div>
@@ -135,22 +135,27 @@ agent.call(messages, <span class="ty">RuntimeContext</span>.builder()
             <div class="hs-window__dot hs-window__dot--y"></div>
             <div class="hs-window__dot hs-window__dot--g"></div>
           </div>
-          <span class="hs-visual__bar-title">supervisor → subagents</span>
+          <span class="hs-visual__bar-title">multi-agent runtime architecture</span>
         </div>
-        <div class="hs-code-panel" style="display:block"><pre><span class="cm">// workspace/subagents/researcher.md</span>
-<span class="cm">## researcher</span>
-<span class="cm">- model: qwen-plus</span>
-<span class="cm">- tools: [web_search, read_file]</span>
-<span class="cm">// workspace/subagents/coder.md</span>
-<span class="cm">## coder</span>
-<span class="cm">- model: qwen-coder-plus</span>
-<span class="cm">- filesystem: sandbox</span>
-<span class="cm">// Delegate synchronously or asynchronously</span>
-<span class="ty">String</span> report = agent
-    .delegate(<span class="str">"researcher"</span>, <span class="str">"analyze competitors"</span>)
-    .block();
-agent.delegateAsync(<span class="str">"coder"</span>, <span class="str">"implement feature"</span>)
-     .subscribe(result -> log.info(result));</pre></div>
+        <div class="hs-code-panel" style="display:block"><pre><span class="cm">+------------------------------------------------------------+</span>
+<span class="cm">|                 Supervisor (HarnessAgent)                  |</span>
+<span class="cm">|  - plans tasks / dispatches agents / aggregates results    |</span>
+<span class="cm">+---------------------------+--------------------------------+</span>
+<span class="cm">                            |</span>
+<span class="cm">          +-----------------+------------------+</span>
+<span class="cm">          |                                    |</span>
+<span class="cm">+---------v---------+                +---------v---------+</span>
+<span class="cm">| researcher Agent  |                |   coder Agent     |</span>
+<span class="cm">| - web_search      |                | - filesystem/tool |</span>
+<span class="cm">| - read_file       |                | - code execution  |</span>
+<span class="cm">+---------+---------+                +---------+---------+</span>
+<span class="cm">          |                                    |</span>
+<span class="cm">          +-----------------+------------------+</span>
+<span class="cm">                            |</span>
+<span class="cm">+---------------------------v--------------------------------+</span>
+<span class="cm">|           Shared Runtime Infrastructure                    |</span>
+<span class="cm">|  Session (Redis) · Workspace · Memory · MCP · A2A         |</span>
+<span class="cm">+------------------------------------------------------------+</span></pre></div>
       </div>
     </div>
     <div class="hs-split__text">
@@ -163,7 +168,7 @@ agent.delegateAsync(<span class="str">"coder"</span>, <span class="str">"impleme
         <li>A2A protocol for cross-process and cross-machine agent calls</li>
         <li>Sub-agents can independently inherit or override Harness config</li>
       </ul>
-      <a href="task/multi-agent.html" class="hs-btn hs-btn--secondary" style="margin-top:4px">Learn about multi-agent →</a>
+      <a href="harness/subagent.html" class="hs-btn hs-btn--secondary" style="margin-top:4px">Learn about multi-agent →</a>
     </div>
   </div>
 </div>
@@ -8690,15 +8695,1402 @@ Msg finalAnswer = synthesizer.call(summaryMessage).block();
 - [Structured Output](../task/structured-output.md) - Extracting structured data from agent responses
 
 
-# Harness runtime
+# Harness Overview
 
-The **Harness** agent workspace, sandbox, memory, and tooling documentation is maintained in **Chinese** first. Use the link below for the full guide; this page keeps you in the **English** locale of the site.
+`agentscope-harness` builds a production-grade runtime infrastructure on top of `agentscope-core`'s `ReActAgent`, through two extension channels: **Hooks** and **Toolkits**. Your entry point is one class: `HarnessAgent`.
 
-<p><strong><a href="../../zh/harness/overview.html">Open full Harness documentation (中文)</a></strong></p>
+A bare `ReActAgent` handles a single request–reason–tool–reply cycle. Harness answers a different set of questions: **what happens on the next turn, what happens the next day, what happens when context overflows, what happens when state is lost, what happens when a task is too heavy**. It does not replace the reasoning loop — it injects hooks at critical lifecycle points and provides a baseline set of tools, packaging the default engineering answers to these questions.
 
-```{note}
-If you are translating or need an English edition of Harness, track progress in the repository; the English sidebar only lists this hub page for now.
+## Quick Start
+
+Add the dependency:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-harness</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
 ```
+
+The example below demonstrates three core values of Harness: **workspace-driven persona**, **session persistence** (a second turn with the same `sessionId` remembers the first), and **explicit conversation compaction**. On first run, `AGENTS.md` is generated under `${cwd}/.agentscope/workspace/`; subsequent runs reuse it.
+
+```java
+public class QuickstartExample {
+
+    public static void main(String[] args) throws Exception {
+        // 1. Prepare workspace: generate AGENTS.md on first run, reuse afterwards
+        Path workspace = Paths.get(".agentscope/workspace");
+        initWorkspaceIfAbsent(workspace);
+
+        // 2. Build model
+        Model model = DashScopeChatModel.builder()
+                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+                .modelName("qwen-max")
+                .stream(true)
+                .build();
+
+        // 3. Build HarnessAgent: workspace injection, session persistence, and trace logging
+        //    are enabled by default; compaction is explicitly configured here
+        HarnessAgent agent = HarnessAgent.builder()
+                .name("quickstart-agent")
+                .sysPrompt("You are a note-taking assistant.")
+                .model(model)
+                .workspace(workspace)
+                .compaction(CompactionConfig.builder()
+                        .triggerMessages(30)
+                        .keepMessages(10)
+                        .flushBeforeCompact(true)   // extract facts to daily log before compacting
+                        .build())
+                .build();
+
+        // 4. Two conversation turns with the same RuntimeContext
+        //    Same sessionId → turn 2 auto-restores state from turn 1
+        RuntimeContext ctx = RuntimeContext.builder()
+                .sessionId("demo-session")
+                .userId("alice")
+                .build();
+
+        Msg turn1 = agent.call(
+                Msg.builder().role(MsgRole.USER)
+                        .textContent("My name is Alice, and I'm preparing a tech talk on ReAct today.")
+                        .build(),
+                ctx).block();
+        System.out.println("[turn1] " + turn1.getTextContent());
+
+        Msg turn2 = agent.call(
+                Msg.builder().role(MsgRole.USER)
+                        .textContent("What is my name? What am I doing today?")
+                        .build(),
+                ctx).block();
+        System.out.println("[turn2] " + turn2.getTextContent());
+    }
+
+    private static void initWorkspaceIfAbsent(Path workspace) throws Exception {
+        Files.createDirectories(workspace);
+        Path agentsMd = workspace.resolve("AGENTS.md");
+        if (Files.exists(agentsMd)) return;
+        Files.writeString(agentsMd, """
+                # Note-taking Assistant
+
+                You are an assistant that helps users organize notes and knowledge.
+
+                ## Behavior Guidelines
+                - Actively record key facts the user mentions (names, plans, preferences, etc.)
+                - Reply concisely, using bullet lists when helpful
+                - For uncertain information, say so clearly rather than guessing
+                """);
+    }
+}
+```
+
+Full runnable version: [`agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](../../../agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
+
+Run:
+
+```bash
+export DASHSCOPE_API_KEY=your_key_here
+
+# First run: install dependency modules to local repo (skip javadoc and spotless)
+mvn -pl agentscope-examples/harness-example -am install \
+    -DskipTests -Dspotless.check.skip=true -Dmaven.javadoc.skip=true -q
+
+# Execute main
+mvn -pl agentscope-examples/harness-example exec:java \
+    -Dexec.mainClass=io.agentscope.harness.example.QuickstartExample \
+    -Dspotless.check.skip=true -q
+```
+
+**What to observe after running**:
+
+- `.agentscope/workspace/AGENTS.md` is auto-created — this is the source of the agent's persona
+- Turn 2 "What is my name?" gets the right answer because the second `call()` with the same `sessionId=demo-session` auto-restored turn 1's state via `bindRuntimeContext` at the start
+- After a few more turns that trigger compaction (≥30 messages), you can see LLM-extracted facts in `workspace/memory/YYYY-MM-DD.md`; the background `MemoryMaintenanceScheduler` will continue merging these into `MEMORY.md`
+- On the next process restart, as long as `sessionId` is unchanged, the agent still remembers everything
+
+**About `RuntimeContext`**: it is the identity carrier for the current `call()`. `sessionId` determines the storage path and log archive location; `userId` determines the default filesystem namespace (natural multi-tenant isolation). It is **not persisted** — it is only shared between hooks and tools within the current call.
+
+**Extension directions**: place `KNOWLEDGE.md`, `skills/*/SKILL.md`, or `subagents/*.md` in the workspace to enable domain knowledge injection, skill loading, and subagent orchestration respectively. Add `.toolResultEviction(ToolResultEvictionConfig.defaults())` to enable large-result offloading. Use [Filesystem — Three Declarative Modes](./filesystem.md) to choose between **shared storage, sandbox, or local+shell** for where files and commands land. For isolated execution prefer `filesystem(SandboxFilesystemSpec)` (see [Sandbox](./sandbox/index.md)); `abstractFilesystem` is only an escape hatch for self-managed backends.
+
+## Core Capabilities
+
+Each capability answers **one problem → one component**:
+
+- **Workspace context injection** — answers *where does the agent's identity come from*. Before every reasoning turn, `WorkspaceContextHook` injects `AGENTS.md`, `MEMORY.md`, today's memory, and `KNOWLEDGE.md` into the system prompt. The workspace is the agent's "persona and knowledge base".
+- **Two-layer persistent memory** — answers *how do conversation facts persist across sessions*. `MemoryFlushHook` uses an LLM to distill conversation into a daily fact log before compaction; `MemoryConsolidator` runs in the background to merge and deduplicate daily logs into the long-term `MEMORY.md`. Still available on next startup.
+- **Compaction and overflow recovery** — answers *what to do when history gets too long*. `CompactionHook` summarizes history and keeps a recent tail when message/token thresholds are exceeded; when the model actually reports a context overflow, `HarnessAgent` catches the error, forces compaction, and retries automatically.
+- **Large tool result offloading** — answers *what to do when a single tool call returns too much*. `ToolResultEvictionHook` writes oversized results to the filesystem and keeps only a head+tail preview with a placeholder in context; the agent can re-read on demand.
+- **Session persistence** — answers *how to preserve state across processes*. `SessionPersistenceHook` writes agent state to the workspace by `sessionId`; the next call automatically resumes from where it left off.
+- **Subagent orchestration** — answers *how to decompose complex tasks*. `SubagentsHook` injects `task` / `task_output` tools; the parent agent can delegate synchronously or in the background. Subagents can be declared via workspace spec files, programmatic specs, or custom factories.
+- **Pluggable filesystem** — answers *how to isolate and control the agent's environment*. All file tools go through `AbstractFilesystem`. Choose from [three declarative modes](./filesystem.md) (local+shell, composite+store, sandbox) or `abstractFilesystem` for self-managed backends. Multi-tenant / session-level isolation is handled via `RuntimeContext.userId` and `IsolationScope`.
+
+Additionally, several infrastructure components support the above: `RuntimeContext` threads through the entire call, `MemoryMaintenanceScheduler` runs background merges and index maintenance, `AgentTraceHook` provides unified trace logging, and `AgentSkillRepository` auto-wires `SkillBox`.
+
+## How Capabilities Work Together
+
+These capabilities collectively support three pillars of "stable continuous operation":
+
+- **Identity continuity** — *workspace context injection* re-feeds persona and knowledge to the model each turn; *two-layer persistent memory* distills valuable facts from conversation back into the workspace; *skill auto-loading* keeps reusable capabilities tied to the workspace. The agent's persona and knowledge do not disappear when a single call ends — they accumulate in the workspace over time.
+- **Bounded context** — *conversation compaction* controls depth, *tool result offloading* controls width, and *overflow recovery* is the final safety net. Together they ensure that even in arbitrarily long sessions, the context never overwhelms the model — and if it does, recovery is seamless.
+- **Recoverable state** — *session persistence* ensures a process restart can continue from where it left off; *RuntimeContext* threads the call's identity (`sessionId`/`userId`) through all hooks and tools; *pluggable filesystem* makes "where state actually lives" (local disk, sandbox, remote) a configuration choice.
+
+The three pillars are connected by three shared objects: `WorkspaceManager` (who reads/writes the workspace), `AbstractFilesystem` (where the workspace lives physically), and `RuntimeContext` (who is speaking in this call). Each hook does only its own job and collaborates with others through these three objects — this is how Harness assembles independent capabilities into one "stably running agent".
+
+## How Capabilities Are Injected
+
+`HarnessAgent` is a thin wrapper around `Agent` + `StateModule`, internally holding a `ReActAgent delegate`. All capability injection happens in `HarnessAgent.Builder.build()`:
+
+- **Hook channel**: hooks are assembled in `priority` order and passed to `ReActAgent` (including `SandboxLifecycleHook` in sandbox mode, see [Architecture](./architecture.md))
+- **Toolkit channel**: `filesystem`, `memory_search`, `memory_get`, `session_search` are appended to the user's `Toolkit`; sandbox backends additionally add `shell_execute`; `SubagentsHook` itself registers `task` / `task_output`
+- **SkillBox channel**: `SkillBox` is auto-constructed from `workspace/skills/` or a custom `AgentSkillRepository`
+
+At the start of each `call()`, `bindRuntimeContext` distributes the current `RuntimeContext` to all hooks implementing `RuntimeContextAwareHook`, and restores state from `Session` as needed.
+
+> Detailed behavior, trigger timing, and sequence diagrams for each component are in [Architecture](./architecture.md).
+
+## Related Pages
+
+- [Architecture](./architecture.md) — component definitions, lifecycle sequence diagrams, collaboration relationships
+- [Workspace](./workspace.md) — workspace directory structure and context injection
+- [Memory](./memory.md) — two-layer memory, compaction configuration, and full-text search
+- [Filesystem](./filesystem.md) — three declarative modes and the `AbstractFilesystem` hierarchy
+- [Sandbox](./sandbox/index.md) — isolated execution, sandbox state, and distributed options
+- [Subagent](./subagent.md) — subagent specs and orchestration
+- [Subagent Streaming](./streaming.md) — `stream()` mode child-agent event forwarding, `EventSource` fields, and multi-level nesting
+- [Tooling](./tool.md) — built-in tool reference
+- [Session](./session.md) — session persistence and state recovery
+
+
+# Harness Architecture
+
+[Overview](./overview.md) introduces Harness capabilities through the lens of "what problem they solve". This page takes a different angle: **explaining the architecture itself** — why it is designed this way, what each layer is responsible for, what happens during a `call()`, and how state flows through the system.
+
+---
+
+## 1. Design Philosophy
+
+Understanding the Harness architecture starts with three core decisions.
+
+### Decision 1: Thin Wrapper, Not a New Reasoning Loop
+
+`HarnessAgent` is not a new reasoning engine — it is a **thin wrapper** around `ReActAgent` that does exactly two extra things:
+
+- **`bindRuntimeContext(ctx)`**: at the start of each `call()`, distributes the current identity (`sessionId`, `userId`) to interested hooks and restores Memory state from the Session as needed;
+- **`forceCompactAndRetry`**: if the model actually returns a `ContextOverflow` error, forces compaction and retries once.
+
+Everything else — workspace injection, memory management, session persistence, subagent orchestration — is injected through ReActAgent's existing **Hook** and **Toolkit** extension points. The benefit: all of ReActAgent's capabilities are preserved unchanged; Harness only adds, never replaces.
+
+### Decision 2: Hook-Driven, Orthogonal Capabilities
+
+Each hook has a single responsibility and its execution order within the same event is determined by `priority`:
+
+- `CompactionHook(10)` checks whether history needs compaction before each reasoning turn;
+- `SubagentsHook(80)` injects the subagent list before reasoning;
+- `WorkspaceContextHook(900)` is the last to run — because it assembles the final system prompt and must layer on top of all preceding processing.
+
+Hooks **hold no references to each other** and communicate only through three shared objects. Each capability can be independently toggled: `compaction` requires explicit configuration, `session persistence` is on by default, `toolResultEviction` is opt-in.
+
+### Decision 3: Shared Objects Are the Only Coupling Point
+
+All hooks collaborate through the same "common language":
+
+| Object | Responsibility | Lifecycle |
+|--------|---------------|-----------|
+| `RuntimeContext` | Current `call()` identity: sessionId, userId, session reference, extra data | Re-injected on every `call()`, **not persisted** |
+| `WorkspaceManager` | Stateless workspace accessor: two-layer reads (filesystem first → local fallback), writes go through filesystem | Created at build time, reused across calls |
+| `AbstractFilesystem` | Storage backend: local disk / sandbox / KV store, pluggable | Created at build time, reused across calls |
+
+---
+
+## 2. Top-Level Architecture Diagram
+
+```{mermaid}
+graph TD
+    USER(["Caller\nagent.call(msg, ctx)"])
+
+    subgraph HA["HarnessAgent  ·  Thin Wrapper Layer"]
+        BRC["① bindRuntimeContext(ctx)\ndistribute ctx · loadIfExists restores Memory"]
+
+        subgraph RA["ReActAgent  ·  Reasoning Core"]
+            HOOKS["Hook Chain\nby priority ascending\nintercepts lifecycle events"]
+            LOOP["ReAct Loop\nreason → act → observe"]
+            TK["Toolkit\nFilesystemTool · MemorySearch\nAgentSpawnTool · TaskTool · ..."]
+            MEM["Memory\n(InMemoryMemory)"]
+            HOOKS <-.->|event-driven| LOOP
+            LOOP <-->|tool invocation| TK
+            LOOP <-->|read/write context| MEM
+        end
+
+        OVF["③ forceCompactAndRetry\nContextOverflow safety net"]
+        BRC --> RA --> OVF
+    end
+
+    subgraph SO["Shared Objects  ·  Common Language for Hook Collaboration"]
+        RC["RuntimeContext\nsessionId / userId / extra"]
+        WM["WorkspaceManager\nAGENTS · MEMORY · knowledge\nskills · subagents"]
+        AFS["AbstractFilesystem\nlocal · sandbox · remote KV"]
+    end
+
+    USER -->|"② call(msg, ctx)"| BRC
+    HOOKS <-->|"ctx + read/write"| SO
+    TK <-->|"file / shell ops"| AFS
+    MEM <-.->|"session persistence"| RC
+```
+
+**Three layers, one glance**:
+
+- **Thin wrapper layer** (HarnessAgent): per-call identity binding and extreme-case recovery;
+- **Reasoning core** (ReActAgent): Hook event pipeline + ReAct loop + tool execution;
+- **Shared objects layer**: three objects that serve as the collaboration substrate for all hooks — belonging to no hook, read/written by all.
+
+---
+
+## 3. Build Phase (`Builder.build()`)
+
+Capability injection happens once, during the **build phase**. After `build()` completes, the hook chain and toolkit composition are fixed for the lifetime of the agent:
+
+```{mermaid}
+graph LR
+    B["HarnessAgent.Builder.build()"]
+
+    B -->|"create"| SO2["Three Shared Objects\nWorkspaceManager\nAbstractFilesystem\nRuntimeContext (ref)"]
+
+    B -->|"assemble in priority order"| HK["Hook Chain\n[0] AgentTraceHook\n[5] MemoryFlushHook\n[6] MemoryMaintenanceHook\n[10] CompactionHook  ✗ opt-in\n[50] SandboxLifecycleHook  ✗ opt-in\n[50] ToolResultEvictionHook  ✗ opt-in\n[80] SubagentsHook\n[900] WorkspaceContextHook\n[900] SessionPersistenceHook"]
+
+    B -->|"append built-in tools"| TK2["Toolkit\nuser tools + built-in tools\n(SubagentsHook registers its tools via tools())"]
+
+    B -->|"load from workspace/skills/"| SK["SkillBox\nauto or AgentSkillRepository"]
+
+    B -->|"hand off to"| RA2["ReActAgent.builder()\n→ final product: delegate"]
+
+    B -->|"start background"| BG["MemoryMaintenanceScheduler\ndaemon thread, 6h cycle"]
+```
+
+> **✗ opt-in** hooks are only assembled when conditions are met: `CompactionHook` requires `.compaction(...)`; `SandboxLifecycleHook` requires `filesystem(SandboxFilesystemSpec)`; `ToolResultEvictionHook` requires `.toolResultEviction(...)`.
+
+---
+
+## 4. Hook Event Pipeline
+
+`ReActAgent` fires events at key points in the ReAct loop; hooks execute in **ascending priority order** at their subscribed events. The complete Hook × Event matrix:
+
+| Event | When | Hooks that fire (priority ascending) |
+|-------|------|--------------------------------------|
+| `PreCallEvent` | Before reasoning loop starts | `AgentTraceHook`(0) |
+| `PreReasoningEvent` | **Before each** model call | `AgentTraceHook`(0) → `CompactionHook`(10) → `SubagentsHook`(80) → `WorkspaceContextHook`(900) |
+| `PostReasoningEvent` | After each model response | `AgentTraceHook`(0) |
+| `PreActingEvent` | Before each tool call | `AgentTraceHook`(0) |
+| `PostActingEvent` | After each tool call | `AgentTraceHook`(0) → `ToolResultEvictionHook`(50) |
+| `PostCallEvent` | After final reply is produced | `AgentTraceHook`(0) → `MemoryFlushHook`(5) → `MemoryMaintenanceHook`(6) → `SessionPersistenceHook`(900) |
+| `ErrorEvent` | When an exception occurs | `AgentTraceHook`(0) → `SessionPersistenceHook`(900) |
+
+The priority arrangement reflects design intent:
+
+- **0**: pure logging, always first, never modifies events;
+- **5/6/10**: memory and compaction, handling context lifecycle outside the reasoning loop;
+- **50**: sandbox lifecycle and tool result offloading, handled in-place during acting;
+- **80**: subagent injection, before workspace context — because subagent information must appear inside the system prompt;
+- **900**: final system prompt assembly (`WorkspaceContextHook`) and persistence (`SessionPersistenceHook`) — ensuring they layer on top of all prior processing, and that memory is flushed before snapshotting.
+
+---
+
+## 5. `call()` Lifecycle Sequence
+
+```{mermaid}
+sequenceDiagram
+    autonumber
+    actor User
+    participant HA as HarnessAgent
+    participant RA as ReActAgent
+    participant H as Hooks (priority ↑)
+    participant M as Model
+    participant T as Toolkit
+
+    User->>HA: call(msg, ctx)
+    HA->>HA: ① bindRuntimeContext(ctx)<br/>distribute ctx · loadIfExists restores Memory
+
+    HA->>RA: delegate.call(msg)
+    RA->>H: PreCallEvent → Trace(0)
+
+    loop ReAct loop (until no tool calls)
+        RA->>H: PreReasoningEvent
+        Note over H: Compact(10): if threshold → flushMemories + LLM distill + replace memory<br/>Subagents(80): inject subagent list<br/>WorkspaceCtx(900): inject AGENTS/MEMORY/KNOWLEDGE
+
+        RA->>M: stream(messages)
+        M-->>RA: ChatResponse
+
+        RA->>H: PostReasoningEvent → Trace(0)
+
+        opt contains tool_calls
+            loop each tool_call
+                RA->>H: PreActingEvent → Trace(0)
+                RA->>T: invoke(toolCall)
+                T-->>RA: ToolResult
+                RA->>H: PostActingEvent
+                Note over H: Eviction(50): > 80K chars → write to disk + replace with placeholder
+            end
+        end
+    end
+
+    RA->>H: PostCallEvent
+    Note over H: Trace(0) · MemFlush(5): flush facts + offload JSONL<br/>MemMaint(6): requestConsolidation<br/>Session(900): saveTo(session, key)
+
+    RA-->>HA: final Msg
+    HA-->>User: ② final Msg
+
+    Note over HA: Failure path: ErrorEvent → Session(900) saveTo<br/>ContextOverflow: ③ forceCompactAndRetry → delegate.call retry
+```
+
+---
+
+## 6. State Flow
+
+State in Harness has three layers, from shortest to longest lived:
+
+```{mermaid}
+graph LR
+    subgraph INCALL["In-call\nalive for one call()"]
+        IM["Memory\n(InMemoryMemory)\nmessage sequence for this turn"]
+        RC2["RuntimeContext\nsessionId · userId · extra"]
+    end
+
+    subgraph CROSSCALL["Cross-call\npersistent within same sessionId"]
+        SP["WorkspaceSession\nagents/&lt;id&gt;/context/&lt;sess&gt;/*.json\nMemory snapshot + StateModule"]
+        JSONL["sessions/&lt;sess&gt;.log.jsonl\nfull conversation log (append-only)"]
+    end
+
+    subgraph LONGTERM["Long-term\naccumulates across sessions"]
+        DAILY["memory/YYYY-MM-DD.md\ndaily fact log (append-only)"]
+        MMEM["MEMORY.md\ncurated long-term memory (full rewrite)"]
+        FTS["memory_index.db\nSQLite FTS5 full-text index"]
+    end
+
+    IM -- "PostCallEvent\nMemoryFlushHook.flush()" --> DAILY
+    IM -- "PostCallEvent\nSessionPersistenceHook.saveTo()" --> SP
+    IM -- "compaction / offload\nMemoryFlushHook.offload()" --> JSONL
+
+    DAILY -- "background 6h\nMemoryConsolidator" --> MMEM
+    DAILY -- "after incremental write\nMemoryIndex" --> FTS
+
+    SP -- "next call() start\nbindRuntimeContext + loadIfExists" --> IM
+
+    MMEM -- "every PreReasoningEvent\nWorkspaceContextHook" --> IM
+    FTS -- "agent invokes\nmemory_search tool" --> IM
+```
+
+**Core pattern**:
+- `Memory` is the in-call "working memory", persisted via two paths when `call()` ends;
+- `WorkspaceSession` ensures "the next call with the same sessionId still remembers this turn";
+- `MEMORY.md` + FTS index ensures "long-term facts survive session boundaries".
+
+---
+
+## 7. Four Typical Collaboration Scenarios
+
+### Scenario A — How Workspace Files Become the Model's System Prompt
+
+```{mermaid}
+sequenceDiagram
+    participant RA as ReActAgent
+    participant Hook as WorkspaceContextHook(900)
+    participant WM as WorkspaceManager
+    participant FS as AbstractFilesystem
+    participant LD as Local disk
+    participant M as Model
+
+    RA->>Hook: PreReasoningEvent
+    Hook->>WM: readAgentsMd / readMemoryMd / readKnowledgeMd
+    WM->>FS: read(path) first
+    alt FS hit, non-empty
+        FS-->>WM: content (multi-tenant transparent)
+    else not found
+        WM->>LD: Files.readString(workspace/...)
+        LD-->>WM: content (fallback)
+    end
+    WM-->>Hook: AGENTS / MEMORY / KNOWLEDGE content
+    Note over Hook: wraps into loaded_context XML,<br>merges into first SYSTEM message
+    Hook-->>RA: modified event
+    RA->>M: stream(newMessages)
+```
+
+### Scenario B — How Facts Settle into `MEMORY.md` Over a Long Session
+
+```{mermaid}
+graph TD
+    A["conversation accumulates → CompactionHook threshold hit"] --> B["ConversationCompactor.compactIfNeeded"]
+    B --> C["MemoryFlushManager.flushMemories(prefix)\n→ LLM extracts new facts"]
+    B --> D["offloadMessages\n→ sessions/&lt;sess&gt;.log.jsonl"]
+    B --> E["LLM distill summary\n→ replace Memory + setInputMessages"]
+
+    C --> C1["append to memory/YYYY-MM-DD.md"]
+    C --> C2["MemoryIndex.indexFromString (FTS5 incremental)"]
+    C --> C3["scheduler.requestConsolidation()"]
+
+    C3 -- "30min throttle" --> C4["submit consolidateMemory"]
+    C4 --> C5["MemoryConsolidator + LLM\nread old daily logs + current MEMORY.md"]
+    C5 --> C6["overwrite MEMORY.md"]
+    C6 --> NEXT["next call\nWorkspaceContextHook reads new MEMORY.md\n→ injected into system prompt"]
+```
+
+### Scenario C — How the Same `sessionId` Remembers Across Calls
+
+```{mermaid}
+graph LR
+    subgraph T1["Turn 1: call(msg1, ctx{sess=A})"]
+        A1["bindRuntimeContext\nloadIfExists → Memory empty (first time)"] --> B1["ReAct loop"]
+        B1 --> C1["PostCallEvent\nMemoryFlushHook: flush + offload\nSessionPersistenceHook: saveTo → write to disk"]
+    end
+
+    subgraph T2["Turn 2: call(msg2, ctx{sess=A})"]
+        A2["bindRuntimeContext\nloadIfExists → read context/A/memory.json\nrestore turn 1 conversation into Memory"] --> B2["ReAct loop\n(aware of turn 1 content)"]
+        B2 --> C2["PostCallEvent → write to disk (overwrite)"]
+    end
+
+    C1 -. "context/A/memory.json" .-> A2
+```
+
+### Scenario D — Parent Agent Delegates to Subagent: Sync and Background Paths
+
+```{mermaid}
+sequenceDiagram
+    participant Parent as Parent Agent
+    participant Hook as SubagentsHook
+    participant Sub as Child HarnessAgent (leaf)
+    participant Repo as TaskRepository
+    participant Exec as Executor
+
+    rect rgb(235, 245, 255)
+    Note over Parent,Sub: Sync path (agent_send / timeout_seconds > 0)
+    Parent->>Hook: agent_send(agent_id, message)
+    Hook->>Sub: factory.create() · sub.call(msg).block()
+    Sub-->>Hook: reply
+    Hook-->>Parent: ToolResultBlock(reply)
+    end
+
+    rect rgb(255, 245, 235)
+    Note over Parent,Exec: Background path (agent_spawn + timeout_seconds=0)
+    Parent->>Hook: agent_spawn(agent_id, task, timeout=0)
+    Hook->>Repo: putTask(taskId, supplier)
+    Repo->>Exec: submit(supplier) → return immediately
+    Hook-->>Parent: ToolResultBlock(taskId)
+
+    Note over Parent: poll in subsequent turns
+    Parent->>Hook: task_output(taskId, block=false)
+    Hook->>Repo: getTask(taskId)
+    Repo-->>Hook: RUNNING / result
+    Hook-->>Parent: status / final result
+    end
+```
+
+---
+
+## Related Pages
+
+- [Workspace](./workspace.md) — workspace directory structure, `WorkspaceManager` two-layer read/write details
+- [Memory](./memory.md) — two-layer memory model, compaction configuration, FTS5 retrieval
+- [Filesystem](./filesystem.md) — `AbstractFilesystem` three modes and extension patterns
+- [Subagent](./subagent.md) — subagent declaration format, `TaskRepository`, five-row decision table
+- [Session](./session.md) — `WorkspaceSession` / `JsonSession` serialization protocol
+- [Tool](./tool.md) — built-in tool reference and registration
+
+
+# Workspace
+
+## Purpose
+
+The workspace is the foundation of a `HarnessAgent`: persona, long-term memory, domain knowledge, subagent declarations, session history, and skill definitions all land here as a **directory structure + Markdown** — no longer scattered in code.
+
+Before every reasoning turn, a few key workspace files are automatically injected into the system prompt. Memory and session output from the running agent is also written back here along well-defined paths.
+
+## Trigger Points
+
+| When | Action |
+|------|--------|
+| `HarnessAgent.build()` | `WorkspaceManager.validate()` checks that the directory and `AGENTS.md` exist; missing items only warn |
+| Before every `call()` reasoning turn | `WorkspaceContextHook` reads `AGENTS.md` / `MEMORY.md` / `knowledge/` / extra files and injects into system prompt |
+| Compaction / end of call | `MemoryFlushHook`, `SessionPersistenceHook`, etc. write back to `memory/`, `agents/.../sessions/` via `WorkspaceManager` |
+
+## Directory Layout
+
+```
+workspace/                           ← default: .agentscope/workspace
+├── AGENTS.md                        ← persona / behavior guidelines (full text injected each turn)
+├── MEMORY.md                        ← curated long-term memory (injected each turn, token-budgeted)
+├── knowledge/
+│   ├── KNOWLEDGE.md                 ← domain knowledge entry point
+│   └── *                            ← other reference files, opened on demand via read_file
+├── memory/
+│   ├── YYYY-MM-DD.md                ← daily fact log (append-only, written by MemoryFlushManager)
+│   └── .consolidation_state         ← MemoryConsolidator internal state
+├── skills/<skill-name>/SKILL.md     ← custom skills
+├── subagents/<id>.md                ← subagent declarations (filename = agent_id, auto-discovered)
+└── agents/<agentId>/
+    ├── workspace/                   ← runtime root for isolated subagents (auto-created when no workspace.path)
+    └── sessions/
+        ├── sessions.json            ← session index (id / summary / updatedAt)
+        ├── <sessionId>.jsonl        ← LLM-visible compacted context
+        └── <sessionId>.log.jsonl   ← full conversation log (append-only)
+```
+
+> The three-layer model for subagents (declaration / definition / runtime) is detailed in [Subagent](./subagent.md).
+
+## Key Logic
+
+### Two-Layer Read / Write
+
+`WorkspaceManager` is a stateless accessor; all reads and writes follow the same contract:
+
+```{mermaid}
+graph LR
+    Caller[Hook / Tool] -->|read| WM[WorkspaceManager]
+    WM -->|read first| FS[AbstractFilesystem<br/>multi-tenant namespace transparent]
+    FS -- hit non-empty --> WM
+    FS -- empty --> LD[Local disk<br/>workspace/...]
+    LD --> WM
+
+    Caller -->|write| WM
+    WM -->|appendUtf8 / uploadFiles| FS2[AbstractFilesystem]
+    WM -. filesystem absent .-> LD2[local disk fallback]
+```
+
+Key points:
+
+- **Read path**: `AbstractFilesystem` first → local disk fallback, making multi-tenant scenarios transparent to callers
+- **Write path**: defaults to `AbstractFilesystem`; falls back to local disk when not configured
+- **List operations** (`listKnowledgeFiles` / `listMemoryFilePaths` / `listSessionLogFiles`) take the union of both layers and deduplicate, avoiding missing files
+
+### System Prompt Injection Content
+
+`WorkspaceContextHook` (priority 900) assembles a fixed-structure text segment on `PreReasoningEvent` and merges it into the first SYSTEM message:
+
+| Section | Source | Token Budget |
+|---------|--------|--------------|
+| `## Session Context` | Template-generated (date, OS, workspace path, `runtimeContext.sessionId`) | Unlimited |
+| `## Workspace` guidance | Built-in template | Unlimited |
+| `<loaded_context>` XML block | — | — |
+| ↳ `<agents_context>` | `AGENTS.md` | Full text |
+| ↳ `<memory_context>` | `MEMORY.md` | Capped by `maxContextTokens` |
+| ↳ `<domain_knowledge_context>` | `knowledge/KNOWLEDGE.md` + `listKnowledgeFiles()` listing | Full text + path listing |
+| ↳ `<{rel_path}>` | Each `additionalContextFile` | Full text |
+
+`maxContextTokens` defaults to `8000` (estimated as `chars/4`). When `MEMORY.md` estimated size exceeds the "remaining budget", it is character-truncated and appended with `... (memory truncated — use memory_search for older entries) ...`, prompting the agent to fall back to `memory_search`.
+
+### Key APIs
+
+```java
+WorkspaceManager wm = new WorkspaceManager(workspace, abstractFilesystem);
+
+wm.readAgentsMd();                 // two-layer read
+wm.readMemoryMd();
+wm.readKnowledgeMd();              // note: reads knowledge/KNOWLEDGE.md
+wm.readManagedWorkspaceFileUtf8(rel); // any workspace-relative path, with path traversal check
+
+wm.listKnowledgeFiles();           // union of both layers
+wm.listMemoryFilePaths();
+wm.listSessionLogFiles();
+
+wm.appendUtf8WorkspaceRelative(rel, content);  // goes through AbstractFilesystem
+wm.updateSessionIndex(agentId, sessionId, summary); // maintains sessions.json
+```
+
+## Configuration
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("MyAgent")
+    .model(model)
+    .workspace(Paths.get(".agentscope/workspace"))   // uses default if not provided
+    .additionalContextFile("SOUL.md")                // any workspace-relative path
+    .additionalContextFile("PREFERENCES.md")
+    .maxContextTokens(8000)                          // controls injection cap for MEMORY
+    .build();
+```
+
+If `AGENTS.md` is missing, the agent still works but loses the persona section. It is recommended to at least write a minimal skeleton (see the quickstart in [overview.md](./overview.md)).
+
+## Related Pages
+
+- [Architecture](./architecture.md) — `WorkspaceContextHook` position in the `call()` lifecycle
+- [Filesystem](./filesystem.md) — implementation of the "upper layer" in the two-layer read path
+- [Memory](./memory.md) — how `MEMORY.md` / `memory/*.md` are generated and maintained
+- [Session](./session.md) — details of `agents/<agentId>/sessions/`
+
+
+# Filesystem
+
+## Purpose
+
+`AbstractFilesystem` abstracts agent access to the **workspace** from "must be local disk" into a unified interface: `ls / read / write / edit / grep / glob / upload / download`. When **executing commands in an isolated environment** is required, a backend additionally implements `AbstractSandboxFilesystem`, which is when `HarnessAgent` registers `ShellExecuteTool`.
+
+In Harness, **the filesystem serves three distinct but often confused roles**:
+
+1. **Tool surface**: `FilesystemTool` (and optional `ShellExecuteTool`) recognize a single `AbstractFilesystem` instance; all paths and executions flow through this outlet, making it easy to swap implementations.
+2. **Physical landing for workspace reads/writes**: `WorkspaceManager` reads "filesystem first, fall back to local if not found"; writes and uploads always go through filesystem. Therefore **where long-term memory, daily logs, and session logs ultimately land** depends on which **mode** you choose.
+3. **Multi-tenant and isolation**: `NamespaceFactory` assembles a path prefix from `RuntimeContext.userId` and other sources on every operation, making the same codebase transparently switch storage shards across **user / session / global** boundaries; `RemoteFilesystemSpec` and `SandboxFilesystemSpec` also connect **IsolationScope** to "shared KV" or "sandbox state key", aligned with the [Sandbox](./sandbox/index.md) isolation story.
+
+## Three Declarative Modes
+
+`HarnessAgent.Builder` accepts **at most one** of the **`filesystem(...)` family** (mutually exclusive with **`abstractFilesystem(...)`**; the latter is an escape hatch for self-managed implementations, see next section):
+
+| Mode | Config Method | Typical Artifact | Shell | Best For |
+|------|--------------|-----------------|-------|----------|
+| **1 — Composite + Shared Storage** | `filesystem(RemoteFilesystemSpec)` | `CompositeFilesystem`: **shell-free** `LocalFilesystem` at workspace root + `RemoteFilesystem` routed by prefix | No | Multi-replica sharing of `MEMORY.md`, `memory/`, session logs, etc.; **no host shell** |
+| **2 — Sandbox** | `filesystem(SandboxFilesystemSpec)` | `SandboxBackedFilesystem` + lifecycle by [Sandbox](./sandbox/index.md) | Yes (inside sandbox) | Isolated execution, recoverable sandbox sessions, optional snapshots and distributed sessions |
+| **3 — Local + Shell** | `filesystem(LocalFilesystemSpec)` or **no explicit filesystem call** | `LocalFilesystemWithShell` | Yes (host `sh -c`) | Single-process/local, trusted environment, simple scripts and tests |
+
+**When no `filesystem(...)` is called**, it is equivalent to **explicit `filesystem(new LocalFilesystemSpec())`** — mode 3, with root directory at `workspace` and host shell available.
+
+### Mode 1: Composite + Storage (`RemoteFilesystemSpec`)
+
+- **Structure**: `RemoteFilesystemSpec#toFilesystem` assembles a `CompositeFilesystem`:
+  - **Default/unmatched prefixes** → plain `LocalFilesystem` (**no** `ShellExecuteTool`)
+  - **Configured prefixes** (e.g., defaults include `MEMORY.md`, `memory/`, `agents/<agentId>/sessions/` + extensible via `addSharedPrefix`) → `RemoteFilesystem` (on `BaseStore`, namespace controlled by `IsolationScope`: SESSION / USER / AGENT / GLOBAL)
+- **Why not `LocalFilesystemWithShell` by default**: mode 1's design goal is **cross-node consistent long memory and logs** while **avoiding opening a shell on the host**; use modes 2 or 3 when a shell is needed.
+
+### Mode 2: Sandbox (`SandboxFilesystemSpec`)
+
+- See [Sandbox](./sandbox/index.md). Key point: still exposes `AbstractFilesystem` + optional `ShellExecuteTool` (via `AbstractSandboxFilesystem`) to upper layers, but actual IO/processes happen on the `SandboxClient` side in an isolated environment; `SandboxLifecycleHook` acquires/persists/releases around each `call`.
+
+### Mode 3: Local + Shell (`LocalFilesystemSpec` or default)
+
+- **Behavior**: `LocalFilesystemWithShell` uses the workspace as root, commands run as host `sh -c` (configurable timeout, environment variables, `virtualMode`, etc.) — **fundamentally different from mode 1's "shell-free local root"**.
+
+## Class Hierarchy and `ShellExecuteTool` Registration
+
+```{mermaid}
+classDiagram
+    class AbstractFilesystem {
+        <<interface>>
+        ls/read/write/edit
+        grep/glob
+        uploadFiles/downloadFiles
+    }
+    class AbstractSandboxFilesystem {
+        <<interface>>
+        +id() String
+        +execute(cmd, timeout)
+    }
+    AbstractSandboxFilesystem --|> AbstractFilesystem
+
+    class LocalFilesystem
+    class LocalFilesystemWithShell
+    class BaseSandboxFilesystem
+    class RemoteFilesystem
+    class CompositeFilesystem
+    class SandboxBackedFilesystem
+
+    LocalFilesystem ..|> AbstractFilesystem
+    RemoteFilesystem ..|> AbstractFilesystem
+    LocalFilesystemWithShell --|> LocalFilesystem
+    LocalFilesystemWithShell ..|> AbstractSandboxFilesystem
+    BaseSandboxFilesystem ..|> AbstractSandboxFilesystem
+    CompositeFilesystem ..|> AbstractFilesystem
+    SandboxBackedFilesystem ..|> AbstractSandboxFilesystem
+```
+
+- **`CompositeFilesystem` only implements `AbstractFilesystem`**, not `AbstractSandboxFilesystem`, so it does **not** register `ShellExecuteTool`. If you need composite routing plus a shell, provide a shell-capable default backend via `abstractFilesystem` or use sandbox/local mode.
+- **`read(filePath, offset, limit)`**: `limit <= 0` means "use the implementation-defined default line count" (may differ between local and sandbox).
+
+## Implementation Quick Reference
+
+| Implementation | Description |
+|----------------|-------------|
+| `LocalFilesystem` | Local files only, no execution; `virtualMode` anchors `rootDir` to prevent traversal |
+| `LocalFilesystemWithShell` | Local + host shell; **core of mode 3** |
+| `BaseSandboxFilesystem` | Base class for connecting to remote Unix; most methods implemented via `execute` + shell commands |
+| `RemoteFilesystem` | KV storage based on `BaseStore`; no shell; used with `IsolationScope` |
+| `CompositeFilesystem` | Multi-backend via longest-prefix matching; **no shell** capability |
+| `SandboxBackedFilesystem` | Sandbox proxy implementing `AbstractSandboxFilesystem`; works with `SandboxManager` |
+
+## `BaseSandboxFilesystem` Default Implementation Strategy
+
+Subclasses primarily implement `execute / uploadFiles / downloadFiles / id`; the base class typically implements `ls/read/grep/glob/edit/write` as remote shell and Python3 snippets, enabling quick deployment in standard Unix environments.
+
+## `NamespaceFactory` and Multi-Tenancy
+
+```java
+@FunctionalInterface
+public interface NamespaceFactory { List<String> getNamespace(); }
+```
+
+Called on every file operation, returns the current request's path segments (e.g., `["users", "alice"]`). When building `HarnessAgent`, you can use an `AtomicReference` linked to `RuntimeContext.userId`, so the same `AbstractFilesystem` instance routes to different subtrees for different users.
+
+## Configuration Examples
+
+**Recommended: choose one of the three modes first, then only touch `abstractFilesystem` when needed:**
+
+```java
+// Mode 3: explicit local + shell (equivalent to "no filesystem" default; useful for adjusting timeouts, etc.)
+HarnessAgent agent = HarnessAgent.builder()
+    .name("local")
+    .model(model)
+    .workspace(workspace)
+    .filesystem(new LocalFilesystemSpec().executeTimeoutSeconds(120))
+    .build();
+```
+
+```java
+// Mode 1: share long-term memory to Store (no host shell)
+HarnessAgent agent = HarnessAgent.builder()
+    .name("store")
+    .model(model)
+    .workspace(workspace)
+    .filesystem(new RemoteFilesystemSpec(redisStore)
+        .isolationScope(IsolationScope.USER))
+    .build();
+```
+
+```java
+// Mode 2: sandbox (specific spec varies by implementation, e.g. Docker)
+HarnessAgent agent = HarnessAgent.builder()
+    .name("sandbox")
+    .model(model)
+    .workspace(workspace)
+    .filesystem(dockerFilesystemSpec)  // extends SandboxFilesystemSpec
+    .build();
+```
+
+**Escape hatch (mutually exclusive with the `filesystem(...Spec)` calls above):**
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("custom")
+    .model(model)
+    .workspace(workspace)
+    .abstractFilesystem(myCustomTree)  // fully self-managed AbstractFilesystem tree
+    .build();
+```
+
+**Manual composition (advanced)**: inside `abstractFilesystem` or a custom factory, you can still use `CompositeFilesystem` + `LocalFilesystemWithShell`, etc., but you are responsible for security boundaries and whether `ShellExecuteTool` should be exposed.
+
+## Related Pages
+
+- [Sandbox](./sandbox/index.md) — sandbox mode principles, `SandboxStateStore`, distributed options
+- [Tool](./tool.md) — `FilesystemTool` / `ShellExecuteTool` parameters
+- [Workspace](./workspace.md) — `WorkspaceManager` and two-layer reads
+- [Architecture](./architecture.md) — collaboration with hooks and `RuntimeContext`
+
+
+# Session
+
+## Purpose
+
+Enable the agent to restore state across requests, process restarts, and multi-user scenarios. After each `call()` ends, two outputs are automatically persisted on parallel tracks:
+
+- **StateModule snapshot** (`Memory`, `ToolExecutionContext`, and other serializable state) — defaults to `WorkspaceSession`
+- **Conversation JSONL** (LLM context + full history) — goes through `SessionTree`, triggered by `MemoryFlushManager.offloadMessages`
+
+The two are **parallel, independent paths**.
+
+## Trigger Points
+
+| When | Action |
+|------|--------|
+| `agent.call(msg, ctx)` | `bindRuntimeContext` passes `ctx.session/sessionKey` to `delegate.loadIfExists` to restore StateModule |
+| `PostCallEvent` / `ErrorEvent` | `SessionPersistenceHook` (priority 900) calls `agent.saveTo(session, sessionKey)` — saves on both success and failure |
+| Compaction / `PostCallEvent` flush | `MemoryFlushManager.offloadMessages` appends to `<sessionId>.jsonl` + `.log.jsonl` |
+| End of session | `WorkspaceManager.updateSessionIndex` updates `sessions.json` for `session_list` queries |
+
+## Key Logic
+
+### Dual-Track Storage Layout
+
+```{mermaid}
+graph LR
+    Call[agent.call] --> Hook[SessionPersistenceHook]
+    Hook -->|saveTo / loadIfExists| WS[(WorkspaceSession<br/>StateModule snapshot)]
+    Call --> Compact[CompactionHook / MemoryFlushHook]
+    Compact -->|offloadMessages| ST[(SessionTree<br/>JSONL dual files)]
+    WSWrite[WorkspaceManager<br/>updateSessionIndex] --> Idx[(sessions.json<br/>session index)]
+    Compact --> WSWrite
+```
+
+```
+workspace/agents/<agentId>/
+├── context/                          ← managed by WorkspaceSession
+│   └── <sessionId>/
+│       ├── memory.json               ← ReActAgent.memory snapshot
+│       └── *.json                    ← other StateModule serialization artifacts
+└── sessions/                         ← managed by SessionTree + WorkspaceManager
+    ├── sessions.json                 ← session index (sessionId / summary / updatedAt)
+    ├── <sessionId>.jsonl             ← LLM-visible compacted context
+    └── <sessionId>.log.jsonl         ← full conversation log (append-only, never compacted)
+```
+
+- **`context/`**: `WorkspaceSession` extends `JsonSession`, base at `agents/<agentId>/context/`; each `StateModule` is stored per `SessionKey → {key}.json` in the sessionId subdirectory.
+- **`sessions/`**: `SessionTree` organizes a JSONL file as a `id/parentId` tree; the paired `<sessionId>.log.jsonl` is **never compacted**, used for auditing and `session_search`.
+
+### How `RuntimeContext` Aligns the Two Tracks
+
+```java
+RuntimeContext ctx = RuntimeContext.builder()
+    .sessionId("sess-001")
+    .userId("alice")
+    .build();
+
+agent.call(msg, ctx).block();
+```
+
+`HarnessAgent.bindRuntimeContext` does several things:
+
+1. **Fill defaults**: if `session` is null, use the `defaultSession` from build time (defaults to `WorkspaceSession(workspace, agentId)`); if `sessionKey` is null, try `SimpleSessionKey.of(sessionId)` → `SimpleSessionKey.of(agentName)` in order.
+2. **Distribute to hooks**: `workspaceContextHook`, `memoryFlushHook`, `sessionPersistenceHook`, `compactionHook` all sync to this ctx — they can read `sessionId` during offload / saveTo.
+3. **Link `userIdRef`**: an `AtomicReference<String>` is updated to `userId`; the default `NamespaceFactory → List.of(userId)` uses this as a path prefix, enabling transparent multi-tenant isolation.
+4. **Pre-load state**: if both `session` and `sessionKey` are present, calls `delegate.loadIfExists` to overwrite current Memory. Does nothing if not found.
+
+### Default vs Custom Session
+
+```java
+// 1. Default: nothing passed → WorkspaceSession(workspace, agentId)
+HarnessAgent.builder()
+    .name("MyAgent").model(model).workspace(workspace).build();
+
+// 2. Use a JsonSession at a specific path
+HarnessAgent.builder()
+    ...
+    .session(new JsonSession(Path.of("/custom/sessions")))
+    .build();
+
+// 3. Override per call
+agent.call(msg, RuntimeContext.builder()
+        .sessionId("sess-001")
+        .session(customSession)
+        .sessionKey(SimpleSessionKey.of("sess-001"))
+        .build())
+    .block();
+```
+
+### Multi-User Isolation at Two Levels
+
+- **Session level**: `sessionId` determines that `context/<sessionId>/` and `sessions/<sessionId>.jsonl` are independent.
+- **File level**: `userId` + `NamespaceFactory` determines the file operation path prefix (the default `LocalFilesystemWithShell` reads `userIdRef`).
+
+```java
+// Serve alice and bob from the same agent instance
+agent.call(msg, RuntimeContext.builder().sessionId("alice-1").userId("alice").build()).block();
+agent.call(msg, RuntimeContext.builder().sessionId("bob-1").userId("bob").build()).block();
+// Session state and file paths for the two users do not interfere with each other
+```
+
+### Session Index
+
+After `MemoryFlushManager.offloadMessages` completes, `WorkspaceManager.updateSessionIndex(agentId, sessionId, summary)` merges a write into `sessions/sessions.json`. In another turn, the agent can use the `session_list` tool to see "what conversations this agent has had historically".
+
+## Related Pages
+
+- [Tool](./tool.md) — `session_search` / `session_list` / `session_history` parameters
+- [Memory](./memory.md) — when `offloadMessages` is called, and how it feeds back into `memory_search`
+- [Filesystem](./filesystem.md) — `userIdRef` + `NamespaceFactory` multi-tenant path isolation
+- [Architecture](./architecture.md) — `SessionPersistenceHook` position in `PostCallEvent` / `ErrorEvent`
+
+
+# Memory
+
+## Purpose
+
+Enable the agent to "remember facts across sessions" while preventing conversation context from growing unboundedly. Harness splits memory into two layers: high-frequency low-curation "daily logs" + low-frequency high-curation "long-term memory", supplemented by FTS5 full-text search and background maintenance.
+
+## Trigger Points
+
+| When | Action |
+|------|--------|
+| Before reasoning (`PreReasoningEvent`) | `CompactionHook` checks conversation thresholds; triggers `ConversationCompactor` if exceeded |
+| End of `call()` (`PostCallEvent`) | `MemoryFlushHook` calls `MemoryFlushManager` to extract facts + offload |
+| Context overflow (`ContextLengthExceeded`) | `HarnessAgent.forceCompactAndRetry` compacts with `triggerMessages=1` and retries |
+| Oversized tool result (`PostActingEvent`) | `ToolResultEvictionHook` offloads to filesystem |
+| Background schedule | `MemoryMaintenanceScheduler` runs a cycle every 6h by default; sends an opportunistic signal after each flush (30-minute throttle) |
+
+## Key Logic
+
+### Two-Layer Memory Model
+
+```{mermaid}
+graph LR
+    Conv[conversation messages] -->|over threshold| Compactor[ConversationCompactor]
+    Compactor -->|offload| Sess[sessions/&lt;id&gt;.log.jsonl]
+    Compactor -->|flushMemories| Flush[MemoryFlushManager]
+    Flush -->|append + index| Daily[memory/YYYY-MM-DD.md]
+    Daily -. background processing .-> Cons[MemoryConsolidator]
+    MEM[MEMORY.md as context] -->|read for deduplication| Cons
+    Cons -->|rewrite| MEM
+    MEM -->|injected each reasoning turn| Hook[WorkspaceContextHook]
+    Daily -.not injected directly.- Hook
+    Daily --> Idx[(MemoryIndex<br/>SQLite FTS5)]
+    MEM --> Idx
+```
+
+- **Layer 1 — Daily log `memory/YYYY-MM-DD.md`**: owned by `MemoryFlushManager`, **append-only**, no deduplication; a raw record of "what was just being discussed".
+- **Layer 2 — Curated long-term memory `MEMORY.md`**: owned by `MemoryConsolidator`, **complete rewrite**; `MemoryFlushManager` never touches it. Injected into system prompt by `WorkspaceContextHook` on every reasoning turn.
+- **Index `MemoryIndex`**: fully indexed at startup with `indexAllFromWorkspace`; incrementally rebuilt for today's file after each flush; SQLite file at `<workspace_parent>/memory_index.db`.
+
+### Conversation Compaction (`ConversationCompactor`)
+
+```
+check thresholds → find cutoff (don't split ASSISTANT/TOOL pairs)
+        → (optional) flushMemories(prefix)
+        → (optional) offloadMessages(messages → sessions/.../<id>.jsonl)
+        → LLM distills summary
+        → [summaryUserMsg] + tail returned to hook to reload memory
+```
+
+Default values (all configurable):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `triggerMessages` | `50` | Trigger by message count (`0` = disabled) |
+| `triggerTokens` | `80_000` | Trigger by estimated token count (`0` = disabled) |
+| `keepMessages` | `20` | Number of tail messages to retain |
+| `keepTokens` | `0` | Non-zero: scan from back by token budget, overrides `keepMessages` |
+| `flushBeforeCompact` | **`true`** | Extract memory to daily log before compacting |
+| `offloadBeforeCompact` | **`true`** | Append raw messages to session `.log.jsonl` before compacting |
+| `summaryPrompt` | Built-in template | Four-section format: SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS |
+
+```java
+CompactionConfig.builder()
+    .triggerMessages(30)
+    .keepMessages(10)
+    .build();   // flush/offload both default to true
+```
+
+#### `TruncateArgsConfig` — Lightweight Pre-processing (Optional)
+
+Before LLM summarization, a **no-LLM** pre-pass can truncate `ToolUseBlock` arguments in older messages (default threshold: 25 messages / 40k tokens, arguments exceeding 2000 characters are trimmed). Useful for scenarios like `write_file` where large argument bodies are not needed later.
+
+```java
+CompactionConfig.builder()
+    .triggerMessages(80)
+    .truncateArgs(TruncateArgsConfig.builder().build())
+    .build();
+```
+
+#### Automatic Context Overflow Recovery
+
+When the model returns a `context_length_exceeded` / `maximum context` style error, `HarnessAgent.recoverFromOverflow` → `forceCompactAndRetry` builds a temporary `CompactionConfig` with `triggerMessages=1`, runs one compaction round, clears `Memory`, and retries. **Prerequisite: `compaction(...)` must be configured**; otherwise the error is rethrown directly.
+
+### Memory Extraction (`MemoryFlushManager`)
+
+- `flushMemories(messages)`: hands the current `MEMORY.md` and today's log to the LLM as "deduplication reference", requesting **only newly added** bullets. "NO_REPLY" means nothing to write.
+- Write location is always `memory/YYYY-MM-DD.md`, **never `MEMORY.md`** (to prevent layer 1 overwriting layer 2).
+- After writing, immediately calls `indexFromString` to rebuild the file index, then calls `MemoryMaintenanceScheduler.requestConsolidation()` to signal "consolidate when you can".
+
+### Secondary Consolidation (`MemoryConsolidator`)
+
+- Reads daily logs with mtime exceeding the watermark + current `MEMORY.md`, calls LLM to merge, deduplicate, and trim.
+- Output limit: default `maxMemoryTokens=4000` (~16k characters); the prompt communicates this as a character budget to the LLM.
+- After writing, advances the watermark stored in `memory/.consolidation_state`; next run only looks at files with mtime past the watermark.
+- Consolidation only runs on the background executor: triggered by a periodic tick or `requestConsolidation()`, never blocking the reasoning loop.
+
+### Background Maintenance (`MemoryMaintenanceScheduler`)
+
+Auto-created and `start()`ed inside `HarnessAgent.build()`; each tick runs in sequence:
+
+1. `expireDailyFiles` — archive daily files older than `dailyFileRetentionDays` to `memory/archive/` (**default 90 days**)
+2. `consolidateMemory` — call `MemoryConsolidator.consolidate()`
+3. `pruneOldSessions` — delete session files with mtime older than `sessionRetentionDays` (**default 180 days**)
+4. `reindex` — `MemoryIndex.indexAllFromWorkspace`
+
+Default interval: `Duration.ofHours(6)`; opportunistic calls are throttled to 30-minute intervals to avoid hammering the LLM with frequent flushes.
+
+### Tool Result Eviction (`ToolResultEvictionConfig`)
+
+Independent from compaction. When a `tool_call` return text exceeds the threshold, the full content is written to a file under `evictionPath`, and the original position is replaced with a "head+tail preview + path" placeholder. The agent calls `read_file` when it needs the full content.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `maxResultChars` | `80_000` | Evict if exceeded |
+| `previewChars` | `2_000` | Number of head and tail preview characters |
+| `evictionPath` | `/large_tool_results` | Root path for evicted files |
+| `excludedToolNames` | Built-in set (includes `read_file` etc.) | Tools excluded from eviction |
+
+```java
+HarnessAgent.builder()
+    ...
+    .toolResultEviction(ToolResultEvictionConfig.defaults())
+    .build();
+```
+
+## Configuration and Code Examples
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("MyAgent")
+    .model(model)
+    .workspace(workspace)
+    .compaction(CompactionConfig.builder()
+        .triggerMessages(30)
+        .keepMessages(10)
+        .build())
+    .toolResultEviction(ToolResultEvictionConfig.defaults())
+    .build();
+
+// Agent can call memory_search at any time
+MemoryIndex index = new MemoryIndex(workspaceAgentScopeDir);
+index.open();
+List<MemoryIndex.SearchHit> hits = index.search("database migration", 10);
+// hit: { path, lineNumber, content, rank }
+```
+
+## Related Pages
+
+- [Tool](./tool.md) — `memory_search` / `memory_get` parameters and call examples
+- [Workspace](./workspace.md) — `MEMORY.md` / `memory/*.md` location in the workspace
+- [Session](./session.md) — how `.log.jsonl` / `.jsonl` feeds back into memory extraction
+- [Architecture](./architecture.md) — `CompactionHook` / `MemoryFlushHook` / `ToolResultEvictionHook` position in the lifecycle
+
+
+# Tooling
+
+## Purpose
+
+The Harness layer provides a default set of built-in tools sufficient to complete a full closed loop: reading and writing files, searching memory and sessions, delegating subagents, and optionally running a shell. No manual registration is needed — `HarnessAgent.build()` and `SubagentsHook` wire everything up together.
+
+## Registration Path
+
+```{mermaid}
+graph LR
+    Build[HarnessAgent.build] --> R1[FilesystemTool]
+    Build --> R2[MemorySearchTool]
+    Build --> R3[MemoryGetTool]
+    Build --> R4[SessionSearchTool]
+    Build -. backend is sandbox .-> R5[ShellExecuteTool]
+    Hook[SubagentsHook.tools<br/>non-leaf with model] --> H1[AgentSpawnTool]
+    Hook --> H2[TaskTool]
+```
+
+- **Direct registration**: `FilesystemTool` / `MemorySearchTool` / `MemoryGetTool` / `SessionSearchTool` are always registered; `ShellExecuteTool` is only registered when `backend instanceof AbstractSandboxFilesystem`.
+- **Indirect registration**: `AgentSpawnTool` and `TaskTool` are returned by `SubagentsHook.tools()` and only appear when non-leaf and `model` is configured; in session mode, `agent_*` tools are renamed to `sessions_*`.
+
+## Filesystem — `FilesystemTool`
+
+Wraps `AbstractFilesystem`; paths are the backend's local paths.
+
+| Tool | Purpose | Parameters |
+|------|---------|------------|
+| `read_file` | Read file content | `path`, `offset` (0-indexed), `limit` (0 = read all) |
+| `write_file` | Create new file | `path`, `content` (errors if file already exists) |
+| `edit_file` | Exact string replacement | `path`, `old_string` (unique by default), `new_string`, `replace_all` (default false) |
+| `grep_files` | Search string in specified path (not regex) | `pattern`, `path`, `glob` (e.g. `*.java`) |
+| `glob_files` | Find files by glob pattern | `pattern` (e.g. `**/*.md`), `path` |
+| `list_files` | List directory | `path` |
+
+## Memory — `MemorySearchTool` / `MemoryGetTool`
+
+| Tool | Purpose | Parameters |
+|------|---------|------------|
+| `memory_search` | FTS5 full-text search, returns at most 30 results; falls back to keyword scan when MemoryIndex is unavailable | `query` |
+| `memory_get` | Read a line range from a memory file, output with line numbers | `path` (workspace-relative), `startLine`, `endLine` (1-based) |
+
+> Parameter names are camelCase (`startLine` / `endLine`), inconsistent with the snake_case used by filesystem tools.
+
+## Session — `SessionSearchTool`
+
+| Tool | Purpose | Parameters |
+|------|---------|------------|
+| `session_search` | Scan session JSONL for keywords | `query`, `agentId` (optional), `maxResults` (default 10) |
+| `session_list` | List sessions for an agent; reads `sessions.json` first | `agentId` |
+| `session_history` | Return the last N messages from a session | `agentId`, `sessionId`, `lastN` (default 20) |
+
+> All parameter names are camelCase. `session_search` returns the "first 10 hits" across all `agents/<agentId>/sessions/*.jsonl`, **not** ranked by relevance.
+
+## Subagent — `AgentSpawnTool`
+
+| Tool | Purpose | Parameters |
+|------|---------|------------|
+| `agent_spawn` | Create a temporary subagent, optionally with an initial task | `agent_id` (required); `task` (optional, omit to create session only); `label` (optional alias); `timeout_seconds` (default 30, `0` = background, max 600) |
+| `agent_send` | Send a follow-up message to an existing subagent | `agent_key` or `label` (one required); `message` (required); `timeout_seconds` (same rules) |
+| `agent_list` | List currently active subagents | none |
+
+```
+agent_spawn agent_id="research-analyst"
+            task="research topic X"
+            timeout_seconds=60
+
+# async
+agent_spawn agent_id="research-analyst" task="full security audit" timeout_seconds=0
+# → agent_key + task_id
+```
+
+In session mode, these three names become `sessions_spawn` / `sessions_send` / `sessions_list`.
+
+## Background Tasks — `TaskTool`
+
+| Tool | Purpose | Parameters |
+|------|---------|------------|
+| `task_output` | Get background task result | `task_id`, `block` (default true), `timeout` default 30000ms, max 600000ms |
+| `task_cancel` | Cancel a task; no effect on terminal states | `task_id` |
+| `task_list` | List tasks | `status_filter`: running / completed / failed / cancelled / all |
+
+## Shell — `ShellExecuteTool` (Conditional)
+
+Only registered when the backend is `AbstractSandboxFilesystem` (which includes `LocalFilesystemWithShell`). If you use a pure `LocalFilesystem` or `RemoteFilesystem`, this tool does not appear.
+
+| Tool | Purpose | Parameters |
+|------|---------|------------|
+| `execute` | Calls backend `execute()`, returns stdout + exit code | `command`, `working_directory` (optional, prepended as `cd <dir> && <cmd>`), `timeout` (seconds, default 30) |
+
+> **Note**: `@Tool` has no explicit `name` set, so the tool name defaults to the method name, meaning the LLM sees `execute`. A future rename to `shell_execute` is a small refactor — see [roadmap](./roadmap.md).
+
+```
+execute command="find . -name '*.java' | wc -l"
+execute command="mvn test" timeout=300
+execute command="git status" working_directory="app"   # becomes: cd app && git status
+```
+
+## Related Pages
+
+- [Filesystem](./filesystem.md) — backend implementations and sandbox interface
+- [Memory](./memory.md) — FTS5 and the two-layer memory behind `memory_search` / `memory_get`
+- [Session](./session.md) — `WorkspaceSession` / `SessionTree` dual-track behind `session_*` tools
+- [Subagent](./subagent.md) — scheduling and lifecycle of `agent_spawn` / `agent_send` / `task_*`
+
+
+# Subagent
+
+## Purpose
+
+Subagents let the parent agent delegate tasks that are "independently handled, context-heavy, or parallelizable", preventing the main thread from bloating.  
+Each subagent is a temporary `HarnessAgent` (or remote stub) instance with its own sub-session; results are returned via tool output.
+
+---
+
+## When Subagents Are Enabled
+
+`HarnessAgent.build()` only loads subagent capability when all of the following are true:
+
+- The current agent is **not** a leaf subagent
+- `disableSubagents()` has not been called
+- `model` is configured
+
+When satisfied, `SubagentsHook` (priority=80) is registered and exposes:
+
+- `agent_spawn` / `agent_send` / `agent_list`
+- `task_output` / `task_cancel` / `task_list`
+
+On every `PreReasoningEvent` turn, `SubagentsHook` injects into SYSTEM:
+
+- Subagent usage rules
+- List of currently available `agent_id`s
+- Summary of async tasks in the current session (up to 10)
+
+---
+
+## Declaration Sources
+
+`buildSubagentEntries(...)` merges four sources:
+
+1. Built-in `general-purpose`
+2. Programmatic declarations: `builder.subagent(SubagentDeclaration)`
+3. File declarations: `workspace/subagents/*.md` (loaded non-recursively by `AgentSpecLoader`)
+4. Custom factories: `builder.subagentFactory(name, factory)`
+
+---
+
+## Declaration Model (`SubagentDeclaration`)
+
+`SubagentDeclaration` supports 3 mutually exclusive source modes:
+
+1. **Definition workspace mode**
+   - `workspace(path)` points to a definition directory (typically containing `AGENTS.md`)
+2. **Inline mode**
+   - `inlineAgentsBody(...)` is used directly as the system prompt base
+3. **Remote HTTP mode**
+   - `url(...)` + optional `headers(...)`, execution delegated remotely via the task protocol
+
+Mutual exclusion constraints (validated on `build()`):
+
+- `url` cannot coexist with `workspace` or non-empty `inlineAgentsBody`
+- `workspace` and non-empty `inlineAgentsBody` cannot coexist
+
+---
+
+## Runtime Workspace Five-Row Decision Table
+
+`WorkspaceMode` determines the runtime workspace root:
+
+| Case | sysPrompt base source | Runtime workspace |
+|------|----------------------|-------------------|
+| Built-in `general-purpose` (always SHARED) | No additional base (only Subagent Context appended; `AGENTS.md` still injected by WorkspaceContextHook) | `mainWorkspace` |
+| `workspace.path` + `ISOLATED` | `<workspace.path>/AGENTS.md` (empty if absent) | `workspace.path` |
+| `workspace.path` + `SHARED` | `<workspace.path>/AGENTS.md` (empty if absent) | `mainWorkspace` |
+| No `workspace.path` + `ISOLATED` (default) | `inlineAgentsBody` / markdown body | `mainWorkspace/agents/<name>/workspace` (auto-created) |
+| No `workspace.path` + `SHARED` | `inlineAgentsBody` / markdown body | `mainWorkspace` |
+
+Notes:
+
+- `tools` is an **allowlist for inherited tools**: it only filters the parent toolkit, and does not affect tools the subagent auto-registers locally
+- Multiple declarations can reuse the same definition workspace
+- `workspace.path` relative paths are resolved via `mainWorkspace.resolve(...).normalize()`
+
+---
+
+## Declaration Files (`workspace/subagents/<id>.md`)
+
+The filename (without `.md`) is the `agent_id`; `name` is not read from front matter.
+
+```markdown
+---
+description: Code review expert
+workspace:
+  mode: isolated               # isolated | shared, defaults to isolated
+  path: ./defs/reviewer        # optional; relative to mainWorkspace or absolute
+model: openai:gpt-4o-mini      # optional
+maxIters: 8                    # optional, default 10
+tools: [read_file, grep_files] # optional
+---
+
+You are a subagent focused on code review.
+```
+
+Parsing rules (`AgentSpecLoader`):
+
+- Required: `description`
+- Only scans the **first level** of `subagents/` directory for `.md` files (non-recursive)
+- If `workspace.path` is set and body is non-empty: logs a warning; body is ignored
+- Markdown declarations currently do not parse `url/headers` (remote declarations should use the programmatic API)
+
+---
+
+## Programmatic Configuration
+
+```java
+HarnessAgent.builder()
+    .name("orchestrator")
+    .model(model)
+    .workspace(workspace)
+    .subagent(SubagentDeclaration.builder()
+        .name("reviewer")
+        .description("Code review expert")
+        .workspace(Path.of("./defs/reviewer"))
+        .workspaceMode(WorkspaceMode.ISOLATED)
+        .model("qwen3-max")
+        .maxIters(8)
+        .tools(List.of("read_file", "grep_files"))
+        .build())
+    .subagent(SubagentDeclaration.builder()
+        .name("remote-researcher")
+        .description("Remote research subagent")
+        .url("http://agent-task-server:8080")
+        .headers(Map.of("Authorization", "Bearer xxx"))
+        .build())
+    .build();
+```
+
+---
+
+## Built-in `general-purpose`
+
+The built-in `general-purpose` requires no declaration file and is always included in the entry list.  
+Its goal is to "mirror the parent agent's capabilities":
+
+- Shares the main workspace (`SHARED` semantics)
+- Inherits and mirrors the parent agent's:
+  - toolkit (parent tools)
+  - hooks
+  - execution config
+  - compaction / toolResultEviction
+  - additional context files / maxContextTokens
+  - various disable flags
+- Always a leaf subagent (cannot further spawn subagents)
+
+---
+
+## Recursion Prevention and Depth Safety
+
+Two safety mechanisms:
+
+1. All subagents generated via declarations or built-in are given `asLeafSubagent()` — leaf agents do not register `SubagentsHook`
+2. `AgentSpawnTool` also has a dynamic depth cap: `MAX_SPAWN_DEPTH = 3`
+
+---
+
+## RuntimeContext Propagation
+
+When `agent_spawn` / `agent_send` invokes a subagent:
+
+- The sub-session `session_id` is a new value (`sub-<uuid>`)
+- `userId` is propagated from the parent `RuntimeContext` to the child `RuntimeContext`
+
+This maintains consistent USER-dimension isolation keys (e.g., scenarios where namespace/sandbox isolation depends on `userId`).
+
+---
+
+## Tool Reference and Key Parameters
+
+| Tool | Purpose | Key Parameters |
+|------|---------|---------------|
+| `agent_spawn` | Create a subagent; optionally execute the first task sync or async | `agent_id` required; `task` optional; `label` optional; `timeout_seconds` default 30, `0` = background, max 600 |
+| `agent_send` | Send a follow-up message to an existing subagent | `agent_key` or `label` (one required); `message` required; `timeout_seconds` same rules |
+| `agent_list` | List currently active subagents | none |
+| `task_output` | Query / wait for background task result | `task_id`; `block` (default true, use false to poll status); `timeout` default 30000ms, max 600000ms |
+| `task_cancel` | Cancel a task | `task_id` |
+| `task_list` | List tasks in the current session | `status_filter` (running/completed/failed/cancelled/all) |
+
+Notes:
+
+- The `agent_key` for `agent_send` must be the complete `agent_key: ...` from the `agent_spawn` return value (not `agent_id` / `session_id` / `task_id`)
+- Do not immediately poll after creating an async task; prefer returning to the user first, then using `task_output(block=false)` or `task_list` to check latest status
+
+---
+
+## Async Task Lifecycle and Storage
+
+By default, the parent agent uses `WorkspaceTaskRepository` (unless overridden with `taskRepository(...)`).
+
+Lifecycle (simplified):
+
+1. `putTask(...)` writes `TaskRecord(PENDING)` to workspace
+2. Submits local execution future (local or remote)
+3. Updates to `RUNNING` during execution
+4. Writes `COMPLETED / FAILED / CANCELLED` on completion
+
+Storage layering:
+
+- In-memory layer: `localTasks` (node-local acceleration handle, lost on restart)
+- Persistent layer: `agents/<parentAgentId>/tasks/<sessionId>.json` (source of truth)
+
+---
+
+## Distributed Semantics
+
+- Task execution is sticky to the creating node, but any node can read state through the workspace
+- `task_output(block=true)` degrades gracefully in cross-node scenarios and does not block indefinitely
+- `task_cancel` persists `cancelRequested=true`; the executing node polls this flag and aborts
+- The orphan sweeper marks local tasks with no heartbeat for a long time as `FAILED` (remote transport tasks are not subject to this check)
+
+Relationship to filesystem mode:
+
+| Mode | `agents/<agentId>/tasks/` path visibility |
+|------|------------------------------------------|
+| `RemoteFilesystemSpec` | Routed to shared remote storage, visible to multiple nodes |
+| `SandboxFilesystemSpec` | Goes through sandbox filesystem and sandbox state persistence |
+| `LocalFilesystemSpec` / local default | Visible on local machine only |
+
+---
+
+## Remote Subagent Behavior
+
+When a declaration has `url(...)` configured:
+
+- The factory returns a `RemoteSubagentStub` (placeholder, performs no local reasoning)
+- Actual execution is delegated to a remote task HTTP service via `TaskRunSpec.RemoteTaskRunSpec` + `AgentProtocolTaskClient`
+- Supports both synchronous (`timeout_seconds > 0`) and asynchronous (`timeout_seconds = 0`) modes
+
+---
+
+## Practical Advice
+
+1. Write `description` clearly — "when to use / output format / prohibited actions" — this is the key signal the parent model uses to decide whether to delegate
+2. Subagent `maxIters` is typically set smaller than the parent agent to avoid sub-threads consuming excessive tokens
+3. After session compaction or recovery, first use `task_list()` to restore full task state before making single-task queries
+
+---
+
+## Related Pages
+
+- [Tool](./tool.md)
+- [Workspace](./workspace.md)
+- [Architecture](./architecture.md)
+- [Subagent Streaming](./streaming.md)
 
 
 # Subagent Streaming
@@ -8925,6 +10317,526 @@ events.onErrorResume(e -> {
 - [Architecture](./architecture.md) — `SubagentEventBus`, Reactor Context injection, and `StreamingHook` lifecycle
 
 
+# Quick Start
+
+This section contains the shortest path to start using `HarnessAgent`.
+
+Start here:
+
+- [Harness Overview](../overview.md)
+- [Architecture](../architecture.md)
+- [Filesystem](../filesystem.md)
+
+For runnable code, see [Examples](../example/index.md).
+
+
+# Sandbox
+
+[Filesystem](../filesystem.md) explains where an agent's "files and commands" come from. When these operations must be **isolated from the host process**, executed in a **replaceable execution environment** (local Unix, Docker, etc.), and able to **restore the same workspace state** across multiple `call`s, use the **sandbox mode** described here (`filesystem(SandboxFilesystemSpec)`).
+
+## 1. What Sandbox Solves
+
+- **Execution boundary**: the model operates on files and commands through the same `AbstractFilesystem` / `ShellExecuteTool` interfaces, but the **actual IO and processes** happen in an isolated environment managed by the sandbox client — suitable for scenarios where user input cannot be fully trusted, or where decoupling from the production host is required.
+- **Recoverable work unit**: unlike "single HTTP requests", multi-turn `call`s should be able to continue in the same logical workspace. `SandboxManager` **persists sandbox-side state** after each `call` ends (via `SandboxStateStore`), and looks it up by `IsolationScope` + `sessionId`/`userId` keys on the next `acquire`.
+- **Relationship to the Harness workspace**: the host still has a `WorkspaceManager` root directory; what the sandbox sees is defined by `WorkspaceSpec` and **workspace projection** mechanisms (syncing/mounting certain host paths into the sandbox at startup).
+
+## 2. Assembly in Harness
+
+When sandbox mode is enabled, `HarnessAgent.Builder` will:
+
+1. Call **`SandboxFilesystemSpec#toSandboxContext(hostWorkspaceRoot)`** to get a **`SandboxContext`** (containing `SandboxClient`, isolation scope, snapshot spec, `WorkspaceSpec`, etc.), while packing host-side paths to project into the sandbox (`AGENTS.md`, `skills/`, `subagents/`, `knowledge/`) into a `WorkspaceProjectionEntry` (see [§7 Workspace Projection](#7-workspace-projection-and-skills-sync)).
+2. Use **`SandboxBackedFilesystem`** as the agent's `AbstractFilesystem` implementation (transparent to upper layers).
+3. Construct **`SandboxManager(client, stateStore, agentId)`**; when no explicit **`SandboxFilesystemSpec#sandboxStateStore`** is configured, defaults to **`SessionSandboxStateStore(effectiveSession, agentId)`**, tying sandbox metadata to the current `Session`.
+4. Register **`SandboxLifecycleHook(sandboxManager, filesystemProxy)`** (priority `50`): on every `PreCall` it **acquires → `start()`** (including the 4-branch workspace initialization, see [§6 Snapshot and 4-Branch Recovery](#6-snapshot-and-4-branch-recovery)); on **`PostCall` / `Error`** it **`stop()` (persist snapshot) → persist state → release** and clears the active session on the proxy.
+
+Only when the backend implements **`AbstractSandboxFilesystem`** does `HarnessAgent` register **`ShellExecuteTool`**; in sandbox mode, files and shell commands go through the sandbox — the host is unaffected.
+
+For steps to implement a custom non-Docker isolation backend (`SandboxClient`, `SandboxState`, `SandboxFilesystemSpec`, etc.) and a self-check checklist, see **[§5 Extending Custom Sandbox Execution Environments](#5-extending-custom-sandbox-execution-environments)**.
+
+## 3. Isolation Dimensions (`IsolationScope`)
+
+`IsolationScope` controls **the persistence key for sandbox state** (sandbox mode) and **the namespace prefix for shared storage** (store mode, see [Filesystem mode 1](../filesystem.md)). Both modes share the same enum with consistent semantics.
+
+| Scope | Persistence key source | Behavior when missing | Typical use case |
+|-------|----------------------|----------------------|-----------------|
+| `SESSION` (default) | `sessionKey.toIdentifier()` | Skip state lookup, create new sandbox | Each session has its own sandbox/memory; conversation isolation |
+| `USER` | `RuntimeContext.userId` | Warn and fall back to new | Same user shares workspace or memory across sessions (including distributed) |
+| `AGENT` | Agent name (fixed at build time) | — | All users and sessions of a single agent share the same workspace |
+| `GLOBAL` | Fixed value `__global__` | — | All agents/users/sessions globally share within one store |
+
+### 3.1 SESSION — Conversation Isolation (Default)
+
+Each conversation has its own independent sandbox with no interference. Suitable for multi-user SaaS where each session's temporary work files and installed dependencies are isolated.
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("code-agent")
+    .model(model)
+    .filesystem(new DockerFilesystemSpec()
+        .image("ubuntu:24.04")
+        .snapshotSpec(new OssSnapshotSpec(...)))
+    // isolationScope defaults to SESSION; this line can be omitted
+    .filesystem(dockerSpec.isolationScope(IsolationScope.SESSION))
+    .build();
+
+// Different sessionId on each call → independent sandbox
+agent.call(msgs, RuntimeContext.builder().sessionId("user1-session1").build()).block();
+agent.call(msgs, RuntimeContext.builder().sessionId("user1-session2").build()).block();
+```
+
+### 3.2 USER — User-level Sharing (Recommended for Distributed Memory)
+
+**Most common distributed scenario**: multiple Pods/processes serving multiple sessions for the same user in parallel, but the user's long-term memory (`MEMORY.md`, `memory/`) must stay consistent across all replicas.
+
+**Sandbox mode + USER**: different sessions (different Pods) write the latest snapshot reference to the same state slot (key = `userId`) after each conversation ends. The next time any replica handles the same user, it restores the same workspace from that snapshot. Note this is **sequential reuse**, not concurrent sharing: concurrent requests each get independent containers, but both update the same state slot on `stop()`, with last-write winning. For `AGENT` / `GLOBAL` scopes requiring strong mutual exclusion, see [§9 Concurrency Control](#9-concurrency-control-sandboxexecutionguard).
+
+**Remote mode + USER** (equivalent without sandbox): `RemoteFilesystemSpec` uses `userId` as the KV namespace prefix, so all reads/writes routed to `MEMORY.md`, `memory/`, etc. land under the same store key — enabling memory sharing across distributed replicas without snapshots.
+
+```java
+// Sandbox + USER isolation: same user shares snapshots across Pods
+HarnessAgent agent = HarnessAgent.builder()
+    .name("assistant")
+    .model(model)
+    .filesystem(new DockerFilesystemSpec()
+        .image("ubuntu:24.04")
+        .snapshotSpec(new OssSnapshotSpec(...))
+        .isolationScope(IsolationScope.USER))
+    .sandboxDistributed(SandboxDistributedOptions.oss(redisSession, ossSnapshotSpec))
+    .build();
+
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("alice")       // same userId → same state slot → recoverable workspace
+    .sessionId("session-xyz")
+    .build();
+agent.call(msgs, ctx).block();
+```
+
+```java
+// Remote mode + USER isolation: lightweight distributed memory sharing (no sandbox)
+HarnessAgent agent = HarnessAgent.builder()
+    .name("assistant")
+    .model(model)
+    .filesystem(new RemoteFilesystemSpec(redisStore)
+        .isolationScope(IsolationScope.USER))
+    .build();
+// All replicas with the same userId share MEMORY.md / memory/ directory
+```
+
+### 3.3 AGENT — Agent-level Sharing
+
+All users and sessions of the same agent (by name) share the workspace snapshot or storage namespace. Suitable for "public knowledge base" agents: a single global workspace with write order determined by call sequence; suitable for tool-type, read-only, or admin scenarios.
+
+### 3.4 GLOBAL — Global Sharing
+
+The widest sharing scope within a store/workspace instance. Use with caution.
+
+## 4. Custom Sandbox Instances and Lifecycle Management
+
+By default, `SandboxManager` fully manages sandbox create / start / stop / shutdown (**self-managed**). When you need to **reuse an existing container**, **share a sandbox across multiple agents**, or **manage the container lifecycle yourself**, you can hand lifecycle control back to the caller in two ways.
+
+### 4.1 Passing an Existing `Sandbox` Instance (User-Managed, Highest Priority)
+
+On each `call`, bring in an **already-started** `Sandbox` object via `SandboxContext` in `RuntimeContext`:
+
+```java
+// Pre-create and start sandbox (container lifecycle managed by caller)
+Sandbox mySandbox = dockerClient.create(workspaceSpec, snapshotSpec, options);
+mySandbox.start();
+
+// Inject this instance on each call
+SandboxContext callCtx = SandboxContext.builder()
+    .client(dockerClient)         // same client used at agent build time
+    .externalSandbox(mySandbox)   // ← explicitly tell Manager: this is user-managed
+    .build();
+
+RuntimeContext ctx = RuntimeContext.builder()
+    .sessionId("my-session")
+    .sandboxContext(callCtx)      // overrides the defaultSandboxContext from build time
+    .build();
+
+agent.call(msgs, ctx).block();
+// SandboxLifecycleHook will call mySandbox.stop() (persist snapshot)
+// but will NOT call mySandbox.shutdown() — container keeps running
+```
+
+**Behavior rules** (`SandboxManager.acquire`'s 4-level priority):
+
+| Priority | Condition | Behavior |
+|----------|-----------|----------|
+| 1 (highest) | `SandboxContext.externalSandbox != null` | Use directly, mark user-managed; `PostCall` only calls `stop()`, not `shutdown()` |
+| 2 | `SandboxContext.externalSandboxState != null` | Restore from specified state, self-managed |
+| 3 | Persisted state exists in `SandboxStateStore` | Restore by `IsolationScope` key, self-managed |
+| 4 (default) | None of the above | Create new sandbox, self-managed |
+
+### 4.2 Passing Serialized State (Precise Snapshot Recovery)
+
+If you already have a `SandboxState` JSON string saved from a previous `call`, you can bypass `SandboxStateStore` automatic lookup and directly specify the state to restore:
+
+```java
+// Load previously serialized state (e.g., from a database or request parameters)
+String savedStateJson = db.load("checkpoint-2026-04-28");
+SandboxState savedState = dockerClient.deserializeState(savedStateJson);
+
+SandboxContext callCtx = SandboxContext.builder()
+    .client(dockerClient)
+    .externalSandboxState(savedState)   // ← specify state; SDK handles resume + lifecycle
+    .build();
+
+RuntimeContext ctx = RuntimeContext.builder()
+    .sandboxContext(callCtx)
+    .build();
+
+agent.call(msgs, ctx).block();
+```
+
+### 4.3 Sharing a Sandbox Across Multiple Agents
+
+```java
+// After main agent finishes a call, pass the sandbox to another agent
+Sandbox sharedSandbox = ...;  // already start()ed
+
+agent1.call(msgs1, RuntimeContext.builder()
+    .sandboxContext(SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
+    .build()).block();
+
+agent2.call(msgs2, RuntimeContext.builder()
+    .sandboxContext(SandboxContext.builder().externalSandbox(sharedSandbox).client(client).build())
+    .build()).block();
+
+// Manually shutdown after all agents are done
+sharedSandbox.shutdown();
+```
+
+## 5. Extending Custom Sandbox Execution Environments
+
+When your application needs an **isolation backend other than Docker** (custom remote executor, commercial sandbox API, local mock, etc.), **no changes to the Harness source are required**: implement the contract types below and plug them in via **`HarnessAgent.Builder#filesystem(SandboxFilesystemSpec)`**. Overall assembly still follows [§2](#2-assembly-in-harness): `SandboxContext` → `SandboxBackedFilesystem` → `SandboxManager` → `SandboxLifecycleHook`.
+
+### 5.1 Extension Points Overview
+
+| Extension Point | Responsibility | Contract with Framework |
+|-----------------|---------------|------------------------|
+| **`SandboxClient` + `SandboxClientOptions`** | **create / resume** in isolated environment, **serialize/deserialize** sandbox state | `create` receives `WorkspaceSpec`, `SandboxSnapshotSpec` (snapshot and "where to run" are **orthogonal**, see [§6](#6-snapshot-and-4-branch-recovery)), and your options; `resume` / `deserializeState` must return a `Sandbox` that can cooperate with `SandboxManager`. |
+| **`SandboxState` subclass** | Backend-specific fields to persist across `call`s (resource id, image, internal path, etc.) | Base class only has **`@JsonTypeInfo(property = "type")`**, **does not use `@JsonSubTypes` in the parent to hard-code subclasses**. Official Docker registers in **`HarnessSandboxJacksonModule`** as `docker` → `DockerSandboxState`; your subclass must **`registerSubtypes(NamedType)`** (or equivalent `SimpleModule`) on any **`ObjectMapper`** participating in deserialization. |
+| **`Sandbox` implementation** | `start` / `stop` / `shutdown`, `exec`, workspace/snapshot cooperation | Typically extends **`AbstractBaseSandbox`** to reuse 4-branch recovery and snapshot hooks; you connect to the real process or API. |
+| **`SandboxFilesystemSpec` subclass** | **Connect** client, options, default `WorkspaceSpec` / `SandboxSnapshotSpec` **to Harness** | Implement **`createClient()`**, **`clientOptions()`**, **`snapshotSpec()`**, **`workspaceSpec()`**; can chain **`isolationScope`**, **`sandboxStateStore`**, **`executionGuard`**, projections, etc. (feature parity with **`DockerFilesystemSpec`**). |
+
+### 5.2 Implementing `SandboxClient` and Options
+
+1. Define **`MySandboxClientOptions extends SandboxClientOptions`**: **`getType()`** returns a stable string (e.g. `acme`), consistent with the **`type`** in persistence/config. If you need to **deserialize options from YAML/JSON**, add Jackson registration for `SandboxClientOptions` polymorphism (see framework's **`DockerSandboxClientOptions`** and the base class's **`@JsonTypeInfo`**); skip this if configuring from Java code only.
+2. Implement **`SandboxClient<MySandboxClientOptions>`**: in **`create`** construct a `Sandbox` that has **not yet been `start()`ed**; **`serializeState` / `deserializeState`** must be consistent with the `SandboxState` subclass fields; **`delete`** can be a no-op if there are no additional resources.
+3. If **`deserializeState`** uses **`objectMapper.readValue(json, SandboxState.class)`**, that **`ObjectMapper` must** register **`HarnessSandboxJacksonModule`** (which includes built-in `NamedType` for `docker` etc.) and your **`NamedType(MySandboxState.class, "acme")`**. **No-arg `new DockerSandboxClient()`** automatically registers **`HarnessSandboxJacksonModule`**; **`new DockerSandboxClient(customMapper)`** requires manually **`registerModule(new HarnessSandboxJacksonModule())`** and **`registerSubtypes`**, otherwise reading back persisted state will fail.
+
+### 5.3 `SandboxState` and Jackson
+
+- **Design intent**: the subtype table is provided at runtime via Module / `registerSubtypes`, making it easy for the same application or downstream jars to **extend state** without modifying **`SandboxState.java`**.
+- **This repo**: in **`io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule`**, add **`registerSubtypes(new NamedType(XxxSandboxState.class, "xxx"))`** for new official backends.
+- **Application-private subclasses**: call **`mapper.registerSubtypes(new NamedType(MySandboxState.class, "acme"))`** on any **`ObjectMapper`** that holds sandbox JSON, and ensure **`SandboxManager` / `SandboxStateStore`** paths use **the same** mapper configuration as the **`SandboxClient`**.
+
+### 5.4 Implementing `SandboxFilesystemSpec`
+
+- **`createClient()`**: return your **`SandboxClient`** (or create it via **`options.createClient()`**, same pattern as **`DockerFilesystemSpec`**).
+- **`clientOptions()`**: return the mutable configuration object.
+- **`snapshotSpec()`** / **`workspaceSpec()`**: can provide default **`NoopSnapshotSpec`** and **`new WorkspaceSpec()`**; callers can still override with **`SandboxFilesystemSpec#snapshotSpec(...)`** before building the agent.
+
+**Reference implementation**: **`InMemorySandboxFilesystemSpec`** in the repo (`agentscope-harness` test support, `harness-example-sandbox` example project) simulates a sandbox with a temp directory, requires no Docker, and is a good minimal skeleton to copy and modify.
+
+### 5.5 Enabling
+
+Same as Docker, pass your spec to **`HarnessAgent.builder()`**:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("my-agent")
+    .model(model)
+    .filesystem(new MySandboxFilesystemSpec()
+        .isolationScope(IsolationScope.SESSION))
+    .build();
+```
+
+When distributed **`Session`** or OSS/Redis snapshots are needed, continue configuring **`sandboxDistributed(...)`** as needed (see [§10](#10-distributed-operation-and-sandboxdistributed)); **snapshot spec and isolated execution backend are chosen independently** on **`SandboxFilesystemSpec`**.
+
+### 5.6 Self-Check Checklist
+
+- [ ] JSON written by **`Sandbox#getState()`** can be losslessly read back by **`SandboxClient#deserializeState`**.
+- [ ] **`SandboxClientOptions#getType()`** and the **`type`** in **`SandboxState` JSON** do not conflict globally.
+- [ ] All **`ObjectMapper`**s that do **`readValue(..., SandboxState.class)`** have the corresponding **`NamedType`** registered (including **`HarnessSandboxJacksonModule`** if Docker-compatible data must be read).
+- [ ] If using **`AbstractSandboxFilesystem`**, **`ShellExecuteTool`** and file APIs are routed to your **`Sandbox#exec`** and sandbox-internal path conventions.
+
+### 5.7 Optional Sandbox Backends: Kubernetes / Daytona / E2B (`agentscope-harness` subpackages)
+
+These three remote sandbox implementations are in **`agentscope-harness`**'s **`io.agentscope.harness.agent.sandbox.impl.*`** subpackages (alongside **`io.agentscope.harness.agent.sandbox.impl.docker`**), available within the same artifact; dependencies like **fabric8** and **protobuf-java** are declared in **`agentscope-harness`**'s `pom.xml`.
+
+| Java Package | Description |
+|--------------|-------------|
+| **`io.agentscope.harness.agent.sandbox.impl.kubernetes`** | Uses Pod as remote host: fabric8 Exec + container-side `tar`; **`KubernetesFilesystemSpec`** / **`KubernetesSandboxClient`** / **`KubernetesHarnessSandboxJacksonModule`** (`NamedType`: `kubernetes`). Supports top-level **`BindMountEntry`** (node **HostPath** + `volumeMount`), see [§5.8](#58-workspace-bind-mount-bindmountentry). |
+| **`io.agentscope.harness.agent.sandbox.impl.daytona`** | Daytona HTTP API: **`DaytonaFilesystemSpec`**, **`DaytonaHarnessSandboxJacksonModule`** (`daytona`), timeouts with limited retries. Does **not** apply host bind mounts; **WARN** at startup if spec contains `bind_mount`. |
+| **`io.agentscope.harness.agent.sandbox.impl.e2b`** | E2B: `https://api.e2b.app` lifecycle + envd **`process.Process/Start`** (Connect+protobuf); **`E2bFilesystemSpec`**, **`E2bHarnessSandboxJacksonModule`** (`e2b`); **`E2bPersistenceMode#TAR`** and **`NATIVE_SNAPSHOT`** (platform snapshot API + **`E2bSnapshotRefs`** magic prefix). Does **not** apply host bind mounts; **WARN** at startup if spec contains `bind_mount`; TAR snapshots still add **`tar --exclude`** for bind paths (consistent with Docker/K8s). |
+
+**Jackson assembly**: register at least **`HarnessSandboxJacksonModule`** on any `ObjectMapper` holding sandbox state JSON, then register each backend's `SimpleModule` as needed (e.g., **`new KubernetesHarnessSandboxJacksonModule()`**), consistent with [§5.3](#53-sandboxstate-and-jackson). **Do not** add **`@JsonSubTypes`** on core **`SandboxClientOptions`** for optional backends — this would cause harness to reverse-depend on optional modules creating Maven cycles; optional backends are wired on the application side via their own **`FilesystemSpec`** + **`SandboxClientOptions` subclass**.
+
+**Dependency coordinates**: depend only on **`agentscope-harness`** (or harness coordinates managed by **`agentscope`** / BOM); **`agentscope-all`** includes these implementation classes alongside harness.
+
+### 5.8 Workspace Bind Mount (`BindMountEntry`)
+
+Place **`io.agentscope.harness.agent.sandbox.layout.BindMountEntry`** (Jackson polymorphic name **`bind_mount`**) in **`WorkspaceSpec#getEntries()`**: the **key (map key)** is the **relative mount point** under workspace root (POSIX style, e.g. `data` → `{root}/data`), **`hostPath`** is the absolute path on the host (Docker machine / K8s node), **`readOnly`** controls whether read-only.
+
+| Backend | Behavior |
+|---------|----------|
+| **Docker** | Adds **`-v host:container:rw|ro`** to `docker run`; `WorkspaceSpecApplier` does not copy the path contents into the container. |
+| **Kubernetes** | Adds a **HostPath `Volume`** and **`volumeMount`** for each top-level bind (path must exist or be creatable on the scheduled node; evaluate security risks in production). |
+| **Daytona / E2B** | Cannot mount your host directory to a remote cloud sandbox; **WARN** at startup if spec contains bind mounts; entries **do not take effect**. |
+
+**Snapshots and `tar`**: when persisting workspace, the framework appends arguments like **`tar --exclude=./`** plus the entry relative path to avoid including external directories under mount points in the archive (aligned with the Python reference implementation). If you want a path **not in snapshots** but still written by the applier as initial content, use an **`ephemeral`** regular file/directory entry rather than a bind mount.
+
+**Security**: when `hostPath` comes from configuration or upstream input, restrict it to trusted directories; bind mounts are equivalent to letting container-side processes directly access the host path.
+
+## 6. Snapshot and 4-Branch Recovery
+
+`Sandbox.start()` decides how to initialize the workspace via **4 branches**, ensuring correct recovery under all combinations of "whether the container is still available" and "whether a snapshot is available":
+
+```
+Branch A: workspaceRootReady=true  &  directory still exists in container   → only re-apply ephemeral entries (fastest, warm start)
+Branch B: workspaceRootReady=true  &  directory lost in container            → restore from snapshot + re-apply ephemeral entries
+Branch C: workspaceRootReady=false &  snapshot available                     → restore from snapshot + re-apply all entries
+Branch D: workspaceRootReady=false &  no snapshot available                  → full initialization from WorkspaceSpec (cold start)
+```
+
+When `Sandbox.stop()` executes, if `SandboxSnapshotSpec` has persistence enabled, the workspace is tarred and stored in the snapshot backend (OSS, Redis, local file, etc.), and `workspaceRootReady` is set to true. This tar is the **archive** used by Branch B/C for the next recovery.
+
+**`WorkspaceEntry.ephemeral` flag**: each entry in `WorkspaceSpec` can be marked as ephemeral (re-written on every start) or non-ephemeral (saved with snapshot, only written on cold start). For host-side files that may be updated at any time like `skills/` and `AGENTS.md`, use `WorkspaceProjectionEntry` (next section) rather than the ephemeral flag.
+
+**Available snapshot spec types**:
+
+| Spec | Storage Location |
+|------|----------------|
+| `NoopSnapshotSpec` (default) | No persistence; cold start from WorkspaceSpec after container rebuild |
+| `LocalSnapshotSpec` | Host local file (suitable for single-machine long-running) |
+| `OssSnapshotSpec` | OSS / S3-compatible storage (suitable for multi-replica) |
+| `RedisSnapshotSpec` | Redis (suitable for low-latency, small workspaces) |
+
+## 7. Workspace Projection and Skills Sync
+
+**Workspace projection** (`WorkspaceProjectionEntry`) is the mechanism by which Harness syncs specific directories/files from the host workspace into the sandbox **at every sandbox startup** — the foundation for Skills and other capabilities running inside the sandbox.
+
+### 7.1 Projection Scope
+
+When `SandboxFilesystemSpec` builds `SandboxContext`, it defaults to packing the following host paths into the projection:
+
+```
+AGENTS.md       ← agent identity and instructions
+skills/         ← directory for all Skills in SkillBox (includes SKILL.md and script files)
+subagents/      ← subagent spec files
+knowledge/      ← domain knowledge files
+```
+
+You can customize which root paths to project via `SandboxFilesystemSpec#workspaceProjectionRoots(List<String>)`, or completely disable projection via `workspaceProjectionEnabled(false)`.
+
+### 7.2 How Projection Works
+
+`WorkspaceProjectionApplier` runs at the end of `Sandbox.start()`:
+
+1. Iterates all `WorkspaceProjectionEntry`s, collects the host-side file set, sorts by path, and computes a **SHA-256 content hash**.
+2. Packs these files into a tar, and decompresses them to the corresponding paths inside the sandbox workspace via `Sandbox.hydrateWorkspace(archive)`.
+3. Stores the current hash in `SandboxState.workspaceProjectionHash`; on the next startup, if the hash is unchanged, **skips the projection** (avoiding redundant transfers).
+
+This means: when `skills/` content on the host is updated, the hash changes on the next sandbox start, and new files are automatically synced in; changes to skill files inside the sandbox are not synced back to the host.
+
+### 7.3 How Skills Execute Inside the Sandbox
+
+Harness's `SkillBox` mechanism injects the instructions from `workspace/skills/<skill-name>/SKILL.md` into the agent's system prompt; after the model understands "this skill is needed", it executes scripts or commands in the skill directory via `ShellExecuteTool`. In sandbox mode, all of this happens inside the sandbox:
+
+```
+host workspace/skills/pytest/
+│── SKILL.md          # description: how to run pytest
+└── run_tests.sh      # actual script
+
+         ▼ projection (at every startup)
+
+sandbox /workspace/skills/pytest/
+│── SKILL.md
+└── run_tests.sh
+
+agent thinks and calls shell_execute:
+  "bash /workspace/skills/pytest/run_tests.sh tests/"
+          ↓
+   ExecResult(exitCode=0, stdout="5 passed")
+```
+
+**Benefit**: scripts run in the isolated container; pip install, apt-get, rm -rf and other operations only affect the sandbox workspace — the host is unaffected. After the sandbox is snapshotted, installed dependencies are archived along with the workspace, so the next restore can use them directly (Branch A/B/C) without reinstalling.
+
+### 7.4 State Persistence of Shell Commands and Scripts
+
+`ShellExecuteTool` calls `AbstractSandboxFilesystem.execute(cmd, timeout)` → `Sandbox.exec(cmd, timeout)`, executing commands in the sandbox. All filesystem changes from commands (new files, installed packages, written logs, etc.) are retained inside the sandbox's overlay/container. When `stop()` runs, these states are persisted with the tar snapshot and restored on the next `start()`.
+
+Therefore, **state is fully preserved across `call`s**:
+
+```
+call 1: shell_execute("pip install pandas")   → pandas installed in sandbox
+call 2: shell_execute("python analyze.py")    → directly available, no reinstall
+call 3: shell_execute("cat results.csv")      → reads file produced in call 2
+```
+
+## 8. State: `SandboxStateStore` and `Session`
+
+- **`SandboxStateStore`**: abstracts persistence of "sandbox metadata (sessionId + snapshot reference) bound to an isolation key". Easy to replace with a custom implementation; configured on **`SandboxFilesystemSpec#sandboxStateStore`** (defaults when not set).
+- **Default `SessionSandboxStateStore`**: depends on the `Session` selected at build time (the **session abstraction** shared with `SessionPersistenceHook` etc.; if you use a distributed `Session` like Redis, sandbox metadata becomes visible across processes).
+- **`WorkspaceSession`** remains responsible for **per-session configuration under the workspace layout**; **do not** conflate `WorkspaceSession`'s JSON with "sandbox state JSON" — the sandbox resume data source of truth is **`SandboxStateStore`**.
+
+## 9. Concurrency Control: `SandboxExecutionGuard`
+
+### 9.1 Concurrency Safety Boundaries
+
+Different `IsolationScope`s have different concurrency safety guarantees:
+
+| Scope | Concurrency Safety | Notes |
+|-------|--------------------|-------|
+| `SESSION` | ✅ Naturally isolated | Each session has its own state slot; requests from different sessions do not interfere |
+| `USER` | ⚠️ Needs extra guarantee in multi-replica | Multiple sessions of the same user are reused sequentially; `checkRunning=true` is sufficient for single-instance; recommend `SandboxExecutionGuard` for multi-replica deployment to protect the shared `userId` state slot |
+| `AGENT` | ⚠️ Needs extra guarantee | All users/sessions share the same state slot; concurrent writes in multi-replica may cause snapshots and state to overwrite each other |
+| `GLOBAL` | ⚠️ Needs extra guarantee | Same as `AGENT`, with wider scope |
+
+**For `SESSION` scope, single-instance `checkRunning=true` (default) is sufficient; `USER`, `AGENT`, and `GLOBAL` in multi-replica deployments should all explicitly configure `SandboxExecutionGuard`** to serialize access to shared slots.
+
+### 9.2 `SandboxExecutionGuard` Interface
+
+```java
+@FunctionalInterface
+public interface SandboxExecutionGuard {
+
+    // Block until execution rights for the key's slot are obtained; return the held lease
+    SandboxLease tryEnter(SandboxIsolationKey key) throws InterruptedException;
+
+    // Default: no-op; behavior identical to not being configured
+    static SandboxExecutionGuard noop() { ... }
+}
+```
+
+**Lifecycle**: the guard intervenes before `acquire`; `lease.close()` is automatically called by Harness after `release()` completes, covering the entire call window:
+
+```
+tryEnter(key)          ← may block here until the previous call completes
+  └─ acquire / resume sandbox
+  └─ sandbox.start()
+  └─ [agent call executing]
+  └─ persistState()
+  └─ sandbox.stop() + shutdown()
+lease.close()          ← release execution rights; next waiter can enter
+```
+
+Priority 1 (`externalSandbox`) and Priority 2 (`externalSandboxState`) bypass the guard — user-managed sandboxes handle concurrency control on the caller side.
+
+### 9.3 Built-in Redis Implementation
+
+`RedisSandboxExecutionGuard` uses Redis `SET NX PX` leases for distributed mutual exclusion, **sharing the same `UnifiedJedis` instance as `RedisSnapshotSpec`** without introducing extra dependencies. It encodes `IsolationScope` into the lock key, so `USER`, `AGENT`, and `GLOBAL` each land on their own independent distributed lock:
+
+```java
+UnifiedJedis jedis = new JedisPooled("redis-host", 6379);
+
+// Share the same jedis instance with RedisSnapshotSpec
+SandboxExecutionGuard guard = RedisSandboxExecutionGuard.builder(jedis)
+    .leaseTtl(Duration.ofMinutes(30))      // must be greater than worst-case call duration
+    .retryInterval(Duration.ofMillis(500)) // polling interval
+    .keyPrefix("myapp:sandbox:lock:")      // optional; use for multi-environment isolation
+    .build();
+
+HarnessAgent.builder()
+    .name("shared-agent")
+    .model(model)
+    .filesystem(new DockerFilesystemSpec()
+        .image("ubuntu:24.04")
+        .isolationScope(IsolationScope.AGENT)
+        .snapshotSpec(new RedisSnapshotSpec(jedis, null, null))
+        .executionGuard(guard))            // ← serialize concurrent access at AGENT dimension
+    .sandboxDistributed(SandboxDistributedOptions.builder()
+        .session(redisSession)
+        .requireDistributed(true)
+        .build())
+    .build();
+```
+
+Redis key format: `<keyPrefix><scope_lower>:<value>`, for example:
+
+- `myapp:sandbox:lock:user:alice`
+- `myapp:sandbox:lock:agent:shared-agent`
+- `myapp:sandbox:lock:global:__global__`
+
+If you change `isolationScope` to `USER`, the same guard should be reused; the lock key is then bucketed by `userId`, protecting the shared sandbox state slot for the same user across multiple replicas.
+
+**TTL note**: TTL is a safety valve, not a correctness guarantee. If a call exceeds the TTL, Redis automatically releases the lock so the next waiter can enter — this prevents permanent deadlock from process crashes, but cannot guarantee the state safety of the timed-out call itself. Set `leaseTtl` to a reasonable upper bound of actual call duration (including LLM latency and retries).
+
+### 9.4 Custom Implementation Reference
+
+`SandboxExecutionGuard` is a `@FunctionalInterface`; any lock backend can be connected:
+
+```java
+// Example: JVM in-memory Semaphore (single-process multi-thread scenario)
+Map<String, Semaphore> semaphores = new ConcurrentHashMap<>();
+
+SandboxExecutionGuard jvmGuard = key -> {
+    Semaphore sem = semaphores.computeIfAbsent(key.toString(), k -> new Semaphore(1));
+    sem.acquire();           // block until available, respects InterruptedException
+    return sem::release;     // SandboxLease: release semaphore
+};
+```
+
+Implementation contract:
+
+1. `tryEnter` blocks until execution rights are obtained or the thread is interrupted (throws `InterruptedException`)
+2. `lease.close()` must be idempotent and must not throw exceptions (failures can only be internally logged)
+3. Implementation must be thread-safe
+
+## 10. Distributed Operation and `sandboxDistributed`
+
+When multi-replica or stateless workers need to share **the sandbox recovery capability of the same logical session**, you need:
+
+- A **distributed `Session`** (e.g., `RedisSession`), not just the default `WorkspaceSession` file backend; and
+- A non-no-op **`SandboxSnapshotSpec`** (archives the workspace for re-fetching), which passes the "must be distributed" validation.
+
+`HarnessAgent.Builder#sandboxDistributed(SandboxDistributedOptions)` can uniformly configure:
+
+- Override **`snapshotSpec`** (if provided); **`IsolationScope` is only configured on `SandboxFilesystemSpec`**, not repeated here;
+- **Explicitly specify** the `Session` used for the sandbox (if different from the main `session`) in the options;
+- Use `SandboxDistributedOptions#oss` / `#redis` etc. helper constructors for common combinations (see class JavaDoc).
+
+If `requireDistributed` is true but the current `effectiveSession` is still `WorkspaceSession` or the snapshot is no-op, the build **fails fast**.
+
+## 11. Choosing Between the Three Filesystem Modes
+
+Sandbox is one of three **declarative** configuration options. For a full comparison see [Filesystem](../filesystem.md#three-declarative-modes); here are the key decision points:
+
+| You primarily need | Recommended mode |
+|-------------------|-----------------|
+| Multi-instance sharing of `MEMORY.md`, session logs, etc. to KV, **without** running shell on host | `RemoteFilesystemSpec` (see [Filesystem — Mode 1](../filesystem.md)) |
+| Single-process/local, trusted shell, **without** a separate sandbox | `LocalFilesystemSpec` or default local + shell (see [Filesystem — Mode 3](../filesystem.md)) |
+| **Isolated execution**, commands and files in sandbox, **long-session recovery**, optional **snapshots + cluster** | **`SandboxFilesystemSpec` (this page) + optional `sandboxDistributed`** |
+
+## 12. Subagents
+
+When `SubagentsHook` is enabled, if the parent agent is built in sandbox mode, **subagents' filesystem reuses** the same `SandboxBackedFilesystem` session-binding strategy (per current implementation, facilitating environment sharing within the same orchestration tree). Subagents remain independent `ReActAgent` instances; the isolation boundary is consistent with the parent agent's sandbox spec.
+
+## 13. Related Pages
+
+- [Filesystem](../filesystem.md) — class hierarchy, three modes, `abstractFilesystem` escape hatch
+- [Tool](../tool.md) — `FilesystemTool`, `ShellExecuteTool` parameters
+- [Session](../session.md) — `Session` and `WorkspaceSession`
+- [Architecture](../architecture.md) — hook collaboration and lifecycle
+
+
+# Examples
+
+This section tracks runnable Harness examples and scenario walkthroughs.
+
+Repository examples:
+
+- `agentscope-examples/harness-example`
+
+Recommended reading order:
+
+1. [Harness Overview](../overview.md)
+2. [Quick Start](../quickstart/index.md)
+3. [Sandbox](../sandbox/index.md)
+
+
 # Integration
 
 This section will cover third-party integrations, extensions, and ecosystem connectors for AgentScope Java.
@@ -8942,7 +10854,7 @@ Technical articles, release highlights, and team notes. Below is the **article i
 
 | Article | Summary |
 |---------|---------|
-| [AgentScope Java 1.1 · Harness (English stub)](agentscope-v1-harness.md) | Short landing page; full long-form article is published in Chinese. |
+| [AgentScope Java 1.1 · Harness](agentscope-v1-harness.md) | English edition covering motivation, architecture, deployment patterns, and quick start for Harness in v1.1. |
 
 ```{tip}
 When adding posts: place Markdown under `en/blogs/`, add a `chapters` entry under **`caption: Blogs`** in `docs/_toc.yml`, and extend this table with a one-line summary.
@@ -8955,13 +10867,124 @@ hide-toc: true
 
 # AgentScope Java 1.1 · Harness
 
-The full long-form article is maintained in **Chinese** to match the primary audience for this release note.
+AgentScope Java 1.1 introduces the first public release of the **Harness Framework**: a production runtime layer for long-running, distributed agents.
 
-- Read the full article: [首个Harness Framework发布…（中文全文）](../../zh/blogs/agentscope-v1-harness.md)
+Harness is designed to preserve the practical "continuous evolution" experience seen in products like OpenClaw/Hermes, while adding the safety and operational boundaries required in enterprise environments.
 
-```{note}
-This English page exists so language switching and the blog sidebar stay consistent. Translate or replace this stub when an English edition is ready.
+---
+
+## Why Harness
+
+Many agent stacks work well for personal assistants, but hit real limits in production:
+
+1. **Distributed workspace state**: local directory assumptions break in multi-replica deployments.
+2. **Execution safety**: user-driven shell/code execution must be isolated from host processes.
+3. **Storage abstraction**: agent logic should not be coupled to one storage backend.
+4. **Subagent orchestration**: task delegation and lifecycle management become complex quickly.
+5. **Memory governance**: context growth and cross-session fact retention need first-class support.
+
+Harness addresses these with one integrated runtime model.
+
+---
+
+## Core Design
+
+### Workspace as source of truth
+
+Harness organizes long-lived agent state under a structured workspace:
+
+- persona and rules (`AGENTS.md`)
+- long-term memory (`MEMORY.md`)
+- domain knowledge
+- skills
+- subagent definitions
+- session artifacts
+
+Before each call, key workspace artifacts are injected into context.  
+After each call, new facts and state are persisted back.
+
+### `AbstractFilesystem` as portability layer
+
+Harness decouples logical file operations (`read`, `write`, `ls`, `grep`) from physical storage/execution:
+
+- local disk
+- remote storage
+- sandbox filesystem
+- composite routing across backends
+
+This lets teams move from local prototypes to distributed production without rewriting business-agent logic.
+
+---
+
+## What 1.1 Delivers
+
+- **Workspace-driven runtime** for durable identity and evolving behavior
+- **Pluggable filesystem abstraction** for local/remote/sandbox execution
+- **Built-in context governance** (compaction + layered memory)
+- **Subagent orchestration** with sync/async delegation and task lifecycle
+
+---
+
+## Typical Deployment Scenarios
+
+### Personal productivity agents
+
+- local execution
+- durable memory and persona
+- workspace-driven skill iteration
+
+### Enterprise data/service agents
+
+- sandboxed execution for untrusted input
+- distributed memory/session continuity across replicas
+- async subagent orchestration for long-running tasks
+
+### API-first online agents
+
+- strict tool boundaries (no implicit shell exposure)
+- shared remote state for cross-instance continuity
+- stable multi-turn behavior under production traffic
+
+---
+
+## Quick Start (Harness)
+
+```xml
+<dependency>
+  <groupId>io.agentscope</groupId>
+  <artifactId>agentscope-harness</artifactId>
+  <version>${agentscope.version}</version>
+</dependency>
 ```
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("my-agent")
+    .model(model)
+    .workspace(Paths.get(".agentscope/workspace"))
+    .compaction(CompactionConfig.builder()
+        .triggerMessages(50)
+        .keepMessages(20)
+        .build())
+    .build();
+
+RuntimeContext ctx = RuntimeContext.builder()
+    .sessionId("user-session-001")
+    .userId("alice")
+    .build();
+
+Msg reply = agent.call(userMessage, ctx).block();
+```
+
+---
+
+## Recommended Reading
+
+- [Harness Overview](../harness/overview.md)
+- [Harness Architecture](../harness/architecture.md)
+- [Filesystem](../harness/filesystem.md)
+- [Sandbox](../harness/sandbox/index.md)
+- [Chinese full article](../../zh/blogs/agentscope-v1-harness.md)
 
 
 # Community

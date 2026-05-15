@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-15T08:44:29+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="子 Agent 流式输出" href="streaming.html"><link rel="prev" title="工具（Tool）" href="tool.html">
+    <meta property="article:modified_time" content="2026-05-15T12:47:50+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="子 Agent 流式输出" href="streaming.html"><link rel="prev" title="工具（Tool）" href="tool.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/harness/subagent.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -18,7 +18,7 @@
     <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
     <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=f6f0bbea" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=0bcf34c1" />
     <link rel="stylesheet" type="text/css" href="../../_static/homepage.css?v=8a098e07" />
     
     
@@ -481,7 +481,17 @@
 <p class="caption" role="heading"><span class="caption-text">Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../en/harness/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/workspace.html">Workspace</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/filesystem.html">Filesystem</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/session.html">Session</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/memory.html">Memory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/tool.html">Tooling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/harness/streaming.html">Subagent Streaming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/quickstart/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/sandbox/index.html">Sandbox</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/harness/example/index.html">Examples</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Integration</span></p>
 <ul>
@@ -607,252 +617,204 @@
 <h1>子 Agent（Subagent）<a class="headerlink" href="#agent-subagent" title="Link to this heading">¶</a></h1>
 <section id="id1">
 <h2>作用<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<p>让父 agent 能把”独立、重上下文、可并行”的子任务交出去，不打扰主线。子 agent 是<strong>临时</strong>的 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 实例：独立会话、不共享父对话历史，仅返回一条结果作为 <code class="docutils literal notranslate"><span class="pre">tool_result</span></code>；同时支持同步 / 异步两种调用。</p>
+<p>Subagent 让主 agent 把「可独立处理、上下文重、可并行」的任务委派出去，避免主线程膨胀。<br />
+每个 subagent 都是一个临时 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>（或 remote stub）实例，拥有独立子会话，最终通过工具结果回传。</p>
 </section>
+<hr class="docutils" />
 <section id="id2">
-<h2>声明 / 定义 / 运行时三层模型<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>声明（Declaration）          定义（Definition）              运行时（Runtime root）
-─────────────────────        ────────────────────────        ────────────────────────────
-mainWorkspace/               一个普通 workspace 目录          subagent 实际工作的目录根
-  subagents/&lt;id&gt;.md          （含 AGENTS.md 等）               由五行判定表确定
-（front matter + 可选 body） 可在仓库内/外/独立项目          ├─ 可以是 defWorkspace
-                             多个声明可指向同一 definition     ├─ 可以是 mainWorkspace
-                                                             └─ 可以是自动创建的隔离目录
-</pre></div>
-</div>
-<p><strong>声明</strong>负责”父 agent 需要知道什么”（名字、描述、调度参数）；<strong>定义</strong>是 subagent 的能力来源；<strong>运行时</strong>是 subagent 实际读写的目录。</p>
+<h2>何时启用<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>当 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.build()</span></code> 满足以下条件时，才会装载 subagent 能力：</p>
+<ul class="simple">
+<li><p>当前 agent <strong>不是</strong> leaf subagent</p></li>
+<li><p>没有 <code class="docutils literal notranslate"><span class="pre">disableSubagents()</span></code></p></li>
+<li><p>已配置 <code class="docutils literal notranslate"><span class="pre">model</span></code></p></li>
+</ul>
+<p>满足后会注册 <code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code>（priority=80），并通过 hook 暴露：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_list</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code></p></li>
+</ul>
+<p>在每轮 <code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code>，<code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code> 会向 SYSTEM 注入：</p>
+<ul class="simple">
+<li><p>子 agent 使用规则</p></li>
+<li><p>当前可用 <code class="docutils literal notranslate"><span class="pre">agent_id</span></code> 列表</p></li>
+<li><p>当前 session 的异步任务摘要（最多 10 条）</p></li>
+</ul>
 </section>
+<hr class="docutils" />
 <section id="id3">
-<h2>触发<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>时机</p></th>
-<th class="head"><p>动作</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">HarnessAgent.build()</span></code></p></td>
-<td><p>非 leaf 且有 model 时注册 <code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code>（priority 80）与 <code class="docutils literal notranslate"><span class="pre">AgentSpawnTool</span></code> / <code class="docutils literal notranslate"><span class="pre">TaskTool</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code> 拼的”Subagents”指南段 + 所有可用 agent_id + <strong>当前 session 最近 async task 摘要</strong> 注入每轮 SYSTEM 消息</p></td>
-</tr>
-<tr class="row-even"><td><p>reasoning 选中子 agent 工具</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_list</span></code> 走同步路径；<code class="docutils literal notranslate"><span class="pre">timeout_seconds=0</span></code> 走异步，写 <code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code> + 返 <code class="docutils literal notranslate"><span class="pre">task_id</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p>后续轮次</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code> 优先读 workspace <code class="docutils literal notranslate"><span class="pre">TaskRecord</span></code>（真源），本节点 in-memory future 作加速层</p></td>
-</tr>
-</tbody>
-</table>
-</div>
+<h2>声明来源<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">buildSubagentEntries(...)</span></code> 会合并四类来源：</p>
+<ol class="arabic simple">
+<li><p>内置 <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code></p></li>
+<li><p>编程声明：<code class="docutils literal notranslate"><span class="pre">builder.subagent(SubagentDeclaration)</span></code></p></li>
+<li><p>文件声明：<code class="docutils literal notranslate"><span class="pre">workspace/subagents/*.md</span></code>（<code class="docutils literal notranslate"><span class="pre">AgentSpecLoader</span></code> 非递归加载）</p></li>
+<li><p>自定义工厂：<code class="docutils literal notranslate"><span class="pre">builder.subagentFactory(name,</span> <span class="pre">factory)</span></code></p></li>
+</ol>
 </section>
+<hr class="docutils" />
+<section id="subagentdeclaration">
+<h2>声明模型（SubagentDeclaration）<a class="headerlink" href="#subagentdeclaration" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">SubagentDeclaration</span></code> 支持 3 种互斥来源模式：</p>
+<ol class="arabic simple">
+<li><p><strong>Definition workspace 模式</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">workspace(path)</span></code> 指向定义目录（通常含 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>）</p></li>
+</ul>
+</li>
+<li><p><strong>Inline 模式</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">inlineAgentsBody(...)</span></code> 直接作为系统提示词 base</p></li>
+</ul>
+</li>
+<li><p><strong>Remote HTTP 模式</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">url(...)</span></code> + 可选 <code class="docutils literal notranslate"><span class="pre">headers(...)</span></code>，通过 task protocol 走远端执行</p></li>
+</ul>
+</li>
+</ol>
+<p>互斥约束（<code class="docutils literal notranslate"><span class="pre">build()</span></code> 校验）：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">url</span></code> 不能与 <code class="docutils literal notranslate"><span class="pre">workspace</span></code> 或非空 <code class="docutils literal notranslate"><span class="pre">inlineAgentsBody</span></code> 同时出现</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">workspace</span></code> 与非空 <code class="docutils literal notranslate"><span class="pre">inlineAgentsBody</span></code> 不能同时出现</p></li>
+</ul>
+</section>
+<hr class="docutils" />
 <section id="id4">
-<h2>声明来源<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
-<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>flowchart LR
-    Built[内置 general-purpose&lt;br/&gt;SHARED 模式，严格镜像父配置] --&gt; Entries[buildSubagentEntries]
-    Decl[编程 SubagentDeclaration&lt;br/&gt;builder.subagent] --&gt; Entries
-    MD[workspace/subagents/*.md&lt;br/&gt;AgentSpecLoader] --&gt; Entries
-    Custom[builder.subagentFactory&lt;br/&gt;name to Function] --&gt; Entries
-    Entries --&gt; Hook[SubagentsHook]
-    Hook --&gt; Spawn[AgentSpawnTool]
-    Hook --&gt; TaskT[TaskTool]
-</pre></div>
-</div>
-</section>
-<section id="id5">
-<h2>五行判定表<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
-<p>workspace 根与 sysPrompt 来源由以下规则确定：</p>
+<h2>运行时工作区五行判定表<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">WorkspaceMode</span></code> 决定 runtime workspace root：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>情形</p></th>
-<th class="head"><p>sysPrompt 来源</p></th>
-<th class="head"><p>运行时 workspace 根</p></th>
+<th class="head"><p>sysPrompt base 来源</p></th>
+<th class="head"><p>runtime workspace</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p>内置 <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code>（强制 SHARED）</p></td>
-<td><p>mainWorkspace 的 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code></p></td>
-<td><p>mainWorkspace</p></td>
+<tr class="row-even"><td><p>内置 <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code>（固定共享）</p></td>
+<td><p>无额外 base（只拼 Subagent Context；<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 仍会由 WorkspaceContextHook 注入）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mainWorkspace</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p>声明含 <code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> + ISOLATED</p></td>
-<td><p>外部 def 的 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code></p></td>
-<td><p>该外部 path</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> + <code class="docutils literal notranslate"><span class="pre">ISOLATED</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&lt;workspace.path&gt;/AGENTS.md</span></code>（无则空）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">workspace.path</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p>声明含 <code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> + SHARED</p></td>
-<td><p>外部 def 的 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code></p></td>
-<td><p>mainWorkspace</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> + <code class="docutils literal notranslate"><span class="pre">SHARED</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&lt;workspace.path&gt;/AGENTS.md</span></code>（无则空）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mainWorkspace</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p>无 <code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> + ISOLATED（默认）</p></td>
-<td><p>声明 body（内联 sysPrompt）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">mainWorkspace/agents/&lt;id&gt;/workspace/</span></code>（自动创建）</p></td>
+<tr class="row-odd"><td><p>无 <code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> + <code class="docutils literal notranslate"><span class="pre">ISOLATED</span></code>（默认）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">inlineAgentsBody</span></code> / markdown body</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mainWorkspace/agents/&lt;name&gt;/workspace</span></code>（自动创建）</p></td>
 </tr>
-<tr class="row-even"><td><p>无 <code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> + SHARED</p></td>
-<td><p>声明 body（内联 sysPrompt）</p></td>
-<td><p>mainWorkspace</p></td>
+<tr class="row-even"><td><p>无 <code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> + <code class="docutils literal notranslate"><span class="pre">SHARED</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">inlineAgentsBody</span></code> / markdown body</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mainWorkspace</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>补充约束：</p>
+<p>补充：</p>
 <ul class="simple">
-<li><p><strong>SHARED 模式</strong>下 definition workspace 自带的 <code class="docutils literal notranslate"><span class="pre">skills/</span></code> / <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> / <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> <strong>一律忽略</strong></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tools</span></code> 是 <strong>allowlist 过滤器</strong>，只能收窄父 toolkit，不能扩权</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> 相对路径相对于 mainWorkspace；不允许 <code class="docutils literal notranslate"><span class="pre">..</span></code> 跳出（绝对路径开发者自负）</p></li>
-<li><p>同一 definition workspace 允许被多个声明引用</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tools</span></code> 是<strong>继承工具的 allowlist</strong>：仅过滤父 toolkit，不影响子 agent 后续自动注册的本地工具</p></li>
+<li><p>同一个 definition workspace 可被多个声明复用</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> 相对路径会按 <code class="docutils literal notranslate"><span class="pre">mainWorkspace.resolve(...).normalize()</span></code> 解析</p></li>
 </ul>
 </section>
+<hr class="docutils" />
 <section id="workspace-subagents-id-md">
 <h2>声明文件（<code class="docutils literal notranslate"><span class="pre">workspace/subagents/&lt;id&gt;.md</span></code>）<a class="headerlink" href="#workspace-subagents-id-md" title="Link to this heading">¶</a></h2>
-<p>文件名（去 <code class="docutils literal notranslate"><span class="pre">.md</span></code>）= subagent <code class="docutils literal notranslate"><span class="pre">name</span></code> / agent-id，不在 front matter 里写 <code class="docutils literal notranslate"><span class="pre">name</span></code>。</p>
+<p>文件名（去掉 <code class="docutils literal notranslate"><span class="pre">.md</span></code>）就是 <code class="docutils literal notranslate"><span class="pre">agent_id</span></code>，不从 front matter 读取 <code class="docutils literal notranslate"><span class="pre">name</span></code>。</p>
 <div class="highlight-markdown notranslate"><div class="highlight"><pre><span></span>---
-description: 代码评审专家，识别安全/性能/可读性问题。
+description: 代码评审专家
 workspace:
-  mode: isolated          # isolated | shared，默认 isolated
-  path: ./defs/code-reviewer   # 可选；相对 mainWorkspace 或绝对路径
-model: qwen3-max          # 可选覆写
-maxIters: 12              # 可选（默认 10）
-<span class="gu">tools: [read_file, grep_files, edit_file]   # 可选 allowlist</span>
+  mode: isolated               # isolated | shared，默认 isolated
+  path: ./defs/reviewer        # 可选；相对 mainWorkspace 或绝对路径
+model: openai:gpt-4o-mini      # 可选
+maxIters: 8                    # 可选，默认 10
+<span class="gu">tools: [read_file, grep_files] # 可选</span>
 <span class="gu">---</span>
 
-仅在 front matter 不含 workspace.path 时，本 body 作为 sysPrompt（轻量内联模式）。
+你是一个专注代码评审的子 agent。
 </pre></div>
 </div>
-<p><strong>规则</strong>：</p>
+<p>解析规则（<code class="docutils literal notranslate"><span class="pre">AgentSpecLoader</span></code>）：</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> 有值时 body <strong>必须为空</strong>，sysPrompt 从 <code class="docutils literal notranslate"><span class="pre">workspace.path/AGENTS.md</span></code> 读取</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> 为空时 body 作为 inline sysPrompt（轻量内联模式）</p></li>
+<li><p>必填：<code class="docutils literal notranslate"><span class="pre">description</span></code></p></li>
+<li><p>仅扫描 <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> 目录<strong>第一层</strong> <code class="docutils literal notranslate"><span class="pre">.md</span></code> 文件（非递归）</p></li>
+<li><p>如果配置了 <code class="docutils literal notranslate"><span class="pre">workspace.path</span></code> 且 body 非空：会记录 warning，body 被忽略</p></li>
+<li><p>markdown 声明当前不解析 <code class="docutils literal notranslate"><span class="pre">url/headers</span></code>（remote 声明建议走编程 API）</p></li>
 </ul>
 </section>
-<section id="api">
-<h2>编程式 API<a class="headerlink" href="#api" title="Link to this heading">¶</a></h2>
+<hr class="docutils" />
+<section id="id5">
+<h2>编程式配置<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;orchestrator&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">subagent</span><span class="p">(</span><span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;code-reviewer&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;审查安全、性能和可读性问题&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./defs/code-reviewer&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 与 inlineAgentsBody 互斥</span>
-<span class="w">        </span><span class="c1">// 或者：.inlineAgentsBody(&quot;你是代码评审专家……&quot;)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">workspaceMode</span><span class="p">(</span><span class="n">WorkspaceMode</span><span class="p">.</span><span class="na">ISOLATED</span><span class="p">)</span><span class="w">         </span><span class="c1">// 默认</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;reviewer&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;代码审查专家&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./defs/reviewer&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspaceMode</span><span class="p">(</span><span class="n">WorkspaceMode</span><span class="p">.</span><span class="na">ISOLATED</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">maxIters</span><span class="p">(</span><span class="mi">12</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">maxIters</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">tools</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;grep_files&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">subagent</span><span class="p">(</span><span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote-researcher&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;远端调研子 agent&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;http://agent-task-server:8080&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">headers</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer xxx&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">.workspace(Path)</span></code> 对应声明 <code class="docutils literal notranslate"><span class="pre">workspace.path</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">.inlineAgentsBody(...)</span></code> 对应轻量内联模式（body 当 sysPrompt）</p></li>
-<li><p>两者互斥；<code class="docutils literal notranslate"><span class="pre">builder.build()</span></code> 阶段校验</p></li>
-</ul>
 </section>
+<hr class="docutils" />
 <section id="general-purpose">
 <h2>内置 <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code><a class="headerlink" href="#general-purpose" title="Link to this heading">¶</a></h2>
+<p>内置 <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code> 不需要写声明文件，会始终加入 entry 列表。<br />
+它的目标是「能力镜像主 agent」，核心行为：</p>
 <ul class="simple">
-<li><p>不写入 <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> 目录，由 <code class="docutils literal notranslate"><span class="pre">HarnessAgent.Builder</span></code> 内部自动注册</p></li>
-<li><p>等价于”SHARED 模式 + 无外部 definition”的内置声明</p></li>
-<li><p><strong>完全镜像</strong> main agent 的 hooks / 工具启用/禁用 / skills / workspace context / execution config / compaction / tool-result-eviction / additionalContextFiles</p></li>
-<li><p>仅保留两个必要差异：</p>
-<ol class="arabic simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">asLeafSubagent()</span></code> — 禁止递归 spawn</p></li>
-<li><p>独立 child sessionId</p></li>
-</ol>
+<li><p>共享主 workspace（<code class="docutils literal notranslate"><span class="pre">SHARED</span></code> 语义）</p></li>
+<li><p>继承并镜像主 agent 的：</p>
+<ul>
+<li><p>toolkit（父工具）</p></li>
+<li><p>hooks</p></li>
+<li><p>execution config</p></li>
+<li><p>compaction / toolResultEviction</p></li>
+<li><p>additional context files / maxContextTokens</p></li>
+<li><p>各类 disable 开关</p></li>
+</ul>
 </li>
-<li><p>sysPrompt = Subagent Context 段（identity + rules）；<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 通过 <code class="docutils literal notranslate"><span class="pre">WorkspaceContextHook</span></code> 自动注入</p></li>
+<li><p>固定是 leaf subagent（不能继续 spawn）</p></li>
 </ul>
 </section>
+<hr class="docutils" />
 <section id="id6">
-<h2>防递归 + 防超深<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p>所有 subagent（无论来源）都调了 <code class="docutils literal notranslate"><span class="pre">Builder.asLeafSubagent()</span></code>：<code class="docutils literal notranslate"><span class="pre">leafSubagent=true</span></code> 时 <code class="docutils literal notranslate"><span class="pre">build()</span></code> 不注册 <code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code>，因此子 agent 无法再 spawn</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">AgentSpawnTool</span></code> 额外限制：<code class="docutils literal notranslate"><span class="pre">MAX_SPAWN_DEPTH</span> <span class="pre">=</span> <span class="pre">3</span></code> 作为动态保险</p></li>
-</ul>
+<h2>防递归与深度保护<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<p>双保险：</p>
+<ol class="arabic simple">
+<li><p>所有通过声明/内置生成的子 agent 都会 <code class="docutils literal notranslate"><span class="pre">asLeafSubagent()</span></code>，leaf 不再注册 <code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AgentSpawnTool</span></code> 还有动态深度上限 <code class="docutils literal notranslate"><span class="pre">MAX_SPAWN_DEPTH</span> <span class="pre">=</span> <span class="pre">3</span></code></p></li>
+</ol>
 </section>
+<hr class="docutils" />
 <section id="runtimecontext">
 <h2>RuntimeContext 透传<a class="headerlink" href="#runtimecontext" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">AgentSpawnTool</span></code> 在生成子 agent 时会从父 agent 的 <code class="docutils literal notranslate"><span class="pre">userIdRef</span></code> 读取当前 <code class="docutils literal notranslate"><span class="pre">userId</span></code>，并通过 <code class="docutils literal notranslate"><span class="pre">DefaultAgentManager.invokeAgent(agent,</span> <span class="pre">sessionId,</span> <span class="pre">userId,</span> <span class="pre">prompt)</span></code> 传递给子 agent 的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>。子 agent 获得独立 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code>（<code class="docutils literal notranslate"><span class="pre">sub-&lt;uuid&gt;</span></code>），但 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 与父一致，确保 <code class="docutils literal notranslate"><span class="pre">USER</span></code> 作用域的 isolation key 一致。</p>
-</section>
-<section id="async-task">
-<h2>Async Task 生命周期<a class="headerlink" href="#async-task" title="Link to this heading">¶</a></h2>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>putTask()
-  │  1. 写 TaskRecord(PENDING) → workspace (agents/&lt;agentId&gt;/tasks/&lt;sessionId&gt;.json)
-  │  2. supplyAsync → executor thread
-  │  3. 存 BackgroundTask → localTasks[&quot;&lt;sessionId&gt;:&lt;taskId&gt;&quot;]
-  │
-  ▼  executor thread
-  [check cancelRequested flag]
-  → updateStatus(RUNNING) → workspace
-  → taskExecution.get()
-  → updateStatus(COMPLETED/FAILED) → workspace
-</pre></div>
-</div>
-<p><strong>存储层次</strong></p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>层次</p></th>
-<th class="head"><p>载体</p></th>
-<th class="head"><p>作用域</p></th>
-<th class="head"><p>持久化</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">localTasks</span></code> Map</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceTaskRepository</span></code></p></td>
-<td><p>单 JVM 进程</p></td>
-<td><p>✗ 重启丢失</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/tasks/&lt;sessionId&gt;.json</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceManager</span></code> → <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code></p></td>
-<td><p>所有节点</p></td>
-<td><p>✔</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p><strong>分布式行为</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 调用子 agent 时：</p>
 <ul class="simple">
-<li><p>任务执行 sticky 在创建节点；任何节点均可通过 workspace 读取状态</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">task_output(block=true)</span></code> 在非原始节点降级为”读 workspace 终态”，返回 <code class="docutils literal notranslate"><span class="pre">note:</span> <span class="pre">possibly</span> <span class="pre">on</span> <span class="pre">another</span> <span class="pre">node</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> 同步写 <code class="docutils literal notranslate"><span class="pre">cancelRequested=true</span></code> 到 workspace；原始节点执行器在下一次入口检查此 flag 并中止</p></li>
+<li><p>子会话 <code class="docutils literal notranslate"><span class="pre">session_id</span></code> 为新值（<code class="docutils literal notranslate"><span class="pre">sub-&lt;uuid&gt;</span></code>）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">userId</span></code> 从父 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 透传给子 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></p></li>
 </ul>
-<p><strong>与 Filesystem 模式的关系</strong></p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>模式</p></th>
-<th class="head"><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/tasks/</span></code> 路由</p></th>
-<th class="head"><p>分布式可见性</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>（Mode 1）</p></td>
-<td><p>自动路由到 <code class="docutils literal notranslate"><span class="pre">RemoteFilesystem</span></code>（BaseStore）</p></td>
-<td><p>✔ 全节点可见</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>（Mode 2）</p></td>
-<td><p>写入沙箱 VFS，通过 <code class="docutils literal notranslate"><span class="pre">SandboxStateStore</span></code> 跨调用持久化</p></td>
-<td><p>单沙箱可见</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code>（Mode 3）</p></td>
-<td><p>写本地磁盘</p></td>
-<td><p>单机可见</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p><strong>模型使用 async task 的关键规则</strong></p>
-<ol class="arabic simple">
-<li><p>启动后立即返回给用户，<strong>不要</strong>立刻调 <code class="docutils literal notranslate"><span class="pre">task_output</span></code> 轮询</p></li>
-<li><p>对话历史里的任务状态是<strong>过时的</strong>，必须用 <code class="docutils literal notranslate"><span class="pre">task_output(block=false)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">task_list()</span></code> 获取最新状态</p></li>
-<li><p>compaction 后先调 <code class="docutils literal notranslate"><span class="pre">task_list()</span></code> 恢复所有任务 ID 和状态</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code> 每轮把当前 session 的 async task 摘要注入 SYSTEM，模型无需记忆 task_id</p></li>
-</ol>
+<p>这样可保持 USER 维度隔离键一致（例如 namespace/sandbox 隔离依赖 userId 的场景）。</p>
 </section>
+<hr class="docutils" />
 <section id="id7">
-<h2>调用工具<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<h2>调用工具与关键参数<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -863,74 +825,113 @@ maxIters: 12              # 可选（默认 10）
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code></p></td>
-<td><p>生成一个子 agent 跑一件任务</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agent_id</span></code>（必填）、<code class="docutils literal notranslate"><span class="pre">task</span></code>（可选）、<code class="docutils literal notranslate"><span class="pre">label</span></code>（可选别名）、<code class="docutils literal notranslate"><span class="pre">timeout_seconds</span></code> 默认 30s，<code class="docutils literal notranslate"><span class="pre">0</span></code> 走后台</p></td>
+<td><p>生成子 agent，可同步/异步执行首条任务</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agent_id</span></code> 必填；<code class="docutils literal notranslate"><span class="pre">task</span></code> 可选；<code class="docutils literal notranslate"><span class="pre">label</span></code> 可选；<code class="docutils literal notranslate"><span class="pre">timeout_seconds</span></code> 默认 30，<code class="docutils literal notranslate"><span class="pre">0</span></code>=后台，最大 600</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agent_send</span></code></p></td>
-<td><p>给已存在的子 agent 补一条话</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agent_key</span></code>（spawn 返回的句柄）或 <code class="docutils literal notranslate"><span class="pre">label</span></code>；<code class="docutils literal notranslate"><span class="pre">message</span></code>；<code class="docutils literal notranslate"><span class="pre">timeout_seconds</span></code></p></td>
+<td><p>给已有子 agent 发后续消息</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agent_key</span></code> 或 <code class="docutils literal notranslate"><span class="pre">label</span></code> 二选一；<code class="docutils literal notranslate"><span class="pre">message</span></code> 必填；<code class="docutils literal notranslate"><span class="pre">timeout_seconds</span></code> 规则同上</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agent_list</span></code></p></td>
 <td><p>列当前活跃子 agent</p></td>
 <td><p>无</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">task_output</span></code></p></td>
-<td><p>取后台任务结果（优先读 live future，否则读 workspace 终态）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">task_id</span></code>、<code class="docutils literal notranslate"><span class="pre">block</span></code>（<strong>推荐 false</strong>）、<code class="docutils literal notranslate"><span class="pre">timeout</span></code> 默认 30s</p></td>
+<td><p>查询/等待后台任务结果</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">task_id</span></code>、<code class="docutils literal notranslate"><span class="pre">block</span></code>（默认 true，建议查状态用 false）、<code class="docutils literal notranslate"><span class="pre">timeout</span></code> 默认 30000ms，最大 600000ms</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">task_cancel</span></code></p></td>
-<td><p>取消任务（写 cancelRequested flag 到 workspace）</p></td>
+<td><p>取消任务</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">task_id</span></code></p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">task_list</span></code></p></td>
-<td><p>列当前 session 全量任务（从 workspace 读，compaction 后仍准确）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">status_filter</span></code></p></td>
+<td><p>列当前 session 任务</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">status_filter</span></code>（running/completed/failed/cancelled/all）</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>注意：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">agent_send</span></code> 的 <code class="docutils literal notranslate"><span class="pre">agent_key</span></code> 必须使用 <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> 返回值中的完整 <code class="docutils literal notranslate"><span class="pre">agent_key:</span> <span class="pre">...</span></code>（不是 <code class="docutils literal notranslate"><span class="pre">agent_id</span></code> / <code class="docutils literal notranslate"><span class="pre">session_id</span></code> / <code class="docutils literal notranslate"><span class="pre">task_id</span></code>）</p></li>
+<li><p>异步任务刚创建时不要立即轮询；优先先返回用户，再用 <code class="docutils literal notranslate"><span class="pre">task_output(block=false)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">task_list</span></code> 查最新状态</p></li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="id8">
+<h2>异步任务生命周期与存储<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<p>默认情况下，主 agent 使用 <code class="docutils literal notranslate"><span class="pre">WorkspaceTaskRepository</span></code>（除非显式 <code class="docutils literal notranslate"><span class="pre">taskRepository(...)</span></code> 覆盖）。</p>
+<p>生命周期（简化）：</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">putTask(...)</span></code> 写入 <code class="docutils literal notranslate"><span class="pre">TaskRecord(PENDING)</span></code> 到 workspace</p></li>
+<li><p>提交本地执行 future（local 或 remote）</p></li>
+<li><p>执行中更新为 <code class="docutils literal notranslate"><span class="pre">RUNNING</span></code></p></li>
+<li><p>结束写入 <code class="docutils literal notranslate"><span class="pre">COMPLETED</span> <span class="pre">/</span> <span class="pre">FAILED</span> <span class="pre">/</span> <span class="pre">CANCELLED</span></code></p></li>
+</ol>
+<p>存储分层：</p>
+<ul class="simple">
+<li><p>内存层：<code class="docutils literal notranslate"><span class="pre">localTasks</span></code>（本节点加速句柄，重启丢失）</p></li>
+<li><p>持久层：<code class="docutils literal notranslate"><span class="pre">agents/&lt;parentAgentId&gt;/tasks/&lt;sessionId&gt;.json</span></code>（状态真源）</p></li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="id9">
+<h2>分布式语义<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>任务执行粘在创建节点，但任意节点都可通过 workspace 读取状态</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">task_output(block=true)</span></code> 在跨节点场景下会优雅降级，不会无休止阻塞</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> 会把 <code class="docutils literal notranslate"><span class="pre">cancelRequested=true</span></code> 持久化；执行节点轮询该标记后中止</p></li>
+<li><p>orphan sweeper 会把长时间无心跳的本地任务标记为 <code class="docutils literal notranslate"><span class="pre">FAILED</span></code>（remote transport 任务不走该判定）</p></li>
+</ul>
+<p>与 filesystem 模式关系：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模式</p></th>
+<th class="head"><p>任务路径 <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/tasks/</span></code> 可见性</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code></p></td>
+<td><p>路由到共享远端存储，多节点可见</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code></p></td>
+<td><p>走沙箱文件系统与沙箱状态持久化</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code> / 默认本地</p></td>
+<td><p>本机本地可见</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
-<section id="id8">
-<h2>配置示例<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">orchestrator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;orchestrator&quot;</span><span class="p">).</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">).</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">    </span><span class="c1">// (1) 编程声明（isolated + 外部 def workspace）</span>
-<span class="w">    </span><span class="p">.</span><span class="na">subagent</span><span class="p">(</span><span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;code-reviewer&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;代码审查专家&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./defs/reviewer&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">workspaceMode</span><span class="p">(</span><span class="n">WorkspaceMode</span><span class="p">.</span><span class="na">ISOLATED</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="c1">// (2) 编程声明（shared + 内联）</span>
-<span class="w">    </span><span class="p">.</span><span class="na">subagent</span><span class="p">(</span><span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;analyst&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;数据分析，与主 agent 共享 workspace&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">workspaceMode</span><span class="p">(</span><span class="n">WorkspaceMode</span><span class="p">.</span><span class="na">SHARED</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">inlineAgentsBody</span><span class="p">(</span><span class="s">&quot;你是数据分析师...&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">tools</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;memory_search&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="c1">// (3) 自定义工厂</span>
-<span class="w">    </span><span class="p">.</span><span class="na">subagentFactory</span><span class="p">(</span><span class="s">&quot;my-specialist&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">-&gt;</span>
-<span class="w">        </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="n">id</span><span class="p">).</span><span class="na">model</span><span class="p">(</span><span class="n">specialModel</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./specialist-workspace&quot;</span><span class="p">))</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="c1">// 默认使用 WorkspaceTaskRepository（workspace 存储 + in-memory 加速层）</span>
-<span class="w">    </span><span class="c1">// 无 workspace 时自动降级为 DefaultTaskRepository（in-memory）</span>
-<span class="w">    </span><span class="c1">// 自定义：.taskRepository(new DefaultTaskRepository())   // 纯内存，仅限单机测试</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="c1">// (4) workspace/subagents/*.md 会被自动扫描（文件名=agent_id）</span>
-<span class="c1">// (5) 内置 general-purpose 总是在位</span>
-</pre></div>
-</div>
-<p>编排 prompt 中子 agent 如何被选中完全依赖 <code class="docutils literal notranslate"><span class="pre">description</span></code>，尽量明确”何时用 / 何时不用 / 输出形式”。同时 <code class="docutils literal notranslate"><span class="pre">maxIters</span></code> 宜比父 agent 小，避免子任务贪吃 token。</p>
-</section>
-<section id="id9">
-<h2>相关文档<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<hr class="docutils" />
+<section id="remote-subagent">
+<h2>Remote subagent 行为<a class="headerlink" href="#remote-subagent" title="Link to this heading">¶</a></h2>
+<p>当声明配置 <code class="docutils literal notranslate"><span class="pre">url(...)</span></code> 时：</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">工具</span></a> — <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_list</span></code> / <code class="docutils literal notranslate"><span class="pre">task_*</span></code> 的完整参数表</p></li>
-<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">workspace/subagents/</span></code> 与自动发现</p></li>
-<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">架构</span></a> — SubagentsHook 在生命周期中的位置与同步 / 后台两条委派路径的时序图</p></li>
-<li><p><a class="reference internal" href="streaming.html"><span class="std std-doc">流式输出</span></a> — <code class="docutils literal notranslate"><span class="pre">stream()</span></code> 模式下子 agent 事件实时转发与 <code class="docutils literal notranslate"><span class="pre">EventSource</span></code> 字段说明</p></li>
+<li><p>工厂返回 <code class="docutils literal notranslate"><span class="pre">RemoteSubagentStub</span></code>（占位，不做本地真实推理）</p></li>
+<li><p>实际执行通过 <code class="docutils literal notranslate"><span class="pre">TaskRunSpec.RemoteTaskRunSpec</span></code> + <code class="docutils literal notranslate"><span class="pre">AgentProtocolTaskClient</span></code> 委派到远端 task HTTP 服务</p></li>
+<li><p>可同步（<code class="docutils literal notranslate"><span class="pre">timeout_seconds&gt;0</span></code>）或异步（<code class="docutils literal notranslate"><span class="pre">timeout_seconds=0</span></code>）</p></li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="id10">
+<h2>实践建议<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">description</span></code> 要写清「何时使用 / 输出格式 / 禁止事项」，这是主模型是否委派的关键依据</p></li>
+<li><p>子 agent <code class="docutils literal notranslate"><span class="pre">maxIters</span></code> 通常设得比主 agent 小，避免子线程吞噬过多 token</p></li>
+<li><p>会话压缩或恢复后，先用 <code class="docutils literal notranslate"><span class="pre">task_list()</span></code> 恢复任务全量状态，再做单任务查询</p></li>
+</ol>
+</section>
+<hr class="docutils" />
+<section id="id11">
+<h2>相关文档<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">工具</span></a></p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a></p></li>
+<li><p><a class="reference internal" href="architecture.html"><span class="std std-doc">架构</span></a></p></li>
+<li><p><a class="reference internal" href="streaming.html"><span class="std std-doc">流式输出</span></a></p></li>
 </ul>
 </section>
 </section>
@@ -1025,19 +1026,21 @@ maxIters: 12              # 可选（默认 10）
             <ul>
 <li><a class="reference internal" href="#">子 Agent（Subagent）</a><ul>
 <li><a class="reference internal" href="#id1">作用</a></li>
-<li><a class="reference internal" href="#id2">声明 / 定义 / 运行时三层模型</a></li>
-<li><a class="reference internal" href="#id3">触发</a></li>
-<li><a class="reference internal" href="#id4">声明来源</a></li>
-<li><a class="reference internal" href="#id5">五行判定表</a></li>
+<li><a class="reference internal" href="#id2">何时启用</a></li>
+<li><a class="reference internal" href="#id3">声明来源</a></li>
+<li><a class="reference internal" href="#subagentdeclaration">声明模型（SubagentDeclaration）</a></li>
+<li><a class="reference internal" href="#id4">运行时工作区五行判定表</a></li>
 <li><a class="reference internal" href="#workspace-subagents-id-md">声明文件（<code class="docutils literal notranslate"><span class="pre">workspace/subagents/&lt;id&gt;.md</span></code>）</a></li>
-<li><a class="reference internal" href="#api">编程式 API</a></li>
+<li><a class="reference internal" href="#id5">编程式配置</a></li>
 <li><a class="reference internal" href="#general-purpose">内置 <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code></a></li>
-<li><a class="reference internal" href="#id6">防递归 + 防超深</a></li>
+<li><a class="reference internal" href="#id6">防递归与深度保护</a></li>
 <li><a class="reference internal" href="#runtimecontext">RuntimeContext 透传</a></li>
-<li><a class="reference internal" href="#async-task">Async Task 生命周期</a></li>
-<li><a class="reference internal" href="#id7">调用工具</a></li>
-<li><a class="reference internal" href="#id8">配置示例</a></li>
-<li><a class="reference internal" href="#id9">相关文档</a></li>
+<li><a class="reference internal" href="#id7">调用工具与关键参数</a></li>
+<li><a class="reference internal" href="#id8">异步任务生命周期与存储</a></li>
+<li><a class="reference internal" href="#id9">分布式语义</a></li>
+<li><a class="reference internal" href="#remote-subagent">Remote subagent 行为</a></li>
+<li><a class="reference internal" href="#id10">实践建议</a></li>
+<li><a class="reference internal" href="#id11">相关文档</a></li>
 </ul>
 </li>
 </ul>
@@ -1070,5 +1073,6 @@ maxIters: 12              # 可选（默认 10）
     <script src="../../_static/tabs.js?v=7ce5a780"></script>
     <script src="../../_static/language.js?v=26e4e812"></script>
     <script src="../../_static/notice-bar.js?v=6a544133"></script>
+    <script src="../../_static/mermaid-zoom.js?v=16ea82f7"></script>
     </body>
 </html>

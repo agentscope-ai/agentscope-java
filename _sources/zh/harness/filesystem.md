@@ -39,7 +39,7 @@
 
 ## 类层次与 `ShellExecuteTool` 注册
 
-```mermaid
+```{mermaid}
 classDiagram
     class AbstractFilesystem {
         <<interface>>

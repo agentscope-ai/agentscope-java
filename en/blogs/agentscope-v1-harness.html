@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-15T08:44:29+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Community" href="../community/overview.html"><link rel="prev" title="Blog" href="index.html">
+    <meta property="article:modified_time" content="2026-05-15T12:47:50+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Community" href="../community/overview.html"><link rel="prev" title="Blog" href="index.html">
         <link rel="canonical" href="https://java.agentscope.io/en/blogs/agentscope-v1-harness.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -18,7 +18,7 @@
     <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
     <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=f6f0bbea" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=0bcf34c1" />
     <link rel="stylesheet" type="text/css" href="../../_static/homepage.css?v=8a098e07" />
     
     
@@ -481,7 +481,17 @@
 <p class="caption" role="heading"><span class="caption-text">Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../harness/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/workspace.html">Workspace</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/filesystem.html">Filesystem</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/session.html">Session</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/memory.html">Memory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/tool.html">Tooling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/streaming.html">Subagent Streaming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/quickstart/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/sandbox/index.html">Sandbox</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/example/index.html">Examples</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Integration</span></p>
 <ul>
@@ -605,14 +615,128 @@
         <article role="main" id="furo-main-content">
           <section id="agentscope-java-1-1-harness">
 <h1>AgentScope Java 1.1 · Harness<a class="headerlink" href="#agentscope-java-1-1-harness" title="Link to this heading">¶</a></h1>
-<p>The full long-form article is maintained in <strong>Chinese</strong> to match the primary audience for this release note.</p>
+<p>AgentScope Java 1.1 introduces the first public release of the <strong>Harness Framework</strong>: a production runtime layer for long-running, distributed agents.</p>
+<p>Harness is designed to preserve the practical “continuous evolution” experience seen in products like OpenClaw/Hermes, while adding the safety and operational boundaries required in enterprise environments.</p>
+<hr class="docutils" />
+<section id="why-harness">
+<h2>Why Harness<a class="headerlink" href="#why-harness" title="Link to this heading">¶</a></h2>
+<p>Many agent stacks work well for personal assistants, but hit real limits in production:</p>
+<ol class="arabic simple">
+<li><p><strong>Distributed workspace state</strong>: local directory assumptions break in multi-replica deployments.</p></li>
+<li><p><strong>Execution safety</strong>: user-driven shell/code execution must be isolated from host processes.</p></li>
+<li><p><strong>Storage abstraction</strong>: agent logic should not be coupled to one storage backend.</p></li>
+<li><p><strong>Subagent orchestration</strong>: task delegation and lifecycle management become complex quickly.</p></li>
+<li><p><strong>Memory governance</strong>: context growth and cross-session fact retention need first-class support.</p></li>
+</ol>
+<p>Harness addresses these with one integrated runtime model.</p>
+</section>
+<hr class="docutils" />
+<section id="core-design">
+<h2>Core Design<a class="headerlink" href="#core-design" title="Link to this heading">¶</a></h2>
+<section id="workspace-as-source-of-truth">
+<h3>Workspace as source of truth<a class="headerlink" href="#workspace-as-source-of-truth" title="Link to this heading">¶</a></h3>
+<p>Harness organizes long-lived agent state under a structured workspace:</p>
 <ul class="simple">
-<li><p>Read the full article: <a class="reference internal" href="../../zh/blogs/agentscope-v1-harness.html"><span class="std std-doc">首个Harness Framework发布…（中文全文）</span></a></p></li>
+<li><p>persona and rules (<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>)</p></li>
+<li><p>long-term memory (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>)</p></li>
+<li><p>domain knowledge</p></li>
+<li><p>skills</p></li>
+<li><p>subagent definitions</p></li>
+<li><p>session artifacts</p></li>
 </ul>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>This English page exists so language switching and the blog sidebar stay consistent. Translate or replace this stub when an English edition is ready.</p>
+<p>Before each call, key workspace artifacts are injected into context.<br />
+After each call, new facts and state are persisted back.</p>
+</section>
+<section id="abstractfilesystem-as-portability-layer">
+<h3><code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> as portability layer<a class="headerlink" href="#abstractfilesystem-as-portability-layer" title="Link to this heading">¶</a></h3>
+<p>Harness decouples logical file operations (<code class="docutils literal notranslate"><span class="pre">read</span></code>, <code class="docutils literal notranslate"><span class="pre">write</span></code>, <code class="docutils literal notranslate"><span class="pre">ls</span></code>, <code class="docutils literal notranslate"><span class="pre">grep</span></code>) from physical storage/execution:</p>
+<ul class="simple">
+<li><p>local disk</p></li>
+<li><p>remote storage</p></li>
+<li><p>sandbox filesystem</p></li>
+<li><p>composite routing across backends</p></li>
+</ul>
+<p>This lets teams move from local prototypes to distributed production without rewriting business-agent logic.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="what-1-1-delivers">
+<h2>What 1.1 Delivers<a class="headerlink" href="#what-1-1-delivers" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>Workspace-driven runtime</strong> for durable identity and evolving behavior</p></li>
+<li><p><strong>Pluggable filesystem abstraction</strong> for local/remote/sandbox execution</p></li>
+<li><p><strong>Built-in context governance</strong> (compaction + layered memory)</p></li>
+<li><p><strong>Subagent orchestration</strong> with sync/async delegation and task lifecycle</p></li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="typical-deployment-scenarios">
+<h2>Typical Deployment Scenarios<a class="headerlink" href="#typical-deployment-scenarios" title="Link to this heading">¶</a></h2>
+<section id="personal-productivity-agents">
+<h3>Personal productivity agents<a class="headerlink" href="#personal-productivity-agents" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>local execution</p></li>
+<li><p>durable memory and persona</p></li>
+<li><p>workspace-driven skill iteration</p></li>
+</ul>
+</section>
+<section id="enterprise-data-service-agents">
+<h3>Enterprise data/service agents<a class="headerlink" href="#enterprise-data-service-agents" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>sandboxed execution for untrusted input</p></li>
+<li><p>distributed memory/session continuity across replicas</p></li>
+<li><p>async subagent orchestration for long-running tasks</p></li>
+</ul>
+</section>
+<section id="api-first-online-agents">
+<h3>API-first online agents<a class="headerlink" href="#api-first-online-agents" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>strict tool boundaries (no implicit shell exposure)</p></li>
+<li><p>shared remote state for cross-instance continuity</p></li>
+<li><p>stable multi-turn behavior under production traffic</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
+<section id="quick-start-harness">
+<h2>Quick Start (Harness)<a class="headerlink" href="#quick-start-harness" title="Link to this heading">¶</a></h2>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">  </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">  </span><span class="nt">&lt;artifactId&gt;</span>agentscope-harness<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">  </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
 </div>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;.agentscope/workspace&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;user-session-001&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">Msg</span><span class="w"> </span><span class="n">reply</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMessage</span><span class="p">,</span><span class="w"> </span><span class="n">ctx</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="recommended-reading">
+<h2>Recommended Reading<a class="headerlink" href="#recommended-reading" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="../harness/overview.html"><span class="std std-doc">Harness Overview</span></a></p></li>
+<li><p><a class="reference internal" href="../harness/architecture.html"><span class="std std-doc">Harness Architecture</span></a></p></li>
+<li><p><a class="reference internal" href="../harness/filesystem.html"><span class="std std-doc">Filesystem</span></a></p></li>
+<li><p><a class="reference internal" href="../harness/sandbox/index.html"><span class="std std-doc">Sandbox</span></a></p></li>
+<li><p><a class="reference internal" href="../../zh/blogs/agentscope-v1-harness.html"><span class="std std-doc">Chinese full article</span></a></p></li>
+</ul>
+</section>
 </section>
 
     <script type="text/x-thebe-config">
@@ -718,5 +842,6 @@
     <script src="../../_static/tabs.js?v=7ce5a780"></script>
     <script src="../../_static/language.js?v=26e4e812"></script>
     <script src="../../_static/notice-bar.js?v=6a544133"></script>
+    <script src="../../_static/mermaid-zoom.js?v=16ea82f7"></script>
     </body>
 </html>
