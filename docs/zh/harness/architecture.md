@@ -2,7 +2,7 @@
 
 [Overview](./overview.md) 把 harness 的能力按"解决了什么问题"组织。本文换一个视角：把每个组件的**定义、行为、触发时机、协作对象**讲清楚，最后用时序图说明这些组件在一次 `call()` 里如何协同。
 
-> 本文聚焦使用者视角的中粒度——讲清"是谁、什么时候、做什么、跟谁协作"，不展开调用栈与实现细节；那些放在各子文档（[memory](./memory.md)、[workspace](./workspace.md)、[filesystem](./filesystem.md)、[sandbox](./sandbox.md)、[subagent](./subagent.md)、[session](./session.md)、[tool](./tool.md)）。
+> 本文聚焦使用者视角的中粒度——讲清"是谁、什么时候、做什么、跟谁协作"，不展开调用栈与实现细节；那些放在各子文档（[memory](./memory.md)、[workspace](./workspace.md)、[filesystem](./filesystem.md)、[sandbox](./sandbox/index.md)、[subagent](./subagent.md)、[session](./session.md)、[tool](./tool.md)）。
 
 ## 1. 顶层结构
 
@@ -66,7 +66,7 @@ workspace/
 |---|---|---|
 | `LocalFilesystem` | 本地磁盘 | `virtualMode` 锚定 `rootDir` 阻止穿越；无 shell |
 | `LocalFilesystemWithShell` | 本地 + 宿主 shell | 声明式下对应 `LocalFilesystemSpec` 与**无 `filesystem` 的默认**；`instanceof AbstractSandboxFilesystem` 时注册 `shell_execute` |
-| `BaseSandboxFilesystem` / `SandboxBackedFilesystem` | 沙箱后端 | 文件与命令在沙箱内；见 [Sandbox](./sandbox.md) |
+| `BaseSandboxFilesystem` / `SandboxBackedFilesystem` | 沙箱后端 | 文件与命令在沙箱内；见 [Sandbox](./sandbox/index.md) |
 | `RemoteFilesystem` | KV store | 在 `RemoteFilesystemSpec` 下与 `LocalFilesystem` 经 `CompositeFilesystem` 路由；无 shell |
 | `CompositeFilesystem` | 按前缀路由 | 仅实现 `AbstractFilesystem`（**不**实现 `AbstractSandboxFilesystem`），**不**触发 `ShellExecuteTool`；最长前缀优先 |
 
@@ -74,7 +74,7 @@ workspace/
 
 ## 3. Hook 列表
 
-下列为 `Builder.build()` 中常见的 harness 内置 hook（**沙箱模式**下会加入 `SandboxLifecycleHook`，见 [Sandbox](./sandbox.md)）。`ReActAgent` 按 `priority()` **升序**执行，同优先级时保留装配顺序。
+下列为 `Builder.build()` 中常见的 harness 内置 hook（**沙箱模式**下会加入 `SandboxLifecycleHook`，见 [Sandbox](./sandbox/index.md)）。`ReActAgent` 按 `priority()` **升序**执行，同优先级时保留装配顺序。
 
 | Hook | 优先级 | 监听事件 | 默认开启 | 关键依赖 |
 |------|--------|----------|---------|----------|
@@ -153,7 +153,7 @@ workspace/
 - **同步路径** `agent_send`：阻塞执行子 agent 并回填结果
 - **后台路径** `agent_spawn`：通过 `TaskRepository.putTask` 提交到 executor 拿 `taskId`；父 agent 后续轮用 `task_output(taskId)` 拉结果
 
-**子 agent 来源**（`Builder.buildSubagentEntries`）：工作区 `subagents/*.md`（`AgentSpecLoader` 解析）/ 编程式 `.subagent(spec)` / 自定义 `.subagentFactory`。每个子 agent 默认是个 leaf `HarnessAgent`（共享父 agent 的 workspace/filesystem/model 但不再装 `SubagentsHook`）。
+**子 agent 来源**（`Builder.buildSubagentEntries`）：工作区 `subagents/*.md`（`AgentSpecLoader` 解析为 `SubagentDeclaration`）/ 编程式 `.subagent(SubagentDeclaration)` / 自定义 `.subagentFactory`。每个子 agent 都是 leaf `HarnessAgent`（`asLeafSubagent()`，不注册 `SubagentsHook`）；workspace / filesystem / sysPrompt 由声明与五行判定表决定，见 [子 Agent](./subagent.md)。
 
 **`TaskRepository`** 是任务编排接口（`putTask` / `getTask` / `listTasks(filter)` / `cancelTask`）；默认 `DefaultTaskRepository` 内部用线程池 + `CompletableFuture<String>` + `BackgroundTask` 包装状态机（PENDING/RUNNING/COMPLETED/FAILED/CANCELLED）。
 

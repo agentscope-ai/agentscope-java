@@ -2,7 +2,7 @@
 
 ## 作用
 
-工作区是 `HarnessAgent` 的"地基"：人格、长期记忆、领域知识、子 agent 规格、会话历史、技能定义统一以**目录结构 + Markdown** 的形式落地，不再散落在代码里。
+工作区是 `HarnessAgent` 的"地基"：人格、长期记忆、领域知识、子 agent 声明、会话历史、技能定义统一以**目录结构 + Markdown** 的形式落地，不再散落在代码里。
 
 agent 每次推理时，工作区里的几个关键文件会被自动注入到 system prompt；运行过程中的记忆与会话也会按既定路径回写到这里。
 
@@ -17,25 +17,26 @@ agent 每次推理时，工作区里的几个关键文件会被自动注入到 s
 ## 目录结构
 
 ```
-workspace/                       ← 默认 .agentscope/workspace
-├── AGENTS.md                    ← 人格 / 行为约定（每次注入全文）
-├── MEMORY.md                    ← 整理过的长期记忆（每次注入，受 token 预算）
+workspace/                           ← 默认 .agentscope/workspace
+├── AGENTS.md                        ← 人格 / 行为约定（每次注入全文）
+├── MEMORY.md                        ← 整理过的长期记忆（每次注入，受 token 预算）
 ├── knowledge/
-│   ├── KNOWLEDGE.md             ← 领域知识入口
-│   └── *                        ← 其他参考文件，按需 read_file 打开
+│   ├── KNOWLEDGE.md                 ← 领域知识入口
+│   └── *                            ← 其他参考文件，按需 read_file 打开
 ├── memory/
-│   ├── YYYY-MM-DD.md            ← 每日记忆流水账（追加，由 MemoryFlushManager 写入）
-│   └── .consolidation_state     ← MemoryConsolidator 内部状态
-├── skills/<skill-name>/SKILL.md ← 自定义技能
-├── subagent.yml                 ← 子 agent 规格（可选）
+│   ├── YYYY-MM-DD.md                ← 每日记忆流水账（追加，由 MemoryFlushManager 写入）
+│   └── .consolidation_state         ← MemoryConsolidator 内部状态
+├── skills/<skill-name>/SKILL.md     ← 自定义技能
+├── subagents/<id>.md                ← 子 agent 声明（文件名=agent_id，自动发现）
 └── agents/<agentId>/
+    ├── workspace/                   ← isolated 子 agent 的运行时根（无 workspace.path 时自动创建）
     └── sessions/
-        ├── sessions.json        ← 会话索引（id / summary / updatedAt）
-        ├── <sessionId>.jsonl    ← LLM 可见的压缩上下文
-        └── <sessionId>.log.jsonl← 完整对话日志（追加）
+        ├── sessions.json            ← 会话索引（id / summary / updatedAt）
+        ├── <sessionId>.jsonl        ← LLM 可见的压缩上下文
+        └── <sessionId>.log.jsonl   ← 完整对话日志（追加）
 ```
 
-> 子 agent 还支持 `workspace/subagents/*.md` 自动发现，详见 [子 Agent](./subagent.md)。
+> 子 agent 三层模型（声明 / 定义 / 运行时）详见 [子 Agent](./subagent.md)。
 
 ## 关键逻辑
 

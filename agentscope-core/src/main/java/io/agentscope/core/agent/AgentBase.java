@@ -906,11 +906,20 @@ public abstract class AgentBase implements StateModule, Agent {
                                             // Add temporary hook
                                             addHook(streamingHook);
 
+                                            // Bus that subagent tools use to push child events
+                                            // into this parent sink without an extra Flux layer.
+                                            SubagentEventBus bus = sink::next;
+
                                             // Use Mono.defer to ensure trace context propagation
                                             // while maintaining streaming hook functionality
                                             Mono.defer(() -> callSupplier.get())
                                                     .contextWrite(
-                                                            context -> context.putAll(ctxView))
+                                                            context ->
+                                                                    context.put(
+                                                                                    SubagentEventBus
+                                                                                            .CONTEXT_KEY,
+                                                                                    bus)
+                                                                            .putAll(ctxView))
                                                     .doFinally(
                                                             signalType -> {
                                                                 // Remove temporary hook

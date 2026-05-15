@@ -29,6 +29,7 @@ import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -156,6 +157,28 @@ class SandboxManagerIsolationTest {
         SandboxAcquireResult result = manager.acquire(sCtx, rtx);
 
         assertSame(resumedSandbox, result.getSandbox());
+    }
+
+    @Test
+    void userScope_withUserId_acquiresExecutionGuardWithUserKey() throws Exception {
+        AtomicReference<SandboxIsolationKey> capturedKey = new AtomicReference<>();
+        SandboxExecutionGuard guard =
+                key -> {
+                    capturedKey.set(key);
+                    return SandboxLease.noop();
+                };
+        manager = new SandboxManager(client, stateStore, AGENT_ID, guard);
+        when(stateStore.load(any())).thenReturn(Optional.empty());
+        when(client.create(any(), any(), any())).thenReturn(freshSandbox);
+
+        RuntimeContext rtx = RuntimeContext.builder().userId("user-42").build();
+        SandboxContext sCtx = SandboxContext.builder().isolationScope(IsolationScope.USER).build();
+
+        SandboxAcquireResult result = manager.acquire(sCtx, rtx);
+
+        assertSame(freshSandbox, result.getSandbox());
+        assertEquals(IsolationScope.USER, capturedKey.get().getScope());
+        assertEquals("user-42", capturedKey.get().getValue());
     }
 
     @Test

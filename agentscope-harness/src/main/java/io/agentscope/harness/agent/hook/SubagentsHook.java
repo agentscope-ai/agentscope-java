@@ -15,19 +15,25 @@
  */
 package io.agentscope.harness.agent.hook;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
+import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.util.HashMap;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.Collection;
 import java.util.List;
-import java.util.Map;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
@@ -48,9 +54,16 @@ import reactor.core.publisher.Mono;
  *       Because each {@link PreReasoningEvent} starts from a fresh copy of the frozen base
  *       system message, calling {@code appendSystemContent} on every iteration is safe —
  *       content never accumulates across iterations.
+ *   <li>Appends a concise summary of current async tasks to the system content each turn
+ *       (at most 10 tasks), so the model always has current task state even after compaction.
  * </ol>
  */
-public class SubagentsHook implements Hook {
+public class SubagentsHook implements Hook, RuntimeContextAware {
+
+    private static final DateTimeFormatter ISO_SHORT =
+            DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC);
+
+    private static final int MAX_TASK_SUMMARY_ENTRIES = 10;
 
     // @formatter:off
     private static final String SUBAGENT_SECTION_TEMPLATE =
@@ -80,11 +93,23 @@ public class SubagentsHook implements Hook {
 
             ### Task Tools (for async/background operations)
 
-            **`task_output`** — Retrieve the result of a background task by task_id. Supports blocking wait (default) or non-blocking peek (block=false).
+            **`task_output`** — Retrieve the result of a background task by task_id.
+            - Prefer `block=false` to check status without blocking.
+            - Only use `block=true` (default) when ready to wait for the result.
+            - **Do NOT call immediately after launching** — the task has just started and will not be ready yet.
 
             **`task_cancel`** — Cancel a running background task by task_id. No effect on already-completed tasks.
 
-            **`task_list`** — List all background tasks with current statuses. Optionally filter by status (running, completed, failed, cancelled).
+            **`task_list`** — List all background tasks with their current, live statuses (reads from durable storage).
+            - Always accurate even after conversation compaction or node migration.
+            - Use after compaction or session resume to recover all task IDs and current state.
+
+            ### CRITICAL async task rules
+            1. **Never poll immediately** after launching a task. Return control to the user instead.
+            2. **Never poll in a loop** — task_output does not short-circuit; every call blocks or waits.
+            3. **Task status in conversation history is STALE** — do not report it. Always call `task_output(block=false)` or `task_list()` for the current state.
+            4. After compaction or session resume, call `task_list()` first to recover all task IDs and statuses.
+            5. For a single task status check, use `task_output(task_id=..., block=false)`.
 
             ### Available agent ids
             %s
@@ -109,7 +134,7 @@ public class SubagentsHook implements Hook {
             4. **Reconcile** → Incorporate or synthesize the result into the main thread
 
             ### Usage patterns
-            - **Parallel execution**: Launch multiple subagents concurrently with timeout_seconds=0 when tasks are independent, then collect results with task_output
+            - **Parallel execution**: Launch multiple subagents concurrently with timeout_seconds=0 when tasks are independent, then collect results with task_output(block=false) after a delay
             - **Sync delegation**: Use default timeout for simple one-shot delegation
             - **Persistent session**: Spawn without a task, then use send for multi-turn interaction
             - **Cancel stale work**: Use task_cancel to stop background tasks that are no longer needed
@@ -120,7 +145,9 @@ public class SubagentsHook implements Hook {
     private final List<SubagentEntry> entries;
     private final Object subagentTool;
     private final TaskTool taskTool;
+    private final TaskRepository taskRepository;
     private final boolean isSessionMode;
+    private volatile RuntimeContext runtimeContext;
 
     /**
      * Default mode: creates {@link AgentSpawnTool} + {@link DefaultAgentManager} internally.
@@ -128,17 +155,20 @@ public class SubagentsHook implements Hook {
      * @param entries subagent descriptors (agent_id, description, factory)
      * @param taskRepository background task store for async operations
      * @param workspaceManager workspace accessor for session file path resolution
+     * @param userIdSupplier provides the parent agent's current user-id at spawn time; may be
+     *     {@code null} if userId propagation is not required
      */
     public SubagentsHook(
             List<SubagentEntry> entries,
             TaskRepository taskRepository,
-            WorkspaceManager workspaceManager) {
+            WorkspaceManager workspaceManager,
+            Supplier<String> userIdSupplier) {
         this.entries = List.copyOf(entries);
         this.isSessionMode = false;
-        Map<String, SubagentFactory> factories = buildFactories(entries);
-        DefaultAgentManager dam = new DefaultAgentManager(factories, workspaceManager);
+        DefaultAgentManager dam = new DefaultAgentManager(entries, workspaceManager);
         TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
-        this.subagentTool = new AgentSpawnTool(dam, repo, 0);
+        this.taskRepository = repo;
+        this.subagentTool = new AgentSpawnTool(dam, repo, 0, userIdSupplier);
         this.taskTool = new TaskTool(repo);
     }
 
@@ -157,11 +187,17 @@ public class SubagentsHook implements Hook {
         this.isSessionMode = true;
         this.subagentTool = externalSubagentTool;
         TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
+        this.taskRepository = repo;
         this.taskTool = new TaskTool(repo);
     }
 
     public SubagentsHook(List<SubagentEntry> entries) {
-        this(entries, (TaskRepository) null, (WorkspaceManager) null);
+        this(entries, null, null, null);
+    }
+
+    @Override
+    public void setRuntimeContext(RuntimeContext runtimeContext) {
+        this.runtimeContext = runtimeContext;
     }
 
     @Override
@@ -202,19 +238,65 @@ public class SubagentsHook implements Hook {
                 String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName, agentList);
 
         event.appendSystemContent(section);
-    }
 
-    private static Map<String, SubagentFactory> buildFactories(List<SubagentEntry> entries) {
-        Map<String, SubagentFactory> factories = new HashMap<>();
-        for (SubagentEntry entry : entries) {
-            factories.put(entry.name(), entry.factory());
+        // Per-turn async task summary (compact, at most MAX_TASK_SUMMARY_ENTRIES entries)
+        String taskSummary = buildTaskSummary();
+        if (taskSummary != null) {
+            event.appendSystemContent(taskSummary);
         }
-        return factories;
     }
 
     /**
-     * Descriptor for a subagent identified by agent id, with its description and {@link
-     * SubagentFactory}.
+     * Builds a concise task summary string for the current session, or {@code null} if there are
+     * no tasks to report. The summary is injected into the system content every turn so the model
+     * always has current task IDs and statuses — even after conversation compaction.
      */
-    public record SubagentEntry(String name, String description, SubagentFactory factory) {}
+    private String buildTaskSummary() {
+        if (taskRepository == null) {
+            return null;
+        }
+        String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        Collection<BackgroundTask> tasks = taskRepository.listTasks(sessionId, null);
+        if (tasks.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder("\n### Async tasks (current session)\n");
+        int count = 0;
+        for (BackgroundTask task : tasks) {
+            if (count >= MAX_TASK_SUMMARY_ENTRIES) {
+                sb.append("- ... (")
+                        .append(tasks.size() - MAX_TASK_SUMMARY_ENTRIES)
+                        .append(" more — use task_list() to see all)\n");
+                break;
+            }
+            sb.append("- task_id: ").append(task.getTaskId());
+            if (task.getAgentId() != null) {
+                sb.append("  agent: ").append(task.getAgentId());
+            }
+            sb.append("  status: ").append(task.getTaskStatus().name().toLowerCase());
+            sb.append("  started: ").append(ISO_SHORT.format(task.getCreatedAt()));
+            sb.append('\n');
+            count++;
+        }
+        sb.append(
+                "(Status above reflects current state; use task_output or task_list for"
+                        + " latest.)\n");
+        return sb.toString();
+    }
+
+    /**
+     * Descriptor for a subagent identified by agent id, with its description, {@link
+     * SubagentFactory}, and optional {@link io.agentscope.harness.agent.subagent.SubagentDeclaration}
+     * (for remote URL and headers).
+     */
+    public record SubagentEntry(
+            String name,
+            String description,
+            SubagentFactory factory,
+            SubagentDeclaration declaration) {
+        public SubagentEntry(String name, String description, SubagentFactory factory) {
+            this(name, description, factory, null);
+        }
+    }
 }
