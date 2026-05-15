@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.subagent;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Declares a subagent: its identity, workspace resolution strategy, and optional capability
@@ -29,13 +30,14 @@ import java.util.List;
  *       containing at least {@code AGENTS.md}. That file is used as the subagent's system-prompt
  *       body. Skills, knowledge, and MEMORY in the definition directory are available when the
  *       {@link WorkspaceMode} is {@link WorkspaceMode#ISOLATED}.
- *   <li><b>Inline</b> — no external workspace; {@link #getInlineAgentsBody()} is the system-prompt
- *       body directly (equivalent to writing the body in a {@code subagents/&lt;name&gt;.md} file
- *       with no {@code workspace.path} in the front matter).
+ *   <li><b>Remote HTTP</b> — {@link #getUrl()} points to an AgentScope task HTTP server. No local
+ *       definition workspace or inline body; the subagent runs out-of-process. Mutually exclusive
+ *       with definition workspace and inline body.
  * </ol>
  *
- * <p>The two source modes are mutually exclusive: setting both {@link Builder#workspace(Path)} and
- * a non-blank {@link Builder#inlineAgentsBody(String)} is rejected at build time.
+ * <p>The three source modes are mutually exclusive: at most one of {@link Builder#workspace(Path)},
+ * a non-blank {@link Builder#inlineAgentsBody(String)}, or a non-blank {@link Builder#url(String)}
+ * may be set.
  *
  * <p>Workspace resolution follows the five-row decision table in {@link WorkspaceMode}.
  *
@@ -69,6 +71,11 @@ public final class SubagentDeclaration {
     private final int maxIters;
     private final List<String> tools;
 
+    /** Base URL of the remote task server (e.g. {@code http://host:8080}). */
+    private final String url;
+
+    private final Map<String, String> headers;
+
     private SubagentDeclaration(Builder b) {
         this.name = b.name;
         this.description = b.description;
@@ -78,6 +85,8 @@ public final class SubagentDeclaration {
         this.model = b.model;
         this.maxIters = b.maxIters;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
+        this.url = b.url;
+        this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
     }
 
     /** Factory method for a new builder. */
@@ -141,6 +150,26 @@ public final class SubagentDeclaration {
         return tools;
     }
 
+    /** Returns {@code true} when this declaration targets a remote task HTTP server. */
+    public boolean isRemote() {
+        return url != null && !url.isBlank();
+    }
+
+    /**
+     * Base URL of the remote task server. Non-blank only in {@linkplain #isRemote() remote} mode.
+     */
+    public String getUrl() {
+        return url;
+    }
+
+    /**
+     * Optional HTTP headers (e.g. auth) sent to the remote task server. Never empty when
+     * non-null.
+     */
+    public Map<String, String> getHeaders() {
+        return headers;
+    }
+
     /** Returns {@code true} when this declaration points at an external definition workspace. */
     public boolean hasDefinitionWorkspace() {
         return workspacePath != null;
@@ -160,6 +189,8 @@ public final class SubagentDeclaration {
         private String model;
         private int maxIters = 10;
         private List<String> tools;
+        private String url;
+        private Map<String, String> headers;
 
         private Builder() {}
 
@@ -240,10 +271,28 @@ public final class SubagentDeclaration {
         }
 
         /**
+         * Remote task server base URL. Mutually exclusive with {@link #workspace(Path)} and a
+         * non-blank {@link #inlineAgentsBody(String)}.
+         */
+        public Builder url(String url) {
+            this.url = url;
+            return this;
+        }
+
+        /**
+         * Optional HTTP headers for the remote task server (e.g. {@code Authorization}). Only used
+         * when {@link #url(String)} is set.
+         */
+        public Builder headers(Map<String, String> headers) {
+            this.headers = headers;
+            return this;
+        }
+
+        /**
          * Builds the {@link SubagentDeclaration}.
          *
          * @throws IllegalArgumentException if {@code name} or {@code description} is blank, or
-         *     both {@code workspace(Path)} and a non-blank {@code inlineAgentsBody()} are set
+         *     mutually exclusive fields are combined (workspace vs inline vs remote URL)
          */
         public SubagentDeclaration build() {
             if (name == null || name.isBlank()) {
@@ -253,7 +302,23 @@ public final class SubagentDeclaration {
                 throw new IllegalArgumentException(
                         "SubagentDeclaration requires a non-blank description");
             }
-            if (workspacePath != null && inlineAgentsBody != null && !inlineAgentsBody.isBlank()) {
+            boolean remote = url != null && !url.isBlank();
+            if (remote) {
+                if (workspacePath != null) {
+                    throw new IllegalArgumentException(
+                            "url() and workspace(Path) are mutually exclusive for subagent '"
+                                    + name
+                                    + "'");
+                }
+                if (inlineAgentsBody != null && !inlineAgentsBody.isBlank()) {
+                    throw new IllegalArgumentException(
+                            "url() and inlineAgentsBody() are mutually exclusive for subagent '"
+                                    + name
+                                    + "'");
+                }
+            } else if (workspacePath != null
+                    && inlineAgentsBody != null
+                    && !inlineAgentsBody.isBlank()) {
                 throw new IllegalArgumentException(
                         "workspace(Path) and inlineAgentsBody() are mutually exclusive;"
                                 + " set at most one for subagent '"

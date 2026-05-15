@@ -696,3 +696,100 @@ body[data-current-tab="home"] .sidebar-scroll .sidebar-tree .caption + ul {
     transition: none;
   }
 }
+
+/*
+ * Harness（中文）侧栏：单 caption 扁平 TOC + 分组小标题。
+ * 指纹：11 个 toctree-l1；第 4 项为「文件系统」或其 current-page（当前页为 #）；第 9 项为 quickstart 或其 current-page。
+ */
+body[data-current-tab="harness"][data-current-lang="zh"] .sidebar-tree p.caption:not(.docs-nav-group-hidden):has(
+    + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  ) {
+  text-transform: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  letter-spacing: 0.02em;
+}
+
+body[data-current-tab="harness"][data-current-lang="zh"]
+  .sidebar-tree
+  p.caption:not(.docs-nav-group-hidden)
+  + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  > .toctree-l1:nth-child(1)::before {
+  content: "核心";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  line-height: 1.35;
+  margin-left: 0.45rem;
+  margin-right: 0.45rem;
+  margin-top: 0.15rem;
+  margin-bottom: 0.35rem;
+}
+
+body[data-current-tab="harness"][data-current-lang="zh"]
+  .sidebar-tree
+  p.caption:not(.docs-nav-group-hidden)
+  + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  > .toctree-l1:nth-child(9)::before {
+  content: "快速开始";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  line-height: 1.35;
+  margin-left: 0.45rem;
+  margin-right: 0.45rem;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  margin-bottom: 0.35rem;
+  border-top: 1px solid var(--color-background-border);
+}
+
+body[data-current-tab="harness"][data-current-lang="zh"]
+  .sidebar-tree
+  p.caption:not(.docs-nav-group-hidden)
+  + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  > .toctree-l1:nth-child(10)::before {
+  content: "沙箱";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  line-height: 1.35;
+  margin-left: 0.45rem;
+  margin-right: 0.45rem;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  margin-bottom: 0.35rem;
+  border-top: 1px solid var(--color-background-border);
+}
+
+body[data-current-tab="harness"][data-current-lang="zh"]
+  .sidebar-tree
+  p.caption:not(.docs-nav-group-hidden)
+  + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  > .toctree-l1:nth-child(11)::before {
+  content: "示例";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  line-height: 1.35;
+  margin-left: 0.45rem;
+  margin-right: 0.45rem;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  margin-bottom: 0.35rem;
+  border-top: 1px solid var(--color-background-border);
+}
+
+/* 博客文章页：隐藏右侧「本页」目录（长文 ## 过多），左侧仍保留全局 toctree 文章列表 */
+body.docs-blog-article-page .toc-drawer {
+  display: none !important;
+}
+
+body.docs-blog-article-page .toc-content-icon {
+  display: none !important;
+}

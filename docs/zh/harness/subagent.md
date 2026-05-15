@@ -214,3 +214,4 @@ HarnessAgent orchestrator = HarnessAgent.builder()
 - [工具](./tool.md) — `agent_spawn` / `agent_send` / `agent_list` / `task_*` 的完整参数表
 - [工作区](./workspace.md) — `workspace/subagents/` 与自动发现
 - [架构](./architecture.md) — SubagentsHook 在生命周期中的位置与同步 / 后台两条委派路径的时序图
+- [流式输出](./streaming.md) — `stream()` 模式下子 agent 事件实时转发与 `EventSource` 字段说明

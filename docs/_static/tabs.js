@@ -308,6 +308,10 @@
     setActiveTab(activeLink);
     filterSidebarByTab(activeLink, lang);
     updateLanguageSwitch(lang);
+
+    const isBlogArticle =
+      currentPage.includes("/blogs/") && !currentPage.endsWith("blogs/index");
+    document.body.classList.toggle("docs-blog-article-page", isBlogArticle);
   }
 
   function scheduleApplyNavigation() {

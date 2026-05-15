@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import java.util.Collection;
-import java.util.function.Supplier;
 
 /**
  * Repository for managing background subagent tasks, scoped by session.
@@ -36,16 +35,15 @@ public interface TaskRepository {
     BackgroundTask getTask(String sessionId, String taskId);
 
     /**
-     * Submit a new background task; the supplier runs asynchronously.
+     * Submit a new background task according to {@link TaskRunSpec}.
      *
      * @param taskId unique identifier for the task
      * @param subAgentId the subagent type executing this task
      * @param sessionId the parent session scope
-     * @param taskExecution the work to execute asynchronously
+     * @param spec local supplier execution or remote HTTP task protocol
      * @return the created background task
      */
-    BackgroundTask putTask(
-            String taskId, String subAgentId, String sessionId, Supplier<String> taskExecution);
+    BackgroundTask putTask(String taskId, String subAgentId, String sessionId, TaskRunSpec spec);
 
     /**
      * Remove a task from the repository.

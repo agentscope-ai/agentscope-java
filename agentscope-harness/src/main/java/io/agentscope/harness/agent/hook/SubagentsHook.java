@@ -21,6 +21,7 @@ import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
@@ -31,9 +32,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
@@ -166,8 +165,7 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
             Supplier<String> userIdSupplier) {
         this.entries = List.copyOf(entries);
         this.isSessionMode = false;
-        Map<String, SubagentFactory> factories = buildFactories(entries);
-        DefaultAgentManager dam = new DefaultAgentManager(factories, workspaceManager);
+        DefaultAgentManager dam = new DefaultAgentManager(entries, workspaceManager);
         TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
         this.taskRepository = repo;
         this.subagentTool = new AgentSpawnTool(dam, repo, 0, userIdSupplier);
@@ -287,17 +285,18 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
         return sb.toString();
     }
 
-    private static Map<String, SubagentFactory> buildFactories(List<SubagentEntry> entries) {
-        Map<String, SubagentFactory> factories = new HashMap<>();
-        for (SubagentEntry entry : entries) {
-            factories.put(entry.name(), entry.factory());
-        }
-        return factories;
-    }
-
     /**
-     * Descriptor for a subagent identified by agent id, with its description and {@link
-     * SubagentFactory}.
+     * Descriptor for a subagent identified by agent id, with its description, {@link
+     * SubagentFactory}, and optional {@link io.agentscope.harness.agent.subagent.SubagentDeclaration}
+     * (for remote URL and headers).
      */
-    public record SubagentEntry(String name, String description, SubagentFactory factory) {}
+    public record SubagentEntry(
+            String name,
+            String description,
+            SubagentFactory factory,
+            SubagentDeclaration declaration) {
+        public SubagentEntry(String name, String description, SubagentFactory factory) {
+            this(name, description, factory, null);
+        }
+    }
 }

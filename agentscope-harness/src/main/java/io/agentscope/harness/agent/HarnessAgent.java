@@ -81,6 +81,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
+import io.agentscope.harness.agent.subagent.RemoteSubagentStub;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -1213,14 +1214,16 @@ public class HarnessAgent implements Agent, StateModule {
                             "general-purpose",
                             "General-purpose subagent with same capabilities as the main agent."
                                     + " Use for any isolated task that can be fully delegated.",
-                            buildGeneralPurposeFactory(resolvedWorkspace, sandboxFs)));
+                            buildGeneralPurposeFactory(resolvedWorkspace, sandboxFs),
+                            null));
 
             for (SubagentDeclaration decl : allDeclarations) {
                 entries.add(
                         new SubagentEntry(
                                 decl.getName(),
                                 decl.getDescription(),
-                                buildDeclaredFactory(decl, resolvedWorkspace, sandboxFs)));
+                                buildDeclaredFactory(decl, resolvedWorkspace, sandboxFs),
+                                decl));
             }
 
             for (SubagentFactoryEntry custom : customSubagentFactories) {
@@ -1228,7 +1231,8 @@ public class HarnessAgent implements Agent, StateModule {
                         new SubagentEntry(
                                 custom.name(),
                                 custom.name(),
-                                () -> custom.factory().apply(custom.name())));
+                                () -> custom.factory().apply(custom.name()),
+                                null));
             }
 
             return entries;
@@ -1723,6 +1727,9 @@ public class HarnessAgent implements Agent, StateModule {
             final boolean capturedDisableSessionPersistence = this.disableSessionPersistence;
 
             return () -> {
+                if (decl.isRemote()) {
+                    return new RemoteSubagentStub(decl.getName(), decl.getDescription());
+                }
                 // ---- Resolve workspace root ----
                 Path runtimeWorkspace = resolveDeclaredWorkspace(decl, mainWorkspace);
 

@@ -142,7 +142,7 @@ sphinx:
           prefixes_zh:
             - zh/harness/
           sections_en:
-            - Harness
+            - Harness (English)
           sections_zh:
             - Harness
           languages:

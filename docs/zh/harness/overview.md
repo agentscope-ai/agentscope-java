@@ -159,5 +159,6 @@ mvn -pl agentscope-examples/harness-example exec:java \
 - [文件系统（Filesystem）](./filesystem.md) — 三种声明式模式与 `AbstractFilesystem` 层次
 - [沙箱（Sandbox）](./sandbox/index.md) — 隔离执行、沙箱状态与分布式选项
 - [子 Agent（Subagent）](./subagent.md) — 子 agent 规格与编排
+- [子 Agent 流式输出](./streaming.md) — `stream()` 模式下子 agent 事件转发、`EventSource` 字段与多级嵌套（通用流式基础见 [task/streaming](../task/streaming.md)）
 - [工具（Tool）](./tool.md) — 内置工具参考
 - [会话（Session）](./session.md) — 会话持久化与状态恢复

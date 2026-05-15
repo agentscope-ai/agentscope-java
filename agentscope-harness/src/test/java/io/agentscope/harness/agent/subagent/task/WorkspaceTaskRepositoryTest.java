@@ -27,6 +27,8 @@ import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -99,10 +101,11 @@ class WorkspaceTaskRepositoryTest {
                 taskId,
                 "sub-agent-x",
                 session,
-                () -> {
-                    executed.set(true);
-                    return "done";
-                });
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            executed.set(true);
+                            return "done";
+                        }));
 
         awaitCondition(
                 () -> {
@@ -128,9 +131,10 @@ class WorkspaceTaskRepositoryTest {
                 taskId,
                 "sub-agent-fail",
                 session,
-                () -> {
-                    throw new RuntimeException("intentional failure");
-                });
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            throw new RuntimeException("intentional failure");
+                        }));
 
         awaitCondition(
                 () -> {
@@ -162,7 +166,11 @@ class WorkspaceTaskRepositoryTest {
         String session = "sess-cross";
         String taskId = "task-cross-node";
 
-        repo.putTask(taskId, "agent-y", session, () -> "cross-node result");
+        repo.putTask(
+                taskId,
+                "agent-y",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "cross-node result"));
 
         awaitCondition(
                 () -> {
@@ -197,8 +205,10 @@ class WorkspaceTaskRepositoryTest {
         String sessionA = "sess-a";
         String sessionB = "sess-b";
 
-        repo.putTask("task-a1", "agent-a", sessionA, () -> "result-a");
-        repo.putTask("task-b1", "agent-b", sessionB, () -> "result-b");
+        repo.putTask(
+                "task-a1", "agent-a", sessionA, new TaskRunSpec.LocalTaskRunSpec(() -> "result-a"));
+        repo.putTask(
+                "task-b1", "agent-b", sessionB, new TaskRunSpec.LocalTaskRunSpec(() -> "result-b"));
 
         awaitCondition(
                 () -> {
@@ -237,15 +247,16 @@ class WorkspaceTaskRepositoryTest {
                 taskId,
                 "agent-slow",
                 session,
-                () -> {
-                    taskRunning.countDown();
-                    try {
-                        release.await(5, java.util.concurrent.TimeUnit.SECONDS);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                    return "slow result";
-                });
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            taskRunning.countDown();
+                            try {
+                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "slow result";
+                        }));
 
         // Wait until task is confirmed RUNNING so workspace has a RUNNING record
         taskRunning.await(5, java.util.concurrent.TimeUnit.SECONDS);
@@ -279,8 +290,10 @@ class WorkspaceTaskRepositoryTest {
     void listTasks_readsFromWorkspaceAfterCompaction() throws Exception {
         String session = "sess-compact";
 
-        repo.putTask("task-c1", "agent-z", session, () -> "result-c1");
-        repo.putTask("task-c2", "agent-z", session, () -> "result-c2");
+        repo.putTask(
+                "task-c1", "agent-z", session, new TaskRunSpec.LocalTaskRunSpec(() -> "result-c1"));
+        repo.putTask(
+                "task-c2", "agent-z", session, new TaskRunSpec.LocalTaskRunSpec(() -> "result-c2"));
 
         awaitCondition(
                 () -> {
@@ -310,7 +323,11 @@ class WorkspaceTaskRepositoryTest {
         String session = "sess-term";
         String taskId = "task-term";
 
-        repo.putTask(taskId, "agent-t", session, () -> "terminal result");
+        repo.putTask(
+                taskId,
+                "agent-t",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "terminal result"));
 
         awaitCondition(
                 () -> {
@@ -334,14 +351,15 @@ class WorkspaceTaskRepositoryTest {
         String sessionOk = "sess-filter-ok";
         String sessionErr = "sess-filter-err";
 
-        repo.putTask("task-ok", "agent-f", sessionOk, () -> "ok");
+        repo.putTask("task-ok", "agent-f", sessionOk, new TaskRunSpec.LocalTaskRunSpec(() -> "ok"));
         repo.putTask(
                 "task-err",
                 "agent-f",
                 sessionErr,
-                () -> {
-                    throw new RuntimeException("error");
-                });
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            throw new RuntimeException("error");
+                        }));
 
         awaitCondition(
                 () -> {
@@ -396,6 +414,329 @@ class WorkspaceTaskRepositoryTest {
 
         Path file = tempDir.resolve("agents/parent/tasks/sess-rt.json");
         assertTrue(Files.exists(file), "Task record JSON file should exist on disk");
+    }
+
+    // ------------------------------------------------------------------
+    //  Heartbeat: lastUpdatedAt is refreshed for live local tasks
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("heartbeat refreshes lastUpdatedAt for a running local task")
+    void heartbeat_refreshesLastUpdatedAt() throws Exception {
+        String session = "sess-hb";
+        String taskId = "task-hb";
+
+        CountDownLatch running = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        repo.putTask(
+                taskId,
+                "agent-hb",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            running.countDown();
+                            try {
+                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "done";
+                        }));
+
+        running.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord("test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.RUNNING;
+                });
+
+        Instant before =
+                workspaceManager
+                        .readTaskRecord("test-agent", session, taskId)
+                        .map(TaskRecord::getLastUpdatedAt)
+                        .orElseThrow();
+
+        // Small sleep so the clock advances at least 1 ms
+        Thread.sleep(10);
+        repo.heartbeat();
+
+        Instant after =
+                workspaceManager
+                        .readTaskRecord("test-agent", session, taskId)
+                        .map(TaskRecord::getLastUpdatedAt)
+                        .orElseThrow();
+
+        assertTrue(
+                after.isAfter(before),
+                "heartbeat() should advance lastUpdatedAt for a live running task");
+
+        release.countDown();
+    }
+
+    @Test
+    @DisplayName("heartbeat does not touch completed tasks")
+    void heartbeat_skipsCompletedTasks() throws Exception {
+        String session = "sess-hb-done";
+        String taskId = "task-hb-done";
+
+        repo.putTask(
+                taskId, "agent-hb-done", session, new TaskRunSpec.LocalTaskRunSpec(() -> "quick"));
+
+        awaitCondition(
+                () ->
+                        workspaceManager
+                                .readTaskRecord("test-agent", session, taskId)
+                                .map(r -> r.getStatus().isTerminal())
+                                .orElse(false));
+
+        Instant before =
+                workspaceManager
+                        .readTaskRecord("test-agent", session, taskId)
+                        .map(TaskRecord::getLastUpdatedAt)
+                        .orElseThrow();
+
+        Thread.sleep(10);
+        repo.heartbeat();
+
+        Instant after =
+                workspaceManager
+                        .readTaskRecord("test-agent", session, taskId)
+                        .map(TaskRecord::getLastUpdatedAt)
+                        .orElseThrow();
+
+        // Completed task's lastUpdatedAt should be unchanged by heartbeat
+        assertEquals(before, after, "heartbeat() must not touch already-completed tasks");
+    }
+
+    // ------------------------------------------------------------------
+    //  Orphan sweeper: stale RUNNING records become FAILED
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("sweepOrphanedTasks marks stale RUNNING local task as FAILED")
+    void sweepOrphanedTasks_marksStaleRunningAsFailed() throws Exception {
+        String session = "sess-sweep";
+        String taskId = "task-stale";
+
+        // Write a RUNNING record with a lastUpdatedAt far in the past (simulates a dead node)
+        TaskRecord stale = new TaskRecord(taskId, "agent-stale", "test-agent", session, null);
+        stale.setStatus(TaskStatus.RUNNING);
+        stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
+        workspaceManager.writeTaskRecord("test-agent", session, stale);
+
+        // orphanTimeout=ZERO: every record is instantly "stale".
+        // recentWindow=1 day: scan all session files regardless of disk mtime.
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+
+        Optional<TaskRecord> swept = workspaceManager.readTaskRecord("test-agent", session, taskId);
+        assertTrue(swept.isPresent());
+        assertEquals(
+                TaskStatus.FAILED,
+                swept.get().getStatus(),
+                "Orphaned task should be marked FAILED by sweeper");
+        assertTrue(
+                swept.get().getErrorMessage() != null
+                        && swept.get().getErrorMessage().contains("executor lost"),
+                "Error message should indicate executor loss");
+    }
+
+    @Test
+    @DisplayName("sweepOrphanedTasks does not touch tasks with a live local future")
+    void sweepOrphanedTasks_skipsLiveTasks() throws Exception {
+        String session = "sess-sweep-live";
+        String taskId = "task-live";
+
+        CountDownLatch running = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        repo.putTask(
+                taskId,
+                "agent-live",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            running.countDown();
+                            try {
+                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "live";
+                        }));
+
+        running.await(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        // orphanTimeout=ZERO, recentWindow=1 day: everything would qualify, but the live
+        // future should still protect this task.
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+
+        Optional<TaskRecord> record =
+                workspaceManager.readTaskRecord("test-agent", session, taskId);
+        assertTrue(record.isPresent());
+        assertEquals(
+                TaskStatus.RUNNING,
+                record.get().getStatus(),
+                "Live task with local future must not be swept");
+
+        release.countDown();
+    }
+
+    @Test
+    @DisplayName("sweepOrphanedTasks does not touch terminal tasks")
+    void sweepOrphanedTasks_skipsTerminalTasks() throws Exception {
+        String session = "sess-sweep-term";
+        String taskId = "task-term-sweep";
+
+        TaskRecord completed = new TaskRecord(taskId, "agent-x", "test-agent", session, null);
+        completed.setStatus(TaskStatus.COMPLETED);
+        completed.setResult("done");
+        completed.setLastUpdatedAt(Instant.now().minusSeconds(7200));
+        workspaceManager.writeTaskRecord("test-agent", session, completed);
+
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+
+        Optional<TaskRecord> record =
+                workspaceManager.readTaskRecord("test-agent", session, taskId);
+        assertTrue(record.isPresent());
+        assertEquals(
+                TaskStatus.COMPLETED, record.get().getStatus(), "Terminal tasks must not be swept");
+    }
+
+    @Test
+    @DisplayName("sweepOrphanedTasks does not touch remote agent-protocol tasks")
+    void sweepOrphanedTasks_skipsRemoteTasks() throws Exception {
+        String session = "sess-sweep-remote";
+        String taskId = "task-remote-sweep";
+
+        TaskRecord remote = new TaskRecord(taskId, "agent-r", "test-agent", session, null);
+        remote.setStatus(TaskStatus.RUNNING);
+        remote.setTransportType("agent-protocol");
+        remote.setRemoteBaseUrl("http://remote-agent:8080");
+        remote.setLastUpdatedAt(Instant.now().minusSeconds(7200));
+        workspaceManager.writeTaskRecord("test-agent", session, remote);
+
+        repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
+
+        Optional<TaskRecord> record =
+                workspaceManager.readTaskRecord("test-agent", session, taskId);
+        assertTrue(record.isPresent());
+        assertEquals(
+                TaskStatus.RUNNING,
+                record.get().getStatus(),
+                "Remote agent-protocol tasks must not be swept (they have their own liveness)");
+    }
+
+    // ------------------------------------------------------------------
+    //  Sweep marker: distributed throttle
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("sweepOrphanedTasksDefault writes sweep marker after completing a sweep")
+    void sweepMarker_isWrittenAfterSweep() throws Exception {
+        // No marker initially
+        assertTrue(workspaceManager.readSweepMarker("test-agent").isEmpty());
+
+        // Trigger the default sweep path (uses the marker internally)
+        repo.sweepOrphanedTasksDefault_forTest();
+
+        // Marker should now be present and recent
+        Optional<java.time.Instant> marker = workspaceManager.readSweepMarker("test-agent");
+        assertTrue(marker.isPresent(), "Sweep marker must be written after a successful sweep");
+        assertTrue(
+                marker.get().isAfter(Instant.now().minusSeconds(5)),
+                "Sweep marker should be a very recent timestamp");
+    }
+
+    @Test
+    @DisplayName("sweepOrphanedTasksDefault skips sweep when marker is fresh")
+    void sweepMarker_freshMarkerSkipsSweep() throws Exception {
+        String session = "sess-marker-skip";
+        String taskId = "task-marker-skip";
+
+        // A stale orphan that would normally be swept
+        TaskRecord stale = new TaskRecord(taskId, "a", "test-agent", session, null);
+        stale.setStatus(TaskStatus.RUNNING);
+        stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
+        workspaceManager.writeTaskRecord("test-agent", session, stale);
+
+        // Write a fresh marker (simulates another node just swept)
+        workspaceManager.writeSweepMarker("test-agent");
+
+        // The default sweep should be skipped due to the fresh marker
+        repo.sweepOrphanedTasksDefault_forTest();
+
+        // Orphan should NOT have been swept
+        Optional<TaskRecord> record =
+                workspaceManager.readTaskRecord("test-agent", session, taskId);
+        assertTrue(record.isPresent());
+        assertEquals(
+                TaskStatus.RUNNING,
+                record.get().getStatus(),
+                "Stale task should not be swept when the sweep marker is fresh");
+    }
+
+    // ------------------------------------------------------------------
+    //  WorkspaceManager.listAllTaskRecords
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("listAllTaskRecords returns records across all sessions for an agent")
+    void listAllTaskRecords_returnsAcrossAllSessions() throws Exception {
+        TaskRecord r1 = new TaskRecord("task-all-1", "a", "test-agent", "sess-all-1", null);
+        r1.setStatus(TaskStatus.COMPLETED);
+        TaskRecord r2 = new TaskRecord("task-all-2", "b", "test-agent", "sess-all-2", null);
+        r2.setStatus(TaskStatus.FAILED);
+        TaskRecord r3 = new TaskRecord("task-all-3", "c", "test-agent", "sess-all-1", null);
+        r3.setStatus(TaskStatus.RUNNING);
+
+        workspaceManager.writeTaskRecord("test-agent", "sess-all-1", r1);
+        workspaceManager.writeTaskRecord("test-agent", "sess-all-2", r2);
+        workspaceManager.writeTaskRecord("test-agent", "sess-all-1", r3);
+
+        Collection<TaskRecord> all =
+                workspaceManager.listAllTaskRecords("test-agent", Duration.ofDays(1));
+        assertEquals(3, all.size(), "Should return all records across all sessions");
+        assertTrue(all.stream().anyMatch(r -> "task-all-1".equals(r.getTaskId())));
+        assertTrue(all.stream().anyMatch(r -> "task-all-2".equals(r.getTaskId())));
+        assertTrue(all.stream().anyMatch(r -> "task-all-3".equals(r.getTaskId())));
+    }
+
+    @Test
+    @DisplayName("listAllTaskRecords returns empty for unknown agent")
+    void listAllTaskRecords_emptyForUnknownAgent() {
+        Collection<TaskRecord> all =
+                workspaceManager.listAllTaskRecords("unknown-agent", Duration.ofDays(1));
+        assertTrue(all.isEmpty());
+    }
+
+    @Test
+    @DisplayName("listAllTaskRecords skips files older than recentWindow")
+    void listAllTaskRecords_skipsOldFiles() throws Exception {
+        // task-new: in a recently-modified file (write it after the old one)
+        TaskRecord recent = new TaskRecord("task-new", "a", "test-agent", "sess-recent", null);
+        recent.setStatus(TaskStatus.RUNNING);
+        workspaceManager.writeTaskRecord("test-agent", "sess-recent", recent);
+
+        // task-old: force its session file's mtime to be 2 days in the past via reflection
+        // We write it first so the file exists, then back-date the file.
+        TaskRecord old = new TaskRecord("task-old", "b", "test-agent", "sess-old", null);
+        old.setStatus(TaskStatus.RUNNING);
+        workspaceManager.writeTaskRecord("test-agent", "sess-old", old);
+
+        Path oldFile = tempDir.resolve("agents/test-agent/tasks/sess-old.json");
+        assertTrue(Files.exists(oldFile), "old session file must exist");
+        oldFile.toFile().setLastModified(System.currentTimeMillis() - 2 * 86_400_000L);
+
+        // recentWindow = 1 day → the 2-day-old file should be skipped
+        Collection<TaskRecord> result =
+                workspaceManager.listAllTaskRecords("test-agent", Duration.ofDays(1));
+
+        assertTrue(
+                result.stream().anyMatch(r -> "task-new".equals(r.getTaskId())),
+                "Recent task should be included");
+        assertTrue(
+                result.stream().noneMatch(r -> "task-old".equals(r.getTaskId())),
+                "Old task file should be skipped by recentWindow filter");
     }
 
     // ------------------------------------------------------------------

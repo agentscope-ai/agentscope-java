@@ -18,6 +18,8 @@ package io.agentscope.harness.agent.subagent.task;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Map;
 
 /**
  * Persistent metadata for a background subagent task, stored as JSON in the workspace under
@@ -46,6 +48,13 @@ public class TaskRecord {
     private Instant createdAt;
     private Instant lastCheckedAt;
     private Instant lastUpdatedAt;
+
+    /** When {@code "agent-protocol"}, this task is driven by {@link AgentProtocolTaskClient}. */
+    private String transportType;
+
+    private String remoteBaseUrl;
+
+    private Map<String, String> remoteHeaders;
 
     public TaskRecord() {}
 
@@ -172,5 +181,37 @@ public class TaskRecord {
     /** Convenience: update lastCheckedAt to now. */
     public void touchChecked() {
         this.lastCheckedAt = Instant.now();
+    }
+
+    public String getTransportType() {
+        return transportType;
+    }
+
+    public void setTransportType(String transportType) {
+        this.transportType = transportType;
+    }
+
+    public String getRemoteBaseUrl() {
+        return remoteBaseUrl;
+    }
+
+    public void setRemoteBaseUrl(String remoteBaseUrl) {
+        this.remoteBaseUrl = remoteBaseUrl;
+    }
+
+    public Map<String, String> getRemoteHeaders() {
+        return remoteHeaders;
+    }
+
+    public void setRemoteHeaders(Map<String, String> remoteHeaders) {
+        this.remoteHeaders =
+                remoteHeaders == null || remoteHeaders.isEmpty()
+                        ? null
+                        : Collections.unmodifiableMap(Map.copyOf(remoteHeaders));
+    }
+
+    /** Whether this task is executed via the HTTP task protocol. */
+    public boolean isAgentProtocolTransport() {
+        return transportType != null && "agent-protocol".equalsIgnoreCase(transportType);
     }
 }

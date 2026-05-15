@@ -24,7 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 
 /**
  * In-memory {@link TaskRepository} backed by a cached daemon thread pool.
@@ -67,8 +66,14 @@ public class DefaultTaskRepository implements TaskRepository {
 
     @Override
     public BackgroundTask putTask(
-            String taskId, String subAgentId, String sessionId, Supplier<String> taskExecution) {
-        CompletableFuture<String> future = CompletableFuture.supplyAsync(taskExecution, executor);
+            String taskId, String subAgentId, String sessionId, TaskRunSpec spec) {
+        if (!(spec instanceof TaskRunSpec.LocalTaskRunSpec local)) {
+            throw new UnsupportedOperationException(
+                    "DefaultTaskRepository only supports LocalTaskRunSpec; use"
+                            + " WorkspaceTaskRepository for remote tasks.");
+        }
+        CompletableFuture<String> future =
+                CompletableFuture.supplyAsync(local.execution(), executor);
         BackgroundTask task = new BackgroundTask(taskId, subAgentId, future);
         tasks.put(taskId, task);
         return task;
