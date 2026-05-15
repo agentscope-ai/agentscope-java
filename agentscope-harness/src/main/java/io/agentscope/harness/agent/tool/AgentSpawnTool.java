@@ -55,7 +55,7 @@ import reactor.core.publisher.Mono;
  * by the current session ID from {@link RuntimeContext}. This makes task state visible in
  * workspace storage for cross-node retrieval and recovery after compaction.
  *
- * <h1>Streaming</h1>
+ * <h2>Streaming</h2>
  *
  * <p>{@code agent_spawn} and {@code agent_send} return {@link Mono}{@code <String>} so that the
  * framework's reactive tool-invocation pipeline (see {@code ToolMethodInvoker}) can subscribe them

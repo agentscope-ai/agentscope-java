@@ -24,6 +24,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.HashMap;
 import java.util.List;
