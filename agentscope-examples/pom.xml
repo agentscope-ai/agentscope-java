@@ -55,6 +55,7 @@
         <module>multiagent-patterns/pipeline</module>
         <module>multiagent-patterns/skills</module>
         <module>a2a-rocketmq</module>
+        <module>harness-examples</module>
     </modules>
 
     <properties>
@@ -63,7 +64,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
         <spring.boot.version>4.0.4</spring.boot.version>
-        <micronaut.version>4.10.11</micronaut.version>
+        <micronaut.version>4.10.13</micronaut.version>
     </properties>
 
 </project>

@@ -47,6 +47,13 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-a2a-client</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
@@ -68,14 +75,14 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+            <artifactId>agentscope-extensions-chat-completions-web</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-chat-completions-web</artifactId>
+            <artifactId>agentscope-extensions-agent-protocol</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
@@ -96,7 +103,28 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-mem0</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-reme</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-memory-bailian</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
@@ -132,13 +160,6 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-rag-simple</artifactId>
-            <scope>compile</scope>
-            <optional>true</optional>
-        </dependency>
-
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-reme</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>

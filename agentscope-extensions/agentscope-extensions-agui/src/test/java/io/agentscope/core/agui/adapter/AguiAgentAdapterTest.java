@@ -1018,7 +1018,7 @@ class AguiAgentAdapterTest {
 
         assertNotNull(reasoningMessageStart, "Should have ReasoningMessageStart");
         assertEquals("msg-r1", reasoningMessageStart.messageId());
-        assertEquals("assistant", reasoningMessageStart.role());
+        assertEquals("reasoning", reasoningMessageStart.role());
 
         AguiEvent.ReasoningMessageContent reasoningMessageContent =
                 events.stream()
@@ -1089,6 +1089,89 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testStateLeakOnMultipleSubscriptions() {
+        // Verifies the fix for Issue #510
+        String bugMessageId = "chatcmpl-afaa1eae32eae120";
+        String bugToolId = "chatcmpl-tool-ab42f73d312799c7";
+
+        // Simulate the first streaming text chunk
+        Msg textChunk =
+                Msg.builder()
+                        .id(bugMessageId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("Preparing to call the tool...")
+                                                .build()))
+                        .build();
+        Event textEvent = new Event(EventType.REASONING, textChunk, false);
+
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id(bugMessageId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id(bugToolId)
+                                                .name("getUniversityInfo")
+                                                .input(Map.of())
+                                                .build()))
+                        .build();
+        Event toolEvent = new Event(EventType.REASONING, toolCallMsg, false);
+
+        // Mock the agent stream to return the same events for every subscription
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(textEvent, toolEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("2010331348305129474")
+                        .runId("17816087-d4aa-4743-baee-9989a4ab3c8d")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage(
+                                                "msg-1", "Check university score lines")))
+                        .build();
+
+        // Get the Flux pipeline to test
+        Flux<AguiEvent> resultFlux = adapter.run(input);
+
+        // First subscription: simulate a normal initial streaming request
+        List<AguiEvent> firstRunEvents = resultFlux.collectList().block();
+        assertNotNull(firstRunEvents);
+
+        long firstRunStartCount =
+                firstRunEvents.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .count();
+        assertEquals(1, firstRunStartCount, "First execution should contain 1 TextMessageStart");
+
+        // Second subscription: simulate an automatic retry or buffer flush from the adapter layer
+        List<AguiEvent> secondRunEvents = resultFlux.collectList().block();
+        assertNotNull(secondRunEvents);
+
+        long secondRunStartCount =
+                secondRunEvents.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .count();
+
+        // Verify state isolation is effective; the second subscription should emit START normally
+        assertEquals(
+                1,
+                secondRunStartCount,
+                "State should be isolated; second execution should contain 1 TextMessageStart");
+
+        // Verify that CONTENT is still emitted
+        long secondRunContentCount =
+                secondRunEvents.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .count();
+        assertTrue(secondRunContentCount > 0, "Second execution should contain TextMessageContent");
+    }
+
+    @Test
     void testToolCallStartBackfillWithoutCache() {
         Msg toolResultMsg =
                 Msg.builder()
@@ -1097,6 +1180,7 @@ class AguiAgentAdapterTest {
                         .content(
                                 ToolResultBlock.builder()
                                         .id("tc-unknown")
+                                        .name("weather_lookup")
                                         .output(TextBlock.builder().text("result").build())
                                         .build())
                         .build();
@@ -1121,6 +1205,17 @@ class AguiAgentAdapterTest {
         long toolStartCount =
                 events.stream().filter(e -> e instanceof AguiEvent.ToolCallStart).count();
         assertEquals(1, toolStartCount, "Should backfill ToolCallStart for unknown tool result");
+
+        AguiEvent.ToolCallStart backfilledStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(backfilledStart, "Should backfill ToolCallStart");
+        assertEquals("tc-unknown", backfilledStart.toolCallId());
+        assertEquals("weather_lookup", backfilledStart.toolCallName());
     }
 
     @Test
@@ -1399,6 +1494,41 @@ class AguiAgentAdapterTest {
         assertTrue(hasReasoningMessageStart, "Should have ReasoningMessageStart");
         assertTrue(hasReasoningMessageContent, "Should have ReasoningMessageContent");
         assertTrue(hasToolStart, "Should have ToolCallStart for tool call");
+
+        int reasoningStartIdx = -1;
+        int reasoningContentIdx = -1;
+        int reasoningEndIdx = -1;
+        int toolStartIdx = -1;
+
+        for (int i = 0; i < events.size(); i++) {
+            AguiEvent e = events.get(i);
+            if (reasoningStartIdx < 0 && e instanceof AguiEvent.ReasoningMessageStart) {
+                reasoningStartIdx = i;
+            } else if (reasoningContentIdx < 0 && e instanceof AguiEvent.ReasoningMessageContent) {
+                reasoningContentIdx = i;
+            } else if (reasoningEndIdx < 0 && e instanceof AguiEvent.ReasoningMessageEnd) {
+                reasoningEndIdx = i;
+            } else if (toolStartIdx < 0 && e instanceof AguiEvent.ToolCallStart) {
+                toolStartIdx = i;
+            }
+        }
+
+        assertTrue(reasoningStartIdx >= 0, "Should have ReasoningMessageStart");
+        assertTrue(reasoningContentIdx >= 0, "Should have ReasoningMessageContent");
+        assertTrue(reasoningEndIdx >= 0, "Should have ReasoningMessageEnd before tool call");
+        assertTrue(toolStartIdx >= 0, "Should have ToolCallStart");
+
+        assertTrue(
+                reasoningStartIdx < reasoningContentIdx,
+                "Reasoning start should be before content");
+        assertTrue(reasoningContentIdx < reasoningEndIdx, "Reasoning content should be before end");
+        assertTrue(
+                reasoningEndIdx < toolStartIdx, "Reasoning should be closed before ToolCallStart");
+
+        // ReasoningMessage must be explicitly closed before ToolCallStart.
+        long reasoningEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageEnd).count();
+        assertEquals(1, reasoningEndCount, "Should emit exactly one ReasoningMessageEnd");
     }
 
     @Test

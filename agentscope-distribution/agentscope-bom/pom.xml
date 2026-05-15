@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.12-SNAPSHOT</revision>
+        <revision>1.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -83,6 +83,12 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-harness</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -114,13 +120,6 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions AutoContext Memory -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- AgentScope Extensions Chat Completions Web -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -128,10 +127,38 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions Agent Protocol Tasks -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-agent-protocol</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions AutoContext Memory -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Mem0 -->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-mem0</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions Reme -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-reme</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions Bailian Long Term Memory -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-memory-bailian</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -167,13 +194,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-rag-simple</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope Extensions Reme -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-reme</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

@@ -34,6 +34,7 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
+import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
@@ -1223,5 +1224,44 @@ class ToolkitTest {
 
         AgentTool tool = toolkit.getTool("tool_with_default_converter");
         assertNotNull(tool, "Tool should be registered");
+    }
+
+    @Test
+    @DisplayName("Should expose MCP output schema through getToolSchemas")
+    void testGetToolSchemasIncludesMcpOutputSchema() {
+        McpClientWrapper mcpClientWrapper = mock(McpClientWrapper.class);
+        when(mcpClientWrapper.getName()).thenReturn("mcp-client");
+        when(mcpClientWrapper.initialize()).thenReturn(Mono.empty());
+
+        McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
+        when(mcpTool.name()).thenReturn("structured_mcp_tool");
+        when(mcpTool.description()).thenReturn("Returns structured MCP output");
+        when(mcpTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(mcpTool.outputSchema())
+                .thenReturn(
+                        Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of("answer", Map.of("type", "string"))));
+        when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
+
+        toolkit.registerMcpClient(mcpClientWrapper).block();
+
+        ToolSchema schema =
+                toolkit.getToolSchemas().stream()
+                        .filter(s -> "structured_mcp_tool".equals(getToolName(s)))
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(schema);
+        assertNotNull(schema.getOutputSchema());
+        assertEquals("object", schema.getOutputSchema().get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties =
+                (Map<String, Object>) schema.getOutputSchema().get("properties");
+        assertTrue(properties.containsKey("answer"));
     }
 }

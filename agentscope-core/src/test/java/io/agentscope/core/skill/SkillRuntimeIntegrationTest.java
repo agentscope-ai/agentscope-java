@@ -23,14 +23,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -134,7 +133,7 @@ class SkillRuntimeIntegrationTest {
         assertNotNull(
                 toolkit.getTool("calculator_multiply"), "calculator_multiply should be accessible");
 
-        // Step 6: Trigger PreReasoningEvent to inject skill prompt
+        // Step 6: Trigger PreCallEvent to inject skill prompt
         List<Msg> messages = new ArrayList<>();
         messages.add(
                 Msg.builder()
@@ -142,19 +141,20 @@ class SkillRuntimeIntegrationTest {
                         .content(TextBlock.builder().text("Calculate 2 + 3").build())
                         .build());
 
-        PreReasoningEvent preReasoningEvent =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
-        PreReasoningEvent result = skillHook.onEvent(preReasoningEvent).block();
+        PreCallEvent preCallEvent = new PreCallEvent(testAgent, messages);
+        PreCallEvent result = skillHook.onEvent(preCallEvent).block();
 
-        // Step 7: Verify skill prompt was injected
-        assertNotNull(result, "PreReasoningEvent should be processed");
+        // Step 7: Verify skill prompt was injected into systemMsg
+        assertNotNull(result, "PreCallEvent should be processed");
         assertEquals(
-                2, result.getInputMessages().size(), "Should add skill prompt to input messages");
+                1,
+                result.getInputMessages().size(),
+                "inputMessages should not gain a SYSTEM entry");
+        assertNotNull(result.getSystemMessage(), "systemMsg should be set by SkillHook");
         assertEquals(
                 MsgRole.SYSTEM,
-                result.getInputMessages().get(0).getRole(),
-                "Skill prompt should be SYSTEM message");
+                result.getSystemMessage().getRole(),
+                "systemMsg should be SYSTEM role");
 
         // Step 8: Verify skill and tool group remain active
         assertTrue(skillBox.isSkillActive(skillId), "Skill should remain active");

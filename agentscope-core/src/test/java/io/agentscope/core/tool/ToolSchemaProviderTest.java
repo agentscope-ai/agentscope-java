@@ -100,6 +100,50 @@ class ToolSchemaProviderTest {
         assertEquals("test_tool", schema.getName());
         assertEquals("Test tool", schema.getDescription());
         assertNotNull(schema.getParameters());
+        assertEquals(null, schema.getOutputSchema());
+    }
+
+    @Test
+    void testGetToolSchemasIncludesOutputSchemaWhenProvided() {
+        AgentTool tool =
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "schema_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Schema-aware tool";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Map<String, Object> getOutputSchema() {
+                        return Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of("result", Map.of("type", "string")));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam input) {
+                        return Mono.just(ToolResultBlock.text("ok"));
+                    }
+                };
+        RegisteredToolFunction registered = new RegisteredToolFunction(tool, null, null);
+        registry.registerTool("schema_tool", tool, registered);
+
+        List<ToolSchema> schemas = schemaProvider.getToolSchemas();
+
+        assertEquals(1, schemas.size());
+        assertNotNull(schemas.get(0).getOutputSchema());
+        assertEquals("object", schemas.get(0).getOutputSchema().get("type"));
     }
 
     @Test
@@ -223,5 +267,43 @@ class ToolSchemaProviderTest {
         assertTrue(toolNames.contains("tool1"));
         assertTrue(toolNames.contains("tool2"));
         assertTrue(toolNames.contains("tool3"));
+    }
+
+    @Test
+    void testGetToolSchemasPreserveStrictFromAgentTool() {
+        AgentTool strictTool =
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "strict_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Strict tool";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object");
+                    }
+
+                    @Override
+                    public Boolean getStrict() {
+                        return true;
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam input) {
+                        return Mono.just(ToolResultBlock.text("ok"));
+                    }
+                };
+
+        RegisteredToolFunction registered = new RegisteredToolFunction(strictTool, null, null);
+        registry.registerTool("strict_tool", strictTool, registered);
+
+        List<ToolSchema> schemas = schemaProvider.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertEquals(Boolean.TRUE, schemas.get(0).getStrict());
     }
 }
