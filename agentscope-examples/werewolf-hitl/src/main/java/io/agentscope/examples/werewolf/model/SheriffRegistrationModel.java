@@ -15,18 +15,10 @@
  */
 package io.agentscope.examples.werewolf.model;
 
-import com.fasterxml.jackson.annotation.JsonPropertyDescription;
-
-/** Structured output model for voting phase. */
-public class VoteModel {
-    @JsonPropertyDescription("目标玩家")
-    public String targetPlayer;
-
-    @JsonPropertyDescription("投票理由")
-    public String reason;
-
-    @JsonPropertyDescription("悍跳狼人候选人姓名（仅第一夜使用）")
-    public String jumpCandidateName; // 悍跳狼人候选人姓名（仅第一夜使用）
-
-    public VoteModel() {}
+/**
+ * Model for sheriff registration decision.
+ */
+public class SheriffRegistrationModel {
+    public Boolean registerForSheriff; // Whether to register for sheriff election
+    public String reason; // Reason for registering or not
 }

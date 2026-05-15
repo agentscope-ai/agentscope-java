@@ -23,6 +23,7 @@ import io.agentscope.examples.werewolf.entity.Player;
 import io.agentscope.examples.werewolf.entity.Role;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 import org.springframework.context.MessageSource;
 
 public class MessageSourcePromptProvider implements PromptProvider {
@@ -52,45 +53,65 @@ public class MessageSourcePromptProvider implements PromptProvider {
     }
 
     @Override
-    public String getSystemPrompt(Role role, String playerName) {
-        String key = "prompt.role." + role.name().toLowerCase();
-        return msg(key, playerName);
+    public String getSystemPrompt(Role role, String[] args, String partiner) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append(msg("prompt.role", args)).append("\n");
+        if (partiner != null && !partiner.isEmpty()) {
+            prompt.append(msg("prompt.partiner", partiner)).append("\n");
+        }
+        prompt.append(msg("prompt.info_source")).append("\n");
+        prompt.append(msg("prompt.history_guide")).append("\n");
+        prompt.append(msg("prompt.important_tip")).append("\n");
+
+        return prompt.toString();
     }
 
     @Override
-    public Msg createWerewolfDiscussionPrompt(GameState state) {
-        List<Player> aliveNonWerewolves =
-                state.getAlivePlayers().stream().filter(p -> p.getRole() != Role.WEREWOLF).toList();
-
+    public Msg createWerewolfDiscussionPrompt(GameState state, Integer round) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append(msg("prompt.werewolf.discussion.header"));
-        for (Player p : aliveNonWerewolves) {
-            prompt.append("  - ").append(p.getName()).append("\n");
+        String alivePlayers =
+                state.getAlivePlayers().stream()
+                        .map(Player::getName)
+                        .collect(Collectors.joining(", "));
+        prompt.append(msg("prompt.werewolf.discussion", alivePlayers));
+
+        if (round.equals(1)) {
+            prompt.append(msg("prompt.werewolf.first.night.tips"));
         }
-        prompt.append(msg("prompt.werewolf.discussion.footer"));
 
         return buildMsg(prompt.toString());
     }
 
     @Override
     public Msg createWerewolfVotingPrompt(GameState state) {
-        List<Player> aliveNonWerewolves =
-                state.getAlivePlayers().stream().filter(p -> p.getRole() != Role.WEREWOLF).toList();
+        List<Player> targetPlayers;
+
+        // First night: werewolves can target anyone (including themselves for self-kill strategy)
+        // Later nights: only non-werewolves
+        if (state.getCurrentRound() == 1) {
+            targetPlayers = state.getAlivePlayers();
+        } else {
+            targetPlayers =
+                    state.getAlivePlayers().stream()
+                            .filter(p -> p.getRole() != Role.WEREWOLF)
+                            .toList();
+        }
 
         StringBuilder prompt = new StringBuilder();
-        prompt.append(msg("prompt.werewolf.voting.header"));
-        for (Player p : aliveNonWerewolves) {
-            prompt.append("  - ").append(p.getName()).append("\n");
-        }
+        prompt.append(msg("prompt.night.header", state.getCurrentRound()));
+        String targetPlayersText =
+                targetPlayers.stream().map(Player::getName).collect(Collectors.joining(", "));
+        prompt.append(msg("prompt.werewolf.voting.header", targetPlayersText));
         prompt.append(msg("prompt.werewolf.voting.footer"));
-
         return buildMsg(prompt.toString());
     }
 
     @Override
-    public Msg createWitchHealPrompt(Player victim) {
-        String prompt = msg("prompt.witch.heal", victim.getName(), victim.getName());
-        return buildMsg(prompt);
+    public Msg createWitchHealPrompt(Player victim, GameState state) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append(msg("prompt.night.header", state.getCurrentRound()));
+        prompt.append(msg("prompt.witch.heal", victim.getName(), victim.getName()));
+        return buildMsg(prompt.toString());
     }
 
     @Override
@@ -98,15 +119,13 @@ public class MessageSourcePromptProvider implements PromptProvider {
         List<Player> alivePlayers = state.getAlivePlayers();
 
         StringBuilder prompt = new StringBuilder();
+        prompt.append(msg("prompt.night.header", state.getCurrentRound()));
         if (usedHeal) {
             prompt.append(msg("prompt.witch.poison.header.healed"));
         }
-        prompt.append(msg("prompt.witch.poison.header"));
-        for (Player p : alivePlayers) {
-            if (p.getRole() != Role.WITCH) {
-                prompt.append("  - ").append(p.getName()).append("\n");
-            }
-        }
+        String alivePlayersText =
+                alivePlayers.stream().map(Player::getName).collect(Collectors.joining(", "));
+        prompt.append(msg("prompt.witch.poison.header", alivePlayersText));
         prompt.append(msg("prompt.witch.poison.footer"));
 
         return buildMsg(prompt.toString());
@@ -117,12 +136,13 @@ public class MessageSourcePromptProvider implements PromptProvider {
         List<Player> alivePlayers = state.getAlivePlayers();
 
         StringBuilder prompt = new StringBuilder();
-        prompt.append(msg("prompt.seer.check.header"));
-        for (Player p : alivePlayers) {
-            if (p.getRole() != Role.SEER) {
-                prompt.append("  - ").append(p.getName()).append("\n");
-            }
-        }
+        prompt.append(msg("prompt.night.header", state.getCurrentRound()));
+        String alivePlayersText =
+                alivePlayers.stream()
+                        .filter(p -> p.getRole() != Role.SEER)
+                        .map(Player::getName)
+                        .collect(Collectors.joining(", "));
+        prompt.append(msg("prompt.seer.check.header", alivePlayersText));
 
         return buildMsg(prompt.toString());
     }
@@ -146,17 +166,19 @@ public class MessageSourcePromptProvider implements PromptProvider {
         Player poisonVictim = state.getLastPoisonedVictim();
         boolean wasResurrected = state.isLastVictimResurrected();
 
+        // Only announce deaths, not witch actions
         if (nightVictim == null && poisonVictim == null) {
             announcement.append(msg("prompt.night.result.peaceful"));
         } else if (wasResurrected && poisonVictim == null) {
-            announcement.append(msg("prompt.night.result.peaceful.healed"));
+            // Healed by witch, but don't reveal this info - just say peaceful night
+            announcement.append(msg("prompt.night.result.peaceful"));
         } else {
             announcement.append(msg("prompt.night.result.deaths"));
             if (!wasResurrected && nightVictim != null) {
-                announcement.append(msg("prompt.night.result.killed", nightVictim.getName()));
+                announcement.append("  - ").append(nightVictim.getName()).append("\n");
             }
             if (poisonVictim != null) {
-                announcement.append(msg("prompt.night.result.poisoned", poisonVictim.getName()));
+                announcement.append("  - ").append(poisonVictim.getName()).append("\n");
             }
         }
 
@@ -169,8 +191,8 @@ public class MessageSourcePromptProvider implements PromptProvider {
     }
 
     @Override
-    public Msg createDiscussionPrompt(GameState state, int round) {
-        String prompt = msg("prompt.discussion.header", round);
+    public Msg createDiscussionPrompt(GameState state, String discussionOrders) {
+        String prompt = msg("prompt.discussion.header", discussionOrders);
         return buildMsg(prompt);
     }
 
@@ -201,6 +223,71 @@ public class MessageSourcePromptProvider implements PromptProvider {
         }
         prompt.append(msg("prompt.hunter.footer"));
 
+        return buildMsg(prompt.toString());
+    }
+
+    @Override
+    public Msg createSheriffElectionStartPrompt(GameState state, List<Player> candidates) {
+        StringBuilder prompt = new StringBuilder(msg("prompt.sheriff.election.start"));
+        prompt.append(",上警的玩家有")
+                .append(candidates.stream().map(Player::getName).collect(Collectors.joining(",")))
+                .append("。");
+        prompt.append("发言顺序从");
+        prompt.append(candidates.stream().map(Player::getName).collect(Collectors.joining("->")));
+        return buildMsg(prompt.toString());
+    }
+
+    @Override
+    public Msg createSheriffRegistrationPrompt(GameState state) {
+        String prompt = msg("prompt.sheriff.register");
+        return buildMsg(prompt);
+    }
+
+    @Override
+    public Msg createSheriffCampaignPrompt(GameState state, Player candidate) {
+        String prompt;
+        prompt = msg("prompt.sheriff.campaign", candidate.getName());
+        return buildMsg(prompt);
+    }
+
+    @Override
+    public Msg createSheriffVotingPrompt(GameState state, List<Player> candidates) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append(msg("prompt.sheriff.voting.header"));
+        for (Player c : candidates) {
+            prompt.append("  - ").append(c.getName()).append("\n");
+        }
+        prompt.append(msg("prompt.sheriff.voting.footer"));
+        return buildMsg(prompt.toString());
+    }
+
+    @Override
+    public Msg createSpeakOrderPrompt(Player sheriff) {
+        String prompt = msg("prompt.sheriff.speak.order", sheriff.getName());
+        return buildMsg(prompt);
+    }
+
+    @Override
+    public Msg createSpeakOrderFromPositionPrompt(GameState state, Player newSheriff) {
+        String prompt = msg("prompt.sheriff.speak.order.from.position", newSheriff.getName());
+        return buildMsg(prompt);
+    }
+
+    @Override
+    public Msg createSheriffTransferPrompt(GameState state, Player sheriff) {
+        List<Player> alivePlayers = state.getAlivePlayers();
+        StringBuilder prompt = new StringBuilder();
+        if (sheriff.getRole() == Role.SEER) {
+            prompt.append(msg("prompt.sheriff.transfer.seer", sheriff.getName()));
+        } else {
+            prompt.append(msg("prompt.sheriff.transfer.default", sheriff.getName()));
+        }
+        for (Player p : alivePlayers) {
+            if (!p.equals(sheriff)) {
+                prompt.append("  - ").append(p.getName()).append("\n");
+            }
+        }
+        prompt.append(msg("prompt.sheriff.transfer.footer"));
         return buildMsg(prompt.toString());
     }
 }

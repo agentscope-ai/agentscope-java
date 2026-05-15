@@ -19,22 +19,23 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.examples.werewolf.entity.GameState;
 import io.agentscope.examples.werewolf.entity.Player;
 import io.agentscope.examples.werewolf.entity.Role;
+import java.util.List;
 
 /**
  * Interface for providing game prompts in different languages.
  *
- * <p>This interface defines all prompts that will be sent to agents during the game,
- * including system prompts for role initialization and various phase-specific prompts.
+ * <p>This interface defines all prompts that will be sent to agents during the game, including
+ * system prompts for role initialization and various phase-specific prompts.
  */
 public interface PromptProvider {
 
-    String getSystemPrompt(Role role, String playerName);
+    String getSystemPrompt(Role role, String[] args, String partner);
 
-    Msg createWerewolfDiscussionPrompt(GameState state);
+    Msg createWerewolfDiscussionPrompt(GameState state, Integer round);
 
     Msg createWerewolfVotingPrompt(GameState state);
 
-    Msg createWitchHealPrompt(Player victim);
+    Msg createWitchHealPrompt(Player victim, GameState state);
 
     Msg createWitchPoisonPrompt(GameState state, boolean usedHeal);
 
@@ -44,9 +45,24 @@ public interface PromptProvider {
 
     String createNightResultAnnouncement(GameState state);
 
-    Msg createDiscussionPrompt(GameState state, int round);
+    Msg createDiscussionPrompt(GameState state, String discussionOrders);
 
     Msg createVotingPrompt(GameState state);
 
     Msg createHunterShootPrompt(GameState state, Player hunter);
+
+    Msg createSheriffElectionStartPrompt(GameState state, List<Player> candidates);
+
+    // Sheriff election related prompts
+    Msg createSheriffRegistrationPrompt(GameState state);
+
+    Msg createSheriffCampaignPrompt(GameState state, Player candidate);
+
+    Msg createSheriffVotingPrompt(GameState state, List<Player> candidates);
+
+    Msg createSpeakOrderPrompt(Player sheriff);
+
+    Msg createSpeakOrderFromPositionPrompt(GameState state, Player newSheriff);
+
+    Msg createSheriffTransferPrompt(GameState state, Player sheriff);
 }

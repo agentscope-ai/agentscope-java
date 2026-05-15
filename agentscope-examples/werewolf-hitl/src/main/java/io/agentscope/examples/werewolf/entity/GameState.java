@@ -19,9 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * Represents the current state of the Werewolf game.
- */
+/** Represents the current state of the Werewolf game. */
 public class GameState {
     private final List<Player> allPlayers;
     private final List<Player> seers;
@@ -33,9 +31,17 @@ public class GameState {
     private Player lastPoisonedVictim;
     private boolean lastVictimResurrected;
 
+    // First night jump candidate (悍跳候选人)
+    private Player jumpCandidate; // 第一夜狼人投票选出的悍跳候选人
+
+    // Sheriff election state
+    private Player sheriff; // 当前警长
+    private boolean speakOrderReversed; // 发言顺序是否逆序（警长决定）
+    private boolean sheriffKilledInNight; // 警长是否在夜间被杀（用于天亮后移交警徽）
+
     /**
-     * Constructs a new GameState instance with the provided players.
-     * Special role players (seer, witch, hunter) are detected from the list.
+     * Constructs a new GameState instance with the provided players. Special role players (seer,
+     * witch, hunter) are detected from the list.
      *
      * @param allPlayers the list of all players participating in the game
      */
@@ -47,6 +53,11 @@ public class GameState {
         this.seers = findPlayersByRole(Role.SEER);
         this.witches = findPlayersByRole(Role.WITCH);
         this.hunters = findPlayersByRole(Role.HUNTER);
+
+        // Initialize sheriff state
+        this.sheriff = null;
+        this.speakOrderReversed = false;
+        this.sheriffKilledInNight = false;
     }
 
     private List<Player> findPlayersByRole(Role role) {
@@ -184,10 +195,53 @@ public class GameState {
         return lastVictimResurrected;
     }
 
+    /**
+     * Returns the current sheriff.
+     *
+     * @return the sheriff player, or null if none
+     */
+    public Player getSheriff() {
+        return sheriff;
+    }
+
+    /**
+     * Indicates whether the speaking order is reversed.
+     *
+     * @return true if speaking order is reversed; false otherwise
+     */
+    public boolean isSpeakOrderReversed() {
+        return speakOrderReversed;
+    }
+
+    /**
+     * Indicates whether the sheriff was killed during the night.
+     *
+     * @return true if sheriff was killed at night; false otherwise
+     */
+    public boolean isSheriffKilledInNight() {
+        return sheriffKilledInNight;
+    }
+
+    /**
+     * Returns the jump candidate selected by werewolves on the first night.
+     *
+     * @return the jump candidate player, or null if none
+     */
+    public Player getJumpCandidate() {
+        return jumpCandidate;
+    }
+
     // State modifiers
     /**
-     * Increments the round counter by one to start a new round.
+     * Sets the jump candidate selected by werewolves on the first night.
+     *
+     * @param jumpCandidate the werewolf player selected to jump as seer
      */
+    public void setJumpCandidate(Player jumpCandidate) {
+        this.jumpCandidate = jumpCandidate;
+    }
+
+    /** Increments the round counter by one to start a new round. */
     public void nextRound() {
         this.currentRound++;
     }
@@ -220,8 +274,8 @@ public class GameState {
     }
 
     /**
-     * Clears last night results, including the werewolf victim, poisoned victim,
-     * and resurrection flag, preparing for the next night.
+     * Clears last night results, including the werewolf victim, poisoned victim, and resurrection
+     * flag, preparing for the next night.
      */
     public void clearNightResults() {
         this.lastNightVictim = null;
@@ -229,23 +283,74 @@ public class GameState {
         this.lastVictimResurrected = false;
     }
 
+    /**
+     * Sets the sheriff.
+     *
+     * @param sheriff the new sheriff player
+     */
+    public void setSheriff(Player sheriff) {
+        // Remove sheriff status from previous sheriff
+        if (this.sheriff != null) {
+            this.sheriff.setSheriff(false);
+        }
+        this.sheriff = sheriff;
+        if (sheriff != null) {
+            sheriff.setSheriff(true);
+        }
+    }
+
+    /**
+     * Sets whether the speaking order is reversed.
+     *
+     * @param reversed true for reversed order; false for normal order
+     */
+    public void setSpeakOrderReversed(boolean reversed) {
+        this.speakOrderReversed = reversed;
+    }
+
+    /**
+     * Sets whether the sheriff was killed during the night.
+     *
+     * @param killed true if sheriff was killed at night; false otherwise
+     */
+    public void setSheriffKilledInNight(boolean killed) {
+        this.sheriffKilledInNight = killed;
+    }
+
     // Winning condition checks
     /**
-     * Checks if werewolves meet the win condition.
-     * Werewolves win if they are alive and their count is greater than or equal to
-     * the number of alive villager-camp players.
+     * Checks if werewolves meet the win condition. Werewolves win if: 1. All villagers (ordinary
+     * villagers) are dead, OR 2. All god roles (seer, witch, hunter) are dead
      *
      * @return true if werewolves win; false otherwise
      */
     public boolean checkWerewolvesWin() {
         int aliveWerewolves = getAliveWerewolves().size();
-        int aliveVillagers = getAliveVillagers().size();
-        return aliveWerewolves > 0 && aliveWerewolves >= aliveVillagers;
+        if (aliveWerewolves == 0) {
+            return false;
+        }
+
+        // Check if all ordinary villagers are dead
+        boolean allVillagersDead =
+                getAlivePlayers().stream().noneMatch(p -> p.getRole() == Role.VILLAGER);
+
+        // Check if all god roles are dead
+        boolean allGodsDead =
+                getAlivePlayers().stream()
+                                .filter(
+                                        p ->
+                                                p.getRole() == Role.SEER
+                                                        || p.getRole() == Role.WITCH
+                                                        || p.getRole() == Role.HUNTER)
+                                .count()
+                        == 0;
+
+        return allVillagersDead || allGodsDead;
     }
 
     /**
-     * Checks if villagers meet the win condition.
-     * Villagers win when all werewolves have been eliminated.
+     * Checks if villagers meet the win condition. Villagers win when all werewolves have been
+     * eliminated.
      *
      * @return true if villagers win; false otherwise
      */

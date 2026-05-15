@@ -17,9 +17,7 @@ package io.agentscope.examples.werewolf.entity;
 
 import io.agentscope.core.agent.AgentBase;
 
-/**
- * Represents a player in the Werewolf game.
- */
+/** Represents a player in the Werewolf game. */
 public class Player {
     private final AgentBase agent;
     private final String name;
@@ -30,6 +28,11 @@ public class Player {
     // Role-specific state
     private boolean witchHasHealPotion;
     private boolean witchHasPoisonPotion;
+
+    // Sheriff election related state
+    private boolean registeredForSheriff; // 是否上警竞选警长
+    private boolean isSheriff; // 是否是警长
+    private String nextCheckTarget; // 预言家下一个要验证的玩家（用于警徽传递信息）
 
     private Player(Builder builder) {
         this.agent = builder.agent;
@@ -43,6 +46,9 @@ public class Player {
             this.witchHasHealPotion = true;
             this.witchHasPoisonPotion = true;
         }
+        this.registeredForSheriff = false;
+        this.isSheriff = false;
+        this.nextCheckTarget = null;
     }
 
     public static Builder builder() {
@@ -78,6 +84,18 @@ public class Player {
         return witchHasPoisonPotion;
     }
 
+    public boolean isRegisteredForSheriff() {
+        return registeredForSheriff;
+    }
+
+    public boolean isSheriff() {
+        return isSheriff;
+    }
+
+    public String getNextCheckTarget() {
+        return nextCheckTarget;
+    }
+
     // State modifiers
     public void kill() {
         this.isAlive = false;
@@ -93,6 +111,18 @@ public class Player {
 
     public void usePoisonPotion() {
         this.witchHasPoisonPotion = false;
+    }
+
+    public void registerForSheriff() {
+        this.registeredForSheriff = true;
+    }
+
+    public void setSheriff(boolean sheriff) {
+        this.isSheriff = sheriff;
+    }
+
+    public void setNextCheckTarget(String targetName) {
+        this.nextCheckTarget = targetName;
     }
 
     @Override

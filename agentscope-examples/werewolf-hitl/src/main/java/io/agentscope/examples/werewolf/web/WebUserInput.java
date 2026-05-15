@@ -28,8 +28,7 @@ import reactor.core.publisher.Sinks;
  * Web-based user input implementation for the Werewolf game.
  *
  * <p>This class bridges the gap between the UserAgent and the web frontend, allowing human players
- * to provide input through the browser interface. It works in conjunction with GameEventEmitter
- * to:
+ * to provide input through the browser interface. It works in conjunction with GameEventEmitter to:
  *
  * <ol>
  *   <li>Emit WAIT_USER_INPUT events to prompt the human player
@@ -49,6 +48,11 @@ public class WebUserInput implements UserInputBase {
     public static final String INPUT_WITCH_POISON = "WITCH_POISON";
     public static final String INPUT_SEER_CHECK = "SEER_CHECK";
     public static final String INPUT_HUNTER_SHOOT = "HUNTER_SHOOT";
+    public static final String INPUT_SHERIFF_REGISTER = "SHERIFF_REGISTER";
+    public static final String INPUT_SHERIFF_CAMPAIGN = "SHERIFF_CAMPAIGN";
+    public static final String INPUT_SHERIFF_VOTE = "SHERIFF_VOTE";
+    public static final String INPUT_SPEAK_ORDER = "SPEAK_ORDER";
+    public static final String INPUT_SHERIFF_TRANSFER = "SHERIFF_TRANSFER";
 
     /**
      * Create a new WebUserInput.
@@ -166,9 +170,7 @@ public class WebUserInput implements UserInputBase {
         return key.split("_")[0];
     }
 
-    /**
-     * Cancel all pending inputs.
-     */
+    /** Cancel all pending inputs. */
     public void cancelAllPending() {
         pendingInputs.values().forEach(sink -> sink.tryEmitValue(""));
         pendingInputs.clear();

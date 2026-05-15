@@ -15,9 +15,7 @@
  */
 package io.agentscope.examples.werewolf.web;
 
-/**
- * Event types for the Werewolf game web interface.
- */
+/** Event types for the Werewolf game web interface. */
 public enum GameEventType {
     /** Game initialization with player info. */
     GAME_INIT,
@@ -60,6 +58,36 @@ public enum GameEventType {
 
     /** User input received confirmation. */
     USER_INPUT_RECEIVED,
+
+    /** Sheriff election: player registers for sheriff campaign. */
+    SHERIFF_REGISTRATION,
+
+    /** Sheriff election: candidates announcement with raise hand icon. */
+    SHERIFF_CANDIDATES_ANNOUNCED,
+
+    /** Sheriff election: candidate campaign speech. */
+    SHERIFF_CAMPAIGN,
+
+    /** Sheriff election: voting for sheriff. */
+    SHERIFF_VOTE,
+
+    /** Sheriff elected announcement. */
+    SHERIFF_ELECTED,
+
+    /** Sheriff transfers badge. */
+    SHERIFF_TRANSFER,
+
+    /** Night action result popup for werewolf kill. */
+    NIGHT_ACTION_WEREWOLF_KILL,
+
+    /** Night action result popup for witch heal. */
+    NIGHT_ACTION_WITCH_HEAL,
+
+    /** Night action result popup for witch poison. */
+    NIGHT_ACTION_WITCH_POISON,
+
+    /** Night action result popup for seer check. */
+    NIGHT_ACTION_SEER_CHECK,
 
     /** Audio chunk for TTS (text-to-speech). */
     AUDIO_CHUNK

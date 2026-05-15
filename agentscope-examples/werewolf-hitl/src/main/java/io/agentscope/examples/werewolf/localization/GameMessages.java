@@ -20,8 +20,8 @@ import io.agentscope.examples.werewolf.entity.Role;
 /**
  * Interface for providing UI messages in different languages.
  *
- * <p>This interface defines all user-facing messages displayed during the game,
- * including titles, status messages, and announcements.
+ * <p>This interface defines all user-facing messages displayed during the game, including titles,
+ * status messages, and announcements.
  */
 public interface GameMessages {
 
@@ -204,4 +204,39 @@ public interface GameMessages {
     String getPromptDayVote();
 
     String getPromptHunterShoot();
+
+    // Sheriff election related messages
+    String getSystemSheriffElectionStart();
+
+    String getSystemNoCandidates();
+
+    String getSystemCampaignStart();
+
+    String getSystemSheriffVotingStart();
+
+    String getSystemSheriffTransferStart();
+
+    String getSystemSpeakOrderDecision(String sheriffName, String order);
+
+    String getPromptSheriffRegister();
+
+    String getPromptSheriffCampaign(String playerName);
+
+    String getPromptSheriffVote();
+
+    String getPromptSpeakOrder();
+
+    String getPromptSpeakOrderFromPosition(String playerName);
+
+    String getPromptSheriffTransfer();
+
+    String getErrorSheriffRegistration(String error);
+
+    String getErrorSheriffCampaign(String error);
+
+    String getErrorSheriffVote(String error);
+
+    String getErrorSpeakOrder(String error);
+
+    String getErrorSheriffTransfer(String error);
 }
