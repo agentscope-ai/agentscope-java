@@ -245,18 +245,20 @@ class SubAgentToolTest {
     }
 
     @Test
-    @DisplayName("Should forward events when forwardEvents is true and emitter is provided")
+    @DisplayName("Should forward events with preserved block types and metadata")
     void testEventForwardingEnabled() {
         // Create mock agent that supports streaming
         Agent mockAgent = mock(Agent.class);
         when(mockAgent.getName()).thenReturn("StreamAgent");
+        when(mockAgent.getAgentId()).thenReturn("stream-agent-123");
         when(mockAgent.getDescription()).thenReturn("Streaming agent");
 
-        Msg responseMsg =
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Thinking...").build())
-                        .build();
+        Map<String, Object> mockArgs = new HashMap<>();
+        mockArgs.put("param", "value");
+        ToolUseBlock originalToolBlock =
+                ToolUseBlock.builder().id("call-123").name("nested_tool").input(mockArgs).build();
+
+        Msg responseMsg = Msg.builder().role(MsgRole.ASSISTANT).content(originalToolBlock).build();
 
         // Mock stream() to return events
         Event reasoningEvent = new Event(EventType.REASONING, responseMsg, true);
@@ -290,8 +292,90 @@ class SubAgentToolTest {
         // Verify stream() was called (not call())
         verify(mockAgent).stream(any(List.class), any(StreamOptions.class));
         verify(mockAgent, never()).call(any(List.class));
-        // Verify events were forwarded
+
+        // Verify events were forwarded and structure is preserved
         assertFalse(emittedChunks.isEmpty());
+        ToolResultBlock emittedResult = emittedChunks.get(0);
+
+        assertNotNull(emittedResult.getOutput());
+        assertEquals(1, emittedResult.getOutput().size());
+        assertTrue(
+                emittedResult.getOutput().get(0) instanceof ToolUseBlock,
+                "The forwarded block should preserve its original specific type (ToolUseBlock)");
+
+        ToolUseBlock forwardedBlock = (ToolUseBlock) emittedResult.getOutput().get(0);
+        assertEquals("call-123", forwardedBlock.getId());
+        assertEquals("nested_tool", forwardedBlock.getName());
+
+        // Verify metadata was populated correctly instead of JSON serialization
+        Map<String, Object> metadata = emittedResult.getMetadata();
+        assertNotNull(metadata);
+        assertEquals("StreamAgent", metadata.get("subagent_name"));
+        assertEquals("stream-agent-123", metadata.get("subagent_id"));
+        assertEquals(EventType.REASONING.name(), metadata.get("subagent_event_type"));
+        assertEquals(true, metadata.get("subagent_event_last"));
+        assertTrue(metadata.containsKey("subagent_session_id"));
+    }
+
+    @Test
+    @DisplayName("Should forward event with default text block when content is empty")
+    void testEventForwardingWithEmptyContent() {
+        Agent mockAgent = mock(Agent.class);
+        when(mockAgent.getName()).thenReturn("EmptyEventAgent");
+        when(mockAgent.getDescription()).thenReturn("Agent that yields empty events");
+
+        // Create a message with NO content (null or empty list)
+        Msg emptyResponseMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        // Intentionally not setting content
+                        .build();
+
+        Event stateEvent = new Event(EventType.REASONING, emptyResponseMsg, false);
+
+        Msg finalMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Done").build())
+                        .build();
+        Event endEvent = new Event(EventType.SUMMARY, finalMsg, true);
+
+        when(mockAgent.stream(any(List.class), any(StreamOptions.class)))
+                .thenReturn(Flux.just(stateEvent, endEvent));
+
+        SubAgentConfig config = SubAgentConfig.builder().forwardEvents(true).build();
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        List<ToolResultBlock> emittedChunks = new ArrayList<>();
+        ToolEmitter testEmitter = emittedChunks::add;
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Trigger");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_emptyeventagent").input(input).build();
+
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(input)
+                                .emitter(testEmitter)
+                                .build())
+                .block();
+
+        // We expect 2 chunks emitted
+        assertEquals(2, emittedChunks.size());
+
+        // Verify the first chunk (the empty one)
+        ToolResultBlock emptyChunk = emittedChunks.get(0);
+        assertNotNull(emptyChunk.getOutput());
+        assertEquals(1, emptyChunk.getOutput().size(), "Should insert a default empty block");
+        assertTrue(emptyChunk.getOutput().get(0) instanceof TextBlock);
+        assertEquals(
+                "",
+                ((TextBlock) emptyChunk.getOutput().get(0)).getText(),
+                "Default block should contain empty string");
+        assertEquals(
+                EventType.REASONING.name(), emptyChunk.getMetadata().get("subagent_event_type"));
     }
 
     @Test
