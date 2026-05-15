@@ -280,6 +280,30 @@ System.out.println("Received elicit request: " + request.message());
 
 ## 管理 MCP 客户端
 
+### 协议版本配置
+
+默认情况下，MCP 客户端仅支持协议版本 `2024-11-05`。如果 MCP 服务器在初始化时返回不同的协议版本（例如 `2025-03-26`），连接将失败并报错 "Unsupported protocol version"。
+
+使用 `protocolVersions()` 声明支持的协议版本：
+
+```java
+// 支持多个协议版本
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .stdioTransport("python", "server.py")
+        .protocolVersions("2024-11-05", "2025-03-26")
+        .buildAsync()
+        .block();
+
+// 适用于任何传输类型
+McpClientWrapper sseClient = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .protocolVersions("2024-11-05", "2025-03-26", "2025-06-18")
+        .buildAsync()
+        .block();
+```
+
+> **注意**：当连接使用较新协议版本的第三方 MCP 服务器时，此功能非常有用。MCP 规范将协议版本协商定义为客户端-服务器握手过程，服务器可能返回与客户端请求不同的版本。
+
 ### 列出 MCP 服务器的工具
 
 ```java
