@@ -39,7 +39,7 @@ In Harness, **the filesystem serves three distinct but often confused roles**:
 
 ## Class Hierarchy and `ShellExecuteTool` Registration
 
-```mermaid
+```{mermaid}
 classDiagram
     class AbstractFilesystem {
         <<interface>>

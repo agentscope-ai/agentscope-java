@@ -44,8 +44,8 @@ workspace/                           ← 默认 .agentscope/workspace
 
 `WorkspaceManager` 是无状态访问器，所有读写都遵循同一规约：
 
-```mermaid
-flowchart LR
+```{mermaid}
+graph LR
     Caller[Hook / Tool] -->|read| WM[WorkspaceManager]
     WM -->|read 优先| FS[AbstractFilesystem<br/>多租户 namespace 透明]
     FS -- 命中非空 --> WM

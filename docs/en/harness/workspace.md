@@ -44,8 +44,8 @@ workspace/                           ← default: .agentscope/workspace
 
 `WorkspaceManager` is a stateless accessor; all reads and writes follow the same contract:
 
-```mermaid
-flowchart LR
+```{mermaid}
+graph LR
     Caller[Hook / Tool] -->|read| WM[WorkspaceManager]
     WM -->|read first| FS[AbstractFilesystem<br/>multi-tenant namespace transparent]
     FS -- hit non-empty --> WM

@@ -18,8 +18,8 @@
 
 ### 双层记忆模型
 
-```mermaid
-flowchart LR
+```{mermaid}
+graph LR
     Conv[对话 messages] -->|超阈值| Compactor[ConversationCompactor]
     Compactor -->|offload| Sess[sessions/&lt;id&gt;.log.jsonl]
     Compactor -->|flushMemories| Flush[MemoryFlushManager]

@@ -18,8 +18,8 @@ Enable the agent to "remember facts across sessions" while preventing conversati
 
 ### Two-Layer Memory Model
 
-```mermaid
-flowchart LR
+```{mermaid}
+graph LR
     Conv[conversation messages] -->|over threshold| Compactor[ConversationCompactor]
     Compactor -->|offload| Sess[sessions/&lt;id&gt;.log.jsonl]
     Compactor -->|flushMemories| Flush[MemoryFlushManager]

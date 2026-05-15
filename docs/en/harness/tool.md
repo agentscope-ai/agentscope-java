@@ -6,8 +6,8 @@ The Harness layer provides a default set of built-in tools sufficient to complet
 
 ## Registration Path
 
-```mermaid
-flowchart LR
+```{mermaid}
+graph LR
     Build[HarnessAgent.build] --> R1[FilesystemTool]
     Build --> R2[MemorySearchTool]
     Build --> R3[MemoryGetTool]

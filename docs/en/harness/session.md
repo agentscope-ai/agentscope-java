@@ -22,8 +22,8 @@ The two are **parallel, independent paths**.
 
 ### Dual-Track Storage Layout
 
-```mermaid
-flowchart LR
+```{mermaid}
+graph LR
     Call[agent.call] --> Hook[SessionPersistenceHook]
     Hook -->|saveTo / loadIfExists| WS[(WorkspaceSession<br/>StateModule snapshot)]
     Call --> Compact[CompactionHook / MemoryFlushHook]
