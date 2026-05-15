@@ -29,7 +29,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *
  * <p>Events emitted by the top-level (parent) agent have {@code source == null}.
  *
- * <h1>Field meanings</h1>
+ * <h2>Field meanings</h2>
  *
  * <table border="1">
  *   <caption>EventSource fields</caption>
@@ -60,14 +60,14 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *       {@code "/"} to recover the hierarchy.</td></tr>
  * </table>
  *
- * <h1>Path convention</h1>
+ * <h2>Path convention</h2>
  *
  * <p>The {@code path} field is a slash-separated string like {@code "main/researcher"} or
  * {@code "main/planner/sub-executor"}. The root segment is the parent agent's session ID
  * (or {@code "main"} as fallback); each subsequent segment is the {@code agentId} of the
  * subagent at that depth. Consumers can split on {@code "/"} to reconstruct the call hierarchy.
  *
- * <h1>Extension points (not yet implemented)</h1>
+ * <h2>Extension points (not yet implemented)</h2>
  *
  * <ul>
  *   <li><b>Async task streaming:</b> Populate {@code taskId} when the subagent runs as an
@@ -83,7 +83,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *       providing a LangGraph v2 streaming-style experience in the UI.</li>
  * </ul>
  *
- * <h1>Example</h1>
+ * <h2>Example</h2>
  *
  * <pre>{@code
  * EventSource src = EventSource.builder()
