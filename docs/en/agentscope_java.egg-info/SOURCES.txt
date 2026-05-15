@@ -1,7 +1,0 @@
-pyproject.toml
-setup.py
-en/agentscope_java.egg-info/PKG-INFO
-en/agentscope_java.egg-info/SOURCES.txt
-en/agentscope_java.egg-info/dependency_links.txt
-en/agentscope_java.egg-info/requires.txt
-en/agentscope_java.egg-info/top_level.txt

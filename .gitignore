@@ -41,6 +41,7 @@ build/
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
 
 ### Docs
 docs/_build
