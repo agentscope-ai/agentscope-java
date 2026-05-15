@@ -34,6 +34,8 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.Session;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
@@ -630,20 +632,25 @@ class HarnessAgentTest {
     // =========================================================================
 
     @Test
-    void toolsAllowlist_narrowsChildToolkit() throws Exception {
+    void toolsAllowlist_filtersInheritedParentTools_only() throws Exception {
         Files.createDirectories(workspace);
+
+        Toolkit parentToolkit = new Toolkit();
+        parentToolkit.registerAgentTool(mockAgentTool("parent_allowed"));
+        parentToolkit.registerAgentTool(mockAgentTool("parent_denied"));
 
         SubagentDeclaration decl =
                 SubagentDeclaration.builder()
                         .name("narrow")
                         .description("narrowed toolkit")
                         .inlineAgentsBody("Only read files.")
-                        .tools(List.of("read_file"))
+                        .tools(List.of("parent_allowed"))
                         .build();
 
         List<SubagentEntry> entries =
                 HarnessAgent.builder()
                         .model(stubModel("ok"))
+                        .toolkit(parentToolkit)
                         .workspace(workspace)
                         .subagent(decl)
                         .buildSubagentEntries(workspace);
@@ -660,9 +667,17 @@ class HarnessAgentTest {
                 child.getDelegate().getToolkit().getToolSchemas().stream()
                         .map(ToolSchema::getName)
                         .toList();
-        assertTrue(toolNames.contains("read_file"), "allowed tool should remain");
-        assertFalse(toolNames.contains("list_files"), "non-allowlisted tool should be removed");
-        assertFalse(toolNames.contains("memory_search"), "non-allowlisted tool should be removed");
+        assertTrue(
+                toolNames.contains("parent_allowed"), "allowlisted inherited tool should remain");
+        assertFalse(
+                toolNames.contains("parent_denied"),
+                "non-allowlisted inherited tool should be removed");
+        assertTrue(
+                toolNames.contains("read_file"),
+                "child-local filesystem tools should not be filtered by inherited allowlist");
+        assertTrue(
+                toolNames.contains("memory_search"),
+                "child-local memory tools should not be filtered by inherited allowlist");
     }
 
     // =========================================================================
@@ -731,5 +746,13 @@ class HarnessAgentTest {
                         "stop");
         when(model.stream(anyList(), any(), any())).thenReturn(Flux.just(chunk));
         return model;
+    }
+
+    private static AgentTool mockAgentTool(String name) {
+        AgentTool tool = mock(AgentTool.class);
+        when(tool.getName()).thenReturn(name);
+        when(tool.getDescription()).thenReturn("mock tool " + name);
+        when(tool.getParameters()).thenReturn(Map.of("type", "object", "properties", Map.of()));
+        return tool;
     }
 }

@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -63,7 +64,12 @@ class WorkspaceTaskRepositoryTest {
     @BeforeEach
     void setUp() {
         workspaceManager = new WorkspaceManager(tempDir);
-        repo = new WorkspaceTaskRepository(workspaceManager, "test-agent");
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent");
+    }
+
+    @AfterEach
+    void tearDown() {
+        repo.shutdown();
     }
 
     // ------------------------------------------------------------------
@@ -547,7 +553,6 @@ class WorkspaceTaskRepositoryTest {
         String session = "sess-sweep-live";
         String taskId = "task-live";
 
-        CountDownLatch running = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         repo.putTask(
                 taskId,
@@ -555,16 +560,24 @@ class WorkspaceTaskRepositoryTest {
                 session,
                 new TaskRunSpec.LocalTaskRunSpec(
                         () -> {
-                            running.countDown();
                             try {
-                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                                release.await();
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
                             }
                             return "live";
                         }));
 
-        running.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        awaitCondition(
+                () ->
+                        workspaceManager
+                                .readTaskRecord("test-agent", session, taskId)
+                                .map(r -> r.getStatus() == TaskStatus.RUNNING)
+                                .orElse(false));
+
+        BackgroundTask live = repo.getTask(session, taskId);
+        assertNotNull(live, "Live task handle must exist before sweep");
+        assertTrue(!live.isCompleted(), "Task must still be running before sweep");
 
         // orphanTimeout=ZERO, recentWindow=1 day: everything would qualify, but the live
         // future should still protect this task.
@@ -579,6 +592,7 @@ class WorkspaceTaskRepositoryTest {
                 "Live task with local future must not be swept");
 
         release.countDown();
+        awaitCondition(() -> live.isCompleted());
     }
 
     @Test
@@ -737,6 +751,128 @@ class WorkspaceTaskRepositoryTest {
         assertTrue(
                 result.stream().noneMatch(r -> "task-old".equals(r.getTaskId())),
                 "Old task file should be skipped by recentWindow filter");
+    }
+
+    // ------------------------------------------------------------------
+    //  Terminal-status immutability (updateStatus guards)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "CANCELLED status is never overwritten by COMPLETED when task finishes after cancel")
+    void cancelledStatus_notOverwrittenByCompleted() throws Exception {
+        String session = "sess-guard-completed";
+        String taskId = "task-guard-completed";
+
+        // Latch keeps the task body blocked until we explicitly release it, giving us a
+        // deterministic window to cancel before the task finishes.
+        CountDownLatch taskRunning = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+
+        repo.putTask(
+                taskId,
+                "agent-guard",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            taskRunning.countDown();
+                            try {
+                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "done";
+                        }));
+
+        // Wait until the task is confirmed RUNNING in the workspace
+        taskRunning.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        awaitCondition(
+                () ->
+                        workspaceManager
+                                .readTaskRecord("test-agent", session, taskId)
+                                .map(r -> r.getStatus() == TaskStatus.RUNNING)
+                                .orElse(false));
+
+        // Cancel while the task is still blocked
+        repo.cancelTask(session, taskId);
+
+        // Verify CANCELLED is persisted before we release the worker
+        awaitCondition(
+                () ->
+                        workspaceManager
+                                .readTaskRecord("test-agent", session, taskId)
+                                .map(r -> r.getStatus() == TaskStatus.CANCELLED)
+                                .orElse(false));
+
+        // Let the worker finish — it would normally try to write COMPLETED
+        release.countDown();
+
+        // Give the async thread a moment to attempt the overwrite, then assert
+        Thread.sleep(200);
+
+        Optional<TaskRecord> record =
+                workspaceManager.readTaskRecord("test-agent", session, taskId);
+        assertTrue(record.isPresent());
+        assertEquals(
+                TaskStatus.CANCELLED,
+                record.get().getStatus(),
+                "CANCELLED must not be overwritten by the subsequent COMPLETED write");
+    }
+
+    @Test
+    @DisplayName("heartbeat does not overwrite CANCELLED status with RUNNING")
+    void heartbeat_doesNotOverwriteCancelledWithRunning() throws Exception {
+        String session = "sess-hb-cancel";
+        String taskId = "task-hb-cancel";
+
+        CountDownLatch taskRunning = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+
+        repo.putTask(
+                taskId,
+                "agent-hb-cancel",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            taskRunning.countDown();
+                            try {
+                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return "cancelled";
+                        }));
+
+        taskRunning.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        awaitCondition(
+                () ->
+                        workspaceManager
+                                .readTaskRecord("test-agent", session, taskId)
+                                .map(r -> r.getStatus() == TaskStatus.RUNNING)
+                                .orElse(false));
+
+        // Cancel the task — writes CANCELLED + cancelRequested=true to workspace
+        repo.cancelTask(session, taskId);
+
+        awaitCondition(
+                () ->
+                        workspaceManager
+                                .readTaskRecord("test-agent", session, taskId)
+                                .map(r -> r.getStatus() == TaskStatus.CANCELLED)
+                                .orElse(false));
+
+        // Simulate a heartbeat tick while the local future is still considered "not completed"
+        repo.heartbeat();
+
+        Optional<TaskRecord> record =
+                workspaceManager.readTaskRecord("test-agent", session, taskId);
+        assertTrue(record.isPresent());
+        assertEquals(
+                TaskStatus.CANCELLED,
+                record.get().getStatus(),
+                "heartbeat must not overwrite CANCELLED with RUNNING");
+
+        release.countDown();
     }
 
     // ------------------------------------------------------------------

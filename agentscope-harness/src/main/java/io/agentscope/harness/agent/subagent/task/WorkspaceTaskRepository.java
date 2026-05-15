@@ -24,12 +24,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -115,45 +115,77 @@ public class WorkspaceTaskRepository implements TaskRepository {
                             t.setName("ws-task-" + t.getId());
                             return t;
                         }),
+                true,
                 true);
     }
 
     public WorkspaceTaskRepository(
             WorkspaceManager workspaceManager, String parentAgentId, ExecutorService executor) {
-        this(workspaceManager, parentAgentId, executor, false);
+        this(workspaceManager, parentAgentId, executor, false, true);
+    }
+
+    /**
+     * Test-only factory without background heartbeat or orphan sweeper threads.
+     *
+     * <p>Unit tests invoke {@link #heartbeat()} and {@link #sweepOrphanedTasks} directly; leaving
+     * the maintenance scheduler enabled causes flaky races on slow CI hosts (notably Windows).
+     */
+    static WorkspaceTaskRepository forTests(
+            WorkspaceManager workspaceManager, String parentAgentId) {
+        return forTests(
+                workspaceManager,
+                parentAgentId,
+                Executors.newCachedThreadPool(
+                        r -> {
+                            Thread t = new Thread(r, "ws-task-test");
+                            t.setDaemon(true);
+                            return t;
+                        }));
+    }
+
+    static WorkspaceTaskRepository forTests(
+            WorkspaceManager workspaceManager, String parentAgentId, ExecutorService executor) {
+        return new WorkspaceTaskRepository(workspaceManager, parentAgentId, executor, false, false);
     }
 
     private WorkspaceTaskRepository(
             WorkspaceManager workspaceManager,
             String parentAgentId,
             ExecutorService executor,
-            boolean ownsExecutor) {
+            boolean ownsExecutor,
+            boolean enableMaintenance) {
         this.workspaceManager = workspaceManager;
         this.parentAgentId = parentAgentId != null ? parentAgentId : "HarnessAgent";
         this.executor = executor;
         this.ownsExecutor = ownsExecutor;
         this.protocolClient = new AgentProtocolTaskClient();
-        this.maintenanceScheduler =
-                Executors.newSingleThreadScheduledExecutor(
-                        r -> {
-                            Thread t = new Thread(r);
-                            t.setDaemon(true);
-                            t.setName("ws-task-maint-" + t.getId());
-                            return t;
-                        });
-        maintenanceScheduler.scheduleAtFixedRate(
-                this::heartbeat,
-                HEARTBEAT_INTERVAL_SECONDS,
-                HEARTBEAT_INTERVAL_SECONDS,
-                TimeUnit.SECONDS);
-        // Random jitter on the first sweep [0, SWEEP_INTERVAL_MINUTES) to spread load when
-        // multiple nodes start simultaneously.
-        long sweepJitterSeconds = new Random().nextLong(SWEEP_INTERVAL_MINUTES * 60L);
-        maintenanceScheduler.scheduleAtFixedRate(
-                this::sweepOrphanedTasksDefault,
-                sweepJitterSeconds,
-                SWEEP_INTERVAL_MINUTES * 60L,
-                TimeUnit.SECONDS);
+        if (enableMaintenance) {
+            ScheduledExecutorService scheduler =
+                    Executors.newSingleThreadScheduledExecutor(
+                            r -> {
+                                Thread t = new Thread(r);
+                                t.setDaemon(true);
+                                t.setName("ws-task-maint-" + t.getId());
+                                return t;
+                            });
+            scheduler.scheduleAtFixedRate(
+                    this::heartbeat,
+                    HEARTBEAT_INTERVAL_SECONDS,
+                    HEARTBEAT_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS);
+            // Jitter the first sweep in [0, SWEEP_INTERVAL_MINUTES) to spread load when multiple
+            // nodes start simultaneously.
+            long sweepJitterSeconds =
+                    ThreadLocalRandom.current().nextLong(SWEEP_INTERVAL_MINUTES * 60L);
+            scheduler.scheduleAtFixedRate(
+                    this::sweepOrphanedTasksDefault,
+                    sweepJitterSeconds,
+                    SWEEP_INTERVAL_MINUTES * 60L,
+                    TimeUnit.SECONDS);
+            this.maintenanceScheduler = scheduler;
+        } else {
+            this.maintenanceScheduler = null;
+        }
     }
 
     @Override
@@ -381,14 +413,16 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
     /** Shuts down the maintenance scheduler and (if owned) the task executor. */
     public void shutdown() {
-        maintenanceScheduler.shutdown();
-        try {
-            if (!maintenanceScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+        if (maintenanceScheduler != null) {
+            maintenanceScheduler.shutdown();
+            try {
+                if (!maintenanceScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    maintenanceScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
                 maintenanceScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
             }
-        } catch (InterruptedException e) {
-            maintenanceScheduler.shutdownNow();
-            Thread.currentThread().interrupt();
         }
         if (ownsExecutor && executor != null) {
             executor.shutdown();
@@ -502,8 +536,9 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 }
                 String sid = record.getParentSessionId();
                 String tid = record.getTaskId();
-                // Skip if this node has a live future — its heartbeat is active
-                if (localTasks.containsKey(localKey(sid, tid))) {
+                // Skip if this node still has an active local future — heartbeat is live.
+                BackgroundTask local = localTasks.get(localKey(sid, tid));
+                if (local != null && !local.isCompleted()) {
                     continue;
                 }
                 long staleSecs = Duration.between(lastUpdated, Instant.now()).getSeconds();
@@ -546,6 +581,21 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String sessionId, String taskId, TaskStatus status, String result, String error) {
         Optional<TaskRecord> existing =
                 workspaceManager.readTaskRecord(parentAgentId, sessionId, taskId);
+        // Guard 1: terminal states are immutable — never overwrite COMPLETED, FAILED, or CANCELLED
+        // with any other status. This prevents a late COMPLETED/FAILED write from a still-running
+        // thread from clobbering a CANCELLED status set concurrently by cancelTask().
+        if (existing.isPresent()
+                && existing.get().getStatus() != null
+                && existing.get().getStatus().isTerminal()) {
+            return;
+        }
+        // Guard 2: if cancellation has been requested but the workspace record has not yet reached
+        // a terminal state (e.g. heartbeat races cancelTask()), refuse to persist non-terminal
+        // updates. This stops the heartbeat from writing RUNNING back over a record whose
+        // cancelRequested flag was just set by cancelTask().
+        if (!status.isTerminal() && existing.isPresent() && existing.get().isCancelRequested()) {
+            return;
+        }
         TaskRecord record =
                 existing.orElseGet(
                         () -> {

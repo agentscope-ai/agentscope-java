@@ -41,9 +41,9 @@ import java.util.Map;
  *
  * <p>Workspace resolution follows the five-row decision table in {@link WorkspaceMode}.
  *
- * <p>The {@code tools} list, when non-empty, acts as an <em>allowlist filter</em>: only tools
- * whose names appear in the list are kept on the subagent's toolkit. It cannot add tools that the
- * parent agent does not have.
+ * <p>The {@code tools} list, when non-empty, acts as an <em>allowlist filter</em> for inherited
+ * parent tools: only inherited tools whose names appear in the list are kept. Child-local tool
+ * registrations may still be added by the child builder.
  *
  * <p>Obtain instances via {@link #builder()}.
  *
@@ -143,8 +143,8 @@ public final class SubagentDeclaration {
     }
 
     /**
-     * Optional tool allowlist. When non-empty, only the listed tool names remain on the subagent's
-     * toolkit. Empty means inherit all tools from the parent configuration.
+     * Optional tool allowlist. When non-empty, only inherited parent tools whose names are listed
+     * remain on the subagent's inherited toolkit. Empty means inherit all parent tools.
      */
     public List<String> getTools() {
         return tools;
@@ -262,8 +262,8 @@ public final class SubagentDeclaration {
         }
 
         /**
-         * Tool allowlist: when non-empty, only the listed tool names are kept on the subagent's
-         * toolkit. Cannot grant tools that the parent does not have.
+         * Tool allowlist: when non-empty, only inherited parent tools with listed names are kept.
+         * Child-local tool registrations are unaffected.
          */
         public Builder tools(List<String> tools) {
             this.tools = tools;

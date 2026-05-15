@@ -1640,6 +1640,8 @@ public class HarnessAgent implements Agent, StateModule {
         private SubagentFactory buildGeneralPurposeFactory(
                 Path workspace, SandboxBackedFilesystem sandboxFs) {
             final Model capturedModel = this.model;
+            final Toolkit capturedParentToolkit =
+                    this.toolkit != null ? this.toolkit.copy() : new Toolkit();
             final AbstractFilesystem capturedBackend =
                     sandboxFs != null ? sandboxFs : this.abstractFilesystem;
             final int capturedMaxIters = this.maxIters;
@@ -1671,6 +1673,7 @@ public class HarnessAgent implements Agent, StateModule {
                                 .description("General-purpose subagent for isolated task execution")
                                 .sysPrompt(buildSubagentSysPrompt(null))
                                 .model(capturedModel)
+                                .toolkit(capturedParentToolkit.copy())
                                 .workspace(workspace)
                                 .asLeafSubagent()
                                 .maxIters(capturedMaxIters)
@@ -1710,12 +1713,14 @@ public class HarnessAgent implements Agent, StateModule {
          * {@link WorkspaceMode}. When the mode is {@link WorkspaceMode#SHARED}, the parent's
          * filesystem backend is reused; when {@link WorkspaceMode#ISOLATED}, a fresh
          * {@link io.agentscope.harness.agent.filesystem.local.LocalFilesystem} is created on the
-         * resolved workspace path. The tools allowlist (if non-empty) is applied after the toolkit
-         * is assembled.
+         * resolved workspace path. The tools allowlist (if non-empty) filters inherited parent
+         * tools before child-local tools are registered.
          */
         private SubagentFactory buildDeclaredFactory(
                 SubagentDeclaration decl, Path mainWorkspace, SandboxBackedFilesystem sandboxFs) {
             final Model capturedModel = this.model;
+            final Toolkit capturedParentToolkit =
+                    this.toolkit != null ? this.toolkit.copy() : new Toolkit();
             final Function<String, Model> capturedResolver = this.modelResolver;
             final AbstractFilesystem capturedSharedBackend =
                     sandboxFs != null ? sandboxFs : this.abstractFilesystem;
@@ -1747,6 +1752,9 @@ public class HarnessAgent implements Agent, StateModule {
                                 .name(decl.getName())
                                 .description(decl.getDescription())
                                 .model(effectiveModel)
+                                .toolkit(
+                                        allowlistedInheritedToolkit(
+                                                capturedParentToolkit, decl.getTools()))
                                 .workspace(runtimeWorkspace)
                                 .maxIters(decl.getMaxIters())
                                 .asLeafSubagent()
@@ -1769,19 +1777,26 @@ public class HarnessAgent implements Agent, StateModule {
                 if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
                 if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
 
-                // Apply tools allowlist: retain only the requested tool names.
-                if (!decl.getTools().isEmpty()) {
-                    sub.toolkit(new Toolkit());
-                }
-
-                HarnessAgent child = sub.build();
-
-                if (!decl.getTools().isEmpty()) {
-                    applyToolsAllowlist(child, decl.getTools());
-                }
-
-                return child;
+                return sub.build();
             };
+        }
+
+        /**
+         * Returns a defensive copy of inherited parent tools filtered by the optional allowlist.
+         */
+        private static Toolkit allowlistedInheritedToolkit(
+                Toolkit parentToolkit, List<String> allowlist) {
+            Toolkit toolkit = parentToolkit != null ? parentToolkit.copy() : new Toolkit();
+            if (allowlist == null || allowlist.isEmpty()) {
+                return toolkit;
+            }
+            List<String> toRemove =
+                    toolkit.getToolSchemas().stream()
+                            .map(ToolSchema::getName)
+                            .filter(name -> !allowlist.contains(name))
+                            .toList();
+            toRemove.forEach(toolkit::removeTool);
+            return toolkit;
         }
 
         /**
@@ -1879,20 +1894,6 @@ public class HarnessAgent implements Agent, StateModule {
                 }
             }
             return parentModel;
-        }
-
-        /**
-         * Applies a tool allowlist to an already-built {@link HarnessAgent} by removing any tools
-         * whose names are not in the allowlist.
-         */
-        private static void applyToolsAllowlist(HarnessAgent agent, List<String> allowlist) {
-            Toolkit toolkit = agent.getDelegate().getToolkit();
-            List<String> toRemove =
-                    toolkit.getToolSchemas().stream()
-                            .map(ToolSchema::getName)
-                            .filter(name -> !allowlist.contains(name))
-                            .toList();
-            toRemove.forEach(toolkit::removeTool);
         }
 
         // -----------------------------------------------------------------

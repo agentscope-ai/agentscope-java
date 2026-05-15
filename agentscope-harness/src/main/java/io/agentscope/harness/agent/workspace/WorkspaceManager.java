@@ -336,7 +336,17 @@ public class WorkspaceManager {
         ReentrantLock lock = taskFileLocks.computeIfAbsent(rel, k -> new ReentrantLock());
         lock.lock();
         try {
-            Map<String, TaskRecord> map = readTaskMap(rel); // already holding lock
+            Map<String, TaskRecord> map;
+            try {
+                map = readTaskMap(rel); // already holding lock
+            } catch (IOException e) {
+                // Never overwrite a malformed store with partial data from a failed parse.
+                log.error(
+                        "Failed to parse task record store {}, aborting write to avoid data loss.",
+                        rel,
+                        e);
+                return;
+            }
             record.touch();
             map.put(record.getTaskId(), record);
             persistTaskMap(rel, map);
@@ -518,24 +528,28 @@ public class WorkspaceManager {
         ReentrantLock lock = taskFileLocks.computeIfAbsent(rel, k -> new ReentrantLock());
         lock.lock();
         try {
-            return readTaskMap(rel);
+            try {
+                return readTaskMap(rel);
+            } catch (IOException e) {
+                // Surface corruption loudly, but do not mutate or reinitialize the backing file.
+                log.error(
+                        "Failed to parse task record store {}, returning empty in-memory view.",
+                        rel,
+                        e);
+                return Collections.emptyMap();
+            }
         } finally {
             lock.unlock();
         }
     }
 
-    private Map<String, TaskRecord> readTaskMap(String rel) {
+    private Map<String, TaskRecord> readTaskMap(String rel) throws IOException {
         String json = readWritableWorkspaceRelativeUtf8(rel);
         if (json == null || json.isBlank()) {
             return new LinkedHashMap<>();
         }
-        try {
-            Map<String, TaskRecord> map = TASK_RECORD_JSON.readValue(json, TASK_MAP_TYPE);
-            return map != null ? new LinkedHashMap<>(map) : new LinkedHashMap<>();
-        } catch (IOException e) {
-            log.warn("Corrupt task record store {}, reinitializing: {}", rel, e.getMessage());
-            return new LinkedHashMap<>();
-        }
+        Map<String, TaskRecord> map = TASK_RECORD_JSON.readValue(json, TASK_MAP_TYPE);
+        return map != null ? new LinkedHashMap<>(map) : new LinkedHashMap<>();
     }
 
     private void persistTaskMap(String rel, Map<String, TaskRecord> map) {
