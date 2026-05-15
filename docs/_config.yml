@@ -108,6 +108,7 @@ sphinx:
       - "_static"
     html_css_files:
       - custom.css
+      - homepage.css
     use_multitoc_numbering: false
     html_js_files:
       - tabs.js
