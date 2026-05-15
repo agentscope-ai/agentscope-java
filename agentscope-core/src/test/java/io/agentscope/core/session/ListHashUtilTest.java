@@ -56,6 +56,17 @@ class ListHashUtilTest {
     }
 
     @Test
+    void testComputeHashEquivalentMsgListsSameHash() {
+        List<Msg> list1 = createStableMsgList(5);
+        List<Msg> list2 = createStableMsgList(5);
+
+        String hash1 = ListHashUtil.computeHash(list1);
+        String hash2 = ListHashUtil.computeHash(list2);
+
+        assertEquals(hash1, hash2);
+    }
+
+    @Test
     void testComputeHashListModifiedDifferentHash() {
         List<Msg> list = createMsgList(5);
 
@@ -201,6 +212,21 @@ class ListHashUtilTest {
                     Msg.builder()
                             .role(MsgRole.USER)
                             .content(TextBlock.builder().text("message " + i).build())
+                            .build());
+        }
+        return list;
+    }
+
+    private List<Msg> createStableMsgList(int size) {
+        List<Msg> list = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            list.add(
+                    Msg.builder()
+                            .id("msg-" + i)
+                            .name("user")
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("message " + i).build())
+                            .timestamp("2026-01-01 00:00:0" + i + ".000")
                             .build());
         }
         return list;
