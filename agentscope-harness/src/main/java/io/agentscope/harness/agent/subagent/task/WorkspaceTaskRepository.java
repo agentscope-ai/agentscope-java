@@ -132,15 +132,16 @@ public class WorkspaceTaskRepository implements TaskRepository {
      */
     static WorkspaceTaskRepository forTests(
             WorkspaceManager workspaceManager, String parentAgentId) {
-        return forTests(
-                workspaceManager,
-                parentAgentId,
+        ExecutorService testExecutor =
                 Executors.newCachedThreadPool(
                         r -> {
                             Thread t = new Thread(r, "ws-task-test");
                             t.setDaemon(true);
                             return t;
-                        }));
+                        });
+        // Test helper creates its own executor, so repository must own and shut it down.
+        return new WorkspaceTaskRepository(
+                workspaceManager, parentAgentId, testExecutor, true, false);
     }
 
     static WorkspaceTaskRepository forTests(
