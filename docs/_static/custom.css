@@ -586,6 +586,59 @@ html.docs-site-notice-dismissed .docs-site-notice {
   padding-block: 0.15rem;
 }
 
+/* Homepage header: keep utilities on one row on desktop widths */
+body.agentscope-home .docs-site-header__inner {
+  flex-wrap: nowrap;
+  column-gap: clamp(1rem, 2.6vw, 2rem);
+}
+
+body.agentscope-home .docs-site-header__start {
+  column-gap: clamp(0.9rem, 2.3vw, 1.8rem);
+}
+
+body.agentscope-home .docs-site-header__nav-shell {
+  padding-left: clamp(0.75rem, 1.9vw, 1.5rem);
+  margin-left: clamp(0.2rem, 0.8vw, 0.6rem);
+}
+
+body.agentscope-home .docs-site-header__actions {
+  flex-wrap: nowrap;
+  gap: 0.6rem;
+  padding-left: clamp(0.6rem, 1.5vw, 1.1rem);
+  margin-left: clamp(0.3rem, 0.9vw, 0.8rem);
+}
+
+body.agentscope-home .docs-header-search {
+  flex: 0 1 11.5rem;
+  max-width: 11.5rem;
+}
+
+body.agentscope-home .docs-site-header .language-button {
+  min-width: 4.6rem;
+  padding: 0.4rem 0.55rem;
+}
+
+body.agentscope-home .docs-top-tabs__list {
+  gap: 0.3rem 0.7rem;
+}
+
+body.agentscope-home .docs-top-tabs__link {
+  padding: 0.48rem 0.82rem;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 960px) {
+  body.agentscope-home .docs-site-header__inner,
+  body.agentscope-home .docs-site-header__actions {
+    flex-wrap: wrap;
+  }
+
+  body.agentscope-home .docs-header-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
 .docs-top-tabs__list {
   display: flex;
   gap: 0.75rem;
