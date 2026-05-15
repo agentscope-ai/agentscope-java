@@ -37,6 +37,11 @@ build/
 .flattened-pom.xml
 **/dependency-reduced-pom.xml
 
+### Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 ### Docs
 docs/_build
 .venv/
