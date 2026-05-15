@@ -107,10 +107,11 @@ public class PendingToolRecoveryHook implements Hook {
             return Mono.just(event);
         }
 
-        boolean userProvidedMatchingResults = inputMessages.stream()
-                .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
-                .map(ToolResultBlock::getId)
-                .anyMatch(pendingIds::contains);
+        boolean userProvidedMatchingResults =
+                inputMessages.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .map(ToolResultBlock::getId)
+                        .anyMatch(pendingIds::contains);
         if (userProvidedMatchingResults) {
             return Mono.just(event);
         }
