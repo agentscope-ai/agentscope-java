@@ -571,6 +571,8 @@ class OpenAIChatModelTest {
                         .build();
 
         assertNotNull(model);
+    }
+
     @Test
     @DisplayName("Should enable parallel tool calls when set parallel_tool_calls to true")
     void testEnableParallelToolCalls() throws Exception {

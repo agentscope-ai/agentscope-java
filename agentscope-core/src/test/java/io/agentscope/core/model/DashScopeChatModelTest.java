@@ -1025,6 +1025,8 @@ class DashScopeChatModelTest {
                         .build();
 
         assertNotNull(model);
+    }
+
     @Test
     @DisplayName("Should enable web_extractor tool when set search_strategy to agent_max")
     void testEnableWebExtractorTool() throws Exception {
