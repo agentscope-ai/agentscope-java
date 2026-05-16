@@ -33,6 +33,7 @@
 
     <modules>
         <module>quickstart</module>
+        <module>mcp-native-example</module>
         <module>advanced</module>
         <module>micronaut</module>
         <module>quarkus</module>
