@@ -65,7 +65,7 @@ public class ToolResultBlockConverter implements BlockEventConverter<ToolResultB
                         ctx.getThreadId(),
                         ctx.getRunId(),
                         toolCallId,
-                        result != null ? result : "",
+                        result,
                         "tool",
                         event.getMessage().getId()));
 

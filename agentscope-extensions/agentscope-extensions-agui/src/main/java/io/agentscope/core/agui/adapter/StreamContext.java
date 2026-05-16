@@ -105,7 +105,7 @@ public class StreamContext {
      * @param event The AG-UI event to emit
      */
     public void emit(AguiEvent event) {
-        this.emittedEvents.add(event);
+        emittedEvents.add(event);
     }
 
     /**
@@ -116,7 +116,7 @@ public class StreamContext {
      * @param endEvent The end event to defer
      */
     public void deferEndEvent(String id, AguiEvent endEvent) {
-        this.deferredEndEvents.put(id, endEvent);
+        deferredEndEvents.put(id, endEvent);
     }
 
     /**
@@ -232,25 +232,25 @@ public class StreamContext {
     }
 
     public void addActiveTool(String id) {
-        this.activeToolIds.add(id);
-        this.lastActiveToolId = id; // Update the fallback ID
+        activeToolIds.add(id);
+        lastActiveToolId = id; // Update the fallback ID
     }
 
     public void removeActiveTool(String id) {
-        this.activeToolIds.remove(id);
+        activeToolIds.remove(id);
         // If the removed ID matches the last recorded fallback ID, reset or step back the pointer
-        if (Objects.equals(this.lastActiveToolId, id)) {
+        if (Objects.equals(lastActiveToolId, id)) {
             if (activeToolIds.isEmpty()) {
-                this.lastActiveToolId = null;
+                lastActiveToolId = null;
             } else {
                 // Retrieve the last inserted element from the LinkedHashSet
                 String[] array = activeToolIds.toArray(new String[0]);
-                this.lastActiveToolId = array[array.length - 1];
+                lastActiveToolId = array[array.length - 1];
             }
         }
     }
 
     public String getLastActiveToolId() {
-        return this.lastActiveToolId;
+        return lastActiveToolId;
     }
 }

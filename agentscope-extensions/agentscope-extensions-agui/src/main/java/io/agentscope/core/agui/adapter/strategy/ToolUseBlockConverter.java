@@ -62,7 +62,7 @@ public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> 
         // Emit tool call args if enabled
         if (ctx.getConfig().isEmitToolCallArgs() && !event.isLast()) {
             String args = block.getContent();
-            if (args != null && !args.isBlank()) {
+            if (args != null && !args.isEmpty()) {
                 ctx.emit(
                         new AguiEvent.ToolCallArgs(
                                 ctx.getThreadId(), ctx.getRunId(), toolCallId, args));

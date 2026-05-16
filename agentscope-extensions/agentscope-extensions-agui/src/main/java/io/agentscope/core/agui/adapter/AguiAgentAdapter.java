@@ -78,8 +78,8 @@ public class AguiAgentAdapter {
      * @param config The adapter configuration
      */
     public AguiAgentAdapter(Agent agent, AguiAdapterConfig config) {
-        this.agent = Objects.requireNonNull(agent);
-        this.config = Objects.requireNonNull(config);
+        this.agent = Objects.requireNonNull(agent, "agent cannot be null");
+        this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
 
         // Register block conversion strategies
@@ -100,15 +100,18 @@ public class AguiAgentAdapter {
      * @return A Flux of AG-UI events
      */
     public Flux<AguiEvent> run(RunAgentInput input) {
-        String threadId = input.getThreadId();
-        String runId = input.getRunId();
-        List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
-        // Create stream options - use incremental mode for true streaming
-        StreamOptions options =
-                StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
-
         return Flux.defer(
                 () -> {
+                    String threadId = input.getThreadId();
+                    String runId = input.getRunId();
+
+                    // Convert AG-UI messages to AgentScope messages
+                    List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
+
+                    // Create stream options - use incremental mode for true streaming
+                    StreamOptions options =
+                            StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
+
                     StreamContext ctx = new StreamContext(threadId, runId, config);
 
                     return Flux.concat(

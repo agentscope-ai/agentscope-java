@@ -39,14 +39,16 @@ public class ThinkingBlockConverter implements BlockEventConverter<ThinkingBlock
         }
 
         String msgId = event.getMessage().getId();
+        // After the id is end, it is rejected to be start again in this flow
         if (ctx.isReasoningFinished(msgId)) {
             return;
         }
 
         String thinking = block.getThinking();
-        if (thinking != null && !thinking.isBlank()) {
+        if (thinking != null && !thinking.isEmpty()) {
             if (!ctx.isReasoningActive(msgId)) {
                 ctx.flushAllActiveReasonings();
+                ctx.flushAllActiveTexts();
 
                 ctx.emit(
                         new AguiEvent.ReasoningMessageStart(

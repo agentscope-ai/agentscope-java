@@ -34,15 +34,16 @@ public class TextBlockConverter implements BlockEventConverter<TextBlock> {
     @Override
     public void convert(TextBlock block, Event event, StreamContext ctx) {
         String msgId = event.getMessage().getId();
+        // After the id is end, it is rejected to be start again in this flow
         if (ctx.isTextFinished(msgId)) {
             return;
         }
 
         String text = block.getText();
-        if (text != null && !text.isBlank()) {
+        if (text != null && !text.isEmpty()) {
             if (!ctx.isTextActive(msgId)) {
                 ctx.flushAllActiveTexts();
-                // When the text is output, it signifies that the "reasoning" has end
+                // When the text start, it signifies that the reasoning should end
                 ctx.flushAllActiveReasonings();
 
                 ctx.emit(
