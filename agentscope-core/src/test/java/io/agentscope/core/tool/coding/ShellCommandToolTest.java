@@ -873,10 +873,17 @@ class ShellCommandToolTest {
         @Test
         @DisplayName("Should handle pre-created large test file without deadlock")
         @EnabledOnOs({OS.LINUX, OS.MAC})
-        void reproduceLargeFileCatDeadlockWithTestResource() {
+        void reproduceLargeFileCatDeadlockWithTestResource() throws Exception {
             // Use the pre-created test resource file (20KB)
+            // Use Paths.get(url.toURI()) instead of url.getPath() to properly decode
+            // URL-encoded characters (e.g. Chinese characters in project path)
             String resourcePath =
-                    getClass().getClassLoader().getResource("large_output_test.txt").getPath();
+                    Paths.get(
+                                    getClass()
+                                            .getClassLoader()
+                                            .getResource("large_output_test.txt")
+                                            .toURI())
+                            .toString();
             String command = "cat " + resourcePath;
 
             // Set a reasonable timeout - should complete quickly with the fix
