@@ -39,9 +39,7 @@ public class ToolResultBlockConverter implements BlockEventConverter<ToolResultB
         String toolCallId =
                 block.getId() != null
                         ? block.getId()
-                        : (ctx.getLastActiveToolId() != null
-                                ? ctx.getLastActiveToolId()
-                                : UUID.randomUUID().toString());
+                        : ctx.resolveAnonymousToolResultId().orElseGet(() -> UUID.randomUUID().toString());
         String result = extractToolResultText(block);
 
         // Closing Start/End Phase

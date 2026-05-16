@@ -23,7 +23,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Context holder for the AG-UI stream pipeline.
@@ -54,8 +56,8 @@ public class StreamContext {
     private final Set<String> finishedTextIds = new HashSet<>();
     private final Set<String> finishedReasoningIds = new HashSet<>();
 
-    // Fallback ID for tool results that might lack an explicit ID
-    private String lastActiveToolId = null;
+    private final Set<String> anonymousToolIds = new LinkedHashSet<>();
+    private final Map<String, String> anonymousToolNames = new LinkedHashMap<>();
 
     /**
      * Initializes a new StreamContext.
@@ -160,8 +162,6 @@ public class StreamContext {
         finishedTextIds.clear();
         finishedReasoningIds.clear();
 
-        lastActiveToolId = null;
-
         return remaining;
     }
 
@@ -233,24 +233,60 @@ public class StreamContext {
 
     public void addActiveTool(String id) {
         activeToolIds.add(id);
-        lastActiveToolId = id; // Update the fallback ID
     }
 
     public void removeActiveTool(String id) {
         activeToolIds.remove(id);
-        // If the removed ID matches the last recorded fallback ID, reset or step back the pointer
-        if (Objects.equals(lastActiveToolId, id)) {
-            if (activeToolIds.isEmpty()) {
-                lastActiveToolId = null;
-            } else {
-                // Retrieve the last inserted element from the LinkedHashSet
-                String[] array = activeToolIds.toArray(new String[0]);
-                lastActiveToolId = array[array.length - 1];
-            }
-        }
+        anonymousToolIds.remove(id);
+        anonymousToolNames.remove(id);
     }
 
-    public String getLastActiveToolId() {
-        return lastActiveToolId;
+    /**
+     * Resolves the tool call ID for a ToolResultBlock that does not provide an explicit ID.
+     *
+     * <p>An anonymous tool result can only be matched safely when there is exactly one active tool
+     * call. If multiple tool calls are active, the result is ambiguous and should not be associated
+     * with any particular tool call by guesswork.
+     *
+     * @return the only active tool call ID, or an empty Optional if the result cannot be matched
+     */
+    public Optional<String> resolveAnonymousToolResultId() {
+        if (activeToolIds.size() == 1) {
+            return Optional.of(activeToolIds.iterator().next());
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Resolves or creates a stable local ID for a ToolUseBlock that does not provide an explicit ID.
+     *
+     * <p>When streaming tool arguments, multiple ToolUseBlock chunks may belong to the same anonymous
+     * tool call. This method reuses an active anonymous tool call with the same normalized tool name
+     * whenever the match is unambiguous. If no matching anonymous tool call exists, a new local ID is
+     * generated and tracked for subsequent chunks.
+     *
+     * @param toolName The tool name from the ToolUseBlock
+     * @return a stable local tool call ID for the anonymous tool use
+     */
+    public String resolveOrCreateAnonymousToolUseId(String toolName) {
+        String normalizedName =
+                toolName != null && !toolName.isBlank() ? toolName : "unknown";
+
+        String matchedId = null;
+        for (String id : anonymousToolIds) {
+            if (activeToolIds.contains(id)
+                    && Objects.equals(anonymousToolNames.get(id), normalizedName)) {
+                matchedId = id;
+            }
+        }
+
+        if (matchedId != null) {
+            return matchedId;
+        }
+
+        String generatedId = UUID.randomUUID().toString();
+        anonymousToolIds.add(generatedId);
+        anonymousToolNames.put(generatedId, normalizedName);
+        return generatedId;
     }
 }

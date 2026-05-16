@@ -34,22 +34,21 @@ public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> 
 
     @Override
     public void convert(ToolUseBlock block, Event event, StreamContext ctx) {
+        String toolName =
+                block.getName() != null && !block.getName().isBlank()
+                        ? block.getName()
+                        : "unknown";
+
         String toolCallId =
                 block.getId() != null
                         ? block.getId()
-                        : (ctx.getLastActiveToolId() != null
-                                ? ctx.getLastActiveToolId()
-                                : UUID.randomUUID().toString());
+                        : ctx.resolveOrCreateAnonymousToolUseId(toolName);
 
         if (!ctx.isToolActive(toolCallId)) {
             // End any active Text/Reasoning message before starting tool call
             ctx.flushAllActiveTexts();
             ctx.flushAllActiveReasonings();
 
-            String toolName =
-                    block.getName() != null && !block.getName().isBlank()
-                            ? block.getName()
-                            : "unknown";
             ctx.emit(
                     new AguiEvent.ToolCallStart(
                             ctx.getThreadId(), ctx.getRunId(), toolCallId, toolName));
