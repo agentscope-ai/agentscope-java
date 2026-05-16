@@ -110,7 +110,10 @@ public class AguiAgentAdapter {
 
                     // Create stream options - use incremental mode for true streaming
                     StreamOptions options =
-                            StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
+                            StreamOptions.builder()
+                                    .eventTypes(EventType.ALL)
+                                    .incremental(true)
+                                    .build();
 
                     StreamContext ctx = new StreamContext(threadId, runId, config);
 

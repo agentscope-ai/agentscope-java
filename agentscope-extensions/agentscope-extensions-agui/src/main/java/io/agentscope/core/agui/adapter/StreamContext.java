@@ -31,12 +31,6 @@ import java.util.Set;
  * to ensure strict adherence to the AG-UI lifecycle protocol.
  */
 public class StreamContext {
-    // Prefixes used to prevent key collisions in the deferred events map,
-    // as different blocks (e.g., Text and Reasoning) may share the same message ID.
-    public static final String PREFIX_TEXT = "text:";
-    public static final String PREFIX_REASONING = "reasoning:";
-    public static final String PREFIX_TOOL = "tool:";
-
     private final String threadId;
     private final String runId;
     private final AguiAdapterConfig config;
@@ -46,6 +40,12 @@ public class StreamContext {
 
     // Deferred event queue for storing pending end events (Key: prefix + id)
     private final Map<String, AguiEvent> deferredEndEvents = new LinkedHashMap<>();
+
+    // Prefixes used to prevent key collisions in the deferred events map,
+    // as different blocks (e.g., Text and Reasoning) may share the same message ID.
+    public static final String PREFIX_TEXT = "text:";
+    public static final String PREFIX_REASONING = "reasoning:";
+    public static final String PREFIX_TOOL = "tool:";
 
     private final Set<String> activeTextIds = new LinkedHashSet<>();
     private final Set<String> activeReasoningIds = new LinkedHashSet<>();
