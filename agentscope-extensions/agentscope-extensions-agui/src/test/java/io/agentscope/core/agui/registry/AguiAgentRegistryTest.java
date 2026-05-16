@@ -24,6 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agui.model.RunAgentInput;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -287,6 +290,203 @@ class AguiAgentRegistryTest {
         void testRegisterNullFactoryThrows() {
             assertThrows(
                     IllegalArgumentException.class, () -> registry.registerFactory("agent", null));
+        }
+    }
+
+    @Nested
+    @DisplayName("Context-Aware Factory Tests")
+    class ContextAwareFactoryTests {
+
+        @Test
+        @DisplayName("Should register and retrieve agent with context-aware factory")
+        void testRegisterAndGetContextAwareFactory() {
+            RunAgentInput input =
+                    RunAgentInput.builder().threadId("test-thread").runId("test-run").build();
+
+            registry.registerFactoryWithInput("context-agent", (inp) -> mock(Agent.class));
+
+            Optional<Agent> result = registry.getAgent("context-agent", input);
+
+            assertTrue(result.isPresent());
+        }
+
+        @Test
+        @DisplayName("Should pass input to context-aware factory")
+        void testContextAwareFactoryReceivesInput() {
+            RunAgentInput input =
+                    RunAgentInput.builder()
+                            .threadId("test-thread-123")
+                            .runId("test-run-456")
+                            .build();
+
+            final String[] capturedThreadId = new String[1];
+            final String[] capturedRunId = new String[1];
+
+            registry.registerFactoryWithInput(
+                    "context-agent",
+                    (inp) -> {
+                        capturedThreadId[0] = inp.getThreadId();
+                        capturedRunId[0] = inp.getRunId();
+                        return mock(Agent.class);
+                    });
+
+            registry.getAgent("context-agent", input);
+
+            assertEquals("test-thread-123", capturedThreadId[0]);
+            assertEquals("test-run-456", capturedRunId[0]);
+        }
+
+        @Test
+        @DisplayName("Should create new instance for each call with context-aware factory")
+        void testContextAwareFactoryReturnsNewInstances() {
+            RunAgentInput input =
+                    RunAgentInput.builder().threadId("test-thread").runId("test-run").build();
+
+            registry.registerFactoryWithInput("context-agent", (inp) -> mock(Agent.class));
+
+            Agent agent1 = registry.getAgent("context-agent", input).orElse(null);
+            Agent agent2 = registry.getAgent("context-agent", input).orElse(null);
+
+            assertNotSame(agent1, agent2);
+        }
+
+        @Test
+        @DisplayName("Should handle forwarded properties in context-aware factory")
+        void testContextAwareFactoryWithForwardedProps() {
+            Map<String, Object> forwardedProps = new HashMap<>();
+            forwardedProps.put("user", "test-user");
+            forwardedProps.put("apiKey", "test-key");
+
+            RunAgentInput input =
+                    RunAgentInput.builder()
+                            .threadId("test-thread")
+                            .runId("test-run")
+                            .forwardedProps(forwardedProps)
+                            .build();
+
+            final String[] capturedUser = new String[1];
+            final String[] capturedApiKey = new String[1];
+
+            registry.registerFactoryWithInput(
+                    "context-agent",
+                    (inp) -> {
+                        capturedUser[0] = (String) inp.getForwardedProp("user");
+                        capturedApiKey[0] = (String) inp.getForwardedProp("apiKey");
+                        return mock(Agent.class);
+                    });
+
+            registry.getAgent("context-agent", input);
+
+            assertEquals("test-user", capturedUser[0]);
+            assertEquals("test-key", capturedApiKey[0]);
+        }
+
+        @Test
+        @DisplayName("Should handle null input gracefully")
+        void testContextAwareFactoryWithNullInput() {
+            registry.registerFactoryWithInput("context-agent", (inp) -> mock(Agent.class));
+
+            Optional<Agent> result = registry.getAgent("context-agent", null);
+
+            assertTrue(result.isPresent());
+        }
+
+        @Test
+        @DisplayName("Context-aware factory should take priority over regular factory")
+        void testContextAwareFactoryTakesPriority() {
+            RunAgentInput input =
+                    RunAgentInput.builder().threadId("test-thread").runId("test-run").build();
+
+            Agent regularAgent = mock(Agent.class);
+            registry.registerFactory("agent", () -> regularAgent);
+            registry.registerFactoryWithInput("agent", (inp) -> mock(Agent.class));
+
+            Agent result = registry.getAgent("agent", input).orElse(null);
+
+            assertNotSame(regularAgent, result);
+        }
+
+        @Test
+        @DisplayName("Should fall back to regular factory when no context factory exists")
+        void testFallbackToRegularFactory() {
+            RunAgentInput input =
+                    RunAgentInput.builder().threadId("test-thread").runId("test-run").build();
+
+            Agent expectedAgent = mock(Agent.class);
+            registry.registerFactory("agent", () -> expectedAgent);
+
+            Agent result = registry.getAgent("agent", input).orElse(null);
+
+            assertSame(expectedAgent, result);
+        }
+
+        @Test
+        @DisplayName("Should track context-aware factory invocation count")
+        void testContextAwareFactoryInvocationCount() {
+            AtomicInteger counter = new AtomicInteger(0);
+            RunAgentInput input =
+                    RunAgentInput.builder().threadId("test-thread").runId("test-run").build();
+
+            registry.registerFactoryWithInput(
+                    "counter-agent",
+                    (inp) -> {
+                        counter.incrementAndGet();
+                        return mock(Agent.class);
+                    });
+
+            registry.getAgent("counter-agent", input);
+            registry.getAgent("counter-agent", input);
+            registry.getAgent("counter-agent", input);
+
+            assertEquals(3, counter.get());
+        }
+
+        @Test
+        @DisplayName("Should unregister context-aware factory")
+        void testUnregisterContextAwareFactory() {
+            registry.registerFactoryWithInput("context-agent", (inp) -> mock(Agent.class));
+
+            assertTrue(registry.unregister("context-agent"));
+            assertFalse(registry.hasAgent("context-agent"));
+        }
+
+        @Test
+        @DisplayName("Should include context-aware factories in size count")
+        void testSizeIncludesContextAwareFactories() {
+            assertEquals(0, registry.size());
+
+            registry.register("agent1", mock(Agent.class));
+            assertEquals(1, registry.size());
+
+            registry.registerFactory("agent2", () -> mock(Agent.class));
+            assertEquals(2, registry.size());
+
+            registry.registerFactoryWithInput("agent3", (inp) -> mock(Agent.class));
+            assertEquals(3, registry.size());
+        }
+
+        @Test
+        @DisplayName("Should throw when registering null context-aware factory")
+        void testRegisterNullContextAwareFactoryThrows() {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> registry.registerFactoryWithInput("agent", null));
+        }
+
+        @Test
+        @DisplayName("Should throw when registering context-aware factory with null ID")
+        void testRegisterContextAwareFactoryNullIdThrows() {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> registry.registerFactoryWithInput(null, (inp) -> mock(Agent.class)));
+        }
+
+        @Test
+        @DisplayName("Should throw when registering context-aware factory with empty ID")
+        void testRegisterContextAwareFactoryEmptyIdThrows() {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> registry.registerFactoryWithInput("", (inp) -> mock(Agent.class)));
         }
     }
 

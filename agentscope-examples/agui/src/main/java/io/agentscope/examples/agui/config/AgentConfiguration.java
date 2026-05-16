@@ -15,14 +15,22 @@
  */
 package io.agentscope.examples.agui.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agui.converter.AguiToolConverter;
+import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.ToolExecutionContext;
+import io.agentscope.core.tool.ToolGroup;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.agui.tools.ExampleTools;
+import io.agentscope.examples.agui.tools.UserContext;
 import io.agentscope.spring.boot.agui.common.AguiAgentRegistryCustomizer;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -54,6 +62,9 @@ public class AgentConfiguration {
 
                     // Example: an agent specialized for calculations
                     registry.registerFactory("calculator", this::createCalculatorAgent);
+
+                    // Example: a factory that creates a new agent instance with context
+                    registry.registerFactoryWithInput("context", this::createAgentWithInput);
                 };
 
         System.out.println("Registered agents with AG-UI registry: default, chat, calculator");
@@ -61,6 +72,7 @@ public class AgentConfiguration {
         System.out.println("  - POST /agui/run (uses default-agent-id from config)");
         System.out.println("  - POST /agui/run/chat (uses 'chat' agent)");
         System.out.println("  - POST /agui/run with X-Agent-Id header");
+        System.out.println("  - POST /agui/run/context with context");
 
         return aguiAgentRegistryCustomizer;
     }
@@ -149,6 +161,56 @@ public class AgentConfiguration {
                 .toolkit(toolkit)
                 .memory(new InMemoryMemory())
                 .maxIters(5)
+                .build();
+    }
+
+    private static final String TOOL_GROUP_NAME = "agui_tools_group";
+
+    private Agent createAgentWithInput(RunAgentInput input) {
+        String apiKey = getRequiredApiKey();
+
+        // Create toolkit with example tools
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new ExampleTools());
+
+        AguiToolConverter toolConverter = new AguiToolConverter();
+        List<ToolSchema> toolSchemas = toolConverter.toToolSchemaList(input.getTools());
+        if (toolkit.getToolGroup(TOOL_GROUP_NAME) == null) {
+            toolkit.createToolGroup(TOOL_GROUP_NAME, "Tools for AG-UI", true);
+        } // 注册到工具组
+        ToolGroup toolGroup = toolkit.getToolGroup(TOOL_GROUP_NAME);
+        toolSchemas.forEach(toolSchema -> toolGroup.addTool(toolSchema.getName()));
+        toolkit.registerSchemas(toolSchemas);
+
+        //        if (!toolSchemas.isEmpty()) {
+        //            toolkit.registerSchemas(toolSchemas);
+        //            for (ToolSchema toolSchema : toolSchemas) {
+        //                toolkit.addToolToGroup(TOOL_GROUP_NAME, toolSchema.getName());
+        //            }
+        //        }
+
+        ObjectMapper om = new ObjectMapper();
+        ToolExecutionContext.Builder builder = ToolExecutionContext.builder();
+        UserContext userContext = om.convertValue(input.getForwardedProps(), UserContext.class);
+        builder.register(userContext);
+
+        // Create the agent
+        return ReActAgent.builder()
+                .name("AG-UI Assistant")
+                .sysPrompt(
+                        "You are a helpful AI assistant exposed via the AG-UI protocol. "
+                                + "You can help users with various tasks including weather queries "
+                                + "and calculations. Be concise and helpful in your responses.")
+                .model(
+                        DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-plus").stream(
+                                        true)
+                                .enableThinking(false)
+                                .formatter(new DashScopeChatFormatter())
+                                .build())
+                .toolkit(toolkit)
+                .toolExecutionContext(builder.build())
+                .memory(new InMemoryMemory())
+                .maxIters(10)
                 .build();
     }
 

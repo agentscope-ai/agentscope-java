@@ -91,7 +91,7 @@ public class AguiRequestProcessor {
         String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
 
         // Resolve agent
-        Agent agent = agentResolver.resolveAgent(agentId, threadId);
+        Agent agent = agentResolver.resolveAgent(agentId, threadId, input);
 
         // Determine effective input based on server-side memory
         RunAgentInput effectiveInput = input;

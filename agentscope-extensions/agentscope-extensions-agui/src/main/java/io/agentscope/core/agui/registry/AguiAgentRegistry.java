@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.registry;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agui.model.RunAgentInput;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -48,6 +49,8 @@ public class AguiAgentRegistry {
 
     private final Map<String, Agent> singletonAgents = new ConcurrentHashMap<>();
     private final Map<String, Supplier<Agent>> agentFactories = new ConcurrentHashMap<>();
+    private final Map<String, InputContextualAgentFactory> inputContextualFactories =
+            new ConcurrentHashMap<>();
 
     /**
      * Register a singleton agent with the given ID.
@@ -87,11 +90,42 @@ public class AguiAgentRegistry {
     }
 
     /**
+     * Register an agent factory with context access for the given ID.
+     *
+     * <p>This factory will receive the {@link RunAgentInput} when creating agent instances,
+     * allowing dynamic configuration based on request parameters such as thread ID,
+     * forwarded properties, or initial state.
+     *
+     * <p>Example:
+     * <pre>{@code
+     *     registry.registerFactoryWithContext("dynamic-agent", (input) -> {
+     *         String apiKey = input.getForwardedProp("apiKey", "default-key");
+     *         return ReActAgent.builder()
+     *             .model(createModel(apiKey))
+     *             .build();
+     *     });
+     * }</pre>
+     *
+     * @param agentId The agent ID
+     * @param factory The factory that creates new agent instances with context
+     */
+    public void registerFactoryWithInput(String agentId, InputContextualAgentFactory factory) {
+        if (agentId == null || agentId.isEmpty()) {
+            throw new IllegalArgumentException("Agent ID cannot be null or empty");
+        }
+        if (factory == null) {
+            throw new IllegalArgumentException("Factory cannot be null");
+        }
+        inputContextualFactories.put(agentId, factory);
+    }
+
+    /**
      * Get an agent by ID.
      *
      * <p>The agent is resolved in the following order:
      * <ol>
-     *   <li>Check for a registered factory and create a new instance</li>
+     *   <li>Check for a registered contextual factory and create a new instance (requires input)</li>
+     *   <li>Check for a regular factory and create a new instance</li>
      *   <li>Return the singleton agent if registered</li>
      * </ol>
      *
@@ -99,7 +133,31 @@ public class AguiAgentRegistry {
      * @return An Optional containing the agent, or empty if not found
      */
     public Optional<Agent> getAgent(String agentId) {
-        // First check for a factory
+        return getAgent(agentId, null);
+    }
+
+    /**
+     * Get an agent by ID with optional request context.
+     *
+     * <p>If a contextual factory is registered and input is provided, it will be used.
+     * Otherwise falls back to regular factory or singleton.
+     *
+     * @param agentId The agent ID
+     * @param input The run agent input (may be null for backward compatibility)
+     * @return An Optional containing the agent, or empty if not found
+     */
+    public Optional<Agent> getAgent(String agentId, RunAgentInput input) {
+        // First check for contextual factory
+        InputContextualAgentFactory contextualFactory = inputContextualFactories.get(agentId);
+        if (contextualFactory != null) {
+            RunAgentInput effectiveInput =
+                    input != null
+                            ? input
+                            : RunAgentInput.builder().threadId("default").runId("default").build();
+            return Optional.of(contextualFactory.create(effectiveInput));
+        }
+
+        // Check for regular factory
         Supplier<Agent> factory = agentFactories.get(agentId);
         if (factory != null) {
             return Optional.of(factory.get());
@@ -116,7 +174,9 @@ public class AguiAgentRegistry {
      * @return true if an agent is registered
      */
     public boolean hasAgent(String agentId) {
-        return agentFactories.containsKey(agentId) || singletonAgents.containsKey(agentId);
+        return inputContextualFactories.containsKey(agentId)
+                || agentFactories.containsKey(agentId)
+                || singletonAgents.containsKey(agentId);
     }
 
     /**
@@ -126,9 +186,10 @@ public class AguiAgentRegistry {
      * @return true if an agent was unregistered
      */
     public boolean unregister(String agentId) {
+        boolean removedContextual = inputContextualFactories.remove(agentId) != null;
         boolean removedFactory = agentFactories.remove(agentId) != null;
         boolean removedSingleton = singletonAgents.remove(agentId) != null;
-        return removedFactory || removedSingleton;
+        return removedContextual || removedFactory || removedSingleton;
     }
 
     /**
@@ -145,6 +206,6 @@ public class AguiAgentRegistry {
      * @return The total count of registered agents
      */
     public int size() {
-        return agentFactories.size() + singletonAgents.size();
+        return inputContextualFactories.size() + agentFactories.size() + singletonAgents.size();
     }
 }

@@ -17,6 +17,7 @@ package io.agentscope.spring.boot.agui.common;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.AguiException;
+import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AgentResolver;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import java.util.Objects;
@@ -63,20 +64,23 @@ public class DefaultAgentResolver implements AgentResolver {
 
     @Override
     public Agent resolveAgent(String agentId, String threadId) {
+        return resolveAgent(agentId, threadId, null);
+    }
+
+    @Override
+    public Agent resolveAgent(String agentId, String threadId, RunAgentInput input) {
         if (serverSideMemory && sessionManager != null) {
-            // Server-side memory mode: use session manager
             return sessionManager.getOrCreateAgent(
                     threadId,
                     agentId,
                     () ->
-                            registry.getAgent(agentId)
+                            registry.getAgent(agentId, input)
                                     .orElseThrow(
                                             () ->
                                                     new AguiException.AgentNotFoundException(
                                                             agentId)));
         } else {
-            // Standard mode: create new agent for each request
-            return registry.getAgent(agentId)
+            return registry.getAgent(agentId, input)
                     .orElseThrow(() -> new AguiException.AgentNotFoundException(agentId));
         }
     }

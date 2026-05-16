@@ -94,6 +94,18 @@ public class ExampleTools {
     }
 
     /**
+     * Get the current context info.
+     *
+     * @return Current context info
+     */
+    @Tool(name = "get_current_context", description = "Get the current context")
+    public ToolResultBlock getCurrentContext(UserContext context) {
+
+        return ToolResultBlock.text(
+                "Current context: " + context.getContext() + " Current user: " + context.getUser());
+    }
+
+    /**
      * Simple expression evaluator.
      * Supports basic arithmetic: +, -, *, /
      */

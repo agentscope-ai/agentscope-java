@@ -17,6 +17,7 @@ package io.agentscope.core.agui.processor;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.AguiException;
+import io.agentscope.core.agui.model.RunAgentInput;
 
 /**
  * Interface for resolving agents from various sources.
@@ -36,6 +37,19 @@ public interface AgentResolver {
      * @throws AguiException.AgentNotFoundException if the agent is not found
      */
     Agent resolveAgent(String agentId, String threadId);
+
+    /**
+     * Resolve an agent by its ID with full request context.
+     *
+     * @param agentId The agent ID to resolve
+     * @param threadId The thread ID for session management
+     * @param input The complete run agent input
+     * @return The resolved agent
+     * @throws AguiException.AgentNotFoundException if the agent is not found
+     */
+    default Agent resolveAgent(String agentId, String threadId, RunAgentInput input) {
+        return resolveAgent(agentId, threadId);
+    }
 
     /**
      * Check if a thread has existing memory/conversation history.
