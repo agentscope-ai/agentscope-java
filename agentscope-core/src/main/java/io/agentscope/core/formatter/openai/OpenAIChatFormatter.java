@@ -112,6 +112,13 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             request.setSeed(seed.intValue());
         }
 
+        // Apply parallel tool calls
+        Boolean parallelToolCalls =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getParallelToolCalls);
+        if (parallelToolCalls != null) {
+            request.setParallelToolCalls(parallelToolCalls);
+        }
+
         // Apply additional body params (must be last to allow overriding)
         applyAdditionalBodyParams(request, defaultOptions);
         applyAdditionalBodyParams(request, options);

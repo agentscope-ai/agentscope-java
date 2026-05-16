@@ -73,4 +73,4 @@ curl -s -X POST http://localhost:8787/query \
 | `support/InMemorySandboxFilesystemSpec.java` | `SandboxFilesystemSpec` + `SandboxClient` |
 | `support/SharedInMemorySandboxStateStore.java` | 分布式沙箱元数据的单机替身 |
 
-更完整的沙箱概念见 [`docs/zh/harness/sandbox.md`](../../docs/zh/harness/sandbox.md)。
+更完整的沙箱概念见 [`docs/zh/harness/sandbox/index.md`](../../docs/zh/harness/sandbox/index.md)。

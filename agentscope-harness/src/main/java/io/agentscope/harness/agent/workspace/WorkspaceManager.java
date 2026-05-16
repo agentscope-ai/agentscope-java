@@ -24,25 +24,37 @@ import static io.agentscope.harness.agent.workspace.WorkspaceConstants.MEMORY_MD
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_STORE;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SKILLS_DIR;
-import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SUBAGENT_YML;
+import static io.agentscope.harness.agent.workspace.WorkspaceConstants.TASKS_DIR;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,8 +62,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Stateless accessor for workspace content using a two-layer read architecture.
  *
- * <p><strong>Read path:</strong> For every read (AGENTS.md, MEMORY.md, knowledge, subagent.yml,
- * etc.), the {@link AbstractFilesystem} is queried first. If it returns non-empty content, that
+ * <p><strong>Read path:</strong> For every read (AGENTS.md, MEMORY.md, knowledge, etc.),
+ * the {@link AbstractFilesystem} is queried first. If it returns non-empty content, that
  * content is used (filesystem overrides). Otherwise, the local workspace disk is read as a
  * fallback. The filesystem layer applies user/session scoping transparently via
  * {@link NamespaceFactory}.
@@ -72,9 +84,10 @@ import org.slf4j.LoggerFactory;
  * ├── skills/&lt;skill-name&gt;/SKILL.md
  * ├── knowledge/KNOWLEDGE.md
  * ├── knowledge/*
+ * ├── subagents/&lt;id&gt;.md                     (subagent declarations)
+ * ├── agents/&lt;agentId&gt;/workspace/           (isolated subagent runtime root, auto-created)
  * ├── agents/&lt;agentId&gt;/sessions/sessions.json
- * ├── agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.log.jsonl
- * └── subagent.yml
+ * └── agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.log.jsonl
  * </pre>
  */
 public class WorkspaceManager {
@@ -83,6 +96,18 @@ public class WorkspaceManager {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
     private static final ObjectMapper SESSION_STORE_JSON = new ObjectMapper();
+    private static final ObjectMapper TASK_RECORD_JSON =
+            new ObjectMapper()
+                    .registerModule(new JavaTimeModule())
+                    .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    private static final TypeReference<Map<String, TaskRecord>> TASK_MAP_TYPE =
+            new TypeReference<>() {};
+
+    /**
+     * Per-path locks for task record files to prevent concurrent read-modify-write races.
+     * Keyed by workspace-relative path (e.g. {@code agents/X/tasks/Y.json}).
+     */
+    private final Map<String, ReentrantLock> taskFileLocks = new ConcurrentHashMap<>();
 
     private final Path workspace;
     private final AbstractFilesystem filesystem;
@@ -156,11 +181,6 @@ public class WorkspaceManager {
             return "";
         }
         return readWithOverride(normalized);
-    }
-
-    /** Reads subagent.yml content (two-layer: filesystem override, local fallback). */
-    public String readSubagentYml() {
-        return readWithOverride(SUBAGENT_YML);
     }
 
     public Path getMemoryDir() {
@@ -291,6 +311,254 @@ public class WorkspaceManager {
             writeUtf8WorkspaceRelative(rel, serialized);
         } catch (IOException e) {
             log.warn("Failed to write session store {}: {}", rel, e.getMessage());
+        }
+    }
+
+    // ==================== Task record methods ====================
+
+    /**
+     * Upserts a {@link TaskRecord} in {@code agents/<agentId>/tasks/<sessionId>.json}.
+     *
+     * <p>Reads the existing map, merges or inserts the record keyed by {@code taskId}, then
+     * writes the updated map back. Acquires a per-file {@link ReentrantLock} to prevent
+     * concurrent read-modify-write races when multiple tasks share the same session file.
+     */
+    public void writeTaskRecord(String agentId, String sessionId, TaskRecord record) {
+        if (agentId == null
+                || agentId.isBlank()
+                || sessionId == null
+                || sessionId.isBlank()
+                || record == null
+                || record.getTaskId() == null) {
+            return;
+        }
+        String rel = taskRecordPath(agentId, sessionId);
+        ReentrantLock lock = taskFileLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            Map<String, TaskRecord> map;
+            try {
+                map = readTaskMap(rel); // already holding lock
+            } catch (IOException e) {
+                // Never overwrite a malformed store with partial data from a failed parse.
+                log.error(
+                        "Failed to parse task record store {}, aborting write to avoid data loss.",
+                        rel,
+                        e);
+                return;
+            }
+            record.touch();
+            map.put(record.getTaskId(), record);
+            persistTaskMap(rel, map);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Reads a single {@link TaskRecord} by task ID, or {@link Optional#empty()} if not found.
+     */
+    public Optional<TaskRecord> readTaskRecord(String agentId, String sessionId, String taskId) {
+        if (agentId == null
+                || agentId.isBlank()
+                || sessionId == null
+                || sessionId.isBlank()
+                || taskId == null
+                || taskId.isBlank()) {
+            return Optional.empty();
+        }
+        String rel = taskRecordPath(agentId, sessionId);
+        Map<String, TaskRecord> map = readTaskMapLocked(rel);
+        return Optional.ofNullable(map.get(taskId));
+    }
+
+    /**
+     * Returns all {@link TaskRecord}s for the given agent and session, in insertion order.
+     */
+    public Collection<TaskRecord> listTaskRecords(String agentId, String sessionId) {
+        if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
+            return Collections.emptyList();
+        }
+        String rel = taskRecordPath(agentId, sessionId);
+        return List.copyOf(readTaskMapLocked(rel).values());
+    }
+
+    /**
+     * Returns all {@link TaskRecord}s for the given agent across <em>all</em> sessions that have
+     * been active within {@code recentWindow}, in no particular order.
+     *
+     * <p>Unions task JSON files from the local disk and the filesystem layer. Files whose last
+     * modification time (from disk mtime or {@link FileInfo#modifiedAt()}) is known and older than
+     * {@code recentWindow} are skipped: once all tasks in a session reach a terminal state the file
+     * is never modified again, so stale files cannot contain orphaned tasks.
+     *
+     * <p>Used by the orphan-task sweeper in
+     * {@link io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository} to bound the
+     * number of files read per sweep cycle without missing any genuinely running tasks.
+     *
+     * @param agentId the parent agent identifier
+     * @param recentWindow only consider files modified within this duration; files known to be
+     *     older are assumed to contain only terminal tasks and are skipped
+     */
+    public Collection<TaskRecord> listAllTaskRecords(String agentId, Duration recentWindow) {
+        if (agentId == null || agentId.isBlank()) {
+            return Collections.emptyList();
+        }
+        Instant cutoff = Instant.now().minus(recentWindow);
+        String tasksRelDir = AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR;
+
+        // workspace-relative path → Optional<Instant> last-modified (empty = mtime unknown)
+        Map<String, Optional<Instant>> relPaths = new LinkedHashMap<>();
+
+        if (filesystem != null) {
+            GlobResult glob = filesystem.glob(DEFAULT_FS_RUNTIME, "*.json", tasksRelDir);
+            if (glob.isSuccess() && glob.matches() != null) {
+                for (FileInfo fi : glob.matches()) {
+                    if (fi.path() == null || fi.path().isBlank()) {
+                        continue;
+                    }
+                    String rel = normalizeRelativePath(fi.path().trim());
+                    Instant mtime = parseInstantQuiet(fi.modifiedAt());
+                    relPaths.put(rel, Optional.ofNullable(mtime));
+                }
+            }
+        }
+
+        Path tasksDir = workspace.resolve(AGENTS_DIR).resolve(agentId).resolve(TASKS_DIR);
+        if (Files.isDirectory(tasksDir)) {
+            try (Stream<Path> stream = Files.list(tasksDir)) {
+                stream.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".json"))
+                        .forEach(
+                                p -> {
+                                    String rel =
+                                            workspace
+                                                    .relativize(p.normalize())
+                                                    .toString()
+                                                    .replace('\\', '/');
+                                    // Prefer mtime from filesystem glob if already known
+                                    if (!relPaths.containsKey(rel)) {
+                                        relPaths.put(rel, Optional.ofNullable(diskMtime(p)));
+                                    }
+                                });
+            } catch (IOException e) {
+                log.warn("Failed to list task files for agent {}: {}", agentId, e.getMessage());
+            }
+        }
+
+        List<TaskRecord> all = new ArrayList<>();
+        for (Map.Entry<String, Optional<Instant>> entry : relPaths.entrySet()) {
+            Optional<Instant> mtime = entry.getValue();
+            // Skip only when mtime is known and clearly before the cutoff
+            if (mtime.isPresent() && mtime.get().isBefore(cutoff)) {
+                continue;
+            }
+            all.addAll(readTaskMapLocked(entry.getKey()).values());
+        }
+        return all;
+    }
+
+    private static Instant parseInstantQuiet(String iso) {
+        if (iso == null || iso.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(iso);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Instant diskMtime(Path p) {
+        try {
+            return Files.getLastModifiedTime(p).toInstant();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Reads the timestamp written by the most recent successful orphan-sweep for this agent, or
+     * {@link Optional#empty()} if no sweep has been recorded yet.
+     *
+     * <p>Stored in {@code agents/<agentId>/tasks/_sweep.marker} as a plain ISO-8601 string. Any
+     * node can write to this path, so it naturally propagates through the shared filesystem layer.
+     */
+    public Optional<Instant> readSweepMarker(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return Optional.empty();
+        }
+        String rel = sweepMarkerPath(agentId);
+        String content = readWritableWorkspaceRelativeUtf8(rel);
+        return Optional.ofNullable(parseInstantQuiet(content == null ? null : content.strip()));
+    }
+
+    /**
+     * Records the current timestamp as the completion time of the most recent orphan-sweep for
+     * this agent. Subsequent nodes that read this marker within the sweep interval will skip their
+     * own sweep, reducing redundant workspace I/O in multi-node deployments.
+     */
+    public void writeSweepMarker(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return;
+        }
+        String rel = sweepMarkerPath(agentId);
+        try {
+            writeUtf8WorkspaceRelative(rel, Instant.now().toString());
+        } catch (Exception e) {
+            log.warn("Failed to write sweep marker for agent {}: {}", agentId, e.getMessage());
+        }
+    }
+
+    private String sweepMarkerPath(String agentId) {
+        return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/_sweep.marker";
+    }
+
+    private String taskRecordPath(String agentId, String sessionId) {
+        return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/" + sessionId + ".json";
+    }
+
+    /**
+     * Acquires the per-file lock before delegating to {@link #readTaskMap(String)}, so that reads
+     * are mutually exclusive with the read-modify-write cycle in {@link #writeTaskRecord}. This
+     * prevents a concurrent writer's non-atomic file update (truncate → write) from being observed
+     * as a partial JSON read.
+     */
+    private Map<String, TaskRecord> readTaskMapLocked(String rel) {
+        ReentrantLock lock = taskFileLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            try {
+                return readTaskMap(rel);
+            } catch (IOException e) {
+                // Surface corruption loudly, but do not mutate or reinitialize the backing file.
+                log.error(
+                        "Failed to parse task record store {}, returning empty in-memory view.",
+                        rel,
+                        e);
+                return Collections.emptyMap();
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private Map<String, TaskRecord> readTaskMap(String rel) throws IOException {
+        String json = readWritableWorkspaceRelativeUtf8(rel);
+        if (json == null || json.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, TaskRecord> map = TASK_RECORD_JSON.readValue(json, TASK_MAP_TYPE);
+        return map != null ? new LinkedHashMap<>(map) : new LinkedHashMap<>();
+    }
+
+    private void persistTaskMap(String rel, Map<String, TaskRecord> map) {
+        try {
+            String serialized =
+                    TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+            writeUtf8WorkspaceRelative(rel, serialized);
+        } catch (IOException e) {
+            log.warn("Failed to write task record store {}: {}", rel, e.getMessage());
         }
     }
 

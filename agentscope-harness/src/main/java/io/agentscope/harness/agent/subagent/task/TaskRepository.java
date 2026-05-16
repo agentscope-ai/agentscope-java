@@ -16,42 +16,58 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import java.util.Collection;
-import java.util.function.Supplier;
 
 /**
- * Repository for managing background subagent tasks. Supports async execution with retrieval by
- * task ID, listing, and cancellation.
+ * Repository for managing background subagent tasks, scoped by session.
+ *
+ * <p>All operations are scoped to a {@code sessionId} so that tasks from different parent sessions
+ * are isolated from one another. Implementations may ignore {@code sessionId} (in-memory stores)
+ * or use it to partition durable storage (workspace-backed stores).
  */
 public interface TaskRepository {
 
-    /** Retrieve a background task by its ID, or null if not found. */
-    BackgroundTask getTask(String taskId);
+    /**
+     * Retrieve a background task by session and task ID, or {@code null} if not found.
+     *
+     * @param sessionId the parent session scope
+     * @param taskId unique task identifier
+     */
+    BackgroundTask getTask(String sessionId, String taskId);
 
     /**
-     * Submit a new background task; the supplier runs asynchronously.
+     * Submit a new background task according to {@link TaskRunSpec}.
      *
      * @param taskId unique identifier for the task
-     * @param agentId the subagent type that is executing this task
-     * @param taskExecution the work to execute asynchronously
+     * @param subAgentId the subagent type executing this task
+     * @param sessionId the parent session scope
+     * @param spec local supplier execution or remote HTTP task protocol
      * @return the created background task
      */
-    BackgroundTask putTask(String taskId, String agentId, Supplier<String> taskExecution);
+    BackgroundTask putTask(String taskId, String subAgentId, String sessionId, TaskRunSpec spec);
 
-    void removeTask(String taskId);
+    /**
+     * Remove a task from the repository.
+     *
+     * @param sessionId the parent session scope
+     * @param taskId unique task identifier
+     */
+    void removeTask(String sessionId, String taskId);
 
+    /** Clear all tasks across all sessions. */
     void clear();
 
     /**
-     * List all tracked tasks, optionally filtered by status.
+     * List all tracked tasks for the given session, optionally filtered by status.
      *
+     * @param sessionId the parent session scope
      * @param filter if non-null, only return tasks with this status; null returns all tasks
      */
-    Collection<BackgroundTask> listTasks(TaskStatus filter);
+    Collection<BackgroundTask> listTasks(String sessionId, TaskStatus filter);
 
     /**
-     * Cancel a running task by its ID.
+     * Cancel a running task by session and task ID.
      *
      * @return true if the task was found and cancellation was attempted
      */
-    boolean cancelTask(String taskId);
+    boolean cancelTask(String sessionId, String taskId);
 }

@@ -228,7 +228,11 @@ class OpenAIChatModelTest {
                                 .build());
 
         GenerateOptions options =
-                GenerateOptions.builder().temperature(0.7).maxTokens(1000).build();
+                GenerateOptions.builder()
+                        .temperature(0.7)
+                        .maxTokens(1000)
+                        .parallelToolCalls(true)
+                        .build();
 
         StepVerifier.create(model.stream(messages, null, options))
                 .assertNext(response -> assertNotNull(response))
@@ -240,6 +244,7 @@ class OpenAIChatModelTest {
         String body = request.getBody().readUtf8();
         assertTrue(body.contains("\"temperature\":0.7"));
         assertTrue(body.contains("\"max_tokens\":1000"));
+        assertTrue(body.contains("\"parallel_tool_calls\":true"));
     }
 
     @Test
@@ -465,5 +470,64 @@ class OpenAIChatModelTest {
                 request.getPath().endsWith("/chat/completions")
                         || request.getPath().contains("/v1/chat/completions"),
                 "Path should contain default endpoint path: " + request.getPath());
+    }
+
+    @Test
+    @DisplayName("Should enable parallel tool calls when set parallel_tool_calls to true")
+    void testEnableParallelToolCalls() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": []
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        ToolSchema tool1 =
+                ToolSchema.builder()
+                        .name("get_weather")
+                        .description("Get weather information")
+                        .build();
+        ToolSchema tool2 =
+                ToolSchema.builder().name("calculate").description("Perform calculations").build();
+
+        model.doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text(
+                                                                "Get the weather of Shanghai and"
+                                                                        + " calculate 1+2+3.")
+                                                        .build())
+                                        .build()),
+                        List.of(tool1, tool2),
+                        GenerateOptions.builder().parallelToolCalls(true).build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        assertTrue(
+                body.contains("\"parallel_tool_calls\":true"),
+                "Request body should contain parallel_tool_calls with true" + body);
+
+        mockServer.shutdown();
     }
 }
