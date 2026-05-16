@@ -47,8 +47,12 @@ import reactor.core.publisher.Mono;
  * <p><b>Behavior:</b>
  * <ul>
  *   <li>Only activates when the agent is a {@link ReActAgent}</li>
- *   <li>Only patches when pending tool calls exist AND user input does not contain
- *       {@link ToolResultBlock}s (i.e., user is not providing results themselves)</li>
+ *   <li>Only patches when pending tool calls exist AND user input does not contain any
+ *       {@link ToolResultBlock} whose ID matches a current pending tool call ID</li>
+ *   <li>If the input contains {@link ToolResultBlock}s but none of their IDs match the current
+ *       pending IDs (i.e., stale or unrelated results), a warning is logged and the input is
+ *       passed through unmodified — {@link ReActAgent}'s {@code doCall} will then reject the
+ *       invalid IDs with an {@link IllegalStateException}</li>
  *   <li>Generated error results are added to memory as TOOL-role messages</li>
  * </ul>
  *
@@ -107,10 +111,31 @@ public class PendingToolRecoveryHook implements Hook {
             return Mono.just(event);
         }
 
-        boolean userProvidedResults =
-                inputMessages.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
-        if (userProvidedResults) {
-            return Mono.just(event);
+        // Collect all ToolResultBlock IDs present in the input messages
+        Set<String> providedResultIds =
+                inputMessages.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .map(ToolResultBlock::getId)
+                        .collect(Collectors.toSet());
+
+        if (!providedResultIds.isEmpty()) {
+            // Check whether any provided ID actually matches a current pending tool call.
+            // Only treat input as user-provided results when the IDs are relevant;
+            // stale or unrelated IDs should not suppress auto-recovery.
+            if (providedResultIds.stream().anyMatch(pendingIds::contains)) {
+                // User provided at least one relevant result — skip auto-patch and let
+                // doCall's validateAndAddToolResults handle strict ID validation
+                return Mono.just(event);
+            }
+            // Input contains ToolResultBlocks, but none of their IDs match the current
+            // pending tool call IDs (stale / unrelated results). Log a warning and
+            // proceed with auto-patch; doCall will reject the invalid IDs with
+            // an IllegalStateException, which is the correct strict-mode behavior.
+            log.warn(
+                    "Input contains ToolResultBlock(s) with IDs {} that do not match"
+                            + " pending tool call IDs {}. Proceeding with auto-patch.",
+                    providedResultIds,
+                    pendingIds);
         }
 
         // Auto-patch: generate error tool results for orphaned pending tool calls
