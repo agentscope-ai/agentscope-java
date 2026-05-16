@@ -146,22 +146,14 @@ public class StreamContext {
 
     /**
      * Flushes all remaining deferred end events.
-     * Typically called during stream termination or error recovery to ensure all UI components are closed.
+     * Commonly used when the stream completes or fails to ensure all pending
+     * component end events are emitted before the run is finished.
      *
-     * @return A list of all remaining deferred events
+     * @return A list of all remaining deferred end events
      */
     public List<AguiEvent> flushAllRemainingDeferred() {
         List<AguiEvent> remaining = new ArrayList<>(deferredEndEvents.values());
-
         deferredEndEvents.clear();
-
-        activeTextIds.clear();
-        activeReasoningIds.clear();
-        activeToolIds.clear();
-
-        finishedTextIds.clear();
-        finishedReasoningIds.clear();
-
         return remaining;
     }
 
@@ -269,8 +261,7 @@ public class StreamContext {
      * @return a stable local tool call ID for the anonymous tool use
      */
     public String resolveOrCreateAnonymousToolUseId(String toolName) {
-        String normalizedName =
-                toolName != null && !toolName.isBlank() ? toolName : "unknown";
+        String normalizedName = toolName != null && !toolName.isBlank() ? toolName : "unknown";
 
         String matchedId = null;
         for (String id : anonymousToolIds) {
