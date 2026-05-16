@@ -38,7 +38,7 @@
         <spring-boot.version>3.3.4</spring-boot.version>
         <rocketmq-a2a.version>1.0.9</rocketmq-a2a.version>
         <logback.version>1.5.32</logback.version>
-        <slf4j-api.version>2.0.17</slf4j-api.version>
+        <slf4j-api.version>2.0.18</slf4j-api.version>
     </properties>
     <dependencyManagement>
         <dependencies>
