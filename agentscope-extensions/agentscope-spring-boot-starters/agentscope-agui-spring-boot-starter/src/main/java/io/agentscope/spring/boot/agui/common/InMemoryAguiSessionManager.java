@@ -27,58 +27,53 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Manages agent sessions by threadId for server-side memory management.
+ * In-memory implementation of {@link AguiSessionManager}.
  *
- * <p>This manager maintains a pool of agent instances, each associated with a threadId. When
- * server-side memory is enabled, the same agent instance is reused for requests with the same
- * threadId, preserving conversation history across requests.
+ * <p>This implementation maintains a pool of agent instances in a {@link ConcurrentHashMap}, each
+ * associated with a threadId. When server-side memory is enabled, the same agent instance is reused
+ * for requests with the same threadId, preserving conversation history across requests.
+ *
+ * <p>This is suitable for single-instance deployments. For distributed deployments where requests
+ * may be routed to different machines, use {@link SessionAwareAguiSessionManager} instead.
  *
  * <p><b>Usage:</b>
  *
  * <pre>{@code
- * ThreadSessionManager manager = new ThreadSessionManager(1000, 30);
+ * AguiSessionManager manager = new InMemoryAguiSessionManager(1000, 30);
  *
  * // Get or create an agent for a thread
  * Agent agent = manager.getOrCreateAgent("thread-123", "default", () -> createAgent());
  *
  * // Check if agent has memory
- * boolean hasMemory = manager.hasMemory("thread-123");
+ * boolean hasMemory = manager.hasMemory("thread-123", "default");
  *
  * // Clean up expired sessions
  * manager.cleanupExpiredSessions();
  * }</pre>
  */
-public class ThreadSessionManager {
+public class InMemoryAguiSessionManager implements AguiSessionManager {
 
-    private static final Logger logger = LoggerFactory.getLogger(ThreadSessionManager.class);
+    private static final Logger logger = LoggerFactory.getLogger(InMemoryAguiSessionManager.class);
 
-    private final Map<String, ThreadSession> sessions = new ConcurrentHashMap<>();
+    private final Map<String, AguiSession> sessions = new ConcurrentHashMap<>();
     private final int maxSessions;
     private final int sessionTimeoutMinutes;
 
     /**
-     * Creates a new ThreadSessionManager.
+     * Creates a new InMemoryAguiSessionManager.
      *
      * @param maxSessions Maximum number of sessions to maintain
      * @param sessionTimeoutMinutes Session timeout in minutes (0 = no timeout)
      */
-    public ThreadSessionManager(int maxSessions, int sessionTimeoutMinutes) {
+    public InMemoryAguiSessionManager(int maxSessions, int sessionTimeoutMinutes) {
         this.maxSessions = maxSessions;
         this.sessionTimeoutMinutes = sessionTimeoutMinutes;
     }
 
-    /**
-     * Get or create an agent for the given threadId.
-     *
-     * <p>This method is thread-safe. It uses atomic operations to ensure that concurrent requests
-     * for the same threadId will share the same agent instance.
-     *
-     * @param threadId The thread identifier
-     * @param agentId The agent type identifier
-     * @param agentFactory Factory to create new agents if needed
-     * @return The agent for this thread
-     */
+    @Override
     public Agent getOrCreateAgent(String threadId, String agentId, Supplier<Agent> agentFactory) {
+        String compositeKey = buildCompositeKey(agentId, threadId);
+
         // Clean up if we're at capacity
         if (sessions.size() >= maxSessions) {
             cleanupExpiredSessions();
@@ -89,23 +84,17 @@ public class ThreadSessionManager {
         }
 
         // Use compute() for atomic check-and-update to avoid race conditions
-        ThreadSession session =
+        AguiSession session =
                 sessions.compute(
-                        threadId,
+                        compositeKey,
                         (k, existing) -> {
                             if (existing == null) {
                                 // No existing session, create new one
-                                logger.debug("Creating new session for threadId: {}", threadId);
-                                return new ThreadSession(agentId, agentFactory.get());
-                            }
-                            if (!existing.getAgentId().equals(agentId)) {
-                                // Agent type changed, create new session
                                 logger.debug(
-                                        "Agent type changed for threadId {}: {} -> {}",
+                                        "Creating new session for threadId: {}, agentId: {}",
                                         threadId,
-                                        existing.getAgentId(),
                                         agentId);
-                                return new ThreadSession(agentId, agentFactory.get());
+                                return new AguiSession(agentId, agentFactory.get());
                             }
                             // Same agent type, update access time and reuse
                             existing.updateLastAccess();
@@ -115,14 +104,10 @@ public class ThreadSessionManager {
         return session.getAgent();
     }
 
-    /**
-     * Check if a session exists and has memory for the given threadId.
-     *
-     * @param threadId The thread identifier
-     * @return true if the session exists and the agent has non-empty memory
-     */
-    public boolean hasMemory(String threadId) {
-        ThreadSession session = sessions.get(threadId);
+    @Override
+    public boolean hasMemory(String threadId, String agentId) {
+        String compositeKey = buildCompositeKey(agentId, threadId);
+        AguiSession session = sessions.get(compositeKey);
         if (session == null) {
             return false;
         }
@@ -139,26 +124,25 @@ public class ThreadSessionManager {
     }
 
     /**
-     * Get the session for a threadId if it exists.
+     * Get the session for a threadId and agentId if it exists.
+     *
+     * <p>This method is specific to the in-memory implementation and not part of the {@link
+     * AguiSessionManager} interface.
      *
      * @param threadId The thread identifier
+     * @param agentId The agent type identifier
      * @return Optional containing the session, or empty if not found
      */
-    public Optional<ThreadSession> getSession(String threadId) {
-        return Optional.ofNullable(sessions.get(threadId));
+    public Optional<AguiSession> getSession(String threadId, String agentId) {
+        return Optional.ofNullable(sessions.get(buildCompositeKey(agentId, threadId)));
     }
 
-    /**
-     * Remove a session by threadId.
-     *
-     * @param threadId The thread identifier
-     * @return true if a session was removed
-     */
-    public boolean removeSession(String threadId) {
-        return sessions.remove(threadId) != null;
+    @Override
+    public boolean removeSession(String threadId, String agentId) {
+        return sessions.remove(buildCompositeKey(agentId, threadId)) != null;
     }
 
-    /** Clean up sessions that have been inactive for longer than the timeout. */
+    @Override
     public void cleanupExpiredSessions() {
         if (sessionTimeoutMinutes <= 0) {
             return;
@@ -199,28 +183,24 @@ public class ThreadSessionManager {
         }
     }
 
-    /**
-     * Get the current number of active sessions.
-     *
-     * @return Number of sessions
-     */
+    @Override
     public int getSessionCount() {
         return sessions.size();
     }
 
-    /** Clear all sessions. */
+    @Override
     public void clear() {
         sessions.clear();
     }
 
-    /** Represents a thread session with its agent and metadata. */
-    public static class ThreadSession {
+    /** Represents a session with its agent and metadata. */
+    public static class AguiSession {
 
         private final String agentId;
         private final Agent agent;
         private Instant lastAccess;
 
-        ThreadSession(String agentId, Agent agent) {
+        AguiSession(String agentId, Agent agent) {
             this.agentId = agentId;
             this.agent = agent;
             this.lastAccess = Instant.now();
@@ -241,5 +221,9 @@ public class ThreadSessionManager {
         void updateLastAccess() {
             this.lastAccess = Instant.now();
         }
+    }
+
+    private static String buildCompositeKey(String agentId, String threadId) {
+        return agentId + ":" + threadId;
     }
 }

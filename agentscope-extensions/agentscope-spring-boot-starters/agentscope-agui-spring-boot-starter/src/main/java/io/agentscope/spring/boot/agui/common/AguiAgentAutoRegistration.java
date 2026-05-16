@@ -18,7 +18,6 @@ package io.agentscope.spring.boot.agui.common;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import java.lang.reflect.Method;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
@@ -30,47 +29,16 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.core.annotation.AnnotationUtils;
 
 /**
- * A Scanner class for automatically registering Agent beans with the AguiAgentRegistry.
+ * Spark-override of the upstream AguiAgentAutoRegistration.
  *
- * <p>This configuration scans all Agent beans in the application context and registers them with
- * the registry. It supports both singleton and prototype scoped beans:
+ * <p>Fixes prototype bean handling: the upstream version uses
+ * {@code beanFactory.getBeansOfType(Agent.class)} which eagerly instantiates
+ * ALL Agent beans including prototypes. This fails when prototype factory methods
+ * depend on request-scoped context (e.g., {@code AguiRequestContext}) that is not
+ * available at application startup.
  *
- * <ul>
- *   <li><b>Singleton beans:</b> The bean instance is registered directly
- *   <li><b>Prototype beans:</b> A factory is registered that creates new instances per request
- *       (thread-safe)
- * </ul>
- *
- * <p><b>Agent ID Resolution:</b>
- *
- * <ol>
- *   <li>{@link AguiAgentId} annotation on the bean method or class
- *   <li>Bean name (default)
- * </ol>
- *
- * <p><b>Usage:</b>
- *
- * <pre>{@code
- * // Singleton bean (shared instance)
- * @Bean
- * public Agent chatAgent() {
- *     return ReActAgent.builder().name("Chat").model(model).build();
- * }
- *
- * // Prototype bean (new instance per request - thread-safe)
- * @Bean
- * @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
- * public Agent isolatedAgent() {
- *     return ReActAgent.builder().name("Isolated").model(model).build();
- * }
- *
- * // Custom agent ID
- * @Bean
- * @AguiAgentId("custom-id")
- * public Agent myAgent() {
- *     return ReActAgent.builder().name("Custom").model(model).build();
- * }
- * }</pre>
+ * <p>This version scans bean definitions without instantiating prototype beans,
+ * registering only a factory supplier for them.
  */
 public class AguiAgentAutoRegistration implements BeanFactoryAware, InitializingBean {
 
@@ -80,11 +48,6 @@ public class AguiAgentAutoRegistration implements BeanFactoryAware, Initializing
 
     private final AguiAgentRegistry registry;
 
-    /**
-     * Creates a new AguiAgentAutoRegistration.
-     *
-     * @param registry The agent registry
-     */
     public AguiAgentAutoRegistration(AguiAgentRegistry registry) {
         this.registry = registry;
     }
@@ -99,7 +62,9 @@ public class AguiAgentAutoRegistration implements BeanFactoryAware, Initializing
     /**
      * Registers all Agent beans with the AguiAgentRegistry.
      *
-     * <p>This method is called after the registry is created and scans for all Agent beans.
+     * <p>Unlike the upstream version, this does NOT call {@code getBeansOfType(Agent.class)}
+     * which would eagerly instantiate prototype beans. Instead, it iterates over bean
+     * definitions and resolves types without instantiation.
      */
     protected void aguiAgentAutoRegistrar() {
         if (beanFactory == null) {
@@ -107,11 +72,21 @@ public class AguiAgentAutoRegistration implements BeanFactoryAware, Initializing
             return;
         }
 
-        Map<String, Agent> agentBeans = beanFactory.getBeansOfType(Agent.class);
+        String[] beanNames = beanFactory.getBeanDefinitionNames();
 
-        for (Map.Entry<String, Agent> entry : agentBeans.entrySet()) {
-            String beanName = entry.getKey();
-            Agent agent = entry.getValue();
+        for (String beanName : beanNames) {
+            // Resolve bean type without instantiation
+            Class<?> beanType;
+            try {
+                beanType = beanFactory.getType(beanName);
+            } catch (Exception e) {
+                logger.debug("Could not resolve type for bean '{}': {}", beanName, e.getMessage());
+                continue;
+            }
+
+            if (beanType == null || !Agent.class.isAssignableFrom(beanType)) {
+                continue;
+            }
 
             // Determine agent ID
             String agentId = resolveAgentId(beanName);
@@ -122,18 +97,19 @@ public class AguiAgentAutoRegistration implements BeanFactoryAware, Initializing
                 continue;
             }
 
-            // Check bean scope
             boolean isPrototype = isPrototypeBean(beanName);
 
             if (isPrototype) {
-                // Register factory for prototype beans (thread-safe: new instance per call)
+                // Register factory for prototype beans WITHOUT creating an instance.
+                // The factory will be invoked per-request when the HTTP context is available.
                 registry.registerFactory(agentId, () -> beanFactory.getBean(beanName, Agent.class));
                 logger.info(
                         "Auto-registered prototype agent '{}' (bean: {}) with factory",
                         agentId,
                         beanName);
             } else {
-                // Register singleton directly
+                // Register singleton directly (safe to instantiate at startup)
+                Agent agent = beanFactory.getBean(beanName, Agent.class);
                 registry.register(agentId, agent);
                 logger.info("Auto-registered singleton agent '{}' (bean: {})", agentId, beanName);
             }

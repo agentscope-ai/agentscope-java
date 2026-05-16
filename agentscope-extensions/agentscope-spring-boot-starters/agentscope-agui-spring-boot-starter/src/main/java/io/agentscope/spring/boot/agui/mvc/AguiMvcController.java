@@ -16,15 +16,18 @@
 package io.agentscope.spring.boot.agui.mvc;
 
 import io.agentscope.core.agui.AguiException;
+import io.agentscope.core.agui.AguiRequestContext;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.AguiSessionManager;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
-import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -99,7 +102,25 @@ public class AguiMvcController {
      * @return An SseEmitter for streaming AG-UI events
      */
     public SseEmitter handle(RunAgentInput input, String headerAgentId) {
-        return handleInternal(input, headerAgentId, null);
+        return handleInternal(
+                input, headerAgentId, null, Collections.emptyMap(), Collections.emptyMap());
+    }
+
+    /**
+     * Handle an AG-UI run request with HTTP request headers and parameters.
+     *
+     * @param input The run agent input
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @param requestHeaders All HTTP request headers
+     * @param requestParams All HTTP query parameters
+     * @return An SseEmitter for streaming AG-UI events
+     */
+    public SseEmitter handle(
+            RunAgentInput input,
+            String headerAgentId,
+            Map<String, List<String>> requestHeaders,
+            Map<String, List<String>> requestParams) {
+        return handleInternal(input, headerAgentId, null, requestHeaders, requestParams);
     }
 
     /**
@@ -112,11 +133,36 @@ public class AguiMvcController {
      */
     public SseEmitter handleWithAgentId(
             RunAgentInput input, String headerAgentId, String pathAgentId) {
-        return handleInternal(input, headerAgentId, pathAgentId);
+        return handleInternal(
+                input, headerAgentId, pathAgentId, Collections.emptyMap(), Collections.emptyMap());
+    }
+
+    /**
+     * Handle an AG-UI run request with agent ID in the URL path,
+     * plus HTTP request headers and parameters.
+     *
+     * @param input The run agent input
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @param pathAgentId The agent ID from URL path variable
+     * @param requestHeaders All HTTP request headers
+     * @param requestParams All HTTP query parameters
+     * @return An SseEmitter for streaming AG-UI events
+     */
+    public SseEmitter handleWithAgentId(
+            RunAgentInput input,
+            String headerAgentId,
+            String pathAgentId,
+            Map<String, List<String>> requestHeaders,
+            Map<String, List<String>> requestParams) {
+        return handleInternal(input, headerAgentId, pathAgentId, requestHeaders, requestParams);
     }
 
     private SseEmitter handleInternal(
-            RunAgentInput input, String headerAgentId, String pathAgentId) {
+            RunAgentInput input,
+            String headerAgentId,
+            String pathAgentId,
+            Map<String, List<String>> requestHeaders,
+            Map<String, List<String>> requestParams) {
         SseEmitter emitter = new SseEmitter(sseTimeout);
         String threadId = input.getThreadId();
         String runId = input.getRunId();
@@ -125,6 +171,7 @@ public class AguiMvcController {
                 () -> {
                     Disposable subscription = null;
                     try {
+                        AguiRequestContext.init(requestHeaders, requestParams);
                         // Process request - returns both agent and event stream
                         AguiRequestProcessor.ProcessResult result =
                                 processor.process(input, headerAgentId, pathAgentId);
@@ -182,6 +229,8 @@ public class AguiMvcController {
                     } catch (Exception e) {
                         logger.error("Error processing AG-UI request: {}", e.getMessage());
                         sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
+                    } finally {
+                        AguiRequestContext.clear();
                     }
                 });
 
@@ -239,7 +288,7 @@ public class AguiMvcController {
     public static class Builder {
 
         private AguiAgentRegistry registry;
-        private ThreadSessionManager sessionManager;
+        private AguiSessionManager sessionManager;
         private AguiAdapterConfig config;
         private boolean serverSideMemory = false;
         private String agentIdHeader;
@@ -257,12 +306,12 @@ public class AguiMvcController {
         }
 
         /**
-         * Set the thread session manager for server-side memory support.
+         * Set the session manager for server-side memory support.
          *
          * @param sessionManager The session manager
          * @return This builder
          */
-        public Builder sessionManager(ThreadSessionManager sessionManager) {
+        public Builder sessionManager(AguiSessionManager sessionManager) {
             this.sessionManager = sessionManager;
             return this;
         }

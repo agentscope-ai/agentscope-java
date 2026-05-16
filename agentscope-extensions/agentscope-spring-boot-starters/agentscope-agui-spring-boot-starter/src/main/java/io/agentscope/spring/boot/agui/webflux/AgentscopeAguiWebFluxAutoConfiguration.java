@@ -19,7 +19,8 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
-import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import io.agentscope.spring.boot.agui.common.AguiSessionManager;
+import io.agentscope.spring.boot.agui.common.InMemoryAguiSessionManager;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -53,15 +54,15 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 public class AgentscopeAguiWebFluxAutoConfiguration {
 
     /**
-     * Creates the thread session manager bean.
+     * Creates the session manager bean.
      *
      * @param props The configuration properties
-     * @return A new ThreadSessionManager
+     * @return A new InMemoryAguiSessionManager
      */
     @Bean
     @ConditionalOnMissingBean
-    public ThreadSessionManager threadSessionManager(AguiProperties props) {
-        return new ThreadSessionManager(
+    public AguiSessionManager aguiSessionManager(AguiProperties props) {
+        return new InMemoryAguiSessionManager(
                 props.getMaxThreadSessions(), props.getSessionTimeoutMinutes());
     }
 
@@ -69,14 +70,14 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
      * Creates the AG-UI WebFlux handler bean.
      *
      * @param registry The agent registry
-     * @param sessionManager The thread session manager
+     * @param sessionManager The session manager
      * @param props The configuration properties
      * @return A new AguiWebFluxHandler
      */
     @Bean
     @ConditionalOnMissingBean
     public AguiWebFluxHandler aguiWebFluxHandler(
-            AguiAgentRegistry registry, ThreadSessionManager sessionManager, AguiProperties props) {
+            AguiAgentRegistry registry, AguiSessionManager sessionManager, AguiProperties props) {
         AguiAdapterConfig config =
                 AguiAdapterConfig.builder()
                         .toolMergeMode(props.getDefaultToolMergeMode())

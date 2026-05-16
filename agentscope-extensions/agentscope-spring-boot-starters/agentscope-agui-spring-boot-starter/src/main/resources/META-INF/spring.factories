@@ -1,0 +1,4 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+io.agentscope.spring.boot.agui.common.AguiAgentRegistryAutoConfiguration,\
+io.agentscope.spring.boot.agui.mvc.AgentscopeAguiMvcAutoConfiguration,\
+io.agentscope.spring.boot.agui.webflux.AgentscopeAguiWebFluxAutoConfiguration

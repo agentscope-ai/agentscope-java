@@ -31,12 +31,14 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -1695,5 +1697,56 @@ class AguiAgentAdapterTest {
         assertTrue(
                 !hasReasoningMessageStart,
                 "Should NOT have ReasoningMessageStart for null thinking");
+    }
+
+    @Test
+    void testImageBlockSilentlySkippedInOutput() {
+        // ImageBlock in output direction should be silently skipped (no AG-UI event emitted)
+        Msg msgWithImage =
+                Msg.builder()
+                        .id("msg-img")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Here is an image:").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/img.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Event imageEvent = new Event(EventType.REASONING, msgWithImage, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(imageEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Show me")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have text message events for the TextBlock
+        boolean hasTextContent =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent);
+        assertTrue(hasTextContent, "Should have TextMessageContent for text part");
+
+        // Should NOT have any image-related event (no such AG-UI event type exists)
+        // Verify only expected event types are present
+        for (AguiEvent event : events) {
+            assertTrue(
+                    event instanceof AguiEvent.RunStarted
+                            || event instanceof AguiEvent.RunFinished
+                            || event instanceof AguiEvent.TextMessageStart
+                            || event instanceof AguiEvent.TextMessageContent
+                            || event instanceof AguiEvent.TextMessageEnd,
+                    "Unexpected event type: " + event.getClass().getSimpleName());
+        }
     }
 }
