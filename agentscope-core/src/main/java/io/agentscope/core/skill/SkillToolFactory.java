@@ -22,6 +22,8 @@ import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -169,14 +171,12 @@ class SkillToolFactory {
         }
 
         // Get resource
-        Map<String, String> resources = skill.getResources();
-        if (resources == null || !resources.containsKey(path)) {
-            // Resource not found, return available resource paths
+        Set<String> paths = skill.getResourcePaths();
+        if (paths == null || !paths.contains(path)) {
             throw new IllegalArgumentException(
-                    buildResourceNotFoundMessage(skillId, path, resources));
+                    buildResourceNotFoundMessage(skillId, path, paths));
         }
-
-        String resourceContent = resources.get(path);
+        String resourceContent = skill.getResource(path);
         activateSkill(skillId);
         return buildResourceResponse(skillId, path, resourceContent);
     }
@@ -225,11 +225,11 @@ class SkillToolFactory {
      *
      * @param skillId The skill ID
      * @param path The requested path that was not found
-     * @param resources The available resources map
+     * @param paths The available resources
      * @return Formatted error message with available resources
      */
     private String buildResourceNotFoundMessage(
-            String skillId, String path, Map<String, String> resources) {
+            String skillId, String path, Set<String> paths) {
         StringBuilder message = new StringBuilder();
         message.append("Resource not found: '")
                 .append(path)
@@ -241,8 +241,8 @@ class SkillToolFactory {
         List<String> resourcePaths = new ArrayList<>();
         resourcePaths.add("SKILL.md"); // Always add SKILL.md as the first resource
 
-        if (resources != null && !resources.isEmpty()) {
-            resourcePaths.addAll(resources.keySet());
+        if (paths != null && !paths.isEmpty()) {
+            resourcePaths.addAll(paths);
         }
 
         message.append("Available resources:\n");
