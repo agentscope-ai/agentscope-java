@@ -22,6 +22,13 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
+
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -29,12 +36,6 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
-import reactor.util.retry.Retry;
 
 /**
  * Unified executor for tool execution with infrastructure concerns.
@@ -336,7 +337,8 @@ class ToolExecutor {
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
-                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
+                                    ToolResultBlock.error("Tool execution failed: " + errorMsg)
+                                            .withIdAndName(toolCall.getId(), toolCall.getName()));
                         });
     }
 
