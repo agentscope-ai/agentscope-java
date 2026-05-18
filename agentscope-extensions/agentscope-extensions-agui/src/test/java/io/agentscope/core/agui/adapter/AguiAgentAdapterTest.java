@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +29,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -1835,5 +1837,80 @@ class AguiAgentAdapterTest {
         assertTrue(
                 !hasAggregateReasoning,
                 "The aggregated reasoning block MUST be ignored and not emitted");
+    }
+
+    @Test
+    void testCustomConverterOverridesDefaultStrategy() {
+        // Create a custom strategy that overrides the default ToolResultBlock behavior
+        BlockEventConverter<ToolResultBlock> customConverter =
+                new BlockEventConverter<>() {
+                    @Override
+                    public boolean isApplicable(Event event) {
+                        return event.getType() == EventType.TOOL_RESULT;
+                    }
+
+                    @Override
+                    public void convert(ToolResultBlock block, Event event, StreamContext ctx) {
+                        // Instead of normal ToolCallResult, emit a special CUSTOM event
+                        ctx.emit(
+                                new AguiEvent.Custom(
+                                        ctx.getThreadId(),
+                                        ctx.getRunId(),
+                                        "overridden_tool_result",
+                                        "Intercepted: " + block.getId()));
+                    }
+                };
+
+        // Inject the custom strategy via config
+        AguiAdapterConfig customConfig =
+                AguiAdapterConfig.builder()
+                        .registerConverter(ToolResultBlock.class, customConverter)
+                        .build();
+        AguiAgentAdapter customAdapter = new AguiAgentAdapter(mockAgent, customConfig);
+
+        // Simulate a ToolResult event
+        Msg toolResultMsg =
+                Msg.builder()
+                        .id("msg-tr1")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-custom-1")
+                                        .output(TextBlock.builder().text("4").build())
+                                        .build())
+                        .build();
+
+        Event toolResultEvent = new Event(EventType.TOOL_RESULT, toolResultMsg, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolResultEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Calculate")))
+                        .build();
+
+        List<AguiEvent> events = customAdapter.run(input).collectList().block();
+        assertNotNull(events);
+
+        // Verify that the CUSTOM event emitted by our overridden strategy exists
+        boolean hasCustomEvent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.Custom)
+                        .map(e -> (AguiEvent.Custom) e)
+                        .anyMatch(
+                                e ->
+                                        "overridden_tool_result".equals(e.name())
+                                                && "Intercepted: tc-custom-1".equals(e.value()));
+        assertTrue(hasCustomEvent, "Should emit the Custom event from the overridden strategy");
+
+        // Verify that the default ToolCallResult event was NOT emitted (perfect override)
+        boolean hasDefaultToolResult =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallResult);
+        assertFalse(
+                hasDefaultToolResult,
+                "Should NOT emit the default ToolCallResult because the strategy was overridden");
     }
 }

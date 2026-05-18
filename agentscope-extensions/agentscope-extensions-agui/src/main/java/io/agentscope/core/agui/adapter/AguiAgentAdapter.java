@@ -79,11 +79,16 @@ public class AguiAgentAdapter {
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
 
-        // Register block conversion strategies
+        // Register default block conversion strategies
         converters.put(TextBlock.class, new TextBlockConverter());
         converters.put(ThinkingBlock.class, new ThinkingBlockConverter());
         converters.put(ToolUseBlock.class, new ToolUseBlockConverter());
         converters.put(ToolResultBlock.class, new ToolResultBlockConverter());
+
+        // Override with custom converters if provided by the user
+        if (!config.getCustomConverters().isEmpty()) {
+            converters.putAll(config.getCustomConverters());
+        }
     }
 
     /**

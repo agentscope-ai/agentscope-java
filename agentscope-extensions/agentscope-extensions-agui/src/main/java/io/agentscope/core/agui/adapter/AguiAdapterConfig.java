@@ -15,8 +15,13 @@
  */
 package io.agentscope.core.agui.adapter;
 
+import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.message.ContentBlock;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Configuration for the AG-UI agent adapter.
@@ -32,6 +37,7 @@ public class AguiAdapterConfig {
     private final boolean enableReasoning;
     private final Duration runTimeout;
     private final String defaultAgentId;
+    private final Map<Class<?>, BlockEventConverter<?>> customConverters;
 
     private AguiAdapterConfig(Builder builder) {
         this.toolMergeMode = builder.toolMergeMode;
@@ -40,6 +46,10 @@ public class AguiAdapterConfig {
         this.enableReasoning = builder.enableReasoning;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
+        this.customConverters =
+                builder.customConverters != null
+                        ? Map.copyOf(builder.customConverters)
+                        : Collections.emptyMap();
     }
 
     /**
@@ -101,6 +111,15 @@ public class AguiAdapterConfig {
     }
 
     /**
+     * Get the custom block event converters.
+     *
+     * @return Immutable map of custom converters
+     */
+    public Map<Class<?>, BlockEventConverter<?>> getCustomConverters() {
+        return customConverters;
+    }
+
+    /**
      * Creates a new builder for AguiAdapterConfig.
      *
      * @return A new builder instance
@@ -129,6 +148,7 @@ public class AguiAdapterConfig {
         private boolean enableReasoning = false;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
+        private final Map<Class<?>, BlockEventConverter<?>> customConverters = new HashMap<>();
 
         /**
          * Set the tool merge mode.
@@ -197,6 +217,23 @@ public class AguiAdapterConfig {
          */
         public Builder defaultAgentId(String defaultAgentId) {
             this.defaultAgentId = defaultAgentId;
+            return this;
+        }
+
+        /**
+         * Register a custom block event converter.
+         *
+         * <p>This allows users to override the default conversion strategies for specific
+         * ContentBlock types, enabling deep customization of AG-UI event generation.
+         *
+         * @param blockClass The class of the ContentBlock to convert
+         * @param converter The custom converter strategy
+         * @param <T> The ContentBlock type
+         * @return This builder
+         */
+        public <T extends ContentBlock> Builder registerConverter(
+                Class<T> blockClass, BlockEventConverter<T> converter) {
+            this.customConverters.put(blockClass, converter);
             return this;
         }
 
