@@ -20,6 +20,7 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agui.adapter.StreamContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.UUID;
 
 /**
  * Converter for handling ToolUseBlock events, transforming them into AG-UI ToolCallStart and ToolCallArgs events.
@@ -33,18 +34,20 @@ public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> 
 
     @Override
     public void convert(ToolUseBlock block, Event event, StreamContext ctx) {
-        String toolName =
-                block.getName() != null && !block.getName().isBlank() ? block.getName() : "unknown";
-
         String toolCallId =
-                block.getId() != null
+                block.getId() != null && !block.getId().isBlank()
                         ? block.getId()
-                        : ctx.resolveOrCreateAnonymousToolUseId(toolName);
+                        : UUID.randomUUID().toString();
 
         if (!ctx.isToolActive(toolCallId)) {
             // End any active Text/Reasoning message before starting tool call
             ctx.flushAllActiveTexts();
             ctx.flushAllActiveReasonings();
+
+            String toolName =
+                    block.getName() != null && !block.getName().isBlank()
+                            ? block.getName()
+                            : "unknown";
 
             ctx.emit(
                     new AguiEvent.ToolCallStart(

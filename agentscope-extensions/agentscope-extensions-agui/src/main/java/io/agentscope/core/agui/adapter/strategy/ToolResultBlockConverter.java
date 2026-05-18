@@ -37,10 +37,10 @@ public class ToolResultBlockConverter implements BlockEventConverter<ToolResultB
     @Override
     public void convert(ToolResultBlock block, Event event, StreamContext ctx) {
         String toolCallId =
-                block.getId() != null
+                block.getId() != null && !block.getId().isBlank()
                         ? block.getId()
-                        : ctx.resolveAnonymousToolResultId()
-                                .orElseGet(() -> UUID.randomUUID().toString());
+                        : UUID.randomUUID().toString();
+
         String result = extractToolResultText(block);
 
         // Closing Start/End Phase
