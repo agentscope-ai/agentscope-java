@@ -18,19 +18,20 @@ package io.agentscope.harness.agent.sandbox.json;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxState;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 class HarnessSandboxJacksonModuleTest {
 
     @Test
-    void roundTripsDockerSandboxState() throws Exception {
-        ObjectMapper mapper =
-                new ObjectMapper()
-                        .findAndRegisterModules()
-                        .registerModule(new HarnessSandboxJacksonModule());
+    void roundTripsDockerSandboxState() {
+        JsonMapper mapper =
+                JsonMapper.builder()
+                        .findAndAddModules()
+                        .addModule(new HarnessSandboxJacksonModule())
+                        .build();
 
         DockerSandboxState original = new DockerSandboxState();
         original.setSessionId("sess-1");

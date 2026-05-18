@@ -15,9 +15,6 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.daytona;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.IOException;
@@ -28,6 +25,9 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /** Minimal HTTP client for the Daytona control plane and toolbox process API. */
 final class DaytonaHttp {
@@ -35,7 +35,7 @@ final class DaytonaHttp {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient http;
-    private final ObjectMapper json = new ObjectMapper();
+    private final JsonMapper json = JsonMapper.shared();
     private final DaytonaSandboxClientOptions opt;
 
     DaytonaHttp(DaytonaSandboxClientOptions opt) {
@@ -73,15 +73,15 @@ final class DaytonaHttp {
                         opt.getMaxRetries(),
                         () -> postJson(opt.getControlPlaneBaseUrl() + "/sandbox", body));
         JsonNode id = root.get("id");
-        if (id == null || id.asText().isBlank()) {
+        if (id == null || id.asString().isBlank()) {
             id = root.get("sandboxId");
         }
-        if (id == null || id.asText().isBlank()) {
+        if (id == null || id.asString().isBlank()) {
             throw new SandboxException.SandboxRuntimeException(
                     SandboxErrorCode.WORKSPACE_START_ERROR,
                     "Daytona create sandbox response missing id: " + root);
         }
-        return id.asText();
+        return id.asString();
     }
 
     void startSandbox(String sandboxId) throws IOException {
@@ -144,12 +144,12 @@ final class DaytonaHttp {
             return null;
         }
         JsonNode st = s.get("state");
-        if (st != null && st.isTextual()) {
-            return st.asText();
+        if (st != null && st.isString()) {
+            return st.asString();
         }
         JsonNode status = s.get("status");
-        if (status != null && status.isTextual()) {
-            return status.asText();
+        if (status != null && status.isString()) {
+            return status.asString();
         }
         return null;
     }

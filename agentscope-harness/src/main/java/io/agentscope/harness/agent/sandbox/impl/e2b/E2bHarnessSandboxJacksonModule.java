@@ -15,8 +15,8 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.e2b;
 
-import com.fasterxml.jackson.databind.jsontype.NamedType;
-import com.fasterxml.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.jsontype.NamedType;
+import tools.jackson.databind.module.SimpleModule;
 
 /** Jackson module registering {@link E2bSandboxState} under the {@code e2b} type id. */
 public final class E2bHarnessSandboxJacksonModule extends SimpleModule {

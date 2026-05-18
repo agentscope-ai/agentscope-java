@@ -15,8 +15,6 @@
  */
 package io.agentscope.harness.agent.subagent;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -28,6 +26,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /**
  * Loads {@link SubagentDeclaration} instances from Markdown files with YAML front matter placed
@@ -69,7 +68,7 @@ import org.slf4j.LoggerFactory;
 public final class AgentSpecLoader {
 
     private static final Logger log = LoggerFactory.getLogger(AgentSpecLoader.class);
-    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory());
+    private static final YAMLMapper YAML_MAPPER = YAMLMapper.builder().build();
 
     private AgentSpecLoader() {}
 

@@ -15,8 +15,6 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.e2b;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
@@ -28,6 +26,8 @@ import java.io.InputStream;
 import java.util.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * {@link io.agentscope.harness.agent.sandbox.Sandbox} backed by E2B cloud sandboxes.
@@ -119,10 +119,10 @@ public class E2bSandbox extends AbstractBaseSandbox {
         String root = e2bState.getWorkspaceRoot();
         String b64 = Base64.getEncoder().encodeToString(all);
         envd().runShell(e2bState, root, "rm -f /tmp/agentscope-ws.b64", 30);
-        ObjectMapper om = new ObjectMapper();
+        JsonMapper jm = JsonMapper.shared();
         for (int i = 0; i < b64.length(); i += B64_CHUNK) {
             String chunk = b64.substring(i, Math.min(b64.length(), i + B64_CHUNK));
-            String lit = om.writeValueAsString(chunk);
+            String lit = jm.writeValueAsString(chunk);
             String py =
                     "import pathlib; pathlib.Path('/tmp/agentscope-ws.b64').open('a').write("
                             + lit
@@ -131,7 +131,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
         }
         String pyFin =
                 "import base64,pathlib,subprocess; d="
-                        + om.writeValueAsString(root)
+                        + jm.writeValueAsString(root)
                         + "; raw=base64.standard_b64decode(pathlib.Path('/tmp/agentscope-ws.b64').read_text());"
                         + " subprocess.run(['tar','xf','-','-C',d],input=raw,check=True)";
         envd().runShell(

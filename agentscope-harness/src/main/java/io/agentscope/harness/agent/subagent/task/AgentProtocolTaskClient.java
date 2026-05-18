@@ -15,8 +15,6 @@
  */
 package io.agentscope.harness.agent.subagent.task;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -27,6 +25,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Minimal HTTP client for the internal AgentScope task protocol ({@code POST/GET /tasks/...}).
@@ -35,7 +35,7 @@ import java.util.Objects;
  */
 public final class AgentProtocolTaskClient {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final JsonMapper JSON = JsonMapper.shared();
 
     private final HttpClient http;
 

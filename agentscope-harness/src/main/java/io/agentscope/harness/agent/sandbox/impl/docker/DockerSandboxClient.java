@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.docker;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxException;
@@ -26,6 +25,8 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * {@link SandboxClient} implementation for the Docker sandbox backend.
@@ -41,9 +42,10 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
 
     public DockerSandboxClient() {
         this.objectMapper =
-                new ObjectMapper()
-                        .findAndRegisterModules()
-                        .registerModule(new HarnessSandboxJacksonModule());
+                JsonMapper.builder()
+                        .findAndAddModules()
+                        .addModules(new HarnessSandboxJacksonModule())
+                        .build();
     }
 
     /**
