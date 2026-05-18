@@ -318,15 +318,9 @@ public class AnthropicChatModel extends ChatModelBase {
         /**
          * Sets the proxy configuration for HTTP traffic.
          *
-         * <p><b>Interaction with other configuration:</b>
-         * AnthropicChatModel constructs the HTTP client internally, so {@code proxy()} is
-         * the <i>only</i> way to configure proxy for this model. Simply call this method
-         * alongside {@link #apiKey(String)}, {@link #baseUrl(String)}, etc., and the proxy
-         * will be applied when the client is built.
-         *
-         * <p><b>Note:</b> The Anthropic SDK is built on OkHttp, which fully supports
-         * {@link ProxyConfig#toJavaProxy()} conversion. Proxy authentication credentials
-         * are applied via the SDK's built-in proxy handling.
+         * <p>The Anthropic Java SDK does not support proxy authentication or {@code nonProxyHosts}. Only
+         * {@link ProxyConfig#toJavaProxy()} is used; {@code username}, {@code password}, and {@code nonProxyHosts} on
+         * {@link ProxyConfig} have no effect.
          *
          * @param proxyConfig the proxy configuration (see {@link ProxyConfig})
          * @return this builder
