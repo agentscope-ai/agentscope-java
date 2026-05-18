@@ -31,7 +31,6 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.core.message.CustomBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -1716,98 +1715,6 @@ class AguiAgentAdapterTest {
         assertTrue(
                 !hasReasoningMessageStart,
                 "Should NOT have ReasoningMessageStart for null thinking");
-    }
-
-    @Test
-    void testRunWithCustomEventForToolProgress() {
-        // Simulate intermediate tool progress using CustomBlock (50% downloaded)
-        Msg progressMsg1 =
-                Msg.builder()
-                        .id("msg-tr1")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                CustomBlock.builder()
-                                        .name("tool_progress")
-                                        .value(Map.of("progress", "50%"))
-                                        .build())
-                        .build();
-        Event progressEvent1 = new Event(EventType.TOOL_RESULT, progressMsg1, false);
-
-        // Simulate intermediate tool progress (100% downloaded)
-        Msg progressMsg2 =
-                Msg.builder()
-                        .id("msg-tr1")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                CustomBlock.builder()
-                                        .name("tool_progress")
-                                        .value(Map.of("progress", "100%"))
-                                        .build())
-                        .build();
-        Event progressEvent2 = new Event(EventType.TOOL_RESULT, progressMsg2, false);
-
-        // Simulate final tool result (isLast = true)
-        Msg finalResultMsg =
-                Msg.builder()
-                        .id("msg-tr1")
-                        .role(MsgRole.TOOL)
-                        .content(
-                                ToolResultBlock.builder()
-                                        .id("tc-1")
-                                        .output(
-                                                TextBlock.builder()
-                                                        .text("Download complete")
-                                                        .build())
-                                        .build())
-                        .build();
-        Event finalResultEvent = new Event(EventType.TOOL_RESULT, finalResultMsg, true);
-
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
-                .thenReturn(Flux.just(progressEvent1, progressEvent2, finalResultEvent));
-
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-1")
-                        .runId("run-1")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Download file")))
-                        .build();
-
-        List<AguiEvent> events = adapter.run(input).collectList().block();
-
-        assertNotNull(events);
-
-        // Verify that exactly 2 Custom events were emitted for the progress
-        long customEventCount = events.stream().filter(e -> e instanceof AguiEvent.Custom).count();
-        assertEquals(2, customEventCount, "Should have 2 Custom events for tool progress");
-
-        // Verify the content of the Custom events
-        List<AguiEvent.Custom> customEvents =
-                events.stream()
-                        .filter(e -> e instanceof AguiEvent.Custom)
-                        .map(e -> (AguiEvent.Custom) e)
-                        .toList();
-
-        assertEquals("tool_progress", customEvents.get(0).name());
-        Map<String, Object> value1 = (Map<String, Object>) customEvents.get(0).value();
-        assertEquals("50%", value1.get("progress"));
-
-        assertEquals("tool_progress", customEvents.get(1).name());
-        Map<String, Object> value2 = (Map<String, Object>) customEvents.get(1).value();
-        assertEquals("100%", value2.get("progress"));
-
-        // Verify that the final ToolCallResult was emitted correctly
-        long toolResultCount =
-                events.stream().filter(e -> e instanceof AguiEvent.ToolCallResult).count();
-        assertEquals(
-                1, toolResultCount, "Should have exactly 1 ToolCallResult for the final event");
-
-        AguiEvent.ToolCallResult finalResult =
-                (AguiEvent.ToolCallResult)
-                        events.stream()
-                                .filter(e -> e instanceof AguiEvent.ToolCallResult)
-                                .findFirst()
-                                .orElseThrow();
-        assertEquals("Download complete", finalResult.content());
     }
 
     @Test

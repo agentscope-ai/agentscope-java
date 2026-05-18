@@ -20,7 +20,6 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
-import io.agentscope.core.agui.adapter.strategy.CustomBlockConverter;
 import io.agentscope.core.agui.adapter.strategy.TextBlockConverter;
 import io.agentscope.core.agui.adapter.strategy.ThinkingBlockConverter;
 import io.agentscope.core.agui.adapter.strategy.ToolResultBlockConverter;
@@ -29,7 +28,6 @@ import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.CustomBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -54,7 +52,6 @@ import reactor.core.publisher.Flux;
  *   <li>AgentScope REASONING/SUMMARY events → AG-UI REASONING_* events (for ThinkingBlock)</li>
  *   <li>AgentScope TOOL_RESULT events → AG-UI TOOL_CALL_END events</li>
  *   <li>ToolUseBlock content → AG-UI TOOL_CALL_START events</li>
- *   <li>CustomBlock content → AG-UI CUSTOM events</li>
  * </ul>
  *
  * <p><b>Reasoning Support:</b>
@@ -87,7 +84,6 @@ public class AguiAgentAdapter {
         converters.put(ThinkingBlock.class, new ThinkingBlockConverter());
         converters.put(ToolUseBlock.class, new ToolUseBlockConverter());
         converters.put(ToolResultBlock.class, new ToolResultBlockConverter());
-        converters.put(CustomBlock.class, new CustomBlockConverter());
     }
 
     /**
