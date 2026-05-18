@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-15T08:44:29+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Harness 架构" href="architecture.html"><link rel="prev" title="核心贡献者" href="../community/contributors.html">
+    <meta property="article:modified_time" content="2026-05-18T13:47:03+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Harness 架构" href="architecture.html"><link rel="prev" title="核心贡献者" href="../community/contributors.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/harness/overview.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -696,16 +696,16 @@
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>完整可运行版本：<a class="reference internal" href="#../../../agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java"><span class="xref myst"><code class="docutils literal notranslate"><span class="pre">agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java</span></code></span></a></p>
+<p>完整可运行版本：<a class="reference download internal" download="" href="../../_downloads/3f58b760656f6898638948a853ed0ec9/QuickstartExample.java"><span class="xref download myst"><code class="docutils literal notranslate"><span class="pre">agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java</span></code></span></a></p>
 <p>运行：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">DASHSCOPE_API_KEY</span><span class="o">=</span>your_key_here
 
 <span class="c1"># 首次运行需要把依赖模块 install 到本地仓库（跳过 javadoc 与 spotless）</span>
-mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/harness-example<span class="w"> </span>-am<span class="w"> </span>install<span class="w"> </span><span class="se">\</span>
+mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/agents/harness-examples/harness-quickstart<span class="w"> </span>-am<span class="w"> </span>install<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DskipTests<span class="w"> </span>-Dspotless.check.skip<span class="o">=</span><span class="nb">true</span><span class="w"> </span>-Dmaven.javadoc.skip<span class="o">=</span><span class="nb">true</span><span class="w"> </span>-q
 
 <span class="c1"># 执行 main</span>
-mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/harness-example<span class="w"> </span>exec:java<span class="w"> </span><span class="se">\</span>
+mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/agents/harness-examples/harness-quickstart<span class="w"> </span>exec:java<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Dexec.mainClass<span class="o">=</span>io.agentscope.harness.example.QuickstartExample<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Dspotless.check.skip<span class="o">=</span><span class="nb">true</span><span class="w"> </span>-q
 </pre></div>
@@ -826,7 +826,7 @@ mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/harnes
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-05-15</div>
+              Last updated on 2026-05-18</div>
           </div>
           <div class="right-details">
             <div class="icons">

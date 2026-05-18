@@ -82,7 +82,7 @@ During execution, the system automatically injects plan hints before each reason
 
 ## Complete Example
 
-See `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PlanNotebookExample.java`
+See `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/PlanNotebookExample.java`
 
 ## Configuration Options
 

@@ -2043,9 +2043,9 @@ The call flow is the same as Tool Suspend: LLM calls → returns `TOOL_SUSPENDED
 
 ## Complete Examples
 
-- **Tool Call Example**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
-- **Tool Group Example**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
-- **MultiModal Tool Example**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)
+- **Tool Call Example**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
+- **Tool Group Example**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
+- **MultiModal Tool Example**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)
 
 # MCP (Model Context Protocol)
 
@@ -2419,16 +2419,16 @@ HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
 ### Higress Example
 
 See the complete Higress example:
-- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
+- `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
 
 ## Complete Example
 
 See the complete MCP example:
-- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
+- `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
 
 Run the example:
 ```bash
-cd agentscope-examples/quickstart
+cd agentscope-examples/documentation/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.McpToolExample"
 ```
 
@@ -3532,12 +3532,12 @@ public class CustomReader implements Reader {
 
 ## Complete Examples
 
-- **Local Knowledge Base Example**: [RAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/RAGExample.java)
-- **Bailian Knowledge Base Example**: [BailianRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianRAGExample.java)
-- **Dify Knowledge Base Example**: [DifyRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/DifyRAGExample.java)
-- **RAGFlow Knowledge Base Example**: [RAGFlowRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/RAGFlowRAGExample.java)
-- **Elasticsearch Knowledge Base Example**: [ElasticsearchRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ElasticsearchRAGExample.java)
-- **PgVector Knowledge Base Example**: [PgVectorRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PgVectorRAGExample.java)
+- **Local Knowledge Base Example**: [RAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/RAGExample.java)
+- **Bailian Knowledge Base Example**: [BailianRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/BailianRAGExample.java)
+- **Dify Knowledge Base Example**: [DifyRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/DifyRAGExample.java)
+- **RAGFlow Knowledge Base Example**: [RAGFlowRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/RAGFlowRAGExample.java)
+- **Elasticsearch Knowledge Base Example**: [ElasticsearchRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/ElasticsearchRAGExample.java)
+- **PgVector Knowledge Base Example**: [PgVectorRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/PgVectorRAGExample.java)
 - 
 
 # Streaming
@@ -3963,11 +3963,11 @@ public class ErrorHandlingHook implements Hook {
 ## Complete Example
 
 See the complete Hook example:
-- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HookExample.java`
+- `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/HookExample.java`
 
 Run the example:
 ```bash
-cd agentscope-examples/quickstart
+cd agentscope-examples/documentation/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.HookExample"
 ```
 
@@ -4233,7 +4233,7 @@ sessionManager.loadIfExists();
 sessionManager.saveSession();
 ```
 
-**Complete Example**: `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
+**Complete Example**: `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
 
 ## Long-term Memory
 
@@ -4331,7 +4331,7 @@ ReActAgent agent = ReActAgent.builder()
   - Platform Mem0: Required
   - Self-hosted Mem0: Depends on your service configuration, may not be needed
 
-**Complete Example**: `agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
+**Complete Example**: `agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
 
 **Run Example**:
 
@@ -4339,14 +4339,14 @@ ReActAgent agent = ReActAgent.builder()
 # Platform Mem0 (default)
 export MEM0_API_KEY=your_api_key
 export MEM0_API_BASE_URL=https://api.mem0.ai  # Optional, defaults to this value
-cd agentscope-examples/advanced
+cd agentscope-examples/documentation/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 
 # Self-hosted Mem0
 export MEM0_API_KEY=your_api_key  # Optional, depends on service configuration
 export MEM0_API_BASE_URL=http://localhost:8000
 export MEM0_API_TYPE=self-hosted
-cd agentscope-examples/advanced
+cd agentscope-examples/documentation/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 ```
 
@@ -4374,7 +4374,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**Complete Example**: `agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
+**Complete Example**: `agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
 
 **Run Example**:
 
@@ -4419,7 +4419,7 @@ ReActAgent agent = ReActAgent.builder()
 - `projectId`: Bailian project ID (optional)
 - `profileSchema`: Bailian configuration Schema ID (optional)
 
-**Complete Example**: `agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianMemoryExample.java`
+**Complete Example**: `agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/BailianMemoryExample.java`
 
 **Run Example**:
 
@@ -4430,7 +4430,7 @@ export BAILIAN_MEMORY_LIBRARY_ID=your_library_id
 export BAILIAN_PROJECT_ID=your_project_id
 export BAILIAN_PROFILE_SCHEMA=your_profile_schema
 
-cd agentscope-examples/advanced
+cd agentscope-examples/documentation/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.BailianMemoryExample"
 ```
 
@@ -4525,7 +4525,7 @@ During execution, the system automatically injects plan hints before each reason
 
 ## Complete Example
 
-See `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PlanNotebookExample.java`
+See `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/PlanNotebookExample.java`
 
 ## Configuration Options
 
@@ -5204,7 +5204,7 @@ redis-cli KEYS "agentscope:session:*" | xargs redis-cli DEL
 
 ## More Resources
 
-- **Complete Example**: [SessionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java)
+- **Complete Example**: [SessionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java)
 - **State Documentation**: [state.md](./state.md)
 - **Agent Configuration**: [agent-config.md](./agent-config.md)
 
@@ -5440,7 +5440,7 @@ DashScopeChatModel.builder()
 
 ## More Resources
 
-- **Complete Example Code**: [VisionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/VisionExample.java)
+- **Complete Example Code**: [VisionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/VisionExample.java)
 - **Message Mechanism**: [message.md](../quickstart/message.md) - Learn about message structure
 - **Model Configuration**: [model.md](./model.md) - Learn about model configuration options
 
@@ -5567,7 +5567,7 @@ try {
 
 ## More Resources
 
-- **Complete Example**: [StructuredOutputExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
+- **Complete Example**: [StructuredOutputExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
 - **Agent Configuration**: [agent-config.md](./agent-config.md)
 
 
@@ -5894,7 +5894,7 @@ TracerRegistry.register(
 
 ## More Resources
 
-- **Studio Example**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
+- **Studio Example**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio Repository**: https://github.com/agentscope-ai/agentscope-studio
 - **Hook Documentation**: [hook.md](./hook.md)
 
@@ -6050,11 +6050,11 @@ function App() {
 
 ## Example Project
 
-See complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui):
+See complete example at [agentscope-examples/integration/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/integration/agui):
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/agui
+cd agentscope-examples/integration/agui
 mvn spring-boot:run
 ```
 
@@ -8784,7 +8784,7 @@ public class QuickstartExample {
 }
 ```
 
-Full runnable version: [`agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](../../../agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
+Full runnable version: [`agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](../../../agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
 
 Run:
 
@@ -8792,11 +8792,11 @@ Run:
 export DASHSCOPE_API_KEY=your_key_here
 
 # First run: install dependency modules to local repo (skip javadoc and spotless)
-mvn -pl agentscope-examples/harness-example -am install \
+mvn -pl agentscope-examples/agents/harness-examples/harness-quickstart -am install \
     -DskipTests -Dspotless.check.skip=true -Dmaven.javadoc.skip=true -q
 
 # Execute main
-mvn -pl agentscope-examples/harness-example exec:java \
+mvn -pl agentscope-examples/agents/harness-examples/harness-quickstart exec:java \
     -Dexec.mainClass=io.agentscope.harness.example.QuickstartExample \
     -Dspotless.check.skip=true -q
 ```
@@ -10828,7 +10828,7 @@ This section tracks runnable Harness examples and scenario walkthroughs.
 
 Repository examples:
 
-- `agentscope-examples/harness-example`
+- `agentscope-examples/agents/harness-examples/harness-quickstart`
 
 Recommended reading order:
 

@@ -87,7 +87,7 @@ public class QuickstartExample {
 }
 ```
 
-Full runnable version: [`agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](../../../agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
+Full runnable version: [`agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](../../../agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
 
 Run:
 
@@ -95,11 +95,11 @@ Run:
 export DASHSCOPE_API_KEY=your_key_here
 
 # First run: install dependency modules to local repo (skip javadoc and spotless)
-mvn -pl agentscope-examples/harness-example -am install \
+mvn -pl agentscope-examples/agents/harness-examples/harness-quickstart -am install \
     -DskipTests -Dspotless.check.skip=true -Dmaven.javadoc.skip=true -q
 
 # Execute main
-mvn -pl agentscope-examples/harness-example exec:java \
+mvn -pl agentscope-examples/agents/harness-examples/harness-quickstart exec:java \
     -Dexec.mainClass=io.agentscope.harness.example.QuickstartExample \
     -Dspotless.check.skip=true -q
 ```
