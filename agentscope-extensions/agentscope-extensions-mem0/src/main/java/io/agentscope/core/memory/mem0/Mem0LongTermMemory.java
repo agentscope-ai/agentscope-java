@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
@@ -111,6 +113,8 @@ import reactor.core.publisher.Mono;
  * @see Mem0Client
  */
 public class Mem0LongTermMemory implements LongTermMemory {
+
+    private static final Logger log = LoggerFactory.getLogger(Mem0LongTermMemory.class);
 
     private final Mem0Client client;
     private final String agentId;
@@ -227,10 +231,11 @@ public class Mem0LongTermMemory implements LongTermMemory {
     /**
      * Builds a search request with the given query.
      *
-     * <p>The search request includes:
+     * <p>The search request follows Mem0 v2 API filter structure:
      * <ul>
-     *   <li>Standard filters: userId, agentId, runId (added by builder convenience methods)</li>
-     *   <li>Custom metadata filters: merged into filters via builder.getFilters()</li>
+     *   <li>Entity filters (userId, agentId, runId) are OR-connected</li>
+     *   <li>Metadata filters are OR-connected</li>
+     *   <li>Entity and metadata filters are AND-connected at top level</li>
      * </ul>
      *
      * @param query The search query string
@@ -245,9 +250,8 @@ public class Mem0LongTermMemory implements LongTermMemory {
                         .runId(runId)
                         .topK(5);
 
-        // Merge custom metadata into filters if present
         if (metadata != null && !metadata.isEmpty()) {
-            builder.getFilters().putAll(metadata);
+            builder.metadata(metadata);
         }
 
         return builder.build();
@@ -288,6 +292,12 @@ public class Mem0LongTermMemory implements LongTermMemory {
                                     .filter(Objects::nonNull)
                                     .collect(Collectors.joining("\n"));
                         })
+                .doOnError(
+                        error ->
+                                log.warn(
+                                        "Failed to retrieve memories for query '{}': {}",
+                                        query,
+                                        error.getMessage()))
                 .onErrorReturn("");
     }
 
