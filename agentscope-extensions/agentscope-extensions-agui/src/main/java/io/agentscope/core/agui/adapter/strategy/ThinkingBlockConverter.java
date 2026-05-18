@@ -39,8 +39,11 @@ public class ThinkingBlockConverter implements BlockEventConverter<ThinkingBlock
         }
 
         String msgId = event.getMessage().getId();
-        // After the id is end, it is rejected to be start again in this flow
-        if (ctx.isReasoningFinished(msgId)) {
+        // The tool call event will terminate all open reasoning events (assuming reasoning event
+        // msgId=2). After a round of reasoning (including reasonings, texts, and tool calls event),
+        // the event.last=true packet will carry the complete accumulation of the reasoning event
+        // with msgId=2, which needs to be blocked
+        if (ctx.isReasoningFinished(msgId) && event.isLast()) {
             return;
         }
 

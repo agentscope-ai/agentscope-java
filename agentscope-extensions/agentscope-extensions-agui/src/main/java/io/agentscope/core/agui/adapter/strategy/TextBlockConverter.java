@@ -34,8 +34,11 @@ public class TextBlockConverter implements BlockEventConverter<TextBlock> {
     @Override
     public void convert(TextBlock block, Event event, StreamContext ctx) {
         String msgId = event.getMessage().getId();
-        // After the id is end, it is rejected to be start again in this flow
-        if (ctx.isTextFinished(msgId)) {
+        // The tool call event will terminate all open text events (assuming text event msgId=1)
+        // After a round of reasoning (including reasonings, texts, and tool calls event),
+        // the event.last=true packet will carry the complete accumulation of the text event with
+        // msgId=1, which needs to be blocked
+        if (ctx.isTextFinished(msgId) && event.isLast()) {
             return;
         }
 

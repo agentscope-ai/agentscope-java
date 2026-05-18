@@ -1809,4 +1809,124 @@ class AguiAgentAdapterTest {
                                 .orElseThrow();
         assertEquals("Download complete", finalResult.content());
     }
+
+    @Test
+    void testAggregateLastEventBlockedWhenFinished() {
+        // Test that when a text or reasoning event is interrupted end(e.g., interrupted by a tool
+        // call),
+        // the final event (isLast=true) containing the aggregated content is strictly blocked and
+        // ignored.
+        // This prevents the UI from repeating the entire accumulated message at the end of a
+        // stream.
+
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        String targetMsgId = "msg-target";
+
+        // 1. Initial chunk (isLast = false)
+        Msg firstMsg =
+                Msg.builder()
+                        .id(targetMsgId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Initial reasoning.")
+                                                .build(),
+                                        TextBlock.builder().text("Initial text.").build()))
+                        .build();
+        Event firstEvent = new Event(EventType.REASONING, firstMsg, false);
+
+        // 2. Tool call chunk (forces closure, making targetMsgId "finished")
+        Msg toolMsg =
+                Msg.builder()
+                        .id("msg-tc")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("tc-1")
+                                        .name("get_weather")
+                                        .input(Map.of())
+                                        .build())
+                        .build();
+        Event toolEvent = new Event(EventType.REASONING, toolMsg, false);
+
+        // 3. Final aggregate chunk (isLast = true) - This MUST be blocked!
+        Msg lastMsg =
+                Msg.builder()
+                        .id(targetMsgId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking(
+                                                        "Initial reasoning. Plus all aggregate"
+                                                                + " chunk.")
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("Initial text. Plus all aggregate chunk.")
+                                                .build()))
+                        .build();
+        Event lastEvent = new Event(EventType.REASONING, lastMsg, true);
+
+        // Mock the stream to return the sequence
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(firstEvent, toolEvent, lastEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage(
+                                                "msg-1", "Test aggregate blocking")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Verify Start events (should only be 1 of each, not restarted by the last aggregate event)
+        long textStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageStart).count();
+        long reasoningStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageStart).count();
+
+        assertEquals(1, textStartCount, "Should emit exactly 1 TextMessageStart");
+        assertEquals(1, reasoningStartCount, "Should emit exactly 1 ReasoningMessageStart");
+
+        // Verify End events (should only be 1 of each, triggered strictly by the tool interruption)
+        long textEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageEnd).count();
+        long reasoningEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageEnd).count();
+
+        assertEquals(
+                1, textEndCount, "Should emit exactly 1 TextMessageEnd due to tool interruption");
+        assertEquals(
+                1,
+                reasoningEndCount,
+                "Should emit exactly 1 ReasoningMessageEnd due to tool interruption");
+
+        // Verify that the aggregate content was strictly blocked and never emitted
+        boolean hasAggregateText =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .anyMatch(e -> e.delta().contains("aggregate chunk"));
+
+        assertTrue(!hasAggregateText, "The aggregated text block MUST be ignored and not emitted");
+
+        boolean hasAggregateReasoning =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageContent)
+                        .map(e -> (AguiEvent.ReasoningMessageContent) e)
+                        .anyMatch(e -> e.delta().contains("aggregate chunk"));
+
+        assertTrue(
+                !hasAggregateReasoning,
+                "The aggregated reasoning block MUST be ignored and not emitted");
+    }
 }
