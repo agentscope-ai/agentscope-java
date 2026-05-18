@@ -161,7 +161,7 @@ sessionManager.loadIfExists();
 sessionManager.saveSession();
 ```
 
-**完整示例**：`agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
+**完整示例**：`agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
 
 ## 长期记忆 (Long-term Memory)
 
@@ -259,7 +259,7 @@ ReActAgent agent = ReActAgent.builder()
   - Platform Mem0：必需
   - 自建 Mem0：取决于您的服务配置，可能不需要
 
-**完整示例**：`agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
+**完整示例**：`agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
 
 **运行示例**：
 
@@ -267,14 +267,14 @@ ReActAgent agent = ReActAgent.builder()
 # Platform Mem0（默认）
 export MEM0_API_KEY=your_api_key
 export MEM0_API_BASE_URL=https://api.mem0.ai  # 可选，默认为此值
-cd agentscope-examples/advanced
+cd agentscope-examples/documentation/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 
 # 自建 Mem0
 export MEM0_API_KEY=your_api_key  # 可选，取决于服务配置
 export MEM0_API_BASE_URL=http://localhost:8000
 export MEM0_API_TYPE=self-hosted
-cd agentscope-examples/advanced
+cd agentscope-examples/documentation/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 ```
 
@@ -302,7 +302,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**完整示例**：`agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
+**完整示例**：`agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
 
 **运行示例**：
 
@@ -348,7 +348,7 @@ ReActAgent agent = ReActAgent.builder()
 - `projectId`：百炼记忆片段规则 ID（可选）
 - `profileSchema`：百炼用户画像规则 ID（可选）
 
-**完整示例**：`agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianMemoryExample.java`
+**完整示例**：`agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/BailianMemoryExample.java`
 
 **运行示例**：
 
@@ -359,7 +359,7 @@ export BAILIAN_MEMORY_LIBRARY_ID=your_library_id
 export BAILIAN_PROJECT_ID=your_project_id
 export BAILIAN_PROFILE_SCHEMA=your_profile_schema
 
-cd agentscope-examples/advanced
+cd agentscope-examples/documentation/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.BailianMemoryExample"
 ```
 
