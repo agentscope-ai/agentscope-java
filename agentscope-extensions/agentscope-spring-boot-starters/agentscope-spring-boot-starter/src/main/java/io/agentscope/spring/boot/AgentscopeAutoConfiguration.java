@@ -19,10 +19,13 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.WebSocketTransport;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.model.ModelProviderType;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
+import io.agentscope.spring.boot.transport.TransportProviderType;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -124,6 +127,11 @@ import org.springframework.context.annotation.Scope;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(AgentscopeProperties.class)
+@ConditionalOnProperty(
+        prefix = "agentscope.agent",
+        name = "enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 @ConditionalOnClass(ReActAgent.class)
 public class AgentscopeAutoConfiguration {
 
@@ -138,7 +146,6 @@ public class AgentscopeAutoConfiguration {
      * {@code ObjectProvider<Memory>} or method injection.
      */
     @Bean
-    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public Memory agentscopeMemory() {
@@ -156,11 +163,36 @@ public class AgentscopeAutoConfiguration {
      * {@code ObjectProvider<Toolkit>} or method injection.
      */
     @Bean
-    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public Toolkit agentscopeToolkit() {
         return new Toolkit();
+    }
+
+    /**
+     * Default HttpTransport implementation.
+     *
+     * @param properties the AgentscopeProperties
+     * @return the HttpTransport
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public HttpTransport agentscopeHttpTransport(AgentscopeProperties properties) {
+        return TransportProviderType.HttpType.createTransportFromProperties(properties);
+    }
+
+    /**
+     * Default WebSocketTransport implementation.
+     *
+     * @param properties the AgentscopeProperties
+     * @return the WebSocketTransport
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public WebSocketTransport agentscopeWebSocketTransport(AgentscopeProperties properties) {
+        return TransportProviderType.WebSocketType.createTransportFromProperties(properties);
     }
 
     /**
@@ -173,10 +205,13 @@ public class AgentscopeAutoConfiguration {
      * settings.
      */
     @Bean
-    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean(Model.class)
-    public Model agentscopeModel(AgentscopeProperties properties) {
-        return ModelProviderType.fromProperties(properties).createModel(properties);
+    public Model agentscopeModel(
+            AgentscopeProperties properties,
+            HttpTransport httpTransport,
+            WebSocketTransport webSocketTransport) {
+        return ModelProviderType.createModelFromProperties(
+                properties, httpTransport, webSocketTransport);
     }
 
     /**
@@ -194,7 +229,6 @@ public class AgentscopeAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public ReActAgent agentscopeReActAgent(
             Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {

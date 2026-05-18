@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.util;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Utility methods for exception handling.
  */
@@ -56,5 +58,43 @@ public final class ExceptionUtils {
 
         // Fall back to the exception class name
         return throwable.getClass().getSimpleName();
+    }
+
+    /**
+     * Retrieves the root cause of an exception.
+     *
+     * @param original The original exception (maybe null)
+     * @return The root cause of the original exception, or null if the original is null
+     */
+    public static @Nullable Throwable getRootCause(@Nullable Throwable original) {
+        return getRootCause(original, null);
+    }
+
+    /**
+     * Retrieves the root cause of an expected type exception.
+     *
+     * @param original The original exception (allow null)
+     * @param expectedType The expected type of the root cause (allow null)
+     * @return The expected type root cause of the original exception, or null if the original is null,
+     *         or null if not have expected type
+     */
+    public static @Nullable Throwable getRootCause(
+            @Nullable Throwable original, @Nullable Class<? extends Throwable> expectedType) {
+        if (original == null) {
+            return null;
+        } else {
+            Throwable rootCause = null;
+
+            for (Throwable cause = original.getCause();
+                    cause != null && cause != rootCause;
+                    cause = cause.getCause()) {
+                if (expectedType != null && expectedType.isInstance(cause)) {
+                    return cause;
+                }
+                rootCause = cause;
+            }
+
+            return expectedType == null ? rootCause : null;
+        }
     }
 }

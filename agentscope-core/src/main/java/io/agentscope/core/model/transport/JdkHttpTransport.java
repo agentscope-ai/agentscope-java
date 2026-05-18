@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.model.transport;
 
+import io.agentscope.core.util.ExceptionUtils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -61,6 +62,8 @@ import reactor.core.scheduler.Schedulers;
  *   <li>HTTP/2 with fallback to HTTP/1.1</li>
  *   <li>Connection pooling (built-in)</li>
  *   <li>Configurable timeouts</li>
+ *   <li>Configurable SSL ignore</li>
+ *   <li>Configurable proxy</li>
  * </ul>
  *
  * <p>This implementation has no external dependencies beyond the JDK.
@@ -229,9 +232,10 @@ public class JdkHttpTransport implements HttpTransport {
                 .onErrorMap(
                         e -> !(e instanceof HttpTransportException),
                         e -> {
-                            Throwable cause = e instanceof CompletionException ? e.getCause() : e;
+                            Throwable cause =
+                                    ExceptionUtils.getRootCause(e, HttpTransportException.class);
                             if (cause instanceof HttpTransportException) {
-                                return (HttpTransportException) cause;
+                                return cause;
                             }
                             return new HttpTransportException(
                                     "SSE/NDJSON stream failed: " + e.getMessage(), e);
@@ -265,13 +269,13 @@ public class JdkHttpTransport implements HttpTransport {
                 .filter(line -> line.startsWith(SSE_DATA_PREFIX))
                 .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
                 .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
-                .doOnNext(data -> log.debug("Received SSE data chunk"))
+                .doOnNext(data -> log.debug("Received SSE data chunk: {}", data))
                 .filter(data -> !data.isEmpty());
     }
 
     private Flux<String> readNdJsonLines(BufferedReader reader) {
         return Flux.fromStream(reader.lines())
-                .doOnNext(line -> log.debug("Received NDJSON line"))
+                .doOnNext(line -> log.debug("Received NDJSON line: {}", line))
                 .filter(line -> !line.isEmpty());
     }
 

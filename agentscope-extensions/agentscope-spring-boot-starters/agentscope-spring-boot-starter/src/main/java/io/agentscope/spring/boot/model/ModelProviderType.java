@@ -20,21 +20,24 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.WebSocketTransport;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import io.agentscope.spring.boot.properties.AnthropicProperties;
 import io.agentscope.spring.boot.properties.DashscopeProperties;
 import io.agentscope.spring.boot.properties.GeminiProperties;
-import io.agentscope.spring.boot.properties.ModelProperties;
 import io.agentscope.spring.boot.properties.OpenAIProperties;
-import java.util.Locale;
 
 /**
  * Enum-based strategy for creating concrete {@link Model} instances from configuration.
  */
 public enum ModelProviderType {
-    DASHSCOPE("dashscope") {
+    DASHSCOPE {
         @Override
-        public Model createModel(AgentscopeProperties properties) {
+        public Model createModel(
+                AgentscopeProperties properties,
+                HttpTransport httpTransport,
+                WebSocketTransport webSocketTransport) {
             DashscopeProperties dashscope = properties.getDashscope();
             if (!dashscope.isEnabled()) {
                 throw new IllegalStateException(
@@ -50,7 +53,8 @@ public enum ModelProviderType {
                     DashScopeChatModel.builder()
                             .apiKey(dashscope.getApiKey())
                             .modelName(dashscope.getModelName())
-                            .stream(dashscope.isStream());
+                            .stream(dashscope.isStream())
+                            .httpTransport(httpTransport);
 
             if (dashscope.getEnableThinking() != null) {
                 builder.enableThinking(dashscope.getEnableThinking());
@@ -59,9 +63,12 @@ public enum ModelProviderType {
             return builder.build();
         }
     },
-    OPENAI("openai") {
+    OPENAI {
         @Override
-        public Model createModel(AgentscopeProperties properties) {
+        public Model createModel(
+                AgentscopeProperties properties,
+                HttpTransport httpTransport,
+                WebSocketTransport webSocketTransport) {
             OpenAIProperties openai = properties.getOpenai();
             if (!openai.isEnabled()) {
                 throw new IllegalStateException(
@@ -77,7 +84,8 @@ public enum ModelProviderType {
                     OpenAIChatModel.builder()
                             .apiKey(openai.getApiKey())
                             .modelName(openai.getModelName())
-                            .stream(openai.isStream());
+                            .stream(openai.isStream())
+                            .httpTransport(httpTransport);
 
             if (openai.getBaseUrl() != null && !openai.getBaseUrl().isEmpty()) {
                 builder.baseUrl(openai.getBaseUrl());
@@ -90,9 +98,12 @@ public enum ModelProviderType {
             return builder.build();
         }
     },
-    GEMINI("gemini") {
+    GEMINI {
         @Override
-        public Model createModel(AgentscopeProperties properties) {
+        public Model createModel(
+                AgentscopeProperties properties,
+                HttpTransport httpTransport,
+                WebSocketTransport webSocketTransport) {
             GeminiProperties gemini = properties.getGemini();
             if (!gemini.isEnabled()) {
                 throw new IllegalStateException(
@@ -120,9 +131,12 @@ public enum ModelProviderType {
             return builder.build();
         }
     },
-    ANTHROPIC("anthropic") {
+    ANTHROPIC {
         @Override
-        public Model createModel(AgentscopeProperties properties) {
+        public Model createModel(
+                AgentscopeProperties properties,
+                HttpTransport httpTransport,
+                WebSocketTransport webSocketTransport) {
             AnthropicProperties anthropic = properties.getAnthropic();
             if (!anthropic.isEnabled()) {
                 throw new IllegalStateException(
@@ -148,37 +162,32 @@ public enum ModelProviderType {
         }
     };
 
-    private final String id;
-
-    ModelProviderType(String id) {
-        this.id = id;
-    }
-
     /**
      * Create a concrete {@link Model} instance using the given properties.
+     *
+     * @param properties The Agentscope properties
+     * @param httpTransport The HTTP transport
+     * @param webSocketTransport The WebSocket transport
+     * @return A new model instance
      */
-    public abstract Model createModel(AgentscopeProperties properties);
+    public abstract Model createModel(
+            AgentscopeProperties properties,
+            HttpTransport httpTransport,
+            WebSocketTransport webSocketTransport);
 
     /**
-     * Resolve provider from root properties. Defaults to {@link #DASHSCOPE} when provider is not
-     * configured.
+     * Create a concrete {@link Model} instance from the given properties.
      *
-     * @param properties root configuration properties
-     * @return resolved provider enum
+     * @param properties The Agentscope properties
+     * @param httpTransport The HTTP transport
+     * @param webSocketTransport The WebSocket transport
+     * @return A new model instance
      */
-    public static ModelProviderType fromProperties(AgentscopeProperties properties) {
-        ModelProperties modelProps = properties.getModel();
-        String provider = modelProps != null ? modelProps.getProvider() : null;
-        String normalized =
-                provider == null || provider.isBlank()
-                        ? DASHSCOPE.id
-                        : provider.trim().toLowerCase(Locale.ROOT);
-
-        for (ModelProviderType type : values()) {
-            if (type.id.equals(normalized)) {
-                return type;
-            }
-        }
-        throw new IllegalStateException("Unsupported agentscope.model.provider: " + normalized);
+    public static Model createModelFromProperties(
+            AgentscopeProperties properties,
+            HttpTransport httpTransport,
+            WebSocketTransport webSocketTransport) {
+        ModelProviderType provider = properties.getModel().getProvider();
+        return provider.createModel(properties, httpTransport, webSocketTransport);
     }
 }

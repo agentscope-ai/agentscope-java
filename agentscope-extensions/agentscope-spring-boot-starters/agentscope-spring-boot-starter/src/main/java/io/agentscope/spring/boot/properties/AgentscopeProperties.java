@@ -24,8 +24,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <ul>
  *   <li>{@link AgentProperties} under {@code agentscope.agent}</li>
- *   <li>{@link DashscopeProperties} under {@code agentscope.dashscope}</li>
+ *   <li>{@link TransportProperties} under {@code agentscope.transport}</li>
  *   <li>{@link ModelProperties} under {@code agentscope.model}</li>
+ *   <li>{@link DashscopeProperties} under {@code agentscope.dashscope}</li>
  *   <li>{@link OpenAIProperties} under {@code agentscope.openai}</li>
  *   <li>{@link GeminiProperties} under {@code agentscope.gemini}</li>
  *   <li>{@link AnthropicProperties} under {@code agentscope.anthropic}</li>
@@ -36,9 +37,11 @@ public class AgentscopeProperties {
 
     private final AgentProperties agent = new AgentProperties();
 
-    private final DashscopeProperties dashscope = new DashscopeProperties();
+    private final TransportProperties transport = new TransportProperties();
 
     private final ModelProperties model = new ModelProperties();
+
+    private final DashscopeProperties dashscope = new DashscopeProperties();
 
     private final OpenAIProperties openai = new OpenAIProperties();
 
@@ -50,12 +53,16 @@ public class AgentscopeProperties {
         return agent;
     }
 
-    public DashscopeProperties getDashscope() {
-        return dashscope;
+    public TransportProperties getTransport() {
+        return transport;
     }
 
     public ModelProperties getModel() {
         return model;
+    }
+
+    public DashscopeProperties getDashscope() {
+        return dashscope;
     }
 
     public OpenAIProperties getOpenai() {

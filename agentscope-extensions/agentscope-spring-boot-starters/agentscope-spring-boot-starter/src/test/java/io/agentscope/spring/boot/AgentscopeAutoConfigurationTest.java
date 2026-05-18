@@ -23,7 +23,16 @@ import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.ProxyType;
+import io.agentscope.core.model.transport.WebSocketTransport;
+import io.agentscope.core.model.transport.websocket.OkHttpWebSocketTransport;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.spring.boot.properties.AgentscopeProperties;
+import io.agentscope.spring.boot.properties.HttpTransportProperties;
+import io.agentscope.spring.boot.properties.WebSocketTransportProperties;
+import io.agentscope.spring.boot.transport.WebClientTransport;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -49,6 +58,8 @@ class AgentscopeAutoConfigurationTest {
                 context -> {
                     assertThat(context).hasSingleBean(Memory.class);
                     assertThat(context).hasSingleBean(Toolkit.class);
+                    assertThat(context).hasSingleBean(HttpTransport.class);
+                    assertThat(context).hasSingleBean(WebSocketTransport.class);
                     assertThat(context).hasSingleBean(Model.class);
                     assertThat(context).hasSingleBean(ReActAgent.class);
                 });
@@ -63,6 +74,8 @@ class AgentscopeAutoConfigurationTest {
                             assertThat(context).doesNotHaveBean(ReActAgent.class);
                             assertThat(context).doesNotHaveBean(Memory.class);
                             assertThat(context).doesNotHaveBean(Toolkit.class);
+                            assertThat(context).doesNotHaveBean(HttpTransport.class);
+                            assertThat(context).doesNotHaveBean(WebSocketTransport.class);
                             assertThat(context).doesNotHaveBean(Model.class);
                         });
     }
@@ -146,6 +159,140 @@ class AgentscopeAutoConfigurationTest {
                             assertThat(context).hasSingleBean(Model.class);
                             assertThat(context.getBean(Model.class))
                                     .isInstanceOf(AnthropicChatModel.class);
+                        });
+    }
+
+    @Test
+    void shouldCreateHttpTransportWhenConfigured() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
+                .withPropertyValues(
+                        "agentscope.agent.enabled=true",
+                        "agentscope.model.provider=dashscope",
+                        "agentscope.dashscope.api-key=test-api-key",
+                        "agentscope.transport.http.type=webclient")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(HttpTransport.class);
+                            assertThat(context.getBean(HttpTransport.class))
+                                    .isInstanceOf(WebClientTransport.class);
+                        });
+    }
+
+    @Test
+    void shouldCreateWebSocketTransportWhenConfigured() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
+                .withPropertyValues(
+                        "agentscope.agent.enabled=true",
+                        "agentscope.model.provider=dashscope",
+                        "agentscope.dashscope.api-key=test-api-key",
+                        "agentscope.transport.websocket.type=okhttp")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(WebSocketTransport.class);
+                            assertThat(context.getBean(WebSocketTransport.class))
+                                    .isInstanceOf(OkHttpWebSocketTransport.class);
+                        });
+    }
+
+    @Test
+    void shouldConfigureHttpTransportProperties() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
+                .withPropertyValues(
+                        "agentscope.agent.enabled=true",
+                        "agentscope.model.provider=dashscope",
+                        "agentscope.dashscope.api-key=test-api-key",
+                        "agentscope.transport.http.connect-timeout=10s",
+                        "agentscope.transport.http.read-timeout=10m",
+                        "agentscope.transport.http.max-connections=100",
+                        "agentscope.transport.http.ignore-ssl=true",
+                        "agentscope.transport.http.proxy.type=socks5",
+                        "agentscope.transport.http.proxy.host=localhost",
+                        "agentscope.transport.http.proxy.port=8080",
+                        "agentscope.transport.http.proxy.username=username",
+                        "agentscope.transport.http.proxy.password=password",
+                        "agentscope.transport.http.proxy.non-proxy-hosts[0]=nonproxy.com")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(AgentscopeProperties.class);
+                            AgentscopeProperties agentscopeProperties =
+                                    context.getBean(AgentscopeProperties.class);
+                            HttpTransportProperties httpTransportProperties =
+                                    agentscopeProperties.getTransport().getHttp();
+                            assertThat(httpTransportProperties).isNotNull();
+                            assertThat(httpTransportProperties.getConnectTimeout())
+                                    .isEqualTo(Duration.ofSeconds(10));
+                            assertThat(httpTransportProperties.getReadTimeout())
+                                    .isEqualTo(Duration.ofMinutes(10));
+                            assertThat(httpTransportProperties.getMaxConnections()).isEqualTo(100);
+                            assertThat(httpTransportProperties.isIgnoreSsl()).isTrue();
+                            assertThat(httpTransportProperties.getProxy()).isNotNull();
+                            assertThat(httpTransportProperties.getProxy().getType())
+                                    .isEqualTo(ProxyType.SOCKS5);
+                            assertThat(httpTransportProperties.getProxy().getHost())
+                                    .isEqualTo("localhost");
+                            assertThat(httpTransportProperties.getProxy().getPort())
+                                    .isEqualTo(8080);
+                            assertThat(httpTransportProperties.getProxy().getUsername())
+                                    .isEqualTo("username");
+                            assertThat(httpTransportProperties.getProxy().getPassword())
+                                    .isEqualTo("password");
+                            assertThat(httpTransportProperties.getProxy().getNonProxyHosts())
+                                    .contains("nonproxy.com");
+                        });
+    }
+
+    @Test
+    void shouldConfigureWebSocketTransportProperties() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
+                .withPropertyValues(
+                        "agentscope.agent.enabled=true",
+                        "agentscope.model.provider=dashscope",
+                        "agentscope.dashscope.api-key=test-api-key",
+                        "agentscope.transport.websocket.connect-timeout=10s",
+                        "agentscope.transport.websocket.write-timeout=5m",
+                        "agentscope.transport.websocket.ping-interval=30s",
+                        "agentscope.transport.websocket.ignore-ssl=true",
+                        "agentscope.transport.websocket.proxy.type=socks5",
+                        "agentscope.transport.websocket.proxy.host=localhost",
+                        "agentscope.transport.websocket.proxy.port=8080",
+                        "agentscope.transport.websocket.proxy.username=username",
+                        "agentscope.transport.websocket.proxy.password=password",
+                        "agentscope.transport.websocket.proxy.non-proxy-hosts[0]=nonproxy.com")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(AgentscopeProperties.class);
+                            AgentscopeProperties agentscopeProperties =
+                                    context.getBean(AgentscopeProperties.class);
+                            WebSocketTransportProperties webSocketTransportProperties =
+                                    agentscopeProperties.getTransport().getWebsocket();
+
+                            assertThat(webSocketTransportProperties).isNotNull();
+                            assertThat(webSocketTransportProperties.getConnectTimeout())
+                                    .isEqualTo(Duration.ofSeconds(10));
+                            assertThat(webSocketTransportProperties.getReadTimeout())
+                                    .isEqualTo(Duration.ZERO);
+                            assertThat(webSocketTransportProperties.getWriteTimeout())
+                                    .isEqualTo(Duration.ofMinutes(5));
+                            assertThat(webSocketTransportProperties.getPingInterval())
+                                    .isEqualTo(Duration.ofSeconds(30));
+                            assertThat(webSocketTransportProperties.isIgnoreSsl()).isTrue();
+                            assertThat(webSocketTransportProperties.getProxy()).isNotNull();
+                            assertThat(webSocketTransportProperties.getProxy().getType())
+                                    .isEqualTo(ProxyType.SOCKS5);
+                            assertThat(webSocketTransportProperties.getProxy().getHost())
+                                    .isEqualTo("localhost");
+                            assertThat(webSocketTransportProperties.getProxy().getPort())
+                                    .isEqualTo(8080);
+                            assertThat(webSocketTransportProperties.getProxy().getUsername())
+                                    .isEqualTo("username");
+                            assertThat(webSocketTransportProperties.getProxy().getPassword())
+                                    .isEqualTo("password");
+                            assertThat(webSocketTransportProperties.getProxy().getNonProxyHosts())
+                                    .contains("nonproxy.com");
                         });
     }
 }

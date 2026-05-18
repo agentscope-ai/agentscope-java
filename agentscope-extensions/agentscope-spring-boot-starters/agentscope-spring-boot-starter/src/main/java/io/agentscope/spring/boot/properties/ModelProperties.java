@@ -15,6 +15,8 @@
  */
 package io.agentscope.spring.boot.properties;
 
+import io.agentscope.spring.boot.model.ModelProviderType;
+
 /**
  * Generic model selection properties that allow choosing which provider to use.
  *
@@ -40,13 +42,13 @@ public class ModelProperties {
      *   <li>{@code anthropic}</li>
      * </ul>
      */
-    private String provider;
+    private ModelProviderType provider = ModelProviderType.DASHSCOPE;
 
-    public String getProvider() {
+    public ModelProviderType getProvider() {
         return provider;
     }
 
-    public void setProvider(String provider) {
+    public void setProvider(ModelProviderType provider) {
         this.provider = provider;
     }
 }
