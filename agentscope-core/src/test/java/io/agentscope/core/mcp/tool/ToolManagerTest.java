@@ -17,16 +17,25 @@
 package io.agentscope.core.mcp.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Collection;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ToolManagerTest {
 
+    private ToolManager toolManager;
+
+    @BeforeEach
+    void setUp() {
+        toolManager = new ToolManager();
+    }
+
     @Test
     void registerAndGetTool() {
-        ToolManager mgr = new ToolManager();
         Tool t =
                 new Tool() {
                     @Override
@@ -50,8 +59,136 @@ class ToolManagerTest {
                     }
                 };
 
-        mgr.register(t);
-        assertTrue(mgr.get("dummy.tool").isPresent());
-        assertEquals(1, mgr.list().size());
+        toolManager.register(t);
+        assertTrue(toolManager.get("dummy.tool").isPresent());
+        assertEquals(1, toolManager.list().size());
+    }
+
+    @Test
+    void getToolByName() {
+        Tool t =
+                new Tool() {
+                    @Override
+                    public String getName() {
+                        return "test.tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "A test tool";
+                    }
+
+                    @Override
+                    public Map<String, Object> getInputSchema() {
+                        return Map.of("type", "object");
+                    }
+
+                    @Override
+                    public Object execute(Object arguments) throws Exception {
+                        return Map.of("status", "success");
+                    }
+                };
+
+        toolManager.register(t);
+        assertTrue(toolManager.get("test.tool").isPresent());
+        assertEquals("test.tool", toolManager.get("test.tool").get().getName());
+    }
+
+    @Test
+    void getNonExistentTool() {
+        assertFalse(toolManager.get("non.existent").isPresent());
+    }
+
+    @Test
+    void listEmptyManager() {
+        Collection<Tool> tools = toolManager.list();
+        assertEquals(0, tools.size());
+    }
+
+    @Test
+    void registerMultipleTools() {
+        for (int i = 0; i < 5; i++) {
+            final int index = i;
+            Tool t =
+                    new Tool() {
+                        @Override
+                        public String getName() {
+                            return "tool." + index;
+                        }
+
+                        @Override
+                        public String getDescription() {
+                            return "Tool " + index;
+                        }
+
+                        @Override
+                        public Map<String, Object> getInputSchema() {
+                            return Map.of();
+                        }
+
+                        @Override
+                        public Object execute(Object arguments) throws Exception {
+                            return null;
+                        }
+                    };
+            toolManager.register(t);
+        }
+
+        assertEquals(5, toolManager.list().size());
+    }
+
+    @Test
+    void overwriteExistingTool() {
+        Tool t1 =
+                new Tool() {
+                    @Override
+                    public String getName() {
+                        return "same.name";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "First version";
+                    }
+
+                    @Override
+                    public Map<String, Object> getInputSchema() {
+                        return Map.of();
+                    }
+
+                    @Override
+                    public Object execute(Object arguments) throws Exception {
+                        return "v1";
+                    }
+                };
+
+        Tool t2 =
+                new Tool() {
+                    @Override
+                    public String getName() {
+                        return "same.name";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Second version";
+                    }
+
+                    @Override
+                    public Map<String, Object> getInputSchema() {
+                        return Map.of();
+                    }
+
+                    @Override
+                    public Object execute(Object arguments) throws Exception {
+                        return "v2";
+                    }
+                };
+
+        toolManager.register(t1);
+        toolManager.register(t2);
+
+        assertEquals(1, toolManager.list().size());
+        assertEquals("Second version", toolManager.get("same.name").get().getDescription());
     }
 }

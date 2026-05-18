@@ -125,7 +125,6 @@ public class OpenAiChatTool implements Tool {
                 new Request.Builder()
                         .url(OPENAI_API_URL)
                         .addHeader("Authorization", "Bearer " + apiKey)
-                        .addHeader("Content-Type", "application/json")
                         .post(body)
                         .build();
 

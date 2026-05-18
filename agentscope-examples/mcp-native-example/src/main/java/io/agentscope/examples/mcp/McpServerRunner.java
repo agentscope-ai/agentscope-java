@@ -58,14 +58,19 @@ public class McpServerRunner {
             server.registerTool(new OpenAiChatTool(openaiApiKey));
             logger.info("Registered tool: openai.chat");
         } else {
-            logger.warning("OPENAI_API_KEY not set; openai.chat tool will not be available");
+            logger.info(
+                    "OPENAI_API_KEY not set; openai.chat tool will not be available"); // Use info
+            // instead of
+            // warning
+            // for
+            // cleaner
+            // stdout
         }
 
         // Start processing messages
         logger.info("Server ready for connections. Listening on stdin/stdout...");
         server.start();
-
-        // Keep the server running
-        Thread.currentThread().join();
+        // Keep the server running until interrupted
+        Thread.currentThread().sleep(Long.MAX_VALUE);
     }
 }

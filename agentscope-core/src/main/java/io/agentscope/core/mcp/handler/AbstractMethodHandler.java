@@ -46,6 +46,8 @@ public abstract class AbstractMethodHandler implements MethodHandler {
                 return null; // Notifications don't require responses
             }
             throw new TransportException("Unknown message type: " + message.getClass());
+        } catch (TransportException te) {
+            throw te; // Re-throw transport exceptions
         } catch (Exception e) {
             if (message instanceof JsonRpcRequest) {
                 JsonRpcRequest request = (JsonRpcRequest) message;

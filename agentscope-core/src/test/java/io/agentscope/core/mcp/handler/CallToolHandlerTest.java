@@ -17,20 +17,33 @@
 package io.agentscope.core.mcp.handler;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.mcp.message.JsonRpcRequest;
+import io.agentscope.core.mcp.message.JsonRpcResponse;
 import io.agentscope.core.mcp.schema.CallToolResult;
 import io.agentscope.core.mcp.tool.Tool;
 import io.agentscope.core.mcp.tool.ToolManager;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class CallToolHandlerTest {
 
+    private CallToolHandler handler;
+    private ToolManager toolManager;
+
+    @BeforeEach
+    void setUp() {
+        toolManager = new ToolManager();
+        handler = new CallToolHandler(toolManager);
+    }
+
     @Test
     void callLocalTool() throws Exception {
-        ToolManager mgr = new ToolManager();
         Tool fake =
                 new Tool() {
                     @Override
@@ -54,8 +67,7 @@ class CallToolHandlerTest {
                     }
                 };
 
-        mgr.register(fake);
-        CallToolHandler handler = new CallToolHandler(mgr);
+        toolManager.register(fake);
 
         Map<String, Object> params = new HashMap<>();
         params.put("name", "echo");
@@ -68,5 +80,94 @@ class CallToolHandlerTest {
         assertEquals(1, content.size());
         Object block = content.get(0);
         assertEquals(true, block.toString().contains("OK:"));
+    }
+
+    @Test
+    void callToolWithMapResult() throws Exception {
+        Tool mapTool =
+                new Tool() {
+                    @Override
+                    public String getName() {
+                        return "map.tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Returns a map";
+                    }
+
+                    @Override
+                    public Map<String, Object> getInputSchema() {
+                        return Map.of();
+                    }
+
+                    @Override
+                    public Object execute(Object arguments) {
+                        return Map.of("key1", "value1", "key2", "value2");
+                    }
+                };
+
+        toolManager.register(mapTool);
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("name", "map.tool");
+        params.put("arguments", Map.of());
+
+        Object res = handler.handle(params);
+        assertTrue(res instanceof CallToolResult);
+        CallToolResult result = (CallToolResult) res;
+        assertNotNull(result.content());
+    }
+
+    @Test
+    void callNonExistentTool() throws Exception {
+        Map<String, Object> params = new HashMap<>();
+        params.put("name", "non.existent");
+        params.put("arguments", Map.of());
+
+        JsonRpcRequest request = new JsonRpcRequest("1", "tools/call", params);
+        JsonRpcResponse response = handler.handleMessage(request);
+
+        // Should have an error
+        assertNotNull(response.getError());
+    }
+
+    @Test
+    void callToolWithStringResult() throws Exception {
+        Tool stringTool =
+                new Tool() {
+                    @Override
+                    public String getName() {
+                        return "string.tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Returns string";
+                    }
+
+                    @Override
+                    public Map<String, Object> getInputSchema() {
+                        return Map.of();
+                    }
+
+                    @Override
+                    public Object execute(Object arguments) throws Exception {
+                        return "simple string result";
+                    }
+                };
+
+        toolManager.register(stringTool);
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("name", "string.tool");
+        params.put("arguments", Map.of());
+
+        JsonRpcRequest request = new JsonRpcRequest("2", "tools/call", params);
+        JsonRpcResponse response = handler.handleMessage(request);
+
+        CallToolResult result = (CallToolResult) response.getResult();
+        assertNotNull(result.content());
+        assertTrue(result.content().size() > 0);
     }
 }

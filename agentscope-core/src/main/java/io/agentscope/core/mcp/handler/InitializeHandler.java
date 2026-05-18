@@ -47,6 +47,6 @@ public class InitializeHandler extends AbstractMethodHandler {
         serverInfo.put("name", "agentscope-core");
         serverInfo.put("version", "0.1.0");
 
-        return new InitializeResult(capabilities, "2.0", serverInfo);
+        return new InitializeResult(capabilities, "2024-11-05", serverInfo);
     }
 }

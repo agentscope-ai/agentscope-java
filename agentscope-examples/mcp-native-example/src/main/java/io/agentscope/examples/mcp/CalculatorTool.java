@@ -17,6 +17,7 @@ package io.agentscope.examples.mcp;
 
 import io.agentscope.core.mcp.tool.Tool;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -51,7 +52,7 @@ public class CalculatorTool implements Tool {
         properties.put("b", Map.of("type", "number"));
 
         schema.put("properties", properties);
-        schema.put("required", new String[] {"operation", "a", "b"});
+        schema.put("required", List.of("operation", "a", "b"));
         return schema;
     }
 
