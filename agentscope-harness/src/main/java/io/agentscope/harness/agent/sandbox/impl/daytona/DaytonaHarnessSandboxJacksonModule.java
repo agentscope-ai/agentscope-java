@@ -15,8 +15,8 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.daytona;
 
-import com.fasterxml.jackson.databind.jsontype.NamedType;
-import com.fasterxml.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.jsontype.NamedType;
+import tools.jackson.databind.module.SimpleModule;
 
 /** Jackson module registering {@link DaytonaSandboxState} under the {@code daytona} type id. */
 public final class DaytonaHarnessSandboxJacksonModule extends SimpleModule {

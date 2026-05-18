@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.agent;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
@@ -40,6 +39,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Abstract base class for agents that support structured output generation.

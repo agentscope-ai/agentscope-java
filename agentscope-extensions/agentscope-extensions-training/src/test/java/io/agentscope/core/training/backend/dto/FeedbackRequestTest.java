@@ -20,18 +20,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.training.util.TrainingTestConstants;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 @DisplayName("FeedbackRequest Unit Tests")
 class FeedbackRequestTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper jsonMapper = JsonMapper.shared();
 
     @Test
     @DisplayName("Should build feedback request with all fields")
@@ -59,7 +58,7 @@ class FeedbackRequestTest {
 
     @Test
     @DisplayName("Should serialize to JSON with snake_case field names")
-    void shouldSerializeToJsonWithSnakeCaseFieldNames() throws JsonProcessingException {
+    void shouldSerializeToJsonWithSnakeCaseFieldNames() {
         // Arrange
         FeedbackRequest request =
                 FeedbackRequest.builder()
@@ -70,7 +69,7 @@ class FeedbackRequestTest {
                         .build();
 
         // Act
-        String json = objectMapper.writeValueAsString(request);
+        String json = jsonMapper.writeValueAsString(request);
 
         // Assert
         assertTrue(json.contains("\"task_id\":\"task-123\""));

@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.chat.completions.builder;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.chat.completions.model.ChatChoice;
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
@@ -32,6 +30,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Service for building Chat Completions API responses.
@@ -75,7 +75,7 @@ import java.util.stream.Collectors;
  */
 public class ChatCompletionsResponseBuilder {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final JsonMapper JSON_MAPPER = JsonMapper.shared();
 
     /**
      * Build a successful chat completion response.
@@ -249,8 +249,8 @@ public class ChatCompletionsResponseBuilder {
             return "{}";
         }
         try {
-            return OBJECT_MAPPER.writeValueAsString(map);
-        } catch (JsonProcessingException e) {
+            return JSON_MAPPER.writeValueAsString(map);
+        } catch (JacksonException e) {
             return "{}";
         }
     }

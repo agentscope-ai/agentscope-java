@@ -17,10 +17,6 @@ package io.agentscope.examples.quickstart;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -37,11 +33,13 @@ import java.lang.reflect.Type;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * ToolCallingWithConverterExample - Demonstrates how to customize ToolResultConverter.
@@ -191,9 +189,7 @@ public class ToolCallingWithConverterExample {
         @Override
         protected ToolResultBlock serialize(Object result, Type returnType) {
             try {
-                ObjectMapper mapper = new ObjectMapper();
-                mapper.registerModule(new JavaTimeModule());
-                JsonNode node = mapper.valueToTree(result);
+                JsonNode node = JsonMapper.shared().valueToTree(result);
                 JsonNode masked = maskSensitiveData(node);
                 String json = JsonUtils.getJsonCodec().toJson(masked);
 
@@ -217,10 +213,8 @@ public class ToolCallingWithConverterExample {
         private JsonNode maskSensitiveData(JsonNode node) {
             if (node.isObject()) {
                 ObjectNode result = ((ObjectNode) node).deepCopy();
-                Iterator<Map.Entry<String, JsonNode>> fields = result.fields();
 
-                while (fields.hasNext()) {
-                    Map.Entry<String, JsonNode> entry = fields.next();
+                for (Map.Entry<String, JsonNode> entry : result.properties()) {
                     String fieldName = entry.getKey().toLowerCase();
 
                     if (isSensitiveField(fieldName)) {

@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
@@ -105,6 +104,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.JsonNode;
 
 /**
  * HarnessAgent is the user-facing API that wraps {@link ReActAgent} with enhanced harness practices:

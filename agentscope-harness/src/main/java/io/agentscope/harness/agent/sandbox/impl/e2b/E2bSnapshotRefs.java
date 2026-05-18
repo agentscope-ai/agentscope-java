@@ -15,9 +15,9 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.e2b;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Cross-language marker for E2B native snapshot references, aligned with openai-agents-python
@@ -31,9 +31,9 @@ public final class E2bSnapshotRefs {
     private E2bSnapshotRefs() {}
 
     public static byte[] encodeSnapshotId(String snapshotId) throws Exception {
-        ObjectMapper om = new ObjectMapper();
+        JsonMapper jm = JsonMapper.shared();
         byte[] body =
-                om.writeValueAsBytes(Map.of("snapshot_id", snapshotId == null ? "" : snapshotId));
+                jm.writeValueAsBytes(Map.of("snapshot_id", snapshotId == null ? "" : snapshotId));
         byte[] out = new byte[MAGIC_PREFIX.length + body.length];
         System.arraycopy(MAGIC_PREFIX, 0, out, 0, MAGIC_PREFIX.length);
         System.arraycopy(body, 0, out, MAGIC_PREFIX.length, body.length);
@@ -50,10 +50,10 @@ public final class E2bSnapshotRefs {
             }
         }
         try {
-            ObjectMapper om = new ObjectMapper();
+            JsonMapper jm = JsonMapper.shared();
             @SuppressWarnings("unchecked")
             Map<String, Object> m =
-                    om.readValue(
+                    jm.readValue(
                             new String(
                                     raw,
                                     MAGIC_PREFIX.length,

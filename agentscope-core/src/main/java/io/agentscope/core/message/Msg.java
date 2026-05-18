@@ -19,7 +19,6 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.State;
 import io.agentscope.core.util.JsonUtils;
@@ -34,6 +33,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * Represents a message in the AgentScope framework.
@@ -245,7 +245,7 @@ public class Msg implements State {
      *
      * <p>This method is useful when the message contains structured input from a user agent
      * or structured output from an LLM. The metadata map is converted to a Java object
-     * using Jackson's ObjectMapper.
+     * using Jackson's JsonMapper.
      *
      * <p>Example usage:
      * <pre>{@code
@@ -330,7 +330,7 @@ public class Msg implements State {
      *                                       }
      *                 					   }
      *         """;
-     *  JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
+     *  JsonNode sampleJsonNode = JsonMapper.shared().readTree(json);
      *   Msg msg = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);
      *   Map<String, Object> structuredData = msg.getStructuredData(false);
      * }</pre>

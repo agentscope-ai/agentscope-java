@@ -20,7 +20,7 @@ package io.agentscope.core.util;
  * Runtime exception for JSON processing errors.
  *
  * <p>This exception wraps underlying JSON processing exceptions (such as
- * Jackson's JsonProcessingException) to provide a unified exception type
+ * Jackson's JacksonException) to provide a unified exception type
  * for JSON operations across the framework.
  *
  * @see JsonCodec

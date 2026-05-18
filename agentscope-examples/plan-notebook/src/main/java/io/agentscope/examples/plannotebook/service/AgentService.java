@@ -15,7 +15,6 @@
  */
 package io.agentscope.examples.plannotebook.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
@@ -61,6 +60,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Service for managing Agent.
@@ -70,7 +70,7 @@ public class AgentService implements InitializingBean {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
 
-    private static final ObjectMapper SSE_JSON = new ObjectMapper();
+    private static final JsonMapper SSE_JSON = JsonMapper.shared();
 
     /** Max length of the flattened transcript in each {@code ctx} SSE payload (large tool outputs). */
     private static final int CTX_FLAT_MAX_CHARS = 48_000;

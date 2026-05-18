@@ -140,7 +140,7 @@ public class Document {
      * Gets a specific payload value by key and converts it to the specified type.
      *
      * <p>This method is useful when the payload contains complex objects (like custom POJOs)
-     * that were serialized to Map during storage. It uses Jackson's ObjectMapper to convert
+     * that were serialized to Map during storage. It uses Jackson's JsonMapper to convert
      * the Map back to the original type.
      *
      * @param <T> the target type

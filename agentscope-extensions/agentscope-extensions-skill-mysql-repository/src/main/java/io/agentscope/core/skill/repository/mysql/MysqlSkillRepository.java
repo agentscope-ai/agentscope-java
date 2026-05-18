@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.skill.repository.mysql;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
@@ -34,6 +33,7 @@ import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * MySQL database-based implementation of AgentSkillRepository.

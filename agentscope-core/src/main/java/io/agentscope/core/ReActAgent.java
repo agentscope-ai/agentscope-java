@@ -15,7 +15,6 @@
  */
 package io.agentscope.core;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -89,6 +88,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.JsonNode;
 
 /**
  * ReAct (Reasoning and Acting) Agent implementation.

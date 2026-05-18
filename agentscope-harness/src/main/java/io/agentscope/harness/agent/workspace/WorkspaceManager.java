@@ -26,11 +26,6 @@ import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SKILLS_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.TASKS_DIR;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -58,6 +53,11 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Stateless accessor for workspace content using a two-layer read architecture.
@@ -95,11 +95,9 @@ public class WorkspaceManager {
     private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
-    private static final ObjectMapper SESSION_STORE_JSON = new ObjectMapper();
-    private static final ObjectMapper TASK_RECORD_JSON =
-            new ObjectMapper()
-                    .registerModule(new JavaTimeModule())
-                    .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    private static final JsonMapper SESSION_STORE_JSON = JsonMapper.shared();
+    private static final JsonMapper TASK_RECORD_JSON =
+            JsonMapper.builder().disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS).build();
     private static final TypeReference<Map<String, TaskRecord>> TASK_MAP_TYPE =
             new TypeReference<>() {};
 
@@ -309,7 +307,7 @@ public class WorkspaceManager {
             String serialized =
                     SESSION_STORE_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root);
             writeUtf8WorkspaceRelative(rel, serialized);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to write session store {}: {}", rel, e.getMessage());
         }
     }
@@ -557,7 +555,7 @@ public class WorkspaceManager {
             String serialized =
                     TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
             writeUtf8WorkspaceRelative(rel, serialized);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to write task record store {}: {}", rel, e.getMessage());
         }
     }
@@ -571,7 +569,7 @@ public class WorkspaceManager {
             if (node instanceof ObjectNode on) {
                 return on;
             }
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             log.warn("Corrupt or unreadable session store, reinitializing: {}", e.getMessage());
         }
         return SESSION_STORE_JSON.createObjectNode();

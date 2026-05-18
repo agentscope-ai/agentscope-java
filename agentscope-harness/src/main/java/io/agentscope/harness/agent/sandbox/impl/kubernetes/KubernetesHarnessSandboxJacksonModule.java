@@ -15,14 +15,14 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.kubernetes;
 
-import com.fasterxml.jackson.databind.jsontype.NamedType;
-import com.fasterxml.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.jsontype.NamedType;
+import tools.jackson.databind.module.SimpleModule;
 
 /**
- * Registers Jackson {@link com.fasterxml.jackson.databind.jsontype.NamedType} entries for the
+ * Registers Jackson {@link tools.jackson.databind.jsontype.NamedType} entries for the
  * Kubernetes sandbox backend. Combine with {@link
  * io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule} on the same {@link
- * com.fasterxml.jackson.databind.ObjectMapper} when mixing Docker and Kubernetes sandboxes.
+ * tools.jackson.databind.ObjectMapper} when mixing Docker and Kubernetes sandboxes.
  */
 public final class KubernetesHarnessSandboxJacksonModule extends SimpleModule {
 

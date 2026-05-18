@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.kubernetes;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxException;
@@ -28,6 +27,8 @@ import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /** {@link SandboxClient} for Kubernetes Pods. */
 public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxClientOptions> {
@@ -57,10 +58,12 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
         this.objectMapper =
                 objectMapper != null
                         ? objectMapper
-                        : new ObjectMapper()
-                                .findAndRegisterModules()
-                                .registerModule(new HarnessSandboxJacksonModule())
-                                .registerModule(new KubernetesHarnessSandboxJacksonModule());
+                        : JsonMapper.builder()
+                                .findAndAddModules()
+                                .addModules(
+                                        new HarnessSandboxJacksonModule(),
+                                        new KubernetesHarnessSandboxJacksonModule())
+                                .build();
     }
 
     @Override

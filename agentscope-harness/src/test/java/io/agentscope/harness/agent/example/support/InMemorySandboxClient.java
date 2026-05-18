@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.example.support;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
@@ -28,11 +27,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import tools.jackson.databind.json.JsonMapper;
 
-/** Test-only {@link SandboxClient} that allocates local temp directories as sandboxes. */
+/**
+ * Test-only {@link SandboxClient} that allocates local temp directories as sandboxes.
+ */
 public class InMemorySandboxClient implements SandboxClient<SandboxClientOptions> {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final JsonMapper MAPPER = JsonMapper.shared();
     private static final int DEFAULT_TIMEOUT_SECONDS = 30;
 
     private final AtomicInteger createCount = new AtomicInteger(0);
@@ -84,25 +86,16 @@ public class InMemorySandboxClient implements SandboxClient<SandboxClientOptions
 
     @Override
     public String serializeState(SandboxState state) {
-        try {
-            InMemorySandboxState s = (InMemorySandboxState) state;
-            return MAPPER.writeValueAsString(new StateDto(s.getSessionId(), s.getWorkspaceRoot()));
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to serialize sandbox state", e);
-        }
+        InMemorySandboxState s = (InMemorySandboxState) state;
+        return MAPPER.writeValueAsString(new StateDto(s.getSessionId(), s.getWorkspaceRoot()));
     }
 
     @Override
     public SandboxState deserializeState(String json) {
-        try {
-            StateDto dto = MAPPER.readValue(json, StateDto.class);
-            InMemorySandboxState state =
-                    new InMemorySandboxState(dto.sessionId(), dto.workspaceRoot());
-            state.setWorkspaceRootReady(true);
-            return state;
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to deserialize sandbox state", e);
-        }
+        StateDto dto = MAPPER.readValue(json, StateDto.class);
+        InMemorySandboxState state = new InMemorySandboxState(dto.sessionId(), dto.workspaceRoot());
+        state.setWorkspaceRootReady(true);
+        return state;
     }
 
     public int getCreateCount() {

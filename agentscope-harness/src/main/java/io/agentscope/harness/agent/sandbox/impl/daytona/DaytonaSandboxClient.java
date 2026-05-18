@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.daytona;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxException;
@@ -26,6 +25,8 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /** {@link SandboxClient} for Daytona. */
 public class DaytonaSandboxClient implements SandboxClient<DaytonaSandboxClientOptions> {
@@ -46,10 +47,12 @@ public class DaytonaSandboxClient implements SandboxClient<DaytonaSandboxClientO
         this.objectMapper =
                 objectMapper != null
                         ? objectMapper
-                        : new ObjectMapper()
-                                .findAndRegisterModules()
-                                .registerModule(new HarnessSandboxJacksonModule())
-                                .registerModule(new DaytonaHarnessSandboxJacksonModule());
+                        : JsonMapper.builder()
+                                .findAndAddModules()
+                                .addModules(
+                                        new HarnessSandboxJacksonModule(),
+                                        new DaytonaHarnessSandboxJacksonModule())
+                                .build();
     }
 
     @Override

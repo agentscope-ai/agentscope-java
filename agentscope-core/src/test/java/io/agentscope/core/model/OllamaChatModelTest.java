@@ -24,8 +24,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.formatter.ollama.OllamaChatFormatter;
 import io.agentscope.core.formatter.ollama.OllamaMultiAgentFormatter;
 import io.agentscope.core.message.Base64Source;
@@ -54,6 +52,7 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 import reactor.core.publisher.Flux;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Unit tests for OllamaChatModel.
@@ -734,7 +733,7 @@ class OllamaChatModelTest {
 
     @Test
     @DisplayName("Should serialize ThinkBoolean option at root level")
-    void testThinkBooleanOption() throws JsonProcessingException {
+    void testThinkBooleanOption() {
         // Test enabling thinking with temperature to ensure separation
         OllamaOptions enableThinkOptions =
                 OllamaOptions.builder()
@@ -759,7 +758,7 @@ class OllamaChatModelTest {
 
         // Parse JSON to verify structure
         JsonNode root =
-                ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getObjectMapper().readTree(body);
+                ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getJsonMapper().readTree(body);
 
         // Verify 'think' is at root
         assertTrue(root.has("think"), "JSON root should contain 'think'");
@@ -780,7 +779,7 @@ class OllamaChatModelTest {
 
         verify(httpTransport, Mockito.times(2)).execute(captor.capture());
         body = captor.getValue().getBody();
-        root = ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getObjectMapper().readTree(body);
+        root = ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getJsonMapper().readTree(body);
 
         assertTrue(root.has("think"), "JSON root should contain 'think'");
         assertFalse(root.get("think").asBoolean(), "'think' should be false");
@@ -858,7 +857,7 @@ class OllamaChatModelTest {
 
     @Test
     @DisplayName("Should serialize ThinkLevel option at root level")
-    void testThinkLevelOption() throws JsonProcessingException {
+    void testThinkLevelOption() {
         // Test high thinking level
         OllamaOptions highThinkOptions =
                 OllamaOptions.builder().thinkOption(ThinkOption.ThinkLevel.HIGH).build();
@@ -878,7 +877,7 @@ class OllamaChatModelTest {
 
         String body = captor.getValue().getBody();
         JsonNode root =
-                ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getObjectMapper().readTree(body);
+                ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getJsonMapper().readTree(body);
 
         assertTrue(root.has("think"), "JSON root should contain 'think'");
         assertEquals("high", root.get("think").asText(), "'think' should be 'high'");

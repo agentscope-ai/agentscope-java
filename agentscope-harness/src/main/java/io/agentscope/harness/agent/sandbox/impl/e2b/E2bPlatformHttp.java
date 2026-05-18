@@ -15,9 +15,6 @@
  */
 package io.agentscope.harness.agent.sandbox.impl.e2b;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.IOException;
@@ -28,6 +25,9 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /** HTTP client for {@code https://api.e2b.app} sandbox lifecycle. */
 final class E2bPlatformHttp {
@@ -35,7 +35,7 @@ final class E2bPlatformHttp {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient http;
-    private final ObjectMapper json = new ObjectMapper();
+    private final JsonMapper json = JsonMapper.shared();
     private final E2bSandboxClientOptions opt;
 
     E2bPlatformHttp(E2bSandboxClientOptions opt) {
