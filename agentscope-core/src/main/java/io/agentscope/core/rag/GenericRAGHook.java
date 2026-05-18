@@ -145,11 +145,9 @@ public class GenericRAGHook implements Hook {
                             if (retrievedDocs == null || retrievedDocs.isEmpty()) {
                                 return Mono.just(event);
                             }
-                            List<Msg> enhancedMessages = new ArrayList<>();
-                            // Build enhanced messages with knowledge context
-                            Msg enhancedMessage = createEnhancedMessages(retrievedDocs);
-                            enhancedMessages.addAll(inputMessages);
-                            enhancedMessages.add(enhancedMessage);
+                            List<Msg> enhancedMessages = new ArrayList<>(inputMessages);
+                            // Build enhanced message with knowledge context
+                            enhancedMessages.add(createEnhancedMessage(retrievedDocs));
                             event.setInputMessages(enhancedMessages);
                             return Mono.just(event);
                         })
@@ -165,7 +163,8 @@ public class GenericRAGHook implements Hook {
      * Extracts query text from message list.
      *
      * <p>Finds the last user message as the query source (not just the last message, which could be
-     * ASSISTANT or TOOL in ReAct loops).
+     * ASSISTANT or TOOL in ReAct loops). Skips messages injected by other hooks (e.g.,
+     * StaticLongTermMemoryHook with name "long_term_memory").
      *
      * @param messages the message list
      * @return the extracted query text, or empty string if no user message found
@@ -175,11 +174,15 @@ public class GenericRAGHook implements Hook {
             return "";
         }
 
-        // Find the last user message (not just the last message, which could be
-        // ASSISTANT or TOOL in ReAct loops)
+        // Find the last user message, skipping hook-injected messages
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
             if (msg.getRole() == MsgRole.USER) {
+                // Skip messages injected by other hooks (e.g., long-term memory)
+                String name = msg.getName();
+                if ("long_term_memory".equals(name)) {
+                    continue;
+                }
                 return msg.getTextContent();
             }
         }
@@ -189,16 +192,18 @@ public class GenericRAGHook implements Hook {
     /**
      * Creates enhanced message list with knowledge context injected.
      *
-     * <p>The knowledge is injected as a system message at the beginning of the message list.
+     * <p>The knowledge is injected as a user message appended to the end of the message list.
+     * The message uses a distinct name "retrieved_knowledge" so that other hooks can identify
+     * and skip it when extracting the original user query.
      *
      * @param retrievedDocs the retrieved documents
-     * @return the enhanced message list with knowledge context
+     * @return the enhanced message with knowledge context
      */
-    private Msg createEnhancedMessages(List<Document> retrievedDocs) {
+    private Msg createEnhancedMessage(List<Document> retrievedDocs) {
         String knowledgeContent = buildKnowledgeContent(retrievedDocs);
 
         return Msg.builder()
-                .name("user")
+                .name("retrieved_knowledge")
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(knowledgeContent).build())
                 .build();

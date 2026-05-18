@@ -162,6 +162,9 @@ class GenericRAGHookTest {
                             assertEquals(MsgRole.USER, enhancedMessages.get(0).getRole());
                             // Second message should be user message with knowledge retrieval
                             assertEquals(MsgRole.USER, enhancedMessages.get(1).getRole());
+                            // Name should be "retrieved_knowledge" to distinguish from real user
+                            // messages
+                            assertEquals("retrieved_knowledge", enhancedMessages.get(1).getName());
                             assertTrue(
                                     enhancedMessages
                                             .get(1)
@@ -317,6 +320,45 @@ class GenericRAGHookTest {
                             assertTrue(content.contains("knowledge base"));
                             assertTrue(
                                     content.contains("Content 1") || content.contains("Content 2"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should skip long_term_memory injected messages when extracting query")
+    void testSkipLongTermMemoryInjectedMessage() {
+        // Simulate StaticLongTermMemoryHook having already injected a "long_term_memory" message
+        Document doc = createDocument("doc1", "Refund policy: 30 days return");
+        knowledge.addDocuments(List.of(doc)).block();
+
+        List<Msg> inputMessages = new ArrayList<>();
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is the refund policy?").build())
+                        .build());
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("long_term_memory")
+                        .content(
+                                TextBlock.builder()
+                                        .text("<long_term_memory>...</long_term_memory>")
+                                        .build())
+                        .build());
+
+        PreCallEvent event = new PreCallEvent(mockAgent, inputMessages);
+
+        StepVerifier.create(hook.onEvent(event))
+                .assertNext(
+                        result -> {
+                            List<Msg> messages = result.getInputMessages();
+                            // Should have original user msg + long_term_memory + RAG knowledge
+                            assertEquals(3, messages.size());
+                            // The RAG hook should use the original user query, not the memory
+                            // message
+                            assertEquals("retrieved_knowledge", messages.get(2).getName());
+                            assertTrue(messages.get(2).getTextContent().contains("knowledge base"));
                         })
                 .verifyComplete();
     }
