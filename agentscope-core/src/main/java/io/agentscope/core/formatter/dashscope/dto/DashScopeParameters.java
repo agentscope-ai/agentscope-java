@@ -60,9 +60,7 @@ public class DashScopeParameters {
     @JsonProperty("enable_thinking")
     private Boolean enableThinking;
 
-    /**
-     *  Whether to stitch the reasoning_content of the assistant message in the conversation history to the model input.
-     */
+    /** Whether to append the reasoning_content to the model input. */
     @JsonProperty("preserve_thinking")
     private Boolean preserveThinking;
 
