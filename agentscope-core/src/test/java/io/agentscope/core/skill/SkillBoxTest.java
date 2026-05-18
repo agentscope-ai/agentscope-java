@@ -168,6 +168,7 @@ class SkillBoxTest {
         void testThrowExceptionForNullSkillIdInOperations() {
             assertThrows(IllegalArgumentException.class, () -> skillBox.removeSkill(null));
             assertThrows(IllegalArgumentException.class, () -> skillBox.exists(null));
+            assertThrows(IllegalArgumentException.class, () -> skillBox.setSkillActive(null, true));
         }
 
         @Test
@@ -263,6 +264,86 @@ class SkillBoxTest {
             assertTrue(skillIds.contains(skill1.getSkillId()), "Should contain first skill ID");
             assertTrue(skillIds.contains(skill2.getSkillId()), "Should contain second skill ID");
             assertTrue(skillIds.contains(skill3.getSkillId()), "Should contain third skill ID");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when setting active state for non-existent skill")
+        void testThrowExceptionForNonExistentSkillInSetActive() {
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> skillBox.setSkillActive("fake_non_existent_skill", true));
+            assertEquals(
+                    "Skill ID does not exist: fake_non_existent_skill", exception.getMessage());
+        }
+
+        @Test
+        @DisplayName("Should update skill active state and automatically sync toolkit")
+        void testSetSkillActiveAutoSyncsState() {
+            AgentSkill skill =
+                    new AgentSkill("test_active_skill", "Test Active Skill", "# Content", null);
+            AgentTool testTool = createTestTool("active_test_tool");
+
+            skillBox.registration().skill(skill).agentTool(testTool).apply();
+
+            String toolsGroupName = skill.getSkillId() + "_skill_tools";
+
+            assertFalse(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill should be inactive initially");
+            assertNotNull(toolkit.getToolGroup(toolsGroupName), "ToolGroup should be created");
+            assertFalse(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be inactive initially");
+
+            skillBox.setSkillActive(skill.getSkillId(), true);
+
+            assertTrue(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill logical state should be active now");
+            assertTrue(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be AUTOMATICALLY activated without explicit sync");
+
+            skillBox.setSkillActive(skill.getSkillId(), false);
+
+            assertFalse(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill logical state should be inactive");
+            assertFalse(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be AUTOMATICALLY deactivated without explicit sync");
+        }
+
+        @Test
+        @DisplayName("Should successfully set active state for a skill without bound tools")
+        void testSetSkillActiveWithoutTools() {
+            AgentSkill purePromptSkill =
+                    new AgentSkill(
+                            "pure_prompt_skill",
+                            "Skill without tools",
+                            "# Just a pure prompt instruction",
+                            null);
+            skillBox.registerSkill(purePromptSkill);
+
+            String toolsGroupName = purePromptSkill.getSkillId() + "_skill_tools";
+            assertNull(
+                    toolkit.getToolGroup(toolsGroupName),
+                    "ToolGroup should not exist for pure prompt skill");
+
+            assertDoesNotThrow(
+                    () -> skillBox.setSkillActive(purePromptSkill.getSkillId(), true),
+                    "Should not throw exception when activating a non-tool-bind skill");
+            assertTrue(
+                    skillBox.isSkillActive(purePromptSkill.getSkillId()),
+                    "Logical state should be active");
+
+            assertDoesNotThrow(
+                    () -> skillBox.setSkillActive(purePromptSkill.getSkillId(), false),
+                    "Should not throw exception when deactivating a non-tool-bind skill");
+            assertFalse(
+                    skillBox.isSkillActive(purePromptSkill.getSkillId()),
+                    "Logical state should be inactive");
         }
     }
 

@@ -72,6 +72,7 @@ header:
     - 'CNAME'
     - 'Jenkinsfile'
     - '**/vendor/**'
+    - '**/docs/**'
     - '**/.prettierrc'
   comment: on-failure
 

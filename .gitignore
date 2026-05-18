@@ -37,8 +37,15 @@ build/
 .flattened-pom.xml
 **/dependency-reduced-pom.xml
 
+### Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
 ### Docs
 docs/_build
+.venv/
 
 
 # vibe coding
