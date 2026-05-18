@@ -19,19 +19,92 @@ package io.agentscope.core.mcp.schema;
 /**
  * A uniquely identifying ID for a request in JSON-RPC.
  *
- * Auto-generated from MCP JSON schema.
+ * <p>The MCP and JSON-RPC specifications allow request ids to be either a string or an
+ * integer value. This type models that union explicitly and validates values at construction
+ * time.
  */
-public record RequestId() {
+public record RequestId(Object value) {
 
-    // Builder pattern for easier construction
-    public static Builder builder() {
-        return new Builder();
+    /**
+     * Creates a request id and validates that the value is either a string or an integral
+     * numeric type.
+     */
+    public RequestId {
+        if (value == null) {
+            throw new IllegalArgumentException("Request id value must not be null");
+        }
+        if (!(value instanceof String)) {
+            if (!(value instanceof Byte
+                    || value instanceof Short
+                    || value instanceof Integer
+                    || value instanceof Long)) {
+                throw new IllegalArgumentException(
+                        "Request id value must be a String or an integral numeric type");
+            }
+        }
     }
 
-    public static class Builder {
+    /**
+     * Creates a numeric request id.
+     *
+     * @param numValue the numeric id value
+     * @return a request id wrapping the numeric value
+     */
+    public static RequestId numeric(long numValue) {
+        return new RequestId(numValue);
+    }
 
-        public RequestId build() {
-            return new RequestId();
+    /**
+     * Creates a string request id.
+     *
+     * @param strValue the string id value
+     * @return a request id wrapping the string value
+     */
+    public static RequestId string(String strValue) {
+        return new RequestId(strValue);
+    }
+
+    /**
+     * Returns whether this request id contains a string value.
+     *
+     * @return {@code true} if the wrapped value is a string; otherwise {@code false}
+     */
+    public boolean isString() {
+        return value instanceof String;
+    }
+
+    /**
+     * Returns whether this request id contains a numeric value.
+     *
+     * @return {@code true} if the wrapped value is numeric; otherwise {@code false}
+     */
+    public boolean isNumber() {
+        return value instanceof Number;
+    }
+
+    /**
+     * Returns the wrapped value as a string.
+     *
+     * @return the string request id value
+     * @throws IllegalStateException if this request id does not contain a string
+     */
+    public String asString() {
+        if (!isString()) {
+            throw new IllegalStateException("Request id does not contain a string value");
         }
+        return (String) value;
+    }
+
+    /**
+     * Returns the wrapped value as a long.
+     *
+     * @return the numeric request id value
+     * @throws IllegalStateException if this request id does not contain a numeric value
+     */
+    public long asLong() {
+        if (!isNumber()) {
+            throw new IllegalStateException("Request id does not contain a numeric value");
+        }
+        return ((Number) value).longValue();
     }
 }

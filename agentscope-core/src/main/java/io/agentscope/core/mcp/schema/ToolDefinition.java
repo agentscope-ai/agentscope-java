@@ -20,11 +20,14 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Definition for a tool the client can call.
+ * Tool definition as described in the MCP specification.
  *
- * Auto-generated from MCP JSON schema.
+ * <p>This record represents the wire-format definition of a tool (also called a resource or
+ * function). To avoid confusion with {@link io.agentscope.core.mcp.tool.Tool} (the execution
+ * SPI), this schema type is named ToolDefinition.
  */
-public record Tool(Optional<String> description, Map<String, Object> inputSchema, String name) {
+public record ToolDefinition(
+        Optional<String> description, Map<String, Object> inputSchema, String name) {
 
     // Builder pattern for easier construction
     public static Builder builder() {
@@ -51,8 +54,8 @@ public record Tool(Optional<String> description, Map<String, Object> inputSchema
             return this;
         }
 
-        public Tool build() {
-            return new Tool(description, inputSchema, name);
+        public ToolDefinition build() {
+            return new ToolDefinition(description, inputSchema, name);
         }
     }
 }

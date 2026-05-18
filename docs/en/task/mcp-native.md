@@ -63,11 +63,15 @@ public class CalculatorTool implements Tool {
         double a = ((Number) args.get("a")).doubleValue();
         double b = ((Number) args.get("b")).doubleValue();
         
+        if (b == 0 && "divide".equals(operation)) {
+            throw new IllegalArgumentException("Division by zero");
+        }
+        
         double result = switch(operation) {
             case "add" -> a + b;
             case "subtract" -> a - b;
             case "multiply" -> a * b;
-            case "divide" -> b != 0 ? a / b : throw new IllegalArgumentException("Division by zero");
+            case "divide" -> a / b;
             default -> throw new IllegalArgumentException("Unknown operation: " + operation);
         };
         
