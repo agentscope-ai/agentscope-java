@@ -18,8 +18,6 @@ package com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.node;
 import com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.tools.SqlTools;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
@@ -32,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Uses AgentScope Model to force a tool call for sql_db_schema. Builds a ReActAgent with
@@ -46,7 +46,7 @@ public class CallGetSchemaNode implements NodeAction {
             Use the available tables from the user message. Do not explain, only output the tool call.
             """;
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final JsonMapper JSON = JsonMapper.shared();
 
     private final Model model;
     private final SqlTools sqlTools;
@@ -116,7 +116,7 @@ public class CallGetSchemaNode implements NodeAction {
             try {
                 argsJson =
                         JSON.writeValueAsString(tu.getInput() != null ? tu.getInput() : Map.of());
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 argsJson = "{}";
             }
             toolCalls.add(

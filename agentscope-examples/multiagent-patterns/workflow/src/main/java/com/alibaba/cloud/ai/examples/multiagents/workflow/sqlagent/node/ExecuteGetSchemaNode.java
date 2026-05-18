@@ -18,13 +18,13 @@ package com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.node;
 import com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.tools.SqlTools;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Executes the sql_db_schema tool when the previous message contains a tool call for it.
@@ -32,7 +32,7 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
  */
 public class ExecuteGetSchemaNode implements NodeAction {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final JsonMapper JSON = JsonMapper.shared();
 
     private final SqlTools sqlTools;
 
