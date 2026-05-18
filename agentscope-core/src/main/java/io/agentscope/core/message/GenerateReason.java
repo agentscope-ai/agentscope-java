@@ -47,6 +47,9 @@ public enum GenerateReason {
     /** Tool execution was suspended, waiting for user to provide results. */
     TOOL_SUSPENDED,
 
+    /** Tool result marked with return_directly, breaking ReAct iterations. */
+    TOOL_RETURN_DIRECT,
+
     /** Reasoning phase was stopped by a Hook (PostReasoningEvent.stopAgent()). */
     REASONING_STOP_REQUESTED,
 

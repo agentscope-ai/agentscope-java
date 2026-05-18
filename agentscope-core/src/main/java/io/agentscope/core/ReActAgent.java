@@ -724,6 +724,19 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                             buildSuspendedMsg(pendingPairs));
                                                 }
 
+                                                // Return directly: if any tool result has
+                                                // return_directly flag, breaking iterations
+                                                boolean hasReturnDirect =
+                                                        successPairs.stream()
+                                                                .anyMatch(
+                                                                        entry ->
+                                                                                entry.getValue()
+                                                                                        .isReturnDirect());
+                                                if (hasReturnDirect) {
+                                                    return Mono.just(
+                                                            buildReturnDirectMsg(successPairs));
+                                                }
+
                                                 // Continue next iteration
                                                 return executeIteration(iter + 1);
                                             });
@@ -751,6 +764,28 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .content(content)
                 .generateReason(GenerateReason.TOOL_SUSPENDED)
                 .build();
+    }
+
+    /**
+     * Build a return_direct message from tool results.
+     *
+     * @param successPairs List of (ToolUseBlock, ToolResultBlock) pairs for successful results
+     * @return Msg with {@link GenerateReason#TOOL_RETURN_DIRECT}
+     */
+    private Msg buildReturnDirectMsg(List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs) {
+        List<ContentBlock> content = new ArrayList<>();
+        for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : successPairs) {
+            content.addAll(pair.getValue().getOutput());
+        }
+        Msg returnDirectMsg =
+                Msg.builder()
+                        .name(getName())
+                        .role(MsgRole.ASSISTANT)
+                        .content(content)
+                        .generateReason(GenerateReason.TOOL_RETURN_DIRECT)
+                        .build();
+        memory.addMessage(returnDirectMsg);
+        return returnDirectMsg;
     }
 
     /**

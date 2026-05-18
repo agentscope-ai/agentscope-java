@@ -382,6 +382,11 @@ public class Toolkit {
                     }
 
                     @Override
+                    public boolean isReturnDirect() {
+                        return toolAnnotation.returnDirect();
+                    }
+
+                    @Override
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         // Pass custom converter to method invoker
                         return methodInvoker.invokeAsync(

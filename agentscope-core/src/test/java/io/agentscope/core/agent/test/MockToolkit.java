@@ -65,6 +65,15 @@ public class MockToolkit extends Toolkit {
     }
 
     /**
+     * Register a tool that returns its result directly (breaking ReAct loop).
+     */
+    public MockToolkit withReturnDirectTool(String toolName, String result) {
+        toolBehaviors.put(toolName, args -> result);
+        registerMockTool(toolName, "Mock returnDirect tool: " + toolName, true);
+        return this;
+    }
+
+    /**
      * Register a tool that throws an error.
      */
     public MockToolkit withErrorTool(String toolName, String errorMessage) {
@@ -117,6 +126,13 @@ public class MockToolkit extends Toolkit {
      * Register a mock tool with the toolkit.
      */
     private void registerMockTool(String name, String description) {
+        registerMockTool(name, description, false);
+    }
+
+    /**
+     * Register a mock tool with the toolkit, optionally marking it as returnDirect.
+     */
+    private void registerMockTool(String name, String description, boolean returnDirect) {
         AgentTool tool =
                 new AgentTool() {
                     @Override
@@ -135,6 +151,11 @@ public class MockToolkit extends Toolkit {
                         schema.put("type", "object");
                         schema.put("properties", new HashMap<String, Object>());
                         return schema;
+                    }
+
+                    @Override
+                    public boolean isReturnDirect() {
+                        return returnDirect;
                     }
 
                     @Override

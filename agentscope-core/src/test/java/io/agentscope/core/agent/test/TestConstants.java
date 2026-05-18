@@ -42,6 +42,7 @@ public class TestConstants {
     public static final String TEST_TOOL_NAME = "test_tool";
     public static final String CALCULATOR_TOOL_NAME = "calculator";
     public static final String FINISH_TOOL_NAME = "generate_response";
+    public static final String RETURN_DIRECT_TOOL_NAME = "return_direct_tool";
 
     // Timeouts
     public static final long DEFAULT_TEST_TIMEOUT_MS = 5000L;

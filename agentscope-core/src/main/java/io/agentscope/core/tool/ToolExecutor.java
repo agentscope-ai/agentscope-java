@@ -242,6 +242,13 @@ class ToolExecutor {
                         .build();
 
         return tool.callAsync(executionParam)
+                .map(
+                        result -> {
+                            if (tool.isReturnDirect()) {
+                                return result.withReturnDirect();
+                            }
+                            return result;
+                        })
                 .onErrorResume(
                         ToolSuspendException.class,
                         e -> {
