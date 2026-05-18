@@ -240,10 +240,10 @@ public class ErrorHandlingHook implements Hook {
 ## Complete Example
 
 See the complete Hook example:
-- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HookExample.java`
+- `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/HookExample.java`
 
 Run the example:
 ```bash
-cd agentscope-examples/quickstart
+cd agentscope-examples/documentation/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.HookExample"
 ```

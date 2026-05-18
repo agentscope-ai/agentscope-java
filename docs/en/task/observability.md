@@ -325,6 +325,6 @@ TracerRegistry.register(
 
 ## More Resources
 
-- **Studio Example**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
+- **Studio Example**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio Repository**: https://github.com/agentscope-ai/agentscope-studio
 - **Hook Documentation**: [hook.md](./hook.md)
