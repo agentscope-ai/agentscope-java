@@ -858,5 +858,219 @@ class MarkdownSkillParserTest {
             assertTrue(description.contains("850订单"));
             assertTrue(description.contains("EDI Customer setup"));
         }
+
+        @Test
+        @DisplayName("Should return empty metadata when key has space (not repaired)")
+        void testKeyWithSpaceNotRepaired() {
+            // When a "key" contains space, repair skips it; YAML parse still fails -> empty metadata
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "some text: value: here\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.getMetadata().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should handle colon at start of line (firstColon == 0)")
+        void testColonAtLineStart() {
+            // When firstColon == 0, repair condition is false
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + ": weird line\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            // Invalid YAML, repair won't help since firstColon == 0
+            assertTrue(parsed.getMetadata().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should handle colon at end of line (no value after)")
+        void testColonAtLineEnd() {
+            // When line.length() == firstColon + 1, repair condition is false
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "description: text ending with colon:\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            // This is invalid YAML (mapping expects value after colon), repair skips it
+            assertTrue(parsed.getMetadata().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should handle URL without space after colon (no repair needed)")
+        void testColonNoSpaceAfter() {
+            // URL with colon but no space after - should NOT trigger needsQuoting
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "url: http://example.com\n"
+                            + "description: normal text\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("http://example.com", parsed.getMetadata().get("url"));
+            assertEquals("normal text", parsed.getMetadata().get("description"));
+        }
+
+        @Test
+        @DisplayName("Should handle empty trimmed value in needsQuoting")
+        void testEmptyValueNoQuoting() {
+            // Value that trims to empty should not trigger quoting
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "description: \n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("test", parsed.getMetadata().get("name"));
+        }
+
+        @Test
+        @DisplayName("Should handle value with only colons no spaces")
+        void testColonsWithoutSpaces() {
+            // Value contains colons but no ": " pattern - should not trigger needsQuoting
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "data: key1:value1,key2:value2\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("key1:value1,key2:value2", parsed.getMetadata().get("data"));
+        }
+
+        @Test
+        @DisplayName("Should handle multiple repairable lines with mixed quoting")
+        void testMultipleLinesMixedQuoting() {
+            // Mix of already-quoted and unquoted colon patterns
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "description: \"already quoted: safe\"\n"
+                            + "detail: error: something: happened\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("already quoted: safe", parsed.getMetadata().get("description"));
+            String detail = (String) parsed.getMetadata().get("detail");
+            assertNotNull(detail);
+            assertTrue(detail.contains("error:"));
+        }
+
+        @Test
+        @DisplayName("Should repair value containing double quotes")
+        void testRepairWithDoubleQuotes() {
+            // Value contains double quotes that need escaping during repair
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "description: error: \"not found\": retry\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("test", parsed.getMetadata().get("name"));
+            String description = (String) parsed.getMetadata().get("description");
+            assertNotNull(description);
+            assertTrue(description.contains("error:"));
+        }
+
+        @Test
+        @DisplayName("Should repair value containing backslash")
+        void testRepairWithBackslash() {
+            // Value contains backslash that needs escaping during repair
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "path: C:\\Users\\admin\\error: not found\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            String path = (String) parsed.getMetadata().get("path");
+            assertNotNull(path);
+            assertTrue(path.contains("error:"));
+        }
+
+        @Test
+        @DisplayName("Should return empty metadata when repair still fails after quoting")
+        void testRepairStillFailsAfterQuoting() {
+            // YAML that fails initial parse, repair modifies it, but re-parse still fails
+            // Invalid YAML: mixing mapping and sequence at same level
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "detail: error: something\n"
+                            + "- broken item\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            // Repair can't fix this - it's fundamentally broken YAML structure
+            assertTrue(parsed.getMetadata().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should return empty metadata when YAML parses to null")
+        void testYamlParsesToNull() {
+            // Empty YAML content between --- markers parses to null
+            String markdown =
+                    "---\n"
+                            + " \n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.getMetadata().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should return empty metadata for non-map top-level YAML")
+        void testNonMapTopLevelYaml() {
+            // YAML list as top-level instead of map
+            String markdown =
+                    "---\n"
+                            + "- item1\n"
+                            + "- item2\n"
+                            + "- item3\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.getMetadata().isEmpty());
+        }
     }
 }
