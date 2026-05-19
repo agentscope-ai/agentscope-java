@@ -260,4 +260,19 @@ class OpenAITextEmbeddingTest {
                                 .dimensions(-1)
                                 .build());
     }
+
+    @Test
+    @DisplayName("Should build successfully without dimensions (uses model default)")
+    void testBuildWithoutDimensions() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals(TEST_MODEL_NAME, model.getModelName());
+        // Should return default dimensions (1536) when not explicitly set
+        assertEquals(1536, model.getDimensions());
+    }
 }

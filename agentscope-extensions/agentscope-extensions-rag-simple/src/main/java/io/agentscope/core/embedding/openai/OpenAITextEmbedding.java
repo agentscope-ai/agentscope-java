@@ -49,7 +49,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
     private final String apiKey;
     private final String modelName;
-    private final int dimensions;
+    private final Integer dimensions;
     private final ExecutionConfig defaultExecutionConfig;
 
     private final String baseUrl;
@@ -59,14 +59,14 @@ public class OpenAITextEmbedding implements EmbeddingModel {
      *
      * @param apiKey the API key for OpenAI authentication
      * @param modelName the model name (e.g., "text-embedding-3-small")
-     * @param dimensions the dimension of embedding vectors
+     * @param dimensions the optional dimension of embedding vectors (null for model default)
      * @param defaultExecutionConfig default execution configuration for timeout and retry
      * @param baseUrl custom base URL for OpenAI API (null for default)
      */
     public OpenAITextEmbedding(
             String apiKey,
             String modelName,
-            int dimensions,
+            Integer dimensions,
             ExecutionConfig defaultExecutionConfig,
             String baseUrl) {
         this.apiKey = apiKey;
@@ -132,15 +132,19 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
                                         OpenAIClient client = clientBuilder.build();
 
-                                        EmbeddingCreateParams createParams =
+                                        // Build embedding params; only include dimensions when
+                                        // explicitly set to support third-party providers
+                                        EmbeddingCreateParams.Builder paramsBuilder =
                                                 EmbeddingCreateParams.builder()
                                                         .model(modelName)
-                                                        .dimensions(dimensions)
                                                         .encodingFormat(
                                                                 EmbeddingCreateParams.EncodingFormat
                                                                         .FLOAT)
-                                                        .inputOfArrayOfStrings(List.of(text))
-                                                        .build();
+                                                        .inputOfArrayOfStrings(List.of(text));
+                                        if (dimensions != null) {
+                                            paramsBuilder.dimensions(dimensions);
+                                        }
+                                        EmbeddingCreateParams createParams = paramsBuilder.build();
 
                                         log.debug(
                                                 "OpenAI embedding call: model={},"
@@ -181,8 +185,9 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                                 EmbeddingUtils.convertFloatListToDoubleArray(
                                                         embeddingValues);
 
-                                        // Validate dimension
-                                        if (embeddingArray.length != dimensions) {
+                                        // Validate dimension when explicitly configured
+                                        if (dimensions != null
+                                                && embeddingArray.length != dimensions) {
                                             log.warn(
                                                     "Embedding dimension mismatch: expected={},"
                                                             + " actual={}",
@@ -225,7 +230,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
     @Override
     public int getDimensions() {
-        return dimensions;
+        return dimensions != null ? dimensions : 1536;
     }
 
     /**
@@ -234,7 +239,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private int dimensions = 1536;
+        private Integer dimensions = null;
         private ExecutionConfig defaultExecutionConfig;
         private String baseUrl;
 
@@ -261,12 +266,15 @@ public class OpenAITextEmbedding implements EmbeddingModel {
         }
 
         /**
-         * Sets the dimension of embedding vectors.
+         * Sets the optional dimension of embedding vectors.
          *
-         * @param dimensions the dimension
+         * <p>When not specified (null), the OpenAI API will use the model's default dimensions.
+         * This allows third-party embedding models to work without requiring a specific dimension.
+         *
+         * @param dimensions the dimension, or null to use model default
          * @return this builder instance
          */
-        public Builder dimensions(int dimensions) {
+        public Builder dimensions(Integer dimensions) {
             this.dimensions = dimensions;
             return this;
         }
@@ -311,7 +319,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                 throw new IllegalStateException(
                         "modelName is required and cannot be null or empty");
             }
-            if (dimensions <= 0) {
+            if (dimensions != null && dimensions <= 0) {
                 throw new IllegalStateException("dimensions must be positive, got: " + dimensions);
             }
 
