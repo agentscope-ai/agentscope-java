@@ -730,4 +730,133 @@ class MarkdownSkillParserTest {
                     () -> parsed.getMetadata().put("description", "desc"));
         }
     }
+
+    @Nested
+    @DisplayName("YAML Auto-Repair Tests")
+    class YamlAutoRepairTests {
+
+        @Test
+        @DisplayName("Should auto-repair description with unquoted colons")
+        void testAutoRepairUnquotedColons() {
+            String markdown =
+                    "---\n"
+                            + "name: testskils\n"
+                            + "description: 测试skills, node: 无法找到EDI Partner、EDI Partner不存在\n"
+                            + "---\n"
+                            + "# Skill Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertNotNull(parsed);
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("testskils", parsed.getMetadata().get("name"));
+            String description = (String) parsed.getMetadata().get("description");
+            assertNotNull(description);
+            assertTrue(description.contains("node:"));
+            assertTrue(description.contains("无法找到EDI Partner"));
+        }
+
+        @Test
+        @DisplayName("Should auto-repair description with error message containing colon")
+        void testAutoRepairErrorMessageWithColon() {
+            String markdown =
+                    "---\n"
+                        + "name: edi-skill\n"
+                        + "description: When error contains: Can't find the EDI Customer setup\n"
+                        + "---\n"
+                        + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            String description = (String) parsed.getMetadata().get("description");
+            assertNotNull(description);
+            assertTrue(description.contains("Can't find the EDI Customer setup"));
+        }
+
+        @Test
+        @DisplayName("Should handle already quoted values without double-quoting")
+        void testAlreadyQuotedValuesNotDoubleQuoted() {
+            String markdown =
+                    "---\n"
+                            + "name: test\n"
+                            + "description: \"Already quoted: with colon\"\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("Already quoted: with colon", parsed.getMetadata().get("description"));
+        }
+
+        @Test
+        @DisplayName("Should handle multiple fields with unquoted colons")
+        void testMultipleFieldsWithUnquotedColons() {
+            String markdown =
+                    "---\n"
+                            + "name: multi-colon\n"
+                            + "description: Error: something failed, detail: node: not found\n"
+                            + "example: status: error, code: 500\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            String description = (String) parsed.getMetadata().get("description");
+            assertNotNull(description);
+            assertTrue(description.contains("Error:"));
+            assertTrue(description.contains("detail:"));
+            String example = (String) parsed.getMetadata().get("example");
+            assertNotNull(example);
+            assertTrue(example.contains("status:"));
+            assertTrue(example.contains("code:"));
+        }
+
+        @Test
+        @DisplayName("Should still parse valid YAML without repair")
+        void testValidYamlNoRepairNeeded() {
+            String markdown =
+                    "---\n"
+                            + "name: valid-yaml\n"
+                            + "description: A normal description without colons\n"
+                            + "version: 1.0.0\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("valid-yaml", parsed.getMetadata().get("name"));
+            assertEquals(
+                    "A normal description without colons", parsed.getMetadata().get("description"));
+            assertEquals("1.0.0", parsed.getMetadata().get("version"));
+        }
+
+        @Test
+        @DisplayName("Should handle Chinese text with colons")
+        void testChineseTextWithColons() {
+            String markdown =
+                    "---\n"
+                        + "name: chinese-skill\n"
+                        + "description: 测试skills, node: 无法找到EDI Partner、EDI"
+                        + " Partner不存在、Partner配置错误、850订单没有生成SO、850订单报错、Can't find the EDI Customer"
+                        + " setup in the EDI partner function、查不到850订单。处理EDI 850订单中无法找到EDI"
+                        + " Partner的问题，当850报错包含Can't find the EDI Customer setup in the EDI partner"
+                        + " function时使用此skill。\n"
+                        + "---\n"
+                        + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("chinese-skill", parsed.getMetadata().get("name"));
+            String description = (String) parsed.getMetadata().get("description");
+            assertNotNull(description);
+            assertTrue(description.contains("无法找到EDI Partner"));
+            assertTrue(description.contains("850订单"));
+            assertTrue(description.contains("EDI Customer setup"));
+        }
+    }
 }

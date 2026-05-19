@@ -154,8 +154,22 @@ public class MarkdownSkillParser {
         try {
             loaded = createParserYaml().load(yamlContent);
         } catch (RuntimeException e) {
-            logger.debug("Failed to parse YAML frontmatter, returning empty metadata", e);
-            return Map.of();
+            String repaired = repairYamlWithUnquotedColons(yamlContent);
+            if (!repaired.equals(yamlContent)) {
+                try {
+                    loaded = createParserYaml().load(repaired);
+                    logger.warn(
+                            "YAML frontmatter contained unquoted colons and was auto-repaired. "
+                                    + "Consider quoting scalar values containing ': ': {}",
+                            yamlContent.substring(0, Math.min(80, yamlContent.length())));
+                } catch (RuntimeException e2) {
+                    logger.debug("Failed to repair YAML frontmatter, returning empty metadata", e2);
+                    return Map.of();
+                }
+            } else {
+                logger.debug("Failed to parse YAML frontmatter, returning empty metadata", e);
+                return Map.of();
+            }
         }
 
         if (loaded == null) {
@@ -180,6 +194,99 @@ public class MarkdownSkillParser {
             metadata.put(stringKey, normalizeMetadataValue(entry.getValue()));
         }
         return metadata;
+    }
+
+    /**
+     * Attempts to repair YAML content that contains unquoted colons in scalar values.
+     *
+     * <p>This handles the common case where a value contains patterns like "key:" that YAML
+     * interprets as mapping keys, for example:
+     * <pre>
+     * description: test, node: cannot find EDI partner
+     * </pre>
+     *
+     * <p>The repair strategy wraps values in double quotes when they contain ": " patterns
+     * that would otherwise be parsed as key-value separators.
+     *
+     * @param yamlContent The original YAML content that failed to parse
+     * @return Repaired YAML content, or the original if no repair was possible
+     */
+    private static String repairYamlWithUnquotedColons(String yamlContent) {
+        StringBuilder result = new StringBuilder();
+        String[] lines = yamlContent.split("\n", -1);
+
+        for (String line : lines) {
+            int firstColon = line.indexOf(':');
+            if (firstColon > 0 && line.length() > firstColon + 1) {
+                String keyPart = line.substring(0, firstColon);
+                String valuePart = line.substring(firstColon + 1);
+
+                String trimmedKey = keyPart.trim();
+                if (!trimmedKey.isEmpty() && !trimmedKey.contains(" ")) {
+                    if (needsQuoting(valuePart)) {
+                        String repairedValue = quoteValue(valuePart);
+                        line = keyPart + ":" + repairedValue;
+                    }
+                }
+            }
+            result.append(line).append('\n');
+        }
+
+        if (result.length() > 0) {
+            result.setLength(result.length() - 1);
+        }
+        return result.toString();
+    }
+
+    /**
+     * Checks if a YAML value needs quoting because it contains unquoted colon-space patterns.
+     */
+    private static boolean needsQuoting(String value) {
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+
+        if ((trimmed.startsWith("\"") && trimmed.endsWith("\""))
+                || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+            return false;
+        }
+
+        return findUnquotedColonSpace(trimmed) >= 0;
+    }
+
+    /**
+     * Finds the index of ": " that is not inside quotes.
+     *
+     * @return Index of the unquoted ": " or -1 if none found
+     */
+    private static int findUnquotedColonSpace(String value) {
+        boolean inDoubleQuotes = false;
+        boolean inSingleQuotes = false;
+
+        for (int i = 0; i < value.length() - 1; i++) {
+            char c = value.charAt(i);
+            if (c == '"' && !inSingleQuotes) {
+                inDoubleQuotes = !inDoubleQuotes;
+            } else if (c == '\'' && !inDoubleQuotes) {
+                inSingleQuotes = !inSingleQuotes;
+            } else if (!inDoubleQuotes
+                    && !inSingleQuotes
+                    && c == ':'
+                    && value.charAt(i + 1) == ' ') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Quotes a YAML value in double quotes, escaping any internal double quotes and backslashes.
+     */
+    private static String quoteValue(String value) {
+        String trimmed = value.trim();
+        String escaped = trimmed.replace("\\", "\\\\").replace("\"", "\\\"");
+        return " \"" + escaped + "\"";
     }
 
     private static LoaderOptions createLoaderOptions() {
