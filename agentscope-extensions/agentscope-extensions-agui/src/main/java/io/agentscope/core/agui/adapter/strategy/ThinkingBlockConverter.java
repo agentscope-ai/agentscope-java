@@ -27,6 +27,11 @@ import io.agentscope.core.message.ThinkingBlock;
 public class ThinkingBlockConverter implements BlockEventConverter<ThinkingBlock> {
 
     @Override
+    public Class<ThinkingBlock> supportedBlockType() {
+        return ThinkingBlock.class;
+    }
+
+    @Override
     public boolean isApplicable(Event event) {
         return event.getType() == EventType.REASONING || event.getType() == EventType.SUMMARY;
     }

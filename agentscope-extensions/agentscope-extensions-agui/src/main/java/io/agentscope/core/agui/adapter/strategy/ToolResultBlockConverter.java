@@ -30,6 +30,11 @@ import java.util.UUID;
 public class ToolResultBlockConverter implements BlockEventConverter<ToolResultBlock> {
 
     @Override
+    public Class<ToolResultBlock> supportedBlockType() {
+        return ToolResultBlock.class;
+    }
+
+    @Override
     public boolean isApplicable(Event event) {
         return event.getType() == EventType.TOOL_RESULT && event.isLast();
     }

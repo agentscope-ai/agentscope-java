@@ -1845,6 +1845,11 @@ class AguiAgentAdapterTest {
         BlockEventConverter<ToolResultBlock> customConverter =
                 new BlockEventConverter<>() {
                     @Override
+                    public Class<ToolResultBlock> supportedBlockType() {
+                        return ToolResultBlock.class;
+                    }
+
+                    @Override
                     public boolean isApplicable(Event event) {
                         return event.getType() == EventType.TOOL_RESULT;
                     }
@@ -1863,9 +1868,7 @@ class AguiAgentAdapterTest {
 
         // Inject the custom strategy via config
         AguiAdapterConfig customConfig =
-                AguiAdapterConfig.builder()
-                        .registerConverter(ToolResultBlock.class, customConverter)
-                        .build();
+                AguiAdapterConfig.builder().registerConverter(customConverter).build();
         AguiAgentAdapter customAdapter = new AguiAgentAdapter(mockAgent, customConfig);
 
         // Simulate a ToolResult event

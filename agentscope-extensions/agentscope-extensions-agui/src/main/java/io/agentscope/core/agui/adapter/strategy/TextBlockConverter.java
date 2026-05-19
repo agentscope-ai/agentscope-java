@@ -27,6 +27,11 @@ import io.agentscope.core.message.TextBlock;
 public class TextBlockConverter implements BlockEventConverter<TextBlock> {
 
     @Override
+    public Class<TextBlock> supportedBlockType() {
+        return TextBlock.class;
+    }
+
+    @Override
     public boolean isApplicable(Event event) {
         return event.getType() == EventType.REASONING || event.getType() == EventType.SUMMARY;
     }

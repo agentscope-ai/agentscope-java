@@ -28,6 +28,11 @@ import java.util.UUID;
 public class ToolUseBlockConverter implements BlockEventConverter<ToolUseBlock> {
 
     @Override
+    public Class<ToolUseBlock> supportedBlockType() {
+        return ToolUseBlock.class;
+    }
+
+    @Override
     public boolean isApplicable(Event event) {
         return event.getType() == EventType.REASONING || event.getType() == EventType.SUMMARY;
     }

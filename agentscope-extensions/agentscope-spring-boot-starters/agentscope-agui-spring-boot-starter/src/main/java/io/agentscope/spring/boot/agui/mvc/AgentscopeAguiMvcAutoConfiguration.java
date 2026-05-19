@@ -17,9 +17,11 @@ package io.agentscope.spring.boot.agui.mvc;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -68,21 +70,36 @@ public class AgentscopeAguiMvcAutoConfiguration {
      * @param registry The agent registry
      * @param sessionManager The thread session manager
      * @param props The configuration properties
+     * @param customConvertersProvider Provider for any custom block converters defined in the Spring context
      * @return A new AguiMvcController
      */
     @Bean
     @ConditionalOnMissingBean
     public AguiMvcController aguiMvcController(
-            AguiAgentRegistry registry, ThreadSessionManager sessionManager, AguiProperties props) {
-        AguiAdapterConfig config =
+            AguiAgentRegistry registry,
+            ThreadSessionManager sessionManager,
+            AguiProperties props,
+            ObjectProvider<BlockEventConverter<?>> customConvertersProvider) {
+        AguiAdapterConfig.Builder configBuilder =
                 AguiAdapterConfig.builder()
                         .toolMergeMode(props.getDefaultToolMergeMode())
                         .runTimeout(props.getRunTimeout())
                         .emitStateEvents(props.isEmitStateEvents())
                         .emitToolCallArgs(props.isEmitToolCallArgs())
                         .enableReasoning(props.isEnableReasoning())
-                        .defaultAgentId(props.getDefaultAgentId())
-                        .build();
+                        .enableActingChunk(props.isEnableActingChunk())
+                        .defaultAgentId(props.getDefaultAgentId());
+
+        customConvertersProvider
+                .orderedStream()
+                .forEach(
+                        converter -> {
+                            @SuppressWarnings({"unchecked", "rawtypes"})
+                            BlockEventConverter rawConverter = converter;
+                            configBuilder.registerConverter(rawConverter);
+                        });
+
+        AguiAdapterConfig config = configBuilder.build();
 
         return AguiMvcController.builder()
                 .agentRegistry(registry)

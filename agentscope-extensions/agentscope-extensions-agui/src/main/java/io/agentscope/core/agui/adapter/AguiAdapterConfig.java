@@ -17,7 +17,6 @@ package io.agentscope.core.agui.adapter;
 
 import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
 import io.agentscope.core.agui.model.ToolMergeMode;
-import io.agentscope.core.message.ContentBlock;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
@@ -255,14 +254,13 @@ public class AguiAdapterConfig {
          * <p>This allows users to override the default conversion strategies for specific
          * ContentBlock types, enabling deep customization of AG-UI event generation.
          *
-         * @param blockClass The class of the ContentBlock to convert
          * @param converter The custom converter strategy
-         * @param <T> The ContentBlock type
          * @return This builder
          */
-        public <T extends ContentBlock> Builder registerConverter(
-                Class<T> blockClass, BlockEventConverter<T> converter) {
-            this.customConverters.put(blockClass, converter);
+        public Builder registerConverter(BlockEventConverter<?> converter) {
+            if (converter != null && converter.supportedBlockType() != null) {
+                this.customConverters.put(converter.supportedBlockType(), converter);
+            }
             return this;
         }
 

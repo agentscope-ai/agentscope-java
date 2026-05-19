@@ -19,10 +19,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import java.time.Duration;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -106,8 +112,7 @@ class AguiAdapterConfigTest {
 
         assertFalse(configDisabled.isEnableReasoning());
 
-        AguiAdapterConfig configEnabled =
-                AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAdapterConfig configEnabled = AguiAdapterConfig.builder().enableReasoning(true).build();
 
         assertTrue(configEnabled.isEnableReasoning());
     }
@@ -153,6 +158,91 @@ class AguiAdapterConfigTest {
         AguiAdapterConfig config = AguiAdapterConfig.builder().defaultAgentId(null).build();
 
         assertNull(config.getDefaultAgentId());
+    }
+
+    @Test
+    void testDefaultCustomConvertersIsEmpty() {
+        AguiAdapterConfig config = AguiAdapterConfig.defaultConfig();
+
+        assertNotNull(config.getCustomConverters());
+        assertTrue(config.getCustomConverters().isEmpty());
+    }
+
+    @Test
+    void testBuilderRegisterCustomConverters() {
+        BlockEventConverter<TextBlock> textConverter =
+                new BlockEventConverter<>() {
+                    @Override
+                    public Class<TextBlock> supportedBlockType() {
+                        return TextBlock.class;
+                    }
+
+                    @Override
+                    public boolean isApplicable(Event event) {
+                        return true;
+                    }
+
+                    @Override
+                    public void convert(TextBlock block, Event event, StreamContext context) {}
+                };
+
+        BlockEventConverter<ToolUseBlock> toolConverter =
+                new BlockEventConverter<>() {
+                    @Override
+                    public Class<ToolUseBlock> supportedBlockType() {
+                        return ToolUseBlock.class;
+                    }
+
+                    @Override
+                    public boolean isApplicable(Event event) {
+                        return true;
+                    }
+
+                    @Override
+                    public void convert(ToolUseBlock block, Event event, StreamContext context) {}
+                };
+
+        AguiAdapterConfig config =
+                AguiAdapterConfig.builder()
+                        .registerConverter(textConverter)
+                        .registerConverter(toolConverter)
+                        .build();
+
+        Map<Class<?>, BlockEventConverter<?>> customConverters = config.getCustomConverters();
+
+        assertEquals(2, customConverters.size());
+        assertTrue(customConverters.containsKey(TextBlock.class));
+        assertTrue(customConverters.containsKey(ToolUseBlock.class));
+    }
+
+    @Test
+    void testCustomConvertersImmutability() {
+        BlockEventConverter<TextBlock> dummyConverter =
+                new BlockEventConverter<>() {
+                    @Override
+                    public Class<TextBlock> supportedBlockType() {
+                        return TextBlock.class;
+                    }
+
+                    @Override
+                    public boolean isApplicable(Event event) {
+                        return true;
+                    }
+
+                    @Override
+                    public void convert(TextBlock block, Event event, StreamContext context) {}
+                };
+
+        AguiAdapterConfig config =
+                AguiAdapterConfig.builder().registerConverter(dummyConverter).build();
+
+        Map<Class<?>, BlockEventConverter<?>> customConverters = config.getCustomConverters();
+
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> {
+                    customConverters.remove(TextBlock.class);
+                });
     }
 
     @Test

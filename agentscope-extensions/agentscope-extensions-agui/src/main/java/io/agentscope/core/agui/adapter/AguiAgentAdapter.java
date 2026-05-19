@@ -29,10 +29,6 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -80,15 +76,22 @@ public class AguiAgentAdapter {
         this.messageConverter = new AguiMessageConverter();
 
         // Register default block conversion strategies
-        converters.put(TextBlock.class, new TextBlockConverter());
-        converters.put(ThinkingBlock.class, new ThinkingBlockConverter());
-        converters.put(ToolUseBlock.class, new ToolUseBlockConverter());
-        converters.put(ToolResultBlock.class, new ToolResultBlockConverter());
+        registerDefault(new TextBlockConverter());
+        registerDefault(new ThinkingBlockConverter());
+        registerDefault(new ToolUseBlockConverter());
+        registerDefault(new ToolResultBlockConverter());
 
         // Override with custom converters if provided by the user
         if (!config.getCustomConverters().isEmpty()) {
             converters.putAll(config.getCustomConverters());
         }
+    }
+
+    /**
+     * Helper method to safely register a default converter using its own declared supported type.
+     */
+    private void registerDefault(BlockEventConverter<?> converter) {
+        converters.put(converter.supportedBlockType(), converter);
     }
 
     /**

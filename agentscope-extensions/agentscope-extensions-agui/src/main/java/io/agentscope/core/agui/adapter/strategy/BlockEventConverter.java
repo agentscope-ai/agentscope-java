@@ -27,6 +27,13 @@ import io.agentscope.core.message.ContentBlock;
 public interface BlockEventConverter<T extends ContentBlock> {
 
     /**
+     * Retrieves the specific type of ContentBlock that this converter can process.
+     *
+     * @return The class type of the ContentBlock handled by this converter.
+     */
+    Class<T> supportedBlockType();
+
+    /**
      * Determines whether the current Event is applicable for this converter.
      *
      * @param event The agent stream event to evaluate.
