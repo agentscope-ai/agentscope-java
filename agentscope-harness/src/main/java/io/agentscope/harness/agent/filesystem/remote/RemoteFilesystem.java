@@ -307,6 +307,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
                                         + (effectivePattern.startsWith("**")
                                                 ? effectivePattern
                                                 : "**/" + effectivePattern));
+        PathMatcher directMatcher =
+                FileSystems.getDefault().getPathMatcher("glob:" + effectivePattern);
 
         List<FileInfo> results = new ArrayList<>();
         for (StoreItem item : items) {
@@ -322,7 +324,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
                 relativePath = key.substring(normalizedPath.length() + 1);
             }
 
-            if (matcher.matches(java.nio.file.Path.of(relativePath))) {
+            if (matcher.matches(java.nio.file.Path.of(relativePath))
+                    || directMatcher.matches(java.nio.file.Path.of(relativePath))) {
                 FileData fd = convertItemToFileData(item);
                 int size = (fd != null && fd.content() != null) ? fd.content().length() : 0;
                 String modifiedAt = (fd != null && fd.modifiedAt() != null) ? fd.modifiedAt() : "";
