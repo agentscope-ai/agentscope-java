@@ -358,6 +358,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                 effectivePattern.startsWith("**") ? effectivePattern : "**/" + effectivePattern;
         FileSystem fs = FileSystems.getDefault();
         PathMatcher matcher = fs.getPathMatcher("glob:" + globExpr);
+        PathMatcher directMatcher = fs.getPathMatcher("glob:" + effectivePattern);
 
         List<FileInfo> results = new ArrayList<>();
         try {
@@ -367,7 +368,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                             Path rel = searchPath.relativize(file);
-                            if (matcher.matches(rel)) {
+                            if (matcher.matches(rel) || directMatcher.matches(rel)) {
                                 String filePath =
                                         virtualMode
                                                 ? toVirtualPath(file)

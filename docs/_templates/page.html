@@ -1,0 +1,8 @@
+{% extends "!page.html" %}
+
+{# Full-width site chrome above Furo's .page (sidebar + main). Per-tab layouts can evolve under .page later. #}
+{% block body %}
+  {% include "docs-site-notice.html" %}
+  {% include "docs-site-header.html" %}
+  {{ super() }}
+{% endblock %}

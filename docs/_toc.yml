@@ -38,6 +38,8 @@ parts:
     title: Agent Skill
   - file: en/task/rag
     title: RAG
+  - file: en/task/streaming
+    title: Streaming
   - file: en/task/hook
     title: Hook System
   - file: en/task/hitl
@@ -88,6 +90,53 @@ parts:
   - file: en/multi-agent/multiagent-debate
     title: Multi-Agent Debate
 
+# 与中文「Harness」区分标题，否则顶栏 tabs 的 sections_* 会同时匹配两段 caption，侧栏出现两个 HARNESS。
+- caption: Harness (English)
+  chapters:
+  - file: en/harness/overview
+    title: Overview
+  - file: en/harness/architecture
+    title: Architecture
+  - file: en/harness/workspace
+    title: Workspace
+  - file: en/harness/filesystem
+    title: Filesystem
+  - file: en/harness/session
+    title: Session
+  - file: en/harness/memory
+    title: Memory
+  - file: en/harness/tool
+    title: Tooling
+  - file: en/harness/subagent
+    title: Subagent
+  - file: en/harness/streaming
+    title: Subagent Streaming
+  - file: en/harness/quickstart/index
+    title: Quick Start
+  - file: en/harness/sandbox/index
+    title: Sandbox
+  - file: en/harness/example/index
+    title: Examples
+
+- caption: Integration
+  chapters:
+  - file: en/integration/overview
+    title: Overview
+
+- caption: Blogs
+  chapters:
+  - file: en/blogs/index
+    title: Article index
+  - file: en/blogs/agentscope-v1-harness
+    title: AgentScope Java 1.1 · Harness
+
+- caption: Community
+  chapters:
+  - file: en/community/overview
+    title: Community
+  - file: en/community/contributors
+    title: Contributors
+
 - caption: 快速开始
   chapters:
   - file: zh/intro
@@ -113,6 +162,8 @@ parts:
     title: Agent Skill
   - file: zh/task/rag
     title: RAG
+  - file: zh/task/streaming
+    title: 流式输出
   - file: zh/task/hook
     title: 钩子系统
   - file: zh/task/hitl
@@ -162,3 +213,49 @@ parts:
     title: Handoffs
   - file: zh/multi-agent/multiagent-debate
     title: 多智能体辩论
+
+- caption: 集成
+  chapters:
+  - file: zh/integration/overview
+    title: 概览
+
+- caption: 博客
+  chapters:
+  - file: zh/blogs/index
+    title: 全部文章
+  - file: zh/blogs/agentscope-v1-harness
+    title: AgentScope Java 1.1 · Harness
+
+- caption: 社区
+  chapters:
+  - file: zh/community/overview
+    title: 社区
+  - file: zh/community/contributors
+    title: 核心贡献者
+
+- caption: Harness
+  chapters:
+  - file: zh/harness/overview
+    title: 概览
+  - file: zh/harness/architecture
+    title: 架构
+  - file: zh/harness/workspace
+    title: 工作区
+  - file: zh/harness/filesystem
+    title: 文件系统
+  - file: zh/harness/session
+    title: 会话
+  - file: zh/harness/memory
+    title: 记忆
+  - file: zh/harness/tool
+    title: 工具
+  - file: zh/harness/subagent
+    title: 子 Agent
+  - file: zh/harness/streaming
+    title: 子 Agent 流式
+  - file: zh/harness/quickstart/index
+    title: 快速开始
+  - file: zh/harness/sandbox/index
+    title: 沙箱
+  - file: zh/harness/example/index
+    title: 示例

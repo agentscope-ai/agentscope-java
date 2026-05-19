@@ -24,10 +24,11 @@ import io.agentscope.harness.agent.IsolationScope;
  * {@link SandboxIsolationKey}. The default {@link #noop()} imposes no restriction, preserving
  * existing behaviour.
  *
- * <p>This extension point is primarily useful for {@link IsolationScope#AGENT} and
- * {@link IsolationScope#GLOBAL} scopes, where multiple concurrent callers could otherwise
- * race on the same persistent state slot (last write wins). Providing a guard serialises
- * such callers without requiring changes to the surrounding infrastructure.
+ * <p>This extension point is primarily useful for {@link IsolationScope#USER},
+ * {@link IsolationScope#AGENT} and {@link IsolationScope#GLOBAL} scopes, where multiple
+ * concurrent callers could otherwise race on the same persistent state slot (last write wins).
+ * Providing a guard serialises such callers without requiring changes to the surrounding
+ * infrastructure.
  *
  * <p>Implementations may use any backend — JVM semaphores, Redis {@code SET NX} leases,
  * ZooKeeper, database advisory locks, etc. — and must be thread-safe.

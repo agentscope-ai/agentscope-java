@@ -471,6 +471,6 @@ redis-cli KEYS "agentscope:session:*" | xargs redis-cli DEL
 
 ## More Resources
 
-- **Complete Example**: [SessionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java)
+- **Complete Example**: [SessionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java)
 - **State Documentation**: [state.md](./state.md)
 - **Agent Configuration**: [agent-config.md](./agent-config.md)

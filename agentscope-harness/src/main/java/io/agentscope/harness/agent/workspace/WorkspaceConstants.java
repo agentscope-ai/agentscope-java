@@ -33,6 +33,7 @@ public final class WorkspaceConstants {
 
     public static final String AGENTS_DIR = "agents";
     public static final String SESSIONS_DIR = "sessions";
+    public static final String TASKS_DIR = "tasks";
 
     /**
      * Per-agent session store filename under {@code agents/&lt;agentId&gt;/sessions/}
@@ -44,6 +45,4 @@ public final class WorkspaceConstants {
 
     /** JSONL session log file extension (full history, append-only, never compacted). */
     public static final String SESSION_LOG_EXT = ".log.jsonl";
-
-    public static final String SUBAGENT_YML = "subagent.yml";
 }

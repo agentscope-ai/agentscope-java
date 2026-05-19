@@ -96,6 +96,13 @@ public class DashScopeToolsHelper {
         if (presencePenalty != null) {
             params.setPresencePenalty(presencePenalty);
         }
+
+        // Apply parallel tool calls
+        Boolean parallelToolCalls =
+                getOption(options, defaultOptions, GenerateOptions::getParallelToolCalls);
+        if (parallelToolCalls != null) {
+            params.setParallelToolCalls(parallelToolCalls);
+        }
     }
 
     /**

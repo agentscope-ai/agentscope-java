@@ -127,6 +127,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions Agent Protocol Tasks -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-agent-protocol</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions AutoContext Memory -->
             <dependency>
                 <groupId>io.agentscope</groupId>
