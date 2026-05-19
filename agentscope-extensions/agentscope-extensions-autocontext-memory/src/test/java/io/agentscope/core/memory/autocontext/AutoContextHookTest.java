@@ -48,6 +48,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Unit tests for AutoContextHook.
@@ -541,6 +543,145 @@ class AutoContextHookTest {
         // Both calls should complete without errors
         assertNotNull(event1);
         assertNotNull(event2);
+    }
+
+    @Test
+    @DisplayName("Should handle PreReasoningEvent on non-blocking scheduler")
+    void testPreReasoningEventOnNonBlockingScheduler() {
+        AutoContextMemory compressionMemory =
+                new AutoContextMemory(
+                        createCompressionConfig(), new TestModel("Compressed summary"));
+        populateCompressibleConversation(compressionMemory, 3);
+        compressionMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text("Latest request").build())
+                        .build());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(mockModel)
+                        .memory(compressionMemory)
+                        .toolkit(toolkit)
+                        .build();
+
+        PreReasoningEvent event =
+                new PreReasoningEvent(
+                        agent,
+                        "test-model",
+                        null,
+                        new ArrayList<>(compressionMemory.getMessages()));
+
+        PreReasoningEvent result =
+                Mono.defer(() -> hook.onEvent(event)).subscribeOn(Schedulers.parallel()).block();
+
+        assertNotNull(result);
+        assertEquals(MsgRole.SYSTEM, result.getInputMessages().get(0).getRole());
+        assertTrue(
+                result.getInputMessages().get(0).getTextContent().contains("context_reload"),
+                "System prompt should include compressed-context instructions");
+        assertEquals(
+                compressionMemory.getMessages().size() + 1,
+                result.getInputMessages().size(),
+                "Result should include system prompt plus compressed memory messages");
+    }
+
+    @Test
+    @DisplayName("Should preserve existing system prompt on non-blocking scheduler")
+    void testPreReasoningEventPreservesSystemPromptOnNonBlockingScheduler() {
+        AutoContextMemory compressionMemory =
+                new AutoContextMemory(
+                        createCompressionConfig(), new TestModel("Compressed summary"));
+        populateCompressibleConversation(compressionMemory, 3);
+        compressionMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text("Latest request").build())
+                        .build());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(mockModel)
+                        .memory(compressionMemory)
+                        .toolkit(toolkit)
+                        .build();
+
+        List<Msg> inputMessages = new ArrayList<>();
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("system")
+                        .content(TextBlock.builder().text("Base system prompt").build())
+                        .build());
+        inputMessages.addAll(compressionMemory.getMessages());
+
+        PreReasoningEvent event = new PreReasoningEvent(agent, "test-model", null, inputMessages);
+        PreReasoningEvent result =
+                Mono.defer(() -> hook.onEvent(event)).subscribeOn(Schedulers.parallel()).block();
+
+        assertNotNull(result);
+        String updatedSystemPrompt = result.getInputMessages().get(0).getTextContent();
+        assertTrue(updatedSystemPrompt.startsWith("Base system prompt"));
+        assertTrue(updatedSystemPrompt.contains("context_reload"));
+    }
+
+    private AutoContextConfig createCompressionConfig() {
+        return AutoContextConfig.builder()
+                .msgThreshold(5)
+                .maxToken(10000)
+                .tokenRatio(0.9)
+                .lastKeep(2)
+                .minConsecutiveToolMessages(10)
+                .largePayloadThreshold(10000)
+                .minCompressionTokenThreshold(0)
+                .build();
+    }
+
+    private void populateCompressibleConversation(AutoContextMemory memory, int rounds) {
+        for (int i = 0; i < rounds; i++) {
+            memory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .name("user")
+                            .content(TextBlock.builder().text("User message " + i).build())
+                            .build());
+            memory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("assistant")
+                            .content(
+                                    ToolUseBlock.builder()
+                                            .name("test_tool")
+                                            .id("call_" + i)
+                                            .input(new HashMap<>())
+                                            .build())
+                            .build());
+            memory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.TOOL)
+                            .name("test_tool")
+                            .content(
+                                    ToolResultBlock.builder()
+                                            .name("test_tool")
+                                            .id("call_" + i)
+                                            .output(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Result " + i)
+                                                                    .build()))
+                                            .build())
+                            .build());
+            memory.addMessage(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("assistant")
+                            .content(TextBlock.builder().text("Assistant response " + i).build())
+                            .build());
+        }
     }
 
     /**
