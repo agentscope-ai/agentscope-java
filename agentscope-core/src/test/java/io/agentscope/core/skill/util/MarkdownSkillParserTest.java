@@ -740,8 +740,8 @@ class MarkdownSkillParserTest {
         void testAutoRepairUnquotedColons() {
             String markdown =
                     "---\n"
-                            + "name: testskils\n"
-                            + "description: 测试skills, node: 无法找到EDI Partner、EDI Partner不存在\n"
+                            + "name: test-skills\n"
+                            + "description: test skills, node: cannot find EDI partner, EDI partner does not exist\n"
                             + "---\n"
                             + "# Skill Content";
 
@@ -749,11 +749,11 @@ class MarkdownSkillParserTest {
 
             assertNotNull(parsed);
             assertTrue(parsed.hasFrontmatter());
-            assertEquals("testskils", parsed.getMetadata().get("name"));
+            assertEquals("test-skills", parsed.getMetadata().get("name"));
             String description = (String) parsed.getMetadata().get("description");
             assertNotNull(description);
             assertTrue(description.contains("node:"));
-            assertTrue(description.contains("无法找到EDI Partner"));
+            assertTrue(description.contains("cannot find EDI partner"));
         }
 
         @Test
@@ -835,27 +835,29 @@ class MarkdownSkillParserTest {
         }
 
         @Test
-        @DisplayName("Should handle Chinese text with colons")
-        void testChineseTextWithColons() {
+        @DisplayName("Should handle long description with multiple colons")
+        void testLongDescriptionWithMultipleColons() {
             String markdown =
                     "---\n"
-                        + "name: chinese-skill\n"
-                        + "description: 测试skills, node: 无法找到EDI Partner、EDI"
-                        + " Partner不存在、Partner配置错误、850订单没有生成SO、850订单报错、Can't find the EDI Customer"
-                        + " setup in the EDI partner function、查不到850订单。处理EDI 850订单中无法找到EDI"
-                        + " Partner的问题，当850报错包含Can't find the EDI Customer setup in the EDI partner"
-                        + " function时使用此skill。\n"
+                        + "name: edi-error-skill\n"
+                        + "description: test skills, node: cannot find EDI partner, EDI "
+                        + "partner does not exist, partner config error, order 850 not generated SO, "
+                        + "order 850 error: Cannot find the EDI Customer setup in the EDI partner "
+                        + "function, cannot find order 850. Use this skill to handle EDI 850 "
+                        + "order errors when the EDI partner cannot be found, specifically when "
+                        + "the 850 error contains: Cannot find the EDI Customer setup in the EDI "
+                        + "partner function.\n"
                         + "---\n"
                         + "# Content";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
             assertTrue(parsed.hasFrontmatter());
-            assertEquals("chinese-skill", parsed.getMetadata().get("name"));
+            assertEquals("edi-error-skill", parsed.getMetadata().get("name"));
             String description = (String) parsed.getMetadata().get("description");
             assertNotNull(description);
-            assertTrue(description.contains("无法找到EDI Partner"));
-            assertTrue(description.contains("850订单"));
+            assertTrue(description.contains("cannot find EDI partner"));
+            assertTrue(description.contains("order 850"));
             assertTrue(description.contains("EDI Customer setup"));
         }
 

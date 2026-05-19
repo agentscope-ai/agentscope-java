@@ -32,6 +32,7 @@ import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.representer.Representer;
+import org.yaml.snakeyaml.error.YAMLException;
 
 /**
  * Utility for parsing and generating Markdown files with YAML frontmatter.
@@ -153,7 +154,7 @@ public class MarkdownSkillParser {
         Object loaded;
         try {
             loaded = createParserYaml().load(yamlContent);
-        } catch (RuntimeException e) {
+        } catch (YAMLException ye) {
             String repaired = repairYamlWithUnquotedColons(yamlContent);
             if (!repaired.equals(yamlContent)) {
                 try {
@@ -162,12 +163,12 @@ public class MarkdownSkillParser {
                             "YAML frontmatter contained unquoted colons and was auto-repaired. "
                                     + "Consider quoting scalar values containing ': ': {}",
                             yamlContent.substring(0, Math.min(80, yamlContent.length())));
-                } catch (RuntimeException e2) {
-                    logger.debug("Failed to repair YAML frontmatter, returning empty metadata", e2);
+                } catch (RuntimeException re) {
+                    logger.debug("Failed to repair YAML frontmatter, returning empty metadata", re);
                     return Map.of();
                 }
             } else {
-                logger.debug("Failed to parse YAML frontmatter, returning empty metadata", e);
+                logger.debug("Failed to parse YAML frontmatter, returning empty metadata", ye);
                 return Map.of();
             }
         }
@@ -222,17 +223,16 @@ public class MarkdownSkillParser {
                 String valuePart = line.substring(firstColon + 1);
 
                 String trimmedKey = keyPart.trim();
-                if (!trimmedKey.isEmpty() && !trimmedKey.contains(" ")) {
-                    if (needsQuoting(valuePart)) {
+                if (!trimmedKey.isEmpty() && !trimmedKey.contains(" ") && needsQuoting(valuePart)) {
                         String repairedValue = quoteValue(valuePart);
                         line = keyPart + ":" + repairedValue;
                     }
-                }
+
             }
             result.append(line).append('\n');
         }
 
-        if (result.length() > 0) {
+        if (!result.isEmpty()) {
             result.setLength(result.length() - 1);
         }
         return result.toString();
