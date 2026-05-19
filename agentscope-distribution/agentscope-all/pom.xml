@@ -47,6 +47,13 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-a2a-client</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
@@ -69,6 +76,13 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-chat-completions-web</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-agent-protocol</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
