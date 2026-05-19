@@ -38,6 +38,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     agent-id-header: X-Agent-Id
  *     enable-path-routing: true
  *     enable-reasoning: false
+ *     enable-acting-chunk: true
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -72,6 +73,14 @@ public class AguiProperties {
      * backward compatibility and privacy compliance.
      */
     private boolean enableReasoning = false;
+
+    /**
+     * Whether to enable acting chunk emissions.
+     *
+     * <p>When enabled, tools can emit intermediate chunks (e.g., Custom events for progress
+     * or real-time logs) during execution.
+     */
+    private boolean enableActingChunk = true;
 
     /** Default agent ID to use when not specified in the request. */
     private String defaultAgentId = "default";
@@ -174,6 +183,14 @@ public class AguiProperties {
 
     public void setEnableReasoning(boolean enableReasoning) {
         this.enableReasoning = enableReasoning;
+    }
+
+    public boolean isEnableActingChunk() {
+        return enableActingChunk;
+    }
+
+    public void setEnableActingChunk(boolean enableActingChunk) {
+        this.enableActingChunk = enableActingChunk;
     }
 
     public String getDefaultAgentId() {

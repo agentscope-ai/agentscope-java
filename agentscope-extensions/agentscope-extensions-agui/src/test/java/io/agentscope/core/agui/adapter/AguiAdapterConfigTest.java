@@ -39,6 +39,7 @@ class AguiAdapterConfigTest {
         assertTrue(config.isEmitStateEvents());
         assertTrue(config.isEmitToolCallArgs());
         assertFalse(config.isEnableReasoning()); // Default should be false
+        assertTrue(config.isEnableActingChunk());
         assertEquals(Duration.ofMinutes(10), config.getRunTimeout());
         assertNull(config.getDefaultAgentId());
     }
@@ -51,7 +52,10 @@ class AguiAdapterConfigTest {
         assertEquals(ToolMergeMode.MERGE_FRONTEND_PRIORITY, config.getToolMergeMode());
         assertTrue(config.isEmitStateEvents());
         assertTrue(config.isEmitToolCallArgs());
+        assertFalse(config.isEnableReasoning());
+        assertTrue(config.isEnableActingChunk());
         assertEquals(Duration.ofMinutes(10), config.getRunTimeout());
+        assertNull(config.getDefaultAgentId());
     }
 
     @Test
@@ -96,6 +100,32 @@ class AguiAdapterConfigTest {
     }
 
     @Test
+    void testBuilderEnableReasoning() {
+        AguiAdapterConfig configDisabled =
+                AguiAdapterConfig.builder().enableReasoning(false).build();
+
+        assertFalse(configDisabled.isEnableReasoning());
+
+        AguiAdapterConfig configEnabled =
+                AguiAdapterConfig.builder().enableReasoning(true).build();
+
+        assertTrue(configEnabled.isEnableReasoning());
+    }
+
+    @Test
+    void testBuilderEnableActingChunk() {
+        AguiAdapterConfig configDisabled =
+                AguiAdapterConfig.builder().enableActingChunk(false).build();
+
+        assertFalse(configDisabled.isEnableActingChunk());
+
+        AguiAdapterConfig configEnabled =
+                AguiAdapterConfig.builder().enableActingChunk(true).build();
+
+        assertTrue(configEnabled.isEnableActingChunk());
+    }
+
+    @Test
     void testBuilderRunTimeout() {
         Duration customTimeout = Duration.ofMinutes(30);
         AguiAdapterConfig config = AguiAdapterConfig.builder().runTimeout(customTimeout).build();
@@ -133,6 +163,7 @@ class AguiAdapterConfigTest {
                         .emitStateEvents(false)
                         .emitToolCallArgs(false)
                         .enableReasoning(true)
+                        .enableActingChunk(false)
                         .runTimeout(Duration.ofHours(1))
                         .defaultAgentId("my-agent")
                         .build();
@@ -141,6 +172,7 @@ class AguiAdapterConfigTest {
         assertFalse(config.isEmitStateEvents());
         assertFalse(config.isEmitToolCallArgs());
         assertTrue(config.isEnableReasoning());
+        assertFalse(config.isEnableActingChunk());
         assertEquals(Duration.ofHours(1), config.getRunTimeout());
         assertEquals("my-agent", config.getDefaultAgentId());
     }

@@ -114,6 +114,7 @@ public class AguiAgentAdapter {
                             StreamOptions.builder()
                                     .eventTypes(EventType.ALL)
                                     .incremental(true)
+                                    .includeActingChunk(config.isEnableActingChunk())
                                     .build();
 
                     StreamContext ctx = new StreamContext(threadId, runId, config);
