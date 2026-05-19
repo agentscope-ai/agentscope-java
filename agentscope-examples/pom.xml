@@ -32,21 +32,23 @@
     <name>AgentScope Java - Examples</name>
 
     <modules>
-        <module>quickstart</module>
-        <module>advanced</module>
-        <module>micronaut</module>
-        <module>quarkus</module>
-        <module>plan-notebook</module>
-        <module>agui</module>
-        <module>werewolf</module>
-        <module>werewolf-hitl</module>
-        <module>model-request-compression</module>
-        <module>boba-tea-shop</module>
-        <module>chat-completions-web</module>
-        <module>hitl-chat</module>
-        <module>a2a</module>
-        <module>chat-tts</module>
-        <module>graceful-shutdown</module>
+        <module>documentation/quickstart</module>
+        <module>documentation/advanced</module>
+        <module>documentation/plan-notebook</module>
+        <module>documentation/werewolf</module>
+        <module>documentation/werewolf-hitl</module>
+        <module>documentation/model-request-compression</module>
+        <module>documentation/chat-completions-web</module>
+        <module>documentation/hitl-chat</module>
+        <module>documentation/a2a</module>
+        <module>documentation/chat-tts</module>
+        <module>documentation/graceful-shutdown</module>
+        <module>integration/micronaut</module>
+        <module>integration/quarkus</module>
+        <module>integration/agui</module>
+        <module>integration/a2a-rocketmq</module>
+        <module>agents/boba-tea-shop</module>
+        <module>agents/harness-examples</module>
         <module>multiagent-patterns/handoffs</module>
         <module>multiagent-patterns/routing</module>
         <module>multiagent-patterns/subagent</module>
@@ -54,8 +56,6 @@
         <module>multiagent-patterns/workflow</module>
         <module>multiagent-patterns/pipeline</module>
         <module>multiagent-patterns/skills</module>
-        <module>a2a-rocketmq</module>
-        <module>harness-examples</module>
     </modules>
 
     <properties>
