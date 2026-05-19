@@ -17,9 +17,11 @@ package io.agentscope.examples.agui.tools;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -43,17 +45,33 @@ public class ExampleTools {
     @Tool(name = "get_weather", description = "Get current weather information for a city")
     public ToolResultBlock getWeather(
             @ToolParam(name = "city", description = "The city name (e.g., 'Beijing', 'New York')")
-                    String city) {
+                    String city,
+            ToolEmitter emitter) {
         // Mock weather data
         String[] conditions = {"Sunny", "Cloudy", "Partly Cloudy", "Rainy", "Overcast"};
         String condition = conditions[random.nextInt(conditions.length)];
         int temperature = random.nextInt(35) + 5; // 5-40 degrees
         int humidity = random.nextInt(60) + 30; // 30-90%
 
+        // Pass progress information in metadata
+        // To take effect, it is necessary to customize the ToolResultBlockConverter to override the
+        // framework default
+        emitter.emit(
+                ToolResultBlock.builder()
+                        .name("get_weather")
+                        .metadata(Map.of("progress", "50%"))
+                        .build());
+
         String result =
                 String.format(
                         "Weather in %s:\n- Condition: %s\n- Temperature: %d°C\n- Humidity: %d%%",
                         city, condition, temperature, humidity);
+
+        emitter.emit(
+                ToolResultBlock.builder()
+                        .name("get_weather")
+                        .metadata(Map.of("progress", "100%"))
+                        .build());
         return ToolResultBlock.text(result);
     }
 

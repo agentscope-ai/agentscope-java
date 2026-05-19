@@ -13,40 +13,69 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.agui.adapter.strategy;
+package io.agentscope.examples.agui.config;
 
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agui.adapter.StreamContext;
+import io.agentscope.core.agui.adapter.strategy.ToolResultBlockConverter;
 import io.agentscope.core.agui.event.AguiEvent;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.UUID;
+import org.springframework.stereotype.Component;
 
 /**
- * Converter for handling ToolResultBlock events, transforming them into AG-UI ToolCallResult events.
+ * Custom converter that overrides the framework's default ToolResultBlockConverter
+ * to emit ag-ui tool progress events.
+ *
+ * <p>Before overriding any default BlockEventConverter, please ensure you have a
+ * thorough understanding of the default implementation.
+ *
+ * <p>IMPORTANT: In production environments, please modify with caution other than tool
+ * progress events. Otherwise, you assume all consequences and risks.
+ *
+ * <p>This is currently provided as a demonstration version only. Please modify it
+ * according to your own requirements.
+ *
+ * <p>Feel free to submit an issue on GitHub if you encounter any problems.
  */
-public class ToolResultBlockConverter implements BlockEventConverter<ToolResultBlock> {
-
-    @Override
-    public Class<ToolResultBlock> supportedBlockType() {
-        return ToolResultBlock.class;
-    }
+@Component
+public class CustomToolResultBlockConverter extends ToolResultBlockConverter {
 
     @Override
     public boolean isApplicable(Event event) {
-        return event.getType() == EventType.TOOL_RESULT && event.isLast();
+        // return event.getType() == EventType.TOOL_RESULT && event.isLast();
+        // The check for event.isLast() needs to be removed, otherwise only the final result event
+        // will be emitted
+        return event.getType() == EventType.TOOL_RESULT;
     }
 
     @Override
     public void convert(ToolResultBlock block, Event event, StreamContext ctx) {
+        // Extract the tool invocation progress from metadata and package it into a ToolCallResult
+        // event
+        // This is currently provided as a demonstration version only.
+        // Please modify it according to your own requirements.
+        if (block.getMetadata() != null && block.getMetadata().size() != 0) {
+            ctx.emit(
+                    new AguiEvent.ToolCallResult(
+                            ctx.getThreadId(),
+                            ctx.getRunId(),
+                            // TODO: Currently using tool name to replace tool call id
+                            block.getName(),
+                            JsonUtils.getJsonCodec().toJson(block.getMetadata()),
+                            "tool",
+                            event.getMessage().getId()));
+            return;
+        }
+
         String toolCallId =
                 block.getId() != null && !block.getId().isBlank()
                         ? block.getId()
                         : UUID.randomUUID().toString();
 
-        String result = extractToolResultText(block);
+        String result = super.extractToolResultText(block);
 
         // Closing Start/End Phase
         if (ctx.isToolActive(toolCallId)) {
@@ -76,29 +105,5 @@ public class ToolResultBlockConverter implements BlockEventConverter<ToolResultB
         if (ctx.isToolActive(toolCallId)) {
             ctx.removeActiveTool(toolCallId);
         }
-    }
-
-    /**
-     * Extract text content from a tool result block.
-     *
-     * @param toolResult The tool result block
-     * @return The text content, or null if not present
-     */
-    protected String extractToolResultText(ToolResultBlock toolResult) {
-        if (toolResult.getOutput() == null || toolResult.getOutput().isEmpty()) {
-            return null;
-        }
-
-        StringBuilder sb = new StringBuilder();
-        for (ContentBlock output : toolResult.getOutput()) {
-            if (output instanceof TextBlock textBlock) {
-                if (!sb.isEmpty()) {
-                    sb.append("\n");
-                }
-                sb.append(textBlock.getText());
-            }
-        }
-
-        return !sb.isEmpty() ? sb.toString() : null;
     }
 }
