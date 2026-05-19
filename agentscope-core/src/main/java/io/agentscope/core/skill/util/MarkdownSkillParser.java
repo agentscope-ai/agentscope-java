@@ -31,8 +31,8 @@ import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
-import org.yaml.snakeyaml.representer.Representer;
 import org.yaml.snakeyaml.error.YAMLException;
+import org.yaml.snakeyaml.representer.Representer;
 
 /**
  * Utility for parsing and generating Markdown files with YAML frontmatter.
@@ -224,10 +224,9 @@ public class MarkdownSkillParser {
 
                 String trimmedKey = keyPart.trim();
                 if (!trimmedKey.isEmpty() && !trimmedKey.contains(" ") && needsQuoting(valuePart)) {
-                        String repairedValue = quoteValue(valuePart);
-                        line = keyPart + ":" + repairedValue;
-                    }
-
+                    String repairedValue = quoteValue(valuePart);
+                    line = keyPart + ":" + repairedValue;
+                }
             }
             result.append(line).append('\n');
         }

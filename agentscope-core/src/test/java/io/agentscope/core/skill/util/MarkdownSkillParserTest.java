@@ -741,7 +741,8 @@ class MarkdownSkillParserTest {
             String markdown =
                     "---\n"
                             + "name: test-skills\n"
-                            + "description: test skills, node: cannot find EDI partner, EDI partner does not exist\n"
+                            + "description: test skills, node: cannot find EDI partner, EDI partner"
+                            + " does not exist\n"
                             + "---\n"
                             + "# Skill Content";
 
@@ -840,13 +841,13 @@ class MarkdownSkillParserTest {
             String markdown =
                     "---\n"
                         + "name: edi-error-skill\n"
-                        + "description: test skills, node: cannot find EDI partner, EDI "
-                        + "partner does not exist, partner config error, order 850 not generated SO, "
-                        + "order 850 error: Cannot find the EDI Customer setup in the EDI partner "
-                        + "function, cannot find order 850. Use this skill to handle EDI 850 "
-                        + "order errors when the EDI partner cannot be found, specifically when "
-                        + "the 850 error contains: Cannot find the EDI Customer setup in the EDI "
-                        + "partner function.\n"
+                        + "description: test skills, node: cannot find EDI partner, EDI partner"
+                        + " does not exist, partner config error, order 850 not generated SO, order"
+                        + " 850 error: Cannot find the EDI Customer setup in the EDI partner"
+                        + " function, cannot find order 850. Use this skill to handle EDI 850 order"
+                        + " errors when the EDI partner cannot be found, specifically when the 850"
+                        + " error contains: Cannot find the EDI Customer setup in the EDI partner"
+                        + " function.\n"
                         + "---\n"
                         + "# Content";
 
@@ -864,13 +865,10 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should return empty metadata when key has space (not repaired)")
         void testKeyWithSpaceNotRepaired() {
-            // When a "key" contains space, repair skips it; YAML parse still fails -> empty metadata
+            // When a "key" contains space, repair skips it; YAML parse still fails -> empty
+            // metadata
             String markdown =
-                    "---\n"
-                            + "name: test\n"
-                            + "some text: value: here\n"
-                            + "---\n"
-                            + "# Content";
+                    "---\n" + "name: test\n" + "some text: value: here\n" + "---\n" + "# Content";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
@@ -881,12 +879,7 @@ class MarkdownSkillParserTest {
         @DisplayName("Should handle colon at start of line (firstColon == 0)")
         void testColonAtLineStart() {
             // When firstColon == 0, repair condition is false
-            String markdown =
-                    "---\n"
-                            + "name: test\n"
-                            + ": weird line\n"
-                            + "---\n"
-                            + "# Content";
+            String markdown = "---\n" + "name: test\n" + ": weird line\n" + "---\n" + "# Content";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
@@ -934,12 +927,7 @@ class MarkdownSkillParserTest {
         @DisplayName("Should handle empty trimmed value in needsQuoting")
         void testEmptyValueNoQuoting() {
             // Value that trims to empty should not trigger quoting
-            String markdown =
-                    "---\n"
-                            + "name: test\n"
-                            + "description: \n"
-                            + "---\n"
-                            + "# Content";
+            String markdown = "---\n" + "name: test\n" + "description: \n" + "---\n" + "# Content";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
@@ -1047,11 +1035,7 @@ class MarkdownSkillParserTest {
         @DisplayName("Should return empty metadata when YAML parses to null")
         void testYamlParsesToNull() {
             // Empty YAML content between --- markers parses to null
-            String markdown =
-                    "---\n"
-                            + " \n"
-                            + "---\n"
-                            + "# Content";
+            String markdown = "---\n" + " \n" + "---\n" + "# Content";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
@@ -1063,12 +1047,7 @@ class MarkdownSkillParserTest {
         void testNonMapTopLevelYaml() {
             // YAML list as top-level instead of map
             String markdown =
-                    "---\n"
-                            + "- item1\n"
-                            + "- item2\n"
-                            + "- item3\n"
-                            + "---\n"
-                            + "# Content";
+                    "---\n" + "- item1\n" + "- item2\n" + "- item3\n" + "---\n" + "# Content";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
