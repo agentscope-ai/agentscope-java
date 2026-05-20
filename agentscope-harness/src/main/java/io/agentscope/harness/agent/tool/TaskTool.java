@@ -21,6 +21,7 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
@@ -40,6 +41,9 @@ import java.util.Collection;
  * exists (cross-node or post-restart scenarios).
  */
 public class TaskTool {
+
+    public static final long MAX_BLOCK_WAIT_MILLIS = 600_000L;
+    public static final Duration MAX_BLOCK_WAIT = Duration.ofMillis(MAX_BLOCK_WAIT_MILLIS);
 
     private static final DateTimeFormatter ISO_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
@@ -96,7 +100,7 @@ public class TaskTool {
         bgTask.updateLastCheckedAt();
 
         boolean shouldBlock = block == null || block;
-        long timeoutMs = timeout != null ? Math.min(timeout, 600_000) : 30_000;
+        long timeoutMs = timeout != null ? Math.min(timeout, MAX_BLOCK_WAIT_MILLIS) : 30_000;
 
         if (shouldBlock && !bgTask.isCompleted()) {
             // If the task has no local future (cross-node or post-restart), degrade gracefully
