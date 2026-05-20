@@ -52,6 +52,7 @@
         <module>agentscope-spring-boot-starters</module>
         <module>agentscope-extensions-agui</module>
         <module>agentscope-extensions-chat-completions-web</module>
+        <module>agentscope-extensions-responses-web</module>
         <module>agentscope-extensions-agent-protocol</module>
         <module>agentscope-extensions-higress</module>
         <module>agentscope-extensions-kotlin</module>
