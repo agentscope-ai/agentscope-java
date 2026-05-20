@@ -42,6 +42,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -53,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
@@ -104,13 +106,20 @@ public class WorkspaceManager {
             new TypeReference<>() {};
 
     /**
-     * Per-path locks for task record files to prevent concurrent read-modify-write races.
-     * Keyed by workspace-relative path (e.g. {@code agents/X/tasks/Y.json}).
+     * Per-path locks for workspace-relative files to prevent concurrent read-modify-write races.
+     * Keyed by workspace-relative path (e.g. {@code agents/X/tasks/Y.json},
+     * {@code agents/X/sessions/sessions.json}, {@code memory/YYYY-MM-DD.md}).
+     *
+     * <p>This is an in-process lock only. For cross-process (multi-node) deployments the Remote
+     * backend must additionally use server-side CAS / optimistic locking.
      */
-    private final Map<String, ReentrantLock> taskFileLocks = new ConcurrentHashMap<>();
+    private final Map<String, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
 
     private final Path workspace;
     private final AbstractFilesystem filesystem;
+
+    /** Best-effort local file index; may be {@code null} if SQLite is unavailable. */
+    private final WorkspaceIndex index;
 
     public WorkspaceManager(Path workspace) {
         this(workspace, null);
@@ -119,6 +128,22 @@ public class WorkspaceManager {
     public WorkspaceManager(Path workspace, AbstractFilesystem filesystem) {
         this.workspace = workspace;
         this.filesystem = filesystem;
+        this.index = WorkspaceIndex.open(workspace);
+    }
+
+    /**
+     * Constructor that accepts a pre-created index (to avoid double-open when the caller has
+     * already created it, e.g. to share with {@code RemoteFilesystem}).
+     */
+    public WorkspaceManager(Path workspace, AbstractFilesystem filesystem, WorkspaceIndex index) {
+        this.workspace = workspace;
+        this.filesystem = filesystem;
+        this.index = index;
+    }
+
+    /** Returns the best-effort workspace index; may be {@code null} when unavailable. */
+    public WorkspaceIndex getIndex() {
+        return index;
     }
 
     public AbstractFilesystem getFilesystem() {
@@ -262,6 +287,11 @@ public class WorkspaceManager {
     /**
      * Appends UTF-8 text to a workspace-relative file, creating parent directories when needed.
      * All writes go through the {@link AbstractFilesystem}.
+     *
+     * <p>A per-path {@link ReentrantLock} serialises concurrent callers so that the
+     * read→merge→write cycle is atomic within this process. For cross-process / multi-node
+     * deployments the {@link AbstractFilesystem} backend must additionally provide server-side
+     * concurrency control.
      */
     public void appendUtf8WorkspaceRelative(String relativePath, String content) {
         if (relativePath == null || content == null) {
@@ -271,46 +301,63 @@ public class WorkspaceManager {
         if (normalized.isEmpty()) {
             return;
         }
-        if (filesystem == null) {
-            appendLocalFile(normalized, content);
-            return;
+        ReentrantLock lock = pathLocks.computeIfAbsent(normalized, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            if (filesystem == null) {
+                appendLocalFile(normalized, content);
+                return;
+            }
+            ReadResult rr = filesystem.read(DEFAULT_FS_RUNTIME, normalized, 0, 0);
+            String existing = "";
+            if (rr.isSuccess() && rr.fileData() != null && rr.fileData().content() != null) {
+                existing = rr.fileData().content();
+            }
+            String merged = existing + content;
+            filesystem.uploadFiles(
+                    DEFAULT_FS_RUNTIME,
+                    List.of(Map.entry(normalized, merged.getBytes(StandardCharsets.UTF_8))));
+        } finally {
+            lock.unlock();
         }
-        ReadResult rr = filesystem.read(DEFAULT_FS_RUNTIME, normalized, 0, 0);
-        String existing = "";
-        if (rr.isSuccess() && rr.fileData() != null && rr.fileData().content() != null) {
-            existing = rr.fileData().content();
-        }
-        String merged = existing + content;
-        filesystem.uploadFiles(
-                DEFAULT_FS_RUNTIME,
-                List.of(Map.entry(normalized, merged.getBytes(StandardCharsets.UTF_8))));
     }
 
     /**
      * Upserts metadata for a session in {@code agents/&lt;agentId&gt;/sessions/sessions.json}
      * (small mutable JSON, keyed by {@code sessionId}).
+     *
+     * <p>A per-path {@link ReentrantLock} serialises concurrent callers so that the
+     * read→merge→write cycle is atomic within this process.
      */
     public void updateSessionIndex(String agentId, String sessionId, String summary) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
             return;
         }
         String rel = AGENTS_DIR + "/" + agentId + "/" + SESSIONS_DIR + "/" + SESSIONS_STORE;
-        String existing = readWritableWorkspaceRelativeUtf8(rel);
-        ObjectNode root = parseSessionStoreOrEmpty(existing);
-        ObjectNode sessions = ensureSessionsObject(root);
-        ObjectNode entry = SESSION_STORE_JSON.createObjectNode();
-        entry.put("summary", summary != null ? summary : "");
-        entry.put("updatedAt", java.time.Instant.now().toString());
-        sessions.set(sessionId, entry);
-        if (!root.has("version")) {
-            root.put("version", 1);
-        }
+        ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        lock.lock();
         try {
-            String serialized =
-                    SESSION_STORE_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root);
-            writeUtf8WorkspaceRelative(rel, serialized);
-        } catch (IOException e) {
-            log.warn("Failed to write session store {}: {}", rel, e.getMessage());
+            String existing = readWritableWorkspaceRelativeUtf8(rel);
+            ObjectNode root = parseSessionStoreOrEmpty(existing);
+            ObjectNode sessions = ensureSessionsObject(root);
+            ObjectNode entry = SESSION_STORE_JSON.createObjectNode();
+            entry.put("summary", summary != null ? summary : "");
+            entry.put("updatedAt", java.time.Instant.now().toString());
+            sessions.set(sessionId, entry);
+            if (!root.has("version")) {
+                root.put("version", 1);
+            }
+            try {
+                String serialized =
+                        SESSION_STORE_JSON
+                                .writerWithDefaultPrettyPrinter()
+                                .writeValueAsString(root);
+                writeUtf8WorkspaceRelative(rel, serialized);
+            } catch (IOException e) {
+                log.warn("Failed to write session store {}: {}", rel, e.getMessage());
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -333,7 +380,7 @@ public class WorkspaceManager {
             return;
         }
         String rel = taskRecordPath(agentId, sessionId);
-        ReentrantLock lock = taskFileLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
         lock.lock();
         try {
             Map<String, TaskRecord> map;
@@ -525,7 +572,7 @@ public class WorkspaceManager {
      * as a partial JSON read.
      */
     private Map<String, TaskRecord> readTaskMapLocked(String rel) {
-        ReentrantLock lock = taskFileLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
         lock.lock();
         try {
             try {
@@ -611,6 +658,10 @@ public class WorkspaceManager {
         filesystem.uploadFiles(
                 DEFAULT_FS_RUNTIME,
                 List.of(Map.entry(normalized, content.getBytes(StandardCharsets.UTF_8))));
+        // Best-effort: record upload size in index (no local file to stat from)
+        if (index != null) {
+            index.upsert(normalized, content.getBytes(StandardCharsets.UTF_8).length, null);
+        }
     }
 
     // ==================== Two-layer read/write helpers ====================
@@ -667,30 +718,52 @@ public class WorkspaceManager {
                     StandardCharsets.UTF_8,
                     java.nio.file.StandardOpenOption.CREATE,
                     java.nio.file.StandardOpenOption.APPEND);
+            if (index != null) {
+                index.upsertFromLocalFile(relativePath, local);
+            }
         } catch (IOException e) {
             log.warn("Failed to append {}: {}", local, e.getMessage());
         }
     }
 
+    /**
+     * Atomically overwrites a workspace-relative UTF-8 file on local disk.
+     *
+     * <p>The content is first written to a sibling temp file, then renamed over the target using
+     * {@link StandardCopyOption#ATOMIC_MOVE} (best-effort; falls back to a plain move when the
+     * underlying filesystem does not support atomic rename). This prevents concurrent readers from
+     * observing a partially-written file.
+     */
     private void writeLocalFile(String relativePath, String content) {
         Path local = workspace.resolve(relativePath).normalize();
         if (!local.startsWith(workspace)) {
             log.warn("Refusing to write outside workspace: {}", relativePath);
             return;
         }
+        Path temp = local.resolveSibling(local.getFileName() + ".tmp." + UUID.randomUUID());
         try {
             if (local.getParent() != null) {
                 Files.createDirectories(local.getParent());
             }
-            Files.writeString(
-                    local,
-                    content,
-                    StandardCharsets.UTF_8,
-                    java.nio.file.StandardOpenOption.CREATE,
-                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
-                    java.nio.file.StandardOpenOption.WRITE);
+            Files.writeString(temp, content, StandardCharsets.UTF_8);
+            try {
+                Files.move(
+                        temp,
+                        local,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                Files.move(temp, local, StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (index != null) {
+                index.upsertFromLocalFile(relativePath, local);
+            }
         } catch (IOException e) {
             log.warn("Failed to write {}: {}", local, e.getMessage());
+            try {
+                Files.deleteIfExists(temp);
+            } catch (IOException ignored) {
+            }
         }
     }
 

@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -86,6 +87,7 @@ public class SessionTree {
     private final Path logFile;
     private final Path workspaceRoot;
     private final AbstractFilesystem filesystem;
+    private final WorkspaceIndex index;
 
     private final Map<String, SessionEntry> entriesById = new LinkedHashMap<>();
     private final List<SessionEntry> appendOrder = new ArrayList<>();
@@ -105,12 +107,29 @@ public class SessionTree {
      *                     {@code null} to disable remote mirroring (local-only mode)
      */
     public SessionTree(Path contextFile, Path workspaceRoot, AbstractFilesystem filesystem) {
+        this(contextFile, workspaceRoot, filesystem, null);
+    }
+
+    /**
+     * Creates a SessionTree with optional best-effort workspace index support.
+     *
+     * @param contextFile   path to the {@code .jsonl} context file
+     * @param workspaceRoot root of the agent workspace
+     * @param filesystem    remote filesystem; may be {@code null}
+     * @param index         best-effort workspace index for fast local lookup; may be {@code null}
+     */
+    public SessionTree(
+            Path contextFile,
+            Path workspaceRoot,
+            AbstractFilesystem filesystem,
+            WorkspaceIndex index) {
         this.contextFile = contextFile;
         String name = contextFile.getFileName().toString();
         String baseName = name.endsWith(".jsonl") ? name.substring(0, name.length() - 6) : name;
         this.logFile = contextFile.resolveSibling(baseName + ".log.jsonl");
         this.workspaceRoot = workspaceRoot;
         this.filesystem = filesystem;
+        this.index = index;
     }
 
     /**
@@ -521,6 +540,10 @@ public class SessionTree {
         try {
             byte[] bytes = Files.readAllBytes(file);
             filesystem.uploadFiles(DEFAULT_FS_RUNTIME, List.of(Map.entry(relativePath, bytes)));
+            // Best-effort: the local file already exists — update index with its current stats
+            if (index != null) {
+                index.upsertFromLocalFile(relativePath, file);
+            }
         } catch (IOException e) {
             log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
         }
@@ -553,6 +576,10 @@ public class SessionTree {
                     StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE);
+            // Best-effort: record restored file in local index
+            if (index != null) {
+                index.upsertFromLocalFile(relativePath, file);
+            }
         } catch (IOException e) {
             log.warn(
                     "Failed to restore session file {} from filesystem mirror: {}",

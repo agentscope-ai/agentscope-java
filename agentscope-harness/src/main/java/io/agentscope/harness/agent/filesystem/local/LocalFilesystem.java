@@ -50,6 +50,8 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -71,6 +73,13 @@ public class LocalFilesystem implements AbstractFilesystem {
     private final boolean virtualMode;
     private final long maxFileSizeBytes;
     private final NamespaceFactory namespaceFactory;
+
+    /**
+     * Per-path locks for the read-modify-write cycle inside {@link #edit}.
+     * Keyed by the absolute, normalized path string so that two callers operating on
+     * the same file (even with different input paths) always share the same lock.
+     */
+    private final ConcurrentHashMap<String, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
 
     /**
      * Same as {@link #LocalFilesystem(Path)} with {@link Path#of(String, String...) Path.of(path)}
@@ -292,6 +301,10 @@ public class LocalFilesystem implements AbstractFilesystem {
             return EditResult.fail("Error: File '" + filePath + "' not found");
         }
 
+        // Serialize concurrent edits to the same file to prevent lost-update races.
+        String lockKey = resolved.toAbsolutePath().normalize().toString();
+        ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
+        lock.lock();
         try {
             String content = Files.readString(resolved, StandardCharsets.UTF_8);
             String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
@@ -312,6 +325,8 @@ public class LocalFilesystem implements AbstractFilesystem {
             return EditResult.ok(filePath, occurrences);
         } catch (IOException e) {
             return EditResult.fail("Error editing file '" + filePath + "': " + e.getMessage());
+        } finally {
+            lock.unlock();
         }
     }
 

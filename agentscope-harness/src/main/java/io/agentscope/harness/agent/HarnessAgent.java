@@ -93,6 +93,7 @@ import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
 import io.agentscope.harness.agent.tool.SessionSearchTool;
 import io.agentscope.harness.agent.tool.ShellExecuteTool;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -1285,8 +1286,15 @@ public class HarnessAgent implements Agent, StateModule {
 
             AtomicReference<String> userIdRef = new AtomicReference<>();
             AtomicReference<String> sessionIdRef = new AtomicReference<>();
+            WorkspaceIndex workspaceIndex =
+                    remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
             AbstractFilesystem filesystem =
-                    resolveFilesystem(resolvedWorkspace, resolvedAgentId, userIdRef, sessionIdRef);
+                    resolveFilesystem(
+                            resolvedWorkspace,
+                            resolvedAgentId,
+                            userIdRef,
+                            sessionIdRef,
+                            workspaceIndex);
 
             // ---- Sandbox integration ----
             SandboxLifecycleHook sandboxLifecycleHook = null;
@@ -1327,7 +1335,8 @@ public class HarnessAgent implements Agent, StateModule {
                                 executionGuard);
                 sandboxLifecycleHook = new SandboxLifecycleHook(sandboxManager, capturedSandboxFs);
             }
-            WorkspaceManager wsManager = new WorkspaceManager(resolvedWorkspace, filesystem);
+            WorkspaceManager wsManager =
+                    new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex);
             wsManager.validate();
 
             Memory memory = new InMemoryMemory();
@@ -1543,12 +1552,16 @@ public class HarnessAgent implements Agent, StateModule {
                 Path workspace,
                 String agentId,
                 AtomicReference<String> userIdRef,
-                AtomicReference<String> sessionIdRef) {
+                AtomicReference<String> sessionIdRef,
+                WorkspaceIndex workspaceIndex) {
             if (abstractFilesystem != null) {
                 return abstractFilesystem;
             }
             NamespaceFactory nsFactory = buildDynamicNamespaceFactory(userIdRef);
             if (remoteFilesystemSpec != null) {
+                if (workspaceIndex != null) {
+                    remoteFilesystemSpec.workspaceIndex(workspaceIndex);
+                }
                 return remoteFilesystemSpec.toFilesystem(
                         workspace, agentId, nsFactory, userIdRef::get, sessionIdRef::get);
             }

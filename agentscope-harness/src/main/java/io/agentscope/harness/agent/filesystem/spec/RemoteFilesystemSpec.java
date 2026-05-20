@@ -23,6 +23,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -71,6 +72,7 @@ public class RemoteFilesystemSpec {
     private final Set<String> extraSharedPrefixes = new LinkedHashSet<>();
     private String anonymousUserId = "_default";
     private IsolationScope isolationScope = IsolationScope.USER;
+    private WorkspaceIndex workspaceIndex = null;
 
     public RemoteFilesystemSpec(BaseStore store) {
         if (store == null) {
@@ -120,7 +122,15 @@ public class RemoteFilesystemSpec {
     }
 
     /**
-     * Builds the effective filesystem:
+     * Sets the workspace index for accelerating remote filesystem reads (ls/glob/exists/grep).
+     * If not set, the remote filesystem falls back to full store scans.
+     */
+    public RemoteFilesystemSpec workspaceIndex(WorkspaceIndex index) {
+        this.workspaceIndex = index;
+        return this;
+    }
+
+    /**
      *
      * <ul>
      *   <li>default backend: {@link LocalFilesystem} (no shell)
@@ -137,7 +147,9 @@ public class RemoteFilesystemSpec {
         AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
         RemoteFilesystem shared =
                 new RemoteFilesystem(
-                        store, storeNamespace(effectiveAgentId, userIdSupplier, sessionIdSupplier));
+                                store,
+                                storeNamespace(effectiveAgentId, userIdSupplier, sessionIdSupplier))
+                        .withIndex(workspaceIndex);
 
         Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
         routes.put("MEMORY.md", shared);

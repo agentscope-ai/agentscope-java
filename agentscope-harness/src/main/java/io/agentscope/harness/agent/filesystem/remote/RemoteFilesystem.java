@@ -32,6 +32,7 @@ import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.store.StoreItem;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.PathMatcher;
@@ -62,6 +63,13 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     private final BaseStore store;
     private final NamespaceFactory namespaceFactory;
+
+    /**
+     * Optional best-effort local index. When non-null, {@code ls}, {@code glob}, {@code exists}
+     * and {@code grep} consult the index first and fall back to the remote store only when the
+     * index has no matching entries.
+     */
+    private WorkspaceIndex index;
 
     /**
      * Creates a RemoteFilesystem with a {@link NamespaceFactory} that is called on every operation,
@@ -100,6 +108,31 @@ public class RemoteFilesystem implements AbstractFilesystem {
         this(store, List.of("filesystem"));
     }
 
+    /**
+     * Attaches a best-effort {@link WorkspaceIndex} to accelerate list/glob/exists/grep
+     * operations. The index may be {@code null} (disabled) or become stale.
+     *
+     * <p>Fallback semantics differ per operation:
+     *
+     * <ul>
+     *   <li>{@code ls}, {@code glob}, {@code exists} — when the index has no matching prefix
+     *       the operation falls back to a full remote-store scan, so results remain correct
+     *       even if this node's index is stale.
+     *   <li>{@code grep} — when the index is non-{@code null} the operation enumerates
+     *       candidates exclusively from the index and does <em>not</em> fall back to a full
+     *       scan. Files that have not yet been registered in this node's index are therefore
+     *       not searched. Content for each candidate is always fetched authoritatively from
+     *       the remote store.
+     * </ul>
+     *
+     * @param index workspace index; {@code null} disables index-backed fast paths
+     * @return this instance (fluent)
+     */
+    public RemoteFilesystem withIndex(WorkspaceIndex index) {
+        this.index = index;
+        return this;
+    }
+
     private static NamespaceFactory toFactory(List<String> namespace) {
         if (namespace == null || namespace.isEmpty()) {
             throw new IllegalArgumentException("namespace must not be empty");
@@ -118,11 +151,33 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
+        String normalizedPath = path.endsWith("/") ? path : path + "/";
+
+        // Fast path: index has entries for this prefix
+        if (index != null && index.hasPrefix(normalizedPath)) {
+            List<String> indexPaths = index.listByPrefix(normalizedPath);
+            List<FileInfo> infos = new ArrayList<>();
+            Set<String> subdirs = new LinkedHashSet<>();
+            for (String p : indexPaths) {
+                String relative = p.substring(normalizedPath.length());
+                if (relative.contains("/")) {
+                    String subdirName = relative.substring(0, relative.indexOf('/'));
+                    subdirs.add(normalizedPath + subdirName + "/");
+                } else {
+                    infos.add(FileInfo.ofFile(p, 0, ""));
+                }
+            }
+            for (String subdir : subdirs) {
+                infos.add(FileInfo.ofDir(subdir, ""));
+            }
+            infos.sort(Comparator.comparing(FileInfo::path));
+            return LsResult.success(infos);
+        }
+
+        // Fallback: full remote scan
         List<StoreItem> items = searchAllItems();
         List<FileInfo> infos = new ArrayList<>();
         Set<String> subdirs = new LinkedHashSet<>();
-
-        String normalizedPath = path.endsWith("/") ? path : path + "/";
 
         for (StoreItem item : items) {
             if (!item.key().startsWith(normalizedPath)) {
@@ -255,7 +310,6 @@ public class RemoteFilesystem implements AbstractFilesystem {
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        List<StoreItem> items = searchAllItems();
         String normalizedPath = normalizePath(path);
 
         PathMatcher globMatcher = null;
@@ -263,6 +317,47 @@ public class RemoteFilesystem implements AbstractFilesystem {
             globMatcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
         }
 
+        // Fast path: use the index to enumerate candidate paths under {@code normalizedPath},
+        // then fetch each file's content from the remote store and scan it line-by-line. The
+        // index only narrows the candidate set; content is always read authoritatively from
+        // the store (never from local disk), so stale/missing local copies cannot mask matches.
+        if (index != null) {
+            List<String> candidates =
+                    "/".equals(normalizedPath)
+                            ? index.listByPrefix("")
+                            : index.listByPrefix(normalizedPath);
+            List<GrepMatch> matches = new ArrayList<>();
+            for (String key : candidates) {
+                if (!matchesPathPrefix(key, normalizedPath)) {
+                    continue;
+                }
+                if (globMatcher != null) {
+                    String fileName =
+                            key.contains("/") ? key.substring(key.lastIndexOf('/') + 1) : key;
+                    if (!globMatcher.matches(java.nio.file.Path.of(fileName))) {
+                        continue;
+                    }
+                }
+                StoreItem item = store.get(getNamespace(), key);
+                if (item == null) {
+                    continue;
+                }
+                FileData fd = convertItemToFileData(item);
+                if (fd == null || fd.content() == null) {
+                    continue;
+                }
+                String[] lines = fd.content().split("\n", -1);
+                for (int i = 0; i < lines.length; i++) {
+                    if (lines[i].contains(pattern)) {
+                        matches.add(new GrepMatch(key, i + 1, lines[i]));
+                    }
+                }
+            }
+            return GrepResult.success(matches);
+        }
+
+        // Fallback: full remote scan
+        List<StoreItem> items = searchAllItems();
         List<GrepMatch> matches = new ArrayList<>();
         for (StoreItem item : items) {
             String key = item.key();
@@ -296,7 +391,6 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        List<StoreItem> items = searchAllItems();
         String normalizedPath = normalizePath(path);
         String effectivePattern = pattern.startsWith("/") ? pattern.substring(1) : pattern;
 
@@ -310,6 +404,31 @@ public class RemoteFilesystem implements AbstractFilesystem {
         PathMatcher directMatcher =
                 FileSystems.getDefault().getPathMatcher("glob:" + effectivePattern);
 
+        // Fast path: index has entries for this prefix
+        if (index != null && index.hasPrefix(normalizedPath)) {
+            List<String> candidates = index.listByPrefix(normalizedPath);
+            List<FileInfo> results = new ArrayList<>();
+            for (String key : candidates) {
+                if (!matchesPathPrefix(key, normalizedPath)) {
+                    continue;
+                }
+                String relativePath;
+                if ("/".equals(normalizedPath)) {
+                    relativePath = key.startsWith("/") ? key.substring(1) : key;
+                } else {
+                    relativePath = key.substring(normalizedPath.length() + 1);
+                }
+                if (matcher.matches(java.nio.file.Path.of(relativePath))
+                        || directMatcher.matches(java.nio.file.Path.of(relativePath))) {
+                    results.add(FileInfo.ofFile(key, 0, ""));
+                }
+            }
+            results.sort(Comparator.comparing(FileInfo::path));
+            return GlobResult.success(results);
+        }
+
+        // Fallback: full remote scan
+        List<StoreItem> items = searchAllItems();
         List<FileInfo> results = new ArrayList<>();
         for (StoreItem item : items) {
             String key = item.key();
@@ -393,16 +512,50 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
+    public boolean exists(RuntimeContext runtimeContext, String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        String normalized = normalizePath(path);
+
+        // Fast path: consult index first
+        if (index != null) {
+            if (index.exists(normalized)) {
+                return true;
+            }
+            if (index.hasPrefix(normalized + "/")) {
+                return true;
+            }
+            // Index miss — fall through to remote (may not be indexed yet)
+        }
+
+        List<String> ns = getNamespace();
+        if (store.get(ns, normalized) != null) {
+            return true;
+        }
+        // Also check if any child exists (directory-like)
+        List<StoreItem> items = searchAllItems();
+        for (StoreItem item : items) {
+            if (item.key().startsWith(normalized + "/")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Also update index on delete/move so entries don't linger
+    @Override
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
         List<String> ns = getNamespace();
         List<StoreItem> items = searchAllItems();
         String normalizedPath = normalizePath(path);
-        boolean deleted = false;
         for (StoreItem item : items) {
             if (item.key().equals(normalizedPath) || item.key().startsWith(normalizedPath + "/")) {
                 store.delete(ns, item.key());
-                deleted = true;
+                if (index != null) {
+                    index.remove(item.key());
+                }
             }
         }
         // idempotent — not found is still success
@@ -424,6 +577,9 @@ public class RemoteFilesystem implements AbstractFilesystem {
                 String newKey = normTo + key.substring(normFrom.length());
                 store.put(ns, newKey, item.value());
                 store.delete(ns, key);
+                if (index != null) {
+                    index.rename(key, newKey);
+                }
                 found = true;
             }
         }
@@ -431,26 +587,6 @@ public class RemoteFilesystem implements AbstractFilesystem {
             return WriteResult.fail("Source does not exist: " + fromPath);
         }
         return WriteResult.ok(toPath);
-    }
-
-    @Override
-    public boolean exists(RuntimeContext runtimeContext, String path) {
-        if (path == null || path.isBlank()) {
-            return false;
-        }
-        List<String> ns = getNamespace();
-        String normalized = normalizePath(path);
-        if (store.get(ns, normalized) != null) {
-            return true;
-        }
-        // Also check if any child exists (directory-like)
-        List<StoreItem> items = searchAllItems();
-        for (StoreItem item : items) {
-            if (item.key().startsWith(normalized + "/")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     // ==================== Internal helpers ====================

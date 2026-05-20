@@ -208,7 +208,8 @@ public class MemoryFlushManager {
                     new SessionTree(
                             contextFile,
                             workspaceManager.getWorkspace(),
-                            workspaceManager.getFilesystem());
+                            workspaceManager.getFilesystem(),
+                            workspaceManager.getIndex());
             tree.load();
             // Sync from remote before appending so that entries written by a previous replica
             // (cross-machine handoff) are included in the merged file pushed to remote.
