@@ -22,8 +22,8 @@
 
 ### 双轨存储布局
 
-```mermaid
-flowchart LR
+```{mermaid}
+graph LR
     Call[agent.call] --> Hook[SessionPersistenceHook]
     Hook -->|saveTo / loadIfExists| WS[(WorkspaceSession<br/>StateModule 快照)]
     Call --> Compact[CompactionHook / MemoryFlushHook]
