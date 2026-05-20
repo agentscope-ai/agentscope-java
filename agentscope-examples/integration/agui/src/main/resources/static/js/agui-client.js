@@ -252,6 +252,10 @@ class AguiClient {
                     callbacks.onToolCallEnd?.(event.toolCallId);
                     break;
 
+                case 'TOOL_CALL_RESULT':
+                    callbacks.onToolCallResult?.(event.toolCallId, event.content);
+                    break;
+
                 case 'STATE_SNAPSHOT':
                     callbacks.onStateSnapshot?.(event.snapshot);
                     break;

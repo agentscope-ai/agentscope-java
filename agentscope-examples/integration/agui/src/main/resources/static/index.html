@@ -472,6 +472,18 @@
                     onToolCallEnd: (toolCallId) => {
                         // Tool call completed
                     },
+                    onToolCallResult: (toolCallId, content) => {
+                        try {
+                            const resultObj = JSON.parse(content);
+                            if (resultObj && resultObj.progress) {
+                                appendMessage('tool', `⏳ 进度: ${resultObj.progress}`);
+                            } else {
+                                appendMessage('tool', `📄 执行结果: ${content}`);
+                            }
+                        } catch (e) {
+                            appendMessage('tool', `✅ 返回结果: ${content}`);
+                        }
+                    },
                     onError: (error) => {
                         hideTypingIndicator();
                         appendMessage('error', `Error: ${error}`);

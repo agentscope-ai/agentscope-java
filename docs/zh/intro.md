@@ -13,7 +13,7 @@ hide-toc: true
 <div class="hs-hero">
   <div>
     <h1 class="hs-hero__headline">专为<span class="hs-hero__accent">分布式、企业级</span>智能体<br/>打造的 Harness 框架。</h1>
-    <p class="hs-hero__desc">AgentScope Java 是面向 JVM 的开源 Agent 框架。提供 ReAct 推理、Harness 工程化基础设施、多智能体编排与 MCP/A2A 协议支持，覆盖从本地原型到企业级分布式部署全链路。</p>
+    <p class="hs-hero__desc">AgentScope Java 是面向 JVM 的开源 Agent 框架。提供 ReAct 推理、Harness 工程化基础设施、多智能体编排与 MCP/A2A/AG-UI 协议支持，覆盖从本地原型到企业级分布式部署全链路。</p>
     <div class="hs-hero__actions">
       <a href="harness/overview.html" class="hs-btn hs-btn--primary">快速开始 →</a>
       <a href="https://github.com/agentscope-ai/agentscope-java" class="hs-btn hs-btn--secondary">
@@ -77,7 +77,7 @@ agent.call(messages, <span class="ty">RuntimeContext</span>.builder()
     <span class="hs-stat__label">基于 Project Reactor</span>
   </div>
   <div class="hs-stat">
-    <span class="hs-stat__val">MCP · A2A</span>
+    <span class="hs-stat__val">MCP · A2A · AG-UI</span>
     <span class="hs-stat__label">开放协议支持</span>
   </div>
   <div class="hs-stat">
