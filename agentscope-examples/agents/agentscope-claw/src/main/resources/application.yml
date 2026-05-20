@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: agentscope-claw
+
+server:
+  port: 8080
+
+# JWT secret shared with agentscope-claw-web for seamless admin SSO.
+# Override in production: -Dclaw.jwt.secret=<at-least-32-char-random-secret>
+claw:
+  jwt:
+    secret: claw-default-dev-secret-change-in-production-32chars
+
+  # Workspace directory. Defaults to $CWD when empty.
+  # On first start, claw materialises classpath:/workspace-template/ into ${workspace}/.agentscope/
+  # (idempotent: existing files are preserved). The bundled template ships an example agent
+  # named 'data-agent' with two skills (sql-analysis, chart-rendering) and two sub-agents
+  # (data-explorer, report-writer). Edit anything under .agentscope/ to customise.
+  workspace:
+
+  # Workspace evolution timeline (Phase 2 — observability). For every session,
+  # WorkspaceMutationHook appends a JSONL line per file write/edit/delete into
+  # ${workspace}/agents/<agentId>/sessions/<sessionId>.workspace.jsonl.
+  workspace-evolution:
+    # Daily cleanup deletes timeline files whose last-modified time is older than this many
+    # days. Set to 0 or negative to disable cleanup (keep forever).
+    retention-days: 30
+
+  # DashScope model settings (optional – provide a Model @Bean to override)
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY:}
+    model-name: ${DASHSCOPE_MODEL:qwen-max}
+    stream: true
+
+  # Sandbox filesystem (optional). When enabled, every agent runs its file I/O and shell
+  # commands inside an isolated Docker container instead of the host. Requires the Docker
+  # CLI on PATH and a reachable Docker daemon.
+  sandbox:
+    enabled: false
+    image: agentscope/python-sandbox:py311-slim
+    network: none              # docker --network value; 'none' disables outbound networking
+    workspace-root: /workspace # path inside the sandbox where projection mounts
+    isolation: USER            # SESSION | USER | AGENT | GLOBAL — one sandbox per <scope>
+    projection-roots: AGENTS.md,skills,subagents,knowledge
+    cpu-count: 0               # 0 = no cap; otherwise number of CPUs allowed
+    memory-bytes: 0            # 0 = no cap; otherwise hard memory limit in bytes
+
+  # Distributed session backend (optional). Required for horizontal scale of sandbox mode.
+  # When disabled, claw runs single-node and persists sessions to local files under
+  # ${workspace}/.agentscope/workspace/agents/<agentId>/. When enabled, the RedisSession bean
+  # is auto-wired into SandboxDistributedOptions so multiple claw instances can share state.
+  session:
+    redis:
+      enabled: false
+      host: localhost
+      port: 6379
+      password:                # blank = no auth
+      database: 0
+      key-prefix: "claw:session:"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      # show-details: never — the public /actuator/health endpoint returns status only (UP/DOWN).
+      # Operators who need component-level health details should hit the runtime admin endpoints
+      # under /api/admin/runtime/* (ROLE_ADMIN required), which give richer information without
+      # leaking dependency hostnames/versions to unauthenticated probes.
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    io.agentscope: INFO
+    org.springframework.security: WARN
+    org.springframework.web: WARN

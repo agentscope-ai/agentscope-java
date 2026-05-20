@@ -1,0 +1,68 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: agentscope-builder
+  webflux:
+    static-path-pattern: /**
+  resources:
+    static-locations:
+      - classpath:/static/
+
+# --------------------------------------------------------------------------
+# agentscope-builder configuration
+#
+# Property prefix is `builder.*`. The legacy `claw.*` prefix and `CLAW_*` env
+# vars remain readable as a fallback for migration; new deployments should
+# use `builder.*` / `BUILDER_*`.
+# --------------------------------------------------------------------------
+builder:
+  # JWT signing secret (>= 32 chars). MUST be overridden in production.
+  jwt:
+    secret: ${BUILDER_JWT_SECRET:${CLAW_JWT_SECRET:builder-default-dev-secret-change-in-production-32chars}}
+
+  # Working directory. If blank, defaults to the JVM's current working directory.
+  # .agentscope/agentscope.json is read from (or auto-created in) this directory.
+  workspace: ${BUILDER_WORKSPACE:${CLAW_WORKSPACE:}}
+
+  # ---- Workspace storage topology (multi-tenant filesystem) ----
+  # fs-spec selects how per-(user, agent) workspaces are backed:
+  #   local    — single LocalFilesystem rooted at ${cwd}/.agentscope/workspaces/, with
+  #              per-agent namespacing via NamespaceFactory (default; no extra infra).
+  #   sandbox  — SandboxBackedFilesystem with per-user OS-level isolation. Reserved.
+  #   remote   — hosted RemoteFilesystem backend. Reserved.
+  workspace-store:
+    fs-spec: ${BUILDER_WORKSPACE_FS_SPEC:local}
+    local:
+      virtual-mode: true
+      max-file-size-mb: 10
+    # sandbox / remote sections will be added when those backends are wired.
+
+  # ---- DashScope model (used when no Model Spring bean is present) ----
+  # Set DASHSCOPE_API_KEY env var or override api-key below.
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY:}
+    model-name: ${BUILDER_MODEL_NAME:${CLAW_MODEL_NAME:qwen-max}}
+    stream: true
+
+  # ---- Agent defaults (used when auto-generating agentscope.json) ----
+  agent:
+    name: ${BUILDER_AGENT_NAME:${CLAW_AGENT_NAME:builder-agent}}
+    sys-prompt: >
+      You are a helpful assistant built with AgentScope Builder.
+      Answer in Chinese when the user speaks Chinese, otherwise answer in English.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    io.agentscope: INFO
+    org.springframework.security: WARN

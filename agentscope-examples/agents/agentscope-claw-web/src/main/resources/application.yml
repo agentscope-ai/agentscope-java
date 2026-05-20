@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: agentscope-claw-web
+
+server:
+  port: 8090
+
+# Admin console configuration
+claw-web:
+  # Base URL of the agentscope-claw runtime process
+  claw-url: ${CLAW_URL:http://localhost:8080}
+
+  # JWT signing secret — MUST match agentscope-claw's claw.jwt.secret
+  # so admin tokens issued by claw are accepted here.
+  # Override: -Dclaw-web.jwt-secret=<same value as claw's secret>
+  jwt-secret: ${CLAW_JWT_SECRET:claw-default-dev-secret-change-in-production-32chars}
+
+  # Shared workspace directory (same path that agentscope-claw uses).
+  # The admin console reads .agentscope/agentscope.json and .agentscope/users.json from here.
+  workspace: ${CLAW_WORKSPACE:}
+
+  # (Optional) system token used by ClawRuntimeClient for system-initiated probes (e.g.
+  # /actuator/health checks) when no inbound admin bearer is available. User-initiated proxy
+  # calls now forward the logged-in admin's Authorization header verbatim, so this token only
+  # matters for unauthenticated health/connectivity checks.
+  #
+  # The legacy property `claw-web.admin-token` (env: CLAW_ADMIN_TOKEN) is still read as a
+  # fallback for backward compatibility, but new deployments should set CLAW_SYSTEM_TOKEN.
+  system-token: ${CLAW_SYSTEM_TOKEN:${CLAW_ADMIN_TOKEN:}}
+
+# JWT secret property expected by JwtService
+claw:
+  jwt:
+    secret: ${CLAW_JWT_SECRET:claw-default-dev-secret-change-in-production-32chars}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    root: INFO
+    io.agentscope: INFO
+    org.springframework.security: WARN
+    org.springframework.web: WARN
