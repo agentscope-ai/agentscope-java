@@ -2,6 +2,8 @@
 hide-toc: true
 ---
 
+# Home
+
 ```{raw} html
 <script>document.body.classList.add('agentscope-home');</script>
 
@@ -57,8 +59,14 @@ agent.call(messages).block();</pre></div>
 agent.call(messages, <span class="ty">RuntimeContext</span>.builder()
     .sessionId(<span class="str">"user-123"</span>).build()).block();</pre></div>
       <div class="hs-install">
-        <code>io.agentscope:agentscope-harness</code>
-        <button class="hs-copy-btn" data-copy="io.agentscope:agentscope-harness">Copy Maven</button>
+        <div class="hs-install__tabs">
+          <div class="hs-tab hs-tab--build active" id="en-tab-maven">Maven</div>
+          <div class="hs-tab hs-tab--build" id="en-tab-gradle">Gradle</div>
+        </div>
+        <div class="hs-install__row">
+          <code id="en-install-code">&lt;dependency&gt;<br>&nbsp;&nbsp;&lt;groupId&gt;io.agentscope&lt;/groupId&gt;<br>&nbsp;&nbsp;&lt;artifactId&gt;agentscope-core&lt;/artifactId&gt;<br>&lt;/dependency&gt;</code>
+          <button class="hs-copy-btn" id="en-install-btn" data-copy="&lt;dependency&gt;&#10;    &lt;groupId&gt;io.agentscope&lt;/groupId&gt;&#10;    &lt;artifactId&gt;agentscope-core&lt;/artifactId&gt;&#10;&lt;/dependency&gt;">Copy</button>
+        </div>
       </div>
     </div>
   </div>
@@ -258,28 +266,78 @@ agent.call(messages, <span class="ty">RuntimeContext</span>.builder()
 
 <script>
 (function () {
+  var buildFormat = 'maven';
+  var mavenMap = {
+    'en-react': '<dependency>\n    <groupId>io.agentscope</groupId>\n    <artifactId>agentscope-core</artifactId>\n</dependency>',
+    'en-harness': '<dependency>\n    <groupId>io.agentscope</groupId>\n    <artifactId>agentscope-harness</artifactId>\n</dependency>'
+  };
+  var gradleMap = {
+    'en-react': "implementation 'io.agentscope:agentscope-core'",
+    'en-harness': "implementation 'io.agentscope:agentscope-harness'"
+  };
+  var currentPanel = 'en-harness';
+
+  function renderInstall() {
+    var installCode = document.getElementById('en-install-code');
+    var installBtn = document.getElementById('en-install-btn');
+    if (!installCode || !installBtn) return;
+    var map = buildFormat === 'maven' ? mavenMap : gradleMap;
+    var text = map[currentPanel];
+    if (buildFormat === 'maven') {
+      installCode.innerHTML = text.replace(/</g, '&lt;').replace(/\n/g, '<br>').replace(/ {4}/g, '&nbsp;&nbsp;');
+    } else {
+      installCode.textContent = text;
+    }
+    installBtn.setAttribute('data-copy', text);
+  }
+
+  function updateBuildTabs() {
+    var mavenTab = document.getElementById('en-tab-maven');
+    var gradleTab = document.getElementById('en-tab-gradle');
+    if (!mavenTab || !gradleTab) return;
+    mavenTab.classList.toggle('active', buildFormat === 'maven');
+    gradleTab.classList.toggle('active', buildFormat === 'gradle');
+  }
+
   document.addEventListener('click', function (e) {
     var tab = e.target.closest('.hs-tab');
-    if (!tab) return;
-    var win = tab.closest('.hs-window');
-    if (!win) return;
-    var panelId = tab.getAttribute('data-panel');
-    win.querySelectorAll('.hs-tab').forEach(function (t) { t.classList.remove('active'); });
-    win.querySelectorAll('.hs-code-panel').forEach(function (p) { p.style.display = 'none'; });
-    tab.classList.add('active');
-    var panel = document.getElementById(panelId);
-    if (panel) panel.style.display = 'block';
-  });
-  document.querySelectorAll('.hs-copy-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var text = btn.getAttribute('data-copy');
+    if (tab) {
+      var panelId = tab.getAttribute('data-panel');
+      var mavenTab = document.getElementById('en-tab-maven');
+      var gradleTab = document.getElementById('en-tab-gradle');
+      if (tab === mavenTab) {
+        buildFormat = 'maven';
+        updateBuildTabs();
+        renderInstall();
+        return;
+      }
+      if (tab === gradleTab) {
+        buildFormat = 'gradle';
+        updateBuildTabs();
+        renderInstall();
+        return;
+      }
+      var win = tab.closest('.hs-window');
+      if (!win) return;
+      win.querySelectorAll('.hs-tab:not(.hs-tab--build)').forEach(function (t) { t.classList.remove('active'); });
+      win.querySelectorAll('.hs-code-panel').forEach(function (p) { p.style.display = 'none'; });
+      tab.classList.add('active');
+      var panel = document.getElementById(panelId);
+      if (panel) panel.style.display = 'block';
+      currentPanel = panelId;
+      renderInstall();
+      return;
+    }
+    var copy = e.target.closest('.hs-copy-btn');
+    if (copy && copy.id === 'en-install-btn') {
+      var text = copy.getAttribute('data-copy');
       if (!text || !navigator.clipboard) return;
       navigator.clipboard.writeText(text).then(function () {
-        var orig = btn.textContent;
-        btn.textContent = '✓ Copied';
-        setTimeout(function () { btn.textContent = orig; }, 1800);
+        var orig = copy.textContent;
+        copy.textContent = '✓ Copied';
+        setTimeout(function () { copy.textContent = orig; }, 1800);
       });
-    });
+    }
   });
 })();
 </script>

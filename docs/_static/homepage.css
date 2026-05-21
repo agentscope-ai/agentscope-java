@@ -4,6 +4,12 @@
    All colors via Furo CSS variables for automatic light/dark mode
    ================================================================ */
 
+/* Hide the Sphinx-rendered heading on landing pages (needed for <title> only) */
+body.agentscope-home .md h1,
+body.agentscope-home h1:first-of-type {
+  display: none;
+}
+
 /* ----- Full-width layout on home page ----- */
 body.agentscope-home .sidebar-drawer {
   display: none !important;
@@ -251,6 +257,14 @@ body.agentscope-home .content-icon-container {
   border: 1px solid var(--hs-border);
 }
 
+.hs-install__tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.hs-tab--build {
+}
+
 /* ----- Code panels ----- */
 .hs-code-panel {
   padding: 20px 22px;
@@ -294,11 +308,15 @@ body.agentscope-home .content-icon-container {
 /* ----- Install bar ----- */
 .hs-install {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  flex-direction: column;
   background: var(--hs-surface);
   border-top: 1px solid var(--hs-border);
+}
+
+.hs-install__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 16px 0;
 }
 
 .hs-install code {
@@ -309,6 +327,13 @@ body.agentscope-home .content-icon-container {
   border: 1px solid var(--hs-border) !important;
   border-radius: 5px !important;
   padding: 4px 10px !important;
+}
+
+.hs-install__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
 }
 
 .hs-copy-btn {

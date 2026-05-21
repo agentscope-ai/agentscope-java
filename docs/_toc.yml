@@ -137,10 +137,13 @@ parts:
   - file: en/community/contributors
     title: Contributors
 
-- caption: 快速开始
+- caption: 首页
   chapters:
   - file: zh/intro
-    title: 简介
+    title: 首页
+
+- caption: 快速开始
+  chapters:
   - file: zh/quickstart/installation
     title: 安装
   - file: zh/quickstart/key-concepts
