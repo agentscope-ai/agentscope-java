@@ -73,6 +73,33 @@ public class OpenAIResponseParser {
                 : 0;
     }
 
+    /**
+     * Safely parse usage information into AgentScope ChatUsage.
+     *
+     * @param openAIUsage the OpenAI usage object (may be null)
+     * @param startTime Request start time for calculating duration
+     * @return AgentScope ChatUsage or null if the input is null
+     */
+    private ChatUsage parseUsage(OpenAIUsage openAIUsage, Instant startTime) {
+        if (openAIUsage == null) {
+            return null;
+        }
+
+        return ChatUsage.builder()
+                .inputTokens((int) getSafePromptTokens(openAIUsage))
+                .outputTokens((int) getSafeCompletionTokens(openAIUsage))
+                .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
+                .reasoningTokens(
+                        openAIUsage.getCompletionTokensDetails() != null
+                                ? openAIUsage.getCompletionTokensDetails().getReasoningTokens()
+                                : null)
+                .cachedTokens(
+                        openAIUsage.getPromptTokensDetails() != null
+                                ? openAIUsage.getPromptTokensDetails().getCachedTokens()
+                                : null)
+                .build();
+    }
+
     public OpenAIResponseParser() {}
 
     /**
@@ -104,30 +131,7 @@ public class OpenAIResponseParser {
 
         try {
             // Parse usage information
-            if (response.getUsage() != null) {
-                OpenAIUsage openAIUsage = response.getUsage();
-
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens((int) getSafePromptTokens(openAIUsage))
-                                .outputTokens((int) getSafeCompletionTokens(openAIUsage))
-                                .time(
-                                        Duration.between(startTime, Instant.now()).toMillis()
-                                                / 1000.0)
-                                .reasoningTokens(
-                                        openAIUsage.getCompletionTokensDetails() != null
-                                                ? openAIUsage
-                                                        .getCompletionTokensDetails()
-                                                        .getReasoningTokens()
-                                                : null)
-                                .cachedTokens(
-                                        openAIUsage.getPromptTokensDetails() != null
-                                                ? openAIUsage
-                                                        .getPromptTokensDetails()
-                                                        .getCachedTokens()
-                                                : null)
-                                .build();
-            }
+            usage = parseUsage(response.getUsage(), startTime);
 
             // Parse response content
             OpenAIChoice choice = response.getFirstChoice();
@@ -344,36 +348,7 @@ public class OpenAIResponseParser {
 
         try {
             // Parse usage information (usually only in the last chunk)
-            if (response.getUsage() != null) {
-                OpenAIUsage openAIUsage = response.getUsage();
-
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens(
-                                        openAIUsage.getPromptTokens() != null
-                                                ? openAIUsage.getPromptTokens()
-                                                : 0)
-                                .outputTokens(
-                                        openAIUsage.getCompletionTokens() != null
-                                                ? openAIUsage.getCompletionTokens()
-                                                : 0)
-                                .time(
-                                        Duration.between(startTime, Instant.now()).toMillis()
-                                                / 1000.0)
-                                .reasoningTokens(
-                                        openAIUsage.getCompletionTokensDetails() != null
-                                                ? openAIUsage
-                                                        .getCompletionTokensDetails()
-                                                        .getReasoningTokens()
-                                                : null)
-                                .cachedTokens(
-                                        openAIUsage.getPromptTokensDetails() != null
-                                                ? openAIUsage
-                                                        .getPromptTokensDetails()
-                                                        .getCachedTokens()
-                                                : null)
-                                .build();
-            }
+            usage = parseUsage(response.getUsage(), startTime);
 
             // Parse chunk content
             OpenAIChoice choice = response.getFirstChoice();
