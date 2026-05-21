@@ -29,7 +29,7 @@ import java.util.List;
  *   <li>No name field in messages (returns HTTP 400 if present)</li>
  *   <li>System messages should be converted to user messages</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
- *   <li>reasoning_content must be kept within current turn but removed for previous turns</li>
+ *   <li>In thinking mode, reasoning_content is preserved for segments with tool calls</li>
  * </ul>
  *
  * <p>Usage:
@@ -85,8 +85,8 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
      * <ul>
      *   <li>No name field in messages</li>
      *   <li>System messages converted to user</li>
-     *   <li>reasoning_content kept within current turn (after last user message)</li>
-     *   <li>reasoning_content removed for previous turns (before last user message)</li>
+     *   <li>In thinking mode, reasoning_content preserved for segments with tool calls</li>
+     *   <li>reasoning_content removed for segments without tool calls in thinking mode</li>
      * </ul>
      *
      * <p>This method is static to allow sharing with {@link DeepSeekMultiAgentFormatter}.
@@ -95,14 +95,49 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
      * @return the fixed messages for DeepSeek API
      */
     static List<OpenAIMessage> applyDeepSeekFixes(List<OpenAIMessage> messages) {
-        // Find the last user message index to determine current turn boundary
         int lastUserIndex = findLastUserIndex(messages);
+        boolean thinkingMode = messages.stream().anyMatch(m -> m.getReasoningContent() != null);
+        boolean[] segHasTool = thinkingMode ? computeSegmentToolFlags(messages) : null;
 
         List<OpenAIMessage> result = new ArrayList<>(messages.size());
         for (int i = 0; i < messages.size(); i++) {
-            result.add(fixMessage(messages.get(i), i >= lastUserIndex));
+            boolean isCurrentTurn = i >= lastUserIndex;
+            boolean needReasoning =
+                    thinkingMode
+                            ? (isCurrentTurn || (segHasTool != null && segHasTool[i]))
+                            : isCurrentTurn;
+            result.add(fixMessage(messages.get(i), needReasoning));
         }
         return result;
+    }
+
+    /**
+     * Scans messages in a single pass to identify segments (between consecutive
+     * user messages) that contain tool calls. Messages within such segments
+     * are flagged to preserve their reasoning_content.
+     */
+    private static boolean[] computeSegmentToolFlags(List<OpenAIMessage> messages) {
+        boolean[] flags = new boolean[messages.size()];
+        int prevUser = -1;
+        for (int i = 0; i <= messages.size(); i++) {
+            if (i == messages.size() || "user".equals(messages.get(i).getRole())) {
+                if (prevUser >= 0) {
+                    // Check if segment (prevUser, i) has any tool call
+                    boolean hasTool = false;
+                    for (int j = prevUser + 1; j < i && !hasTool; j++) {
+                        OpenAIMessage m = messages.get(j);
+                        hasTool = m.getToolCalls() != null && !m.getToolCalls().isEmpty();
+                    }
+                    if (hasTool) {
+                        for (int j = prevUser + 1; j < i; j++) {
+                            flags[j] = true;
+                        }
+                    }
+                }
+                prevUser = i;
+            }
+        }
+        return flags;
     }
 
     /**
@@ -133,12 +168,13 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
     }
 
     @SuppressWarnings("unchecked")
-    private static OpenAIMessage fixMessage(OpenAIMessage msg, boolean isCurrentTurn) {
+    private static OpenAIMessage fixMessage(OpenAIMessage msg, boolean needReasoning) {
         boolean isSystem = "system".equals(msg.getRole());
         boolean hasName = msg.getName() != null;
         boolean hasReasoning = msg.getReasoningContent() != null;
-        // Remove reasoning_content for previous turns, keep for current turn
-        boolean shouldRemoveReasoning = hasReasoning && !isCurrentTurn;
+        // needReasoning is determined by applyDeepSeekFixes:
+        // true = current turn, or segment had tool calls in thinking mode
+        boolean shouldRemoveReasoning = hasReasoning && !needReasoning;
 
         if (!isSystem && !hasName && !shouldRemoveReasoning) {
             return msg;
@@ -162,8 +198,7 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
             builder.toolCallId(msg.getToolCallId());
         }
 
-        // Keep reasoning_content only for current turn
-        if (hasReasoning && isCurrentTurn) {
+        if (needReasoning && hasReasoning) {
             builder.reasoningContent(msg.getReasoningContent());
         }
 
