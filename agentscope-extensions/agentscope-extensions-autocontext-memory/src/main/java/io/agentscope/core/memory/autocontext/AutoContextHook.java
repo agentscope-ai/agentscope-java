@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Hook for automatically registering AutoContextMemory integration with ReActAgent.
@@ -214,27 +215,32 @@ public class AutoContextHook implements Hook {
     private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
         Agent agent = event.getAgent();
 
-        // Only process ReActAgent instances
         if (!(agent instanceof ReActAgent reActAgent)) {
             return Mono.just(event);
         }
 
-        // Get memory from agent and verify it's an AutoContextMemory instance
         Memory memory = reActAgent.getMemory();
         if (!(memory instanceof AutoContextMemory autoContextMemory)) {
             return Mono.just(event);
         }
 
-        // Trigger compression if needed (this modifies workingMemoryStorage in place)
-        autoContextMemory.compressIfNeeded();
+        return autoContextMemory
+                .compressIfNeededAsync()
+                .map(
+                        ignored -> {
+                            event.setInputMessages(buildInputMessages(event, autoContextMemory));
+                            return event;
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
 
-        // Always append system prompt instruction about compressed messages
+    private List<Msg> buildInputMessages(
+            PreReasoningEvent event, AutoContextMemory autoContextMemory) {
         List<Msg> originalInputMessages = event.getInputMessages();
         List<Msg> newInputMessages = new ArrayList<>();
 
         if (!originalInputMessages.isEmpty()
                 && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
-            // Append instruction to existing system prompt
             Msg originalSystemMsg = originalInputMessages.get(0);
             String originalSystemText = originalSystemMsg.getTextContent();
             String appendedInstruction =
@@ -260,7 +266,6 @@ public class AutoContextHook implements Hook {
 
             newInputMessages.add(updatedSystemMsg);
         } else {
-            // No system message exists, create a new one with the instruction
             String instruction =
                     "You may see compressed messages containing <!-- CONTEXT_OFFLOAD uuid=..."
                             + " -->.\n"
@@ -276,10 +281,7 @@ public class AutoContextHook implements Hook {
                             .build());
         }
 
-        // Add memory messages (compressed or not)
         newInputMessages.addAll(autoContextMemory.getMessages());
-        event.setInputMessages(newInputMessages);
-
-        return Mono.just(event);
+        return newInputMessages;
     }
 }

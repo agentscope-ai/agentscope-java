@@ -105,7 +105,7 @@ Register each tool on the corresponding agent’s Toolkit via `toolkit.registerT
 Create a sales and a support agent as `AgentScopeAgent`, each with its own ReActAgent, system prompt, and Toolkit that includes the appropriate handoff tool.
 
 ```java
-import com.alibaba.cloud.ai.graph.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
@@ -129,6 +129,7 @@ ReActAgent.Builder salesReActBuilder = ReActAgent.builder()
 
 AgentScopeAgent salesAgent = AgentScopeAgent.fromBuilder(salesReActBuilder)
         .name(AgentScopeStateConstants.SALES_AGENT)
+        .description("Sales agent for pricing, product availability, and sales inquiries")
         .instruction("please assist the customer with their sales inquiry: {input}.")
         .includeContents(true)
         .returnReasoningContents(true)
@@ -152,6 +153,7 @@ ReActAgent.Builder supportReActBuilder = ReActAgent.builder()
 
 AgentScopeAgent supportAgent = AgentScopeAgent.fromBuilder(supportReActBuilder)
         .name(AgentScopeStateConstants.SUPPORT_AGENT)
+        .description("Support agent for technical issues and troubleshooting")
         .instruction("please assist the customer with their product technical inquiry: {input}.")
         .includeContents(true)
         .returnReasoningContents(true)

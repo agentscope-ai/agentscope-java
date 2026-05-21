@@ -29,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -129,6 +130,53 @@ class SkillFileSystemHelperTest {
     }
 
     @Test
+    @DisplayName("Should preserve full metadata when saving and loading")
+    void testSaveSkills_PreservesFullMetadata() throws IOException {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "metadata-skill");
+        metadata.put("description", "Metadata Skill");
+        metadata.put("homepage", "https://example.com/docs");
+        metadata.put(
+                "metadata",
+                Map.of(
+                        "clawdbot",
+                        Map.of(
+                                "requires",
+                                Map.of(
+                                        "env", List.of("API_KEY", "API_SECRET"),
+                                        "bins", List.of("jq")))));
+        AgentSkill skill =
+                new AgentSkill(metadata, "Content", Map.of("references/doc.md", "Doc"), null);
+
+        boolean result = SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(skill), false);
+        assertTrue(result);
+
+        String savedSkillMd =
+                Files.readString(
+                        skillsBaseDir.resolve("metadata-skill").resolve("SKILL.md"),
+                        StandardCharsets.UTF_8);
+        assertTrue(savedSkillMd.contains("homepage: https://example.com/docs"));
+        assertTrue(savedSkillMd.contains("metadata:"));
+        assertTrue(savedSkillMd.contains("clawdbot:"));
+
+        AgentSkill loaded =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "metadata-skill", "source");
+        assertEquals(List.copyOf(metadata.keySet()), List.copyOf(loaded.getMetadata().keySet()));
+        assertEquals("https://example.com/docs", loaded.getMetadataValue("homepage"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> loadedMetadata =
+                (Map<String, Object>) loaded.getMetadataValue("metadata");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> clawdbot = (Map<String, Object>) loadedMetadata.get("clawdbot");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> requires = (Map<String, Object>) clawdbot.get("requires");
+
+        assertEquals(List.of("API_KEY", "API_SECRET"), requires.get("env"));
+        assertEquals(List.of("jq"), requires.get("bins"));
+    }
+
+    @Test
     @DisplayName("Should return false when saving empty list")
     void testSaveSkills_EmptyList() {
         assertFalse(SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(), false));
@@ -150,6 +198,72 @@ class SkillFileSystemHelperTest {
 
         AgentSkill loaded = SkillFileSystemHelper.loadSkill(skillsBaseDir, "test-skill", "source");
         assertEquals("Test Skill", loaded.getDescription());
+    }
+
+    @Test
+    @DisplayName(
+            "Should save zero skills and leave file contents unchanged when all exist and force is"
+                    + " false")
+    void testSaveSkills_AllExistingSkills_ForceDisabled_NoSkillsSaved() throws IOException {
+        String originalTestSkill =
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8);
+        String originalAnotherSkill =
+                Files.readString(
+                        skillsBaseDir.resolve("another-skill/SKILL.md"), StandardCharsets.UTF_8);
+
+        AgentSkill skill1 = new AgentSkill("test-skill", "Updated Test", "Updated content 1", null);
+        AgentSkill skill2 =
+                new AgentSkill("another-skill", "Updated Another", "Updated content 2", null);
+
+        boolean result =
+                SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(skill1, skill2), false);
+
+        // 0 out of 2 saved — no coverage at all
+        assertFalse(result);
+        assertEquals(
+                originalTestSkill,
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "test-skill SKILL.md must not be modified");
+        assertEquals(
+                originalAnotherSkill,
+                Files.readString(
+                        skillsBaseDir.resolve("another-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "another-skill SKILL.md must not be modified");
+    }
+
+    @Test
+    @DisplayName("Should save new skills while leaving existing ones unchanged when force is false")
+    void testSaveSkills_MixedSkills_ForceDisabled_NewSavedExistingUnchanged() throws IOException {
+        String originalContent =
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8);
+
+        AgentSkill existingSkill =
+                new AgentSkill("test-skill", "Updated Description", "Updated content", null);
+        AgentSkill newSkill = new AgentSkill("brand-new-skill", "Brand New", "New content", null);
+
+        boolean result =
+                SkillFileSystemHelper.saveSkills(
+                        skillsBaseDir, List.of(existingSkill, newSkill), false);
+
+        // 1 out of 2 saved — not all saved
+        assertFalse(result);
+
+        // existing skill must not be modified
+        assertEquals(
+                originalContent,
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "test-skill SKILL.md must not be modified");
+
+        // new skill must be saved correctly
+        AgentSkill loaded =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "brand-new-skill", "source");
+        assertEquals("brand-new-skill", loaded.getName());
+        assertEquals("Brand New", loaded.getDescription());
+        assertEquals("New content", loaded.getSkillContent());
     }
 
     @Test

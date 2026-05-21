@@ -27,6 +27,26 @@ public class WeatherService {
 
 > **注意**：`@ToolParam` 的 `name` 属性必须指定，因为 Java 默认不保留参数名。
 
+### 严格模式（Strict Mode）
+
+`strict` 用于控制支持严格 Schema 检查的模型提供商是否应严格遵循工具参数 Schema。
+
+```java
+public class WeatherService {
+    @Tool(name = "get_weather", description = "获取天气", strict = true)
+    public String getWeather(
+            @ToolParam(name = "city", description = "城市名称") String city) {
+        return city + " 的天气：晴天，25°C";
+    }
+}
+```
+
+配置了严格模式后，AgentScope 在以下所有路径中保留并传播严格模式配置：
+
+- `@Tool(..., strict = true)` 注解驱动的工具注册
+- `AgentTool` 接口实现（通过 `getStrict()` 方法）
+- `Toolkit#registerSchema(...)` 和 `Toolkit#registerSchemas(...)` 方式
+
 ### 注册和使用
 
 ```java
@@ -72,7 +92,7 @@ public Mono<String> search(
 
 ### 流式工具
 
-使用 `ToolEmitter` 发送中间进度，适合长时间任务：
+使用 `ToolEmitter` 发送中间进度，适合长时间任务（进度仅对 Hook 可见，不会发送给 LLM）：
 
 ```java
 @Tool(description = "生成数据")
@@ -200,6 +220,7 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 | 工具 | 方法 | 说明 |
 |------|------|------|
 | `ReadFileTool` | `view_text_file` | 按行范围查看文件 |
+| `ReadFileTool` | `list_directory` | 列出目录下的文件和文件夹 |
 | `WriteFileTool` | `write_text_file` | 创建/覆盖/替换文件内容 |
 | `WriteFileTool` | `insert_text_file` | 在指定行插入内容 |
 
@@ -230,8 +251,8 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 | 工具 | 能力 |
 |------|------|
-| `DashScopeMultiModalTool` | 文生图、图生文、文生语音、语音转文字 |
-| `OpenAIMultiModalTool` | 文生图、图片编辑、图片变体、图生文、文生语音、语音转文字 |
+| `DashScopeMultiModalTool` | 文生图、图生文、文生语音、语音转文字、文生视频、图生视频、首尾帧图生视频、视频理解 |
+| `OpenAIMultiModalTool` | 文生图、图生文、文生语音、语音转文字 |
 
 ### 子智能体工具
 
@@ -261,6 +282,9 @@ public class CustomTool implements AgentTool {
     }
 
     @Override
+    public Boolean getStrict() { return true; }
+
+    @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         String query = (String) param.getInput().get("query");
         return Mono.just(ToolResultBlock.text("结果：" + query));
@@ -282,7 +306,7 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `parallel` | 是否并行执行多个工具 | `true` |
+| `parallel` | 是否并行执行多个工具 | `false` |
 | `allowToolDeletion` | 是否允许删除工具 | `true` |
 | `executionConfig.timeout` | 工具执行超时时间 | 5 分钟 |
 
@@ -292,7 +316,7 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
 
 ```java
 toolkit.registerMetaTool();
-// Agent 可调用 "reset_equipped_tools" 激活/停用工具组
+// Agent 可调用 "reset_equipped_tools" 激活指定的工具组（重置为指定的工具组集合）
 ```
 
 当工具组较多时，可让智能体根据任务需求自主选择激活哪些工具组。
@@ -327,15 +351,16 @@ if (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
     List<ToolUseBlock> pendingTools = response.getContentBlocks(ToolUseBlock.class);
 
     // 外部执行后，提供结果
-    Msg toolResult = Msg.builder()
-        .role(MsgRole.TOOL)
-        .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
-            TextBlock.builder().text("外部执行结果").build()))
-        .build();
+    for (ToolUseBlock toolUse : pendingTools) {
+        Msg toolResult = Msg.builder()
+            .role(MsgRole.TOOL)
+            .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
+                TextBlock.builder().text("外部执行结果").build()))
+            .build();
 
-    // 恢复执行
-    response = agent.call(toolResult).block();
-}
+        // 恢复执行
+        response = agent.call(toolResult).block();
+    }
 ```
 
 ## 仅 Schema 工具（Schema Only Tool）
@@ -358,6 +383,7 @@ ToolSchema schema = ToolSchema.builder()
         "properties", Map.of("sql", Map.of("type", "string")),
         "required", List.of("sql")
     ))
+    .strict(true)
     .build();
 
 toolkit.registerSchema(schema);
@@ -373,6 +399,6 @@ boolean isExternal = toolkit.isExternalTool("query_database");  // true
 
 ## 完整示例
 
-- **工具调用示例**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
-- **工具组示例**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
-- **多模态工具示例**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)
+- **工具调用示例**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
+- **工具组示例**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
+- **多模态工具示例**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)

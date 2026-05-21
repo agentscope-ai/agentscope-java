@@ -96,6 +96,13 @@ public class DashScopeToolsHelper {
         if (presencePenalty != null) {
             params.setPresencePenalty(presencePenalty);
         }
+
+        // Apply parallel tool calls
+        Boolean parallelToolCalls =
+                getOption(options, defaultOptions, GenerateOptions::getParallelToolCalls);
+        if (parallelToolCalls != null) {
+            params.setParallelToolCalls(parallelToolCalls);
+        }
     }
 
     /**
@@ -236,19 +243,7 @@ public class DashScopeToolsHelper {
                 continue;
             }
 
-            // Prioritize using content field (raw arguments string), fallback to input map
-            // serialization
-            String argsJson;
-            if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
-                argsJson = toolUse.getContent();
-            } else {
-                try {
-                    argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
-                } catch (Exception e) {
-                    log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
-                    argsJson = "{}";
-                }
-            }
+            String argsJson = JsonUtils.resolveToolCallArgsJson(toolUse);
 
             DashScopeFunction function = DashScopeFunction.of(toolUse.getName(), argsJson);
             DashScopeToolCall toolCall =

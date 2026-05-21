@@ -17,6 +17,7 @@ package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,10 +43,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Unit tests for AutoContextMemory.
@@ -966,7 +970,86 @@ class AutoContextMemoryTest {
                 "Should have tool compression event with plan-aware hint");
     }
 
+    @Test
+    @DisplayName("Should compress asynchronously on non-blocking scheduler")
+    void testCompressIfNeededAsyncOnNonBlockingScheduler() {
+        AutoContextConfig asyncConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        TestModel asyncModel = new TestModel("Conversation summary");
+        AutoContextMemory asyncMemory = new AutoContextMemory(asyncConfig, asyncModel);
+
+        addCompressibleConversation(asyncMemory, 3);
+        asyncMemory.addMessage(createTextMessage("Latest request", MsgRole.USER));
+        int initialCount = asyncMemory.getMessages().size();
+
+        Boolean compressed =
+                Mono.defer(asyncMemory::compressIfNeededAsync)
+                        .subscribeOn(Schedulers.parallel())
+                        .block();
+
+        assertTrue(Boolean.TRUE.equals(compressed));
+        assertTrue(asyncModel.getCallCount() >= 1, "Compression should invoke the model");
+        assertTrue(asyncMemory.getMessages().size() < initialCount);
+        assertFalse(asyncMemory.getOffloadContext().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should allow repeated async compression calls")
+    void testCompressIfNeededAsyncMultipleCalls() {
+        AutoContextConfig asyncConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        TestModel asyncModel = new TestModel("Conversation summary");
+        AutoContextMemory asyncMemory = new AutoContextMemory(asyncConfig, asyncModel);
+
+        addCompressibleConversation(asyncMemory, 3);
+        asyncMemory.addMessage(createTextMessage("Latest request", MsgRole.USER));
+        Boolean firstCompressed =
+                Mono.defer(asyncMemory::compressIfNeededAsync)
+                        .subscribeOn(Schedulers.parallel())
+                        .block();
+
+        addCompressibleConversation(asyncMemory, 2);
+        asyncMemory.addMessage(createTextMessage("Another request", MsgRole.USER));
+        Boolean secondCompressed =
+                Mono.defer(asyncMemory::compressIfNeededAsync)
+                        .subscribeOn(Schedulers.parallel())
+                        .block();
+
+        assertTrue(Boolean.TRUE.equals(firstCompressed));
+        assertTrue(Boolean.TRUE.equals(secondCompressed));
+        assertTrue(
+                asyncModel.getCallCount() >= 2, "Both async compressions should reach the model");
+        assertFalse(asyncMemory.getMessages().isEmpty());
+    }
+
     // Helper methods
+
+    private void addCompressibleConversation(AutoContextMemory targetMemory, int rounds) {
+        for (int i = 0; i < rounds; i++) {
+            String callId = "call_" + i + "_" + targetMemory.getMessages().size();
+            targetMemory.addMessage(createTextMessage("User message " + i, MsgRole.USER));
+            targetMemory.addMessage(createToolUseMessage("test_tool", callId));
+            targetMemory.addMessage(createToolResultMessage("test_tool", callId, "Result " + i));
+            targetMemory.addMessage(
+                    createTextMessage("Assistant response " + i, MsgRole.ASSISTANT));
+        }
+    }
 
     private Msg createTextMessage(String text, MsgRole role) {
         return Msg.builder()
@@ -2072,5 +2155,211 @@ class AutoContextMemoryTest {
                 1,
                 testModel.getCallCount(),
                 "Model should be called exactly once for the second high-token tool group");
+    }
+
+    // ==================== ToolUseBlock Compression Format Tests ====================
+
+    @Test
+    @DisplayName(
+            "Should preserve ToolUseBlock and compress TextBlock when compressing mixed ASSISTANT"
+                    + " message")
+    void testToolUseBlockPreservedAndTextBlockCompressedDuringLargeMessageCompression()
+            throws Exception {
+        // Use CapturingModel to verify messages sent to the model
+        CapturingModel capturingModel = new CapturingModel("Compressed summary of reasoning");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .largePayloadThreshold(100) // low threshold to trigger compression
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(100) // disable Strategy 1
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE) // disable LLM compression
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, capturingModel);
+
+        // Add messages to exceed msgThreshold
+        for (int i = 0; i < 8; i++) {
+            testMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Add a user message (this becomes the latest user)
+        testMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Create a large ASSISTANT message with both TextBlock and ToolUseBlock
+        String largeReasoning = "x".repeat(200); // exceeds largePayloadThreshold
+        Msg mixedMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text(largeReasoning).build(),
+                                        ToolUseBlock.builder()
+                                                .name("search")
+                                                .id("call_001")
+                                                .input(new HashMap<>())
+                                                .build()))
+                        .build();
+        testMemory.addMessage(mixedMsg);
+
+        // Trigger compression
+        testMemory.compressIfNeeded();
+
+        // Verify: model was called for compression
+        assertTrue(
+                capturingModel.getCapturedMessages().size() > 0,
+                "Model should be called for compression");
+
+        // Verify: messages sent to model should NOT contain ToolUseBlock
+        List<List<Msg>> captured = capturingModel.getCapturedMessages();
+        for (List<Msg> msgs : captured) {
+            for (Msg msg : msgs) {
+                assertFalse(
+                        msg.hasContentBlocks(ToolUseBlock.class),
+                        "Messages sent to model for compression should not contain ToolUseBlock");
+            }
+        }
+
+        // Verify: the compressed message in memory should preserve ToolUseBlock
+        List<Msg> finalMessages = testMemory.getMessages();
+        boolean foundCompressedMixed = false;
+        for (Msg msg : finalMessages) {
+            if (msg.hasContentBlocks(ToolUseBlock.class) && msg.getRole() == MsgRole.ASSISTANT) {
+                foundCompressedMixed = true;
+                // Should still have ToolUseBlock
+                boolean hasToolUse = false;
+                boolean hasText = false;
+                for (var block : msg.getContent()) {
+                    if (block instanceof ToolUseBlock toolUse) {
+                        hasToolUse = true;
+                        assertEquals(
+                                "call_001", toolUse.getId(), "ToolUseBlock id should be preserved");
+                        assertEquals(
+                                "search",
+                                toolUse.getName(),
+                                "ToolUseBlock name should be preserved");
+                    } else if (block instanceof TextBlock textBlock) {
+                        hasText = true;
+                        // TextBlock should be compressed (not the original large text)
+                        assertNotEquals(
+                                largeReasoning,
+                                textBlock.getText(),
+                                "TextBlock should be compressed, not original");
+                    }
+                }
+                assertTrue(hasToolUse, "Compressed message should preserve ToolUseBlock");
+                assertTrue(hasText, "Compressed message should have summary TextBlock");
+            }
+        }
+
+        assertTrue(
+                foundCompressedMixed,
+                "Should find a compressed ASSISTANT message with preserved ToolUseBlock");
+    }
+
+    @Test
+    @DisplayName(
+            "Should preserve ToolResultBlock structure and compress output during large TOOL"
+                    + " message compression")
+    void testToolResultBlockPreservedAndOutputCompressedDuringLargeMessageCompression()
+            throws Exception {
+        CapturingModel capturingModel = new CapturingModel("Compressed tool result summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .largePayloadThreshold(100)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(100) // disable Strategy 1
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE) // disable LLM compression
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, capturingModel);
+
+        // Add messages to exceed msgThreshold
+        for (int i = 0; i < 8; i++) {
+            testMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Add user + assistant with tool use (to pair with the tool result)
+        testMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+        testMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Let me search").build(),
+                                        ToolUseBlock.builder()
+                                                .name("search")
+                                                .id("call_tr_001")
+                                                .input(new HashMap<>())
+                                                .build()))
+                        .build());
+
+        // Create a large TOOL message with ToolResultBlock containing large output
+        String largeToolOutput = "y".repeat(200); // exceeds largePayloadThreshold
+        Msg toolMsg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("search")
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_tr_001")
+                                        .name("search")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text(largeToolOutput)
+                                                                .build()))
+                                        .build())
+                        .build();
+        testMemory.addMessage(toolMsg);
+
+        // Trigger compression
+        testMemory.compressIfNeeded();
+
+        // Verify: model was called for compression
+        assertTrue(
+                capturingModel.getCapturedMessages().size() > 0,
+                "Model should be called for compression");
+
+        // Verify: messages sent to model should NOT contain ToolResultBlock
+        for (List<Msg> msgs : capturingModel.getCapturedMessages()) {
+            for (Msg msg : msgs) {
+                assertFalse(
+                        msg.hasContentBlocks(ToolResultBlock.class),
+                        "Messages sent to model should not contain ToolResultBlock");
+            }
+        }
+
+        // Verify: the compressed TOOL message should preserve ToolResultBlock structure
+        List<Msg> finalMessages = testMemory.getMessages();
+        boolean foundCompressedTool = false;
+        for (Msg msg : finalMessages) {
+            if (msg.getRole() == MsgRole.TOOL && msg.hasContentBlocks(ToolResultBlock.class)) {
+                ToolResultBlock resultBlock = msg.getFirstContentBlock(ToolResultBlock.class);
+                if (resultBlock != null && "call_tr_001".equals(resultBlock.getId())) {
+                    foundCompressedTool = true;
+                    assertEquals(
+                            "search",
+                            resultBlock.getName(),
+                            "ToolResultBlock name should be preserved");
+                    // Output should be compressed, not the original
+                    String outputText =
+                            resultBlock.getOutput().stream()
+                                    .filter(TextBlock.class::isInstance)
+                                    .map(TextBlock.class::cast)
+                                    .map(TextBlock::getText)
+                                    .collect(Collectors.joining());
+                    assertNotEquals(
+                            largeToolOutput,
+                            outputText,
+                            "ToolResultBlock output should be compressed, not original");
+                }
+            }
+        }
+
+        assertTrue(
+                foundCompressedTool,
+                "Should find a compressed TOOL message with preserved ToolResultBlock structure");
     }
 }

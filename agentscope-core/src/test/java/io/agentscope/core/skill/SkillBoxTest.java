@@ -41,13 +41,19 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -162,6 +168,7 @@ class SkillBoxTest {
         void testThrowExceptionForNullSkillIdInOperations() {
             assertThrows(IllegalArgumentException.class, () -> skillBox.removeSkill(null));
             assertThrows(IllegalArgumentException.class, () -> skillBox.exists(null));
+            assertThrows(IllegalArgumentException.class, () -> skillBox.setSkillActive(null, true));
         }
 
         @Test
@@ -257,6 +264,86 @@ class SkillBoxTest {
             assertTrue(skillIds.contains(skill1.getSkillId()), "Should contain first skill ID");
             assertTrue(skillIds.contains(skill2.getSkillId()), "Should contain second skill ID");
             assertTrue(skillIds.contains(skill3.getSkillId()), "Should contain third skill ID");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when setting active state for non-existent skill")
+        void testThrowExceptionForNonExistentSkillInSetActive() {
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> skillBox.setSkillActive("fake_non_existent_skill", true));
+            assertEquals(
+                    "Skill ID does not exist: fake_non_existent_skill", exception.getMessage());
+        }
+
+        @Test
+        @DisplayName("Should update skill active state and automatically sync toolkit")
+        void testSetSkillActiveAutoSyncsState() {
+            AgentSkill skill =
+                    new AgentSkill("test_active_skill", "Test Active Skill", "# Content", null);
+            AgentTool testTool = createTestTool("active_test_tool");
+
+            skillBox.registration().skill(skill).agentTool(testTool).apply();
+
+            String toolsGroupName = skill.getSkillId() + "_skill_tools";
+
+            assertFalse(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill should be inactive initially");
+            assertNotNull(toolkit.getToolGroup(toolsGroupName), "ToolGroup should be created");
+            assertFalse(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be inactive initially");
+
+            skillBox.setSkillActive(skill.getSkillId(), true);
+
+            assertTrue(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill logical state should be active now");
+            assertTrue(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be AUTOMATICALLY activated without explicit sync");
+
+            skillBox.setSkillActive(skill.getSkillId(), false);
+
+            assertFalse(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill logical state should be inactive");
+            assertFalse(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be AUTOMATICALLY deactivated without explicit sync");
+        }
+
+        @Test
+        @DisplayName("Should successfully set active state for a skill without bound tools")
+        void testSetSkillActiveWithoutTools() {
+            AgentSkill purePromptSkill =
+                    new AgentSkill(
+                            "pure_prompt_skill",
+                            "Skill without tools",
+                            "# Just a pure prompt instruction",
+                            null);
+            skillBox.registerSkill(purePromptSkill);
+
+            String toolsGroupName = purePromptSkill.getSkillId() + "_skill_tools";
+            assertNull(
+                    toolkit.getToolGroup(toolsGroupName),
+                    "ToolGroup should not exist for pure prompt skill");
+
+            assertDoesNotThrow(
+                    () -> skillBox.setSkillActive(purePromptSkill.getSkillId(), true),
+                    "Should not throw exception when activating a non-tool-bind skill");
+            assertTrue(
+                    skillBox.isSkillActive(purePromptSkill.getSkillId()),
+                    "Logical state should be active");
+
+            assertDoesNotThrow(
+                    () -> skillBox.setSkillActive(purePromptSkill.getSkillId(), false),
+                    "Should not throw exception when deactivating a non-tool-bind skill");
+            assertFalse(
+                    skillBox.isSkillActive(purePromptSkill.getSkillId()),
+                    "Logical state should be inactive");
         }
     }
 
@@ -747,6 +834,98 @@ class SkillBoxTest {
             // Verify validator was preserved
             assertEquals(customValidator, shellTool.getCommandValidator());
         }
+
+        @Test
+        @DisplayName(
+                "Should safely upload skill files concurrently across multiple SkillBox instances")
+        void testConcurrentUploadSkillFiles() throws InterruptedException {
+            int threadCount = 10;
+            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+
+            try {
+                CountDownLatch startLatch = new CountDownLatch(1);
+                CountDownLatch doneLatch = new CountDownLatch(threadCount);
+
+                // Shared working directory for all SkillBox instances
+                String sharedWorkDir = tempDir.resolve("concurrent-upload").toString();
+
+                // Create a relatively large payload to increase the probability of write collisions
+                String largeContent = "A".repeat(100 * 1024);
+                Map<String, String> resources = new HashMap<>();
+                resources.put("scripts/heavy_worker.py", largeContent);
+                AgentSkill sharedSkill =
+                        new AgentSkill(
+                                "concurrent_skill", "Concurrent Skill", "Content", resources);
+
+                List<Exception> exceptions = Collections.synchronizedList(new ArrayList<>());
+
+                for (int i = 0; i < threadCount; i++) {
+                    executor.submit(
+                            () -> {
+                                try {
+                                    // Simulate multiple isolated agents, each with its own Toolkit
+                                    // and
+                                    // SkillBox
+                                    Toolkit localToolkit = new Toolkit();
+                                    SkillBox localSkillBox = new SkillBox(localToolkit);
+
+                                    // Point all of them to the exact same shared physical directory
+                                    localSkillBox
+                                            .codeExecution()
+                                            .workDir(sharedWorkDir)
+                                            .withShell()
+                                            .withRead()
+                                            .withWrite()
+                                            .enable();
+
+                                    localSkillBox.registerSkill(sharedSkill);
+
+                                    startLatch.await();
+
+                                    // Concurrent execution! (This would corrupt files or throw
+                                    // FileSystemException without the lock)
+                                    localSkillBox.uploadSkillFiles();
+                                } catch (Exception e) {
+                                    exceptions.add(e);
+                                } finally {
+                                    doneLatch.countDown();
+                                }
+                            });
+                }
+
+                startLatch.countDown();
+
+                // Wait up to 10 seconds for all threads to finish
+                assertTrue(
+                        doneLatch.await(10, TimeUnit.SECONDS),
+                        "Timeout waiting for concurrent uploads");
+                executor.shutdown();
+
+                assertTrue(
+                        exceptions.isEmpty(),
+                        "Concurrent execution threw exceptions: " + exceptions);
+
+                Path targetPath =
+                        Path.of(sharedWorkDir)
+                                .resolve("skills/concurrent_skill_custom/scripts/heavy_worker.py");
+                assertTrue(Files.exists(targetPath), "Target file should exist");
+
+                assertDoesNotThrow(
+                        () -> {
+                            String readContent = Files.readString(targetPath);
+                            assertEquals(
+                                    largeContent.length(),
+                                    readContent.length(),
+                                    "File content should not be corrupted or truncated");
+                            assertEquals(
+                                    largeContent,
+                                    readContent,
+                                    "File content exactly matches the original");
+                        });
+            } finally {
+                executor.shutdownNow();
+            }
+        }
     }
 
     @Test
@@ -1066,6 +1245,27 @@ class SkillBoxTest {
             assertTrue(availableSkillsEnd >= 0);
             assertTrue(codeExecutionStart >= 0);
             assertTrue(availableSkillsEnd < codeExecutionStart);
+        }
+
+        @Test
+        @DisplayName("Should expose only core skill metadata when configured")
+        void testExposeOnlyCoreSkillMetadata() {
+            Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+            metadata.put("name", "trello");
+            metadata.put("description", "Manage Trello boards");
+            metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
+            metadata.put("metadata", Map.of("clawdbot", Map.of("emoji", "📋")));
+            AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+            skillBox.registerSkill(skill);
+            skillBox.setExposeAllSkillMetadata(false);
+
+            String prompt = skillBox.getSkillPrompt();
+
+            assertTrue(prompt.contains("<name>trello</name>"));
+            assertTrue(prompt.contains("<description>Manage Trello boards</description>"));
+            assertTrue(prompt.contains("<skill-id>trello_custom</skill-id>"));
+            assertFalse(prompt.contains("<homepage>"));
+            assertFalse(prompt.contains("<metadata>"));
         }
     }
 

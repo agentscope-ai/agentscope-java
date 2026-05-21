@@ -26,10 +26,12 @@ import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTranspor
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.McpJsonMapper;
+import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.ElicitRequest;
 import io.modelcontextprotocol.spec.McpSchema.ElicitResult;
+import io.modelcontextprotocol.spec.McpSchema.JSONRPCMessage;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -38,9 +40,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -78,6 +82,13 @@ import reactor.core.publisher.Mono;
  *         .streamableHttpTransport("https://mcp.example.com/http")
  *         .queryParams(Map.of("token", "abc123", "env", "prod"))
  *         .buildSync();
+ *
+ * // StdIO transport with custom protocol versions
+ * McpClientWrapper client = McpClientBuilder.create("mcp")
+ *         .stdioTransport("python", "server.py")
+ *         .protocolVersions("2024-11-05", "2025-03-26")
+ *         .buildAsync()
+ *         .block();
  * }</pre>
  */
 public class McpClientBuilder {
@@ -91,6 +102,7 @@ public class McpClientBuilder {
     private Duration initializationTimeout = DEFAULT_INIT_TIMEOUT;
     private Function<ElicitRequest, Mono<ElicitResult>> asyncElicitationHandler;
     private Function<ElicitRequest, ElicitResult> syncElicitationHandler;
+    private List<String> protocolVersions;
 
     private McpClientBuilder(String name) {
         this.name = name;
@@ -295,6 +307,40 @@ public class McpClientBuilder {
     }
 
     /**
+     * Sets the MCP protocol versions that the client supports.
+     *
+     * <p>By default, the client only supports "2024-11-05". If the MCP server responds
+     * with a different protocol version during initialization (e.g., "2025-03-26"),
+     * the connection will fail with "Unsupported protocol version".
+     *
+     * <p>Use this method to declare support for additional protocol versions:
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("server")
+     *         .stdioTransport("python", "server.py")
+     *         .protocolVersions("2024-11-05", "2025-03-26")
+     *         .buildAsync()
+     *         .block();
+     * }</pre>
+     *
+     * @param versions one or more protocol version strings (e.g., "2024-11-05", "2025-03-26")
+     * @return this builder
+     * @throws IllegalArgumentException if no versions are provided
+     */
+    public McpClientBuilder protocolVersions(String... versions) {
+        if (versions == null || versions.length == 0) {
+            throw new IllegalArgumentException("At least one protocol version must be specified");
+        }
+        List<String> filtered =
+                Arrays.stream(versions).filter(Objects::nonNull).collect(Collectors.toList());
+        if (filtered.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "At least one non-null protocol version must be specified");
+        }
+        this.protocolVersions = Collections.unmodifiableList(filtered);
+        return this;
+    }
+
+    /**
      * Registers an asynchronous elicitation handler for processing elicit requests
      * from the server.
      *
@@ -381,6 +427,11 @@ public class McpClientBuilder {
                 () -> {
                     McpClientTransport transport = transportConfig.createTransport();
 
+                    if (protocolVersions != null) {
+                        transport =
+                                new ProtocolVersionOverrideTransport(transport, protocolVersions);
+                    }
+
                     McpSchema.Implementation clientInfo =
                             new McpSchema.Implementation(
                                     "agentscope-java", "AgentScope Java Framework", VERSION);
@@ -416,6 +467,10 @@ public class McpClientBuilder {
         }
 
         McpClientTransport transport = transportConfig.createTransport();
+
+        if (protocolVersions != null) {
+            transport = new ProtocolVersionOverrideTransport(transport, protocolVersions);
+        }
 
         McpSchema.Implementation clientInfo =
                 new McpSchema.Implementation(
@@ -458,6 +513,64 @@ public class McpClientBuilder {
 
     private interface TransportConfig {
         McpClientTransport createTransport();
+    }
+
+    /**
+     * A transport decorator that overrides the protocol versions reported to the MCP client.
+     *
+     * <p>The MCP Java SDK's {@code LifecycleInitializer} performs a strict check:
+     * the server's protocol version must be contained in the client's supported versions list.
+     * By default, transports only report support for "2024-11-05", causing connections to fail
+     * with servers that respond with newer versions (e.g., "2025-03-26").
+     *
+     * <p>This decorator wraps any {@link McpClientTransport} and overrides
+     * {@link #protocolVersions()} to return a user-specified list, while delegating
+     * all other operations to the underlying transport.
+     */
+    private static class ProtocolVersionOverrideTransport implements McpClientTransport {
+
+        private final McpClientTransport delegate;
+        private final List<String> versions;
+
+        ProtocolVersionOverrideTransport(McpClientTransport delegate, List<String> versions) {
+            this.delegate = delegate;
+            this.versions = versions;
+        }
+
+        @Override
+        public List<String> protocolVersions() {
+            return versions;
+        }
+
+        @Override
+        public Mono<Void> connect(Function<Mono<JSONRPCMessage>, Mono<JSONRPCMessage>> handler) {
+            return delegate.connect(handler);
+        }
+
+        @Override
+        public void setExceptionHandler(Consumer<Throwable> handler) {
+            delegate.setExceptionHandler(handler);
+        }
+
+        @Override
+        public Mono<Void> closeGracefully() {
+            return delegate.closeGracefully();
+        }
+
+        @Override
+        public void close() {
+            delegate.close();
+        }
+
+        @Override
+        public Mono<Void> sendMessage(JSONRPCMessage message) {
+            return delegate.sendMessage(message);
+        }
+
+        @Override
+        public <T> T unmarshalFrom(Object data, TypeRef<T> typeRef) {
+            return delegate.unmarshalFrom(data, typeRef);
+        }
     }
 
     private static class StdioTransportConfig implements TransportConfig {

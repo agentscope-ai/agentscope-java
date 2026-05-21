@@ -44,5 +44,7 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
                 context.getCurrentRequestId(),
                 task.getId(),
                 task.getStatus());
+
+        context.publishPreReasoning();
     }
 }

@@ -27,7 +27,6 @@ target/
 build/
 !**/src/main/**/build/
 !**/src/test/**/build/
-
 ### VS Code ###
 .vscode/
 .claude/
@@ -38,8 +37,15 @@ build/
 .flattened-pom.xml
 **/dependency-reduced-pom.xml
 
+### Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
 ### Docs
 docs/_build
+.venv/
 
 
 # vibe coding
@@ -55,3 +61,9 @@ logs/
 **/boba-tea-shop/supervisor-agent/**/static/
 **/boba-tea-shop/**/node_modules/
 **/boba-tea-shop/**/dist/
+
+##agentscope
+.agentscope/
+
+## harness db
+**/*.db

@@ -25,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -52,7 +54,7 @@ class MarkdownSkillParserTest {
 
             assertNotNull(parsed);
             assertTrue(parsed.hasFrontmatter());
-            Map<String, String> metadata = parsed.getMetadata();
+            Map<String, Object> metadata = parsed.getMetadata();
             assertEquals("test_skill", metadata.get("name"));
             assertEquals("A test skill", metadata.get("description"));
             assertEquals("1.0.0", metadata.get("version"));
@@ -283,28 +285,105 @@ class MarkdownSkillParserTest {
     class ErrorHandlingTests {
 
         @Test
-        @DisplayName("Should throw exception for invalid YAML")
+        @DisplayName("Should return empty metadata for invalid YAML frontmatter")
         void testInvalidYaml() {
             String markdown = "---\nname: test\nthis is not a valid line\n---\nContent";
 
-            IllegalArgumentException exception =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
-            assertTrue(exception.getMessage().contains("expected 'key: value' format"));
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertTrue(metadata.isEmpty());
+            assertEquals("Content", parsed.getContent());
         }
 
         @Test
-        @DisplayName("Should throw exception for list format")
+        @DisplayName("Should return empty metadata for invalid list-style frontmatter")
         void testListFormat() {
-            String markdown = "---\n- item1\n- item2\n---\nContent";
+            String markdown = "---\nname: test_skill\n- item1\n- item2\n---\nContent";
 
-            IllegalArgumentException exception =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertTrue(metadata.isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should keep flat scalar metadata and preserve complex YAML structures")
+        void testParseAndIgnoreComplexMetadata() {
+            String markdown =
+                    """
+                    ---
+                    name: Agent Browser
+                    description: A fast Rust-based headless browser automation CLI
+                    read_when:
+                      - Automating web interactions
+                      - Extracting structured data from pages
+                    metadata: {"clawdbot":{"emoji":"🌐"}}
+                    allowed-tools: Bash(agent-browser:*)
+                    ---
+
+                    # Content
+                    This is the content.\
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertEquals("Agent Browser", metadata.get("name"));
+            assertEquals(
+                    "A fast Rust-based headless browser automation CLI",
+                    metadata.get("description"));
+            assertEquals("Bash(agent-browser:*)", metadata.get("allowed-tools"));
+            assertEquals(Map.of("clawdbot", Map.of("emoji", "🌐")), metadata.get("metadata"));
+            assertEquals(
+                    List.of("Automating web interactions", "Extracting structured data from pages"),
+                    metadata.get("read_when"));
+
+            assertTrue(parsed.getContent().contains("# Content"));
+        }
+
+        @Test
+        @DisplayName("Should parse block-style scalar values")
+        void testParseBlockStyleModifiers() {
+            String markdown =
+                    """
+                    ---
+                    name: test_skill
+                    description: |
+                      This is a multi-line description.
+                      It should be ignored by the simple parser.
+                    summary: >
+                      This is a folded multi-line summary.
+                      It should also be ignored.
+                    version: "1.0"
+                    ---
+                    Content\
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertEquals("test_skill", metadata.get("name"));
+            assertEquals("1.0", metadata.get("version"));
+            assertEquals(
+                    "This is a multi-line description.\n"
+                            + "It should be ignored by the simple parser.\n",
+                    metadata.get("description"));
+            assertEquals(
+                    "This is a folded multi-line summary. It should also be ignored.\n",
+                    metadata.get("summary"));
+        }
+
+        @Test
+        @DisplayName("Should return empty metadata when frontmatter exceeds size limit")
+        void testFrontmatterSizeLimit() {
+            String largeValue = "x".repeat(17_000);
+            String markdown = "---\nname: " + largeValue + "\ndescription: desc\n---\nContent";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals("Content", parsed.getContent());
         }
     }
 
@@ -315,7 +394,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate with metadata and content")
         void testGenerateBasic() {
-            Map<String, String> metadata = Map.of("name", "test_skill", "description", "Test");
+            Map<String, Object> metadata = Map.of("name", "test_skill", "description", "Test");
             String content = "# Skill Content";
 
             String generated = MarkdownSkillParser.generate(metadata, content);
@@ -351,7 +430,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate with special characters in content")
         void testGenerateSpecialContent() {
-            Map<String, String> metadata = Map.of("name", "special");
+            Map<String, Object> metadata = Map.of("name", "special");
             String content = "Content with special chars: @#$%^&*(){}[]|\\:;\"'<>?,./";
 
             String generated = MarkdownSkillParser.generate(metadata, content);
@@ -362,7 +441,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate and quote values with special characters")
         void testGenerateQuotingSpecialChars() {
-            Map<String, String> metadata =
+            Map<String, Object> metadata =
                     Map.of(
                             "colon", "http://example.com:8080",
                             "hash", "#important",
@@ -381,7 +460,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate and quote values with whitespace")
         void testGenerateQuotingWhitespace() {
-            Map<String, String> metadata = Map.of("leading", "  spaces", "trailing", "spaces  ");
+            Map<String, Object> metadata = Map.of("leading", "  spaces", "trailing", "spaces  ");
 
             String generated = MarkdownSkillParser.generate(metadata, "Content");
             ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
@@ -393,7 +472,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate and quote values starting with YAML special chars")
         void testGenerateQuotingYAMLChars() {
-            Map<String, String> metadata =
+            Map<String, Object> metadata =
                     Map.of(
                             "quote", "\"starts with quote",
                             "bracket", "[array",
@@ -424,7 +503,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate with empty value")
         void testGenerateEmptyValue() {
-            Map<String, String> metadata = Map.of("empty", "");
+            Map<String, Object> metadata = Map.of("empty", "");
 
             String generated = MarkdownSkillParser.generate(metadata, "Content");
             ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
@@ -463,7 +542,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should round trip with special characters")
         void testRoundTripSpecialCharacters() {
-            Map<String, String> original =
+            Map<String, Object> original =
                     Map.of(
                             "url", "http://example.com:8080",
                             "tag", "#important",
@@ -478,6 +557,112 @@ class MarkdownSkillParserTest {
             assertEquals(original.get("path"), parsed.getMetadata().get("path"));
             assertEquals(original.get("message"), parsed.getMetadata().get("message"));
         }
+
+        @Test
+        @DisplayName("Should preserve metadata order for parse and generate")
+        void testPreserveMetadataOrder() {
+            String original =
+                    "---\n"
+                            + "name: trello\n"
+                            + "description: Manage Trello boards\n"
+                            + "homepage: https://developer.atlassian.com/cloud/trello/rest/\n"
+                            + "metadata:\n"
+                            + "  clawdbot:\n"
+                            + "    emoji: 📋\n"
+                            + "    requires:\n"
+                            + "      bins:\n"
+                            + "        - jq\n"
+                            + "      env:\n"
+                            + "        - TRELLO_API_KEY\n"
+                            + "        - TRELLO_TOKEN\n"
+                            + "---\n"
+                            + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(original);
+
+            assertEquals(
+                    List.of("name", "description", "homepage", "metadata"),
+                    List.copyOf(parsed.getMetadata().keySet()));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> nestedMetadata =
+                    (Map<String, Object>) parsed.getMetadata().get("metadata");
+            assertEquals(List.of("clawdbot"), List.copyOf(nestedMetadata.keySet()));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> clawdbotMetadata =
+                    (Map<String, Object>) nestedMetadata.get("clawdbot");
+            assertEquals(List.of("emoji", "requires"), List.copyOf(clawdbotMetadata.keySet()));
+
+            String generated =
+                    MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
+            int nameIndex = generated.indexOf("name: trello");
+            int descriptionIndex = generated.indexOf("description: Manage Trello boards");
+            int homepageIndex =
+                    generated.indexOf(
+                            "homepage: https://developer.atlassian.com/cloud/trello/rest/");
+            int metadataIndex = generated.indexOf("metadata:");
+
+            assertTrue(nameIndex < descriptionIndex);
+            assertTrue(descriptionIndex < homepageIndex);
+            assertTrue(homepageIndex < metadataIndex);
+        }
+
+        @Test
+        @DisplayName("Should reject non-string required metadata values")
+        void testRejectNonStringRequiredMetadataValues() {
+            String skillMd =
+                    "---\n"
+                            + "name:\n"
+                            + "  - a\n"
+                            + "  - b\n"
+                            + "description: valid description\n"
+                            + "---\n"
+                            + "Content";
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
+        }
+
+        @Test
+        @DisplayName("Should align parser code point limit with frontmatter limit")
+        void testFrontmatterAtConfiguredCodePointLimit() {
+            String value = "a".repeat(16_360);
+            String markdown =
+                    "---\n" + "name: test\n" + "description: " + value + "\n---\n" + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("test", parsed.getMetadata().get("name"));
+            assertEquals(value, parsed.getMetadata().get("description"));
+        }
+
+        @Test
+        @DisplayName("Should keep generated document unchanged after parse and regenerate")
+        void testParseThenGenerateKeepsDocumentStable() {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("name", "trello");
+            metadata.put("description", "Manage Trello boards, lists, and cards.");
+            metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
+            metadata.put(
+                    "metadata",
+                    Map.of(
+                            "clawdbot",
+                            Map.of(
+                                    "emoji",
+                                    "📋",
+                                    "requires",
+                                    Map.of(
+                                            "bins", List.of("jq"),
+                                            "env", List.of("TRELLO_API_KEY", "TRELLO_TOKEN")))));
+
+            String original = MarkdownSkillParser.generate(metadata, "# Content\nBody");
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(original);
+            String regenerated =
+                    MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
+
+            assertEquals(original, regenerated);
+        }
     }
 
     @Nested
@@ -487,7 +672,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should provide correct getters")
         void testGetters() {
-            Map<String, String> metadata = Map.of("key", "value");
+            Map<String, Object> metadata = Map.of("key", "value");
             ParsedMarkdown parsed = new ParsedMarkdown(metadata, "content");
 
             assertEquals("value", parsed.getMetadata().get("key"));
@@ -498,7 +683,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should maintain immutability")
         void testImmutability() {
-            Map<String, String> originalMetadata = new HashMap<>();
+            Map<String, Object> originalMetadata = new HashMap<>();
             originalMetadata.put("key", "value");
 
             ParsedMarkdown parsed = new ParsedMarkdown(originalMetadata, "content");
@@ -524,7 +709,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should provide meaningful toString")
         void testToString() {
-            Map<String, String> metadata = Map.of("name", "test");
+            Map<String, Object> metadata = Map.of("name", "test");
             String content = "This is a very long content that should be truncated in toString";
 
             ParsedMarkdown parsed = new ParsedMarkdown(metadata, content);
@@ -533,6 +718,16 @@ class MarkdownSkillParserTest {
             assertTrue(toString.contains("ParsedMarkdown"));
             assertTrue(toString.contains("metadata"));
             assertTrue(toString.contains("content"));
+        }
+
+        @Test
+        @DisplayName("Should keep metadata immutable")
+        void testMetadataImmutable() {
+            ParsedMarkdown parsed = new ParsedMarkdown(Map.of("name", "test"), "content");
+
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> parsed.getMetadata().put("description", "desc"));
         }
     }
 }

@@ -40,4 +40,6 @@ public class Constants {
     public static final String DEFAULT_SERVER_EXPORT_PORT = "server.port";
 
     public static final String DEFAULT_SERVER_EXPORT_ADDRESS = "server.address";
+
+    public static final String DEFAULT_SERVER_EXPORT_CONTEXT_PATH = "server.servlet.context-path";
 }

@@ -72,9 +72,11 @@ Message is the most fundamental data structure in AgentScope, used for:
 
 | Field | Description |
 |-------|-------------|
+| `id` | Unique message identifier (auto-generated UUID) |
 | `name` | Sender's name, used to distinguish identities in multi-agent scenarios |
 | `role` | Role: `USER`, `ASSISTANT`, `SYSTEM`, or `TOOL` |
 | `content` | List of content blocks, supports multiple types |
+| `timestamp` | Message timestamp |
 | `metadata` | Optional structured data |
 
 **Content types**:
@@ -99,6 +101,8 @@ Messages returned by Agent contain additional metadata to help understand execut
 | Value | Description |
 |-------|-------------|
 | `MODEL_STOP` | Task completed normally |
+| `TOOL_CALLS` | Model returned tool calls (internal tools, framework continues execution) |
+| `STRUCTURED_OUTPUT` | Structured output completed |
 | `TOOL_SUSPENDED` | Tool needs external execution, waiting for result |
 | `REASONING_STOP_REQUESTED` | Paused by Hook during Reasoning phase (HITL) |
 | `ACTING_STOP_REQUESTED` | Paused by Hook during Acting phase (HITL) |
@@ -133,10 +137,11 @@ Msg imgMsg = Msg.builder()
 The Agent interface defines the core contract:
 
 ```java
-public interface Agent {
-    Mono<Msg> call(Msg msg);      // Process message and return response
-    Flux<Msg> stream(Msg msg);    // Stream response in real-time
-    void interrupt();             // Stop execution
+public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
+    String getAgentId();
+    String getName();
+    void interrupt();
+    void interrupt(Msg msg);
 }
 ```
 
@@ -239,8 +244,13 @@ Formatter is responsible for converting AgentScope messages to the format requir
 - Identity handling in multi-agent scenarios
 
 **Built-in implementations**:
-- `DashScopeFormatter` - Alibaba Cloud DashScope (Qwen series)
-- `OpenAIFormatter` - OpenAI and compatible APIs
+- `DashScopeChatFormatter` - Alibaba Cloud DashScope (Qwen series)
+- `OpenAIChatFormatter` - OpenAI and compatible APIs
+- `AnthropicChatFormatter` - Anthropic (Claude series)
+- `GeminiChatFormatter` - Google Gemini
+- `OllamaChatFormatter` - Ollama local models
+- `DeepSeekFormatter` - DeepSeek
+- `GLMFormatter` - GLM (Zhipu)
 
 > Formatter is automatically selected based on Model type; manual configuration is usually not needed.
 
@@ -262,6 +272,9 @@ Hook provides extension points at key nodes of the ReAct loop through an event m
 | `PreActingEvent` | Before executing tool | ✓ |
 | `PostActingEvent` | After tool execution | ✓ |
 | `ActingChunkEvent` | During tool streaming output | - |
+| `PreSummaryEvent` | Before summary generation | ✓ |
+| `PostSummaryEvent` | After summary generation | ✓ |
+| `SummaryChunkEvent` | During summary streaming output | - |
 | `ErrorEvent` | When error occurs | - |
 
 **Hook Priority**: Hooks execute in priority order (lower value = higher priority), default is 100.
@@ -309,9 +322,10 @@ ReActAgent agent = ReActAgent.builder()
 
 **Problem solved**: Agent state such as conversation history and configuration needs to be saved and restored to support session persistence.
 
-AgentScope separates "initialization" from "state":
-- `saveState()` - Export current state as a serializable Map
-- `loadState()` - Restore from saved state
+AgentScope separates "initialization" from "state" through the `StateModule` interface:
+- `saveTo(Session, SessionKey)` - Save current state to Session
+- `loadFrom(Session, SessionKey)` - Restore state from Session
+- `loadIfExists(Session, SessionKey)` - Restore state from Session if it exists
 
 **Session** provides persistent storage across runs:
 

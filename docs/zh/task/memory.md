@@ -161,7 +161,7 @@ sessionManager.loadIfExists();
 sessionManager.saveSession();
 ```
 
-**完整示例**：`agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
+**完整示例**：`agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
 
 ## 长期记忆 (Long-term Memory)
 
@@ -259,7 +259,7 @@ ReActAgent agent = ReActAgent.builder()
   - Platform Mem0：必需
   - 自建 Mem0：取决于您的服务配置，可能不需要
 
-**完整示例**：`agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
+**完整示例**：`agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
 
 **运行示例**：
 
@@ -267,14 +267,14 @@ ReActAgent agent = ReActAgent.builder()
 # Platform Mem0（默认）
 export MEM0_API_KEY=your_api_key
 export MEM0_API_BASE_URL=https://api.mem0.ai  # 可选，默认为此值
-cd agentscope-examples/advanced
+cd agentscope-examples/documentation/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 
 # 自建 Mem0
 export MEM0_API_KEY=your_api_key  # 可选，取决于服务配置
 export MEM0_API_BASE_URL=http://localhost:8000
 export MEM0_API_TYPE=self-hosted
-cd agentscope-examples/advanced
+cd agentscope-examples/documentation/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 ```
 
@@ -302,7 +302,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**完整示例**：`agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
+**完整示例**：`agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
 
 **运行示例**：
 
@@ -312,8 +312,59 @@ cd examples/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
 ```
 
+### BailianLongTermMemory
+
+基于 [百炼记忆库](https://help.aliyun.com/zh/model-studio/memory-library) 的长期记忆实现。
+
+**使用示例**：
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.bailian.BailianLongTermMemory;
+
+BailianLongTermMemory longTermMemory = BailianLongTermMemory.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .userId("your_user_id")
+        .memoryLibraryId("your_memory_library_id")
+        .projectId("your_project_id")
+        .profileSchema("your_profile_schema")
+        .metadata(Map.of("location_name", "Beijing"))
+        .build();
+
+ReActAgent agent = ReActAgent.builder()
+        .name("Assistant")
+        .model(model)
+        .longTermMemory(longTermMemory)
+        .longTermMemoryMode(LongTermMemoryMode.STATIC_CONTROL)
+        .build();
+```
+
+**配置说明**：
+
+- `apiKey`：阿里云 DashScope API 密钥（必需）
+- `userId`：用户 ID（必需）
+- `memoryLibraryId`：百炼记忆库 ID（可选）
+- `projectId`：百炼记忆片段规则 ID（可选）
+- `profileSchema`：百炼用户画像规则 ID（可选）
+
+**完整示例**：`agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/BailianMemoryExample.java`
+
+**运行示例**：
+
+```bash
+export DASHSCOPE_API_KEY=sk-xxxx
+export BAILIAN_USER_ID=your_user_id
+export BAILIAN_MEMORY_LIBRARY_ID=your_library_id
+export BAILIAN_PROJECT_ID=your_project_id
+export BAILIAN_PROFILE_SCHEMA=your_profile_schema
+
+cd agentscope-examples/documentation/advanced
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.BailianMemoryExample"
+```
+
 ## 相关文档
 
 - [AutoContextMemory 详细文档](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md)
 - [Session 管理](./session.md)
-- [ReActAgent 使用指南](./react-agent.md)
+- [Agent 配置](./agent-config.md)
