@@ -35,6 +35,7 @@ import io.agentscope.harness.agent.store.StoreItem;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
+import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -259,19 +260,21 @@ public class RemoteFilesystem implements AbstractFilesystem {
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         List<String> ns = getNamespace();
-        StoreItem existing = store.get(ns, filePath);
-        if (existing != null) {
+        FileData fileData = FileData.create(content);
+        // CAS create-if-absent: atomic under concurrent writers across nodes.
+        boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
+        if (!written) {
             return WriteResult.fail(
                     "Cannot write to "
                             + filePath
                             + " because it already exists. Read and then make an edit,"
                             + " or write to a new path.");
         }
-
-        FileData fileData = FileData.create(content);
-        store.put(ns, filePath, fileDataToStoreValue(fileData));
         return WriteResult.ok(filePath);
     }
+
+    /** Maximum CAS retry attempts for {@link #edit} under concurrent writers. */
+    static final int EDIT_MAX_RETRIES = 5;
 
     @Override
     public EditResult edit(
@@ -281,30 +284,46 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String newString,
             boolean replaceAll) {
         List<String> ns = getNamespace();
-        StoreItem item = store.get(ns, filePath);
-        if (item == null) {
-            return EditResult.fail("Error: File '" + filePath + "' not found");
+        // Bounded CAS retry loop: re-read the current version on each attempt and retry on
+        // version mismatch. After EDIT_MAX_RETRIES failed CAS attempts we surface a conflict
+        // error rather than spinning indefinitely.
+        for (int attempt = 0; attempt < EDIT_MAX_RETRIES; attempt++) {
+            StoreItem item = store.get(ns, filePath);
+            if (item == null) {
+                return EditResult.fail("Error: File '" + filePath + "' not found");
+            }
+
+            FileData fileData = convertItemToFileData(item);
+            if (fileData == null) {
+                return EditResult.fail("Error: Invalid file data");
+            }
+
+            String content = fileData.content() != null ? fileData.content() : "";
+            Object[] result =
+                    FilesystemUtils.performStringReplacement(
+                            content, oldString, newString, replaceAll);
+
+            if (result.length == 1) {
+                return EditResult.fail((String) result[0]);
+            }
+
+            String newContent = (String) result[0];
+            int occurrences = (int) result[1];
+
+            FileData updated = fileData.withContent(newContent);
+            boolean ok =
+                    store.putIfVersion(ns, filePath, fileDataToStoreValue(updated), item.version());
+            if (ok) {
+                return EditResult.ok(filePath, occurrences);
+            }
+            // Version mismatch — another writer raced us. Re-read and retry.
         }
-
-        FileData fileData = convertItemToFileData(item);
-        if (fileData == null) {
-            return EditResult.fail("Error: Invalid file data");
-        }
-
-        String content = fileData.content() != null ? fileData.content() : "";
-        Object[] result =
-                FilesystemUtils.performStringReplacement(content, oldString, newString, replaceAll);
-
-        if (result.length == 1) {
-            return EditResult.fail((String) result[0]);
-        }
-
-        String newContent = (String) result[0];
-        int occurrences = (int) result[1];
-
-        FileData updated = fileData.withContent(newContent);
-        store.put(ns, filePath, fileDataToStoreValue(updated));
-        return EditResult.ok(filePath, occurrences);
+        return EditResult.fail(
+                "Edit conflict on '"
+                        + filePath
+                        + "' after "
+                        + EDIT_MAX_RETRIES
+                        + " retries. Another writer is concurrently modifying this file.");
     }
 
     @Override
@@ -418,8 +437,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
                 } else {
                     relativePath = key.substring(normalizedPath.length() + 1);
                 }
-                if (matcher.matches(java.nio.file.Path.of(relativePath))
-                        || directMatcher.matches(java.nio.file.Path.of(relativePath))) {
+                if (matcher.matches(Path.of(relativePath))
+                        || directMatcher.matches(Path.of(relativePath))) {
                     results.add(FileInfo.ofFile(key, 0, ""));
                 }
             }
@@ -476,6 +495,9 @@ public class RemoteFilesystem implements AbstractFilesystem {
             }
 
             FileData fileData = FileData.create(contentStr, encoding);
+            // Blind overwrite: uploadFiles is the snapshot-push primitive used by session mirror
+            // and audit-log rotation. Concurrent uploads to the same path are last-write-wins by
+            // design; callers that need create-only semantics use write() instead.
             store.put(ns, filePath, fileDataToStoreValue(fileData));
             responses.add(FileUploadResponse.success(filePath));
         }
