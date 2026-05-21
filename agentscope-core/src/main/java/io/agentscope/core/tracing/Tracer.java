@@ -65,4 +65,6 @@ public interface Tracer {
     default <TResp> TResp runWithContext(ContextView reactorCtx, Supplier<TResp> inner) {
         return inner.get();
     }
+
+    default void shutdown() {}
 }
