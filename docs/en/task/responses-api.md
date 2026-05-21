@@ -38,15 +38,17 @@ you need real execution.
 ## Dependency
 
 ```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-spring-boot-starter</artifactId>
-</dependency>
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-responses-web-starter</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
+<dependencies>
+    <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-spring-boot-starter</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-responses-web-starter</artifactId>
+        <version>${agentscope.version}</version>
+    </dependency>
+</dependencies>
 ```
 
 ## Configuration

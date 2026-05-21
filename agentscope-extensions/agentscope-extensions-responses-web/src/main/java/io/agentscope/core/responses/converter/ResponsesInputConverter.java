@@ -62,7 +62,7 @@ public class ResponsesInputConverter {
 
         // Keep instructions/system/developer content out of the chat message list so the hook can
         // append it through AgentScope's system prompt mechanism.
-        convertInput(jsonNode(request.getInput()), messages, systemFragments, "input");
+        convertInput(jsonNode(request.getInput()), messages, systemFragments);
         if (messages.isEmpty()) {
             throw ResponsesValidationException.invalid(
                     "At least one non-system input item is required", "input");
@@ -120,24 +120,23 @@ public class ResponsesInputConverter {
         return schema;
     }
 
-    private void convertInput(
-            JsonNode input, List<Msg> messages, List<String> systemFragments, String param) {
+    private void convertInput(JsonNode input, List<Msg> messages, List<String> systemFragments) {
         if (input.isTextual()) {
             messages.add(userMessage(List.of(text(input.asText()))));
             return;
         }
         if (input.isArray()) {
             for (int i = 0; i < input.size(); i++) {
-                convertInputItem(input.get(i), messages, systemFragments, param + "[" + i + "]");
+                convertInputItem(input.get(i), messages, systemFragments, "input[" + i + "]");
             }
             return;
         }
         if (input.isObject()) {
-            convertInputItem(input, messages, systemFragments, param);
+            convertInputItem(input, messages, systemFragments, "input");
             return;
         }
         throw ResponsesValidationException.invalid(
-                "input must be a string, object, or array", param);
+                "input must be a string, object, or array", "input");
     }
 
     private void convertInputItem(

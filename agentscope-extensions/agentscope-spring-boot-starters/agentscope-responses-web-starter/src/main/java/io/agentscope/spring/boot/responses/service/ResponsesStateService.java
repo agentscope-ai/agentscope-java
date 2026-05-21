@@ -134,9 +134,8 @@ public class ResponsesStateService {
      * @param response Queued response placeholder
      * @param prepared Prepared request metadata
      * @param task Running background subscription, if already available
-     * @return The same response object
      */
-    public ResponsesResponse saveBackground(
+    public void saveBackground(
             ResponsesResponse response, PreparedRequest prepared, Disposable task) {
         responses.put(
                 response.getId(),
@@ -145,7 +144,6 @@ public class ResponsesStateService {
                         prepared != null ? withItemIds(prepared.currentInputItems()) : List.of(),
                         prepared != null ? prepared.conversationId() : null,
                         task));
-        return response;
     }
 
     /**
@@ -209,16 +207,6 @@ public class ResponsesStateService {
         }
         stored.response().setStatus("cancelled");
         return stored.response();
-    }
-
-    /**
-     * List the original input items associated with a stored response.
-     *
-     * @param responseId Response ID
-     * @return List wrapper containing input items
-     */
-    public ResponsesList<Object> responseInputItems(String responseId) {
-        return responseInputItems(responseId, null, null, null);
     }
 
     /**
@@ -313,16 +301,6 @@ public class ResponsesStateService {
             throw notFound("Conversation not found: " + conversationId, "conversation_id");
         }
         return new ResponsesDeletionStatus(conversationId, "conversation.deleted", true);
-    }
-
-    /**
-     * List all conversation items.
-     *
-     * @param conversationId Conversation ID
-     * @return List wrapper containing conversation items
-     */
-    public ResponsesList<Object> listConversationItems(String conversationId) {
-        return listConversationItems(conversationId, null, null, null);
     }
 
     /**
@@ -503,7 +481,7 @@ public class ResponsesStateService {
         if (node.isTextual()) {
             // String input is the common shorthand; store it back as an official message item so
             // input_items and previous_response_id use the same shape as object input.
-            return List.of(messageItem("user", node.asText()));
+            return List.of(userMessageItem(node.asText()));
         }
         if (node.isArray()) {
             List<Object> result = new ArrayList<>();
@@ -515,13 +493,13 @@ public class ResponsesStateService {
         return List.of(toObject(node));
     }
 
-    private Map<String, Object> messageItem(String role, String text) {
+    private Map<String, Object> userMessageItem(String text) {
         Map<String, Object> part = new LinkedHashMap<>();
         part.put("type", "input_text");
         part.put("text", text);
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("type", "message");
-        item.put("role", role);
+        item.put("role", "user");
         item.put("content", List.of(part));
         return item;
     }

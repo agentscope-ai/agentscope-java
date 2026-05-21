@@ -36,15 +36,17 @@ services。如果需要真实执行，请把这些工具接入 AgentScope 或业
 ## 依赖
 
 ```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-spring-boot-starter</artifactId>
-</dependency>
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-responses-web-starter</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
+<dependencies>
+    <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-spring-boot-starter</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-responses-web-starter</artifactId>
+        <version>${agentscope.version}</version>
+    </dependency>
+</dependencies>
 ```
 
 ## 配置
