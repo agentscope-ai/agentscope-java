@@ -109,17 +109,9 @@ public class SessionTree {
      *                     {@code null} to disable remote mirroring (local-only mode)
      */
     public SessionTree(Path contextFile, Path workspaceRoot, AbstractFilesystem filesystem) {
-        this(contextFile, workspaceRoot, filesystem, null);
+        this(contextFile, workspaceRoot, filesystem, null, null);
     }
 
-    /**
-     * Creates a SessionTree with optional best-effort workspace index support.
-     *
-     * @param contextFile   path to the {@code .jsonl} context file
-     * @param workspaceRoot root of the agent workspace
-     * @param filesystem    remote filesystem; may be {@code null}
-     * @param index         best-effort workspace index for fast local lookup; may be {@code null}
-     */
     public SessionTree(
             Path contextFile,
             Path workspaceRoot,
@@ -129,19 +121,16 @@ public class SessionTree {
     }
 
     /**
-     * Creates a SessionTree with an explicit workspace-relative path for mirror operations.
+     * Creates a SessionTree with optional best-effort workspace index support.
      *
-     * <p>When a {@code contextRelativePath} is provided, it is used instead of deriving the
-     * relative path from the absolute context file path. This avoids double-applying namespace
-     * prefixes when the context file is already under a namespace directory.
-     *
-     * @param contextFile         path to the {@code .jsonl} context file
-     * @param workspaceRoot       root of the agent workspace
-     * @param filesystem          remote filesystem; may be {@code null}
-     * @param index               best-effort workspace index; may be {@code null}
-     * @param contextRelativePath explicit workspace-relative path (without namespace prefix)
-     *                            for mirror operations; may be {@code null} to fall back to
-     *                            {@link #toWorkspaceRelative(Path)}
+     * @param contextFile          path to the {@code .jsonl} context file
+     * @param workspaceRoot        root of the agent workspace
+     * @param filesystem           remote filesystem; may be {@code null}
+     * @param index                best-effort workspace index; may be {@code null}
+     * @param contextRelativePath  workspace-relative path for the context file WITHOUT namespace
+     *                             prefix (e.g. {@code agents/X/sessions/Y.jsonl}); when non-null,
+     *                             used for filesystem mirror/restore instead of computing via
+     *                             {@link #toWorkspaceRelative(Path)}
      */
     public SessionTree(
             Path contextFile,
@@ -157,10 +146,16 @@ public class SessionTree {
         this.filesystem = filesystem;
         this.index = index;
         this.contextRelativePath = contextRelativePath;
-        this.logRelativePath =
-                contextRelativePath != null
-                        ? contextRelativePath.replace(".jsonl", ".log.jsonl")
-                        : null;
+        if (contextRelativePath != null) {
+            String dir =
+                    contextRelativePath.contains("/")
+                            ? contextRelativePath.substring(
+                                    0, contextRelativePath.lastIndexOf('/') + 1)
+                            : "";
+            this.logRelativePath = dir + baseName + ".log.jsonl";
+        } else {
+            this.logRelativePath = null;
+        }
     }
 
     /**
@@ -449,8 +444,8 @@ public class SessionTree {
         }
         MIRROR_EXECUTOR.execute(
                 () -> {
-                    mirrorToFilesystem(contextFile);
-                    mirrorToFilesystem(logFile);
+                    mirrorToFilesystem(contextFile, resolveRelativePath(contextFile));
+                    mirrorToFilesystem(logFile, resolveRelativePath(logFile));
                 });
     }
 
@@ -560,11 +555,10 @@ public class SessionTree {
      * Uploads {@code file} to the remote filesystem (full-file upload). Only called from the
      * mirror executor thread; failures are logged as warnings.
      */
-    private void mirrorToFilesystem(Path file) {
+    private void mirrorToFilesystem(Path file, String relativePath) {
         if (filesystem == null || workspaceRoot == null || !Files.isRegularFile(file)) {
             return;
         }
-        String relativePath = resolveRelativePath(file);
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
@@ -620,11 +614,13 @@ public class SessionTree {
     }
 
     private String resolveRelativePath(Path file) {
-        if (file.equals(contextFile) && contextRelativePath != null) {
-            return contextRelativePath;
-        }
-        if (file.equals(logFile) && logRelativePath != null) {
-            return logRelativePath;
+        if (contextRelativePath != null) {
+            if (file.equals(contextFile)) {
+                return contextRelativePath;
+            }
+            if (file.equals(logFile)) {
+                return logRelativePath;
+            }
         }
         return toWorkspaceRelative(file);
     }

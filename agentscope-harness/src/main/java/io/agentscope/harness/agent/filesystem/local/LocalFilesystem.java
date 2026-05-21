@@ -383,7 +383,14 @@ public class LocalFilesystem implements AbstractFilesystem {
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                             Path rel = searchPath.relativize(file);
                             if (matcher.matches(rel) || directMatcher.matches(rel)) {
-                                String filePath = resolveEntryPath(file);
+                                String filePath;
+                                if (virtualMode) {
+                                    filePath = toVirtualPath(file);
+                                } else if (hasNamespace()) {
+                                    filePath = stripNamespacePrefix(file);
+                                } else {
+                                    filePath = file.toAbsolutePath().toString();
+                                }
                                 String modifiedAt =
                                         Instant.ofEpochMilli(attrs.lastModifiedTime().toMillis())
                                                 .toString();
@@ -559,10 +566,32 @@ public class LocalFilesystem implements AbstractFilesystem {
         return prefix + "/" + key;
     }
 
+    protected String toVirtualPath(Path path) {
+        return "/"
+                + path.toAbsolutePath()
+                        .normalize()
+                        .toString()
+                        .substring(cwd.toString().length())
+                        .replace('\\', '/')
+                        .replaceFirst("^/+", "");
+    }
+
     private boolean hasNamespace() {
-        if (namespaceFactory == null) return false;
+        if (namespaceFactory == null) {
+            return false;
+        }
         List<String> ns = namespaceFactory.getNamespace();
         return ns != null && !ns.isEmpty();
+    }
+
+    private String resolveEntryPath(Path entry) {
+        if (virtualMode) {
+            return toVirtualPath(entry);
+        }
+        if (hasNamespace()) {
+            return stripNamespacePrefix(entry);
+        }
+        return entry.toAbsolutePath().toString();
     }
 
     private String stripNamespacePrefix(Path absolutePath) {
@@ -575,22 +604,6 @@ public class LocalFilesystem implements AbstractFilesystem {
             return relPath.substring(nsPrefix.length() + 1);
         }
         return relPath;
-    }
-
-    private String resolveEntryPath(Path entry) {
-        if (virtualMode) return toVirtualPath(entry);
-        if (hasNamespace()) return stripNamespacePrefix(entry);
-        return entry.toAbsolutePath().toString();
-    }
-
-    protected String toVirtualPath(Path path) {
-        return "/"
-                + path.toAbsolutePath()
-                        .normalize()
-                        .toString()
-                        .substring(cwd.toString().length())
-                        .replace('\\', '/')
-                        .replaceFirst("^/+", "");
     }
 
     // ==================== Grep implementations ====================
@@ -738,7 +751,14 @@ public class LocalFilesystem implements AbstractFilesystem {
                                             Files.readAllLines(file, StandardCharsets.UTF_8);
                                     for (int i = 0; i < lines.size(); i++) {
                                         if (compiledPattern.matcher(lines.get(i)).find()) {
-                                            String filePath = resolveEntryPath(file);
+                                            String filePath;
+                                            if (virtualMode) {
+                                                filePath = toVirtualPath(file);
+                                            } else if (hasNamespace()) {
+                                                filePath = stripNamespacePrefix(file);
+                                            } else {
+                                                filePath = file.toAbsolutePath().toString();
+                                            }
                                             matches.add(
                                                     new GrepMatch(filePath, i + 1, lines.get(i)));
                                         }

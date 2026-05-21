@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -38,22 +39,26 @@ import java.util.function.Supplier;
  * <p>This spec produces a {@link CompositeFilesystem} that blends:
  *
  * <ul>
- *   <li>a plain {@link LocalFilesystem} (no shell) for workspace-local, ephemeral files such as
- *       skills/, knowledge/, additional context files, etc.;
- *   <li>a shared {@link RemoteFilesystem} for cross-node paths that must be identical across all
- *       replicas (long-term memory, offloaded session logs).
+ *   <li>a plain {@link LocalFilesystem} (no shell) for workspace-local, unmanaged files;
+ *   <li>per-route {@link RemoteFilesystem} instances for cross-node paths (memory, skills,
+ *       subagents, knowledge, sessions, tasks). Each route gets its own store namespace
+ *       segment to prevent key collisions across routes.
  * </ul>
  *
  * <p>Because the default backend is {@link LocalFilesystem} (not {@link LocalFilesystemWithShell}),
  * shell execution is intentionally not available in this mode — use a sandbox filesystem spec or
  * {@link LocalFilesystemWithShell} if shell is required.
  *
- * <p>Default shared routes:
+ * <p>Default shared routes (each gets an isolated store namespace segment):
  *
  * <ul>
- *   <li>{@code MEMORY.md}
- *   <li>{@code memory/}
- *   <li>{@code agents/<agentId>/sessions/}
+ *   <li>{@code AGENTS.md}, {@code MEMORY.md} → segment {@code root}
+ *   <li>{@code memory/} → segment {@code memory}
+ *   <li>{@code skills/} → segment {@code skills}
+ *   <li>{@code subagents/} → segment {@code subagents}
+ *   <li>{@code knowledge/} → segment {@code knowledge}
+ *   <li>{@code agents/<agentId>/sessions/} → segment {@code sessions}
+ *   <li>{@code agents/<agentId>/tasks/} → segment {@code tasks}
  * </ul>
  *
  * <p>The store namespace for shared files is controlled by {@link #isolationScope(IsolationScope)},
@@ -145,19 +150,36 @@ public class RemoteFilesystemSpec {
             Supplier<String> sessionIdSupplier) {
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
         AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
-        RemoteFilesystem shared =
-                new RemoteFilesystem(
-                                store,
-                                storeNamespace(effectiveAgentId, userIdSupplier, sessionIdSupplier))
-                        .withIndex(workspaceIndex);
+
+        RemoteFilesystem rootFs =
+                remoteForRoute("root", effectiveAgentId, userIdSupplier, sessionIdSupplier);
+        RemoteFilesystem memoryFs =
+                remoteForRoute("memory", effectiveAgentId, userIdSupplier, sessionIdSupplier);
+        RemoteFilesystem skillsFs =
+                remoteForRoute("skills", effectiveAgentId, userIdSupplier, sessionIdSupplier);
+        RemoteFilesystem subagentsFs =
+                remoteForRoute("subagents", effectiveAgentId, userIdSupplier, sessionIdSupplier);
+        RemoteFilesystem knowledgeFs =
+                remoteForRoute("knowledge", effectiveAgentId, userIdSupplier, sessionIdSupplier);
+        RemoteFilesystem sessionsFs =
+                remoteForRoute("sessions", effectiveAgentId, userIdSupplier, sessionIdSupplier);
+        RemoteFilesystem tasksFs =
+                remoteForRoute("tasks", effectiveAgentId, userIdSupplier, sessionIdSupplier);
 
         Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
-        routes.put("MEMORY.md", shared);
-        routes.put("memory/", shared);
-        routes.put("agents/" + effectiveAgentId + "/sessions/", shared);
-        routes.put("agents/" + effectiveAgentId + "/tasks/", shared);
+        routes.put("AGENTS.md", rootFs);
+        routes.put("MEMORY.md", rootFs);
+        routes.put("memory/", memoryFs);
+        routes.put("skills/", skillsFs);
+        routes.put("subagents/", subagentsFs);
+        routes.put("knowledge/", knowledgeFs);
+        routes.put("agents/" + effectiveAgentId + "/sessions/", sessionsFs);
+        routes.put("agents/" + effectiveAgentId + "/tasks/", tasksFs);
         for (String extra : extraSharedPrefixes) {
-            routes.put(extra, shared);
+            String segment = routeSegmentFromPrefix(extra);
+            routes.put(
+                    extra,
+                    remoteForRoute(segment, effectiveAgentId, userIdSupplier, sessionIdSupplier));
         }
         return new CompositeFilesystem(local, routes);
     }
@@ -175,6 +197,29 @@ public class RemoteFilesystemSpec {
             NamespaceFactory localNamespaceFactory,
             Supplier<String> userIdSupplier) {
         return toFilesystem(workspace, agentId, localNamespaceFactory, userIdSupplier, () -> null);
+    }
+
+    private RemoteFilesystem remoteForRoute(
+            String routeSegment,
+            String agentId,
+            Supplier<String> userIdSupplier,
+            Supplier<String> sessionIdSupplier) {
+        NamespaceFactory base = storeNamespace(agentId, userIdSupplier, sessionIdSupplier);
+        NamespaceFactory extended =
+                () -> {
+                    List<String> ns = new ArrayList<>(base.getNamespace());
+                    ns.add(routeSegment);
+                    return ns;
+                };
+        return new RemoteFilesystem(store, extended).withIndex(workspaceIndex);
+    }
+
+    private static String routeSegmentFromPrefix(String normalizedPrefix) {
+        String segment = normalizedPrefix;
+        while (segment.endsWith("/")) {
+            segment = segment.substring(0, segment.length() - 1);
+        }
+        return segment.isEmpty() ? "extra" : segment;
     }
 
     private NamespaceFactory storeNamespace(

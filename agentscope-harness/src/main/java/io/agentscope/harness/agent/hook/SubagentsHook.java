@@ -18,8 +18,11 @@ package io.agentscope.harness.agent.hook;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.RuntimeContextAware;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -29,12 +32,17 @@ import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
@@ -49,6 +57,8 @@ import reactor.core.publisher.Mono;
  *
  * <ol>
  *   <li>Registers the subagent tool and {@link TaskTool} as agent tools
+ *   <li>On {@link PreCallEvent}, reloads subagent declarations from the workspace filesystem
+ *       (namespace-scoped) to support per-user subagent isolation
  *   <li>Injects rich subagent usage guidance into the unified system message at
  *       {@link PreReasoningEvent} time via {@link PreReasoningEvent#appendSystemContent}.
  *       Because each {@link PreReasoningEvent} starts from a fresh copy of the frozen base
@@ -60,16 +70,18 @@ import reactor.core.publisher.Mono;
  */
 public class SubagentsHook implements Hook, RuntimeContextAware {
 
+    private static final Logger log = LoggerFactory.getLogger(SubagentsHook.class);
+
+    /** Hook priority used by both this hook and {@link DynamicSubagentsHook}. */
+    public static final int SUBAGENT_HOOK_PRIORITY = 80;
+
     private static final DateTimeFormatter ISO_SHORT =
             DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC);
 
     private static final int MAX_TASK_SUMMARY_ENTRIES = 10;
 
-    /** Shared priority value so dynamic variants register at the same lifecycle slot. */
-    public static final int SUBAGENT_HOOK_PRIORITY = 80;
-
     // @formatter:off
-    static final String SUBAGENT_SECTION_TEMPLATE =
+    private static final String SUBAGENT_SECTION_TEMPLATE =
             """
 
             ## Subagents
@@ -145,12 +157,18 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
             """;
     // @formatter:on
 
-    private final List<SubagentEntry> entries;
+    private final List<SubagentEntry> baseEntries;
+    private volatile List<SubagentEntry> entries;
     private final Object subagentTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
     private final boolean isSessionMode;
     private volatile RuntimeContext runtimeContext;
+
+    private final AbstractFilesystem filesystem;
+    private final Path mainWorkspace;
+    private final Function<SubagentDeclaration, SubagentFactory> factoryBuilder;
+    private final DefaultAgentManager agentManager;
 
     /**
      * Default mode: creates {@link AgentSpawnTool} + {@link DefaultAgentManager} internally.
@@ -160,19 +178,43 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
      * @param workspaceManager workspace accessor for session file path resolution
      * @param userIdSupplier provides the parent agent's current user-id at spawn time; may be
      *     {@code null} if userId propagation is not required
+     * @param filesystem the filesystem layer for dynamic subagent discovery (may be {@code null})
+     * @param mainWorkspace the parent workspace path for resolving subagent workspace paths
+     * @param factoryBuilder creates a {@link SubagentFactory} from a {@link SubagentDeclaration};
+     *     may be {@code null} if dynamic discovery is not needed
+     */
+    public SubagentsHook(
+            List<SubagentEntry> entries,
+            TaskRepository taskRepository,
+            WorkspaceManager workspaceManager,
+            Supplier<String> userIdSupplier,
+            AbstractFilesystem filesystem,
+            Path mainWorkspace,
+            Function<SubagentDeclaration, SubagentFactory> factoryBuilder) {
+        this.baseEntries = List.copyOf(entries);
+        this.entries = this.baseEntries;
+        this.isSessionMode = false;
+        DefaultAgentManager dam = new DefaultAgentManager(entries, workspaceManager);
+        this.agentManager = dam;
+        TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
+        this.taskRepository = repo;
+        this.subagentTool = new AgentSpawnTool(dam, repo, 0, userIdSupplier);
+        this.taskTool = new TaskTool(repo);
+        this.filesystem = filesystem;
+        this.mainWorkspace = mainWorkspace;
+        this.factoryBuilder = factoryBuilder;
+    }
+
+    /**
+     * Default mode without dynamic reload support. Equivalent to passing {@code null} for
+     * filesystem, mainWorkspace, and factoryBuilder.
      */
     public SubagentsHook(
             List<SubagentEntry> entries,
             TaskRepository taskRepository,
             WorkspaceManager workspaceManager,
             Supplier<String> userIdSupplier) {
-        this.entries = List.copyOf(entries);
-        this.isSessionMode = false;
-        DefaultAgentManager dam = new DefaultAgentManager(entries, workspaceManager);
-        TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
-        this.taskRepository = repo;
-        this.subagentTool = new AgentSpawnTool(dam, repo, 0, userIdSupplier);
-        this.taskTool = new TaskTool(repo);
+        this(entries, taskRepository, workspaceManager, userIdSupplier, null, null, null);
     }
 
     /**
@@ -186,12 +228,17 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
             List<SubagentEntry> entries,
             Object externalSubagentTool,
             TaskRepository taskRepository) {
-        this.entries = List.copyOf(entries);
+        this.baseEntries = List.copyOf(entries);
+        this.entries = this.baseEntries;
         this.isSessionMode = true;
+        this.agentManager = null;
         this.subagentTool = externalSubagentTool;
         TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
         this.taskRepository = repo;
         this.taskTool = new TaskTool(repo);
+        this.filesystem = null;
+        this.mainWorkspace = null;
+        this.factoryBuilder = null;
     }
 
     public SubagentsHook(List<SubagentEntry> entries) {
@@ -213,6 +260,9 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
+        if (event instanceof PreCallEvent) {
+            reloadSubagentEntries();
+        }
         if (event instanceof PreReasoningEvent preReasoning) {
             injectSubagentPrompt(preReasoning);
         }
@@ -224,34 +274,62 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
         return SUBAGENT_HOOK_PRIORITY;
     }
 
-    private void injectSubagentPrompt(PreReasoningEvent event) {
-        if (entries.isEmpty()) {
+    private void reloadSubagentEntries() {
+        if (filesystem == null || factoryBuilder == null || isSessionMode) {
             return;
         }
-        String section = renderSubagentSection(entries, isSessionMode);
-        event.appendSystemContent(section);
+        try {
+            List<SubagentDeclaration> decls =
+                    AgentSpecLoader.loadFromFilesystem(filesystem, mainWorkspace);
 
-        // Per-turn async task summary (compact, at most MAX_TASK_SUMMARY_ENTRIES entries)
-        String taskSummary = buildTaskSummary(taskRepository, runtimeContext);
+            List<SubagentEntry> newEntries = new ArrayList<>(baseEntries);
+            for (SubagentDeclaration decl : decls) {
+                boolean alreadyExists =
+                        baseEntries.stream().anyMatch(e -> e.name().equals(decl.getName()));
+                if (!alreadyExists) {
+                    newEntries.add(
+                            new SubagentEntry(
+                                    decl.getName(),
+                                    decl.getDescription(),
+                                    factoryBuilder.apply(decl),
+                                    decl));
+                }
+            }
+
+            this.entries = List.copyOf(newEntries);
+            if (agentManager != null) {
+                agentManager.refreshEntries(this.entries);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to reload subagent entries from filesystem: {}", e.getMessage());
+        }
+    }
+
+    private void injectSubagentPrompt(PreReasoningEvent event) {
+        List<SubagentEntry> currentEntries = this.entries;
+        if (currentEntries.isEmpty()) {
+            return;
+        }
+        event.appendSystemContent(renderSubagentSection(currentEntries, isSessionMode));
+
+        String taskSummary = buildTaskSummary();
         if (taskSummary != null) {
             event.appendSystemContent(taskSummary);
         }
     }
 
     /**
-     * Renders the subagent guidance section with the given entries. Exposed package-private so
-     * dynamic variants can reuse the template without duplicating the formatting logic.
+     * Renders the {@code ## Subagents} system-prompt section for the supplied entries. Shared by
+     * {@link SubagentsHook} and {@link DynamicSubagentsHook}.
      */
-    static String renderSubagentSection(List<SubagentEntry> entries, boolean isSessionMode) {
+    public static String renderSubagentSection(List<SubagentEntry> entries, boolean isSessionMode) {
         String agentList =
                 entries.stream()
                         .map(e -> String.format("- `%s`: %s", e.name(), e.description()))
                         .collect(Collectors.joining("\n"));
-
         String spawnName = isSessionMode ? "sessions_spawn" : "agent_spawn";
         String sendName = isSessionMode ? "sessions_send" : "agent_send";
         String listName = isSessionMode ? "sessions_list" : "agent_list";
-
         return String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName, agentList);
     }
 
@@ -260,12 +338,20 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
      * no tasks to report. The summary is injected into the system content every turn so the model
      * always has current task IDs and statuses — even after conversation compaction.
      */
-    static String buildTaskSummary(TaskRepository taskRepository, RuntimeContext runtimeContext) {
-        if (taskRepository == null) {
+    private String buildTaskSummary() {
+        return buildTaskSummary(this.taskRepository, this.runtimeContext);
+    }
+
+    /**
+     * Static variant of {@link #buildTaskSummary()} for use by {@link DynamicSubagentsHook}.
+     * Returns {@code null} when no tasks should be rendered.
+     */
+    public static String buildTaskSummary(TaskRepository repo, RuntimeContext ctx) {
+        if (repo == null) {
             return null;
         }
-        String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        Collection<BackgroundTask> tasks = taskRepository.listTasks(sessionId, null);
+        String sessionId = ctx != null ? ctx.getSessionId() : null;
+        Collection<BackgroundTask> tasks = repo.listTasks(sessionId, null);
         if (tasks.isEmpty()) {
             return null;
         }

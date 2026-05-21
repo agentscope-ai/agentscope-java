@@ -495,11 +495,21 @@ public class RemoteFilesystem implements AbstractFilesystem {
             }
 
             FileData fileData = FileData.create(contentStr, encoding);
-            // Blind overwrite: uploadFiles is the snapshot-push primitive used by session mirror
-            // and audit-log rotation. Concurrent uploads to the same path are last-write-wins by
-            // design; callers that need create-only semantics use write() instead.
-            store.put(ns, filePath, fileDataToStoreValue(fileData));
-            responses.add(FileUploadResponse.success(filePath));
+            // CAS create-if-absent: upload is treated as a create operation (same semantics as
+            // write). Re-uploading to an existing path is rejected — callers must delete or
+            // edit explicitly.
+            boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
+            if (written) {
+                responses.add(FileUploadResponse.success(filePath));
+            } else {
+                responses.add(
+                        FileUploadResponse.fail(
+                                filePath,
+                                "Cannot upload to "
+                                        + filePath
+                                        + " because it already exists. Delete the existing file"
+                                        + " or upload to a new path."));
+            }
         }
         return responses;
     }

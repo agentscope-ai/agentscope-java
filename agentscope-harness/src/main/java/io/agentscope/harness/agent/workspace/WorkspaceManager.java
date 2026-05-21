@@ -124,27 +124,17 @@ public class WorkspaceManager {
     private final NamespaceFactory namespaceFactory;
 
     public WorkspaceManager(Path workspace) {
-        this(workspace, null);
+        this(workspace, null, null, null);
     }
 
     public WorkspaceManager(Path workspace, AbstractFilesystem filesystem) {
-        this.workspace = workspace;
-        this.filesystem = filesystem;
-        this.index = WorkspaceIndex.open(workspace);
-        this.namespaceFactory = null;
+        this(workspace, filesystem, WorkspaceIndex.open(workspace), null);
     }
 
-    /**
-     * Constructor that accepts a pre-created index (to avoid double-open when the caller has
-     * already created it, e.g. to share with {@code RemoteFilesystem}).
-     */
     public WorkspaceManager(Path workspace, AbstractFilesystem filesystem, WorkspaceIndex index) {
         this(workspace, filesystem, index, null);
     }
 
-    /**
-     * Constructor with namespace support for per-user isolation of runtime data.
-     */
     public WorkspaceManager(
             Path workspace,
             AbstractFilesystem filesystem,
@@ -156,6 +146,10 @@ public class WorkspaceManager {
         this.namespaceFactory = namespaceFactory;
     }
 
+    public NamespaceFactory getNamespaceFactory() {
+        return namespaceFactory;
+    }
+
     /** Returns the best-effort workspace index; may be {@code null} when unavailable. */
     public WorkspaceIndex getIndex() {
         return index;
@@ -163,26 +157,6 @@ public class WorkspaceManager {
 
     public AbstractFilesystem getFilesystem() {
         return filesystem;
-    }
-
-    public NamespaceFactory getNamespaceFactory() {
-        return namespaceFactory;
-    }
-
-    /**
-     * Resolves a workspace-relative path for runtime user data, applying namespace prefix.
-     * Use for paths that contain per-user data (sessions, tasks, memory), NOT for shared
-     * agent definition files (AGENTS.md, knowledge/, subagents/, skills/).
-     */
-    public Path resolveRuntimeDataPath(String relativePath) {
-        if (namespaceFactory == null) {
-            return workspace.resolve(relativePath);
-        }
-        List<String> ns = namespaceFactory.getNamespace();
-        if (ns == null || ns.isEmpty()) {
-            return workspace.resolve(relativePath);
-        }
-        return workspace.resolve(String.join("/", ns)).resolve(relativePath);
     }
 
     /**
@@ -197,7 +171,17 @@ public class WorkspaceManager {
                     workspace.toAbsolutePath());
             return;
         }
-        if (!Files.isRegularFile(workspace.resolve(AGENTS_MD))) {
+        boolean agentsMdExists = Files.isRegularFile(workspace.resolve(AGENTS_MD));
+        if (!agentsMdExists && filesystem != null) {
+            try {
+                agentsMdExists = filesystem.exists(DEFAULT_FS_RUNTIME, AGENTS_MD);
+            } catch (Exception e) {
+                log.debug(
+                        "Filesystem not available at build time, skipping exists check: {}",
+                        e.getMessage());
+            }
+        }
+        if (!agentsMdExists) {
             log.warn(
                     "AGENTS.md not found in workspace: {}. "
                             + "AGENTS.md defines persona and local conventions for the agent.",
@@ -207,6 +191,21 @@ public class WorkspaceManager {
 
     public Path getWorkspace() {
         return workspace;
+    }
+
+    /**
+     * Resolves a workspace-relative path for runtime user data, applying namespace prefix.
+     * Use for paths that contain per-user data (sessions, tasks, memory).
+     */
+    public Path resolveRuntimeDataPath(String relativePath) {
+        if (namespaceFactory == null) {
+            return workspace.resolve(relativePath);
+        }
+        List<String> ns = namespaceFactory.getNamespace();
+        if (ns == null || ns.isEmpty()) {
+            return workspace.resolve(relativePath);
+        }
+        return workspace.resolve(String.join("/", ns)).resolve(relativePath);
     }
 
     /** Reads AGENTS.md content, returns empty string if not found. */
@@ -506,14 +505,14 @@ public class WorkspaceManager {
             }
         }
 
-        Path tasksDir = resolveRuntimeDataPath(tasksRelDir);
+        Path tasksDir = resolveRuntimeDataPath(AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR);
         if (Files.isDirectory(tasksDir)) {
             try (Stream<Path> stream = Files.list(tasksDir)) {
                 stream.filter(Files::isRegularFile)
                         .filter(p -> p.getFileName().toString().endsWith(".json"))
                         .forEach(
                                 p -> {
-                                    String rel = tasksRelDir + "/" + p.getFileName().toString();
+                                    String rel = tasksRelDir + "/" + p.getFileName();
                                     if (!relPaths.containsKey(rel)) {
                                         relPaths.put(rel, Optional.ofNullable(diskMtime(p)));
                                     }

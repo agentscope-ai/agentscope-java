@@ -54,14 +54,15 @@ class RemoteFilesystemSpecTest {
                 List.of(
                         java.util.Map.entry(
                                 "MEMORY.md", "hello".getBytes(StandardCharsets.UTF_8))));
-        assertNotNull(store.get(List.of("agents", "agent-a", "users", "anon"), "/MEMORY.md"));
+        assertNotNull(
+                store.get(List.of("agents", "agent-a", "users", "anon", "root"), "/MEMORY.md"));
 
         fs.uploadFiles(
                 RT,
                 List.of(
                         java.util.Map.entry(
-                                "knowledge/notes.md", "local".getBytes(StandardCharsets.UTF_8))));
-        assertTrue(Files.isRegularFile(workspace.resolve("local-user/knowledge/notes.md")));
+                                "docs/notes.md", "local".getBytes(StandardCharsets.UTF_8))));
+        assertTrue(Files.isRegularFile(workspace.resolve("local-user/docs/notes.md")));
     }
 
     @Test
@@ -76,7 +77,8 @@ class RemoteFilesystemSpecTest {
         fs.uploadFiles(
                 RT,
                 List.of(java.util.Map.entry("MEMORY.md", "v1".getBytes(StandardCharsets.UTF_8))));
-        assertNotNull(store.get(List.of("agents", "agent-a", "users", "user-1"), "/MEMORY.md"));
+        assertNotNull(
+                store.get(List.of("agents", "agent-a", "users", "user-1", "root"), "/MEMORY.md"));
     }
 
     /**

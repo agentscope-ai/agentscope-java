@@ -26,13 +26,10 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.util.Collections;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -44,16 +41,11 @@ import reactor.core.publisher.Mono;
  * management, no run tracking. The
  * agent-internal {@link AgentSpawnTool} uses this directly for
  * lightweight subagent invocation.
- *
- * <p>The factory and declaration maps are mutable to support dynamic reload by hooks (e.g.
- * {@code DynamicSubagentsHook}) that re-read subagent declarations on every reasoning step.
- * Use {@link #replaceAgents(List)} to atomically swap the registered set and
- * {@link #createAgentIfPresent(String)} for race-free lookup+create.
  */
 public final class DefaultAgentManager {
 
-    private final Map<String, SubagentFactory> agentFactories = new ConcurrentHashMap<>();
-    private final Map<String, SubagentDeclaration> declarations = new ConcurrentHashMap<>();
+    private volatile Map<String, SubagentFactory> agentFactories;
+    private volatile Map<String, SubagentDeclaration> declarations;
     private final WorkspaceManager workspaceManager;
 
     /**
@@ -61,8 +53,60 @@ public final class DefaultAgentManager {
      * metadata for remote configuration).
      */
     public DefaultAgentManager(List<SubagentEntry> entries, WorkspaceManager workspaceManager) {
+        Map<String, SubagentFactory> factories = new HashMap<>();
+        Map<String, SubagentDeclaration> decls = new HashMap<>();
+        for (SubagentEntry e : entries) {
+            factories.put(e.name(), e.factory());
+            if (e.declaration() != null) {
+                decls.put(e.name(), e.declaration());
+            }
+        }
+        this.agentFactories = Map.copyOf(factories);
+        this.declarations = Map.copyOf(decls);
         this.workspaceManager = workspaceManager;
-        replaceAgents(entries);
+    }
+
+    /**
+     * Replaces the current set of entries with a new snapshot. Called per-call from
+     * {@link io.agentscope.harness.agent.hook.SubagentsHook} to reflect per-user subagent
+     * configurations.
+     */
+    public void refreshEntries(List<SubagentEntry> entries) {
+        Map<String, SubagentFactory> factories = new HashMap<>();
+        Map<String, SubagentDeclaration> decls = new HashMap<>();
+        for (SubagentEntry e : entries) {
+            factories.put(e.name(), e.factory());
+            if (e.declaration() != null) {
+                decls.put(e.name(), e.declaration());
+            }
+        }
+        this.agentFactories = Map.copyOf(factories);
+        this.declarations = Map.copyOf(decls);
+    }
+
+    /**
+     * Atomic alias of {@link #refreshEntries(List)} used by
+     * {@link io.agentscope.harness.agent.hook.DynamicSubagentsHook} to swap the registered
+     * subagent set on every reasoning step. The two volatile reference assignments below ensure
+     * any concurrent reader observes either the previous snapshot or the new one fully — never a
+     * partial state.
+     */
+    public void replaceAgents(List<SubagentEntry> entries) {
+        refreshEntries(entries);
+    }
+
+    /**
+     * Race-safe lookup-and-create. Returns {@link Optional#empty()} when no factory is registered
+     * for {@code agentId} at the moment of the volatile read, otherwise returns a freshly created
+     * agent. Preferred over the two-step {@link #hasAgent(String)} + {@link #createAgent(String)}
+     * pair when the registry may be replaced concurrently (e.g. dynamic reload between calls).
+     */
+    public Optional<Agent> createAgentIfPresent(String agentId) {
+        if (agentId == null) {
+            return Optional.empty();
+        }
+        SubagentFactory factory = agentFactories.get(agentId);
+        return factory == null ? Optional.empty() : Optional.of(factory.create());
     }
 
     /** Whether a factory is registered for the given agent id. */
@@ -72,40 +116,12 @@ public final class DefaultAgentManager {
 
     /** Immutable view of registered subagent factories keyed by {@code agent_id}. */
     public Map<String, SubagentFactory> getAgentFactories() {
-        return Collections.unmodifiableMap(agentFactories);
+        return agentFactories;
     }
 
     /** Optional declaration metadata for the given {@code agent_id} (e.g. remote URL). */
     public Optional<SubagentDeclaration> getDeclaration(String agentId) {
         return Optional.ofNullable(declarations.get(agentId));
-    }
-
-    /**
-     * Atomically replaces the registered set of subagents with {@code entries}.
-     *
-     * <p>Existing keys not present in the new list are removed. Keys present in both are replaced
-     * with the new factory/declaration. Concurrent {@link #createAgentIfPresent(String)} calls
-     * observe a consistent snapshot for each individual key but may straddle the boundary between
-     * old and new sets across keys; callers needing global atomicity should serialize externally.
-     */
-    public void replaceAgents(List<SubagentEntry> entries) {
-        Set<String> incomingKeys = new HashSet<>();
-        if (entries != null) {
-            for (SubagentEntry e : entries) {
-                if (e == null || e.name() == null) {
-                    continue;
-                }
-                incomingKeys.add(e.name());
-                agentFactories.put(e.name(), e.factory());
-                if (e.declaration() != null) {
-                    declarations.put(e.name(), e.declaration());
-                } else {
-                    declarations.remove(e.name());
-                }
-            }
-        }
-        agentFactories.keySet().removeIf(k -> !incomingKeys.contains(k));
-        declarations.keySet().removeIf(k -> !incomingKeys.contains(k));
     }
 
     /**
@@ -119,25 +135,6 @@ public final class DefaultAgentManager {
             throw new IllegalArgumentException("Unknown agent_id: " + agentId);
         }
         return factory.create();
-    }
-
-    /**
-     * Atomically resolves the factory for {@code agentId} and invokes it. Returns
-     * {@link Optional#empty()} if no factory is registered.
-     *
-     * <p>Prefer this over the two-step {@link #hasAgent(String)} + {@link #createAgent(String)}
-     * pattern in environments where the registered set may change between calls (e.g. with a
-     * dynamic reload hook).
-     */
-    public Optional<Agent> createAgentIfPresent(String agentId) {
-        if (agentId == null) {
-            return Optional.empty();
-        }
-        SubagentFactory factory = agentFactories.get(agentId);
-        if (factory == null) {
-            return Optional.empty();
-        }
-        return Optional.of(factory.create());
     }
 
     /**

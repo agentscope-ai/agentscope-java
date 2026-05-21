@@ -336,7 +336,8 @@ class HarnessAgentTest {
         agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "shared-memory");
 
         assertTrue(
-                store.get(List.of("agents", "agent-a", "users", "_default"), "/MEMORY.md") != null);
+                store.get(List.of("agents", "agent-a", "users", "_default", "root"), "/MEMORY.md")
+                        != null);
     }
 
     private static Msg userText(String text) {
