@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Hook for automatically registering AutoContextMemory integration with ReActAgent.
@@ -220,83 +221,85 @@ public class AutoContextHook implements Hook {
     private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
         Agent agent = event.getAgent();
 
-        // Only process ReActAgent instances
         if (!(agent instanceof ReActAgent reActAgent)) {
             return Mono.just(event);
         }
 
-        // Get memory from agent and verify it's an AutoContextMemory instance
         Memory memory = reActAgent.getMemory();
         if (!(memory instanceof AutoContextMemory autoContextMemory)) {
             return Mono.just(event);
         }
 
-        try {
-            // Trigger compression if needed (this modifies workingMemoryStorage in place)
-            autoContextMemory.compressIfNeeded();
+        return autoContextMemory
+                .compressIfNeededAsync()
+                .map(
+                        ignored -> {
+                            event.setInputMessages(buildInputMessages(event, autoContextMemory));
+                            return event;
+                        })
+                .onErrorResume(
+                        e -> {
+                            if (isInterruptedException(e)) {
+                                return Mono.error(e);
+                            }
+                            log.warn(
+                                    "Failed to compress context in handlePreReasoning, continuing"
+                                            + " with original messages",
+                                    e);
+                            return Mono.just(event);
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
 
-            // Always append system prompt instruction about compressed messages
-            List<Msg> originalInputMessages = event.getInputMessages();
-            List<Msg> newInputMessages = new ArrayList<>();
+    private List<Msg> buildInputMessages(
+            PreReasoningEvent event, AutoContextMemory autoContextMemory) {
+        List<Msg> originalInputMessages = event.getInputMessages();
+        List<Msg> newInputMessages = new ArrayList<>();
 
-            if (!originalInputMessages.isEmpty()
-                    && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
-                // Append instruction to existing system prompt
-                Msg originalSystemMsg = originalInputMessages.get(0);
-                String originalSystemText = originalSystemMsg.getTextContent();
-                String appendedInstruction =
-                        "\n\n"
+        if (!originalInputMessages.isEmpty()
+                && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
+            Msg originalSystemMsg = originalInputMessages.get(0);
+            String originalSystemText = originalSystemMsg.getTextContent();
+            String appendedInstruction =
+                    "\n\n"
                             + "You may see compressed messages containing <!-- CONTEXT_OFFLOAD"
                             + " uuid=... -->.\n"
                             + "- Use the UUID to call context_reload if you need full details.\n"
                             + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
                             + " metadata in your response.";
 
-                String newSystemText =
-                        originalSystemText != null
-                                ? originalSystemText + appendedInstruction
-                                : appendedInstruction.trim();
+            String newSystemText =
+                    originalSystemText != null
+                            ? originalSystemText + appendedInstruction
+                            : appendedInstruction.trim();
 
-                Msg updatedSystemMsg =
-                        Msg.builder()
-                                .role(MsgRole.SYSTEM)
-                                .name(originalSystemMsg.getName())
-                                .content(TextBlock.builder().text(newSystemText).build())
-                                .metadata(originalSystemMsg.getMetadata())
-                                .build();
+            Msg updatedSystemMsg =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .name(originalSystemMsg.getName())
+                            .content(TextBlock.builder().text(newSystemText).build())
+                            .metadata(originalSystemMsg.getMetadata())
+                            .build();
 
-                newInputMessages.add(updatedSystemMsg);
-            } else {
-                // No system message exists, create a new one with the instruction
-                String instruction =
-                        "You may see compressed messages containing <!-- CONTEXT_OFFLOAD uuid=..."
+            newInputMessages.add(updatedSystemMsg);
+        } else {
+            String instruction =
+                    "You may see compressed messages containing <!-- CONTEXT_OFFLOAD uuid=..."
                             + " -->.\n"
                             + "- Use the UUID to call context_reload if you need full details.\n"
                             + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
                             + " metadata in your response.";
 
-                newInputMessages.add(
-                        Msg.builder()
-                                .role(MsgRole.SYSTEM)
-                                .name("system")
-                                .content(TextBlock.builder().text(instruction).build())
-                                .build());
-            }
-
-            // Add memory messages (compressed or not)
-            newInputMessages.addAll(autoContextMemory.getMessages());
-            event.setInputMessages(newInputMessages);
-        } catch (Exception e) {
-            if (isInterruptedException(e)) {
-                return Mono.error(e);
-            }
-            log.warn(
-                    "Failed to compress context in handlePreReasoning, continuing with original"
-                            + " messages",
-                    e);
+            newInputMessages.add(
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .name("system")
+                            .content(TextBlock.builder().text(instruction).build())
+                            .build());
         }
 
-        return Mono.just(event);
+        newInputMessages.addAll(autoContextMemory.getMessages());
+        return newInputMessages;
     }
 
     private static boolean isInterruptedException(Throwable t) {

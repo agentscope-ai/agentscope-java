@@ -67,9 +67,16 @@ import reactor.util.context.ContextView;
 public class TelemetryTracer implements Tracer {
 
     private final io.opentelemetry.api.trace.Tracer tracer;
+    private final SdkTracerProvider sdkTracerProvider;
 
     public TelemetryTracer(io.opentelemetry.api.trace.Tracer tracer) {
+        this(tracer, null);
+    }
+
+    private TelemetryTracer(
+            io.opentelemetry.api.trace.Tracer tracer, SdkTracerProvider sdkTracerProvider) {
         this.tracer = tracer;
+        this.sdkTracerProvider = sdkTracerProvider;
     }
 
     @Override
@@ -226,6 +233,13 @@ public class TelemetryTracer implements Tracer {
         return otelContext.wrapSupplier(inner).get();
     }
 
+    @Override
+    public void shutdown() {
+        if (sdkTracerProvider != null) {
+            sdkTracerProvider.close();
+        }
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -294,14 +308,15 @@ public class TelemetryTracer implements Tracer {
                 exporterBuilder.addHeader(entry.getKey(), entry.getValue());
             }
 
-            TracerProvider tracerProvider =
+            SdkTracerProvider tracerProvider =
                     SdkTracerProvider.builder()
                             .addSpanProcessor(
                                     BatchSpanProcessor.builder(exporterBuilder.build()).build())
                             .setSampler(Sampler.alwaysOn())
                             .build();
 
-            return new TelemetryTracer(tracerProvider.get(INSTRUMENTATION_NAME, Version.VERSION));
+            return new TelemetryTracer(
+                    tracerProvider.get(INSTRUMENTATION_NAME, Version.VERSION), tracerProvider);
         }
     }
 }

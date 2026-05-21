@@ -283,6 +283,49 @@ public class SkillBox implements StateModule {
     }
 
     /**
+     * Sets the activation state of a specific skill.
+     *
+     * <p>When a skill is set to inactive, its associated tool group will be disabled
+     * in the underlying toolkit, preventing the agent from accessing its tools until
+     * it is activated again.
+     *
+     * <p>This method automatically synchronizes the state change with the bound toolkit.
+     *
+     * <p><b>Warning on Deactivation:</b> Setting a skill to inactive only unbinds its associated
+     * tool group. It does not automatically remove the skill's context or prompt instructions
+     * from the agent's memory. This is a risky operation, as the agent might still attempt to
+     * invoke the inactive tool based on its retained memory context, leading to execution failures.
+     * For a complete and ideal deactivation, it is recommended to implement custom hooks to unbind
+     * both the tool group and its associated context from memory.
+     *
+     * @param skillId The ID of the skill to modify
+     * @param active  true to activate the skill, false to deactivate
+     * @throws IllegalArgumentException if skillId is null or the skill does not exist
+     */
+    public void setSkillActive(String skillId, boolean active) {
+        if (skillId == null) {
+            throw new IllegalArgumentException("Skill ID cannot be null");
+        }
+
+        if (!exists(skillId)) {
+            throw new IllegalArgumentException("Skill ID does not exist: " + skillId);
+        }
+
+        skillRegistry.setSkillActive(skillId, active);
+
+        // sync ToolGroup state
+        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
+        if (registeredSkill != null) {
+            String toolGroupName = registeredSkill.getToolsGroupName();
+            if (this.toolkit.getToolGroup(toolGroupName) != null) {
+                this.toolkit.updateToolGroups(List.of(toolGroupName), active);
+            }
+        }
+
+        logger.debug("Skill '{}' active state set to {}", skillId, active);
+    }
+
+    /**
      * Deactivates all skills.
      *
      * <p>This method sets all registered skills to inactive state, which means their associated

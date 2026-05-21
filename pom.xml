@@ -27,7 +27,7 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>1.0.12-SNAPSHOT</revision>
+        <revision>1.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -55,6 +55,7 @@
 
     <modules>
         <module>agentscope-core</module>
+        <module>agentscope-harness</module>
         <module>agentscope-extensions</module>
         <module>agentscope-examples</module>
         <module>agentscope-dependencies-bom</module>

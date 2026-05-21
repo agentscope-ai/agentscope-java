@@ -1,0 +1,37 @@
+{% if docs_top_tabs is defined and docs_top_tabs %}
+  {% set current_lang = "zh" if pagename.startswith("zh/") else "en" %}
+  <nav
+    class="docs-top-tabs"
+    aria-label="Documentation sections"
+    data-current-page="{{ pagename }}"
+    data-current-lang="{{ current_lang }}"
+  >
+    <div class="docs-top-tabs__list">
+      {% for tab in docs_top_tabs %}
+        {% set supported_languages = tab.get("languages", ["en", "zh"]) %}
+        {% if current_lang in supported_languages %}
+          {% set label = tab.get("label_zh") if current_lang == "zh" and tab.get("label_zh") else tab.get("label_en") %}
+          {% set href = tab.get("href_zh") if current_lang == "zh" and tab.get("href_zh") else tab.get("href_en") %}
+          {% if href %}
+            <a
+              class="docs-top-tabs__link"
+              href="{{ pathto(href) }}"
+              data-tab-id="{{ tab.get('id') }}"
+              data-mirror-paths="{{ 'true' if tab.get('mirror_paths') else 'false' }}"
+              data-href-en="{{ tab.get('href_en', '') }}"
+              data-href-zh="{{ tab.get('href_zh', '') }}"
+              data-url-en="{{ pathto(tab.get('href_en')) if tab.get('href_en') else '' }}"
+              data-url-zh="{{ pathto(tab.get('href_zh')) if tab.get('href_zh') else '' }}"
+              data-prefixes-en="{{ tab.get('prefixes_en', []) | join('|') }}"
+              data-prefixes-zh="{{ tab.get('prefixes_zh', []) | join('|') }}"
+              data-sections-en="{{ tab.get('sections_en', []) | join('|') }}"
+              data-sections-zh="{{ tab.get('sections_zh', []) | join('|') }}"
+            >
+              {{ label }}
+            </a>
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+    </div>
+  </nav>
+{% endif %}

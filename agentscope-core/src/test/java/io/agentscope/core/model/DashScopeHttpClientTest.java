@@ -173,6 +173,18 @@ class DashScopeHttpClientTest {
         assertEquals(
                 DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
                 client.selectEndpoint("qwen3.6-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi-k2.5", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi-k2.6", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi/kimi-k2.5", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("kimi/kimi-k2.6", EndpointType.AUTO));
     }
 
     @Test

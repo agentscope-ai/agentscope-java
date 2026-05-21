@@ -100,6 +100,18 @@ public class OpenAIResponse {
     @JsonProperty("error")
     private OpenAIError error;
 
+    /** Error code for non-standard error responses. */
+    @JsonProperty("code")
+    private String code;
+
+    /** Error message for non-standard error responses. */
+    @JsonProperty("message")
+    private String message;
+
+    /** Status for non-standard error responses. */
+    @JsonProperty("status")
+    private String status;
+
     public OpenAIResponse() {}
 
     public String getId() {
@@ -166,13 +178,84 @@ public class OpenAIResponse {
         this.error = error;
     }
 
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
     /**
      * Check if this response represents an error.
+     *
+     * Support the detection of standard OpenAI error structures
+     * and non-standard code/status error structures using a blacklist strategy.
      *
      * @return true if the response contains an error
      */
     public boolean isError() {
-        return error != null;
+        // Standard OpenAI error format
+        if (error != null) {
+            return true;
+        }
+
+        // Double check using the status field
+        if ("error".equalsIgnoreCase(status) || "failed".equalsIgnoreCase(status)) {
+            return true;
+        }
+
+        // Blacklist strategy for custom error codes
+        if (code != null) {
+            try {
+                int numericCode = Integer.parseInt(code);
+                if (numericCode >= 400 && numericCode <= 599) {
+                    return true;
+                }
+            } catch (NumberFormatException e) {
+                // If code is not numeric (e.g., "ok", "success", "invalid_key"),
+                // we rely on the 'status' or 'error' fields checked above.
+                // Do not blindly assume it's an error.
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get the effective error message, handling both standard and non-standard formats.
+     */
+    public String getEffectiveErrorMessage() {
+        if (error != null && error.getMessage() != null) {
+            return error.getMessage();
+        }
+        return message != null ? message : "Unknown error";
+    }
+
+    /**
+     * Get the effective error code, handling both standard and non-standard formats.
+     */
+    public String getEffectiveErrorCode() {
+        if (error != null && error.getCode() != null) {
+            return error.getCode();
+        }
+        return code != null ? code : "unknown_error";
     }
 
     /**
