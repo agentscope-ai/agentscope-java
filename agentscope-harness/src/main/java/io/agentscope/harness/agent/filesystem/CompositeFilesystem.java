@@ -324,8 +324,12 @@ public class CompositeFilesystem implements AbstractFilesystem {
                     batch.getKey().uploadFiles(runtimeContext, batchFiles);
             List<IndexedFile> indexed = batch.getValue();
             for (int i = 0; i < responses.size() && i < indexed.size(); i++) {
+                FileUploadResponse backendResp = responses.get(i);
+                String originalPath = indexed.get(i).originalPath();
                 results[indexed.get(i).originalIndex()] =
-                        FileUploadResponse.success(indexed.get(i).originalPath());
+                        backendResp.isSuccess()
+                                ? FileUploadResponse.success(originalPath)
+                                : FileUploadResponse.fail(originalPath, backendResp.error());
             }
         }
 

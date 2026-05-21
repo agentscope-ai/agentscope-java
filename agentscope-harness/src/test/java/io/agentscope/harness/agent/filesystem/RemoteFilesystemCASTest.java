@@ -22,9 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.store.InMemoryStore;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -42,8 +44,10 @@ import org.junit.jupiter.api.Test;
  *   <li>{@code edit} survives concurrent edits by retrying on version mismatch (no lost updates).
  * </ul>
  *
- * <p>Note: {@code uploadFiles} is intentionally last-write-wins (snapshot push semantics used by
- * session mirror and audit-log rotation) and is therefore not exercised here.
+ * <p>{@code uploadFiles} is intentionally last-write-wins (snapshot push semantics used by
+ * session mirror, audit-log rotation, and {@code WorkspaceManager.writeUtf8WorkspaceRelative}).
+ * This contract is covered by {@link #uploadFiles_overwritesExistingFile_lastWriteWins} and
+ * {@link #uploadFiles_repeatedOnSamePath_returnsSuccessEachTime}.
  */
 class RemoteFilesystemCASTest {
 
@@ -162,6 +166,54 @@ class RemoteFilesystemCASTest {
                                         + content);
             }
         }
+    }
+
+    @Test
+    void uploadFiles_overwritesExistingFile_lastWriteWins() {
+        InMemoryStore store = new InMemoryStore();
+        RemoteFilesystem fs = newFs(store);
+
+        List<FileUploadResponse> first =
+                fs.uploadFiles(
+                        CTX, List.of(Map.entry("/foo.md", "v1".getBytes(StandardCharsets.UTF_8))));
+        assertEquals(1, first.size());
+        assertTrue(first.get(0).isSuccess(), () -> "first upload: " + first.get(0).error());
+
+        List<FileUploadResponse> second =
+                fs.uploadFiles(
+                        CTX, List.of(Map.entry("/foo.md", "v2".getBytes(StandardCharsets.UTF_8))));
+        assertEquals(1, second.size());
+        assertTrue(
+                second.get(0).isSuccess(),
+                () ->
+                        "second upload must succeed (last-write-wins); got error: "
+                                + second.get(0).error());
+
+        var read = fs.read(CTX, "/foo.md", 0, 0);
+        assertTrue(read.isSuccess());
+        assertEquals("v2", read.fileData().content(), "second upload must replace first");
+    }
+
+    @Test
+    void uploadFiles_repeatedOnSamePath_returnsSuccessEachTime() {
+        InMemoryStore store = new InMemoryStore();
+        RemoteFilesystem fs = newFs(store);
+        for (int i = 0; i < 5; i++) {
+            String content = "iter-" + i;
+            List<FileUploadResponse> resp =
+                    fs.uploadFiles(
+                            CTX,
+                            List.of(
+                                    Map.entry(
+                                            "/log.md", content.getBytes(StandardCharsets.UTF_8))));
+            assertEquals(1, resp.size());
+            assertTrue(
+                    resp.get(0).isSuccess(),
+                    () -> "iteration " + content + " must succeed; got: " + resp.get(0).error());
+        }
+        var read = fs.read(CTX, "/log.md", 0, 0);
+        assertTrue(read.isSuccess());
+        assertEquals("iter-4", read.fileData().content());
     }
 
     @Test

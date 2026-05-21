@@ -119,11 +119,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
      *   <li>{@code ls}, {@code glob}, {@code exists} — when the index has no matching prefix
      *       the operation falls back to a full remote-store scan, so results remain correct
      *       even if this node's index is stale.
-     *   <li>{@code grep} — when the index is non-{@code null} the operation enumerates
-     *       candidates exclusively from the index and does <em>not</em> fall back to a full
-     *       scan. Files that have not yet been registered in this node's index are therefore
-     *       not searched. Content for each candidate is always fetched authoritatively from
-     *       the remote store.
+     *   <li>{@code grep} — when the index is non-{@code null} the operation first enumerates
+     *       candidates from the index. If the index path yields zero matches, the operation
+     *       falls back to a full remote-store scan so that sibling-node writes not yet seen by
+     *       this node's index are not silently missed. Content for each candidate is always
+     *       fetched authoritatively from the remote store.
      * </ul>
      *
      * @param index workspace index; {@code null} disables index-backed fast paths
@@ -372,7 +372,12 @@ public class RemoteFilesystem implements AbstractFilesystem {
                     }
                 }
             }
-            return GrepResult.success(matches);
+            // Index returned matches — return them. Otherwise fall through to the authoritative
+            // store scan: on a multi-node deployment, this node's index may not yet know about
+            // files written via another node, and we must not silently miss them.
+            if (!matches.isEmpty()) {
+                return GrepResult.success(matches);
+            }
         }
 
         // Fallback: full remote scan
@@ -495,21 +500,12 @@ public class RemoteFilesystem implements AbstractFilesystem {
             }
 
             FileData fileData = FileData.create(contentStr, encoding);
-            // CAS create-if-absent: upload is treated as a create operation (same semantics as
-            // write). Re-uploading to an existing path is rejected — callers must delete or
-            // edit explicitly.
-            boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
-            if (written) {
-                responses.add(FileUploadResponse.success(filePath));
-            } else {
-                responses.add(
-                        FileUploadResponse.fail(
-                                filePath,
-                                "Cannot upload to "
-                                        + filePath
-                                        + " because it already exists. Delete the existing file"
-                                        + " or upload to a new path."));
-            }
+            // Last-write-wins: uploadFiles is the snapshot-push API (session mirror, audit-log
+            // rotation, WorkspaceManager.writeUtf8WorkspaceRelative). Callers needing
+            // create-if-absent semantics should use {@link #write} instead, which preserves
+            // CAS-create-if-absent for the tool-surface write path.
+            store.put(ns, filePath, fileDataToStoreValue(fileData));
+            responses.add(FileUploadResponse.success(filePath));
         }
         return responses;
     }

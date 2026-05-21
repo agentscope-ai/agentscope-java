@@ -59,6 +59,7 @@ import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.hook.AgentTraceHook;
 import io.agentscope.harness.agent.hook.CompactionHook;
 import io.agentscope.harness.agent.hook.DynamicSkillHook;
+import io.agentscope.harness.agent.hook.DynamicSubagentsHook;
 import io.agentscope.harness.agent.hook.MemoryFlushHook;
 import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
 import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
@@ -82,6 +83,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
+import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.RemoteSubagentStub;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -1355,10 +1357,20 @@ public class HarnessAgent implements Agent, StateModule {
                     validateDistributedSandboxConfig(effectiveSession, defaultSandboxContext);
                 }
 
+                // SessionSandboxStateStore.slotKey already encodes per-scope discriminators
+                // (sandbox/session/<id>, sandbox/user/<agentId>/<userId>, sandbox/agent/<agentId>,
+                // sandbox/global). When the effective Session is a WorkspaceSession with a
+                // userId-scoped namespace, layering that namespace on top would partition
+                // AGENT/GLOBAL state per user and break their cross-caller sharing contract.
+                Session sandboxStateSession =
+                        effectiveSession instanceof WorkspaceSession
+                                ? new WorkspaceSession(resolvedWorkspace, resolvedAgentId, null)
+                                : effectiveSession;
                 SandboxStateStore stateStore =
                         sandboxFilesystemSpec.getSandboxStateStore() != null
                                 ? sandboxFilesystemSpec.getSandboxStateStore()
-                                : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
+                                : new SessionSandboxStateStore(
+                                        sandboxStateSession, resolvedAgentId);
                 SandboxExecutionGuard executionGuard =
                         sandboxFilesystemSpec.getExecutionGuard() != null
                                 ? sandboxFilesystemSpec.getExecutionGuard()
@@ -1426,11 +1438,20 @@ public class HarnessAgent implements Agent, StateModule {
             }
 
             if (!leafSubagent && !disableSubagents && model != null) {
-                SubagentsHook subagentsHook =
-                        buildSubagentsHook(
-                                wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
-                if (subagentsHook != null) {
-                    allHooks.add(subagentsHook);
+                if (filesystem != null && !disableDynamicSubagents) {
+                    DynamicSubagentsHook dynamicSubagentsHook =
+                            buildDynamicSubagentsHook(
+                                    wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
+                    if (dynamicSubagentsHook != null) {
+                        allHooks.add(dynamicSubagentsHook);
+                    }
+                } else {
+                    SubagentsHook subagentsHook =
+                            buildSubagentsHook(
+                                    wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
+                    if (subagentsHook != null) {
+                        allHooks.add(subagentsHook);
+                    }
                 }
             }
 
@@ -1686,6 +1707,86 @@ public class HarnessAgent implements Agent, StateModule {
                     decl -> buildDeclaredFactory(decl, workspace, sandboxFs);
             return new SubagentsHook(
                     entries, repo, wsManager, userIdRef::get, fs, workspace, factoryFn);
+        }
+
+        /**
+         * Builds the {@link DynamicSubagentsHook} used by default when a workspace filesystem is
+         * configured. Mirrors {@link #buildSubagentsHook} but feeds the hook only the
+         * <em>static</em> entries (programmatic declarations + {@code general-purpose} + custom
+         * factories); the local-disk {@code subagents/} directory is rescanned by the hook itself
+         * on every reasoning step as Layer 2, and the namespaced filesystem read is Layer 1.
+         *
+         * <p>Returns the hook, which owns its own {@link DefaultAgentManager} and (unless an
+         * external one was supplied) its own {@link io.agentscope.harness.agent.tool.AgentSpawnTool}.
+         */
+        private DynamicSubagentsHook buildDynamicSubagentsHook(
+                WorkspaceManager wsManager,
+                Path workspace,
+                SandboxBackedFilesystem sandboxFs,
+                AtomicReference<String> userIdRef) {
+            List<SubagentEntry> staticEntries = buildStaticSubagentEntries(workspace, sandboxFs);
+            TaskRepository repo;
+            if (taskRepository != null) {
+                repo = taskRepository;
+            } else if (wsManager != null) {
+                String resolvedName = name != null ? name : "HarnessAgent";
+                repo = new WorkspaceTaskRepository(wsManager, resolvedName);
+            } else {
+                repo = new DefaultTaskRepository();
+            }
+
+            AbstractFilesystem fs = wsManager.getFilesystem();
+            Function<SubagentDeclaration, SubagentFactory> factoryFn =
+                    decl -> buildDeclaredFactory(decl, workspace, sandboxFs);
+            DefaultAgentManager manager = new DefaultAgentManager(staticEntries, wsManager);
+            return new DynamicSubagentsHook(
+                    staticEntries,
+                    fs,
+                    workspace,
+                    factoryFn,
+                    manager,
+                    externalSubagentTool,
+                    repo,
+                    userIdRef::get);
+        }
+
+        /**
+         * Like {@link #buildSubagentEntries(Path, SandboxBackedFilesystem)} but omits the
+         * local-disk {@code subagents/} scan. The {@link DynamicSubagentsHook} performs that scan
+         * itself on every reasoning step (Layer 2), so feeding the same entries in here would
+         * register them twice.
+         */
+        private List<SubagentEntry> buildStaticSubagentEntries(
+                Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            List<SubagentEntry> entries = new ArrayList<>();
+
+            entries.add(
+                    new SubagentEntry(
+                            "general-purpose",
+                            "General-purpose subagent with same capabilities as the main agent."
+                                    + " Use for any isolated task that can be fully delegated.",
+                            buildGeneralPurposeFactory(resolvedWorkspace, sandboxFs),
+                            null));
+
+            for (SubagentDeclaration decl : subagentDeclarations) {
+                entries.add(
+                        new SubagentEntry(
+                                decl.getName(),
+                                decl.getDescription(),
+                                buildDeclaredFactory(decl, resolvedWorkspace, sandboxFs),
+                                decl));
+            }
+
+            for (SubagentFactoryEntry custom : customSubagentFactories) {
+                entries.add(
+                        new SubagentEntry(
+                                custom.name(),
+                                custom.name(),
+                                () -> custom.factory().apply(custom.name()),
+                                null));
+            }
+
+            return entries;
         }
 
         /**
