@@ -417,7 +417,7 @@ public class ResponsesInputConverter {
             if (!parsed.isObject()) {
                 return Map.of();
             }
-            return OBJECT_MAPPER.convertValue(parsed, new TypeReference<Map<String, Object>>() {});
+            return OBJECT_MAPPER.convertValue(parsed, new TypeReference<>() {});
         } catch (Exception e) {
             return Map.of();
         }

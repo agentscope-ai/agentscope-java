@@ -18,7 +18,6 @@ package io.agentscope.core.responses.builder;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -235,13 +234,6 @@ public class ResponsesResponseBuilder {
         String text = text(reply);
         if (!text.isEmpty() || items.isEmpty()) {
             items.add(0, ResponsesOutputItem.message(messageId(reply.getId()), text));
-        }
-
-        // TOOL_SUSPENDED means the model paused for a tool. If no function_call item was emitted,
-        // preserve a normal assistant message rather than returning an empty output array.
-        GenerateReason reason = reply.getGenerateReason();
-        if (reason == GenerateReason.TOOL_SUSPENDED && items.isEmpty()) {
-            return List.of(ResponsesOutputItem.message(messageId(reply.getId()), text));
         }
         return items;
     }

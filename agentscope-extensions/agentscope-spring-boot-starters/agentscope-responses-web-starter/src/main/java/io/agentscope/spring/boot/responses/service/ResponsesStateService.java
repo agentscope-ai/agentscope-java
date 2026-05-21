@@ -571,7 +571,7 @@ public class ResponsesStateService {
     }
 
     private Map<String, Object> toMap(Object value) {
-        return OBJECT_MAPPER.convertValue(value, new TypeReference<Map<String, Object>>() {});
+        return OBJECT_MAPPER.convertValue(value, new TypeReference<>() {});
     }
 
     public record PreparedRequest(

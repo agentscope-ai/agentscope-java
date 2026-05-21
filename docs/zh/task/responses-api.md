@@ -214,7 +214,7 @@ curl -s -X POST http://localhost:8080/v1/responses \
   }' | tee /tmp/schema-response.json | python3 -m json.tool
 ```
 
-检查 `output_text` 是否是合法 JSON：
+检查 `output_text` 是否为合法 JSON：
 
 ```bash
 python3 - <<'PY'

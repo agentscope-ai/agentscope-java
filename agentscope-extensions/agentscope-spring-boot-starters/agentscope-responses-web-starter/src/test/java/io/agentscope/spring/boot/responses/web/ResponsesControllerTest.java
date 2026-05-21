@@ -70,7 +70,6 @@ class ResponsesControllerTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private ObjectProvider<ReActAgent> agentProvider;
-    private ResponsesStateService stateService;
     private ResponsesController controller;
 
     @BeforeEach
@@ -80,7 +79,7 @@ class ResponsesControllerTest {
         ResponsesResponseBuilder responseBuilder = new ResponsesResponseBuilder();
         ResponsesStreamingService streamingService =
                 new ResponsesStreamingService(new ResponsesStreamingAdapter(responseBuilder));
-        stateService = new ResponsesStateService();
+        ResponsesStateService stateService = new ResponsesStateService();
         agentProvider = mock(ObjectProvider.class);
         controller =
                 new ResponsesController(
@@ -138,11 +137,12 @@ class ResponsesControllerTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void shouldStoreResponseAndUsePreviousResponseId() throws Exception {
         ReActAgent agent = prepareTextAgent("First answer", "Second answer");
 
         ResponsesResponse first =
-                ((Mono<ResponsesResponse>)
+                responseMono(
                                 controller.createResponse(
                                         request(
                                                 """
@@ -160,7 +160,7 @@ class ResponsesControllerTest {
         assertThat(((ResponseEntity<?>) retrieved).getStatusCode()).isEqualTo(HttpStatus.OK);
 
         ResponsesResponse second =
-                ((Mono<ResponsesResponse>)
+                responseMono(
                                 controller.createResponse(
                                         request(
                                                 """
@@ -186,7 +186,7 @@ class ResponsesControllerTest {
         prepareTextAgent("Background answer");
 
         ResponsesResponse response =
-                ((Mono<ResponsesResponse>)
+                responseMono(
                                 controller.createResponse(
                                         request(
                                                 """
@@ -210,7 +210,7 @@ class ResponsesControllerTest {
         prepareTextAgent("Stored");
 
         ResponsesResponse response =
-                ((Mono<ResponsesResponse>)
+                responseMono(
                                 controller.createResponse(
                                         request(
                                                 """
@@ -231,7 +231,7 @@ class ResponsesControllerTest {
         prepareTextAgent("Compacted answer");
 
         ResponsesResponse response =
-                ((Mono<ResponsesResponse>)
+                responseMono(
                                 controller.compactResponseInput(
                                         request(
                                                 """
@@ -251,7 +251,7 @@ class ResponsesControllerTest {
         prepareTextAgent("Stored");
 
         ResponsesResponse response =
-                ((Mono<ResponsesResponse>)
+                responseMono(
                                 controller.createResponse(
                                         request(
                                                 """
@@ -360,5 +360,10 @@ class ResponsesControllerTest {
 
     private ResponsesRequest request(String json) throws Exception {
         return OBJECT_MAPPER.readValue(json, ResponsesRequest.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Mono<ResponsesResponse> responseMono(Object response) {
+        return (Mono<ResponsesResponse>) response;
     }
 }

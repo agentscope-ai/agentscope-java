@@ -23,7 +23,6 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.responses.model.ResponsesTool;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /** Converts Responses tools and tool choices to AgentScope model types. */
 public class ResponsesToolConverter {
@@ -82,9 +81,7 @@ public class ResponsesToolConverter {
                         .name(tool.getName())
                         .description(tool.getDescription() != null ? tool.getDescription() : "");
         if (parameters != null && !parameters.isNull()) {
-            builder.parameters(
-                    OBJECT_MAPPER.convertValue(
-                            parameters, new TypeReference<Map<String, Object>>() {}));
+            builder.parameters(OBJECT_MAPPER.convertValue(parameters, new TypeReference<>() {}));
         }
         if (tool.getStrict() != null) {
             builder.strict(tool.getStrict());
