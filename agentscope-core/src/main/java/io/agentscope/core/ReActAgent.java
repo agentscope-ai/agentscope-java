@@ -21,6 +21,25 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ExceedMaxItersEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.ReplyEndEvent;
+import io.agentscope.core.event.ReplyStartEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockEndEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
@@ -49,11 +68,19 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.Middleware;
+import io.agentscope.core.middleware.MiddlewareChain;
+import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.middleware.ReplyInput;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.rag.GenericRAGHook;
 import io.agentscope.core.rag.Knowledge;
@@ -83,11 +110,17 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 
 /**
@@ -155,6 +188,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
     private final StatePersistence statePersistence;
+    private final List<Middleware> middlewares;
     private RuntimeContext pendingRuntimeContext;
 
     /**
@@ -166,6 +200,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      */
     private final java.util.concurrent.atomic.AtomicReference<Msg> currentSystemMsg =
             new java.util.concurrent.atomic.AtomicReference<>();
+
+    private final AtomicReference<FluxSink<AgentEvent>> activeEventSink = new AtomicReference<>();
 
     // ==================== Constructor ====================
 
@@ -191,6 +227,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 builder.statePersistence != null
                         ? builder.statePersistence
                         : StatePersistence.all();
+        this.middlewares = List.copyOf(builder.middlewares);
     }
 
     // ==================== RuntimeContext ====================
@@ -209,14 +246,26 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected Msg seedSystemMsg() {
-        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
-            return Msg.builder()
-                    .name("system")
-                    .role(MsgRole.SYSTEM)
-                    .content(TextBlock.builder().text(sysPrompt).build())
-                    .build();
+        if (sysPrompt == null || sysPrompt.trim().isEmpty()) {
+            return null;
         }
-        return null;
+        String prompt = applySystemPromptMiddlewares(sysPrompt);
+        return Msg.builder()
+                .name("system")
+                .role(MsgRole.SYSTEM)
+                .content(TextBlock.builder().text(prompt).build())
+                .build();
+    }
+
+    private String applySystemPromptMiddlewares(String prompt) {
+        if (middlewares.isEmpty()) {
+            return prompt;
+        }
+        Mono<String> result = Mono.just(prompt);
+        for (Middleware mw : middlewares) {
+            result = result.flatMap(p -> mw.onSystemPrompt(this, p));
+        }
+        return result.block();
     }
 
     @Override
@@ -276,6 +325,46 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext context) {
         this.pendingRuntimeContext = context;
         return stream(msgs, options, schema);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s from the full agent lifecycle.
+     *
+     * <p>This method goes through the same lifecycle as {@code call()} (acquire execution,
+     * hooks, pre/post call notification) but exposes the internal event stream. The lifecycle
+     * is driven by {@code call()} internally; events are captured via the shared
+     * {@code activeEventSink}.
+     *
+     * @param msgs input messages
+     * @return event stream covering the full reply lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        return Flux.<AgentEvent>create(
+                        sink -> {
+                            activeEventSink.set(sink);
+                            sink.next(new ReplyStartEvent(null, replyId, getName()));
+                            call(msgs)
+                                    .doFinally(
+                                            signal -> {
+                                                sink.next(new ReplyEndEvent(replyId));
+                                                activeEventSink.set(null);
+                                                sink.complete();
+                                            })
+                                    .subscribe(finalMsg -> {}, sink::error);
+                        },
+                        FluxSink.OverflowStrategy.BUFFER)
+                .doOnError(e -> activeEventSink.set(null));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single input message.
+     *
+     * @param msg input message
+     * @return event stream covering the full reply lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg) {
+        return streamEvents(List.of(msg));
     }
 
     // ==================== New StateModule API ====================
@@ -395,6 +484,52 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                         + "Enable PendingToolRecoveryHook or provide tool results. "
                         + "Pending IDs: "
                         + pendingIds);
+    }
+
+    /**
+     * Execute the full reply as a {@link Flux} of fine-grained {@link AgentEvent}s.
+     *
+     * <p>This method wraps the existing {@code doCall()} logic and captures all events emitted
+     * by the internal stream methods ({@code reasoningStream}, {@code actingStream},
+     * {@code summaryStream}). The stream is bookended by {@link ReplyStartEvent} and
+     * {@link ReplyEndEvent}.
+     *
+     * @param msgs the input messages
+     * @return event stream covering the full reply lifecycle
+     */
+    Flux<AgentEvent> replyImpl(List<Msg> msgs) {
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+
+        Function<ReplyInput, Flux<AgentEvent>> core =
+                input ->
+                        Flux.<AgentEvent>create(
+                                        sink -> {
+                                            activeEventSink.set(sink);
+                                            sink.next(
+                                                    new ReplyStartEvent(null, replyId, getName()));
+
+                                            doCall(input.msgs())
+                                                    .doFinally(
+                                                            signal -> {
+                                                                sink.next(
+                                                                        new ReplyEndEvent(replyId));
+                                                                activeEventSink.set(null);
+                                                                sink.complete();
+                                                            })
+                                                    .subscribe(finalMsg -> {}, sink::error);
+                                        },
+                                        FluxSink.OverflowStrategy.BUFFER)
+                                .doOnError(e -> activeEventSink.set(null));
+
+        return MiddlewareChain.build(middlewares, this, Middleware::onReply, core)
+                .apply(new ReplyInput(msgs));
+    }
+
+    private void publishEvent(AgentEvent event) {
+        FluxSink<AgentEvent> sink = activeEventSink.get();
+        if (sink != null) {
+            sink.next(event);
+        }
     }
 
     /**
@@ -567,7 +702,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
         return checkInterruptedAsync()
                 .then(notifyPreReasoningEvent(memory.getMessages()))
-                .flatMapMany(
+                .flatMap(
                         event -> {
                             GenerateOptions options =
                                     event.getEffectiveGenerateOptions() != null
@@ -576,18 +711,25 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             List<Msg> modelInput =
                                     prependSystemMsg(
                                             event.getInputMessages(), event.getSystemMessage());
-                            return model.stream(modelInput, toolkit.getToolSchemas(), options)
-                                    .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk));
+                            List<ToolSchema> tools = toolkit.getToolSchemas();
+                            Function<ReasoningInput, Flux<AgentEvent>> reasoningCore =
+                                    ri ->
+                                            reasoningStream(
+                                                    context,
+                                                    ri.messages(),
+                                                    ri.tools(),
+                                                    ri.options());
+                            Flux<AgentEvent> stream =
+                                    MiddlewareChain.build(
+                                                    middlewares,
+                                                    ReActAgent.this,
+                                                    Middleware::onReasoning,
+                                                    reasoningCore)
+                                            .apply(new ReasoningInput(modelInput, tools, options));
+                            return stream.then(
+                                    Mono.defer(
+                                            () -> Mono.justOrEmpty(context.buildFinalMessage())));
                         })
-                .doOnNext(
-                        chunk -> {
-                            List<Msg> chunkMsgs = context.processChunk(chunk);
-                            // Notify streaming hooks for each chunk message
-                            for (Msg msg : chunkMsgs) {
-                                notifyReasoningChunk(msg, context).subscribe();
-                            }
-                        })
-                .then(Mono.defer(() -> Mono.justOrEmpty(context.buildFinalMessage())))
                 .onErrorResume(
                         InterruptedException.class,
                         error -> {
@@ -599,8 +741,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                 .getConfig()
                                                                 .partialReasoningPolicy()
                                                         == PartialReasoningPolicy.DISCARD;
-                                // Manually interruption will save the msg, while system
-                                // interruption will discard on specific config
                                 if (!discard) {
                                     memory.addMessage(msg);
                                 }
@@ -624,12 +764,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
                             // gotoReasoning requested (e.g., by StructuredOutputHook)
                             if (event.isGotoReasoningRequested()) {
-                                // Validation already done in PostReasoningEvent.gotoReasoning()
                                 List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
                                 if (gotoMsgs != null) {
                                     gotoMsgs.forEach(memory::addMessage);
                                 }
-                                // Continue to next iteration, ignoring maxIters for this entry
                                 return reasoning(iter + 1, true);
                             }
 
@@ -650,6 +788,134 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
+     * Stream fine-grained {@link AgentEvent}s from a model call during reasoning.
+     *
+     * <p>Emits: {@link ModelCallStartEvent} → block start/delta/end events → {@link
+     * ModelCallEndEvent}. The provided {@link ReasoningContext} is used to accumulate chunks
+     * (for building the final {@link Msg}) and to notify legacy {@link Hook}s.
+     *
+     * @param context   reasoning context for chunk accumulation
+     * @param messages  the messages to send to the model
+     * @param tools     the tool schemas available
+     * @param options   generation options
+     * @return event stream from a single model call
+     */
+    Flux<AgentEvent> reasoningStream(
+            ReasoningContext context,
+            List<Msg> messages,
+            List<ToolSchema> tools,
+            GenerateOptions options) {
+
+        Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
+                mci -> modelCallStream(context, mci, true);
+
+        return MiddlewareChain.build(middlewares, this, Middleware::onModelCall, modelCallCore)
+                .apply(new ModelCallInput(messages, tools, options, model))
+                .doOnNext(this::publishEvent);
+    }
+
+    private Flux<AgentEvent> modelCallStream(
+            ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
+
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        AtomicBoolean textStarted = new AtomicBoolean(false);
+        AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+        Set<String> startedToolCalls = ConcurrentHashMap.newKeySet();
+
+        Flux<AgentEvent> modelEvents =
+                mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                        .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
+                        .concatMap(
+                                chunk -> {
+                                    List<Msg> chunkMsgs = context.processChunk(chunk);
+                                    for (Msg msg : chunkMsgs) {
+                                        notifyReasoningChunk(msg, context).subscribe();
+                                    }
+
+                                    List<AgentEvent> events = new ArrayList<>();
+                                    for (ContentBlock block : chunk.getContent()) {
+                                        emitBlockEvents(
+                                                block,
+                                                replyId,
+                                                context,
+                                                textStarted,
+                                                thinkingStarted,
+                                                withToolEvents
+                                                        ? startedToolCalls
+                                                        : ConcurrentHashMap.newKeySet(),
+                                                events);
+                                    }
+                                    return Flux.fromIterable(events);
+                                });
+
+        Flux<AgentEvent> endEvents =
+                Flux.defer(
+                        () -> {
+                            List<AgentEvent> events = new ArrayList<>();
+                            if (textStarted.get()) {
+                                events.add(new TextBlockEndEvent(replyId, "text"));
+                            }
+                            if (thinkingStarted.get()) {
+                                events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                            }
+                            for (String toolId : startedToolCalls) {
+                                events.add(new ToolCallEndEvent(replyId, toolId));
+                            }
+                            events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                            return Flux.fromIterable(events);
+                        });
+
+        return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
+    }
+
+    private void emitBlockEvents(
+            ContentBlock block,
+            String replyId,
+            ReasoningContext context,
+            AtomicBoolean textStarted,
+            AtomicBoolean thinkingStarted,
+            Set<String> startedToolCalls,
+            List<AgentEvent> events) {
+
+        if (block instanceof TextBlock tb) {
+            if (textStarted.compareAndSet(false, true)) {
+                events.add(new TextBlockStartEvent(replyId, "text"));
+            }
+            if (tb.getText() != null && !tb.getText().isEmpty()) {
+                events.add(new TextBlockDeltaEvent(replyId, "text", tb.getText()));
+            }
+        } else if (block instanceof ThinkingBlock tb) {
+            if (thinkingStarted.compareAndSet(false, true)) {
+                events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
+            }
+            if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
+                events.add(new ThinkingBlockDeltaEvent(replyId, "thinking", tb.getThinking()));
+            }
+        } else if (block instanceof ToolUseBlock tub) {
+            String toolId = resolveToolCallId(tub, context);
+            if (toolId != null && startedToolCalls.add(toolId)) {
+                String toolName = tub.getName();
+                if (toolName != null && !toolName.startsWith("__")) {
+                    events.add(new ToolCallStartEvent(replyId, toolId, toolName));
+                }
+            }
+            if (tub.getContent() != null && !tub.getContent().isEmpty()) {
+                events.add(
+                        new ToolCallDeltaEvent(
+                                replyId, toolId != null ? toolId : "", tub.getContent()));
+            }
+        }
+    }
+
+    private String resolveToolCallId(ToolUseBlock tub, ReasoningContext context) {
+        if (tub.getId() != null && !tub.getId().isEmpty()) {
+            return tub.getId();
+        }
+        ToolUseBlock accumulated = context.getAccumulatedToolCall(null);
+        return accumulated != null ? accumulated.getId() : null;
+    }
+
+    /**
      * Execute the acting phase.
      *
      * <p>This method executes only pending tools (those without results in memory),
@@ -667,24 +933,32 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * @return Mono containing the final result message
      */
     private Mono<Msg> acting(int iter) {
-        // Extract only pending tool calls (those without results in memory)
         List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
 
         if (pendingToolCalls.isEmpty()) {
-            // No pending tools have been executed, continue to next iteration
             return executeIteration(iter + 1);
         }
 
-        // Forward tool chunks into ActingChunkEvent hooks without overwriting user callbacks.
-        toolkit.setInternalChunkCallback(
-                (toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
+                new AtomicReference<>();
 
-        // Execute only pending tools (those without results in memory)
         return notifyPreActingHooks(pendingToolCalls)
-                .flatMap(this::executeToolCalls)
+                .flatMap(
+                        toolCalls -> {
+                            Function<ActingInput, Flux<AgentEvent>> actingCore =
+                                    ai -> actingStream(ai.toolCalls(), replyId, resultHolder);
+                            Flux<AgentEvent> stream =
+                                    MiddlewareChain.build(
+                                                    middlewares,
+                                                    this,
+                                                    Middleware::onActing,
+                                                    actingCore)
+                                            .apply(new ActingInput(toolCalls));
+                            return stream.then(Mono.defer(() -> Mono.just(resultHolder.get())));
+                        })
                 .flatMap(
                         results -> {
-                            // Separate success and pending results
                             List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
                                     results.stream()
                                             .filter(e -> !e.getValue().isSuspended())
@@ -694,7 +968,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                             .filter(e -> e.getValue().isSuspended())
                                             .toList();
 
-                            // If no success results to process
                             if (successPairs.isEmpty()) {
                                 if (!pendingPairs.isEmpty()) {
                                     return Mono.just(buildSuspendedMsg(pendingPairs));
@@ -702,14 +975,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                 return executeIteration(iter + 1);
                             }
 
-                            // Process success results through hooks and add to memory
                             return Flux.fromIterable(successPairs)
                                     .concatMap(this::notifyPostActingHook)
                                     .last()
                                     .flatMap(
                                             event -> {
-                                                // HITL stop (also triggered by
-                                                // StructuredOutputHook when completed)
                                                 if (event.isStopRequested()) {
                                                     return Mono.just(
                                                             event.getToolResultMsg()
@@ -718,16 +988,102 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                                     .ACTING_STOP_REQUESTED));
                                                 }
 
-                                                // If there are pending results, build suspended Msg
                                                 if (!pendingPairs.isEmpty()) {
                                                     return Mono.just(
                                                             buildSuspendedMsg(pendingPairs));
                                                 }
 
-                                                // Continue next iteration
                                                 return executeIteration(iter + 1);
                                             });
                         });
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s from tool execution during the acting phase.
+     *
+     * <p>Emits: {@link ToolResultStartEvent} → delta events → {@link ToolResultEndEvent}
+     * for each tool call. The provided {@code resultHolder} is populated with the execution
+     * results so the caller can process them afterward.
+     *
+     * @param toolCalls    the tool calls to execute
+     * @param replyId      the reply identifier for event correlation
+     * @param resultHolder populated with tool execution results on completion
+     * @return event stream from tool execution
+     */
+    Flux<AgentEvent> actingStream(
+            List<ToolUseBlock> toolCalls,
+            String replyId,
+            AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
+
+        return Flux.<AgentEvent>create(
+                        sink -> {
+                            for (ToolUseBlock tool : toolCalls) {
+                                sink.next(
+                                        new ToolResultStartEvent(
+                                                replyId, tool.getId(), tool.getName()));
+                            }
+
+                            toolkit.setInternalChunkCallback(
+                                    (toolUse, chunk) -> {
+                                        if (chunk.getOutput() != null) {
+                                            for (ContentBlock block : chunk.getOutput()) {
+                                                if (block instanceof TextBlock tb) {
+                                                    sink.next(
+                                                            new ToolResultTextDeltaEvent(
+                                                                    replyId,
+                                                                    toolUse.getId(),
+                                                                    tb.getText()));
+                                                } else {
+                                                    sink.next(
+                                                            new ToolResultDataDeltaEvent(
+                                                                    replyId,
+                                                                    toolUse.getId(),
+                                                                    block));
+                                                }
+                                            }
+                                        }
+                                        notifyActingChunk(toolUse, chunk).subscribe();
+                                    });
+
+                            executeToolCalls(toolCalls)
+                                    .subscribe(
+                                            results -> {
+                                                resultHolder.set(results);
+                                                for (Map.Entry<ToolUseBlock, ToolResultBlock>
+                                                        entry : results) {
+                                                    ToolResultState state =
+                                                            determineToolResultState(
+                                                                    entry.getValue());
+                                                    sink.next(
+                                                            new ToolResultEndEvent(
+                                                                    replyId,
+                                                                    entry.getKey().getId(),
+                                                                    state));
+                                                }
+                                                sink.complete();
+                                            },
+                                            sink::error);
+                        })
+                .doOnNext(this::publishEvent);
+    }
+
+    private ToolResultState determineToolResultState(ToolResultBlock result) {
+        if (result.isSuspended()) {
+            return ToolResultState.RUNNING;
+        }
+        if (result.getState() != null && result.getState() != ToolResultState.RUNNING) {
+            return result.getState();
+        }
+        if (result.getOutput() != null
+                && result.getOutput().stream()
+                        .anyMatch(
+                                b ->
+                                        b instanceof TextBlock tb
+                                                && tb.getText() != null
+                                                && tb.getText().startsWith("[ERROR]"))) {
+            return ToolResultState.ERROR;
+        }
+        return ToolResultState.SUCCESS;
     }
 
     /**
@@ -830,6 +1186,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
         List<Msg> messageList = prepareSummaryMessages();
         GenerateOptions generateOptions = buildGenerateOptions();
+        ReasoningContext context = new ReasoningContext(getName());
+        publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
         return notifyPreSummaryHook(messageList, generateOptions)
                 .flatMap(
@@ -841,7 +1199,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             GenerateOptions effectiveOptions =
                                     preSummaryEvent.getEffectiveGenerateOptions();
 
-                            return streamAndAccumulateSummary(effectiveMessages, effectiveOptions)
+                            return summaryStream(context, effectiveMessages, effectiveOptions)
+                                    .then(
+                                            Mono.defer(
+                                                    () ->
+                                                            Mono.justOrEmpty(
+                                                                    context.buildFinalMessage())))
                                     .flatMap(
                                             msg ->
                                                     notifyPostSummaryHook(msg, effectiveOptions)
@@ -860,21 +1223,92 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .onErrorResume(this::handleSummaryError);
     }
 
-    private Mono<Msg> streamAndAccumulateSummary(
-            List<Msg> messages, GenerateOptions generateOptions) {
-        return model.stream(messages, null, generateOptions)
-                .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
-                .reduce(
-                        new ReasoningContext(getName()),
-                        (ctx, chunk) -> {
-                            List<Msg> streamedMessages = ctx.processChunk(chunk);
-                            for (Msg streamedMessage : streamedMessages) {
-                                notifySummaryChunk(streamedMessage, ctx, generateOptions)
-                                        .subscribe();
+    /**
+     * Stream fine-grained {@link AgentEvent}s from a model call during summarization.
+     *
+     * <p>Structurally identical to {@link #reasoningStream} but notifies summary-specific
+     * hooks ({@link SummaryChunkEvent}) and does not pass tool schemas to the model.
+     *
+     * @param context   reasoning context for chunk accumulation
+     * @param messages  the messages to send to the model
+     * @param options   generation options
+     * @return event stream from the summary model call
+     */
+    Flux<AgentEvent> summaryStream(
+            ReasoningContext context, List<Msg> messages, GenerateOptions options) {
+
+        Function<ModelCallInput, Flux<AgentEvent>> summaryModelCallCore =
+                mci -> summaryModelCallStream(context, mci, options);
+
+        return MiddlewareChain.build(
+                        middlewares, this, Middleware::onModelCall, summaryModelCallCore)
+                .apply(new ModelCallInput(messages, null, options, model))
+                .doOnNext(this::publishEvent);
+    }
+
+    private Flux<AgentEvent> summaryModelCallStream(
+            ReasoningContext context, ModelCallInput mci, GenerateOptions hookOptions) {
+
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        AtomicBoolean textStarted = new AtomicBoolean(false);
+        AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+
+        Flux<AgentEvent> modelEvents =
+                mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                        .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
+                        .concatMap(
+                                chunk -> {
+                                    List<Msg> chunkMsgs = context.processChunk(chunk);
+                                    for (Msg msg : chunkMsgs) {
+                                        notifySummaryChunk(msg, context, hookOptions).subscribe();
+                                    }
+
+                                    List<AgentEvent> events = new ArrayList<>();
+                                    for (ContentBlock block : chunk.getContent()) {
+                                        if (block instanceof TextBlock tb) {
+                                            if (textStarted.compareAndSet(false, true)) {
+                                                events.add(
+                                                        new TextBlockStartEvent(replyId, "text"));
+                                            }
+                                            if (tb.getText() != null && !tb.getText().isEmpty()) {
+                                                events.add(
+                                                        new TextBlockDeltaEvent(
+                                                                replyId, "text", tb.getText()));
+                                            }
+                                        } else if (block instanceof ThinkingBlock tb) {
+                                            if (thinkingStarted.compareAndSet(false, true)) {
+                                                events.add(
+                                                        new ThinkingBlockStartEvent(
+                                                                replyId, "thinking"));
+                                            }
+                                            if (tb.getThinking() != null
+                                                    && !tb.getThinking().isEmpty()) {
+                                                events.add(
+                                                        new ThinkingBlockDeltaEvent(
+                                                                replyId,
+                                                                "thinking",
+                                                                tb.getThinking()));
+                                            }
+                                        }
+                                    }
+                                    return Flux.fromIterable(events);
+                                });
+
+        Flux<AgentEvent> endEvents =
+                Flux.defer(
+                        () -> {
+                            List<AgentEvent> events = new ArrayList<>();
+                            if (textStarted.get()) {
+                                events.add(new TextBlockEndEvent(replyId, "text"));
                             }
-                            return ctx;
-                        })
-                .map(ReasoningContext::buildFinalMessage);
+                            if (thinkingStarted.get()) {
+                                events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                            }
+                            events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                            return Flux.fromIterable(events);
+                        });
+
+        return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
     }
 
     private List<Msg> prepareSummaryMessages() {
@@ -1217,6 +1651,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private ExecutionConfig toolExecutionConfig;
         private GenerateOptions generateOptions;
         private final Set<Hook> hooks = new LinkedHashSet<>();
+        private final List<Middleware> middlewares = new ArrayList<>();
         private boolean enableMetaTool = false;
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
@@ -1347,6 +1782,28 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          */
         public Builder hooks(List<Hook> hooks) {
             this.hooks.addAll(hooks);
+            return this;
+        }
+
+        /**
+         * Adds a middleware for intercepting agent execution.
+         *
+         * @param middleware the middleware to add
+         * @return this builder instance for method chaining
+         */
+        public Builder middleware(Middleware middleware) {
+            this.middlewares.add(middleware);
+            return this;
+        }
+
+        /**
+         * Adds multiple middlewares for intercepting agent execution.
+         *
+         * @param middlewares the list of middlewares to add
+         * @return this builder instance for method chaining
+         */
+        public Builder middlewares(List<Middleware> middlewares) {
+            this.middlewares.addAll(middlewares);
             return this;
         }
 
