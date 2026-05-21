@@ -9,50 +9,54 @@ interface Props {
 
 const s: Record<string, React.CSSProperties> = {
   sidebar: {
-    width: 240,
-    minWidth: 200,
-    background: '#13151f',
-    borderRight: '1px solid #1e2235',
+    width: 260,
+    minWidth: 220,
+    background: '#ffffff',
+    borderRight: '1px solid #e5e7eb',
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
     overflowY: 'auto',
   },
   header: {
-    padding: '1rem',
-    borderBottom: '1px solid #1e2235',
-    fontWeight: 600,
-    fontSize: '0.85rem',
-    color: '#7c8bad',
+    padding: '1.1rem 1.25rem',
+    borderBottom: '1px solid #e5e7eb',
+    fontWeight: 700,
+    fontSize: '0.78rem',
+    color: '#64748b',
     textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    letterSpacing: '0.08em',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   newBtn: {
-    background: '#6366f1',
+    background: '#4f46e5',
     color: '#fff',
     border: 'none',
-    borderRadius: 4,
-    padding: '2px 8px',
+    borderRadius: 6,
+    padding: '3px 10px',
     cursor: 'pointer',
-    fontSize: '0.8rem',
+    fontSize: '0.88rem',
+    fontWeight: 600,
+    boxShadow: '0 1px 2px rgba(79,70,229,0.25)',
   },
-  time: { fontSize: '0.7rem', color: '#4b5571', display: 'block', marginTop: 2 },
+  time: { fontSize: '0.78rem', color: '#94a3b8', display: 'block', marginTop: 3 },
 };
 
 function itemStyle(active: boolean): React.CSSProperties {
   return {
-    padding: '0.65rem 1rem',
+    padding: '0.75rem 1.25rem',
     cursor: 'pointer',
-    background: active ? '#1e2235' : 'transparent',
-    borderLeft: active ? '3px solid #6366f1' : '3px solid transparent',
-    fontSize: '0.82rem',
-    color: active ? '#e2e8f0' : '#94a3b8',
+    background: active ? '#eef2ff' : 'transparent',
+    borderLeft: active ? '3px solid #4f46e5' : '3px solid transparent',
+    fontSize: '0.9rem',
+    color: active ? '#4338ca' : '#334155',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    fontWeight: active ? 600 : 500,
+    transition: 'background 0.12s, color 0.12s',
   };
 }
 
@@ -82,7 +86,7 @@ export default function SessionSidebar({ activeKey, onSelect, onNew }: Props) {
         </button>
       </div>
       {sessions.length === 0 && (
-        <div style={{ padding: '1rem', color: '#4b5571', fontSize: '0.8rem' }}>
+        <div style={{ padding: '1.25rem', color: '#94a3b8', fontSize: '0.88rem' }}>
           No sessions yet
         </div>
       )}

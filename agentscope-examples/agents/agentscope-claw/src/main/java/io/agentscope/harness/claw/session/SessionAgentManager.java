@@ -17,8 +17,6 @@ package io.agentscope.harness.claw.session;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.StateModule;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.claw.session.tool.SessionsTool;
@@ -89,7 +87,6 @@ public class SessionAgentManager {
     private final DefaultAgentManager delegate;
     private final AgentManagerConfig config;
     private final SubagentRunRegistry runRegistry;
-    private final Session session;
     private final SessionStore sessionStore;
 
     // Session registry
@@ -118,20 +115,16 @@ public class SessionAgentManager {
      * @param delegate agent factory/invoker
      * @param config concurrency and announce tuning
      * @param runRegistry run lifecycle tracking
-     * @param session persistent session storage for agent state (saveTo/loadFrom); may be null to
-     *     disable persistence (in-memory only, state lost on restart)
      * @param sessionStore durable session registry for metadata persistence; may be null
      */
     public SessionAgentManager(
             DefaultAgentManager delegate,
             AgentManagerConfig config,
             SubagentRunRegistry runRegistry,
-            Session session,
             SessionStore sessionStore) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.config = Objects.requireNonNull(config, "config");
         this.runRegistry = Objects.requireNonNull(runRegistry, "runRegistry");
-        this.session = session;
         this.sessionStore = sessionStore;
         this.subagentLane = new Semaphore(config.maxConcurrentSubagentRuns());
         this.nestedLane = new Semaphore(config.maxConcurrentNestedRuns());
@@ -140,21 +133,12 @@ public class SessionAgentManager {
         }
     }
 
-    /** Constructor with Session but no SessionStore. */
-    public SessionAgentManager(
-            DefaultAgentManager delegate,
-            AgentManagerConfig config,
-            SubagentRunRegistry runRegistry,
-            Session session) {
-        this(delegate, config, runRegistry, session, null);
-    }
-
-    /** Backwards-compatible constructor without Session or SessionStore (no persistence). */
+    /** Constructor without SessionStore (no metadata persistence). */
     public SessionAgentManager(
             DefaultAgentManager delegate,
             AgentManagerConfig config,
             SubagentRunRegistry runRegistry) {
-        this(delegate, config, runRegistry, null, null);
+        this(delegate, config, runRegistry, null);
     }
 
     /**
@@ -209,11 +193,6 @@ public class SessionAgentManager {
 
     public Map<String, SubagentFactory> getAgentFactories() {
         return delegate.getAgentFactories();
-    }
-
-    /** The persistent session storage, or null if persistence is disabled. */
-    public Session getSession() {
-        return session;
     }
 
     /** The durable session registry, or null if not configured. */
@@ -536,13 +515,11 @@ public class SessionAgentManager {
         } catch (RuntimeException e) {
             String err = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             log.warn("Session execute failed: sessionKey={}", entry.sessionKey(), e);
-            persistAgentState(agent, entry);
             finishRun(entry, "failed", null, err);
             return new SendResult(entry.sessionKey(), "error", null, err);
         }
 
         String text = reply != null ? reply.getTextContent() : "";
-        persistAgentState(agent, entry);
         touchSession(entry.sessionKey());
         finishRun(entry, "ok", text, null);
         return new SendResult(entry.sessionKey(), "ok", text, null);
@@ -554,44 +531,7 @@ public class SessionAgentManager {
      */
     private Agent getOrCreateAgent(SessionEntry entry) {
         return agentCache.computeIfAbsent(
-                entry.sessionKey(),
-                k -> {
-                    Agent agent = delegate.createAgent(entry.agentId());
-                    if (session != null && agent instanceof StateModule sm) {
-                        try {
-                            sm.loadIfExists(session, entry.sessionId());
-                            log.debug(
-                                    "Loaded agent state from session: sessionKey={}, sessionId={}",
-                                    entry.sessionKey(),
-                                    entry.sessionId());
-                        } catch (Exception e) {
-                            log.warn(
-                                    "Failed to load agent state: sessionKey={}, sessionId={}",
-                                    entry.sessionKey(),
-                                    entry.sessionId(),
-                                    e);
-                        }
-                    }
-                    return agent;
-                });
-    }
-
-    /**
-     * Persists the agent's in-memory state (memory, metadata) to the persistent {@link Session}.
-     */
-    private void persistAgentState(Agent agent, SessionEntry entry) {
-        if (session == null || !(agent instanceof StateModule sm)) {
-            return;
-        }
-        try {
-            sm.saveTo(session, entry.sessionId());
-        } catch (Exception e) {
-            log.warn(
-                    "Failed to persist agent state: sessionKey={}, sessionId={}",
-                    entry.sessionKey(),
-                    entry.sessionId(),
-                    e);
-        }
+                entry.sessionKey(), k -> delegate.createAgent(entry.agentId()));
     }
 
     /** Evicts the cached agent for the given session key. */

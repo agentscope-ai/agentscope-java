@@ -18,7 +18,6 @@ package io.agentscope.harness.claw.gateway;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.session.Session;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.claw.channel.OutboundAddress;
 import io.agentscope.harness.claw.session.PendingCompletion;
@@ -117,10 +116,6 @@ public final class HarnessGateway implements Gateway {
             new ConcurrentHashMap<>();
 
     private final SessionTurnGate sessionTurnGate = new SessionTurnGate();
-
-    /** Tracks which main-agent sessionIds have already been loaded in this JVM lifetime. */
-    private final ConcurrentHashMap<String, Boolean> mainAgentLoadedSessions =
-            new ConcurrentHashMap<>();
 
     private HarnessGateway(SessionAgentManager sessionAgentManager, ChannelManager channelManager) {
         this.sessionAgentManager = Objects.requireNonNull(sessionAgentManager);
@@ -267,8 +262,6 @@ public final class HarnessGateway implements Gateway {
             lastRouteBySessionKey.put(sessionKey, outboundAddress);
         }
 
-        loadMainAgentState(ha, sessionId);
-
         RuntimeContext.Builder rtcBuilder =
                 RuntimeContext.builder()
                         .sessionId(sessionId)
@@ -278,8 +271,7 @@ public final class HarnessGateway implements Gateway {
             rtcBuilder.userId(ctx.userId());
         }
         RuntimeContext runtimeContext = rtcBuilder.build();
-        return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext))
-                .doFinally(sig -> saveMainAgentState(ha, sessionId));
+        return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext));
     }
 
     /**
@@ -476,40 +468,6 @@ public final class HarnessGateway implements Gateway {
     private static String resolveAgentId(HarnessAgent ha) {
         String id = ha != null ? ha.getAgentId() : null;
         return (id != null && !id.isBlank()) ? id : "main";
-    }
-
-    /**
-     * Loads the main agent's persisted state (conversation history, etc.) from the Session storage
-     * if this is the first turn for this sessionId in this JVM lifetime.
-     */
-    private void loadMainAgentState(HarnessAgent ha, String sessionId) {
-        Session sess = sessionAgentManager.getSession();
-        if (sess == null) {
-            return;
-        }
-        String loadKey = "main-loaded:" + sessionId;
-        mainAgentLoadedSessions.computeIfAbsent(
-                loadKey,
-                k -> {
-                    try {
-                        ha.loadIfExists(sess, sessionId);
-                    } catch (Exception e) {
-                        log.warn("Failed to load main agent state: sessionId={}", sessionId, e);
-                    }
-                    return Boolean.TRUE;
-                });
-    }
-
-    private void saveMainAgentState(HarnessAgent ha, String sessionId) {
-        Session sess = sessionAgentManager.getSession();
-        if (sess == null) {
-            return;
-        }
-        try {
-            ha.saveTo(sess, sessionId);
-        } catch (Exception e) {
-            log.warn("Failed to save main agent state: sessionId={}", sessionId, e);
-        }
     }
 
     private Mono<Msg> withGatedTurn(String gateKey, Supplier<Mono<Msg>> turn) {

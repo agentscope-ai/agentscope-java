@@ -18,8 +18,6 @@ package io.agentscope.harness.coding;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.hook.SubagentsHook;
@@ -515,8 +513,6 @@ public final class CodingBootstrap {
                             : new WorkspaceManager(mainWorkspace);
             DefaultAgentManager dam = new DefaultAgentManager(entries, wsManager);
 
-            Path sessionsDir = mainWorkspace.resolve("sessions");
-            Session session = new JsonSession(sessionsDir);
             Path storeFile = mainWorkspace.resolve("sessions.json");
             SessionStore sessionStore = new SessionStore(storeFile);
             sessionStore.load();
@@ -526,7 +522,6 @@ public final class CodingBootstrap {
                             dam,
                             AgentManagerConfig.defaults(),
                             new SubagentRunRegistry(),
-                            session,
                             sessionStore);
 
             ChannelManager channelMgr = new ChannelManager();

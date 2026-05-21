@@ -28,16 +28,29 @@ builder:
 
   # ---- Workspace storage topology (multi-tenant filesystem) ----
   # fs-spec selects how per-(user, agent) workspaces are backed:
-  #   local    — single LocalFilesystem rooted at ${cwd}/.agentscope/workspaces/, with
-  #              per-agent namespacing via NamespaceFactory (default; no extra infra).
-  #   sandbox  — SandboxBackedFilesystem with per-user OS-level isolation. Reserved.
-  #   remote   — hosted RemoteFilesystem backend. Reserved.
+  #   local    — LocalFilesystem rooted at the agent workspace, with per-agent
+  #              namespacing via NamespaceFactory (default; no extra infra).
+  #   sandbox  — local workspace store + SandboxBackedFilesystem for agent runtime.
+  #              Requires builder.sandbox.enabled=true.
+  #   remote   — RemoteFilesystem backed by a BaseStore bean for distributed
+  #              deployments. Requires a BaseStore bean (e.g. Redis, OSS).
   workspace-store:
     fs-spec: ${BUILDER_WORKSPACE_FS_SPEC:local}
     local:
-      virtual-mode: true
       max-file-size-mb: 10
-    # sandbox / remote sections will be added when those backends are wired.
+
+  # ---- Sandbox mode (Docker-based agent isolation) ----
+  # When enabled, agents run inside Docker containers with workspace projection.
+  # The web API workspace endpoints continue managing projected files on the host.
+  sandbox:
+    enabled: ${BUILDER_SANDBOX_ENABLED:false}
+    image: ${BUILDER_SANDBOX_IMAGE:agentscope/python-sandbox:py311-slim}
+    network: ${BUILDER_SANDBOX_NETWORK:none}
+    workspace-root: ${BUILDER_SANDBOX_WORKSPACE_ROOT:/workspace}
+    isolation: ${BUILDER_SANDBOX_ISOLATION:USER}
+    projection-roots: ${BUILDER_SANDBOX_PROJECTION_ROOTS:AGENTS.md,skills,subagents,knowledge}
+    cpu-count: ${BUILDER_SANDBOX_CPU_COUNT:0}
+    memory-bytes: ${BUILDER_SANDBOX_MEMORY_BYTES:0}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

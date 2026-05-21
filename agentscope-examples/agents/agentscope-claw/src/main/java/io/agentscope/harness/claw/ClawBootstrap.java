@@ -18,8 +18,6 @@ package io.agentscope.harness.claw;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
@@ -566,16 +564,13 @@ public final class ClawBootstrap {
                             : new WorkspaceManager(mainWorkspace);
             DefaultAgentManager dam = new DefaultAgentManager(entries, wsManager);
 
-            Path sessionsDir = mainWorkspace.resolve("sessions");
-            Session session = new JsonSession(sessionsDir);
             Path storeFile = mainWorkspace.resolve("sessions.json");
             SessionStore sessionStore = new SessionStore(storeFile);
             sessionStore.load();
 
             AgentManagerConfig amCfg = resolveAgentManagerConfig(fileConfig);
             SessionAgentManager sam =
-                    new SessionAgentManager(
-                            dam, amCfg, new SubagentRunRegistry(), session, sessionStore);
+                    new SessionAgentManager(dam, amCfg, new SubagentRunRegistry(), sessionStore);
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);

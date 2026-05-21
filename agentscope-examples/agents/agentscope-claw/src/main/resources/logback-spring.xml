@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!-- In-memory ring-buffer appender for live log streaming via /api/admin/runtime/logs -->
+    <appender name="MEMORY"
+              class="io.agentscope.harness.claw.app.util.InMemoryLogAppender"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="MEMORY"/>
+    </root>
+
+    <logger name="io.agentscope" level="INFO"/>
+    <logger name="org.springframework.security" level="WARN"/>
+    <logger name="org.springframework.web" level="WARN"/>
+</configuration>

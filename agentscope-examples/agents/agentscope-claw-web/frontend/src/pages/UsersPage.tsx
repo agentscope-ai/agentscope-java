@@ -12,38 +12,38 @@ import {
 
 // ── styles ────────────────────────────────────────────────────────────
 function badge(isAdmin: boolean): React.CSSProperties {
-  return { display: 'inline-block', padding: '1px 7px', borderRadius: 10, fontSize: '0.68rem', marginRight: 4,
-    background: isAdmin ? '#312e81' : '#1e2235', color: isAdmin ? '#a5b4fc' : '#64748b' };
+  return { display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: '0.76rem', marginRight: 6, fontWeight: 500,
+    background: isAdmin ? '#e0e7ff' : '#f1f5f9', color: isAdmin ? '#4338ca' : '#64748b' };
 }
 function actionBtn(danger?: boolean): React.CSSProperties {
-  return { padding: '3px 10px', fontSize: '0.75rem', marginRight: 4,
-    border: `1px solid ${danger ? '#5b2030' : '#2d3148'}`,
-    borderRadius: 5, background: 'transparent',
-    color: danger ? '#f87171' : '#7c8bad', cursor: 'pointer' };
+  return { padding: '5px 12px', fontSize: '0.82rem', marginRight: 6, fontWeight: 500,
+    border: `1px solid ${danger ? '#fecaca' : '#d1d5db'}`,
+    borderRadius: 6, background: danger ? '#ffffff' : '#ffffff',
+    color: danger ? '#dc2626' : '#475569', cursor: 'pointer' };
 }
 const S: Record<string, React.CSSProperties> = {
-  err:      { color: '#f87171', fontSize: '0.82rem', background: '#1f1520', border: '1px solid #5b2030', borderRadius: 8, padding: '8px 12px', marginBottom: 14 },
-  info:     { color: '#34d399', fontSize: '0.82rem', background: '#0d1f14', border: '1px solid #166534', borderRadius: 8, padding: '8px 12px', marginBottom: 14 },
-  table:    { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.83rem' },
-  th:       { textAlign: 'left' as const, padding: '8px 10px', background: '#13151f', color: '#7c8bad', borderBottom: '1px solid #1e2235', fontWeight: 600 },
-  td:       { padding: '9px 10px', borderBottom: '1px solid #1a1d2e', color: '#94a3b8', verticalAlign: 'middle' as const },
-  refreshBtn:{ background: 'transparent', border: '1px solid #2d3148', color: '#7c8bad', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: '0.78rem' },
+  err:      { color: '#dc2626', fontSize: '0.9rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 16px', marginBottom: 18 },
+  info:     { color: '#15803d', fontSize: '0.9rem', background: '#dcfce7', border: '1px solid #86efac', borderRadius: 10, padding: '12px 16px', marginBottom: 18 },
+  table:    { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.9rem', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(15,23,42,0.04)' },
+  th:       { textAlign: 'left' as const, padding: '12px 16px', background: '#f8fafc', color: '#64748b', borderBottom: '1px solid #e5e7eb', fontWeight: 600, fontSize: '0.78rem', textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
+  td:       { padding: '14px 16px', borderBottom: '1px solid #f1f5f9', color: '#334155', verticalAlign: 'middle' as const },
+  refreshBtn:{ background: '#ffffff', border: '1px solid #d1d5db', color: '#475569', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: '0.86rem', fontWeight: 500 },
   // Add-user form
-  formWrap: { maxWidth: 480 },
-  formCard: { background: '#13151f', border: '1px solid #1e2235', borderRadius: 10, padding: '1.5rem' },
-  label:    { display: 'block', fontSize: '0.78rem', color: '#94a3b8', fontWeight: 500, marginBottom: 4 },
-  input:    { width: '100%', boxSizing: 'border-box' as const, padding: '8px 10px', background: '#0f1117', border: '1px solid #2d3148', borderRadius: 6, color: '#e2e8f0', fontSize: '0.85rem', outline: 'none', marginBottom: 14 },
-  checkRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 },
-  saveBtn:  { background: '#6366f1', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 22px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, marginRight: 8 },
-  cancelBtn:{ background: 'transparent', border: '1px solid #2d3148', color: '#7c8bad', borderRadius: 7, padding: '8px 14px', cursor: 'pointer', fontSize: '0.85rem' },
+  formWrap: { maxWidth: 540 },
+  formCard: { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 14, padding: '2rem', boxShadow: '0 1px 3px rgba(15,23,42,0.04)' },
+  label:    { display: 'block', fontSize: '0.85rem', color: '#475569', fontWeight: 500, marginBottom: 6 },
+  input:    { width: '100%', boxSizing: 'border-box' as const, padding: '9px 12px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: 8, color: '#0f172a', fontSize: '0.92rem', outline: 'none', marginBottom: 18 },
+  checkRow: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 },
+  saveBtn:  { background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 24px', cursor: 'pointer', fontSize: '0.92rem', fontWeight: 600, marginRight: 10, boxShadow: '0 1px 3px rgba(79,70,229,0.25)' },
+  cancelBtn:{ background: '#ffffff', border: '1px solid #d1d5db', color: '#475569', borderRadius: 8, padding: '9px 18px', cursor: 'pointer', fontSize: '0.92rem', fontWeight: 500 },
   // Modals (for edit roles / reset password — kept as overlay since user-specific)
-  modal:    { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modalBox: { background: '#13151f', border: '1px solid #2d3148', borderRadius: 12, padding: '1.5rem', minWidth: 340, maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.5)' } as React.CSSProperties,
-  modalTitle:{ margin: '0 0 18px', fontSize: '1rem', fontWeight: 600, color: '#e2e8f0' } as React.CSSProperties,
-  modalInput:{ width: '100%', boxSizing: 'border-box' as const, padding: '8px 10px', background: '#0d0f18', border: '1px solid #2d3148', borderRadius: 6, color: '#e2e8f0', fontSize: '0.85rem', outline: 'none', marginBottom: 14 },
-  modalActions:{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 } as React.CSSProperties,
-  primaryBtn:  { padding: '7px 18px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 } as React.CSSProperties,
-  secBtn:      { padding: '7px 14px', background: 'transparent', border: '1px solid #2d3148', color: '#7c8bad', borderRadius: 7, cursor: 'pointer', fontSize: '0.85rem' } as React.CSSProperties,
+  modal:    { position: 'fixed' as const, inset: 0, background: 'rgba(15,23,42,0.35)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modalBox: { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 14, padding: '1.75rem', minWidth: 380, maxWidth: 460, boxShadow: '0 24px 60px rgba(15,23,42,0.18), 0 4px 12px rgba(15,23,42,0.06)' } as React.CSSProperties,
+  modalTitle:{ margin: '0 0 22px', fontSize: '1.1rem', fontWeight: 600, color: '#0f172a' } as React.CSSProperties,
+  modalInput:{ width: '100%', boxSizing: 'border-box' as const, padding: '9px 12px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: 8, color: '#0f172a', fontSize: '0.92rem', outline: 'none', marginBottom: 18 },
+  modalActions:{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 } as React.CSSProperties,
+  primaryBtn:  { padding: '8px 20px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600, boxShadow: '0 1px 3px rgba(79,70,229,0.25)' } as React.CSSProperties,
+  secBtn:      { padding: '8px 16px', background: '#ffffff', border: '1px solid #d1d5db', color: '#475569', borderRadius: 8, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 } as React.CSSProperties,
 };
 
 type ModalMode = 'reset-password' | 'edit-roles' | null;
@@ -124,7 +124,7 @@ export default function UsersPage() {
         {/* ── Users list ───────────────────────────────────────────── */}
         {tab === 'list' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
               <button style={S.refreshBtn} onClick={load} disabled={loading}>{loading ? '…' : '↺ Refresh'}</button>
             </div>
             <table style={S.table}>
@@ -139,8 +139,8 @@ export default function UsersPage() {
               <tbody>
                 {users.map(u => (
                   <tr key={u.userId}>
-                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.75rem', color: '#4b5280' }}>{u.userId}</td>
-                    <td style={{ ...S.td, fontWeight: 600, color: '#e2e8f0' }}>{u.username}</td>
+                    <td style={{ ...S.td, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.82rem', color: '#64748b' }}>{u.userId}</td>
+                    <td style={{ ...S.td, fontWeight: 600, color: '#0f172a' }}>{u.username}</td>
                     <td style={S.td}>
                       {u.roles.map(r => <span key={r} style={badge(r === 'admin')}>{r}</span>)}
                     </td>
@@ -153,7 +153,7 @@ export default function UsersPage() {
                 ))}
               </tbody>
             </table>
-            {!loading && users.length === 0 && <p style={{ color: '#4b5280', fontSize: '0.85rem', marginTop: 12 }}>No users found.</p>}
+            {!loading && users.length === 0 && <p style={{ color: '#94a3b8', fontSize: '0.92rem', marginTop: 16 }}>No users found.</p>}
           </>
         )}
 
@@ -183,9 +183,9 @@ export default function UsersPage() {
           <div style={S.modal} onClick={() => setModalMode(null)}>
             <div style={S.modalBox} onClick={e => e.stopPropagation()}>
               <h3 style={S.modalTitle}>Edit Roles — {targetUser.username}</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
                 <input type="checkbox" id="editAdmin" checked={editAdmin} onChange={e => setEditAdmin(e.target.checked)} />
-                <label htmlFor="editAdmin" style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Admin role</label>
+                <label htmlFor="editAdmin" style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 500 }}>Admin role</label>
               </div>
               {formError && <div style={S.err}>{formError}</div>}
               <div style={S.modalActions}>

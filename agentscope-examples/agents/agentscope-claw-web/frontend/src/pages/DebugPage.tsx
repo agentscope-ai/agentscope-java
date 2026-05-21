@@ -4,34 +4,36 @@ import AdminPageLayout from '../components/AdminPageLayout';
 import { getDebugInfo, DebugInfo, openLogStream } from '../api/admin';
 
 const S: Record<string, React.CSSProperties> = {
-  cards: { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: '1.5rem' },
+  cards: { display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: '2rem', padding: '24px 32px 0' },
   card: {
-    background: '#13151f', border: '1px solid #1e2235', borderRadius: 10,
-    padding: '1rem 1.25rem', flex: '1 1 200px',
+    background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 14,
+    padding: '1.25rem 1.5rem', flex: '1 1 220px', boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
   },
-  cardLabel: { fontSize: '0.72rem', color: '#374056', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' },
-  cardValue: { fontSize: '0.95rem', color: '#94a3b8', fontFamily: 'monospace' },
-  logHeader: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 },
-  sectionTitle: { fontSize: '1rem', fontWeight: 600, color: '#94a3b8' },
+  cardLabel: { fontSize: '0.78rem', color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 },
+  cardValue: { fontSize: '1.05rem', color: '#0f172a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontWeight: 500 },
+  logHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: '0 32px' },
+  sectionTitle: { fontSize: '1.05rem', fontWeight: 600, color: '#0f172a' },
   logBox: {
-    background: '#0a0b10', border: '1px solid #1e2235', borderRadius: 8,
-    padding: '0.75rem 1rem', height: 480, overflowY: 'auto',
-    fontFamily: 'monospace', fontSize: '0.76rem', color: '#4b5571',
-    lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+    background: '#0f172a', border: '1px solid #1e293b', borderRadius: 10,
+    padding: '1rem 1.25rem', height: 520, overflowY: 'auto',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.84rem', color: '#cbd5e1',
+    lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+    margin: '0 32px',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
   },
-  streamBtn: { borderRadius: 6, padding: '4px 12px', cursor: 'pointer', fontSize: '0.8rem', marginLeft: 'auto' },
-  clearBtn:  { background: 'transparent', border: '1px solid #2d3148', color: '#7c8bad', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: '0.78rem' },
-  refreshBtn:{ background: 'transparent', border: '1px solid #2d3148', color: '#7c8bad', borderRadius: 6, padding: '4px 12px', cursor: 'pointer', fontSize: '0.8rem' },
-  okDot:  { width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block', marginRight: 4 },
-  errDot: { width: 8, height: 8, borderRadius: '50%', background: '#f87171', display: 'inline-block', marginRight: 4 },
-  err: { color: '#f87171', fontSize: '0.85rem', padding: '1rem', background: '#1f1520', borderRadius: 8, border: '1px solid #5b2030' },
+  streamBtn: { borderRadius: 8, padding: '6px 16px', cursor: 'pointer', fontSize: '0.88rem', marginLeft: 'auto', fontWeight: 500 },
+  clearBtn:  { background: '#ffffff', border: '1px solid #d1d5db', color: '#475569', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: '0.86rem', fontWeight: 500 },
+  refreshBtn:{ background: '#ffffff', border: '1px solid #d1d5db', color: '#475569', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: '0.86rem', fontWeight: 500 },
+  okDot:  { width: 8, height: 8, borderRadius: '50%', background: '#16a34a', display: 'inline-block', marginRight: 6, boxShadow: '0 0 0 3px rgba(22,163,74,0.15)' },
+  errDot: { width: 8, height: 8, borderRadius: '50%', background: '#dc2626', display: 'inline-block', marginRight: 6, boxShadow: '0 0 0 3px rgba(220,38,38,0.15)' },
+  err: { color: '#dc2626', fontSize: '0.92rem', padding: '14px 18px', background: '#fef2f2', borderRadius: 10, border: '1px solid #fecaca', margin: '0 32px 20px' },
 };
 
 function logLineColor(line: string): React.CSSProperties {
   const l = line.toLowerCase();
-  if (l.includes(' error ') || l.includes(' error-')) return { color: '#f87171' };
-  if (l.includes(' warn ')) return { color: '#fbbf24' };
-  if (l.includes(' info ')) return { color: '#60a5fa' };
+  if (l.includes(' error ') || l.includes(' error-')) return { color: '#fca5a5' };
+  if (l.includes(' warn ')) return { color: '#fcd34d' };
+  if (l.includes(' info ')) return { color: '#93c5fd' };
   return {};
 }
 
@@ -95,7 +97,7 @@ export default function DebugPage() {
   }
 
   const streamingBadge = streaming
-    ? <span style={{ fontSize: '0.68rem', color: '#4ade80', marginLeft: 4 }}>● live</span>
+    ? <span style={{ fontSize: '0.78rem', color: '#16a34a', marginLeft: 4, fontWeight: 500 }}>● live</span>
     : undefined;
 
   const tabs = DEBUG_TABS.map(t =>
@@ -115,7 +117,7 @@ export default function DebugPage() {
             : undefined
         }
       >
-        <div style={{ padding: '0 0', maxWidth: 1100 }}>
+        <div style={{ padding: '24px 0', maxWidth: 1200 }}>
           {/* ── System Info ──────────────────────────────────────── */}
           {tab === 'info' && (
             <>
@@ -156,7 +158,7 @@ export default function DebugPage() {
                   </div>
                 </div>
               ) : (
-                !infoErr && <p style={{ color: '#4b5280' }}>Loading…</p>
+                !infoErr && <p style={{ color: '#94a3b8', padding: '0 32px' }}>Loading…</p>
               )}
             </>
           )}
@@ -169,9 +171,9 @@ export default function DebugPage() {
                 <button
                   style={{
                     ...S.streamBtn,
-                    background: streaming ? '#14532d' : '#1e2235',
-                    border: `1px solid ${streaming ? '#166534' : '#2d3148'}`,
-                    color: streaming ? '#4ade80' : '#7c8bad',
+                    background: streaming ? '#dcfce7' : '#ffffff',
+                    border: `1px solid ${streaming ? '#86efac' : '#d1d5db'}`,
+                    color: streaming ? '#15803d' : '#475569',
                   }}
                   onClick={toggleStream}
                 >
@@ -179,12 +181,12 @@ export default function DebugPage() {
                 </button>
               </div>
               <div ref={logBoxRef} style={S.logBox} onScroll={handleScroll}>
-                {logs.length === 0 && <span style={{ color: '#1e2235' }}>(waiting for log output…)</span>}
+                {logs.length === 0 && <span style={{ color: '#64748b' }}>(waiting for log output…)</span>}
                 {logs.map((line, i) => (
                   <div key={i} style={logLineColor(line)}>{line}</div>
                 ))}
               </div>
-              <div style={{ marginTop: 6, fontSize: '0.72rem', color: '#374056' }}>
+              <div style={{ marginTop: 10, fontSize: '0.82rem', color: '#94a3b8', padding: '0 32px' }}>
                 {autoScroll ? 'Auto-scroll: on (scroll up to pause)' : 'Auto-scroll: off (scroll to bottom to resume)'}
                 {' · '}{logs.length} lines
               </div>
