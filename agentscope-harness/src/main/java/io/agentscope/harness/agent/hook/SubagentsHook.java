@@ -65,8 +65,11 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
 
     private static final int MAX_TASK_SUMMARY_ENTRIES = 10;
 
+    /** Shared priority value so dynamic variants register at the same lifecycle slot. */
+    public static final int SUBAGENT_HOOK_PRIORITY = 80;
+
     // @formatter:off
-    private static final String SUBAGENT_SECTION_TEMPLATE =
+    static final String SUBAGENT_SECTION_TEMPLATE =
             """
 
             ## Subagents
@@ -218,13 +221,28 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
 
     @Override
     public int priority() {
-        return 80;
+        return SUBAGENT_HOOK_PRIORITY;
     }
 
     private void injectSubagentPrompt(PreReasoningEvent event) {
         if (entries.isEmpty()) {
             return;
         }
+        String section = renderSubagentSection(entries, isSessionMode);
+        event.appendSystemContent(section);
+
+        // Per-turn async task summary (compact, at most MAX_TASK_SUMMARY_ENTRIES entries)
+        String taskSummary = buildTaskSummary(taskRepository, runtimeContext);
+        if (taskSummary != null) {
+            event.appendSystemContent(taskSummary);
+        }
+    }
+
+    /**
+     * Renders the subagent guidance section with the given entries. Exposed package-private so
+     * dynamic variants can reuse the template without duplicating the formatting logic.
+     */
+    static String renderSubagentSection(List<SubagentEntry> entries, boolean isSessionMode) {
         String agentList =
                 entries.stream()
                         .map(e -> String.format("- `%s`: %s", e.name(), e.description()))
@@ -234,16 +252,7 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
         String sendName = isSessionMode ? "sessions_send" : "agent_send";
         String listName = isSessionMode ? "sessions_list" : "agent_list";
 
-        String section =
-                String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName, agentList);
-
-        event.appendSystemContent(section);
-
-        // Per-turn async task summary (compact, at most MAX_TASK_SUMMARY_ENTRIES entries)
-        String taskSummary = buildTaskSummary();
-        if (taskSummary != null) {
-            event.appendSystemContent(taskSummary);
-        }
+        return String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName, agentList);
     }
 
     /**
@@ -251,7 +260,7 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
      * no tasks to report. The summary is injected into the system content every turn so the model
      * always has current task IDs and statuses — even after conversation compaction.
      */
-    private String buildTaskSummary() {
+    static String buildTaskSummary(TaskRepository taskRepository, RuntimeContext runtimeContext) {
         if (taskRepository == null) {
             return null;
         }

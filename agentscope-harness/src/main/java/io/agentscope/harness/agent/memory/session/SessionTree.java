@@ -88,6 +88,8 @@ public class SessionTree {
     private final Path workspaceRoot;
     private final AbstractFilesystem filesystem;
     private final WorkspaceIndex index;
+    private final String contextRelativePath;
+    private final String logRelativePath;
 
     private final Map<String, SessionEntry> entriesById = new LinkedHashMap<>();
     private final List<SessionEntry> appendOrder = new ArrayList<>();
@@ -123,6 +125,30 @@ public class SessionTree {
             Path workspaceRoot,
             AbstractFilesystem filesystem,
             WorkspaceIndex index) {
+        this(contextFile, workspaceRoot, filesystem, index, null);
+    }
+
+    /**
+     * Creates a SessionTree with an explicit workspace-relative path for mirror operations.
+     *
+     * <p>When a {@code contextRelativePath} is provided, it is used instead of deriving the
+     * relative path from the absolute context file path. This avoids double-applying namespace
+     * prefixes when the context file is already under a namespace directory.
+     *
+     * @param contextFile         path to the {@code .jsonl} context file
+     * @param workspaceRoot       root of the agent workspace
+     * @param filesystem          remote filesystem; may be {@code null}
+     * @param index               best-effort workspace index; may be {@code null}
+     * @param contextRelativePath explicit workspace-relative path (without namespace prefix)
+     *                            for mirror operations; may be {@code null} to fall back to
+     *                            {@link #toWorkspaceRelative(Path)}
+     */
+    public SessionTree(
+            Path contextFile,
+            Path workspaceRoot,
+            AbstractFilesystem filesystem,
+            WorkspaceIndex index,
+            String contextRelativePath) {
         this.contextFile = contextFile;
         String name = contextFile.getFileName().toString();
         String baseName = name.endsWith(".jsonl") ? name.substring(0, name.length() - 6) : name;
@@ -130,6 +156,11 @@ public class SessionTree {
         this.workspaceRoot = workspaceRoot;
         this.filesystem = filesystem;
         this.index = index;
+        this.contextRelativePath = contextRelativePath;
+        this.logRelativePath =
+                contextRelativePath != null
+                        ? contextRelativePath.replace(".jsonl", ".log.jsonl")
+                        : null;
     }
 
     /**
@@ -431,7 +462,7 @@ public class SessionTree {
         if (filesystem == null || workspaceRoot == null) {
             return List.of();
         }
-        String relativePath = toWorkspaceRelative(file);
+        String relativePath = resolveRelativePath(file);
         if (relativePath == null || relativePath.isBlank()) {
             return List.of();
         }
@@ -533,7 +564,7 @@ public class SessionTree {
         if (filesystem == null || workspaceRoot == null || !Files.isRegularFile(file)) {
             return;
         }
-        String relativePath = toWorkspaceRelative(file);
+        String relativePath = resolveRelativePath(file);
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
@@ -557,7 +588,7 @@ public class SessionTree {
         if (filesystem == null || workspaceRoot == null || Files.isRegularFile(file)) {
             return;
         }
-        String relativePath = toWorkspaceRelative(file);
+        String relativePath = resolveRelativePath(file);
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
@@ -586,6 +617,16 @@ public class SessionTree {
                     file,
                     e.getMessage());
         }
+    }
+
+    private String resolveRelativePath(Path file) {
+        if (file.equals(contextFile) && contextRelativePath != null) {
+            return contextRelativePath;
+        }
+        if (file.equals(logFile) && logRelativePath != null) {
+            return logRelativePath;
+        }
+        return toWorkspaceRelative(file);
     }
 
     private String toWorkspaceRelative(Path file) {

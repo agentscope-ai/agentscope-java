@@ -32,6 +32,7 @@ import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -160,19 +161,19 @@ public class AgentSpawnTool {
             System.err.println("[agentSpawn] depth exceeded");
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
-        if (!agentManager.hasAgent(agentId)) {
-            System.err.println(
-                    "[agentSpawn] unknown agentId=" + agentId + " known=" + agentManager);
-            return Mono.just("Error: Unknown agent_id: " + agentId);
-        }
-        System.err.println("[agentSpawn] hasAgent=true, proceeding");
-
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
         if (canonLabel != null && labelToKey.containsKey(canonLabel.toLowerCase())) {
             return Mono.just("Error: Label already in use: " + canonLabel);
         }
 
-        Agent agent = agentManager.createAgent(agentId);
+        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId);
+        if (agentOpt.isEmpty()) {
+            System.err.println(
+                    "[agentSpawn] unknown agentId=" + agentId + " known=" + agentManager);
+            return Mono.just("Error: Unknown agent_id: " + agentId);
+        }
+        System.err.println("[agentSpawn] hasAgent=true, proceeding");
+        Agent agent = agentOpt.get();
         String key = "agent:" + agentId + ":" + UUID.randomUUID();
         String sessionId = "sub-" + UUID.randomUUID();
         String currentUserId = userIdSupplier.get();

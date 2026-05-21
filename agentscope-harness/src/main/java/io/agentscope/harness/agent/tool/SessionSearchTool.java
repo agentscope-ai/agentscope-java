@@ -216,7 +216,7 @@ public class SessionSearchTool {
      */
     private List<Path> listLogFiles(String agentId) {
         List<Path> files = new ArrayList<>();
-        Path agentsDir = workspaceManager.getWorkspace().resolve(WorkspaceConstants.AGENTS_DIR);
+        Path agentsDir = workspaceManager.resolveRuntimeDataPath(WorkspaceConstants.AGENTS_DIR);
         if (!Files.isDirectory(agentsDir)) {
             return files;
         }

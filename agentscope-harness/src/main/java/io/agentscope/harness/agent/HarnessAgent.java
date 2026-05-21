@@ -58,6 +58,8 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.hook.AgentTraceHook;
 import io.agentscope.harness.agent.hook.CompactionHook;
+import io.agentscope.harness.agent.hook.DynamicSkillHook;
+import io.agentscope.harness.agent.hook.DynamicSubagentsHook;
 import io.agentscope.harness.agent.hook.MemoryFlushHook;
 import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
 import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
@@ -81,6 +83,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
+import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.RemoteSubagentStub;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -622,6 +625,21 @@ public class HarnessAgent implements Agent, StateModule {
          */
         private boolean disableSubagents = false;
 
+        /**
+         * When {@code true}, the per-user dynamic subagents path is disabled even if a workspace
+         * {@link AbstractFilesystem} is configured; the legacy build-time
+         * {@link SubagentsHook} (one-shot local-disk scan) is used instead.
+         */
+        private boolean disableDynamicSubagents = false;
+
+        /**
+         * When {@code true}, the per-user dynamic skills path is disabled even if a workspace
+         * {@link AbstractFilesystem} is configured; the legacy build-time
+         * {@code FileSystemSkillRepository} path is used instead. Has no effect when the user
+         * provides an explicit {@link #skillRepository(AgentSkillRepository)}.
+         */
+        private boolean disableDynamicSkills = false;
+
         // Filesystem mode configuration (at most one of these three is set)
         private SandboxFilesystemSpec sandboxFilesystemSpec;
         private RemoteFilesystemSpec remoteFilesystemSpec;
@@ -1048,6 +1066,29 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
+         * Opts out of the per-call {@link DynamicSubagentsHook} when a workspace
+         * {@link AbstractFilesystem} is configured. With this flag set, subagent declarations
+         * fall back to a one-shot scan of the local workspace {@code subagents/} directory at
+         * build time, matching the behaviour from before per-user dynamic subagents existed.
+         */
+        public Builder disableDynamicSubagents() {
+            this.disableDynamicSubagents = true;
+            return this;
+        }
+
+        /**
+         * Opts out of the per-call {@link DynamicSkillHook} when a workspace
+         * {@link AbstractFilesystem} is configured. With this flag set, skills come from a
+         * build-time {@code FileSystemSkillRepository} scan of the local workspace
+         * {@code skills/} directory. Has no effect when an explicit
+         * {@link #skillRepository(AgentSkillRepository)} is supplied.
+         */
+        public Builder disableDynamicSkills() {
+            this.disableDynamicSkills = true;
+            return this;
+        }
+
+        /**
          * Enables the {@link CompactionHook} with the given configuration as the conversation
          * compaction strategy.
          *
@@ -1200,14 +1241,20 @@ public class HarnessAgent implements Agent, StateModule {
          */
         public List<SubagentEntry> buildSubagentEntries(
                 Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
-            List<SubagentDeclaration> allDeclarations = new ArrayList<>(subagentDeclarations);
+            List<SubagentEntry> entries =
+                    new ArrayList<>(buildStaticSubagentEntries(resolvedWorkspace, sandboxFs));
+            entries.addAll(buildLocalDiskSubagentEntries(resolvedWorkspace, sandboxFs));
+            return entries;
+        }
 
-            Path subagentsDir = resolvedWorkspace.resolve("subagents");
-            if (Files.isDirectory(subagentsDir)) {
-                allDeclarations.addAll(
-                        AgentSpecLoader.loadFromDirectory(subagentsDir, resolvedWorkspace));
-            }
-
+        /**
+         * Static portion of the subagent registry — built-in {@code general-purpose}, programmatic
+         * declarations registered via {@link #subagent(SubagentDeclaration)}, and custom factories.
+         * Excludes anything scanned from the workspace {@code subagents/} directory so the dynamic
+         * hook can layer that part on per-call without duplication.
+         */
+        List<SubagentEntry> buildStaticSubagentEntries(
+                Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
             List<SubagentEntry> entries = new ArrayList<>();
 
             entries.add(
@@ -1218,7 +1265,7 @@ public class HarnessAgent implements Agent, StateModule {
                             buildGeneralPurposeFactory(resolvedWorkspace, sandboxFs),
                             null));
 
-            for (SubagentDeclaration decl : allDeclarations) {
+            for (SubagentDeclaration decl : subagentDeclarations) {
                 entries.add(
                         new SubagentEntry(
                                 decl.getName(),
@@ -1237,6 +1284,40 @@ public class HarnessAgent implements Agent, StateModule {
             }
 
             return entries;
+        }
+
+        /**
+         * Entries derived from a one-shot scan of the local workspace {@code subagents/} directory.
+         * Used as the build-time list when dynamic reload is disabled.
+         */
+        List<SubagentEntry> buildLocalDiskSubagentEntries(
+                Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            List<SubagentEntry> entries = new ArrayList<>();
+            Path subagentsDir = resolvedWorkspace.resolve("subagents");
+            if (!Files.isDirectory(subagentsDir)) {
+                return entries;
+            }
+            for (SubagentDeclaration decl :
+                    AgentSpecLoader.loadFromDirectory(subagentsDir, resolvedWorkspace)) {
+                entries.add(
+                        new SubagentEntry(
+                                decl.getName(),
+                                decl.getDescription(),
+                                buildDeclaredFactory(decl, resolvedWorkspace, sandboxFs),
+                                decl));
+            }
+            return entries;
+        }
+
+        /**
+         * Returns a function that converts a parsed {@link SubagentDeclaration} into a runtime
+         * {@link SubagentFactory}, reusing the builder's captured model resolver / parent toolkit /
+         * disable flags. Exposed for {@link DynamicSubagentsHook} so dynamic loads share the same
+         * factory wiring as the build-time path.
+         */
+        Function<SubagentDeclaration, SubagentFactory> subagentFactoryBuilder(
+                Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            return decl -> buildDeclaredFactory(decl, resolvedWorkspace, sandboxFs);
         }
 
         public HarnessAgent build() {
@@ -1265,13 +1346,18 @@ public class HarnessAgent implements Agent, StateModule {
                             : Paths.get(System.getProperty("user.dir"))
                                     .resolve(".agentscope/workspace");
             String resolvedAgentId = name != null ? name : "HarnessAgent";
+            AtomicReference<String> userIdRef = new AtomicReference<>();
+            AtomicReference<String> sessionIdRef = new AtomicReference<>();
+            NamespaceFactory nsFactory = buildDynamicNamespaceFactory(userIdRef);
+
             Session effectiveSession =
                     sandboxDistributedOptions != null
                                     && sandboxDistributedOptions.getSession() != null
                             ? sandboxDistributedOptions.getSession()
                             : session;
             if (effectiveSession == null) {
-                effectiveSession = new WorkspaceSession(resolvedWorkspace, resolvedAgentId);
+                effectiveSession =
+                        new WorkspaceSession(resolvedWorkspace, resolvedAgentId, nsFactory);
             }
 
             // Mode 1 (RemoteFilesystemSpec) is inherently distributed: automatically require a
@@ -1283,15 +1369,13 @@ public class HarnessAgent implements Agent, StateModule {
                                 + " WorkspaceSession. Configure a distributed Session backend (for"
                                 + " example RedisSession) via .session(...).");
             }
-
-            AtomicReference<String> userIdRef = new AtomicReference<>();
-            AtomicReference<String> sessionIdRef = new AtomicReference<>();
             WorkspaceIndex workspaceIndex =
                     remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
             AbstractFilesystem filesystem =
                     resolveFilesystem(
                             resolvedWorkspace,
                             resolvedAgentId,
+                            nsFactory,
                             userIdRef,
                             sessionIdRef,
                             workspaceIndex);
@@ -1319,10 +1403,17 @@ public class HarnessAgent implements Agent, StateModule {
                     validateDistributedSandboxConfig(effectiveSession, defaultSandboxContext);
                 }
 
+                // Sandbox state must use a non-namespaced session: isolation keys
+                // (SESSION/USER/AGENT/GLOBAL) already encode identity in the key itself,
+                // so applying a per-user namespace prefix would make AGENT/GLOBAL-scope
+                // state unreachable from other users' calls.
+                Session sandboxStateSession =
+                        new WorkspaceSession(resolvedWorkspace, resolvedAgentId);
                 SandboxStateStore stateStore =
                         sandboxFilesystemSpec.getSandboxStateStore() != null
                                 ? sandboxFilesystemSpec.getSandboxStateStore()
-                                : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
+                                : new SessionSandboxStateStore(
+                                        sandboxStateSession, resolvedAgentId);
                 SandboxExecutionGuard executionGuard =
                         sandboxFilesystemSpec.getExecutionGuard() != null
                                 ? sandboxFilesystemSpec.getExecutionGuard()
@@ -1336,7 +1427,7 @@ public class HarnessAgent implements Agent, StateModule {
                 sandboxLifecycleHook = new SandboxLifecycleHook(sandboxManager, capturedSandboxFs);
             }
             WorkspaceManager wsManager =
-                    new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex);
+                    new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
             wsManager.validate();
 
             Memory memory = new InMemoryMemory();
@@ -1390,9 +1481,13 @@ public class HarnessAgent implements Agent, StateModule {
             }
 
             if (!leafSubagent && !disableSubagents && model != null) {
-                SubagentsHook subagentsHook =
+                Hook subagentsHook =
                         buildSubagentsHook(
-                                wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
+                                wsManager,
+                                resolvedWorkspace,
+                                capturedSandboxFs,
+                                filesystem,
+                                userIdRef);
                 if (subagentsHook != null) {
                     allHooks.add(subagentsHook);
                 }
@@ -1415,9 +1510,19 @@ public class HarnessAgent implements Agent, StateModule {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
 
-            // ---- Skills (SkillBox assembled from optional AgentSkillRepository or default FS
-            // repo) ----
-            SkillBox effectiveSkillBox = resolveSkillBox(wsManager, agentToolkit);
+            // ---- Skills ----
+            // Three branches:
+            //   1. User-supplied AgentSkillRepository  → resolveSkillBox (legacy, unchanged)
+            //   2. filesystem != null && dynamic on    → DynamicSkillHook (per-user, two-layer)
+            //   3. neither                              → resolveSkillBox (local disk only)
+            SkillBox effectiveSkillBox = null;
+            boolean useDynamicSkills =
+                    skillRepository == null && filesystem != null && !disableDynamicSkills;
+            if (useDynamicSkills) {
+                allHooks.add(new DynamicSkillHook(filesystem, resolvedWorkspace, agentToolkit));
+            } else {
+                effectiveSkillBox = resolveSkillBox(wsManager, agentToolkit);
+            }
 
             // ---- Build ReActAgent ----
             ReActAgent.Builder reactBuilder =
@@ -1551,13 +1656,13 @@ public class HarnessAgent implements Agent, StateModule {
         private AbstractFilesystem resolveFilesystem(
                 Path workspace,
                 String agentId,
+                NamespaceFactory nsFactory,
                 AtomicReference<String> userIdRef,
                 AtomicReference<String> sessionIdRef,
                 WorkspaceIndex workspaceIndex) {
             if (abstractFilesystem != null) {
                 return abstractFilesystem;
             }
-            NamespaceFactory nsFactory = buildDynamicNamespaceFactory(userIdRef);
             if (remoteFilesystemSpec != null) {
                 if (workspaceIndex != null) {
                     remoteFilesystemSpec.workspaceIndex(workspaceIndex);
@@ -1613,12 +1718,12 @@ public class HarnessAgent implements Agent, StateModule {
         //  Subagents
         // -----------------------------------------------------------------
 
-        private SubagentsHook buildSubagentsHook(
+        private Hook buildSubagentsHook(
                 WorkspaceManager wsManager,
                 Path workspace,
                 SandboxBackedFilesystem sandboxFs,
+                AbstractFilesystem filesystem,
                 AtomicReference<String> userIdRef) {
-            List<SubagentEntry> entries = buildSubagentEntries(workspace, sandboxFs);
             TaskRepository repo;
             if (taskRepository != null) {
                 repo = taskRepository;
@@ -1629,6 +1734,30 @@ public class HarnessAgent implements Agent, StateModule {
                 repo = new DefaultTaskRepository();
             }
 
+            // Dynamic per-user path: only when a workspace filesystem is available, the agent is
+            // not in session mode (externalSubagentTool), and the user has not opted out.
+            boolean useDynamic =
+                    filesystem != null && !disableDynamicSubagents && externalSubagentTool == null;
+
+            if (useDynamic) {
+                List<SubagentEntry> staticEntries =
+                        buildStaticSubagentEntries(workspace, sandboxFs);
+                Function<SubagentDeclaration, SubagentFactory> factoryBuilder =
+                        subagentFactoryBuilder(workspace, sandboxFs);
+                DefaultAgentManager dam = new DefaultAgentManager(staticEntries, wsManager);
+                return new DynamicSubagentsHook(
+                        staticEntries,
+                        filesystem,
+                        workspace,
+                        factoryBuilder,
+                        dam,
+                        null,
+                        repo,
+                        userIdRef::get);
+            }
+
+            // Legacy path: build entries once from local disk + programmatic registrations.
+            List<SubagentEntry> entries = buildSubagentEntries(workspace, sandboxFs);
             if (externalSubagentTool != null) {
                 return new SubagentsHook(entries, externalSubagentTool, repo);
             }
@@ -1671,6 +1800,8 @@ public class HarnessAgent implements Agent, StateModule {
             final boolean capturedDisableMemoryHooks = this.disableMemoryHooks;
             final boolean capturedDisableSessionPersistence = this.disableSessionPersistence;
             final boolean capturedDisableWorkspaceContext = this.disableWorkspaceContext;
+            final boolean capturedDisableDynamicSkills = this.disableDynamicSkills;
+            final boolean capturedDisableDynamicSubagents = this.disableDynamicSubagents;
             final CompactionConfig capturedCompactionConfig = this.compactionConfig;
             final ToolResultEvictionConfig capturedToolResultEvictionConfig =
                     this.toolResultEvictionConfig;
@@ -1703,6 +1834,8 @@ public class HarnessAgent implements Agent, StateModule {
                 if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
                 if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
                 if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
+                if (capturedDisableDynamicSkills) sub.disableDynamicSkills();
+                if (capturedDisableDynamicSubagents) sub.disableDynamicSubagents();
 
                 if (capturedSkillRepo != null) sub.skillRepository(capturedSkillRepo);
                 if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
@@ -1743,6 +1876,8 @@ public class HarnessAgent implements Agent, StateModule {
             final boolean capturedDisableMemoryTools = this.disableMemoryTools;
             final boolean capturedDisableMemoryHooks = this.disableMemoryHooks;
             final boolean capturedDisableSessionPersistence = this.disableSessionPersistence;
+            final boolean capturedDisableDynamicSkills = this.disableDynamicSkills;
+            final boolean capturedDisableDynamicSubagents = this.disableDynamicSubagents;
 
             return () -> {
                 if (decl.isRemote()) {
@@ -1789,6 +1924,8 @@ public class HarnessAgent implements Agent, StateModule {
                 if (capturedDisableMemoryTools) sub.disableMemoryTools();
                 if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
                 if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
+                if (capturedDisableDynamicSkills) sub.disableDynamicSkills();
+                if (capturedDisableDynamicSubagents) sub.disableDynamicSubagents();
 
                 return sub.build();
             };

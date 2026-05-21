@@ -121,6 +121,8 @@ public class WorkspaceManager {
     /** Best-effort local file index; may be {@code null} if SQLite is unavailable. */
     private final WorkspaceIndex index;
 
+    private final NamespaceFactory namespaceFactory;
+
     public WorkspaceManager(Path workspace) {
         this(workspace, null);
     }
@@ -129,6 +131,7 @@ public class WorkspaceManager {
         this.workspace = workspace;
         this.filesystem = filesystem;
         this.index = WorkspaceIndex.open(workspace);
+        this.namespaceFactory = null;
     }
 
     /**
@@ -136,9 +139,21 @@ public class WorkspaceManager {
      * already created it, e.g. to share with {@code RemoteFilesystem}).
      */
     public WorkspaceManager(Path workspace, AbstractFilesystem filesystem, WorkspaceIndex index) {
+        this(workspace, filesystem, index, null);
+    }
+
+    /**
+     * Constructor with namespace support for per-user isolation of runtime data.
+     */
+    public WorkspaceManager(
+            Path workspace,
+            AbstractFilesystem filesystem,
+            WorkspaceIndex index,
+            NamespaceFactory namespaceFactory) {
         this.workspace = workspace;
         this.filesystem = filesystem;
         this.index = index;
+        this.namespaceFactory = namespaceFactory;
     }
 
     /** Returns the best-effort workspace index; may be {@code null} when unavailable. */
@@ -148,6 +163,26 @@ public class WorkspaceManager {
 
     public AbstractFilesystem getFilesystem() {
         return filesystem;
+    }
+
+    public NamespaceFactory getNamespaceFactory() {
+        return namespaceFactory;
+    }
+
+    /**
+     * Resolves a workspace-relative path for runtime user data, applying namespace prefix.
+     * Use for paths that contain per-user data (sessions, tasks, memory), NOT for shared
+     * agent definition files (AGENTS.md, knowledge/, subagents/, skills/).
+     */
+    public Path resolveRuntimeDataPath(String relativePath) {
+        if (namespaceFactory == null) {
+            return workspace.resolve(relativePath);
+        }
+        List<String> ns = namespaceFactory.getNamespace();
+        if (ns == null || ns.isEmpty()) {
+            return workspace.resolve(relativePath);
+        }
+        return workspace.resolve(String.join("/", ns)).resolve(relativePath);
     }
 
     /**
@@ -209,7 +244,7 @@ public class WorkspaceManager {
     }
 
     public Path getMemoryDir() {
-        return workspace.resolve(MEMORY_DIR);
+        return resolveRuntimeDataPath(MEMORY_DIR);
     }
 
     public Path getSkillsDir() {
@@ -261,7 +296,7 @@ public class WorkspaceManager {
     }
 
     public Path getSessionDir(String agentId) {
-        return workspace.resolve(AGENTS_DIR).resolve(agentId).resolve(SESSIONS_DIR);
+        return resolveRuntimeDataPath(AGENTS_DIR + "/" + agentId + "/" + SESSIONS_DIR);
     }
 
     /**
@@ -471,19 +506,14 @@ public class WorkspaceManager {
             }
         }
 
-        Path tasksDir = workspace.resolve(AGENTS_DIR).resolve(agentId).resolve(TASKS_DIR);
+        Path tasksDir = resolveRuntimeDataPath(tasksRelDir);
         if (Files.isDirectory(tasksDir)) {
             try (Stream<Path> stream = Files.list(tasksDir)) {
                 stream.filter(Files::isRegularFile)
                         .filter(p -> p.getFileName().toString().endsWith(".json"))
                         .forEach(
                                 p -> {
-                                    String rel =
-                                            workspace
-                                                    .relativize(p.normalize())
-                                                    .toString()
-                                                    .replace('\\', '/');
-                                    // Prefer mtime from filesystem glob if already known
+                                    String rel = tasksRelDir + "/" + p.getFileName().toString();
                                     if (!relPaths.containsKey(rel)) {
                                         relPaths.put(rel, Optional.ofNullable(diskMtime(p)));
                                     }
@@ -804,7 +834,7 @@ public class WorkspaceManager {
             }
         }
 
-        if (Files.isRegularFile(workspace.resolve(MEMORY_MD))) {
+        if (Files.isRegularFile(resolveRuntimeDataPath(MEMORY_MD))) {
             paths.add(MEMORY_MD);
         }
         Path memDir = getMemoryDir();
@@ -841,7 +871,7 @@ public class WorkspaceManager {
             }
         }
 
-        Path agentsDir = workspace.resolve(AGENTS_DIR);
+        Path agentsDir = resolveRuntimeDataPath(AGENTS_DIR);
         if (Files.isDirectory(agentsDir)) {
             try (Stream<Path> walk = Files.walk(agentsDir)) {
                 walk.filter(Files::isRegularFile)
@@ -849,7 +879,8 @@ public class WorkspaceManager {
                         .forEach(
                                 p -> {
                                     String rel =
-                                            workspace
+                                            agentsDir
+                                                    .getParent()
                                                     .relativize(p.normalize())
                                                     .toString()
                                                     .replace('\\', '/');

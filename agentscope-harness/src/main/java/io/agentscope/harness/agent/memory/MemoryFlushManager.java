@@ -204,12 +204,22 @@ public class MemoryFlushManager {
     private void offloadToSessionTree(List<Msg> messages, String agentId, String sessionId) {
         try {
             Path contextFile = workspaceManager.resolveSessionContextFile(agentId, sessionId);
+            String contextRelPath =
+                    WorkspaceConstants.AGENTS_DIR
+                            + "/"
+                            + agentId
+                            + "/"
+                            + WorkspaceConstants.SESSIONS_DIR
+                            + "/"
+                            + sessionId
+                            + WorkspaceConstants.SESSION_CONTEXT_EXT;
             SessionTree tree =
                     new SessionTree(
                             contextFile,
                             workspaceManager.getWorkspace(),
                             workspaceManager.getFilesystem(),
-                            workspaceManager.getIndex());
+                            workspaceManager.getIndex(),
+                            contextRelPath);
             tree.load();
             // Sync from remote before appending so that entries written by a previous replica
             // (cross-machine handoff) are included in the merged file pushed to remote.
