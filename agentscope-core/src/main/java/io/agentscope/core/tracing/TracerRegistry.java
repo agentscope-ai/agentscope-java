@@ -147,6 +147,13 @@ public class TracerRegistry {
         }
     }
 
+    public static void resetToNoop() {
+        Tracer previousTracer = TracerRegistry.tracer;
+        TracerRegistry.tracer = new NoopTracer();
+        disableTracingHook();
+        previousTracer.shutdown();
+    }
+
     public static Tracer get() {
         return tracer;
     }
