@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -173,8 +172,7 @@ class SkillToolFactory {
         // Get resource
         Set<String> paths = skill.getResourcePaths();
         if (paths == null || !paths.contains(path)) {
-            throw new IllegalArgumentException(
-                    buildResourceNotFoundMessage(skillId, path, paths));
+            throw new IllegalArgumentException(buildResourceNotFoundMessage(skillId, path, paths));
         }
         String resourceContent = skill.getResource(path);
         activateSkill(skillId);
@@ -228,8 +226,7 @@ class SkillToolFactory {
      * @param paths The available resources
      * @return Formatted error message with available resources
      */
-    private String buildResourceNotFoundMessage(
-            String skillId, String path, Set<String> paths) {
+    private String buildResourceNotFoundMessage(String skillId, String path, Set<String> paths) {
         StringBuilder message = new StringBuilder();
         message.append("Resource not found: '")
                 .append(path)
