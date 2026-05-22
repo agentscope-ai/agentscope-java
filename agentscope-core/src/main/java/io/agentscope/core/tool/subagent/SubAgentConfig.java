@@ -329,7 +329,7 @@ public class SubAgentConfig {
          * @param required true if the parameter is required, false otherwise
          * @return This builder
          * @throws IllegalArgumentException If the {@code name} is null, empty, or a reserved
-         * system parameter (e.g., "message" or "session_id").
+         * system parameter (e.g., "message" or "session_id"). Also thrown if {@code schema} is null or empty.
          */
         public Builder addParameter(String name, Map<String, Object> schema, boolean required) {
             if ("message".equals(name) || "session_id".equals(name)) {
@@ -340,6 +340,10 @@ public class SubAgentConfig {
             }
             if (name == null || name.trim().isEmpty()) {
                 throw new IllegalArgumentException("Parameter name cannot be null or empty.");
+            }
+
+            if (schema == null || schema.isEmpty()) {
+                throw new IllegalArgumentException("Parameter schema cannot be null or empty.");
             }
 
             this.customParameters.put(name, schema);

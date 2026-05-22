@@ -250,7 +250,7 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Extracts a value from the ToolExecutionContext by trying standard JSON types.
+     * Extracts a value from the ToolExecutionContext by parameter key.
      *
      * @param context   The execution context
      * @param paramName The name of the parameter to extract
@@ -260,7 +260,13 @@ public class SubAgentTool implements AgentTool {
         if (context == null) {
             return null;
         }
-        Object ctxValue = context.get(paramName, String.class);
+
+        Object ctxValue = context.get(paramName);
+        if (ctxValue != null) {
+            return ctxValue;
+        }
+
+        ctxValue = context.get(paramName, String.class);
         if (ctxValue == null) {
             ctxValue = context.get(paramName, Integer.class);
         }

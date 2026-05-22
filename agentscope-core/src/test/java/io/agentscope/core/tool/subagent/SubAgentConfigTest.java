@@ -272,7 +272,7 @@ class SubAgentConfigTest {
                             .forwardEvents(true)
                             .streamOptions(null)
                             .session(new InMemorySession())
-                            .addParameter("param", null, true)
+                            .addParameter("param", Map.of("type", "string"), true)
                             .addSystemParameter("sysParam")
                             .build();
 

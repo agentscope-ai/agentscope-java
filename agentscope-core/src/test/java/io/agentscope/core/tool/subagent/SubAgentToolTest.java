@@ -18,6 +18,7 @@ package io.agentscope.core.tool.subagent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -563,6 +564,44 @@ class SubAgentToolTest {
     }
 
     @Test
+    @DisplayName("Should let Context override LLM input for custom parameters of any runtime type")
+    void testCustomParameterContextOverrideForCustomRuntimeType() {
+        Agent mockAgent = createMockAgent("TestAgent", "Test");
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .forwardEvents(false)
+                        .addParameter("tenant", "object", "Tenant context", false)
+                        .build();
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        Map<String, Object> llmInput = new HashMap<>();
+        llmInput.put("message", "Hello");
+        llmInput.put("tenant", "FAKE_TENANT_FROM_LLM");
+
+        TenantContext realTenant = new TenantContext("REAL_SYSTEM_TENANT_ID");
+        ToolExecutionContext systemContext =
+                ToolExecutionContext.builder().register("tenant", realTenant).build();
+
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_testagent").input(llmInput).build();
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(llmInput)
+                                .context(systemContext)
+                                .build())
+                .block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mockAgent).call(captor.capture());
+        Map<String, Object> metadata = captor.getValue().get(0).getMetadata();
+
+        assertNotNull(metadata);
+        assertSame(realTenant, metadata.get("tenant"));
+    }
+
+    @Test
     @DisplayName(
             "Should securely inject system parameters and completely ignore LLM prompt injections")
     void testSystemParameterSecurityAndInjectionDefense() {
@@ -604,7 +643,75 @@ class SubAgentToolTest {
                 "Forged system parameter from LLM MUST be ignored");
     }
 
+    @Test
+    @DisplayName("Should inject system parameters of any runtime type")
+    void testSystemParameterInjectionForCustomRuntimeType() {
+        Agent mockAgent = createMockAgent("DefenseAgent", "Test custom system context");
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .forwardEvents(false)
+                        .addSystemParameter("authContext")
+                        .build();
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        Map<String, Object> llmInput = new HashMap<>();
+        llmInput.put("message", "Use secure context");
+        llmInput.put("authContext", "FORGED_AUTH_CONTEXT");
+
+        AuthContext authContext = new AuthContext("sys_user_999", List.of("read", "write"));
+        ToolExecutionContext systemContext =
+                ToolExecutionContext.builder().register("authContext", authContext).build();
+
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_defenseagent").input(llmInput).build();
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(llmInput)
+                                .context(systemContext)
+                                .build())
+                .block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mockAgent).call(captor.capture());
+        Map<String, Object> metadata = captor.getValue().get(0).getMetadata();
+
+        assertNotNull(metadata);
+        assertSame(authContext, metadata.get("authContext"));
+    }
+
     // Helper methods
+
+    private static class TenantContext {
+        private final String tenantId;
+
+        private TenantContext(String tenantId) {
+            this.tenantId = tenantId;
+        }
+
+        String getTenantId() {
+            return tenantId;
+        }
+    }
+
+    private static class AuthContext {
+        private final String userId;
+        private final List<String> permissions;
+
+        private AuthContext(String userId, List<String> permissions) {
+            this.userId = userId;
+            this.permissions = permissions;
+        }
+
+        String getUserId() {
+            return userId;
+        }
+
+        List<String> getPermissions() {
+            return permissions;
+        }
+    }
 
     private Agent createMockAgent(String name, String description) {
         Agent agent = mock(Agent.class);

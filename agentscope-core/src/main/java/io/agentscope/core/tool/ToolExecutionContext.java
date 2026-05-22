@@ -76,6 +76,22 @@ public class ToolExecutionContext {
     }
 
     /**
+     * Retrieves an object by key without requiring the caller to know its registered type.
+     *
+     * @param key The key identifying the instance
+     * @return The object instance, or null if not found
+     */
+    public Object get(String key) {
+        for (ContextStore store : stores) {
+            Object obj = store.get(key);
+            if (obj != null) {
+                return obj;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Retrieves an object by type only (for singleton scenarios).
      *
      * @param type The class type to retrieve
@@ -103,6 +119,21 @@ public class ToolExecutionContext {
     public boolean contains(String key, Class<?> type) {
         for (ContextStore store : stores) {
             if (store.contains(key, type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks whether an object with the specified key exists in any store, regardless of type.
+     *
+     * @param key The key identifying the instance
+     * @return true if any store contains the object, false otherwise
+     */
+    public boolean contains(String key) {
+        for (ContextStore store : stores) {
+            if (store.contains(key)) {
                 return true;
             }
         }
