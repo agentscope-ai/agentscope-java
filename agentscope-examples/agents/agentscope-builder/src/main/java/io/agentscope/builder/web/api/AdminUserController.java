@@ -249,15 +249,14 @@ public class AdminUserController {
                 e.identityEmoji(),
                 e.groupChatMentionPatterns(),
                 e.groupChatRequireMention(),
-                e.sandboxMode(),
-                e.sandboxScope(),
                 e.skillsAllow(),
                 e.skillsDeny(),
                 e.createdAt(),
                 e.updatedAt(),
                 newShares.isEmpty() ? null : newShares,
                 e.runAs(),
-                e.forkOf());
+                e.forkOf(),
+                e.workspacePath());
     }
 
     private static AdminUserView toView(UserRecord u) {

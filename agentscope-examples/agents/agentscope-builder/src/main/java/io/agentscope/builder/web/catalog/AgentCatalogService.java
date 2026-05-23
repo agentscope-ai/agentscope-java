@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -199,6 +200,10 @@ public class AgentCatalogService {
         }
 
         long now = System.currentTimeMillis();
+        String workspacePath = normalizeWorkspacePathInput(req.workspacePath());
+        if (workspacePath == null) {
+            workspacePath = id + WORKSPACE_DIR_SUFFIX;
+        }
         UserAgentDefinitionStore.StoredEntry entry =
                 new UserAgentDefinitionStore.StoredEntry(
                         id,
@@ -213,22 +218,21 @@ public class AgentCatalogService {
                         req.identityEmoji(),
                         req.groupChatMentionPatterns(),
                         req.groupChatRequireMention(),
-                        req.sandboxMode(),
-                        req.sandboxScope(),
                         req.skillsAllow(),
                         req.skillsDeny(),
                         now,
                         now,
                         null, // shares — new agents start unshared
                         AgentDefinition.RUN_AS_INVOKER,
-                        null);
+                        null,
+                        workspacePath);
         store.save(userId, entry);
         log.info("User '{}' created custom agent '{}'", userId, id);
 
         // Workspace scaffolding. Template wins over AI draft if both are supplied; otherwise fall
         // back to the WorkspaceScaffolder default. Failures are logged but do not roll back the
         // save — the workspace is regenerable from the catalog at any time.
-        Path workspace = userWorkspacePath(userId, id);
+        Path workspace = userWorkspacePath(userId, entry);
         try {
             if (req.templateId() != null && !req.templateId().isBlank()) {
                 boolean ok = templateRegistry.instantiate(req.templateId(), workspace);
@@ -255,8 +259,46 @@ public class AgentCatalogService {
         return entry.toDefinition(userId);
     }
 
-    private Path userWorkspacePath(String userId, String agentId) {
-        return workspaceManagerFactory.localWorkspacePath(userId, agentId);
+    private Path userWorkspacePath(String userId, UserAgentDefinitionStore.StoredEntry entry) {
+        return workspaceManagerFactory.resolveAgentDataPath(entry.workspacePath(), entry.id());
+    }
+
+    /** Suffix automatically appended to the final segment of user-supplied workspace paths. */
+    static final String WORKSPACE_DIR_SUFFIX = "-workspace";
+
+    /**
+     * Trims user-supplied workspace path input. Returns {@code null} for blank input (let the
+     * resolver fall back to the agent id at runtime). Absolute paths are passed through unchanged.
+     * Relative paths are rejected if they contain {@code ..} traversal segments. If the final
+     * path segment does not already end with {@code -workspace}, the suffix is appended so all
+     * agent workspaces share a consistent on-disk naming convention.
+     */
+    static String normalizeWorkspacePathInput(String raw) {
+        if (raw == null) return null;
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return null;
+        Path p = Paths.get(trimmed);
+        if (!p.isAbsolute()) {
+            for (Path seg : p) {
+                if ("..".equals(seg.toString())) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "Relative workspace path must not contain '..' segments");
+                }
+            }
+        }
+        Path fileName = p.getFileName();
+        if (fileName == null) {
+            return trimmed;
+        }
+        String leaf = fileName.toString();
+        if (leaf.endsWith(WORKSPACE_DIR_SUFFIX)) {
+            return trimmed;
+        }
+        String suffixed = leaf + WORKSPACE_DIR_SUFFIX;
+        Path parent = p.getParent();
+        Path rebuilt = parent != null ? parent.resolve(suffixed) : Paths.get(suffixed);
+        return rebuilt.toString();
     }
 
     /**
@@ -388,8 +430,6 @@ public class AgentCatalogService {
                         req.groupChatRequireMention() != null
                                 ? req.groupChatRequireMention()
                                 : existing.groupChatRequireMention(),
-                        req.sandboxMode() != null ? req.sandboxMode() : existing.sandboxMode(),
-                        req.sandboxScope() != null ? req.sandboxScope() : existing.sandboxScope(),
                         req.skillsAllow() != null ? req.skillsAllow() : existing.skillsAllow(),
                         req.skillsDeny() != null ? req.skillsDeny() : existing.skillsDeny(),
                         existing.createdAt(),
@@ -398,7 +438,8 @@ public class AgentCatalogService {
                         existing.runAs() != null
                                 ? existing.runAs()
                                 : AgentDefinition.RUN_AS_INVOKER,
-                        existing.forkOf());
+                        existing.forkOf(),
+                        existing.workspacePath()); // workspacePath is creation-only
         store.save(userId, updated);
 
         // Evict cached gateway registration so the next conversation picks up the new definition.
@@ -410,7 +451,7 @@ public class AgentCatalogService {
 
     /**
      * Materializes a clone of {@code (srcOwnerId, srcAgentId)} in {@code newOwnerId}'s namespace.
-     * The clone copies settings (name/description/sysPrompt/tools/skills/sandbox/identity) and
+     * The clone copies settings (name/description/sysPrompt/tools/skills/identity) and
      * marks {@code forkOf = srcAgentId}. Shares, sessions, and channel bindings start empty —
      * see plan §5.
      *
@@ -467,15 +508,15 @@ public class AgentCatalogService {
                         src.identityEmoji(),
                         src.groupChatMentionPatterns(),
                         src.groupChatRequireMention(),
-                        src.sandboxMode(),
-                        src.sandboxScope(),
                         src.skillsAllow(),
                         src.skillsDeny(),
                         now,
                         now,
                         null, // shares — clones start unshared
                         src.runAs(),
-                        srcAgentId); // forkOf
+                        srcAgentId, // forkOf
+                        id + WORKSPACE_DIR_SUFFIX); // workspacePath — clone uses its own id +
+        // suffix
         store.save(newOwnerId, clone);
         log.info(
                 "User '{}' cloned agent '{}/{}' as '{}/{}'",
@@ -584,7 +625,6 @@ public class AgentCatalogService {
             AgentConfigEntry.ToolsConfig tc = cfg != null ? cfg.getTools() : null;
             AgentConfigEntry.IdentityConfig ic = cfg != null ? cfg.getIdentity() : null;
             AgentConfigEntry.GroupChatConfig gc = cfg != null ? cfg.getGroupChat() : null;
-            AgentConfigEntry.SandboxConfig sc = cfg != null ? cfg.getSandbox() : null;
             AgentConfigEntry.SkillsConfig sk = cfg != null ? cfg.getSkills() : null;
 
             result.add(
@@ -602,8 +642,6 @@ public class AgentCatalogService {
                             ic != null ? ic.getEmoji() : null,
                             gc != null ? gc.getMentionPatterns() : null,
                             gc != null ? gc.getRequireMention() : null,
-                            sc != null ? sc.getMode() : null,
-                            sc != null ? sc.getScope() : null,
                             sk != null ? sk.getAllow() : null,
                             sk != null ? sk.getDeny() : null,
                             AgentDefinition.SCOPE_GLOBAL,
@@ -612,7 +650,8 @@ public class AgentCatalogService {
                             0L,
                             null, // shares — globals are never shared individually
                             AgentDefinition.RUN_AS_INVOKER,
-                            null,
+                            null, // forkOf
+                            cfg != null ? cfg.getWorkspace() : null, // mirror runtime workspace
                             null)); // tierForCurrentUser — populated by the controller
         }
         return result;
@@ -625,7 +664,7 @@ public class AgentCatalogService {
     private String buildAndRegisterUca(String userId, UserAgentDefinitionStore.StoredEntry entry) {
         String gatewayAgentId = UCA_PREFIX + userId + "-" + entry.id();
 
-        Path workspace = workspaceManagerFactory.localWorkspacePath(userId, entry.id());
+        Path workspace = userWorkspacePath(userId, entry);
 
         HarnessAgent.Builder b = HarnessAgent.builder();
 
@@ -701,10 +740,9 @@ public class AgentCatalogService {
             String identityEmoji,
             List<String> groupChatMentionPatterns,
             Boolean groupChatRequireMention,
-            String sandboxMode,
-            String sandboxScope,
             List<String> skillsAllow,
             List<String> skillsDeny,
+            String workspacePath,
             String templateId,
             AgentDraft aiDraft) {}
 

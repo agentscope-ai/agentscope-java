@@ -17,94 +17,46 @@ package io.agentscope.builder.web.catalog;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.runtime.config.AgentConfigEntry;
 import io.agentscope.builder.web.share.AgentShareGrant;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 /**
- * JSON-file-backed store for per-user custom agent definitions.
+ * Abstraction over the per-user custom agent definition registry.
  *
- * <p>Each user's definitions are persisted at
- * {@code {cwd}/.agentscope/users/{userId}/agents.json}. Definitions are cached in-memory and
- * lazily loaded on first access per user.
+ * <p>Agent definitions carry the user-facing metadata for every custom agent (id, name,
+ * description, system prompt, model overrides, tool allow/deny lists, identity config,
+ * sharing grants, ...). Workspace files (skills, subagents, memory, ...) are stored separately
+ * under the agent's namespaced workspace directory; only the lightweight definition lives here.
  *
- * <p>This class is thread-safe: all mutations are synchronized on the per-user lock.
+ * <p>The only bundled implementation is
+ * {@link io.agentscope.builder.web.persistence.jpa.JpaUserAgentDefinitionStore}, which persists
+ * via Spring Data JPA with a soft foreign key to the user table. The default DataSource is the
+ * embedded H2 database at {@code ${user.home}/.agentscope-builder/db}; activate the
+ * {@code jdbc} Spring profile (or set {@code BUILDER_DB_URL}) to point at MySQL / PostgreSQL.
+ *
+ * <p>Implementations are expected to be thread-safe.
  */
-@Component
-public class UserAgentDefinitionStore {
+public interface UserAgentDefinitionStore {
 
-    private static final Logger log = LoggerFactory.getLogger(UserAgentDefinitionStore.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    /** In-memory cache: userId → (agentId → StoredEntry). Lazily populated. */
-    private final ConcurrentHashMap<String, Map<String, StoredEntry>> cache =
-            new ConcurrentHashMap<>();
-
-    /** Locks per userId to prevent concurrent file writes. */
-    private final ConcurrentHashMap<String, Object> locks = new ConcurrentHashMap<>();
-
-    private final Path baseDir;
-
-    public UserAgentDefinitionStore(Path baseDir) {
-        this.baseDir = baseDir;
-    }
-
-    // -----------------------------------------------------------------
-    //  Public API
-    // -----------------------------------------------------------------
-
-    /** Returns all agent definitions owned by {@code userId}. */
-    public List<StoredEntry> list(String userId) {
-        return new ArrayList<>(loadForUser(userId).values());
-    }
+    /** Returns all agent definitions owned by {@code userId}. Insertion-ordered. */
+    List<StoredEntry> list(String userId);
 
     /** Finds a single agent definition by id for the given user. */
-    public Optional<StoredEntry> findById(String userId, String agentId) {
-        return Optional.ofNullable(loadForUser(userId).get(agentId));
-    }
+    Optional<StoredEntry> findById(String userId, String agentId);
 
     /**
-     * Saves (creates or updates) an agent definition for the given user. Persists atomically to
-     * the user's JSON file.
+     * Saves (creates or updates) an agent definition for the given user. Implementations persist
+     * atomically.
      */
-    public StoredEntry save(String userId, StoredEntry entry) {
-        synchronized (lockFor(userId)) {
-            Map<String, StoredEntry> userMap = loadForUser(userId);
-            userMap.put(entry.id(), entry);
-            persist(userId, userMap);
-            return entry;
-        }
-    }
+    StoredEntry save(String userId, StoredEntry entry);
 
-    /**
-     * Deletes an agent definition. Returns {@code true} if the entry existed and was removed.
-     */
-    public boolean delete(String userId, String agentId) {
-        synchronized (lockFor(userId)) {
-            Map<String, StoredEntry> userMap = loadForUser(userId);
-            if (userMap.remove(agentId) == null) {
-                return false;
-            }
-            persist(userId, userMap);
-            return true;
-        }
-    }
+    /** Deletes an agent definition. Returns {@code true} if the entry existed and was removed. */
+    boolean delete(String userId, String agentId);
 
     // -----------------------------------------------------------------
-    //  Stored data model
+    //  Stored data model — stable wire format consumed across the app
     // -----------------------------------------------------------------
 
     /**
@@ -113,7 +65,7 @@ public class UserAgentDefinitionStore {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record StoredEntry(
+    record StoredEntry(
             String id,
             String name,
             String description,
@@ -126,15 +78,14 @@ public class UserAgentDefinitionStore {
             String identityEmoji,
             List<String> groupChatMentionPatterns,
             Boolean groupChatRequireMention,
-            String sandboxMode,
-            String sandboxScope,
             List<String> skillsAllow,
             List<String> skillsDeny,
             long createdAt,
             long updatedAt,
             List<AgentShareGrant> shares,
             String runAs,
-            String forkOf) {
+            String forkOf,
+            String workspacePath) {
 
         public AgentDefinition toDefinition(String ownerId) {
             return new AgentDefinition(
@@ -151,8 +102,6 @@ public class UserAgentDefinitionStore {
                     identityEmoji,
                     groupChatMentionPatterns,
                     groupChatRequireMention,
-                    sandboxMode,
-                    sandboxScope,
                     skillsAllow,
                     skillsDeny,
                     AgentDefinition.SCOPE_USER,
@@ -162,6 +111,7 @@ public class UserAgentDefinitionStore {
                     shares,
                     runAs != null ? runAs : AgentDefinition.RUN_AS_INVOKER,
                     forkOf,
+                    workspacePath,
                     null); // tierForCurrentUser — populated by the controller
         }
 
@@ -191,12 +141,6 @@ public class UserAgentDefinitionStore {
                 gc.setRequireMention(groupChatRequireMention);
                 e.setGroupChat(gc);
             }
-            if (sandboxMode != null || sandboxScope != null) {
-                AgentConfigEntry.SandboxConfig sc = new AgentConfigEntry.SandboxConfig();
-                sc.setMode(sandboxMode);
-                sc.setScope(sandboxScope);
-                e.setSandbox(sc);
-            }
             if (skillsAllow != null || skillsDeny != null) {
                 AgentConfigEntry.SkillsConfig sk = new AgentConfigEntry.SkillsConfig();
                 sk.setAllow(skillsAllow);
@@ -205,52 +149,5 @@ public class UserAgentDefinitionStore {
             }
             return e;
         }
-    }
-
-    // -----------------------------------------------------------------
-    //  Internals
-    // -----------------------------------------------------------------
-
-    private Map<String, StoredEntry> loadForUser(String userId) {
-        return cache.computeIfAbsent(userId, this::loadFromDisk);
-    }
-
-    private Map<String, StoredEntry> loadFromDisk(String userId) {
-        Path file = agentsFile(userId);
-        if (!Files.isRegularFile(file)) {
-            return new LinkedHashMap<>();
-        }
-        try {
-            List<StoredEntry> entries =
-                    MAPPER.readValue(file.toFile(), new TypeReference<List<StoredEntry>>() {});
-            Map<String, StoredEntry> map = new LinkedHashMap<>();
-            for (StoredEntry e : entries) {
-                map.put(e.id(), e);
-            }
-            return map;
-        } catch (IOException e) {
-            log.warn("Failed to load user agent definitions from {}: {}", file, e.getMessage());
-            return new LinkedHashMap<>();
-        }
-    }
-
-    private void persist(String userId, Map<String, StoredEntry> entries) {
-        Path file = agentsFile(userId);
-        try {
-            Files.createDirectories(file.getParent());
-            MAPPER.writerWithDefaultPrettyPrinter()
-                    .writeValue(file.toFile(), new ArrayList<>(entries.values()));
-        } catch (IOException e) {
-            log.error("Failed to persist user agent definitions to {}: {}", file, e.getMessage());
-            throw new RuntimeException("Failed to save agent definitions", e);
-        }
-    }
-
-    private Path agentsFile(String userId) {
-        return baseDir.resolve("users").resolve(userId).resolve("agents.json");
-    }
-
-    private Object lockFor(String userId) {
-        return locks.computeIfAbsent(userId, k -> new Object());
     }
 }

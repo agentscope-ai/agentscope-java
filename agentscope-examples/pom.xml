@@ -57,9 +57,9 @@
         <module>a2a-rocketmq</module>
         <module>harness-examples</module>
         <module>agents/agentscope-claw</module>
-        <module>agents/agentscope-claw-web</module>
         <module>agents/agentscope-builder</module>
         <module>agents/agentscope-codingagent</module>
+        <module>agents/agentscope-dataagent</module>
     </modules>
 
     <properties>

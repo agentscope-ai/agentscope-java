@@ -18,7 +18,6 @@ package io.agentscope.builder.web.workspace;
 import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.harness.agent.store.BaseStore;
 import java.nio.file.Path;
-import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,47 +28,32 @@ import org.springframework.context.annotation.Configuration;
  * Spring configuration for the per-tenant workspace filesystem used by all per-agent {@code
  * WorkspaceManager} instances.
  *
- * <p>Each per-agent {@link WorkspaceManagerFactory#forAgent(String, String)} call creates a {@link
- * io.agentscope.harness.agent.filesystem.local.LocalFilesystem} with a {@link
- * io.agentscope.harness.agent.store.NamespaceFactory} that scopes all paths to {@code [users,
- * ownerId, agents, agentId]} within the agent's workspace root.
+ * <p>Builder is a multi-tenant distributed deployable, so per-agent workspaces always run on a
+ * composite filesystem: a read-only {@link
+ * io.agentscope.harness.agent.filesystem.local.LocalFilesystem} over the shared workspace root
+ * (templates, default {@code AGENTS.md} / {@code skills/} / {@code subagents/} / {@code knowledge/}
+ * shipped on disk) blended with a per-(owner, agent) {@link
+ * io.agentscope.harness.agent.filesystem.RemoteFilesystem} for {@code memory/}, {@code MEMORY.md},
+ * {@code sessions/}, {@code tasks/}, {@code skills/} and {@code subagents/} routes. The {@link
+ * BaseStore} bean backing the remote routes is therefore required — operators must wire one.
  */
 @Configuration
 public class BuilderWorkspaceConfig {
 
     private static final Logger log = LoggerFactory.getLogger(BuilderWorkspaceConfig.class);
 
-    @Value("${builder.workspace-store.fs-spec:local}")
-    private String fsSpec;
-
     @Value("${builder.workspace-store.local.max-file-size-mb:10}")
     private int localMaxFileSizeMb;
 
     @Bean
     public WorkspaceManagerFactory workspaceManagerFactory(
-            BuilderBootstrap bootstrap, Optional<BaseStore> remoteStore) {
+            BuilderBootstrap bootstrap, BaseStore baseStore) {
         Path workspaceRoot = bootstrap.resolveWorkspace(null);
-        if ("remote".equals(fsSpec)) {
-            if (remoteStore.isEmpty()) {
-                throw new IllegalStateException(
-                        "builder.workspace-store.fs-spec=remote requires a BaseStore bean."
-                                + " Provide one (e.g. via a Redis or OSS store extension).");
-            }
-            log.info("Builder workspace: remote mode, root={}", workspaceRoot);
-            return new WorkspaceManagerFactory(
-                    workspaceRoot, localMaxFileSizeMb, remoteStore.get());
-        }
-        if (!"local".equals(fsSpec) && !"sandbox".equals(fsSpec)) {
-            throw new IllegalStateException(
-                    "Unknown builder.workspace-store.fs-spec: '"
-                            + fsSpec
-                            + "'. Expected one of: local, sandbox, remote.");
-        }
         log.info(
-                "Builder workspace: {} mode, root={}, maxFileSizeMb={}",
-                fsSpec,
+                "Builder workspace: composite mode, root={}, maxFileSizeMb={}, store={}",
                 workspaceRoot,
-                localMaxFileSizeMb);
-        return new WorkspaceManagerFactory(workspaceRoot, localMaxFileSizeMb);
+                localMaxFileSizeMb,
+                baseStore.getClass().getSimpleName());
+        return new WorkspaceManagerFactory(workspaceRoot, localMaxFileSizeMb, baseStore);
     }
 }

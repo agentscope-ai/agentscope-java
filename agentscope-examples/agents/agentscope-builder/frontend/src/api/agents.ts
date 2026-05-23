@@ -25,6 +25,7 @@ export interface AgentDefinition {
   shares?: AgentShareGrant[];
   runAs?: string;
   forkOf?: string;
+  workspacePath?: string;
   tierForCurrentUser?: ShareTier;
 }
 
@@ -45,6 +46,7 @@ export interface AgentCreateRequest {
   maxIters?: number;
   templateId?: string;
   aiDraft?: AgentDraft;
+  workspacePath?: string;
 }
 
 function authHeaders() {

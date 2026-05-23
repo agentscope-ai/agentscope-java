@@ -18,34 +18,59 @@ package io.agentscope.builder.web.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.agentscope.builder.BuilderApp;
 import io.agentscope.builder.web.api.AdminUserController.CreateUserRequest;
 import io.agentscope.builder.web.api.AdminUserController.CreateUserResponse;
 import io.agentscope.builder.web.api.AdminUserController.PasswordResetRequest;
 import io.agentscope.builder.web.api.AdminUserController.RolesRequest;
 import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
-import java.nio.file.Path;
+import io.agentscope.builder.web.persistence.jpa.AgentEntityRepository;
+import io.agentscope.builder.web.persistence.jpa.JpaUserAgentDefinitionStore;
+import io.agentscope.builder.web.persistence.jpa.JpaUserStore;
+import io.agentscope.builder.web.persistence.jpa.UserEntityRepository;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.persistence.autoconfigure.EntityScan;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Slice test for {@link AdminUserController}. Boots a minimal JPA slice backed by in-memory H2
+ * (MySQL compatibility mode) and wires the real {@link JpaUserStore} / {@link
+ * JpaUserAgentDefinitionStore} on top of it. The controller logic is exercised against the same
+ * persistence path the application uses in production.
+ */
+@DataJpaTest(
+        properties = {
+            "spring.datasource.url=jdbc:h2:mem:admin-user-it;DB_CLOSE_DELAY=-1;MODE=MYSQL",
+            "spring.datasource.driver-class-name=org.h2.Driver",
+            "spring.datasource.username=sa",
+            "spring.datasource.password=",
+            "spring.jpa.hibernate.ddl-auto=create-drop",
+            // Skip the dev-only bob/alice demo seed so the slice mirrors a clean fresh DB.
+            "spring.sql.init.mode=never"
+        })
+@ContextConfiguration(classes = BuilderApp.class)
+@Import(AdminUserControllerTest.JpaStoresConfig.class)
 class AdminUserControllerTest {
 
-    @TempDir Path tmp;
-
-    private UserStore userStore;
-    private UserAgentDefinitionStore agentStore;
+    @Autowired UserStore userStore;
+    @Autowired UserAgentDefinitionStore agentStore;
     private AdminUserController controller;
 
     @BeforeEach
     void setUp() {
-        userStore = new UserStore(tmp.resolve("users.json"));
-        agentStore = new UserAgentDefinitionStore(tmp);
         controller = new AdminUserController(userStore, agentStore);
     }
 
@@ -108,7 +133,6 @@ class AdminUserControllerTest {
 
     @Test
     void cannotDeleteLastAdmin() {
-        Authentication admin = principal("admin", "ROLE_ADMIN");
         // The seeded 'admin' user is the only admin. Deleting must hit the last-admin guard.
         // (We use a different actor principal to bypass the self-delete guard and surface the
         // last-admin check.)
@@ -164,5 +188,25 @@ class AdminUserControllerTest {
     private static Authentication principal(String userId, String role) {
         return new UsernamePasswordAuthenticationToken(
                 userId, null, List.of(new SimpleGrantedAuthority(role)));
+    }
+
+    /**
+     * Brings up the two JPA-backed stores on top of the {@code @DataJpaTest} slice. The
+     * production {@code JpaPersistenceConfig} is not imported here so we stay below the threshold
+     * that triggers full Spring Boot context loading.
+     */
+    @TestConfiguration(proxyBeanMethods = false)
+    @EnableJpaRepositories(basePackageClasses = UserEntityRepository.class)
+    @EntityScan(basePackageClasses = UserEntityRepository.class)
+    static class JpaStoresConfig {
+        @Bean
+        UserStore userStore(UserEntityRepository repository) {
+            return new JpaUserStore(repository);
+        }
+
+        @Bean
+        UserAgentDefinitionStore agentStore(AgentEntityRepository repository) {
+            return new JpaUserAgentDefinitionStore(repository);
+        }
     }
 }

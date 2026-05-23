@@ -45,8 +45,6 @@ import java.util.List;
  * @param identityEmoji emoji shorthand (null = not set)
  * @param groupChatMentionPatterns mention patterns for group chat (null = not configured)
  * @param groupChatRequireMention whether mention is required in group chat
- * @param sandboxMode sandbox mode string (null = "off")
- * @param sandboxScope sandbox scope string (null = "agent")
  * @param skillsAllow explicit skills allowlist (null = not configured)
  * @param skillsDeny explicit skills denylist (null = not configured)
  * @param scope {@code "global"} or {@code "user"}
@@ -57,6 +55,9 @@ import java.util.List;
  * @param runAs identity the agent runs as ({@code "INVOKER"} default; reserved for v2 Claws
  *     semantics where {@code "OWNER"} would impersonate the agent's owner across grantees)
  * @param forkOf source {@code agentId} if this entry was produced by clone; {@code null} otherwise
+ * @param workspacePath user-chosen workspace location for this agent's data root. If absolute, used
+ *     as-is. If relative or blank, resolved against {@code ~/.agentscope/} (blank defaults to the
+ *     agent id). Set at creation time only; not editable afterwards.
  * @param tierForCurrentUser transient: the calling user's effective tier
  *     ({@code "CLONE"}/{@code "RUN"}/{@code "EDIT"}); only populated on read paths and only when
  *     the caller is authenticated. Never persisted.
@@ -76,8 +77,6 @@ public record AgentDefinition(
         String identityEmoji,
         List<String> groupChatMentionPatterns,
         Boolean groupChatRequireMention,
-        String sandboxMode,
-        String sandboxScope,
         List<String> skillsAllow,
         List<String> skillsDeny,
         String scope,
@@ -87,6 +86,7 @@ public record AgentDefinition(
         List<AgentShareGrant> shares,
         String runAs,
         String forkOf,
+        String workspacePath,
         String tierForCurrentUser) {
 
     public static final String SCOPE_GLOBAL = "global";
@@ -111,8 +111,6 @@ public record AgentDefinition(
                 identityEmoji,
                 groupChatMentionPatterns,
                 groupChatRequireMention,
-                sandboxMode,
-                sandboxScope,
                 skillsAllow,
                 skillsDeny,
                 scope,
@@ -122,6 +120,7 @@ public record AgentDefinition(
                 shares,
                 runAs,
                 forkOf,
+                workspacePath,
                 tier);
     }
 }

@@ -17,6 +17,7 @@ package io.agentscope.builder.web.audit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.web.auth.UserStore;
+import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
 import io.agentscope.builder.web.workspace.WorkspaceManagerFactory;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -47,8 +48,9 @@ import org.springframework.stereotype.Service;
  * </pre>
  *
  * <p>Writes go through the same {@link AbstractFilesystem} the workspace uses, so the file lives
- * inside the per-(owner, agent) prefix and inherits the deployment's isolation guarantees (local
- * disk, sandbox volume, remote backend, ...). Append is implemented as read-modify-write because
+ * inside the per-(owner, agent) prefix and inherits the deployment's isolation guarantees (the
+ * shared {@link io.agentscope.harness.agent.store.BaseStore} backing {@code RemoteFilesystem} for
+ * the user-data routes). Append is implemented as read-modify-write because
  * the abstract filesystem does not expose a streaming append primitive; per-agent in-process
  * locking keeps concurrent appends consistent on a single node. {@code WorkspaceCopier} excludes
  * {@code activity*.jsonl}, so clones start with a fresh audit trail.
@@ -78,13 +80,18 @@ public class AgentActivityStore {
 
     private final WorkspaceManagerFactory workspaceFactory;
     private final UserStore userStore;
+    private final UserAgentDefinitionStore agentStore;
 
     /** One lock per (ownerId, agentId) keeps in-process appends consistent. */
     private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
-    public AgentActivityStore(WorkspaceManagerFactory workspaceFactory, UserStore userStore) {
+    public AgentActivityStore(
+            WorkspaceManagerFactory workspaceFactory,
+            UserStore userStore,
+            UserAgentDefinitionStore agentStore) {
         this.workspaceFactory = workspaceFactory;
         this.userStore = userStore;
+        this.agentStore = agentStore;
     }
 
     /**
@@ -266,7 +273,12 @@ public class AgentActivityStore {
     // -----------------------------------------------------------------
 
     private AbstractFilesystem scopedFs(String ownerId, String agentId) {
-        return workspaceFactory.forAgent(ownerId, agentId).getFilesystem();
+        String workspacePath =
+                agentStore
+                        .findById(ownerId, agentId)
+                        .map(UserAgentDefinitionStore.StoredEntry::workspacePath)
+                        .orElse(null);
+        return workspaceFactory.userDataFs(ownerId, agentId, workspacePath);
     }
 
     private static Optional<String> readUtf8(AbstractFilesystem fs, String path) {

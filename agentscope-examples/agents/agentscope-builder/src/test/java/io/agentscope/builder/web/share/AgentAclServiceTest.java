@@ -137,14 +137,13 @@ class AgentAclServiceTest {
                 null,
                 null,
                 null,
-                null,
-                null,
                 AgentDefinition.SCOPE_USER,
                 ownerId,
                 0L,
                 0L,
                 shares,
                 AgentDefinition.RUN_AS_INVOKER,
+                null,
                 null,
                 null);
     }
@@ -166,14 +165,13 @@ class AgentAclServiceTest {
                 null,
                 null,
                 null,
-                null,
-                null,
                 AgentDefinition.SCOPE_GLOBAL,
                 null,
                 0L,
                 0L,
                 null,
                 AgentDefinition.RUN_AS_INVOKER,
+                null,
                 null,
                 null);
     }

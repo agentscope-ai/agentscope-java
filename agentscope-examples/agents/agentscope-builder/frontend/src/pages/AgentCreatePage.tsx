@@ -49,6 +49,7 @@ const S: Record<string, React.CSSProperties> = {
     border: '1px solid #cbd5e1', borderRadius: 9, cursor: 'pointer', fontSize: '0.92rem', fontWeight: 500,
   },
   err: { color: '#dc2626', fontSize: '0.88rem' },
+  hint: { fontSize: '0.8rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.5 },
   tip: { fontSize: '0.88rem', color: '#64748b', marginBottom: 20, lineHeight: 1.55 },
   aiTabDisabled: { opacity: 0.5, cursor: 'not-allowed' },
 };
@@ -61,6 +62,7 @@ export default function AgentCreatePage() {
   // shared inputs
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [workspacePath, setWorkspacePath] = useState('');
   const [sysPrompt, setSysPrompt] = useState('');
 
   // template
@@ -100,6 +102,7 @@ export default function AgentCreatePage() {
         name: name.trim(),
         description: description.trim() || undefined,
         sysPrompt: sysPrompt.trim() || undefined,
+        workspacePath: workspacePath.trim() || undefined,
         templateId: mode === 'template' && templateId ? templateId : undefined,
         aiDraft: mode === 'ai' && draft ? draft : undefined,
       };
@@ -182,6 +185,22 @@ export default function AgentCreatePage() {
             onChange={e => setDescription(e.target.value)}
             placeholder="Short summary shown on cards and tabs"
           />
+        </div>
+
+        <div style={S.row}>
+          <label style={S.fieldLabel}>Workspace path</label>
+          <input
+            style={S.input}
+            value={workspacePath}
+            onChange={e => setWorkspacePath(e.target.value)}
+            placeholder=".agentscope/<agentId>-workspace"
+          />
+          <div style={S.hint}>
+            Leave blank to use <code>{'<agentId>-workspace'}</code> under{' '}
+            <code>.agentscope/</code> (relative to the server's working directory).
+            Absolute paths are used as-is. If the final directory name does not end with{' '}
+            <code>-workspace</code>, the suffix is appended automatically. Set at creation only.
+          </div>
         </div>
 
         {mode !== 'template' && (

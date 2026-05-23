@@ -51,6 +51,12 @@ import java.util.Set;
  * @param roles optional set of role ids the sender holds within the guild; used for
  *     {@code binding.guild+roles} tier evaluation
  * @param messages the actual message content to forward to the agent
+ * @param preferredAgentId optional explicit agent override evaluated by {@link ChannelRouter} as a
+ *     tier-0 short-circuit before any binding tier. Set this when the caller already knows which
+ *     agent should handle the request (e.g. a path-mapped Web UI where the user clicked an agent
+ *     card); the router still builds session and outbound context normally so bindings continue to
+ *     control {@code sessionScope} and outbound addressing. {@code null} for normal binding-driven
+ *     routing.
  */
 public record InboundMessage(
         String channelId,
@@ -61,7 +67,8 @@ public record InboundMessage(
         String guild,
         String team,
         Set<String> roles,
-        List<Msg> messages) {
+        List<Msg> messages,
+        String preferredAgentId) {
 
     public InboundMessage {
         Objects.requireNonNull(channelId, "channelId");
@@ -90,7 +97,29 @@ public record InboundMessage(
                 null,
                 null,
                 Set.of(),
-                List.copyOf(messages));
+                List.copyOf(messages),
+                null);
+    }
+
+    /**
+     * Single-turn DM with an explicit {@link #preferredAgentId()} override — the router will use
+     * the supplied {@code agentId} as a tier-0 short-circuit instead of evaluating bindings.
+     * Suitable for path-mapped Web UI calls where the user has already chosen the target agent.
+     */
+    public static InboundMessage dmFor(
+            String channelId, String peerId, String agentId, List<Msg> messages) {
+        Objects.requireNonNull(agentId, "agentId");
+        return new InboundMessage(
+                channelId,
+                null,
+                Peer.direct(peerId),
+                peerId,
+                null,
+                null,
+                null,
+                Set.of(),
+                List.copyOf(messages),
+                agentId);
     }
 
     /**
@@ -108,7 +137,8 @@ public record InboundMessage(
                 guild,
                 null,
                 Set.of(),
-                List.copyOf(messages));
+                List.copyOf(messages),
+                null);
     }
 
     /**
@@ -126,7 +156,8 @@ public record InboundMessage(
                 guild,
                 null,
                 Set.of(),
-                List.copyOf(messages));
+                List.copyOf(messages),
+                null);
     }
 
     // -----------------------------------------------------------------
@@ -158,6 +189,7 @@ public record InboundMessage(
         private String guild;
         private String team;
         private Set<String> roles = Set.of();
+        private String preferredAgentId;
 
         private Builder(String channelId, Peer peer, List<Msg> messages) {
             this.channelId = channelId;
@@ -200,9 +232,27 @@ public record InboundMessage(
             return this;
         }
 
+        /**
+         * Sets an explicit agent override evaluated by {@link ChannelRouter} as a tier-0
+         * short-circuit. See {@link InboundMessage#preferredAgentId()}.
+         */
+        public Builder preferredAgentId(String preferredAgentId) {
+            this.preferredAgentId = preferredAgentId;
+            return this;
+        }
+
         public InboundMessage build() {
             return new InboundMessage(
-                    channelId, accountId, peer, senderId, parentPeer, guild, team, roles, messages);
+                    channelId,
+                    accountId,
+                    peer,
+                    senderId,
+                    parentPeer,
+                    guild,
+                    team,
+                    roles,
+                    messages,
+                    preferredAgentId);
         }
     }
 }

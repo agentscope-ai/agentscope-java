@@ -117,4 +117,24 @@ public interface Channel {
      * @param messages the messages to deliver
      */
     default void deliver(OutboundAddress address, List<Msg> messages) {}
+
+    /**
+     * Applies a new routing {@link ChannelConfig} (bindings, dmScope, defaultAgentId) without
+     * tearing down the channel's transport. Implementations that hold their {@link #config()} in a
+     * mutable / volatile reference can override this to support hot reload of bindings edited via
+     * the admin UI.
+     *
+     * <p>The default implementation returns {@code false} to signal that this channel does not
+     * support live config swap — callers (e.g. {@code BindingPersistence}) should then surface a
+     * "restart required" notice. Returning {@code true} means the swap was applied and subsequent
+     * inbound messages will route under the new config.
+     *
+     * @param newConfig the new routing configuration to install (channelId must match
+     *     {@link #channelId()})
+     * @return {@code true} if the config was applied live; {@code false} if the channel requires a
+     *     restart to pick up the new config
+     */
+    default boolean applyRoutingConfig(ChannelConfig newConfig) {
+        return false;
+    }
 }

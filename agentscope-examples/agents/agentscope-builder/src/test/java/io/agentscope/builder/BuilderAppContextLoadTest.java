@@ -22,6 +22,8 @@ import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.store.BaseStore;
+import io.agentscope.harness.agent.store.InMemoryStore;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -46,6 +48,14 @@ import reactor.core.publisher.Flux;
             "builder.jwt.secret=test-jwt-secret-must-be-at-least-32-characters-long",
             "builder.workspace=${java.io.tmpdir}/agentscope-builder-context-load-test",
             "builder.dashscope.api-key=",
+            // Keep the test hermetic: avoid writing the default H2 file under ${user.home}.
+            "spring.datasource.url=jdbc:h2:mem:builder-ctx-load;DB_CLOSE_DELAY=-1;MODE=MYSQL",
+            "spring.datasource.driver-class-name=org.h2.Driver",
+            "spring.datasource.username=sa",
+            "spring.datasource.password=",
+            "spring.jpa.hibernate.ddl-auto=create-drop",
+            // Skip the dev-only bob/alice demo seed so assertions about user counts stay stable.
+            "spring.sql.init.mode=never"
         })
 class BuilderAppContextLoadTest {
 
@@ -78,6 +88,15 @@ class BuilderAppContextLoadTest {
             Mockito.when(model.stream(Mockito.anyList(), Mockito.any(), Mockito.any()))
                     .thenReturn(Flux.just(chunk));
             return model;
+        }
+
+        // BaseStore is a hard dependency of the builder configuration after the
+        // composite-only filesystem refactor. The Spring context cannot start without
+        // one, so the test wires an InMemoryStore to back the per-(owner, agent)
+        // RemoteFilesystem routes.
+        @Bean
+        BaseStore inMemoryStore() {
+            return new InMemoryStore();
         }
     }
 }

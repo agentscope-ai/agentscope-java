@@ -20,8 +20,6 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
-import io.agentscope.harness.agent.store.NamespaceFactory;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -33,7 +31,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Copies every file from one agent's namespaced workspace into another agent's namespaced
  * workspace. Operates over {@link AbstractFilesystem} so it works identically against {@code
- * LocalFilesystem}, {@code SandboxBackedFilesystem}, and other backends.
+ * LocalFilesystem}, {@code RemoteFilesystem}, and other backends.
  *
  * <p>Walks the source namespace with a recursive glob, reads each file's content via the source's
  * namespaced view, then uploads it into the destination's namespaced view. Directories are
@@ -49,28 +47,28 @@ public final class WorkspaceCopier {
     private WorkspaceCopier() {}
 
     /**
-     * Copies all files from {@code (srcOwnerId, srcAgentId)} into {@code (dstOwnerId, dstAgentId)}
-     * via the supplied factory.
+     * Copies every user-data file from {@code (srcOwnerId, srcAgentId)} into {@code (dstOwnerId,
+     * dstAgentId)} via the supplied factory. Only the user-isolated layer is copied — shared
+     * workspace content (AGENTS.md, tools.json, shared skills/, ...) lives once at the workspace
+     * root and is not duplicated per agent.
      *
+     * @param srcWorkspacePath user-supplied workspace path of the source agent (may be null)
+     * @param dstWorkspacePath user-supplied workspace path of the target agent (may be null)
      * @return the number of files copied
      */
     public static int copy(
             WorkspaceManagerFactory factory,
             String srcOwnerId,
             String srcAgentId,
+            String srcWorkspacePath,
             String dstOwnerId,
-            String dstAgentId) {
+            String dstAgentId,
+            String dstWorkspacePath) {
 
-        WorkspaceManager src = factory.forAgent(srcOwnerId, srcAgentId);
-        WorkspaceManager dst = factory.forAgent(dstOwnerId, dstAgentId);
-        AbstractFilesystem srcFs = src.getFilesystem();
-        AbstractFilesystem dstFs = dst.getFilesystem();
-        if (srcFs == null || dstFs == null) {
-            throw new IllegalStateException("WorkspaceManager has no filesystem; cannot clone");
-        }
+        AbstractFilesystem srcFs = factory.userDataFs(srcOwnerId, srcAgentId, srcWorkspacePath);
+        AbstractFilesystem dstFs = factory.userDataFs(dstOwnerId, dstAgentId, dstWorkspacePath);
 
-        NamespaceFactory srcNs = factory.namespaceFor(srcOwnerId, srcAgentId);
-        String srcPrefix = "/" + String.join("/", srcNs.getNamespace());
+        String srcPrefix = factory.userDataPathPrefix(srcOwnerId, srcAgentId, srcWorkspacePath);
 
         GlobResult globRes = srcFs.glob(null, "**/*", null);
         if (!globRes.isSuccess() || globRes.matches() == null) {

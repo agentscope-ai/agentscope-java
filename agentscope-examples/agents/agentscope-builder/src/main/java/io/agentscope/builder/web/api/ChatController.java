@@ -18,8 +18,8 @@ package io.agentscope.builder.web.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.runtime.BuilderBootstrap;
+import io.agentscope.builder.runtime.channel.InboundMessage;
 import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.builder.runtime.gateway.HarnessGateway;
 import io.agentscope.builder.runtime.gateway.MsgContext;
 import io.agentscope.builder.runtime.session.SessionAgentManager;
 import io.agentscope.builder.runtime.session.SessionEntry;
@@ -78,7 +78,6 @@ public class ChatController {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ChatUiChannel chatUiChannel;
-    private final HarnessGateway gateway;
     private final SessionAgentManager sessionAgentManager;
     private final AgentCatalogService catalogService;
     private final IdentityLinkStore identityLinks;
@@ -104,7 +103,6 @@ public class ChatController {
             AgentAccessGuard guard,
             AgentActivityStore activity) {
         this.chatUiChannel = chatUiChannel;
-        this.gateway = builderBootstrap.gateway();
         this.sessionAgentManager = builderBootstrap.gateway().sessionAgentManager();
         this.catalogService = catalogService;
         this.identityLinks = identityLinks;
@@ -310,21 +308,18 @@ public class ChatController {
      * {@link MsgContext#canonicalKey()} the gateway uses to look up (or create) the underlying
      * session — it is <em>not</em> the {@code SessionEntry.sessionKey()} the storage layer uses.
      * Use {@link #findSessionKeyByGate} to translate to the real sessionKey.
+     *
+     * <p>Uses {@link ChatUiChannel#previewRoute} so the key matches exactly what {@link
+     * #executeChat} will produce when it dispatches through the same channel.
      */
     private String resolveGateKey(String userId, String agentId) {
         if (agentId == null || agentId.isBlank()) return null;
         try {
             String gatewayAgentId = catalogService.resolveGatewayAgentId(userId, agentId);
-            MsgContext ctx =
-                    new MsgContext(
-                            ChatUiChannel.CHANNEL_ID,
-                            null,
-                            userId,
-                            null,
-                            null,
-                            Map.of("agentId", gatewayAgentId),
-                            userId);
-            return ctx.canonicalKey();
+            InboundMessage probe =
+                    InboundMessage.dmFor(
+                            ChatUiChannel.CHANNEL_ID, userId, gatewayAgentId, List.of());
+            return chatUiChannel.previewRoute(probe).context().canonicalKey();
         } catch (Exception e) {
             return null;
         }
@@ -423,31 +418,30 @@ public class ChatController {
     private record CommandResult(String message) {}
 
     /**
-     * Core dispatch logic. Uses {@link ChatUiChannel} for the default agent (agentId equals the
-     * channel default), otherwise builds a {@link MsgContext} directly so the agentId participates
-     * in {@link MsgContext#canonicalKey()} and each (userId, agentId) pair gets its own session.
+     * Core dispatch logic. Always routes through {@link ChatUiChannel#dispatch} so that the
+     * {@link io.agentscope.builder.runtime.channel.ChannelRouter} runs uniformly — including for
+     * the path-mapped Web UI calls. The URL-supplied {@code agentId} is passed as
+     * {@link InboundMessage#preferredAgentId()} so it short-circuits the binding-tier evaluation
+     * (the user explicitly picked this agent) while still letting the router derive sessionScope
+     * and outbound addressing from any matching binding.
+     *
+     * <p>When {@code agentId} is blank (defensive — controller always supplies one), falls back to
+     * pure binding-driven routing: the chatui channel's default agent or matching binding wins.
      */
     private Mono<Msg> executeChat(String userId, String agentId, String message) {
         Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(message).build();
         long startMs = System.currentTimeMillis();
 
-        Mono<Msg> call;
+        InboundMessage inbound;
         if (agentId == null || agentId.isBlank()) {
-            // Path-mapped controller always supplies an agentId, but be defensive.
-            call = chatUiChannel.send(userId, message);
+            inbound = InboundMessage.dm(ChatUiChannel.CHANNEL_ID, userId, List.of(userMsg));
         } else {
             String gatewayAgentId = catalogService.resolveGatewayAgentId(userId, agentId);
-            MsgContext ctx =
-                    new MsgContext(
-                            ChatUiChannel.CHANNEL_ID,
-                            null,
-                            userId,
-                            null,
-                            null,
-                            Map.of("agentId", gatewayAgentId),
-                            userId);
-            call = gateway.run(ctx, List.of(userMsg));
+            inbound =
+                    InboundMessage.dmFor(
+                            ChatUiChannel.CHANNEL_ID, userId, gatewayAgentId, List.of(userMsg));
         }
+        Mono<Msg> call = chatUiChannel.dispatch(inbound);
 
         final String recordedAgentId = agentId != null ? agentId : "(default)";
         return call.doOnSuccess(

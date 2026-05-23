@@ -18,7 +18,7 @@ actually use:
 - `list_files` — list a workspace directory
 - `grep_files` — regex-search across the workspace
 - `glob_files` — glob-match workspace paths
-- `execute` — run a shell command in the workspace sandbox
+- `execute` — run a shell command in the agent workspace
 - `memory_search` — search the agent's long-term memory
 - `memory_get` — fetch a specific memory entry
 - `session_search` — search prior session transcripts

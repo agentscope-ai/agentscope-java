@@ -3,13 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DataAgent</title>
+    <title>AgentScope Builder</title>
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e2e8f0; height: 100vh; }
+      html { font-size: 16px; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", system-ui, "Helvetica Neue", Arial, sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+        height: 100vh;
+        font-size: 15px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
       #root { height: 100%; }
+      button { font-family: inherit; transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease; }
+      button:active:not(:disabled) { transform: translateY(1px); }
+      input, textarea, select { font-family: inherit; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+      input:focus, textarea:focus, select:focus {
+        outline: none;
+        border-color: #6366f1 !important;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+      }
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; border: 2px solid #f8fafc; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
-    <script type="module" crossorigin src="/assets/index-06JyofOA.js"></script>
+    <script type="module" crossorigin src="/assets/index-CJGJIBJx.js"></script>
   </head>
   <body>
     <div id="root"></div>

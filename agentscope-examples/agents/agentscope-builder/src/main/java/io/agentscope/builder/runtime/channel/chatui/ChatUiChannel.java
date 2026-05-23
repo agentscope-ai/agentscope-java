@@ -90,7 +90,9 @@ public final class ChatUiChannel implements Channel {
     /** Null until {@link #init(Gateway)} is called (when constructed without a gateway). */
     private volatile Gateway gateway;
 
-    private final ChannelConfig config;
+    /** Volatile so {@link #applyRoutingConfig} can hot-swap it from the admin UI. */
+    private volatile ChannelConfig config;
+
     private final ChannelRouter router;
 
     /** Buffer for proactive outbound messages delivered by the gateway. */
@@ -191,11 +193,37 @@ public final class ChatUiChannel implements Channel {
         return config;
     }
 
+    /**
+     * Hot-swaps the routing config without tearing down the channel. {@code newConfig.channelId()}
+     * must equal {@link #CHANNEL_ID}; otherwise the swap is rejected and this returns {@code
+     * false}.
+     */
+    @Override
+    public boolean applyRoutingConfig(ChannelConfig newConfig) {
+        Objects.requireNonNull(newConfig, "newConfig");
+        if (!CHANNEL_ID.equals(newConfig.channelId())) {
+            return false;
+        }
+        this.config = newConfig;
+        return true;
+    }
+
     @Override
     public Mono<Msg> dispatch(InboundMessage message) {
         Objects.requireNonNull(message, "message");
         RouteResult route = router.resolveRoute(config, message);
         return resolveGateway().run(route.context(), message.messages(), route.outboundAddress());
+    }
+
+    /**
+     * Returns the {@link RouteResult} this channel would produce for {@code message} without
+     * dispatching it. Lets callers compute the eventual session key (via
+     * {@code result.context().canonicalKey()}) before sending — useful for SSE subscribers that
+     * need to attach to the tool-event bus before the first turn registers a session.
+     */
+    public RouteResult previewRoute(InboundMessage message) {
+        Objects.requireNonNull(message, "message");
+        return router.resolveRoute(config, message);
     }
 
     /**

@@ -35,7 +35,6 @@ import java.util.List;
  *   <li>{@link #tools} — allow/deny lists for built-in tools
  *   <li>{@link #identity} — display name and emoji override
  *   <li>{@link #groupChat} — mention gating for group/room channels
- *   <li>{@link #sandbox} — sandbox mode and scope
  *   <li>{@link #skills} — skill allowlist/denylist
  * </ul>
  */
@@ -89,10 +88,6 @@ public class AgentConfigEntry {
     /** Group chat gating configuration (mention patterns, requireMention). */
     @JsonProperty("groupChat")
     private GroupChatConfig groupChat;
-
-    /** Sandbox mode and scope. */
-    @JsonProperty("sandbox")
-    private SandboxConfig sandbox;
 
     /** Skill allow / deny lists. */
     @JsonProperty("skills")
@@ -188,14 +183,6 @@ public class AgentConfigEntry {
 
     public void setGroupChat(GroupChatConfig groupChat) {
         this.groupChat = groupChat;
-    }
-
-    public SandboxConfig getSandbox() {
-        return sandbox;
-    }
-
-    public void setSandbox(SandboxConfig sandbox) {
-        this.sandbox = sandbox;
     }
 
     public SkillsConfig getSkills() {
@@ -300,41 +287,6 @@ public class AgentConfigEntry {
 
         public void setRequireMention(Boolean requireMention) {
             this.requireMention = requireMention;
-        }
-    }
-
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class SandboxConfig {
-
-        /**
-         * Sandbox mode. One of: {@code "off"} (default, no sandbox), {@code "all"} (always
-         * sandboxed), {@code "prompt"} (user-approved per session).
-         */
-        @JsonProperty("mode")
-        private String mode;
-
-        /**
-         * Sandbox scope. One of: {@code "agent"} (one container per agent), {@code "session"}
-         * (one container per session), {@code "shared"} (shared across agents).
-         */
-        @JsonProperty("scope")
-        private String scope;
-
-        public String getMode() {
-            return mode;
-        }
-
-        public void setMode(String mode) {
-            this.mode = mode;
-        }
-
-        public String getScope() {
-            return scope;
-        }
-
-        public void setScope(String scope) {
-            this.scope = scope;
         }
     }
 

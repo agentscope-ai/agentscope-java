@@ -8,6 +8,17 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+export interface WorkspaceSummary {
+  agentId: string;
+  workspacePath: string;
+  exists: boolean;
+  agentsMdExists: boolean;
+  memoryMdExists: boolean;
+  skillCount: number;
+  subagentCount: number;
+  dailyMemoryCount: number;
+}
+
 function authHeaders(): Record<string, string> {
   const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -19,6 +30,12 @@ function jsonHeaders(): Record<string, string> {
 
 function base(agentId: string): string {
   return `/api/agents/${encodeURIComponent(agentId)}/workspace`;
+}
+
+export async function summary(agentId: string): Promise<WorkspaceSummary> {
+  const res = await fetch(base(agentId), { headers: authHeaders() });
+  if (!res.ok) throw new Error('Failed to load workspace summary');
+  return res.json();
 }
 
 export async function tree(agentId: string, recursive = true): Promise<FileNode[]> {

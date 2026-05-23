@@ -28,6 +28,9 @@ import java.util.Objects;
  * <h2>Binding evaluation tiers (highest → lowest priority)</h2>
  *
  * <ol>
+ *   <li><b>explicit</b> — {@link InboundMessage#preferredAgentId()} short-circuit when the caller
+ *       has already nominated a specific agent (e.g. a path-mapped Web UI). Bindings are still
+ *       consulted to determine {@code sessionScope} and outbound addressing.
  *   <li><b>peer</b> — exact {@link Peer#key()} match (e.g. {@code "direct:u_42"})
  *   <li><b>peer.parent</b> — exact match on the thread-parent peer's key
  *   <li><b>guild + roles</b> — guild id matches AND sender holds at least one of the binding's
@@ -85,10 +88,16 @@ public final class ChannelRouter {
 
         String agentId;
         String matchedBy;
-        ChannelBinding matchedBinding;
+        // Tier 0: explicit override — caller pinned the agent (e.g. path-mapped Web UI). We still
+        // evaluate bindings below to derive the effective sessionScope/outbound address; the
+        // override only displaces the agentId selection.
+        String explicit = msg.preferredAgentId();
+        ChannelBinding matchedBinding = findMatchedBinding(config.bindings(), msg);
 
-        matchedBinding = findMatchedBinding(config.bindings(), msg);
-        if (matchedBinding != null) {
+        if (explicit != null && !explicit.isBlank()) {
+            agentId = explicit;
+            matchedBy = "explicit";
+        } else if (matchedBinding != null) {
             agentId = matchedBinding.agentId();
             matchedBy = detectMatchedTier(config.bindings(), msg);
         } else if (config.defaultAgentId() != null) {

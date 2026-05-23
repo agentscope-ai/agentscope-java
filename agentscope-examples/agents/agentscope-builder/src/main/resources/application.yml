@@ -10,6 +10,57 @@ spring:
     static-locations:
       - classpath:/static/
 
+  # --------------------------------------------------------------------------
+  # User + agent metadata are persisted via Spring Data JPA. The default backend
+  # is an embedded H2 database written to `${user.home}/.agentscope-builder/db.*`
+  # — intentionally NOT placed under `builder.workspace`, so workspace volumes
+  # never accidentally include the catalog tables.
+  #
+  # To switch to MySQL / PostgreSQL in production, activate the `jdbc` Spring
+  # profile (`--spring.profiles.active=jdbc` or `SPRING_PROFILES_ACTIVE=jdbc`)
+  # which sets MySQL-shaped DataSource defaults in `application-jdbc.yml`. You
+  # can also override individual settings directly via `BUILDER_DB_*` env vars
+  # without activating the profile.
+  # --------------------------------------------------------------------------
+  datasource:
+    url: ${BUILDER_DB_URL:jdbc:h2:file:${BUILDER_DB_PATH:${user.home}/.agentscope-builder/db};AUTO_SERVER=TRUE;MODE=MYSQL;DB_CLOSE_DELAY=-1}
+    driver-class-name: ${BUILDER_DB_DRIVER:org.h2.Driver}
+    username: ${BUILDER_DB_USER:sa}
+    password: ${BUILDER_DB_PASSWORD:}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # 'update' is fine for dev / single-node. Production deployments running
+      # against MySQL/PostgreSQL should pin the schema with Flyway/Liquibase and
+      # switch this to `validate`.
+      ddl-auto: ${BUILDER_JPA_DDL_AUTO:update}
+    # Run the SQL init scripts AFTER Hibernate creates the schema. Required so
+    # `data-h2.sql` finds the `builder_user` table to MERGE into.
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  # --------------------------------------------------------------------------
+  # `data-${platform}.sql` seeding. Setting platform=h2 makes Spring only run
+  # `data-h2.sql`; the bundled script seeds two demo accounts (bob / alice,
+  # passwords identical to the usernames) so a fresh local checkout is usable
+  # without first calling the admin API. The script is idempotent (MERGE INTO).
+  #
+  # `mode=always` is intentional: in Spring Boot 4, `mode=embedded` classifies
+  # only `jdbc:h2:mem:` URLs as embedded (see spring-projects/spring-boot#32865),
+  # which would skip the seed against the default `jdbc:h2:file:` DataSource.
+  # `application-jdbc.yml` explicitly overrides this to `never` so MySQL /
+  # PostgreSQL deployments never accidentally run the H2-only script.
+  # --------------------------------------------------------------------------
+  sql:
+    init:
+      mode: ${BUILDER_SQL_INIT_MODE:always}
+      platform: ${BUILDER_SQL_INIT_PLATFORM:h2}
+      continue-on-error: false
+
 # --------------------------------------------------------------------------
 # agentscope-builder configuration
 #
@@ -27,30 +78,16 @@ builder:
   workspace: ${BUILDER_WORKSPACE:${CLAW_WORKSPACE:}}
 
   # ---- Workspace storage topology (multi-tenant filesystem) ----
-  # fs-spec selects how per-(user, agent) workspaces are backed:
-  #   local    — LocalFilesystem rooted at the agent workspace, with per-agent
-  #              namespacing via NamespaceFactory (default; no extra infra).
-  #   sandbox  — local workspace store + SandboxBackedFilesystem for agent runtime.
-  #              Requires builder.sandbox.enabled=true.
-  #   remote   — RemoteFilesystem backed by a BaseStore bean for distributed
-  #              deployments. Requires a BaseStore bean (e.g. Redis, OSS).
+  # Builder always runs every HarnessAgent on a CompositeFilesystem: a read-only
+  # LocalFilesystem over `${builder.workspace}/.agentscope/workspace` (templates,
+  # AGENTS.md, default skills/subagents/knowledge shipped on disk) blended with
+  # per-(owner, agent) RemoteFilesystem routes for memory/, MEMORY.md, sessions/,
+  # tasks/, skills/, subagents/. The remote routes are backed by a `BaseStore`
+  # Spring bean — operators MUST provide one (e.g. SqliteBaseStore, a Redis-
+  # backed implementation, etc.); a missing bean fails context refresh fast.
   workspace-store:
-    fs-spec: ${BUILDER_WORKSPACE_FS_SPEC:local}
     local:
       max-file-size-mb: 10
-
-  # ---- Sandbox mode (Docker-based agent isolation) ----
-  # When enabled, agents run inside Docker containers with workspace projection.
-  # The web API workspace endpoints continue managing projected files on the host.
-  sandbox:
-    enabled: ${BUILDER_SANDBOX_ENABLED:false}
-    image: ${BUILDER_SANDBOX_IMAGE:agentscope/python-sandbox:py311-slim}
-    network: ${BUILDER_SANDBOX_NETWORK:none}
-    workspace-root: ${BUILDER_SANDBOX_WORKSPACE_ROOT:/workspace}
-    isolation: ${BUILDER_SANDBOX_ISOLATION:USER}
-    projection-roots: ${BUILDER_SANDBOX_PROJECTION_ROOTS:AGENTS.md,skills,subagents,knowledge}
-    cpu-count: ${BUILDER_SANDBOX_CPU_COUNT:0}
-    memory-bytes: ${BUILDER_SANDBOX_MEMORY_BYTES:0}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

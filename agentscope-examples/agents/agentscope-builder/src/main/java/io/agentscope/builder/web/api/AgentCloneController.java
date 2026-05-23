@@ -44,7 +44,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>The clone copies settings + workspace files but starts with no shares, no sessions, and no
  * channel bindings (plan §5). Files are copied via the {@code AbstractFilesystem} layer so the
- * operation works identically against {@code LocalFilesystem} and {@code SandboxBackedFilesystem}.
+ * operation works identically against {@code LocalFilesystem} and {@code RemoteFilesystem}.
  *
  * <p>Cloning a global agent is not supported in v1 (returns 409): globals live in
  * {@code agentscope.json}, not in any user namespace, and their workspace layout is not yet wired
@@ -100,8 +100,10 @@ public class AgentCloneController {
                                     workspaceFactory,
                                     srcOwnerId,
                                     sourceAgentId,
+                                    src.workspacePath(),
                                     userId,
-                                    out.entry().id());
+                                    out.entry().id(),
+                                    out.entry().workspacePath());
                     log.info(
                             "Clone {}/{} -> {}/{}: {} files copied",
                             srcOwnerId,

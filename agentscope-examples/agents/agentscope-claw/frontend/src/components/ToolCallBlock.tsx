@@ -8,34 +8,36 @@ interface Props {
 
 const s: Record<string, React.CSSProperties> = {
   wrapper: {
-    background: '#1a1d27',
-    border: '1px solid #2d3148',
-    borderRadius: 6,
+    background: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: 9,
     margin: '0.5rem 0',
     overflow: 'hidden',
-    fontSize: '0.82rem',
+    fontSize: '0.9rem',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    padding: '0.4rem 0.75rem',
+    gap: 10,
+    padding: '0.6rem 0.9rem',
     cursor: 'pointer',
     userSelect: 'none',
-    background: '#1e2235',
+    background: '#eef2ff',
+    borderBottom: '1px solid #e2e8f0',
   },
-  icon: { color: '#6366f1', fontWeight: 700, fontSize: '0.75rem' },
-  name: { color: '#a5b4fc', fontWeight: 500 },
-  id: { color: '#4b5571', marginLeft: 'auto', fontSize: '0.7rem' },
+  icon: { color: '#6366f1', fontWeight: 700, fontSize: '0.82rem' },
+  name: { color: '#3730a3', fontWeight: 600 },
+  id: { color: '#94a3b8', marginLeft: 'auto', fontSize: '0.78rem', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
   body: {
-    padding: '0.6rem 0.75rem',
-    color: '#94a3b8',
+    padding: '0.85rem 1rem',
+    color: '#334155',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-all',
-    maxHeight: 300,
+    maxHeight: 320,
     overflowY: 'auto',
-    fontFamily: 'monospace',
-    fontSize: '0.78rem',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: '0.85rem',
+    lineHeight: 1.55,
   },
 };
 
@@ -50,7 +52,7 @@ export default function ToolCallBlock({ toolName, toolCallId, result }: Props) {
       </div>
       {open && result && <div style={s.body}>{result}</div>}
       {open && !result && (
-        <div style={{ ...s.body, color: '#4b5571' }}>Running…</div>
+        <div style={{ ...s.body, color: '#94a3b8' }}>Running…</div>
       )}
     </div>
   );

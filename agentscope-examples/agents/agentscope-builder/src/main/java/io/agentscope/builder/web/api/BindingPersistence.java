@@ -21,7 +21,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.builder.runtime.channel.Channel;
 import io.agentscope.builder.runtime.channel.ChannelConfig;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.builder.runtime.config.AgentscopeConfig;
 import io.agentscope.builder.runtime.config.BindingConfigEntry;
 import io.agentscope.builder.runtime.config.ChannelConfigEntry;
@@ -34,6 +33,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -150,26 +150,32 @@ public class BindingPersistence {
     }
 
     /**
-     * Re-registers the given channel from its on-disk config so binding edits take effect for
-     * subsequent inbound messages. Currently only ChatUiChannel is rebuildable from a config
-     * record; for other channel types this is a no-op (their bindings are still persisted on disk
-     * and will apply on the next process restart).
+     * Applies the on-disk routing config to the live channel so binding edits take effect for
+     * subsequent inbound messages. Delegates to {@link Channel#applyRoutingConfig}; channels that
+     * return {@code false} (no live-swap support) get a "restart required" log entry — their
+     * bindings are still persisted on disk and will apply on the next process start.
      */
     private void reloadChannel(String channelId, ChannelConfigEntry entry) {
         if (channelId == null || entry == null) return;
-        if (!ChatUiChannel.CHANNEL_ID.equals(channelId)) {
+        Optional<Channel> liveOpt = channelManager.getChannel(channelId);
+        if (liveOpt.isEmpty()) {
+            log.info(
+                    "Channel '{}' not currently registered; bindings persisted and will load on"
+                            + " next start.",
+                    channelId);
             return;
         }
+        Channel live = liveOpt.get();
         try {
             ChannelConfig newCfg = entry.toChannelConfig(channelId);
-            channelManager.unregister(channelId);
-            Channel rebuilt = ChatUiChannel.create(newCfg);
-            channelManager.register(rebuilt);
-            rebuilt.init(bootstrap.gateway());
-            if (channelManager.isStarted()) {
-                rebuilt.start();
+            if (live.applyRoutingConfig(newCfg)) {
+                log.info("Hot-reloaded routing config for channel '{}'", channelId);
+            } else {
+                log.warn(
+                        "Channel '{}' does not support live config swap; restart required for"
+                                + " binding changes to take effect.",
+                        channelId);
             }
-            log.info("Reloaded channel '{}' after binding edit", channelId);
         } catch (Exception e) {
             log.warn(
                     "Failed to reload channel '{}': {}. Restart required for live changes.",

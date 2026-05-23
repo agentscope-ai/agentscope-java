@@ -206,7 +206,9 @@ export default function ChannelBindingTable({ agentId }: Props) {
       <h2 style={S.title}>Channels</h2>
       {dirty && (
         <div style={S.banner}>
-          ⚠ Binding changes for non-chatui channels apply on next restart.
+          ⚠ Channel adapters that do not support live config swap will pick up binding changes on
+          next restart. Check the server log for the per-channel status emitted by
+          BindingPersistence.
         </div>
       )}
       {err && <div style={{ ...S.err, marginBottom: 8 }}>{err}</div>}

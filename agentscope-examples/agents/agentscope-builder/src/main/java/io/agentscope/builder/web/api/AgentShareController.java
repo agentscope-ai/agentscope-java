@@ -237,15 +237,14 @@ public class AgentShareController {
                 e.identityEmoji(),
                 e.groupChatMentionPatterns(),
                 e.groupChatRequireMention(),
-                e.sandboxMode(),
-                e.sandboxScope(),
                 e.skillsAllow(),
                 e.skillsDeny(),
                 e.createdAt(),
                 e.updatedAt(),
                 newShares == null || newShares.isEmpty() ? null : List.copyOf(newShares),
                 e.runAs(),
-                e.forkOf());
+                e.forkOf(),
+                e.workspacePath());
     }
 
     public record AddShareRequest(String granteeType, String granteeId, String tier) {}

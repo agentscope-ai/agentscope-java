@@ -1,43 +1,16 @@
-const BASE = '';
-
-export interface SessionView {
+export interface InboxEntry {
   sessionKey: string;
-  agentId: string;
   sessionId: string;
+  agentId: string;
   label: string | null;
-  kind: string;
   lastActivityMs: number;
-  createdAtMs: number;
-  userId: string | null;
+  lastMessage: string | null;
+  unread: boolean;
 }
 
-export interface HistoryResult {
-  sessionKey: string | null;
-  sessionFilePath: string | null;
-  content: string | null;
-  error: string | null;
-}
-
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem('claw_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-export async function listSessions(limit = 50): Promise<SessionView[]> {
-  const res = await fetch(`${BASE}/api/sessions?limit=${limit}`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error('Failed to list sessions');
-  return res.json();
-}
-
-export async function sessionHistory(key: string): Promise<HistoryResult> {
-  const encodedKey = encodeURIComponent(key);
-  const res = await fetch(`${BASE}/api/sessions/${encodedKey}/history`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error('Failed to fetch history');
-  return res.json();
+export interface InboxOptions {
+  limit?: number;
+  unreadOnly?: boolean;
 }
 
 export interface TurnEntry {
@@ -51,58 +24,58 @@ export interface TurnEntry {
   toolResult: string | null;
 }
 
-export async function sessionTurns(key: string): Promise<TurnEntry[]> {
-  const encodedKey = encodeURIComponent(key);
-  const res = await fetch(`${BASE}/api/sessions/${encodedKey}/turns`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error('Failed to fetch session turns');
-  return res.json();
-}
-
 export interface ResetResult {
   sessionKey: string;
   reset: boolean;
 }
 
-export async function resetSession(key: string): Promise<ResetResult> {
-  const encodedKey = encodeURIComponent(key);
-  const res = await fetch(`${BASE}/api/sessions/${encodedKey}/reset`, {
-    method: 'POST',
-    headers: authHeaders(),
-  });
+export interface ReadStateResult {
+  sessionKey: string;
+  readAtMs: number;
+  unread: boolean;
+}
+
+export async function inbox(agentId: string, opts: InboxOptions = {}): Promise<InboxEntry[]> {
+  const params = new URLSearchParams();
+  if (opts.limit != null) params.set('limit', String(opts.limit));
+  if (opts.unreadOnly) params.set('unreadOnly', 'true');
+  const qs = params.toString();
+  const url = `/api/agents/${encodeURIComponent(agentId)}/sessions/inbox${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to load inbox');
+  return res.json();
+}
+
+export async function turns(agentId: string, sessionKey: string): Promise<TurnEntry[]> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionKey)}`,
+  );
+  if (!res.ok) throw new Error('Failed to fetch session turns');
+  return res.json();
+}
+
+export async function resetSession(agentId: string, sessionKey: string): Promise<ResetResult> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionKey)}/reset`,
+    { method: 'POST' },
+  );
   if (!res.ok) throw new Error('Failed to reset session');
   return res.json();
 }
 
-export interface MutationEntry {
-  ts: number;
-  sessionKey: string | null;
-  agentId: string | null;
-  sessionId: string | null;
-  toolCallId: string | null;
-  toolName: string | null;
-  path: string | null;
-  kind: string | null;
-  preHash: string | null;
-  postHash: string | null;
-  preSize: number;
-  postSize: number;
+export async function markRead(agentId: string, sessionKey: string): Promise<ReadStateResult> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionKey)}/read`,
+    { method: 'PATCH' },
+  );
+  if (!res.ok) throw new Error('Failed to mark session as read');
+  return res.json();
 }
 
-export async function listWorkspaceEvents(
-  key: string,
-  since?: number,
-  limit = 200,
-): Promise<MutationEntry[]> {
-  const encodedKey = encodeURIComponent(key);
-  const q = new URLSearchParams();
-  q.set('limit', String(limit));
-  if (since != null) q.set('since', String(since));
+export async function deleteSession(agentId: string, sessionKey: string): Promise<void> {
   const res = await fetch(
-    `${BASE}/api/sessions/${encodedKey}/workspace/events?${q.toString()}`,
-    { headers: authHeaders() },
+    `/api/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionKey)}`,
+    { method: 'DELETE' },
   );
-  if (!res.ok) throw new Error('Failed to fetch workspace events');
-  return res.json();
+  if (!res.ok && res.status !== 204) throw new Error('Failed to delete session');
 }

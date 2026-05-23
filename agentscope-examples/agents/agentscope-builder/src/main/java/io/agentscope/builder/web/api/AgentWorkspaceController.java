@@ -24,6 +24,12 @@ import io.agentscope.builder.web.catalog.AgentDefinition;
 import io.agentscope.builder.web.share.AgentAccessGuard;
 import io.agentscope.builder.web.share.AgentAclService.Tier;
 import io.agentscope.builder.web.workspace.WorkspaceManagerFactory;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -164,23 +170,27 @@ public class AgentWorkspaceController {
         return Mono.fromCallable(
                 () -> {
                     guard.require(userId, agentId, Tier.RUN);
-                    Path ws = resolveWorkspace(userId, agentId);
-                    Path memoryMd = ws.resolve("MEMORY.md");
-                    String memoryContent =
-                            Files.isRegularFile(memoryMd) ? readSafe(memoryMd) : null;
-                    Path memoryDir = ws.resolve("memory");
-                    List<DailyMemoryFile> dailyFiles = new ArrayList<>();
-                    if (Files.isDirectory(memoryDir)) {
-                        try (Stream<Path> stream = Files.list(memoryDir)) {
-                            stream.filter(p -> p.getFileName().toString().endsWith(".md"))
-                                    .sorted(Comparator.comparing(Path::getFileName).reversed())
-                                    .forEach(
-                                            p ->
-                                                    dailyFiles.add(
-                                                            new DailyMemoryFile(
-                                                                    p.getFileName().toString(),
-                                                                    sizeOf(p))));
+                    WorkspaceContext ctx = resolveContext(userId, agentId);
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    RuntimeContext rc = RuntimeContext.empty();
+                    String memoryContent = null;
+                    if (fs.exists(rc, "MEMORY.md")) {
+                        ReadResult rr = fs.read(rc, "MEMORY.md", 0, 50000);
+                        if (rr.isSuccess()) {
+                            memoryContent = rr.fileData().content();
                         }
+                    }
+                    List<DailyMemoryFile> dailyFiles = new ArrayList<>();
+                    LsResult ls = fs.ls(rc, "/memory");
+                    if (ls.isSuccess() && ls.entries() != null) {
+                        ls.entries().stream()
+                                .filter(fi -> !fi.isDirectory() && fi.path().endsWith(".md"))
+                                .sorted(Comparator.comparing(FileInfo::path).reversed())
+                                .forEach(
+                                        fi ->
+                                                dailyFiles.add(
+                                                        new DailyMemoryFile(
+                                                                fileName(fi.path()), fi.size())));
                     }
                     return new MemoryView(memoryContent, dailyFiles);
                 });
@@ -220,15 +230,12 @@ public class AgentWorkspaceController {
                         throw new ResponseStatusException(
                                 HttpStatus.NOT_FOUND, "File not found: " + path);
                     }
-                    if (ctx.manager() != null) {
-                        long size = sizeOf(target);
-                        if (size > MAX_FILE_SIZE) {
-                            return "(file too large to display: " + size + " bytes)";
-                        }
-                        String rel = relativize(ctx.workspace(), target);
-                        return ctx.manager().readManagedWorkspaceFileUtf8(rel);
+                    long size = sizeOf(target);
+                    if (size > MAX_FILE_SIZE) {
+                        return "(file too large to display: " + size + " bytes)";
                     }
-                    return readSafe(target);
+                    String rel = relativize(ctx.workspace(), target);
+                    return ctx.manager().readManagedWorkspaceFileUtf8(rel);
                 });
     }
 
@@ -250,13 +257,8 @@ public class AgentWorkspaceController {
                     }
                     boolean existed = Files.isRegularFile(target);
                     String content = req != null && req.content() != null ? req.content() : "";
-                    if (ctx.manager() != null) {
-                        String rel = relativize(ctx.workspace(), target);
-                        ctx.manager().writeUtf8WorkspaceRelative(rel, content);
-                    } else {
-                        Files.createDirectories(target.getParent());
-                        writeAtomic(target, content);
-                    }
+                    String rel = relativize(ctx.workspace(), target);
+                    ctx.manager().writeUtf8WorkspaceRelative(rel, content);
                     if (ctx.ownerId() != null) {
                         activity.record(
                                 ctx.ownerId(),
@@ -446,21 +448,29 @@ public class AgentWorkspaceController {
         return Mono.fromCallable(
                 () -> {
                     guard.require(userId, agentId, Tier.RUN);
-                    Path ws = resolveWorkspace(userId, agentId);
-                    Path subagentsDir = ws.resolve("subagents");
-                    if (!Files.isDirectory(subagentsDir)) {
+                    WorkspaceContext ctx = resolveContext(userId, agentId);
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    RuntimeContext rc = RuntimeContext.empty();
+                    LsResult ls = fs.ls(rc, "/subagents");
+                    if (!ls.isSuccess() || ls.entries() == null) {
                         return List.<SubagentInfo>of();
                     }
                     List<SubagentInfo> result = new ArrayList<>();
-                    try (DirectoryStream<Path> ds =
-                            Files.newDirectoryStream(subagentsDir, "*.md")) {
-                        for (Path file : ds) {
-                            String markdown = readSafe(file);
-                            String name = stripMdExtension(file.getFileName().toString());
-                            SubagentDeclaration decl = AgentSpecLoader.parse(markdown, name, ws);
-                            if (decl != null) {
-                                result.add(toSubagentInfo(decl));
-                            }
+                    for (FileInfo fi : ls.entries()) {
+                        String entryPath = fi.path();
+                        if (fi.isDirectory() || !entryPath.endsWith(".md")) {
+                            continue;
+                        }
+                        ReadResult rr = fs.read(rc, "subagents/" + fileName(entryPath), 0, 50000);
+                        if (!rr.isSuccess()) {
+                            continue;
+                        }
+                        String markdown = rr.fileData().content();
+                        String name = stripMdExtension(fileName(entryPath));
+                        SubagentDeclaration decl =
+                                AgentSpecLoader.parse(markdown, name, ctx.workspace());
+                        if (decl != null) {
+                            result.add(toSubagentInfo(decl));
                         }
                     }
                     result.sort(Comparator.comparing(SubagentInfo::name));
@@ -483,13 +493,11 @@ public class AgentWorkspaceController {
                                 HttpStatus.BAD_REQUEST, "description is required");
                     }
                     validateSubagentName(name);
-                    Path ws = resolveWorkspace(userId, agentId);
+                    WorkspaceContext ctx = resolveContext(userId, agentId);
                     String markdown = renderSubagentMarkdown(req);
-                    Path subagentsDir = ws.resolve("subagents");
-                    Files.createDirectories(subagentsDir);
-                    Path target = subagentsDir.resolve(name + ".md");
-                    writeAtomic(target, markdown);
-                    SubagentDeclaration decl = AgentSpecLoader.parse(markdown, name, ws);
+                    ctx.manager().writeUtf8WorkspaceRelative("subagents/" + name + ".md", markdown);
+                    SubagentDeclaration decl =
+                            AgentSpecLoader.parse(markdown, name, ctx.workspace());
                     if (decl == null) {
                         throw new ResponseStatusException(
                                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -543,11 +551,11 @@ public class AgentWorkspaceController {
                                     source.sysPrompt(),
                                     req.sourceAgentId());
                     String markdown = renderSubagentMarkdown(upsert);
-                    Path ws = resolveWorkspace(userId, agentId);
-                    Path subagentsDir = ws.resolve("subagents");
-                    Files.createDirectories(subagentsDir);
-                    writeAtomic(subagentsDir.resolve(subName + ".md"), markdown);
-                    SubagentDeclaration decl = AgentSpecLoader.parse(markdown, subName, ws);
+                    WorkspaceContext ctx = resolveContext(userId, agentId);
+                    ctx.manager()
+                            .writeUtf8WorkspaceRelative("subagents/" + subName + ".md", markdown);
+                    SubagentDeclaration decl =
+                            AgentSpecLoader.parse(markdown, subName, ctx.workspace());
                     if (decl == null) {
                         throw new ResponseStatusException(
                                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -566,18 +574,17 @@ public class AgentWorkspaceController {
                 () -> {
                     guard.require(userId, agentId, Tier.EDIT);
                     validateSubagentName(name);
-                    Path ws = resolveWorkspace(userId, agentId);
-                    Path target = ws.resolve("subagents").resolve(name + ".md");
-                    if (!Files.isRegularFile(target)) {
+                    WorkspaceContext ctx = resolveContext(userId, agentId);
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    String path = "subagents/" + name + ".md";
+                    if (!fs.exists(RuntimeContext.empty(), path)) {
                         throw new ResponseStatusException(
                                 HttpStatus.NOT_FOUND, "Subagent not found: " + name);
                     }
-                    try {
-                        Files.delete(target);
-                    } catch (IOException e) {
+                    WriteResult wr = fs.delete(RuntimeContext.empty(), path);
+                    if (!wr.isSuccess()) {
                         throw new ResponseStatusException(
-                                HttpStatus.INTERNAL_SERVER_ERROR,
-                                "Delete failed: " + e.getMessage());
+                                HttpStatus.INTERNAL_SERVER_ERROR, "Delete failed: " + wr.error());
                     }
                 });
     }
@@ -597,13 +604,12 @@ public class AgentWorkspaceController {
     }
 
     /**
-     * Resolves the (workspace path, optional {@link WorkspaceManager}) tuple for an agent.
+     * Resolves the (workspace path, {@link WorkspaceManager}) tuple for an agent.
      *
-     * <p>For SCOPE_USER agents the manager is populated and read/write endpoints route through it
-     * so the eventual {@code fs-spec=sandbox|remote} deployments work without further controller
-     * changes. For global agents the manager is {@code null} and callers fall back to NIO; globals
-     * are read-only in practice (edits go through {@code agentscope.json}) and are not subject to
-     * multi-tenant routing.
+     * <p>For SCOPE_USER agents, skills/subagents use an overlay filesystem (user can override
+     * shared). For global agents, skills/subagents are purely shared but memory/sessions/tasks
+     * are still user-isolated. Both cases route through {@link WorkspaceManager} backed by a
+     * {@link io.agentscope.harness.agent.filesystem.CompositeFilesystem}.
      */
     private WorkspaceContext resolveContext(String userId, String agentId) {
         AgentDefinition def =
@@ -616,10 +622,13 @@ public class AgentWorkspaceController {
                                                 "Agent not found or not accessible: " + agentId));
         if (AgentDefinition.SCOPE_USER.equals(def.scope())) {
             String ownerId = def.ownerId() != null ? def.ownerId() : userId;
-            WorkspaceManager wm = workspaceManagerFactory.forAgent(ownerId, agentId);
+            WorkspaceManager wm =
+                    workspaceManagerFactory.forAgent(ownerId, agentId, def.workspacePath());
             return new WorkspaceContext(wm.getWorkspace().normalize(), wm, ownerId);
         }
-        return new WorkspaceContext(builderBootstrap.resolveWorkspace(agentId), null, null);
+        WorkspaceManager wm =
+                workspaceManagerFactory.forGlobalAgent(userId, agentId, def.workspacePath());
+        return new WorkspaceContext(wm.getWorkspace().normalize(), wm, userId);
     }
 
     private static String relativize(Path workspace, Path target) {
@@ -829,6 +838,11 @@ public class AgentWorkspaceController {
 
     private static String stripMdExtension(String filename) {
         return filename.endsWith(".md") ? filename.substring(0, filename.length() - 3) : filename;
+    }
+
+    private static String fileName(String path) {
+        int slash = path.lastIndexOf('/');
+        return slash >= 0 ? path.substring(slash + 1) : path;
     }
 
     // -----------------------------------------------------------------

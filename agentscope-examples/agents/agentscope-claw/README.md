@@ -1,237 +1,530 @@
 # agentscope-claw
 
-**DataAgent** — a multi-tenant, distributable data-analysis assistant built on
-**HarnessAgent**. This module is the deployable shell that wraps a single
-business agent (the bundled example targets internal data analysis) and serves
-it to many users at once.
+A single-user local assistant built on top of [AgentScope Java]. Runs entirely
+on your machine — no login, no multi-tenant isolation, no remote sandbox.
 
-Run it and users log in through a React chat UI to converse with a fully-wired
-DataAgent (Skills, sub-agents, optional sandbox filesystem). Each user gets
-their own isolated workspace, sessions, skills, and knowledge directory.
+## Quick start
 
----
+Prerequisites:
 
-## Architecture
+- JDK 17+
+- A model API key (DashScope by default). Set `DASHSCOPE_API_KEY` in your
+  environment, or pass it as `--claw.dashscope.api-key=…`.
 
-```
-agentscope-claw (port 8080)          agentscope-claw-web (port 8090)
-┌──────────────────────────┐         ┌────────────────────────────┐
-│  Spring Boot WebFlux     │         │  Spring Boot WebFlux       │
-│  ┌──────────────────┐    │◄────────│  Admin Console (read-only) │
-│  │ ClawBootstrap    │    │  REST   │  Reads .agentscope/ files  │
-│  │ HarnessAgent     │    │  proxy  │  + /api/admin/runtime/*    │
-│  │ ChatUiChannel    │    │         │  + /api/admin/usage/*      │
-│  │ Sub-agents       │    │         └────────────────────────────┘
-│  │ Skills           │    │
-│  │ (Sandbox FS)     │    │
-│  └──────────────────┘    │
-│  React Chat SPA          │
-│  JWT Auth (BCrypt)       │
-│                          │
-│  .agentscope/            │
-│    agentscope.json ──────┼─► shared workspace (read by claw-web)
-│    users.json            │
-│    sessions.json         │
-│    workspace/            │
-│      AGENTS.md           │
-│      skills/             │
-│      subagents/          │
-│      agents/             │
-└──────────────────────────┘
-```
-
-**Deployment shape:** two independent executable JARs on the same host (or two
-Kubernetes pods sharing a persistent volume for `.agentscope/`).
-
----
-
-## Sample agent (bundled)
-
-On first start, claw materialises `classpath:/workspace-template/` into
-`.agentscope/` (idempotent — existing files are never overwritten). The bundled
-template ships a working agent named **`data-agent`** with:
-
-- **System prompt:** `workspace/AGENTS.md` — defines DataAgent's operating
-  principles (Skills first, delegate to sub-agents, cite sources, structured
-  output).
-- **Skills** (loaded automatically from `workspace/skills/`):
-  - `sql-analysis` — SOP for turning a business question into a verified SQL
-    answer with a small result table and the query that produced it.
-  - `chart-rendering` — SOP for visualising results (line / bar / area /
-    scatter) with sane defaults and matching commentary.
-- **Sub-agents** (loaded automatically from `workspace/subagents/`):
-  - `data-explorer` — Multi-source schema/data exploration when the right
-    source isn't obvious (30 iterations).
-  - `report-writer` — Polished written deliverable on top of already-computed
-    numbers (25 iterations).
-- **Channel preferences:** Each user can store per-channel preferences
-  (`displayLabel`, `sessionScope`, `language`, `enabledSkills`) at
-  `/api/user/bindings`. DataAgent always answers — preferences only shape *how*
-  it answers (e.g. force replies in `zh-CN`, restrict to a subset of skills).
-
-You can freely edit any file under `.agentscope/` to customise the agent —
-changes are preserved across restarts.
-
----
-
-## Getting started
-
-### 1. Configure a model
+Build and run from the repo root:
 
 ```bash
-export DASHSCOPE_API_KEY=sk-...
+mvn -pl agentscope-examples/agents/agentscope-claw -am clean package -DskipTests
+java -jar agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar
 ```
 
-Or provide your own `Model` Spring bean to use a different provider.
+Then open <http://localhost:8080/>. The default home is `~/.agentscope`; set
+`CLAW_HOME` (or `--claw.home=…`) to override it. The first run auto-creates a
+`default` built-in agent if `agentscope.json` is missing.
 
-### 2. (Optional) Enable sandbox mode
+## Directory layout
 
-Sandbox mode runs every agent's file I/O and shell commands inside an isolated
-Docker container instead of the host. Edit `application.yml`:
+All persistent state lives under `${claw.home}` (default `~/.agentscope`):
 
-```yaml
-claw:
-  sandbox:
-    enabled: true
-    image: agentscope/python-sandbox:py311-slim
-    isolation: USER          # one sandbox per user
+```
+~/.agentscope/
+├── agentscope.json          # built-in agent definitions
+├── agents.json              # custom agent catalog (JSON file)
+└── agents/
+    └── <agentId>/
+        ├── workspace/       # AGENTS.md, skills/, subagents/, tools.json, memory/, …
+        └── sessions.json    # session-store index for that agent
 ```
 
-Requires the Docker CLI on `PATH` and a reachable Docker daemon.
+Each agent — built-in or custom — gets its own workspace directory and its own
+session store. The harness manages workspace files, skills, subagents, and
+sub-session histories under `workspace/agents/<subId>/`.
 
-### 3. (Optional) Enable Redis for distributed deployment
+## Agents
 
-For horizontal scale (multiple claw instances), back the agent session state
-with Redis:
+Two flavours, both backed by the same runtime:
 
-```yaml
-claw:
-  session:
-    redis:
-      enabled: true
-      host: redis.internal
-      port: 6379
-      password: ${REDIS_PASSWORD:}
-      database: 0
+- **Built-in agents** live in `~/.agentscope/agentscope.json`. They show up in
+  the UI as read-only; edit the JSON to change them.
+- **Custom agents** are created through the UI (or via `POST /api/agents`) and
+  persisted to `~/.agentscope/agents.json`.
+
+Use the **New agent** button in the UI to create one from a blank scaffold, a
+bundled template, or an AI-generated draft.
+
+## Channels
+
+By default a single `chatui` channel is registered with `DmScope.MAIN`, so the
+web UI talks to one shared session per agent. Additional channel adapters
+(DingTalk, WeCom, …) can be enabled by adding entries to
+`~/.agentscope/agentscope.json`.
+
+### Built-in channel types
+
+| `type` | Direction | Transport | Notes |
+| --- | --- | --- | --- |
+| `chatui` | inbound + outbound | in-process pull | Always-on local web UI. |
+| `dingtalk` | inbound + outbound | **Stream** (WebSocket, no public port) | Enterprise internal app + Stream subscription. |
+| `wecom` | inbound + outbound | HTTP callback + REST API | Self-built enterprise app; needs a public HTTPS URL for the callback. |
+| `feishu` | inbound + outbound | HTTP event callback + REST API | Custom app with event subscription; needs a public HTTPS URL. |
+| `github` | inbound + outbound | Webhook + REST API | Reacts to issue / PR review comments. Needs a public HTTPS URL. |
+| `gitlab` | inbound + outbound | Webhook + REST API | Reacts to Issue / MR Note Hooks. Needs a public HTTPS URL (self-hosted GitLab works too). |
+
+### Config schema
+
+Every channel entry under `channels` shares the same skeleton:
+
+```json
+"channels": {
+  "<channelId>": {
+    "type": "dingtalk | wecom | feishu | github | gitlab | chatui",
+    "defaultAgentId": "main",
+    "dmScope": "MAIN | PER_PEER | PER_CHANNEL_PEER | PER_ACCOUNT_CHANNEL_PEER",
+    "disabled": false,
+    "bindings": [ /* optional routing rules — see ChannelRouter */ ],
+    "properties": { /* provider-specific block, see below */ }
+  }
+}
 ```
 
-When `claw.session.redis.enabled=true`:
+> `agentscope.json` is parsed as plain JSON — `${ENV_VAR}` placeholders are
+> **not** expanded. Either paste the literal values, or render the file with
+> `envsubst < agentscope.json.template > agentscope.json` before launch.
 
-- **Sandbox state** — `RedisSession` is auto-wired into `SandboxDistributedOptions`;
-  sandbox state survives across instances.
-- **Tool-event SSE** — `RedisToolEventBus` replaces the in-process bus, so an SSE
-  consumer on R2 sees tool-call events fired by R1 in the same session.
-- **User channel preferences** — `UserBindingStore` switches to `RedisKvStore`
-  (key prefix `claw:bindings:`); updates on R1 are immediately visible on R2.
-- **Workspace and other JSON stores** (`users.json`, `usage`, `sessions.json`)
-  remain file-backed — point `claw.workspace` at a **shared volume** (NFS/EFS)
-  so every replica sees the same data. Startup will fail loudly if it detects
-  Redis enabled with `claw.workspace` on local-ephemeral paths
-  (`/tmp/`, `/var/tmp/`, …).
+### Run agentscope-claw locally with DingTalk
 
-When disabled, claw runs single-node with file-based session persistence.
+DingTalk Stream mode keeps the WebSocket open to the DingTalk gateway from your
+laptop — no public callback, no tunnel needed. This is the simplest setup for
+local testing.
 
-See [`docs/cluster-deploy.md`](docs/cluster-deploy.md) for a docker-compose
-walkthrough of a 3-replica + Redis + shared NFS deployment, including the
-pre-flight checks that intentionally refuse misconfigured setups.
+1. **Create an enterprise internal app** in [DingTalk Developer Console]
+   (开发者后台 → 应用开发 → 企业内部开发 → 创建应用).
+   - Capture **AppKey** and **AppSecret** from the app's credentials page.
+   - On "机器人" / "Robot" sub-page, create a robot and capture its
+     **robotCode** (sometimes shown as `RobotCode` / `chatbotUserId`).
+   - Under "权限管理", grant at least: `Contact.User.Read`, `im:bot:send`,
+     `qyapi_send_msg_to_conversation`.
 
-### 4. Run
+2. **Enable Stream mode**: in the app's "事件订阅" → choose **Stream 推送**
+   (no HTTP callback URL required). Subscribe to the
+   `/v1.0/im/bot/messages/get` topic — this is the bot DM/group message
+   topic the included `DingTalkStreamClient` registers for.
 
-```bash
-java -jar target/agentscope-claw-*-exec.jar
-```
+3. **Write `~/.agentscope/agentscope.json`** (only the `channels` block is
+   new; keep your existing `agents` block):
 
-Open **http://localhost:8080** and log in (default admin account is auto-created
-on first start — check the startup logs for credentials).
+   ```json
+   {
+     "main": "default",
+     "agents": {
+       "default": {
+         "name": "claw",
+         "sysPrompt": "You are a helpful local assistant."
+       }
+     },
+     "channels": {
+       "dingtalk-dev": {
+         "type": "dingtalk",
+         "defaultAgentId": "default",
+         "dmScope": "PER_PEER",
+         "properties": {
+           "appKey": "dingxxxxxxxxxx",
+           "appSecret": "your-app-secret",
+           "robotCode": "dingxxxxxxxxxx"
+         }
+       }
+     }
+   }
+   ```
 
----
+4. **Launch**:
 
-## Configuration reference (`application.yml`)
+   ```bash
+   export DASHSCOPE_API_KEY=sk-...
+   mvn -pl agentscope-examples/agents/agentscope-claw -am clean package -DskipTests
+   java -jar agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar
+   ```
+
+   Watch the startup log for:
+
+   ```
+   ClawBootstrap initialized: ..., channels=[chatui, dingtalk-dev]
+   DingTalk channel 'dingtalk-dev' started: appKey=..., robotCode=...
+   DingTalk Stream connected: endpoint=wss://...
+   ```
+
+5. **Test inbound (DM)**: in DingTalk, find your robot's profile and send it
+   any text → the reply comes back in the same DM. Check `logs/` for the
+   `DingTalk inbound` debug line.
+
+6. **Test inbound (group @-mention)**: add the robot to a test group, send
+   `@<bot> ping` → reply lands in the group.
+
+7. **Test outbound (HTTP)**:
+
+   ```bash
+   # DM to a specific staff member
+   curl -X POST http://localhost:8080/api/outbound/send \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "channelId": "dingtalk-dev",
+       "peerKind": "DIRECT",
+       "peerId": "<staffId-or-unionId>",
+       "text": "hello from claw"
+     }'
+
+   # Group message
+   curl -X POST http://localhost:8080/api/outbound/send \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "channelId": "dingtalk-dev",
+       "peerKind": "GROUP",
+       "peerId": "<openConversationId>",
+       "markdown": "**alert**: build failed"
+     }'
+   ```
+
+8. **Test outbound (agent tool)**: every agent is auto-wired with the
+   `outbound_send` tool. Ask the agent something like _"use outbound_send to
+   ping DingTalk DM `<staffId>` on channel `dingtalk-dev` with the text
+   'hello'"_ — the LLM will invoke the tool and the message will pop in
+   DingTalk.
+
+### Run agentscope-claw locally with WeCom
+
+WeCom uses an HTTP callback, so your laptop needs to be reachable from the
+public internet. Use a tunnel like ngrok or frpc.
+
+1. **Create a self-built application** in the [WeCom admin console]
+   (我的企业 → 应用管理 → 自建).
+   - Capture **corpId** (我的企业 → 企业信息) and the app's
+     **agentId** + **secret**.
+   - In "接收消息" → enable callbacks. Set:
+     - **Token** — any random string; copy into config below.
+     - **EncodingAESKey** — click "随机生成"; this is the 43-char base64 key.
+     - **URL** — `https://<your-tunnel-host>/api/channels/wecom/<channelId>/callback`
+       (replace `<channelId>` to match what you put in `agentscope.json`).
+   - On "可信IP" / trusted IPs, add your tunnel's egress IP.
+
+2. **Start a tunnel**:
+
+   ```bash
+   ngrok http 8080
+   # → https://<random>.ngrok.io  ← use this as the URL above
+   ```
+
+3. **Write `~/.agentscope/agentscope.json`**:
+
+   ```json
+   {
+     "channels": {
+       "wecom-dev": {
+         "type": "wecom",
+         "defaultAgentId": "default",
+         "dmScope": "PER_PEER",
+         "properties": {
+           "corpId": "ww1234567890abcdef",
+           "agentId": 1000002,
+           "secret": "your-app-secret",
+           "token": "your-callback-token",
+           "encodingAesKey": "43-character-base64-no-padding-aes-key-here"
+         }
+       }
+     }
+   }
+   ```
+
+4. **Launch claw**, then in the WeCom console click **保存** on the callback
+   page — WeCom hits `GET /api/channels/wecom/wecom-dev/callback?echostr=…` to
+   verify; you should see a `WeCom URL verification ok` log line.
+
+5. **Test inbound**: open the app inside the WeCom client and DM it → reply
+   appears. For groups, the app must be added to the group context first.
+
+6. **Test outbound**: same `POST /api/outbound/send` shape as DingTalk;
+   `peerId` is a WeCom userid for DMs or a chatId for groups.
+
+### Run agentscope-claw locally with Feishu (Lark)
+
+Feishu uses HTTP event subscription, so your laptop needs a public HTTPS URL.
+Use a tunnel like ngrok or frpc.
+
+1. **Create a custom app** in [Feishu Developer Console]
+   (开发者后台 → 自建应用 → 创建企业自建应用).
+   - Capture **App ID** (`cli_xxx`) and **App Secret** from the credentials page.
+   - Under "权限管理" (Permissions), grant at least: `im:message`,
+     `im:message:send_as_bot`, `im:chat`, and (recommended) `im:resource`.
+   - Under "事件与回调" (Events & Callbacks) → enable the bot, then subscribe to
+     `im.message.receive_v1` (Schema 2.0).
+   - Set the **Encrypt Key** (推荐启用加密) — copy it; this enables AES-256-CBC
+     payload encryption. Optional but recommended.
+   - Set the **Verification Token** — any random string; copy it.
+   - Set the **Request URL** to
+     `https://<your-tunnel-host>/api/channels/feishu/<channelId>/callback`.
+
+2. **Start a tunnel**:
+
+   ```bash
+   ngrok http 8080
+   ```
+
+3. **Write `~/.agentscope/agentscope.json`**:
+
+   ```json
+   {
+     "channels": {
+       "feishu-dev": {
+         "type": "feishu",
+         "defaultAgentId": "default",
+         "dmScope": "PER_PEER",
+         "properties": {
+           "appId": "cli_xxxxxxxxxxxxxxxx",
+           "appSecret": "your-app-secret",
+           "encryptKey": "your-encrypt-key-from-console",
+           "verificationToken": "your-verification-token",
+           "apiBase": "https://open.feishu.cn"
+         }
+       }
+     }
+   }
+   ```
+
+   For Lark (international), use `"apiBase": "https://open.larksuite.com"`.
+
+4. **Launch claw**, then in the Feishu console click **保存并发布** on the
+   event-callback page. Feishu posts a one-time `url_verification` challenge to
+   your URL — you should see a `Feishu URL verification ok` log line.
+
+5. **Test inbound (DM)**: open the Feishu app, find your bot's profile and send
+   it any text → reply comes back in the same DM.
+
+6. **Test inbound (group)**: add the bot to a test group, send `@<bot> ping` →
+   reply lands in the group.
+
+7. **Test outbound**:
+
+   ```bash
+   curl -X POST http://localhost:8080/api/outbound/send \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "channelId": "feishu-dev",
+       "peerKind": "GROUP",
+       "peerId": "<chat_id>",
+       "text": "hello from claw"
+     }'
+   ```
+
+   Feishu addresses both DMs and groups by `chat_id`; the inbound mapper
+   captures it so replies land back on the same chat without any extra config.
+
+### Run agentscope-claw locally with GitHub
+
+GitHub uses a webhook. The bot reacts to `issue_comment` and
+`pull_request_review_comment` events and replies as a new comment on the same
+issue/PR.
+
+1. **Create a Personal Access Token (PAT)** at
+   `Settings → Developer settings → Personal access tokens (fine-grained)`.
+   Grant **Read & write** on **Issues** and **Pull requests** for the repos
+   you want the bot to act on. Capture the token (`github_pat_...`).
+
+2. **Start a tunnel**:
+
+   ```bash
+   ngrok http 8080
+   ```
+
+3. **Create a webhook** on the target repo:
+   `Settings → Webhooks → Add webhook`.
+   - **Payload URL**:
+     `https://<your-tunnel-host>/api/channels/github/<channelId>/webhook`
+   - **Content type**: `application/json`
+   - **Secret**: any random string; copy it into config below.
+   - **Events**: select **Let me choose individual events**, then tick
+     **Issue comments** and **Pull request review comments**.
+
+4. **Write `~/.agentscope/agentscope.json`**:
+
+   ```json
+   {
+     "channels": {
+       "github-acme": {
+         "type": "github",
+         "defaultAgentId": "default",
+         "dmScope": "PER_PEER",
+         "properties": {
+           "token": "github_pat_xxxxxxxxxxxxxxxx",
+           "webhookSecret": "your-webhook-shared-secret",
+           "apiBase": "https://api.github.com"
+         }
+       }
+     }
+   }
+   ```
+
+   For GitHub Enterprise Server, set `apiBase` to your install (e.g.
+   `https://github.acme.com/api/v3`).
+
+5. **Launch claw**. On startup the log prints the resolved bot login from
+   `GET /user`, which is used to filter self-authored comments (bot-loop
+   protection).
+
+6. **Test inbound**: comment on an issue or PR in the target repo → reply is
+   posted as a new comment on the same thread.
+
+7. **Test outbound**:
+
+   ```bash
+   curl -X POST http://localhost:8080/api/outbound/send \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "channelId": "github-acme",
+       "peerKind": "THREAD",
+       "peerId": "owner/repo#42",
+       "markdown": "**heads up:** new build available"
+     }'
+   ```
+
+   GitHub addresses issues and PRs uniformly through the issues comments
+   endpoint, so the same `peerId` shape works for both.
+
+### Run agentscope-claw locally with GitLab
+
+GitLab uses a webhook. The bot reacts to **Note Hook** events on Issues and
+Merge Requests, and replies as a new note on the same thread. Self-hosted
+GitLab works the same as gitlab.com.
+
+1. **Create a Project Access Token** at
+   `Settings → Access Tokens` on the target project. Role: **Developer** (or
+   higher); scopes: `api`. Capture the token (`glpat-...`).
+
+2. **Start a tunnel** (skip if self-hosted GitLab can already reach your
+   laptop):
+
+   ```bash
+   ngrok http 8080
+   ```
+
+3. **Add a webhook** at `Settings → Webhooks`:
+   - **URL**:
+     `https://<your-tunnel-host>/api/channels/gitlab/<channelId>/webhook`
+   - **Secret token**: any random string; copy it.
+   - **Trigger**: tick **Comments** (other event types are silently ignored
+     by the controller).
+
+4. **Write `~/.agentscope/agentscope.json`**:
+
+   ```json
+   {
+     "channels": {
+       "gitlab-internal": {
+         "type": "gitlab",
+         "defaultAgentId": "default",
+         "dmScope": "PER_PEER",
+         "properties": {
+           "token": "glpat-xxxxxxxxxxxxxxxx",
+           "webhookToken": "your-webhook-shared-token",
+           "apiBase": "https://gitlab.com"
+         }
+       }
+     }
+   }
+   ```
+
+   For self-hosted GitLab, set `apiBase` to your install root (e.g.
+   `https://gitlab.internal`). The adapter appends `/api/v4` automatically
+   if it's not already in the URL.
+
+5. **Launch claw**. On startup the log prints the resolved bot username from
+   `GET /api/v4/user`, used to filter self-authored notes.
+
+6. **Test inbound**: leave a comment on an issue or MR → reply is posted as a
+   new note on the same thread.
+
+7. **Test outbound**:
+
+   ```bash
+   curl -X POST http://localhost:8080/api/outbound/send \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "channelId": "gitlab-internal",
+       "peerKind": "THREAD",
+       "peerId": "group/project#7:Issue",
+       "markdown": "**deploy:** rolled out v1.2.3"
+     }'
+   ```
+
+   The trailing `:Issue` (or `:MergeRequest`) in `peerId` tells the outbound
+   client which REST endpoint to hit — it matches the shape used by the
+   inbound mapper.
+
+### Programmatic outbound from an agent
+
+The `outbound_send` tool is registered on every agent's toolkit at bootstrap.
+Any prompt that nudges the agent to call it works — e.g.
+
+> Use the `outbound_send` tool to message DingTalk user `dingstaff_001` on
+> channel `dingtalk-dev` with the text "deploy finished".
+
+When a sub-agent finishes, `HarnessGateway.tryDispatchAnnounce` automatically
+re-uses the originating channel's `OutboundAddress`, so completion
+notifications follow the user back to the same DingTalk/WeCom conversation
+with no extra wiring.
+
+### Reliability features (always on)
+
+| Mechanism | Default | Source |
+| --- | --- | --- |
+| Idempotency | dedup by `<channelId>\|<msgId>`, 5 min TTL, ~10 k entries | `IdempotencyStore` |
+| Bot-loop guard | 20 events / 60 s per peer; 60 s cooldown | `BotLoopGuard` |
+| Signature verify (WeCom) | SHA-1(token, ts, nonce, encrypt) per WeCom spec | `WeComCrypto` |
+| AES-256-CBC decrypt (WeCom) | 43-char base64 key + "=" → 32-byte AES key, IV = first 16 bytes | `WeComCrypto` |
+| Access-token refresh | proactive at 80% of the issued TTL | `*AccessTokenProvider` |
+
+### Troubleshooting
+
+- **No DingTalk/WeCom channels at startup** — confirm the log line
+  `ClawBootstrap initialized: ..., channels=[chatui, ...]` lists your
+  channelId. If only `chatui` shows, the entry was either skipped (missing
+  `type`, unknown `type`, or `disabled: true`) or rejected by the factory
+  (look for the `Failed to instantiate channel` error above it).
+- **WeCom returns 401 on URL verification** — `token` / `encodingAesKey`
+  mismatch with what's saved in the WeCom console.
+- **DingTalk Stream keeps reconnecting** — most often a bad
+  `appKey`/`appSecret`, missing Stream subscription permission, or the robot
+  is not yet enabled. The client retries with exponential backoff (1 s → 60 s).
+- **Outbound returns 400 `peerId is required`** — for groups, `peerId` is the
+  provider's group id, not the channel id: DingTalk wants
+  `openConversationId`, WeCom wants the chatId from the group registration.
+- **Bot-loop guard tripped** — log shows `bot-loop guard cooldown`; the
+  60 s window resets on its own. Send fewer than 20 messages/minute per peer
+  during stress tests.
+
+[DingTalk Developer Console]: https://open-dev.dingtalk.com/
+[WeCom admin console]: https://work.weixin.qq.com/wework_admin/
+
+## Configuration
+
+Recognised properties (all under `claw.*`, with matching `CLAW_*` env vars):
 
 | Property | Default | Description |
-|---|---|---|
-| `claw.jwt.secret` | dev placeholder | JWT signing secret. Share with claw-web. **Refuses to boot in non-dev profiles when left at the default.** |
-| `claw.workspace` | `$CWD` *(dev only)* | Working directory; `.agentscope/` is created here. **Required** in non-dev profiles — startup fails if blank. |
-| `claw.workspace-evolution.retention-days` | `30` | How long per-session workspace mutation logs are kept under `.agentscope/workspace/agents/*/sessions/*.workspace.jsonl`. Set to `0` to disable cleanup. |
-| `claw.dashscope.api-key` | _(empty)_ | DashScope API key. |
-| `claw.dashscope.model-name` | `qwen-max` | Model name. |
-| `claw.sandbox.enabled` | `false` | Run agents inside Docker sandboxes. |
-| `claw.sandbox.image` | `agentscope/python-sandbox:py311-slim` | Sandbox image. |
-| `claw.sandbox.network` | `none` | Docker network mode. `none` disables outbound networking. |
-| `claw.sandbox.isolation` | `USER` | `SESSION` \| `USER` \| `AGENT` \| `GLOBAL` — one sandbox per scope. |
-| `claw.sandbox.projection-roots` | `AGENTS.md,skills,subagents,knowledge` | Host paths copied into the sandbox. |
-| `claw.sandbox.cpu-count` | `0` | CPU cap (0 = unlimited). |
-| `claw.sandbox.memory-bytes` | `0` | Memory cap in bytes (0 = unlimited). |
-| `claw.session.redis.enabled` | `false` | Use Redis for distributed agent state. |
-| `claw.session.redis.host/port/password/database` | `localhost:6379/0` | Redis connection. |
-| `claw.session.redis.key-prefix` | `claw:session:` | Redis key namespace. |
+| --- | --- | --- |
+| `claw.home` | `~/.agentscope` | Root directory for built-ins, custom catalog, agent workspaces. |
+| `claw.dashscope.api-key` | _empty_ | DashScope API key. When set, a `DashScopeChatModel` bean is created automatically. |
+| `claw.dashscope.model-name` | `qwen-max` | Model name passed to DashScope. |
+| `claw.dashscope.stream` | `true` | Whether to stream responses. |
+| `claw.agent.name` | `claw` | Display name for the auto-generated `default` agent. |
+| `claw.agent.sys-prompt` | `You are a helpful local assistant. …` | System prompt for the auto-generated `default` agent. |
 | `server.port` | `8080` | HTTP port. |
 
----
+If you provide your own `Model` Spring bean (for example by importing another
+`@Configuration`), the auto-wired DashScope model is skipped.
 
-## API endpoints
+## What this fork is _not_
 
-### Public
+agentscope-claw used to support multi-tenant deployment, JWT login, per-user
+workspace namespacing, Docker-sandbox isolation, and agent sharing. All of
+that has been removed. See [`builder.md`](builder.md) for the list of removed
+modules and the recommended way to recover any of it from git history.
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/auth/login` | Login, returns JWT |
-
-### User-scoped (any authenticated user)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/auth/me` | Current user info |
-| `GET` | `/api/me/agent-info` | Metadata for the single product agent (id / name / description / maxIters) |
-| `POST` | `/api/chat/stream` | SSE streaming chat (request body: `{ message }`) |
-| `POST` | `/api/chat/send` | Synchronous chat (request body: `{ message }`) |
-| `GET` | `/api/sessions` | List own sessions |
-| `GET` | `/api/sessions/{key}/history` | Session message history |
-| `GET` | `/api/sessions/{key}/turns` | Per-turn transcript |
-| `GET` | `/api/sessions/{key}/tree` | Sub-agent fan-out tree (user-scoped) |
-| `GET` | `/api/sessions/{key}/workspace/events?since=&limit=` | Workspace mutation timeline for this session |
-| `POST` | `/api/sessions/{key}/reset` | Reset a session |
-| `GET` | `/api/user/profile` | View own profile |
-| `POST` | `/api/user/change-password` | Change password |
-| `GET` `POST` | `/api/user/bindings` | List / add channel preferences |
-| `PUT` `DELETE` | `/api/user/bindings/{index}` | Update / remove a preference |
-| `GET` | `/api/user/identity-links` | List identity links |
-| `GET` | `/api/skills` | List available Skills |
-| `GET` | `/api/usage/me/summary` | Own usage summary |
-| `GET` | `/api/usage/me/daily?days=7` | Own daily turn counts |
-
-### Admin-scoped (`ROLE_ADMIN`)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/admin/users` | List all users |
-| `POST` | `/api/admin/users` | Create user |
-| `GET` | `/api/admin/runtime/overview` | Platform overview |
-| `GET` | `/api/admin/runtime/instances` | Registered agent instances |
-| `GET` | `/api/admin/runtime/sessions` | All sessions (flat) |
-| `GET` | `/api/admin/runtime/sessions/{key}` | Single session detail |
-| `GET` | `/api/admin/runtime/sessions/{key}/tree` | Sub-agent tree rooted at session |
-| `GET` | `/api/admin/runtime/sessions/{key}/workspace/events?since=&limit=` | Workspace mutation timeline |
-| `GET` | `/api/admin/runtime/channels` | Channel state |
-| `GET` | `/api/admin/runtime/logs` | Live log stream (SSE) |
-| `GET` | `/api/admin/usage/summary` | Platform totals |
-| `GET` | `/api/admin/usage/hourly?hours=24` | Hourly turn counts |
-| `GET` | `/api/admin/usage/daily?days=30` | Daily turn counts |
-| `GET` | `/api/admin/usage/top-users?days=7&n=10` | Top users |
-| `GET` | `/api/admin/usage/top-agents?days=7&n=10` | Top agents |
-| `GET` | `/api/admin/usage/users-rollup?days=30` | Per-user rollup |
-| `GET` | `/api/admin/usage/agents-rollup?days=30` | Per-agent rollup |
-| `GET` | `/api/admin/usage/user/{userId}/daily?days=30` | One user's daily turns |
-
----
-
-## Building
-
-```bash
-mvn package -pl agentscope-claw -am -DskipTests
-```
-
-Outputs:
-- `target/agentscope-claw-<version>-exec.jar` — executable fat JAR
-- `target/agentscope-claw-<version>.jar` — thin library JAR (for reuse as a
-  Maven dependency)
+[AgentScope Java]: https://github.com/agentscope-ai/agentscope-java
