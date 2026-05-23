@@ -22,6 +22,7 @@ import io.agentscope.core.session.Session;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +88,7 @@ public class SubAgentConfig {
     private final Map<String, Map<String, Object>> customParameters;
     private final List<String> requiredCustomParameters;
     private final Set<String> systemParameters;
+    private static final Set<String> RESERVED_PARAMETER_NAMES = Set.of("message", "session_id");
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
@@ -94,14 +96,11 @@ public class SubAgentConfig {
         this.forwardEvents = builder.forwardEvents;
         this.streamOptions = builder.streamOptions;
         this.session = builder.session != null ? builder.session : new InMemorySession();
-        this.customParameters =
-                builder.customParameters != null ? builder.customParameters : new HashMap<>();
+        this.customParameters = copyCustomParameters(builder.customParameters);
         this.requiredCustomParameters =
-                builder.requiredCustomParameters != null
-                        ? builder.requiredCustomParameters
-                        : new ArrayList<>();
+                Collections.unmodifiableList(new ArrayList<>(builder.requiredCustomParameters));
         this.systemParameters =
-                builder.systemParameters != null ? builder.systemParameters : new LinkedHashSet<>();
+                Collections.unmodifiableSet(new LinkedHashSet<>(builder.systemParameters));
     }
 
     /**
@@ -184,9 +183,7 @@ public class SubAgentConfig {
      * @return A map of parameter names to their JSON schema definitions
      */
     public Map<String, Map<String, Object>> getCustomParameters() {
-        return customParameters == null
-                ? Collections.emptyMap()
-                : Collections.unmodifiableMap(customParameters);
+        return customParameters;
     }
 
     /**
@@ -195,9 +192,7 @@ public class SubAgentConfig {
      * @return A list containing the names of required parameters
      */
     public List<String> getRequiredCustomParameters() {
-        return requiredCustomParameters == null
-                ? Collections.emptyList()
-                : Collections.unmodifiableList(requiredCustomParameters);
+        return requiredCustomParameters;
     }
 
     /**
@@ -209,9 +204,70 @@ public class SubAgentConfig {
      * @return A set containing the names of system parameters
      */
     public Set<String> getSystemParameters() {
-        return systemParameters == null
-                ? Collections.emptySet()
-                : Collections.unmodifiableSet(systemParameters);
+        return systemParameters;
+    }
+
+    private static Map<String, Map<String, Object>> copyCustomParameters(
+            Map<String, Map<String, Object>> source) {
+        if (source == null || source.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Map<String, Object>> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Object>> entry : source.entrySet()) {
+            if (entry.getKey() == null) {
+                throw new IllegalArgumentException("Parameter name cannot be null.");
+            }
+            copy.put(entry.getKey(), immutableSchemaMap(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(copy);
+    }
+
+    private static Map<String, Object> immutableSchemaMap(Map<String, Object> source) {
+        if (source == null) {
+            throw new IllegalArgumentException("Parameter schema cannot be null.");
+        }
+
+        Map<String, Object> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : source.entrySet()) {
+            if (entry.getKey() == null) {
+                throw new IllegalArgumentException("Parameter schema key cannot be null.");
+            }
+            copy.put(entry.getKey(), immutableJsonValue(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(copy);
+    }
+
+    private static Object immutableJsonValue(Object value) {
+        if (value instanceof Map<?, ?> mapValue) {
+            Map<String, Object> copy = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+                if (!(entry.getKey() instanceof String key)) {
+                    throw new IllegalArgumentException(
+                            "JSON schema object keys must be strings: " + entry.getKey());
+                }
+                copy.put(key, immutableJsonValue(entry.getValue()));
+            }
+            return Collections.unmodifiableMap(copy);
+        }
+
+        if (value instanceof List<?> listValue) {
+            List<Object> copy = new ArrayList<>(listValue.size());
+            for (Object item : listValue) {
+                copy.add(immutableJsonValue(item));
+            }
+            return Collections.unmodifiableList(copy);
+        }
+
+        if (value instanceof Set<?> setValue) {
+            List<Object> copy = new ArrayList<>(setValue.size());
+            for (Object item : setValue) {
+                copy.add(immutableJsonValue(item));
+            }
+            return Collections.unmodifiableList(copy);
+        }
+
+        return value;
     }
 
     /** Builder for SubAgentConfig. */
@@ -332,23 +388,25 @@ public class SubAgentConfig {
          * system parameter (e.g., "message" or "session_id"). Also thrown if {@code schema} is null or empty.
          */
         public Builder addParameter(String name, Map<String, Object> schema, boolean required) {
-            if ("message".equals(name) || "session_id".equals(name)) {
-                throw new IllegalArgumentException(
-                        "Cannot use reserved parameter name: '"
-                                + name
-                                + "'. This is a built-in system parameter.");
-            }
-            if (name == null || name.trim().isEmpty()) {
-                throw new IllegalArgumentException("Parameter name cannot be null or empty.");
-            }
-
+            String normalizedName = normalizeParameterName(name, "Parameter");
             if (schema == null || schema.isEmpty()) {
                 throw new IllegalArgumentException("Parameter schema cannot be null or empty.");
             }
 
-            this.customParameters.put(name, schema);
+            if (systemParameters.contains(normalizedName)) {
+                throw new IllegalArgumentException(
+                        "Cannot declare parameter '"
+                                + normalizedName
+                                + "' as both custom and system parameter.");
+            }
+
+            this.customParameters.put(normalizedName, new HashMap<>(schema));
             if (required) {
-                this.requiredCustomParameters.add(name);
+                if (!this.requiredCustomParameters.contains(normalizedName)) {
+                    this.requiredCustomParameters.add(normalizedName);
+                }
+            } else {
+                this.requiredCustomParameters.remove(normalizedName);
             }
             return this;
         }
@@ -367,19 +425,32 @@ public class SubAgentConfig {
          * system parameter (e.g., "message" or "session_id").
          */
         public Builder addSystemParameter(String name) {
-            if ("message".equals(name) || "session_id".equals(name)) {
+            String normalizedName = normalizeParameterName(name, "System parameter");
+
+            if (customParameters.containsKey(normalizedName)) {
                 throw new IllegalArgumentException(
-                        "Cannot use reserved parameter name: '"
-                                + name
-                                + "'. This is a built-in parameter.");
-            }
-            if (name == null || name.trim().isEmpty()) {
-                throw new IllegalArgumentException(
-                        "System parameter name cannot be null or empty.");
+                        "Cannot declare parameter '"
+                                + normalizedName
+                                + "' as both custom and system parameter.");
             }
 
-            this.systemParameters.add(name);
+            this.systemParameters.add(normalizedName);
             return this;
+        }
+
+        private String normalizeParameterName(String name, String label) {
+            if (name == null || name.trim().isEmpty()) {
+                throw new IllegalArgumentException(label + " name cannot be null or empty.");
+            }
+
+            String normalizedName = name.trim();
+            if (RESERVED_PARAMETER_NAMES.contains(normalizedName)) {
+                throw new IllegalArgumentException(
+                        "Cannot use reserved parameter name: '"
+                                + normalizedName
+                                + "'. This is a built-in parameter.");
+            }
+            return normalizedName;
         }
 
         /**

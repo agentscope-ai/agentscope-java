@@ -179,22 +179,18 @@ public class SubAgentTool implements AgentTool {
                             }
                         }
 
-                        // 2. Extract custom parameters (LLM inferred, Context overrides LLM)
+                        // 2. Extract custom parameters (LLM inferred)
                         Map<String, Map<String, Object>> declaredCustomParams =
                                 config.getCustomParameters();
                         if (declaredCustomParams != null && !declaredCustomParams.isEmpty()) {
                             for (String paramName : declaredCustomParams.keySet()) {
-                                boolean injectedFromContext = false;
-
-                                // Prioritize obtaining from ToolExecutionContext
                                 Object ctxValue = extractFromContext(context, paramName);
                                 if (ctxValue != null) {
                                     finalMetadata.put(paramName, ctxValue);
-                                    injectedFromContext = true;
+                                    continue;
                                 }
 
-                                // Attempt to retrieve from LLM input if not injected by context
-                                if (!injectedFromContext && input.containsKey(paramName)) {
+                                if (input.containsKey(paramName) && input.get(paramName) != null) {
                                     finalMetadata.put(paramName, input.get(paramName));
                                 }
                             }
