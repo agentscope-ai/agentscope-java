@@ -27,6 +27,7 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.Session;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -215,12 +216,15 @@ class SubAgentConfigTest {
         @DisplayName("Should build config with schema custom parameter")
         void testSchemaCustomParameter() {
             Map<String, Object> enumSchema = new HashMap<>();
+            List<String> enumValues = new ArrayList<>(List.of("admin", "user"));
             enumSchema.put("type", "string");
-            enumSchema.put("enum", List.of("admin", "user"));
+            enumSchema.put("enum", enumValues);
             enumSchema.put("description", "The user role");
 
             SubAgentConfig config =
                     SubAgentConfig.builder().addParameter("role", enumSchema, false).build();
+            enumValues.add("owner");
+            enumSchema.put("description", "Mutated description");
 
             assertNotNull(config.getCustomParameters());
             assertEquals(1, config.getCustomParameters().size());
@@ -228,10 +232,81 @@ class SubAgentConfigTest {
             Map<String, Object> paramConfig = config.getCustomParameters().get("role");
             assertNotNull(paramConfig);
             assertEquals("string", paramConfig.get("type"));
+            assertEquals("The user role", paramConfig.get("description"));
             assertTrue(paramConfig.containsKey("enum"));
+            assertEquals(List.of("admin", "user"), paramConfig.get("enum"));
 
             assertNotNull(config.getRequiredCustomParameters());
             assertFalse(config.getRequiredCustomParameters().contains("role"));
+        }
+
+        @Test
+        @DisplayName("Should expose immutable custom parameter schemas")
+        @SuppressWarnings("unchecked")
+        void testCustomParameterSchemaIsImmutable() {
+            Map<String, Object> schema = new HashMap<>();
+            schema.put("type", "object");
+            schema.put("properties", Map.of("mode", Map.of("type", "string")));
+
+            SubAgentConfig config =
+                    SubAgentConfig.builder().addParameter("options", schema, false).build();
+
+            Map<String, Object> parameterSchema = config.getCustomParameters().get("options");
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> parameterSchema.put("description", "mutated"));
+
+            Map<String, Object> properties =
+                    (Map<String, Object>) parameterSchema.get("properties");
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> properties.put("extra", Map.of("type", "string")));
+        }
+
+        @Test
+        @DisplayName("Should throw exception when custom parameter schema is null or empty")
+        void testAddNullOrEmptyParameterSchemaThrowsException() {
+            SubAgentConfig.Builder builder = SubAgentConfig.builder();
+
+            assertThrows(
+                    NullPointerException.class,
+                    () -> builder.addParameter("missingSchema", null, true));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> builder.addParameter("emptySchema", Map.of(), true));
+        }
+
+        @Test
+        @DisplayName("Should reject non-string keys in nested custom parameter schemas")
+        void testRejectNonStringSchemaKeys() {
+            Map<Object, Object> nested = new HashMap<>();
+            nested.put(1, Map.of("type", "string"));
+
+            Map<String, Object> schema = new HashMap<>();
+            schema.put("type", "object");
+            schema.put("properties", nested);
+
+            SubAgentConfig.Builder builder = SubAgentConfig.builder();
+            builder.addParameter("options", schema, false);
+
+            assertThrows(IllegalArgumentException.class, builder::build);
+        }
+
+        @Test
+        @DisplayName("Should reject parameter declared as both custom and system")
+        void testRejectCustomAndSystemParameterConflict() {
+            SubAgentConfig.Builder customFirst = SubAgentConfig.builder();
+            customFirst.addParameter("userId", "string", "User ID", true);
+
+            assertThrows(
+                    IllegalArgumentException.class, () -> customFirst.addSystemParameter("userId"));
+
+            SubAgentConfig.Builder systemFirst = SubAgentConfig.builder();
+            systemFirst.addSystemParameter("tenantId");
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> systemFirst.addParameter("tenantId", "string", "Tenant ID", true));
         }
 
         @Test
@@ -277,6 +352,22 @@ class SubAgentConfigTest {
                             .build();
 
             assertNotNull(config);
+        }
+
+        @Test
+        @DisplayName(
+                "Multiple builds from same builder should keep parameter snapshots independent")
+        void testMultipleBuildsKeepParameterSnapshotsIndependent() {
+            SubAgentConfig.Builder builder =
+                    SubAgentConfig.builder().addParameter("first", "string", "First", true);
+
+            SubAgentConfig config1 = builder.build();
+            builder.addParameter("second", "string", "Second", true);
+            SubAgentConfig config2 = builder.build();
+
+            assertTrue(config1.getCustomParameters().containsKey("first"));
+            assertFalse(config1.getCustomParameters().containsKey("second"));
+            assertTrue(config2.getCustomParameters().containsKey("second"));
         }
     }
 

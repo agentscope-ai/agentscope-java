@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -48,11 +49,20 @@ import java.util.Set;
  *
  * <ul>
  *   <li><b>Custom Parameters:</b> Added via {@link Builder#addParameter}. These are exposed to the
- *       LLM in the tool schema, allowing the LLM to infer and generate values based on the conversation.
+ *       LLM in the tool schema, allowing the LLM to infer and generate values based on the
+ *       conversation. Required custom parameters are also placed in the JSON Schema {@code
+ *       required} array, so they must be present in the tool call input before the tool is
+ *       executed.
  *   <li><b>System Parameters:</b> Added via {@link Builder#addSystemParameter}. These are strictly
  *       injected by the system via {@code ToolExecutionContext}. They are completely transparent
- *       (invisible) to the LLM, preventing prompt injection.
+ *       (invisible) to the LLM, preventing prompt injection. Use system parameters for sensitive
+ *       values or for values that should be supplied only by backend context.
  * </ul>
+ *
+ * <p>A parameter name can belong to only one category. If the same value is useful both as a
+ * model-visible business hint and as a backend override, declare it as a custom parameter and let
+ * {@code ToolExecutionContext} override the LLM-provided value at runtime. If the value is
+ * security-sensitive, declare it as a system parameter instead.
  *
  * <p><b>Default Behavior:</b>
  *
@@ -180,6 +190,9 @@ public class SubAgentConfig {
     /**
      * Gets the custom parameters defined for the sub-agent tool.
      *
+     * <p>The returned map and nested JSON-schema containers are immutable defensive copies of the
+     * builder input.
+     *
      * @return A map of parameter names to their JSON schema definitions
      */
     public Map<String, Map<String, Object>> getCustomParameters() {
@@ -188,6 +201,11 @@ public class SubAgentConfig {
 
     /**
      * Gets the list of required custom parameter names.
+     *
+     * <p>These names are used to populate the generated JSON Schema {@code required} array for
+     * model-visible custom parameters. They are validated by the tool executor before
+     * {@code ToolExecutionContext} is merged into the tool call; use {@link Builder#addSystemParameter}
+     * for context-only required values.
      *
      * @return A list containing the names of required parameters
      */
@@ -198,8 +216,8 @@ public class SubAgentConfig {
     /**
      * Gets the system parameters defined for the sub-agent tool.
      *
-     * <p>System parameters are injected transparently via ToolExecutionContext
-     * and are NOT exposed to the LLM in the JSON schema.
+     * <p>System parameters are injected transparently via ToolExecutionContext and are NOT exposed
+     * to the LLM in the JSON schema.
      *
      * @return A set containing the names of system parameters
      */
@@ -207,6 +225,27 @@ public class SubAgentConfig {
         return systemParameters;
     }
 
+    /**
+     * Creates an immutable defensive copy of the custom parameter schema map.
+     *
+     * <p>Custom parameter schemas are JSON-Schema-like trees supplied by users through
+     * {@link Builder#addParameter(String, Map, boolean)}. They can contain nested maps and lists
+     * such as {@code properties}, {@code items}, {@code enum}, and {@code required}. Because a
+     * {@link SubAgentConfig} instance is treated as immutable after {@link Builder#build()}, this
+     * method recursively copies and freezes JSON-style containers so later mutations to the builder
+     * or to caller-owned schema objects cannot change the generated tool schema.
+     *
+     * <p>The copy intentionally handles JSON-style values only: {@link Map}, {@link List},
+     * {@link Set}, scalar values, and {@code null}. Nested map keys must be strings because JSON
+     * object keys are strings. Sets are copied as immutable lists to preserve stable JSON array
+     * semantics when schemas are serialized.
+     *
+     * @param source The custom parameter definitions keyed by parameter name
+     * @return An immutable copy of the custom parameter definitions
+     * @throws IllegalArgumentException If a parameter name is null or a nested schema map contains
+     *     a non-string key
+     * @throws NullPointerException If any parameter schema map is null
+     */
     private static Map<String, Map<String, Object>> copyCustomParameters(
             Map<String, Map<String, Object>> source) {
         if (source == null || source.isEmpty()) {
@@ -224,9 +263,7 @@ public class SubAgentConfig {
     }
 
     private static Map<String, Object> immutableSchemaMap(Map<String, Object> source) {
-        if (source == null) {
-            throw new IllegalArgumentException("Parameter schema cannot be null.");
-        }
+        Objects.requireNonNull(source, "Parameter schema cannot be null.");
 
         Map<String, Object> copy = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : source.entrySet()) {
@@ -357,8 +394,13 @@ public class SubAgentConfig {
         /**
          * Adds a simple custom parameter to the tool's JSON schema.
          *
-         * <p>This is a convenience method for adding basic parameters. For complex schemas
-         * (e.g., enums, arrays), use {@link #addParameter(String, Map, boolean)}.
+         * <p>This is a convenience method for adding basic parameters. For complex schemas (e.g.,
+         * enums, arrays), use {@link #addParameter(String, Map, boolean)}.
+         *
+         * <p>If {@code required} is true, the parameter is included in the generated JSON Schema
+         * {@code required} array. That means the LLM/tool caller must provide it in the tool input;
+         * backend context can override the provided value, but it cannot satisfy this
+         * pre-execution schema requirement by itself.
          *
          * @param name The name of the parameter
          * @param type The type of the parameter (e.g., "string", "integer")
@@ -377,20 +419,30 @@ public class SubAgentConfig {
         /**
          * Adds a custom parameter with a fully defined JSON schema.
          *
-         * <p>This method allows for advanced JSON schema features like enums, nested objects,
-         * or arrays, enabling precise control over how the language model understands the parameter.
+         * <p>This method allows for advanced JSON schema features like enums, nested objects, or
+         * arrays, enabling precise control over how the language model understands the parameter.
+         *
+         * <p>Custom parameters are model-visible. When {@code required} is true, the parameter is
+         * also model-required via JSON Schema validation before the tool is invoked. The backend can
+         * still provide a same-name value through {@code ToolExecutionContext}; that value overrides
+         * the LLM input at runtime, but the tool call must still include the required field to pass
+         * schema validation. Use {@link #addSystemParameter(String)} for values that should be
+         * supplied only by backend context.
          *
          * @param name The name of the parameter
          * @param schema The JSON schema map definition for the parameter
-         * @param required true if the parameter is required, false otherwise
+         * @param required true if the parameter must be generated in the tool input, false
+         *     otherwise
          * @return This builder
-         * @throws IllegalArgumentException If the {@code name} is null, empty, or a reserved
-         * system parameter (e.g., "message" or "session_id"). Also thrown if {@code schema} is null or empty.
+         * @throws IllegalArgumentException If the {@code name} is null, empty, reserved, already
+         *     declared as a system parameter, or if {@code schema} is empty.
+         * @throws NullPointerException If {@code schema} is null.
          */
         public Builder addParameter(String name, Map<String, Object> schema, boolean required) {
             String normalizedName = normalizeParameterName(name, "Parameter");
-            if (schema == null || schema.isEmpty()) {
-                throw new IllegalArgumentException("Parameter schema cannot be null or empty.");
+            Objects.requireNonNull(schema, "Parameter schema cannot be null.");
+            if (schema.isEmpty()) {
+                throw new IllegalArgumentException("Parameter schema cannot be empty.");
             }
 
             if (systemParameters.contains(normalizedName)) {
@@ -419,10 +471,14 @@ public class SubAgentConfig {
          * extracted strictly from the {@link io.agentscope.core.tool.ToolExecutionContext}
          * at runtime, preventing prompt injection attacks and LLM hallucination.
          *
+         * <p>Use this for security-sensitive values, such as authenticated user IDs or tenant IDs,
+         * and for values that must be supplied by backend context rather than by the LLM. System
+         * parameter names cannot also be declared as custom parameters.
+         *
          * @param name The name of the system parameter
          * @return This builder
-         * @throws IllegalArgumentException If the {@code name} is null, empty, or a reserved
-         * system parameter (e.g., "message" or "session_id").
+         * @throws IllegalArgumentException If the {@code name} is null, empty, reserved, or already
+         * declared as a custom parameter.
          */
         public Builder addSystemParameter(String name) {
             String normalizedName = normalizeParameterName(name, "System parameter");

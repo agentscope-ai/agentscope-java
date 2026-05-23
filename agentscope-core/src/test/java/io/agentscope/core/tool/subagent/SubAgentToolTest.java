@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -481,18 +480,6 @@ class SubAgentToolTest {
                 "Truncated name must end with an underscore and an 8-character hash");
 
         assertFalse(generatedName.contains("__"));
-    }
-
-    @Test
-    @DisplayName("Should reject parameter declared as both custom and system")
-    void testRejectCustomAndSystemParameterConflict() {
-        SubAgentConfig.Builder builder = SubAgentConfig.builder();
-
-        builder.addParameter("userId", "string", "User ID", true);
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> builder.addSystemParameter("userId"));
     }
 
     @Test

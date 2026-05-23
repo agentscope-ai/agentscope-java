@@ -64,8 +64,11 @@ import reactor.core.publisher.Mono;
  * <ul>
  *   <li><b>System Parameters:</b> Extracted strictly from {@link ToolExecutionContext}. These are
  *       invisible to the LLM and completely tamper-proof.
- *   <li><b>Custom Parameters:</b> Exposed in the tool schema for LLM inference. At runtime, these
- *       are extracted with {@link ToolExecutionContext} taking precedence over LLM input.
+ *   <li><b>Custom Parameters:</b> Exposed to the LLM in the JSON schema. If marked as required,
+ *       the LLM MUST provide a value, and the framework will validate its presence BEFORE execution.
+ *       While {@link ToolExecutionContext} can forcefully override the LLM's value at runtime,
+ *       it cannot bypass the initial schema validation. <em>Rule of thumb: If the LLM should
+ *       infer it, use Custom Parameters; if the LLM shouldn't know about it, use System Parameters.</em>
  * </ul>
  * Both types of parameters are securely injected into the sub-agent's message {@code metadata}.
  */
@@ -131,7 +134,9 @@ public class SubAgentTool implements AgentTool {
      *   <li>Session ID generation for new conversations
      *   <li>Agent state loading for continued sessions
      *   <li>Extraction of external parameters with strict priority:
-     *       {@link ToolExecutionContext} (highest) &gt; LLM input (lowest)
+     *       {@link ToolExecutionContext} (highest) &gt; LLM input (lowest). For required custom
+     *       parameters, this override occurs after schema validation has already required the LLM
+     *       tool call to contain the field.
      *   <li>Secure injection of custom parameters into the message metadata
      *   <li>Message execution (streaming or non-streaming based on config)
      *   <li>Agent state persistence after execution
@@ -179,7 +184,9 @@ public class SubAgentTool implements AgentTool {
                             }
                         }
 
-                        // 2. Extract custom parameters (LLM inferred)
+                        // 2. Extract custom parameters. These are visible in the JSON Schema.
+                        // Required custom parameters are validated by ToolExecutor before this
+                        // method runs; context only overrides the value selected by the LLM.
                         Map<String, Map<String, Object>> declaredCustomParams =
                                 config.getCustomParameters();
                         if (declaredCustomParams != null && !declaredCustomParams.isEmpty()) {
@@ -451,9 +458,11 @@ public class SubAgentTool implements AgentTool {
      *   <li>{@code message} - Required string containing the message to send
      * </ul>
      *
-     * <p>If custom parameters are defined in the configuration, they are merged into
-     * the properties map, and their required status is updated accordingly.
-     * The schema strictly disables {@code additionalProperties}.
+     * <p>If custom parameters are defined in the configuration, they are merged into the properties
+     * map, and required custom parameters are added to the JSON Schema {@code required} array. This
+     * intentionally keeps required custom parameters model-visible and pre-validated. Use system
+     * parameters for context-only required values. The schema strictly disables {@code
+     * additionalProperties}.
      *
      * @return A map representing the JSON schema for tool parameters
      */
