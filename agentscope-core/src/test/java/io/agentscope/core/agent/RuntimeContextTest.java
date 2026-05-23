@@ -90,6 +90,21 @@ class RuntimeContextTest {
     }
 
     @Test
+    @DisplayName("builder typedFrom copies singleton typed attributes")
+    void builderTypedFromCopiesSingletonTypedAttributes() {
+        PojoA a = new PojoA("a");
+        PojoB keyed = new PojoB(7);
+        RuntimeContext source = RuntimeContext.builder().put(PojoA.class, a).build();
+        source.put("keyed", PojoB.class, keyed);
+
+        RuntimeContext copy = RuntimeContext.builder().put("extra", 42).typedFrom(source).build();
+
+        assertSame(a, copy.get(PojoA.class));
+        assertNull(copy.get("keyed", PojoB.class));
+        assertEquals(Integer.valueOf(42), copy.get("extra"));
+    }
+
+    @Test
     @DisplayName("get(Class) for RuntimeContext returns the instance")
     void selfTypedAccess() {
         RuntimeContext ctx = RuntimeContext.empty();
