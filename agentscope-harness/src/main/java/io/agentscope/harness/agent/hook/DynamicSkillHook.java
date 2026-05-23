@@ -23,17 +23,8 @@ import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillHook;
-import io.agentscope.core.skill.repository.FileSystemSkillRepository;
-import io.agentscope.core.skill.util.SkillUtil;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.model.FileInfo;
-import io.agentscope.harness.agent.filesystem.model.GlobResult;
-import io.agentscope.harness.agent.filesystem.model.ReadResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,22 +33,36 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * Dynamically loads skills from the workspace filesystem on each {@link PreCallEvent}, replacing
- * the static {@link SkillHook} to support per-user skill isolation.
+ * Dynamically composes skills from an ordered list of {@link AgentSkillRepository repositories}
+ * on every {@link PreCallEvent}, replacing the static {@link SkillHook} with a per-call view that
+ * supports per-user skill isolation and one-click marketplace integration.
  *
- * <p><strong>Two-layer load</strong> (mirrors the override semantics of {@code
- * WorkspaceManager}):
+ * <p>The repository list is iterated low-priority first; when two repositories provide a skill
+ * with the same {@link AgentSkill#getName()}, the later (higher-priority) entry wins. The default
+ * composition assembled by {@code HarnessAgent.Builder} is:
  *
  * <ol>
- *   <li><em>Layer 1 (override)</em> — {@code filesystem.glob("SKILL.md", "skills")} +
- *       per-file {@code filesystem.read}. The backend's {@code NamespaceFactory} is applied
- *       transparently so each user sees their own slice of the store.
- *   <li><em>Layer 2 (base)</em> — {@link FileSystemSkillRepository} reads the local workspace
- *       {@code skills/} directory directly. This preserves the original behaviour of
- *       {@code LocalFilesystemWithShell} / sandbox modes where skill definitions live on the host
- *       filesystem rather than in a per-user namespace.
- *   <li><em>Merge</em> — same-name skills from Layer 1 override Layer 2.
+ *   <li>Project-global directory (if configured)</li>
+ *   <li>Marketplace repositories (in registration order)</li>
+ *   <li>Workspace agent-shared directory ({@code workspace/skills/})</li>
+ *   <li>Per-user namespaced filesystem ({@code <userId>/skills/})</li>
  * </ol>
+ *
+ * <p>Behaviour each {@link PreCallEvent}:
+ *
+ * <ol>
+ *   <li>Walk the repository list and collect skills into a {@link LinkedHashMap} keyed by name —
+ *       later repositories override earlier ones.</li>
+ *   <li>Build a fresh {@link SkillBox}, replay {@link SkillBox#bindToolkit},
+ *       {@link SkillBox#registerSkillLoadTool}, and {@link SkillBox#uploadSkillFiles} (when
+ *       {@link SkillBox#isAutoUploadSkill()} is set), then append {@code skillBox.getSkillPrompt()}
+ *       to the system message.</li>
+ * </ol>
+ *
+ * <p>Rebuilding on every call is intentional: per-user namespaced repositories return different
+ * content under the same skill name as the {@link RuntimeContext} switches users, so caching by
+ * skill id alone would mask those swaps. {@code bindToolkit} / {@code registerSkillLoadTool} are
+ * idempotent on a fresh {@link SkillBox}, so the rebuild stays cheap.
  *
  * <p>Priority matches {@link SkillHook#SKILL_HOOK_PRIORITY} (85).
  */
@@ -65,27 +70,19 @@ public class DynamicSkillHook implements Hook, RuntimeContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicSkillHook.class);
 
-    private static final String SKILLS_DIR = "skills";
-    private static final String SKILL_FILE = "SKILL.md";
-
-    private final AbstractFilesystem filesystem;
-    private final Path workspace;
+    private final List<AgentSkillRepository> repositories;
     private final Toolkit toolkit;
+
     private volatile SkillBox currentSkillBox;
     private volatile RuntimeContext runtimeContext;
 
     /**
-     * Builds a dynamic skill hook.
-     *
-     * @param filesystem workspace filesystem used for namespaced reads of {@code skills/}; may be
-     *     {@code null}, in which case only Layer 2 (local disk) is consulted
-     * @param workspace local workspace root, used as the Layer 2 base; may be {@code null}, in
-     *     which case Layer 2 is skipped
-     * @param toolkit toolkit on which loaded skill tools are registered
+     * @param repositories ordered repositories; later entries override earlier ones on name
+     *     collisions. May be empty (the hook becomes a no-op).
+     * @param toolkit toolkit on which loaded skill tool groups are registered
      */
-    public DynamicSkillHook(AbstractFilesystem filesystem, Path workspace, Toolkit toolkit) {
-        this.filesystem = filesystem;
-        this.workspace = workspace;
+    public DynamicSkillHook(List<AgentSkillRepository> repositories, Toolkit toolkit) {
+        this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
         this.toolkit = toolkit;
     }
 
@@ -119,79 +116,58 @@ public class DynamicSkillHook implements Hook, RuntimeContextAware {
     }
 
     private void reloadSkills() {
-        Map<String, AgentSkill> skillsByName = new LinkedHashMap<>();
-
-        // ---- Layer 2 (base): local workspace scan ----
-        for (AgentSkill skill : loadSkillsFromLocalDisk()) {
-            skillsByName.put(skill.getName(), skill);
+        if (repositories.isEmpty()) {
+            currentSkillBox = null;
+            return;
         }
 
-        // ---- Layer 1 (override): filesystem with namespace ----
-        for (AgentSkill skill : loadSkillsViaFilesystem()) {
-            skillsByName.put(skill.getName(), skill);
+        Map<String, AgentSkill> skillsByName = new LinkedHashMap<>();
+        for (AgentSkillRepository repo : repositories) {
+            List<AgentSkill> skills;
+            try {
+                skills = repo.getAllSkills();
+            } catch (Exception e) {
+                log.warn(
+                        "Skill repository {} failed to load: {}",
+                        repo.getClass().getSimpleName(),
+                        e.getMessage());
+                continue;
+            }
+            if (skills == null) {
+                continue;
+            }
+            for (AgentSkill skill : skills) {
+                if (skill == null || skill.getName() == null) {
+                    continue;
+                }
+                skillsByName.put(skill.getName(), skill);
+            }
         }
 
         if (skillsByName.isEmpty()) {
             currentSkillBox = null;
             return;
         }
+
         SkillBox box = new SkillBox(toolkit);
         for (AgentSkill skill : skillsByName.values()) {
             box.registerSkill(skill);
         }
-        currentSkillBox = box;
-    }
-
-    private List<AgentSkill> loadSkillsFromLocalDisk() {
-        if (workspace == null) {
-            return Collections.emptyList();
-        }
-        Path skillsDir = workspace.resolve(SKILLS_DIR);
-        if (!Files.isDirectory(skillsDir)) {
-            return Collections.emptyList();
-        }
-        try {
-            List<AgentSkill> skills = new FileSystemSkillRepository(skillsDir).getAllSkills();
-            return skills != null ? skills : Collections.emptyList();
-        } catch (Exception e) {
-            log.warn("Failed to load skills from local disk {}: {}", skillsDir, e.getMessage());
-            return Collections.emptyList();
-        }
-    }
-
-    private List<AgentSkill> loadSkillsViaFilesystem() {
-        if (filesystem == null) {
-            return Collections.emptyList();
-        }
-        RuntimeContext ctx = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        GlobResult glob;
-        try {
-            glob = filesystem.glob(ctx, SKILL_FILE, SKILLS_DIR);
-        } catch (Exception e) {
-            log.debug("Filesystem glob for skills failed: {}", e.getMessage());
-            return Collections.emptyList();
-        }
-        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<AgentSkill> skills = new ArrayList<>();
-        for (FileInfo fi : glob.matches()) {
-            String path = fi.path();
-            if (path == null || path.isBlank()) {
-                continue;
-            }
+        if (toolkit != null) {
             try {
-                ReadResult rr = filesystem.read(ctx, path, 0, 0);
-                if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
-                    continue;
-                }
-                AgentSkill skill = SkillUtil.createFrom(rr.fileData().content(), null, "workspace");
-                skills.add(skill);
+                box.bindToolkit(toolkit);
+                box.registerSkillLoadTool();
             } catch (Exception e) {
-                log.warn("Failed to load skill from '{}': {}", path, e.getMessage());
+                log.warn("Failed to bind skill toolkit hooks: {}", e.getMessage());
             }
         }
-        return skills;
+        if (box.isAutoUploadSkill()) {
+            try {
+                box.uploadSkillFiles();
+            } catch (Exception e) {
+                log.warn("Failed to upload skill files: {}", e.getMessage());
+            }
+        }
+        currentSkillBox = box;
     }
 }

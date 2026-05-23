@@ -81,6 +81,7 @@ import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
+import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -96,15 +97,21 @@ import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
 import io.agentscope.harness.agent.tool.SessionSearchTool;
 import io.agentscope.harness.agent.tool.ShellExecuteTool;
+import io.agentscope.harness.agent.tools.McpServerRegistrar;
+import io.agentscope.harness.agent.tools.ToolFilter;
+import io.agentscope.harness.agent.tools.ToolsConfig;
+import io.agentscope.harness.agent.tools.ToolsConfigLoader;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -157,6 +164,7 @@ public class HarnessAgent implements Agent, StateModule {
     private final AtomicReference<String> sessionIdRef;
     private final Session defaultSession;
     private final SandboxContext defaultSandboxContext;
+    private final List<AgentSkillRepository> skillRepositories;
     private RuntimeContext runtimeContext;
 
     private HarnessAgent(
@@ -166,7 +174,8 @@ public class HarnessAgent implements Agent, StateModule {
             AtomicReference<String> userIdRef,
             AtomicReference<String> sessionIdRef,
             Session defaultSession,
-            SandboxContext defaultSandboxContext) {
+            SandboxContext defaultSandboxContext,
+            List<AgentSkillRepository> skillRepositories) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.compactionHook = compactionHook;
@@ -174,6 +183,8 @@ public class HarnessAgent implements Agent, StateModule {
         this.sessionIdRef = sessionIdRef;
         this.defaultSession = defaultSession;
         this.defaultSandboxContext = defaultSandboxContext;
+        this.skillRepositories =
+                skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
     }
 
     /** Calls the agent with a runtime context, which provides sessionId and other metadata. */
@@ -434,6 +445,16 @@ public class HarnessAgent implements Agent, StateModule {
         return runtimeContext;
     }
 
+    /**
+     * Returns the ordered list of {@link AgentSkillRepository} instances bound to this agent.
+     * The list reflects the four-layer composition (project-global → marketplace → workspace
+     * shared → per-user namespace) computed at build time, in priority order from lowest to
+     * highest. The returned list is immutable.
+     */
+    public List<AgentSkillRepository> getSkillRepositories() {
+        return skillRepositories;
+    }
+
     // ==================== StateModule delegation ====================
 
     @Override
@@ -528,8 +549,18 @@ public class HarnessAgent implements Agent, StateModule {
         private GenerateOptions generateOptions;
         private final List<Hook> hooks = new ArrayList<>();
 
-        /** When {@code null}, skills load from {@code workspace/skills/} via {@link FileSystemSkillRepository}. */
-        private AgentSkillRepository skillRepository;
+        /**
+         * Marketplace / external skill repositories layered between the project-global directory
+         * and the workspace agent-shared directory. Empty by default. {@link
+         * #skillRepository(AgentSkillRepository)} appends to this list.
+         */
+        private final List<AgentSkillRepository> skillRepositories = new ArrayList<>();
+
+        /**
+         * Optional project-global skills directory (lowest precedence in the composition).
+         * When {@code null}, no project-global layer is added.
+         */
+        private Path projectGlobalSkillsDir;
 
         private ToolExecutionContext toolExecutionContext;
 
@@ -639,6 +670,19 @@ public class HarnessAgent implements Agent, StateModule {
          */
         private boolean disableDynamicSubagents = false;
 
+        /**
+         * When {@code true}, {@code workspace/tools.json} is not consulted at build time. MCP
+         * servers and allow/deny lists from that file are skipped entirely; the toolkit keeps
+         * exactly the built-ins registered programmatically.
+         */
+        private boolean disableToolsConfig = false;
+
+        /**
+         * Programmatic override for {@code workspace/tools.json}. When non-null, {@link
+         * ToolsConfigLoader} is bypassed and this value is used directly. Useful for tests.
+         */
+        private ToolsConfig toolsConfigOverride;
+
         // Filesystem mode configuration (at most one of these three is set)
         private SandboxFilesystemSpec sandboxFilesystemSpec;
         private RemoteFilesystemSpec remoteFilesystemSpec;
@@ -717,13 +761,44 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
-         * Supplies skills from a custom repository (e.g. {@code GitSkillRepository}). A {@link SkillBox} is
-         * assembled automatically from this repository and the agent toolkit. When {@code null} (default),
-         * skills are loaded from {@code &lt;workspace&gt;/skills/} using {@link FileSystemSkillRepository} when
-         * that directory exists.
+         * Adds a marketplace / external skill repository (e.g. {@code GitSkillRepository},
+         * Nacos, HTTP). Repositories compose <em>additively</em> with workspace skills: the
+         * default precedence is project-global → marketplace repos (in registration order) →
+         * workspace agent-shared → per-user namespaced filesystem, with later layers
+         * overriding earlier ones on name collisions. Call this method multiple times to add
+         * multiple sources.
          */
         public Builder skillRepository(AgentSkillRepository skillRepository) {
-            this.skillRepository = skillRepository;
+            if (skillRepository != null) {
+                this.skillRepositories.add(skillRepository);
+            }
+            return this;
+        }
+
+        /**
+         * Replaces the current marketplace repository list with the given collection. Useful
+         * for bulk configuration from an external config; equivalent to clearing the list and
+         * calling {@link #skillRepository(AgentSkillRepository)} for each entry.
+         */
+        public Builder skillRepositories(List<AgentSkillRepository> repositories) {
+            this.skillRepositories.clear();
+            if (repositories != null) {
+                for (AgentSkillRepository repo : repositories) {
+                    if (repo != null) {
+                        this.skillRepositories.add(repo);
+                    }
+                }
+            }
+            return this;
+        }
+
+        /**
+         * Configures a project-global skills directory layered <em>below</em> marketplace and
+         * workspace skills (lowest precedence). Used to ship default skills shared across all
+         * agents started from a project. Pass {@code null} to clear.
+         */
+        public Builder projectGlobalSkillsDir(Path projectGlobalSkillsDir) {
+            this.projectGlobalSkillsDir = projectGlobalSkillsDir;
             return this;
         }
 
@@ -1081,6 +1156,26 @@ public class HarnessAgent implements Agent, StateModule {
          */
         public Builder disableSubagents() {
             this.disableSubagents = true;
+            return this;
+        }
+
+        /**
+         * Skips reading {@code workspace/tools.json}. No MCP servers from that file are
+         * registered, and allow/deny filtering is not applied. Programmatic {@code disable*}
+         * switches still take effect.
+         */
+        public Builder disableToolsConfig() {
+            this.disableToolsConfig = true;
+            return this;
+        }
+
+        /**
+         * Provides an in-memory {@link ToolsConfig} that bypasses the {@code workspace/tools.json}
+         * file lookup. Setting a non-null value implies the same MCP-server registration and
+         * allow/deny filtering steps as if this object were parsed from the workspace.
+         */
+        public Builder toolsConfig(ToolsConfig toolsConfig) {
+            this.toolsConfigOverride = toolsConfig;
             return this;
         }
 
@@ -1472,20 +1567,43 @@ public class HarnessAgent implements Agent, StateModule {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
 
+            // ---- workspace/tools.json: MCP servers + allow/deny filter ----
+            ToolsConfig resolvedToolsConfig = null;
+            if (!disableToolsConfig) {
+                if (toolsConfigOverride != null) {
+                    resolvedToolsConfig = toolsConfigOverride;
+                } else if (wsManager != null) {
+                    resolvedToolsConfig = ToolsConfigLoader.load(wsManager).orElse(null);
+                }
+            }
+            if (resolvedToolsConfig != null) {
+                McpServerRegistrar.register(agentToolkit, resolvedToolsConfig.getMcpServers());
+            }
+
             // ---- Skills ----
-            // Three branches:
-            //   1. Custom skillRepository → legacy resolveSkillBox path (static SkillBox +
-            // SkillHook)
-            //   2. filesystem available, dynamic enabled → DynamicSkillHook (per-call namespace
-            // reload)
-            //   3. dynamic disabled or no filesystem → legacy resolveSkillBox path
+            // Compose an ordered repository list (low → high priority):
+            //   1. Project-global directory (~/.agentscope/skills/-equivalent)
+            //   2. Marketplace repos (skillRepository(...) calls, in registration order)
+            //   3. Workspace agent-shared directory (workspace/skills/)
+            //   4. Per-user namespaced filesystem (<userId>/skills/)
+            // Later entries override earlier ones on name collision. When the merged list is
+            // non-empty AND dynamic skills are enabled → DynamicSkillHook owns SkillBox lifecycle.
+            // When dynamic is disabled (legacy / static) → build the merged set once into a static
+            // SkillBox and let ReActAgent's legacy SkillHook render it.
+            List<AgentSkillRepository> orderedSkillRepos =
+                    composeSkillRepositories(wsManager, filesystem, userIdRef, sessionIdRef);
             SkillBox effectiveSkillBox = null;
-            if (skillRepository != null) {
-                effectiveSkillBox = resolveSkillBox(wsManager, agentToolkit);
-            } else if (filesystem != null && !disableDynamicSkills) {
-                allHooks.add(new DynamicSkillHook(filesystem, resolvedWorkspace, agentToolkit));
-            } else {
-                effectiveSkillBox = resolveSkillBox(wsManager, agentToolkit);
+            if (!orderedSkillRepos.isEmpty()) {
+                if (disableDynamicSkills) {
+                    effectiveSkillBox = staticSkillBoxFromRepos(orderedSkillRepos, agentToolkit);
+                } else {
+                    allHooks.add(new DynamicSkillHook(orderedSkillRepos, agentToolkit));
+                }
+            }
+
+            // ---- Apply tools.json allow/deny filter (after MCP + static skill registration) ----
+            if (resolvedToolsConfig != null) {
+                ToolFilter.apply(agentToolkit, resolvedToolsConfig);
             }
 
             // ---- Build ReActAgent ----
@@ -1557,7 +1675,8 @@ public class HarnessAgent implements Agent, StateModule {
                     userIdRef,
                     sessionIdRef,
                     effectiveSession,
-                    defaultSandboxContext);
+                    defaultSandboxContext,
+                    orderedSkillRepos);
         }
 
         // @formatter:off
@@ -1817,7 +1936,9 @@ public class HarnessAgent implements Agent, StateModule {
             final GenerateOptions capturedGenOpts = this.generateOptions;
             final String capturedEnvMemory = this.environmentMemory;
             final List<Hook> capturedHooks = List.copyOf(this.hooks);
-            final AgentSkillRepository capturedSkillRepo = this.skillRepository;
+            final List<AgentSkillRepository> capturedSkillRepos =
+                    List.copyOf(this.skillRepositories);
+            final Path capturedProjectGlobalSkillsDir = this.projectGlobalSkillsDir;
             final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
             final boolean capturedDisableFilesystemTools = this.disableFilesystemTools;
             final boolean capturedDisableShellTool = this.disableShellTool;
@@ -1858,7 +1979,10 @@ public class HarnessAgent implements Agent, StateModule {
                 if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
                 if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
 
-                if (capturedSkillRepo != null) sub.skillRepository(capturedSkillRepo);
+                if (!capturedSkillRepos.isEmpty()) sub.skillRepositories(capturedSkillRepos);
+                if (capturedProjectGlobalSkillsDir != null) {
+                    sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
+                }
                 if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
                 if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
                 if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
@@ -2067,45 +2191,106 @@ public class HarnessAgent implements Agent, StateModule {
         //  Skills
         // -----------------------------------------------------------------
 
-        private SkillBox resolveSkillBox(WorkspaceManager wsManager, Toolkit agentToolkit) {
-            if (skillRepository != null) {
-                return skillBoxFromRepository(skillRepository, agentToolkit);
+        /**
+         * Assembles the ordered list of skill repositories used by this build (low → high
+         * priority). Returns an empty list when no source resolves.
+         */
+        private List<AgentSkillRepository> composeSkillRepositories(
+                WorkspaceManager wsManager,
+                AbstractFilesystem filesystem,
+                AtomicReference<String> userIdRef,
+                AtomicReference<String> sessionIdRef) {
+            List<AgentSkillRepository> ordered = new ArrayList<>();
+
+            // Layer 1 (lowest priority): project-global skills directory.
+            if (projectGlobalSkillsDir != null && Files.isDirectory(projectGlobalSkillsDir)) {
+                try {
+                    ordered.add(new FileSystemSkillRepository(projectGlobalSkillsDir));
+                } catch (Exception e) {
+                    log.warn(
+                            "Failed to register project-global skills dir {}: {}",
+                            projectGlobalSkillsDir,
+                            e.getMessage());
+                }
             }
-            Path skillsDir = wsManager.getSkillsDir();
-            if (!Files.isDirectory(skillsDir)) {
-                return null;
+
+            // Layer 2: marketplace repositories (user-supplied).
+            ordered.addAll(skillRepositories);
+
+            // Layer 3: workspace agent-shared directory.
+            Path workspaceSkillsDir = wsManager.getSkillsDir();
+            if (workspaceSkillsDir != null && Files.isDirectory(workspaceSkillsDir)) {
+                try {
+                    ordered.add(new FileSystemSkillRepository(workspaceSkillsDir));
+                } catch (Exception e) {
+                    log.warn(
+                            "Failed to load workspace skills from {}: {}",
+                            workspaceSkillsDir,
+                            e.getMessage());
+                }
             }
-            try {
-                return skillBoxFromRepository(
-                        new FileSystemSkillRepository(skillsDir), agentToolkit);
-            } catch (Exception e) {
-                log.warn("Failed to auto-load skills from {}: {}", skillsDir, e.getMessage());
-                return null;
+
+            // Layer 4 (highest priority): per-user namespaced filesystem view.
+            if (filesystem != null) {
+                Supplier<RuntimeContext> ctxSupplier =
+                        () -> {
+                            String uid = userIdRef != null ? userIdRef.get() : null;
+                            String sid = sessionIdRef != null ? sessionIdRef.get() : null;
+                            if ((uid == null || uid.isEmpty()) && (sid == null || sid.isEmpty())) {
+                                return RuntimeContext.empty();
+                            }
+                            RuntimeContext.Builder b = RuntimeContext.builder();
+                            if (uid != null && !uid.isEmpty()) {
+                                b.userId(uid);
+                            }
+                            if (sid != null && !sid.isEmpty()) {
+                                b.sessionId(sid);
+                            }
+                            return b.build();
+                        };
+                ordered.add(
+                        new FilesystemBackedSkillRepository(
+                                filesystem, "skills", ctxSupplier, "workspace-namespaced"));
             }
+
+            return ordered;
         }
 
-        private static SkillBox skillBoxFromRepository(
-                AgentSkillRepository repo, Toolkit agentToolkit) {
-            try {
-                List<AgentSkill> skills = repo.getAllSkills();
-                if (skills == null || skills.isEmpty()) {
-                    return null;
+        /**
+         * Eagerly assembles a static {@link SkillBox} from {@code repos} (low → high priority)
+         * so callers using {@link #disableDynamicSkills()} keep the legacy {@code SkillHook}
+         * path while still benefiting from the additive composition.
+         */
+        private static SkillBox staticSkillBoxFromRepos(
+                List<AgentSkillRepository> repos, Toolkit agentToolkit) {
+            LinkedHashMap<String, AgentSkill> merged = new LinkedHashMap<>();
+            for (AgentSkillRepository repo : repos) {
+                try {
+                    List<AgentSkill> skills = repo.getAllSkills();
+                    if (skills == null) {
+                        continue;
+                    }
+                    for (AgentSkill skill : skills) {
+                        if (skill != null && skill.getName() != null) {
+                            merged.put(skill.getName(), skill);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn(
+                            "Failed to load skills from {}: {}",
+                            repo.getClass().getSimpleName(),
+                            e.getMessage());
                 }
-                SkillBox box = new SkillBox(agentToolkit);
-                for (AgentSkill skill : skills) {
-                    box.registerSkill(skill);
-                }
-                log.info(
-                        "Loaded {} skills from {}",
-                        skills.size(),
-                        repo.getRepositoryInfo() != null
-                                ? repo.getRepositoryInfo()
-                                : repo.getClass().getSimpleName());
-                return box;
-            } catch (Exception e) {
-                log.warn("Failed to load skills from repository: {}", e.getMessage());
+            }
+            if (merged.isEmpty()) {
                 return null;
             }
+            SkillBox box = new SkillBox(agentToolkit);
+            for (AgentSkill skill : merged.values()) {
+                box.registerSkill(skill);
+            }
+            log.info("Loaded {} skills from {} repositories (static)", merged.size(), repos.size());
+            return box;
         }
 
         private record SubagentFactoryEntry(String name, Function<String, Agent> factory) {}

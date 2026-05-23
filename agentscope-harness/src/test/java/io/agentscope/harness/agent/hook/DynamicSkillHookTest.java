@@ -21,18 +21,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,17 +47,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Unit tests for {@link DynamicSkillHook} covering the two-layer load and the override semantics
- * across the three supported filesystem modes:
+ * Unit tests for {@link DynamicSkillHook} covering the four-layer composite repository merge that
+ * powers HarnessAgent's skill wiring:
  *
  * <ul>
- *   <li>{@code LocalFilesystem} without a userId namespace — Layer 1 has no override scope, so
- *       behaviour must match the legacy build-time scan (regression test for the constraint that
- *       {@code LocalFilesystemWithShell} mode is unaffected).
- *   <li>{@code LocalFilesystem} with a userId namespace + writes to {@code <ns>/skills/} —
- *       Layer 1 must observe per-user content while Layer 2 still provides the local-disk base.
- *   <li>Filesystem returns nothing (typical sandbox case where skills live in the host
- *       workspace, not the container) — Layer 2 is the sole source.
+ *   <li>Workspace-only path (regression for {@code LocalFilesystem} mode without a namespace) —
+ *       only Layer 3 (workspace agent-shared) contributes skills.
+ *   <li>Per-user namespace overrides workspace — Layer 4 wins on same-name skills.
+ *   <li>Marketplace repos compose between project-global and workspace — verifies the four-layer
+ *       precedence with a fake in-memory marketplace repo.
+ *   <li>Filesystem returns nothing — Layer 3 (workspace) is authoritative.
+ *   <li>No skills anywhere — {@code currentSkillBox} stays null so the prompt isn't appended.
+ *   <li>After first fire — {@code DynamicSkillHook} registers the {@code skill-build-in-tools}
+ *       tool group on the toolkit (parity with the legacy {@code SkillHook} path).
  * </ul>
  */
 class DynamicSkillHookTest {
@@ -58,32 +67,31 @@ class DynamicSkillHookTest {
     @TempDir Path tmp;
 
     // ---------------------------------------------------------------------
-    //  Layer 2 only: LocalFilesystem with no userId namespace
+    //  Workspace only (Layer 3): LocalFilesystem with no userId namespace
     //  Regression: this is the LocalFilesystemWithShell-equivalent path.
     // ---------------------------------------------------------------------
     @Test
-    void localFilesystemWithoutNamespace_loadsFromLocalDiskOnly() throws IOException {
+    void localFilesystemWithoutNamespace_loadsFromWorkspaceOnly() throws IOException {
         Path workspace = tmp.resolve("ws");
         writeSkillMd(workspace, "reviewer", "Reviews code for quality issues.");
 
-        LocalFilesystem fs = new LocalFilesystem(workspace);
         Toolkit toolkit = new Toolkit();
-        DynamicSkillHook hook = new DynamicSkillHook(fs, workspace, toolkit);
+        DynamicSkillHook hook = newHook(toolkit, workspace, new LocalFilesystem(workspace));
 
         fireOnce(hook);
 
         SkillBox box = hook.getCurrentSkillBox();
         assertNotNull(box, "SkillBox must be created when at least one skill is loaded");
         assertTrue(
-                containsSkill(box, "reviewer"), "Layer 2 (local disk) declaration must be visible");
+                containsSkill(box, "reviewer"), "Layer 3 (workspace) declaration must be visible");
     }
 
     // ---------------------------------------------------------------------
-    //  Layer 1 overrides Layer 2: per-user content under <ns>/skills/
+    //  Layer 4 overrides Layer 3: per-user content under <ns>/skills/
     //  Different users see different skill content on the same registry.
     // ---------------------------------------------------------------------
     @Test
-    void namespacedFilesystem_layer1OverridesLayer2_perUser() throws IOException {
+    void namespacedFilesystem_layer4OverridesLayer3_perUser() throws IOException {
         Path workspace = tmp.resolve("ws");
         writeSkillMd(workspace, "reviewer", "BASE description from local disk.");
 
@@ -101,7 +109,7 @@ class DynamicSkillHookTest {
                                 : List.of(userRef.get());
         LocalFilesystem fs = new LocalFilesystem(workspace, false, 0, ns);
         Toolkit toolkit = new Toolkit();
-        DynamicSkillHook hook = new DynamicSkillHook(fs, workspace, toolkit);
+        DynamicSkillHook hook = newHook(toolkit, workspace, fs);
 
         // --- Alice's view ---
         userRef.set("alice");
@@ -112,26 +120,96 @@ class DynamicSkillHookTest {
         assertTrue(containsSkill(aliceBox, "scribe"), "Alice sees her private scribe");
         assertTrue(
                 aliceBox.getSkillPrompt().contains("ALICE override of reviewer."),
-                "Layer 1 (alice's override) must win over Layer 2 (local disk)");
+                "Layer 4 (alice's override) must win over Layer 3 (workspace)");
 
         // --- Bob's view ---
         userRef.set("bob");
         fireOnce(hook);
         SkillBox bobBox = hook.getCurrentSkillBox();
-        assertNotNull(bobBox, "Bob still sees the Layer 2 reviewer");
-        assertTrue(containsSkill(bobBox, "reviewer"), "Bob still sees reviewer (Layer 2 fallback)");
+        assertNotNull(bobBox, "Bob still sees the Layer 3 reviewer");
+        assertTrue(containsSkill(bobBox, "reviewer"), "Bob still sees reviewer (Layer 3 fallback)");
         assertTrue(
                 bobBox.getSkillPrompt().contains("BASE description from local disk."),
-                "Bob has no override; Layer 2 base must be visible");
+                "Bob has no override; Layer 3 base must be visible");
         assertNull(findSkill(bobBox, "scribe"), "Bob must NOT see alice's private scribe");
     }
 
     // ---------------------------------------------------------------------
-    //  Sandbox-equivalent: filesystem returns nothing for skills/ —
-    //  fall back to Layer 2 (host workspace) entirely.
+    //  Four-layer precedence: marketplace repo composes between project-global
+    //  and workspace. Workspace must win over marketplace, namespace must win
+    //  over workspace.
     // ---------------------------------------------------------------------
     @Test
-    void filesystemReturnsNothing_layer2IsAuthoritative() throws IOException {
+    void marketplaceRepo_isOverriddenByWorkspace_andByNamespace() throws IOException {
+        Path workspace = tmp.resolve("ws");
+        writeSkillMd(workspace, "reviewer", "WORKSPACE reviewer description.");
+        writeNamespacedSkillMd(workspace, "alice", "reviewer", "ALICE namespaced reviewer.");
+
+        AgentSkillRepository marketplace =
+                new InMemorySkillRepository(
+                        "marketplace",
+                        AgentSkill.builder()
+                                .name("reviewer")
+                                .description("MARKETPLACE reviewer description.")
+                                .skillContent("Marketplace reviewer body")
+                                .source("marketplace")
+                                .build(),
+                        AgentSkill.builder()
+                                .name("forecaster")
+                                .description("MARKETPLACE-only forecaster.")
+                                .skillContent("Forecast body")
+                                .source("marketplace")
+                                .build());
+
+        AtomicReference<String> userRef = new AtomicReference<>();
+        NamespaceFactory ns =
+                () ->
+                        userRef.get() == null || userRef.get().isEmpty()
+                                ? List.of()
+                                : List.of(userRef.get());
+        LocalFilesystem fs = new LocalFilesystem(workspace, false, 0, ns);
+        Toolkit toolkit = new Toolkit();
+
+        // Compose the four-layer list manually (HarnessAgent.Builder builds the same shape).
+        List<AgentSkillRepository> repos = new ArrayList<>();
+        repos.add(marketplace); // Layer 2
+        repos.add(new FileSystemSkillRepository(workspace.resolve("skills"))); // Layer 3
+        repos.add(
+                new FilesystemBackedSkillRepository(
+                        fs, "skills", RuntimeContext::empty, "ns")); // Layer 4
+        DynamicSkillHook hook = new DynamicSkillHook(repos, toolkit);
+
+        // --- No user: workspace overrides marketplace, marketplace-only stays. ---
+        userRef.set(null);
+        fireOnce(hook);
+        SkillBox box = hook.getCurrentSkillBox();
+        assertNotNull(box);
+        assertTrue(
+                box.getSkillPrompt().contains("WORKSPACE reviewer description."),
+                "Layer 3 (workspace) must override Layer 2 (marketplace) for shared name");
+        assertTrue(
+                containsSkill(box, "forecaster"),
+                "Marketplace-only skill must remain when no higher layer overrides it");
+
+        // --- Alice: namespace overrides everything. ---
+        userRef.set("alice");
+        fireOnce(hook);
+        SkillBox aliceBox = hook.getCurrentSkillBox();
+        assertNotNull(aliceBox);
+        assertTrue(
+                aliceBox.getSkillPrompt().contains("ALICE namespaced reviewer."),
+                "Layer 4 (namespace) must win over Layer 3 (workspace) and Layer 2 (marketplace)");
+        assertTrue(
+                containsSkill(aliceBox, "forecaster"),
+                "Marketplace-only skill remains visible to Alice");
+    }
+
+    // ---------------------------------------------------------------------
+    //  Sandbox-equivalent: filesystem returns nothing for skills/ —
+    //  fall back to Layer 3 (workspace) entirely.
+    // ---------------------------------------------------------------------
+    @Test
+    void filesystemReturnsNothing_workspaceIsAuthoritative() throws IOException {
         Path workspace = tmp.resolve("ws");
         writeSkillMd(workspace, "researcher", "Researches things.");
 
@@ -140,15 +218,15 @@ class DynamicSkillHookTest {
         Files.createDirectories(emptyRoot);
         LocalFilesystem fs = new LocalFilesystem(emptyRoot);
         Toolkit toolkit = new Toolkit();
-        DynamicSkillHook hook = new DynamicSkillHook(fs, workspace, toolkit);
+        DynamicSkillHook hook = newHook(toolkit, workspace, fs);
 
         fireOnce(hook);
 
         SkillBox box = hook.getCurrentSkillBox();
-        assertNotNull(box, "Layer 2 must remain authoritative when Layer 1 is empty");
+        assertNotNull(box, "Layer 3 must remain authoritative when Layer 4 is empty");
         assertTrue(
                 containsSkill(box, "researcher"),
-                "Local-disk skill must be present via Layer 2 fallback");
+                "Workspace skill must be present via Layer 3 fallback");
     }
 
     // ---------------------------------------------------------------------
@@ -161,16 +239,48 @@ class DynamicSkillHookTest {
         Files.createDirectories(workspace);
         LocalFilesystem fs = new LocalFilesystem(workspace);
         Toolkit toolkit = new Toolkit();
-        DynamicSkillHook hook = new DynamicSkillHook(fs, workspace, toolkit);
+        DynamicSkillHook hook = newHook(toolkit, workspace, fs);
 
         fireOnce(hook);
 
         assertNull(hook.getCurrentSkillBox(), "Empty load must leave skillBox unset");
     }
 
+    // ---------------------------------------------------------------------
+    //  Feature-parity with legacy SkillHook: after firing, the hook must
+    //  register the `skill-build-in-tools` group (load_skill_through_path).
+    // ---------------------------------------------------------------------
+    @Test
+    void afterFirstFire_registersSkillLoadToolGroup() throws IOException {
+        Path workspace = tmp.resolve("ws");
+        writeSkillMd(workspace, "reviewer", "Reviews code.");
+        Toolkit toolkit = new Toolkit();
+        DynamicSkillHook hook = newHook(toolkit, workspace, new LocalFilesystem(workspace));
+
+        fireOnce(hook);
+
+        assertNotNull(
+                toolkit.getToolGroup("skill-build-in-tools"),
+                "DynamicSkillHook must wire the load_skill_through_path tool group on first fire");
+    }
+
     // =====================================================================
     //  Helpers
     // =====================================================================
+
+    /** Builds a DynamicSkillHook over the standard workspace + namespaced-fs repository pair. */
+    private static DynamicSkillHook newHook(Toolkit toolkit, Path workspace, LocalFilesystem fs)
+            throws IOException {
+        List<AgentSkillRepository> repos = new ArrayList<>();
+        Path workspaceSkills = workspace.resolve("skills");
+        if (Files.isDirectory(workspaceSkills)) {
+            repos.add(new FileSystemSkillRepository(workspaceSkills));
+        }
+        repos.add(
+                new FilesystemBackedSkillRepository(
+                        fs, "skills", RuntimeContext::empty, "test-ns"));
+        return new DynamicSkillHook(repos, toolkit);
+    }
 
     private static void fireOnce(DynamicSkillHook hook) {
         Agent agent = mock(Agent.class);
@@ -231,5 +341,75 @@ class DynamicSkillHookTest {
             }
         }
         return null;
+    }
+
+    /** Minimal in-memory repository used to simulate a marketplace source in tests. */
+    private static final class InMemorySkillRepository implements AgentSkillRepository {
+        private final String source;
+        private final List<AgentSkill> skills;
+
+        InMemorySkillRepository(String source, AgentSkill... skills) {
+            this.source = source;
+            this.skills = List.of(skills);
+        }
+
+        @Override
+        public AgentSkill getSkill(String name) {
+            for (AgentSkill s : skills) {
+                if (s.getName().equals(name)) {
+                    return s;
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public List<String> getAllSkillNames() {
+            List<String> names = new ArrayList<>();
+            for (AgentSkill s : skills) {
+                names.add(s.getName());
+            }
+            return names;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills() {
+            return Collections.unmodifiableList(skills);
+        }
+
+        @Override
+        public boolean save(List<AgentSkill> skills, boolean force) {
+            return false;
+        }
+
+        @Override
+        public boolean delete(String skillName) {
+            return false;
+        }
+
+        @Override
+        public boolean skillExists(String skillName) {
+            return getSkill(skillName) != null;
+        }
+
+        @Override
+        public AgentSkillRepositoryInfo getRepositoryInfo() {
+            return new AgentSkillRepositoryInfo("in-memory", source, false);
+        }
+
+        @Override
+        public String getSource() {
+            return source;
+        }
+
+        @Override
+        public void setWriteable(boolean writeable) {
+            // no-op
+        }
+
+        @Override
+        public boolean isWriteable() {
+            return false;
+        }
     }
 }

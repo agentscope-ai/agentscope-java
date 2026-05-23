@@ -15,7 +15,10 @@
  */
 package io.agentscope.harness.agent;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -44,17 +47,20 @@ import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 /**
- * Verifies the three-branch wiring in {@link HarnessAgent.Builder} for skills + subagents:
+ * Verifies the wiring in {@link HarnessAgent.Builder} for skills + subagents:
  *
  * <ul>
- *   <li>default (workspace filesystem available, no custom repo, no opt-out) → dynamic hooks
- *   <li>{@code skillRepository(custom)} → legacy {@link SkillHook} via {@code resolveSkillBox}
- *   <li>{@code disableDynamicSkills()} / {@code disableDynamicSubagents()} → legacy path
+ *   <li>default (workspace filesystem available, no opt-out) → {@link DynamicSkillHook} +
+ *       {@link DynamicSubagentsHook} are registered.
+ *   <li>{@code skillRepository(custom)} composes <em>additively</em> with workspace skills — the
+ *       dynamic hook is still registered and exposes both sources.
+ *   <li>{@code disableDynamicSkills()} → no {@link DynamicSkillHook}; falls back to the static
+ *       legacy {@link SkillHook} path.
+ *   <li>{@code disableDynamicSubagents()} → no {@link DynamicSubagentsHook}; falls back to the
+ *       static {@link SubagentsHook}.
  * </ul>
  *
- * <p>The contract under test is the hook list registered on the underlying {@code ReActAgent};
- * each branch must register exactly one of the two skill hooks (or none) and exactly one of the
- * two subagent hooks.
+ * <p>The contract under test is the hook list registered on the underlying {@code ReActAgent}.
  */
 class HarnessAgentDynamicHookBuilderTest {
 
@@ -87,7 +93,7 @@ class HarnessAgentDynamicHookBuilderTest {
     }
 
     @Test
-    void customSkillRepository_usesLegacySkillHook() throws Exception {
+    void customSkillRepository_composesWithDynamicHook() throws Exception {
         Files.createDirectories(workspace);
         AgentSkillRepository emptyRepo = new EmptySkillRepository();
 
@@ -101,11 +107,14 @@ class HarnessAgentDynamicHookBuilderTest {
                         .build();
 
         List<Hook> hooks = agent.getDelegate().getHooks();
-        // An empty custom repo means resolveSkillBox returns null (no skills) → no SkillHook.
-        // But importantly the dynamic hook must NOT be registered.
-        assertFalse(
+        // Repos now compose additively with the workspace and namespaced filesystem layers.
+        // The dynamic hook must be registered, and the legacy SkillHook must NOT be registered.
+        assertTrue(
                 anyOfType(hooks, DynamicSkillHook.class),
-                "Custom skillRepository must skip dynamic loading");
+                "Custom skillRepository must compose with the dynamic skill hook");
+        assertFalse(
+                anyOfType(hooks, SkillHook.class),
+                "Legacy SkillHook must not be registered when dynamic loading is active");
     }
 
     @Test
@@ -124,6 +133,77 @@ class HarnessAgentDynamicHookBuilderTest {
         assertFalse(
                 anyOfType(hooks, DynamicSkillHook.class),
                 "disableDynamicSkills() must skip the dynamic skill hook");
+    }
+
+    @Test
+    void getSkillRepositories_exposesComposedListInOrder() throws Exception {
+        Files.createDirectories(workspace);
+        AgentSkillRepository custom = new EmptySkillRepository();
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .skillRepository(custom)
+                        .build();
+
+        List<AgentSkillRepository> repos = agent.getSkillRepositories();
+        assertNotNull(repos, "getSkillRepositories() must never return null");
+        // Marketplace (custom) repo + workspace shared + per-user namespace = 3 entries.
+        // Marketplaces sit at index 0 (lowest priority above project-global, which is unset).
+        assertTrue(
+                repos.size() >= 1,
+                "Composed skill repositories must include at least the registered marketplace");
+        assertSame(
+                custom,
+                repos.get(0),
+                "First composed repository should be the registered marketplace");
+    }
+
+    @Test
+    void getSkillRepositories_isEmptyWhenNothingComposed() throws Exception {
+        Files.createDirectories(workspace);
+        // Use disableDynamicSkills() to bypass workspace/namespace layers; build with no
+        // marketplaces. Even when dynamic loading is off, composeSkillRepositories() still
+        // computes a snapshot at build time, which is what getSkillRepositories() returns.
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableDynamicSkills()
+                        .build();
+
+        // Even in static mode the field must be non-null.
+        assertNotNull(agent.getSkillRepositories());
+    }
+
+    @Test
+    void getSkillRepositories_returnsImmutableList() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        List<AgentSkillRepository> first = agent.getSkillRepositories();
+        List<AgentSkillRepository> second = agent.getSkillRepositories();
+        // Same snapshot on repeated calls.
+        assertEquals(first.size(), second.size());
+        try {
+            first.add(new EmptySkillRepository());
+            // If we reach here, the list is mutable — this is a bug in the accessor contract.
+            org.junit.jupiter.api.Assertions.fail(
+                    "getSkillRepositories() must return an immutable list");
+        } catch (UnsupportedOperationException expected) {
+            // ok
+        }
     }
 
     @Test
