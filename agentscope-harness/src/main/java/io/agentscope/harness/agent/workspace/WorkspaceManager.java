@@ -149,6 +149,44 @@ public class WorkspaceManager {
         return workspace;
     }
 
+    /**
+     * Normalizes a filesystem-reported path to a workspace-relative path when possible.
+     *
+     * <p>This handles three common cases:
+     * <ul>
+     *   <li>already-relative workspace paths such as {@code memory/2026-05-20.md}</li>
+     *   <li>virtual/remote paths that start with {@code /}</li>
+     *   <li>local absolute paths that live under the workspace root</li>
+     * </ul>
+     */
+    public String toWorkspaceRelativePath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+
+        String normalized = path.strip().replace('\\', '/');
+        Path workspaceRoot = workspace.toAbsolutePath().normalize();
+        try {
+            Path candidate = Path.of(path).normalize();
+            if (candidate.isAbsolute()) {
+                Path absoluteCandidate = candidate.toAbsolutePath().normalize();
+                if (absoluteCandidate.startsWith(workspaceRoot)) {
+                    return workspaceRoot
+                            .relativize(absoluteCandidate)
+                            .toString()
+                            .replace('\\', '/');
+                }
+            }
+        } catch (Exception ignored) {
+            // Fall through to string-based normalization.
+        }
+
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
+    }
+
     /** Reads AGENTS.md content, returns empty string if not found. */
     public String readAgentsMd() {
         return readWithOverride(AGENTS_MD);
@@ -172,7 +210,7 @@ public class WorkspaceManager {
         if (relativePath == null || relativePath.isBlank()) {
             return "";
         }
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = toWorkspaceRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return "";
         }
@@ -204,7 +242,10 @@ public class WorkspaceManager {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        relativePaths.add(normalizeRelativePath(fi.path().trim()));
+                        String rel = toWorkspaceRelativePath(fi.path().trim());
+                        if (!rel.isEmpty()) {
+                            relativePaths.add(rel);
+                        }
                     }
                 }
             }
@@ -722,7 +763,7 @@ public class WorkspaceManager {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
+                        String rel = toWorkspaceRelativePath(fi.path().trim());
                         if (!rel.isEmpty()) {
                             paths.add(rel);
                         }
@@ -759,7 +800,7 @@ public class WorkspaceManager {
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
+                        String rel = toWorkspaceRelativePath(fi.path().trim());
                         if (!rel.isEmpty()) {
                             paths.add(rel);
                         }
