@@ -34,6 +34,7 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -195,15 +197,64 @@ public class JdkHttpTransport implements HttpTransport {
 
         var jdkRequest = buildJdkRequest(request, true);
 
-        // Use Mono.fromFuture() to ensure lazy execution and proper cancellation propagation.
-        // This prevents "ghost connections" from leaking if the downstream cancels or times out
-        // before headers arrive.
-        return Mono.fromFuture(() -> client.sendAsync(jdkRequest, BodyHandlers.ofInputStream()))
-                .flatMapMany(
-                        response -> {
-                            int statusCode = response.statusCode();
-                            if (statusCode < 200 || statusCode >= 300) {
-                                String errorBody = readInputStream(response.body());
+        return Flux.defer(
+                () -> {
+                    AtomicReference<InputStream> responseBody = new AtomicReference<>();
+                    return sendInputStreamAsync(jdkRequest, responseBody)
+                            .timeout(Mono.delay(streamResponseTimeout()))
+                            .flatMapMany(
+                                    response ->
+                                            handleStreamResponse(response, request, responseBody))
+                            .doFinally(signal -> closeQuietly(responseBody.getAndSet(null)))
+                            .onErrorMap(this::mapStreamError);
+                });
+    }
+
+    private Mono<java.net.http.HttpResponse<InputStream>> sendInputStreamAsync(
+            java.net.http.HttpRequest request, AtomicReference<InputStream> responseBody) {
+        return Mono.create(
+                sink -> {
+                    AtomicBoolean cancelled = new AtomicBoolean(false);
+                    var future = client.sendAsync(request, BodyHandlers.ofInputStream());
+                    sink.onCancel(
+                            () -> {
+                                cancelled.set(true);
+                                future.cancel(true);
+                                closeQuietly(responseBody.getAndSet(null));
+                            });
+                    future.whenComplete(
+                            (response, error) -> {
+                                if (error != null) {
+                                    if (!cancelled.get()) {
+                                        sink.error(error);
+                                    }
+                                    return;
+                                }
+
+                                responseBody.set(response.body());
+                                if (cancelled.get()) {
+                                    closeQuietly(responseBody.getAndSet(null));
+                                    return;
+                                }
+                                sink.success(response);
+                            });
+                });
+    }
+
+    private Flux<String> handleStreamResponse(
+            java.net.http.HttpResponse<InputStream> response,
+            HttpRequest request,
+            AtomicReference<InputStream> responseBody) {
+        InputStream inputStream = response.body();
+        responseBody.set(inputStream);
+
+        int statusCode = response.statusCode();
+        if (statusCode < 200 || statusCode >= 300) {
+            return readInputStreamAsync(inputStream)
+                    .timeout(streamResponseTimeout())
+                    .onErrorReturn("")
+                    .flatMapMany(
+                            errorBody -> {
                                 log.warn(
                                         "HTTP request failed. URL: {} | Status: {} | Error: {}",
                                         request.getUrl(),
@@ -217,45 +268,21 @@ public class JdkHttpTransport implements HttpTransport {
                                                         + errorBody,
                                                 statusCode,
                                                 errorBody));
-                            }
-                            return processStreamResponse(response, request);
-                        })
+                            });
+        }
+
+        return processStreamResponse(inputStream, request)
                 .timeout(
                         // Timeout strategy 1: Time To First Token (TTFT).
-                        // The maximum time to wait for the first piece of data.
-                        Mono.delay(
-                                config.getResponseTimeout() != null
-                                        ? config.getResponseTimeout()
-                                        : HttpTransportConfig.DEFAULT_RESPONSE_TIMEOUT),
+                        // The maximum time to wait for the first piece of data after headers.
+                        Mono.delay(streamResponseTimeout()),
 
                         // Timeout strategy 2: Inter-token gap (Stream Idle Timeout).
                         // The maximum time to wait between receiving two consecutive data chunks.
-                        data ->
-                                Mono.delay(
-                                        config.getStreamIdleTimeout() != null
-                                                ? config.getStreamIdleTimeout()
-                                                : HttpTransportConfig.DEFAULT_STREAM_IDLE_TIMEOUT))
-                .onErrorMap(
-                        e -> {
-                            if (e instanceof TimeoutException) {
-                                return new HttpTransportException(
-                                        "Stream timeout: " + e.getMessage(), e);
-                            }
-                            if (e instanceof HttpTransportException) {
-                                return e;
-                            }
-                            Throwable cause = e instanceof CompletionException ? e.getCause() : e;
-                            if (cause instanceof HttpTransportException) {
-                                return cause;
-                            }
-                            return new HttpTransportException(
-                                    "SSE/NDJSON stream failed: " + e.getMessage(), e);
-                        });
+                        data -> Mono.delay(streamIdleTimeout()));
     }
 
-    private Flux<String> processStreamResponse(
-            java.net.http.HttpResponse<InputStream> response, HttpRequest request) {
-        InputStream inputStream = response.body();
+    private Flux<String> processStreamResponse(InputStream inputStream, HttpRequest request) {
         if (inputStream == null) {
             return Flux.empty();
         }
@@ -399,6 +426,38 @@ public class JdkHttpTransport implements HttpTransport {
             log.warn("Failed to read response body: {}", e.getMessage());
             return null;
         }
+    }
+
+    private Mono<String> readInputStreamAsync(InputStream inputStream) {
+        return Mono.fromCallable(() -> readInputStream(inputStream))
+                .defaultIfEmpty("")
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private Duration streamResponseTimeout() {
+        return config.getResponseTimeout() != null
+                ? config.getResponseTimeout()
+                : HttpTransportConfig.DEFAULT_RESPONSE_TIMEOUT;
+    }
+
+    private Duration streamIdleTimeout() {
+        return config.getStreamIdleTimeout() != null
+                ? config.getStreamIdleTimeout()
+                : HttpTransportConfig.DEFAULT_STREAM_IDLE_TIMEOUT;
+    }
+
+    private Throwable mapStreamError(Throwable e) {
+        if (e instanceof TimeoutException) {
+            return new HttpTransportException("Stream timeout: " + e.getMessage(), e);
+        }
+        if (e instanceof HttpTransportException) {
+            return e;
+        }
+        Throwable cause = e instanceof CompletionException ? e.getCause() : e;
+        if (cause instanceof HttpTransportException) {
+            return cause;
+        }
+        return new HttpTransportException("SSE/NDJSON stream failed: " + e.getMessage(), e);
     }
 
     private void closeQuietly(AutoCloseable closeable) {

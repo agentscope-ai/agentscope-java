@@ -28,14 +28,14 @@ public class HttpTransportConfig {
     /** Default connect timeout: 30 seconds. */
     public static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(30);
 
+    /** Default read timeout: 5 minutes (Overall timeout for non-streaming calls). */
+    public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofMinutes(5);
+
     /** Default response timeout (TTFT): 5 minutes (Time To First Token for streaming). */
     public static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofMinutes(5);
 
-    /** Default stream idle timeout: 30 seconds (Maximum wait time between consecutive data chunks). */
-    public static final Duration DEFAULT_STREAM_IDLE_TIMEOUT = Duration.ofSeconds(30);
-
-    /** Default read timeout: 5 minutes (Overall timeout for non-streaming calls). */
-    public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofMinutes(5);
+    /** Default stream idle timeout: 5 minutes (maximum wait between consecutive data chunks). */
+    public static final Duration DEFAULT_STREAM_IDLE_TIMEOUT = DEFAULT_READ_TIMEOUT;
 
     /** Default write timeout: 30 seconds. */
     public static final Duration DEFAULT_WRITE_TIMEOUT = Duration.ofSeconds(30);
@@ -92,7 +92,10 @@ public class HttpTransportConfig {
     }
 
     /**
-     * Get the read timeout(for non-streaming).
+     * Get the read timeout.
+     *
+     * <p>For {@link JdkHttpTransport} streaming requests, response and idle timeouts are controlled
+     * by {@link #getResponseTimeout()} and {@link #getStreamIdleTimeout()} instead.
      *
      * @return the read timeout duration
      */

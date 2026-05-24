@@ -22,14 +22,31 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.Authenticator;
+import java.net.CookieHandler;
+import java.net.ProxySelector;
+import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpClient.Redirect;
+import java.net.http.HttpClient.Version;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSession;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -1139,14 +1156,14 @@ class JdkHttpTransportTest {
     @Test
     void testStreamIdleTimeout() {
         // Test Timeout Strategy 2 (Inter-token gap):
-        // Throttle body to emit 1 byte every 2 seconds.
-        // This exceeds the configured streamIdleTimeout (1 second).
+        // Emit the first complete event immediately, then delay the second event long enough to
+        // exceed streamIdleTimeout.
         mockServer.enqueue(
                 new MockResponse()
                         .setResponseCode(200)
                         .setHeader("Content-Type", "text/event-stream")
                         .setBody("data: {\"id\":\"1\"}\n\ndata: {\"id\":\"2\"}\n\n")
-                        .throttleBody(1, 2, TimeUnit.SECONDS));
+                        .throttleBody(19, 2, TimeUnit.SECONDS));
 
         HttpRequest request =
                 HttpRequest.builder()
@@ -1156,11 +1173,51 @@ class JdkHttpTransportTest {
                         .build();
 
         StepVerifier.create(transport.stream(request))
+                .expectNextMatches(data -> data.contains("\"id\":\"1\""))
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
                                         && e.getMessage().contains("Stream timeout"))
                 .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void testStreamTimeoutClosesBodyWhenFutureCompletesAfterCancellation() {
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .responseTimeout(Duration.ofMillis(100))
+                        .streamIdleTimeout(Duration.ofSeconds(1))
+                        .build();
+        BlockingInputStream body = new BlockingInputStream();
+        AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>> futureRef =
+                new AtomicReference<>();
+        JdkHttpTransport customTransport =
+                new JdkHttpTransport(new DeferredBodyHttpClient(futureRef, body), customConfig);
+
+        try {
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url("http://localhost/deferred-body")
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            StepVerifier.create(customTransport.stream(request))
+                    .expectErrorMatches(
+                            e ->
+                                    e instanceof HttpTransportException
+                                            && e.getMessage().contains("Stream timeout"))
+                    .verify(Duration.ofSeconds(2));
+
+            CompletableFuture<java.net.http.HttpResponse<InputStream>> future = futureRef.get();
+            assertNotNull(future);
+            assertTrue(future.isCancelled(), "Timeout should cancel the pending async request");
+
+            future.complete(new TestHttpResponse(200, body));
+            assertTrue(body.awaitClosed(), "Response body must be closed after late completion");
+        } finally {
+            customTransport.close();
+        }
     }
 
     @Test
@@ -1194,5 +1251,185 @@ class JdkHttpTransportTest {
         StepVerifier.create(transport.stream(request))
                 .expectNextCount(5) // Should successfully receive all 5 data chunks
                 .verifyComplete();
+    }
+
+    private static class DeferredBodyHttpClient extends HttpClient {
+        private final AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>>
+                futureRef;
+        private final InputStream body;
+
+        DeferredBodyHttpClient(
+                AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>>
+                        futureRef,
+                InputStream body) {
+            this.futureRef = futureRef;
+            this.body = body;
+        }
+
+        @Override
+        public Optional<CookieHandler> cookieHandler() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<Duration> connectTimeout() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Redirect followRedirects() {
+            return Redirect.NEVER;
+        }
+
+        @Override
+        public Optional<ProxySelector> proxy() {
+            return Optional.empty();
+        }
+
+        @Override
+        public SSLContext sslContext() {
+            return null;
+        }
+
+        @Override
+        public SSLParameters sslParameters() {
+            return new SSLParameters();
+        }
+
+        @Override
+        public Optional<Authenticator> authenticator() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Version version() {
+            return Version.HTTP_2;
+        }
+
+        @Override
+        public Optional<Executor> executor() {
+            return Optional.empty();
+        }
+
+        @Override
+        public <T> java.net.http.HttpResponse<T> send(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
+            throw new UnsupportedOperationException("send is not used in this test");
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> CompletableFuture<java.net.http.HttpResponse<T>> sendAsync(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
+            CompletableFuture<java.net.http.HttpResponse<T>> future = new LateCompletableFuture<>();
+            futureRef.set(
+                    (CompletableFuture<java.net.http.HttpResponse<InputStream>>)
+                            (CompletableFuture<?>) future);
+            return future;
+        }
+
+        @Override
+        public <T> CompletableFuture<java.net.http.HttpResponse<T>> sendAsync(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler,
+                java.net.http.HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
+            return sendAsync(request, responseBodyHandler);
+        }
+    }
+
+    private static class LateCompletableFuture<T> extends CompletableFuture<T> {
+        private final AtomicBoolean cancelled = new AtomicBoolean(false);
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            cancelled.set(true);
+            return true;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return cancelled.get();
+        }
+    }
+
+    private static class TestHttpResponse implements java.net.http.HttpResponse<InputStream> {
+        private final int statusCode;
+        private final InputStream body;
+
+        TestHttpResponse(int statusCode, InputStream body) {
+            this.statusCode = statusCode;
+            this.body = body;
+        }
+
+        @Override
+        public int statusCode() {
+            return statusCode;
+        }
+
+        @Override
+        public java.net.http.HttpRequest request() {
+            return null;
+        }
+
+        @Override
+        public Optional<java.net.http.HttpResponse<InputStream>> previousResponse() {
+            return Optional.empty();
+        }
+
+        @Override
+        public java.net.http.HttpHeaders headers() {
+            return java.net.http.HttpHeaders.of(Map.of(), (name, value) -> true);
+        }
+
+        @Override
+        public InputStream body() {
+            return body;
+        }
+
+        @Override
+        public Optional<SSLSession> sslSession() {
+            return Optional.empty();
+        }
+
+        @Override
+        public URI uri() {
+            return URI.create("http://localhost/deferred-body");
+        }
+
+        @Override
+        public Version version() {
+            return Version.HTTP_2;
+        }
+    }
+
+    private static class BlockingInputStream extends InputStream {
+        private final CountDownLatch closed = new CountDownLatch(1);
+
+        @Override
+        public int read() {
+            return -1;
+        }
+
+        @Override
+        public byte[] readAllBytes() {
+            return "closed".getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed.countDown();
+            super.close();
+        }
+
+        boolean awaitClosed() {
+            try {
+                return closed.await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
     }
 }
