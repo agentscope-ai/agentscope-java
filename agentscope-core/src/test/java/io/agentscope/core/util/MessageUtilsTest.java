@@ -55,7 +55,26 @@ class MessageUtilsTest {
         assertTrue(MessageUtils.extractRecentToolCalls(List.of(), "assistant").isEmpty());
     }
 
+    @Test
+    @DisplayName("Should not skip assistant messages when _compress_meta is not a map")
+    void testExtractRecentToolCallsDoesNotSkipAssistantMessagesWithInvalidCompressMetadata() {
+        Msg message =
+                createAssistantToolUseMessage(
+                        "real-tool", "real-call", Map.of("_compress_meta", "not-a-map"));
+
+        List<ToolUseBlock> toolCalls =
+                MessageUtils.extractRecentToolCalls(List.of(message), "assistant");
+
+        assertEquals(1, toolCalls.size());
+        assertEquals("real-call", toolCalls.get(0).getId());
+    }
+
     private Msg createAssistantToolUseMessage(String toolName, String callId) {
+        return createAssistantToolUseMessage(toolName, callId, Map.of());
+    }
+
+    private Msg createAssistantToolUseMessage(
+            String toolName, String callId, Map<String, Object> metadata) {
         return Msg.builder()
                 .role(MsgRole.ASSISTANT)
                 .name("assistant")
@@ -66,6 +85,7 @@ class MessageUtilsTest {
                                         .id(callId)
                                         .input(new HashMap<>())
                                         .build()))
+                .metadata(metadata)
                 .build();
     }
 

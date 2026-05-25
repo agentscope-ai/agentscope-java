@@ -71,15 +71,7 @@ public final class MessageUtils {
     }
 
     private static boolean isCompressedMessage(Msg msg) {
-        if (msg == null) {
-            return false;
-        }
-
         Map<String, Object> metadata = msg.getMetadata();
-        if (metadata == null) {
-            return false;
-        }
-
         return metadata.get(COMPRESS_META_KEY) instanceof Map;
     }
 }
