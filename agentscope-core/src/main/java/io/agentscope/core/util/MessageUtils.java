@@ -19,6 +19,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -29,6 +30,8 @@ import java.util.Objects;
  * @hidden
  */
 public final class MessageUtils {
+
+    private static final String COMPRESS_META_KEY = "_compress_meta";
 
     private MessageUtils() {
         throw new UnsupportedOperationException("Utility class cannot be instantiated");
@@ -53,6 +56,9 @@ public final class MessageUtils {
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
             if (msg.getRole() == MsgRole.ASSISTANT && Objects.equals(msg.getName(), agentName)) {
+                if (isCompressedMessage(msg)) {
+                    continue;
+                }
                 List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
                 if (!toolCalls.isEmpty()) {
                     return toolCalls;
@@ -62,5 +68,18 @@ public final class MessageUtils {
         }
 
         return List.of();
+    }
+
+    private static boolean isCompressedMessage(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata == null) {
+            return false;
+        }
+
+        return metadata.get(COMPRESS_META_KEY) instanceof Map;
     }
 }
