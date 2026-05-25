@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.filesystem.spec;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
@@ -137,8 +138,23 @@ public class RemoteFilesystemSpec {
     /**
      *
      * <ul>
-     *   <li>default backend: {@link LocalFilesystem} (no shell)
-     *   <li>shared routes: {@link RemoteFilesystem} with scope-driven namespace
+     *   <li>default backend: {@link LocalFilesystem} (no shell), per-user namespaced
+     *   <li>shared <b>prefix</b> routes ({@code memory/}, {@code skills/}, {@code subagents/},
+     *       {@code knowledge/}, {@code agents/<id>/sessions/}, {@code agents/<id>/tasks/}, plus
+     *       any {@code addSharedPrefix} extras): wrapped in an {@link OverlayFilesystem} where
+     *       the <em>upper</em> layer is the {@link RemoteFilesystem} (per-user, persisted in the
+     *       {@link BaseStore}) and the <em>lower</em> layer is a read-only {@link LocalFilesystem}
+     *       rooted at {@code workspace.resolve(<routeDir>)}. So scaffolded template content under
+     *       {@code <workspace>/skills/}, {@code <workspace>/subagents/}, etc. is visible as a
+     *       baseline; per-user edits land in the remote store via copy-on-write and override the
+     *       template on subsequent reads.
+     *   <li>{@code AGENTS.md}, {@code MEMORY.md}, {@code tools.json} exact-file routes: wrapped
+     *       in an {@link OverlayFilesystem} where the <em>upper</em> is the {@code root}-segment
+     *       {@link RemoteFilesystem} and the <em>lower</em> is a read-only {@link LocalFilesystem}
+     *       rooted at the workspace, so the scaffolded template files at the workspace root are
+     *       visible as the baseline. {@link CompositeFilesystem} does not recurse into exact-file
+     *       routes when listing/globbing the tree; it performs a single {@code exists} check
+     *       against the overlay, which is satisfied by either layer.
      * </ul>
      */
     public AbstractFilesystem toFilesystem(
@@ -146,28 +162,68 @@ public class RemoteFilesystemSpec {
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
         AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
 
-        RemoteFilesystem rootFs = remoteForRoute("root", effectiveAgentId);
-        RemoteFilesystem memoryFs = remoteForRoute("memory", effectiveAgentId);
-        RemoteFilesystem skillsFs = remoteForRoute("skills", effectiveAgentId);
-        RemoteFilesystem subagentsFs = remoteForRoute("subagents", effectiveAgentId);
-        RemoteFilesystem knowledgeFs = remoteForRoute("knowledge", effectiveAgentId);
-        RemoteFilesystem sessionsFs = remoteForRoute("sessions", effectiveAgentId);
-        RemoteFilesystem tasksFs = remoteForRoute("tasks", effectiveAgentId);
+        // Read-only workspace-root template view for the exact-file overlays below. The lower
+        // technically exposes the entire workspace, but CompositeFilesystem does not recurse into
+        // exact-file routes (it does single-key exists/read), so the over-exposure is unreachable.
+        LocalFilesystem workspaceTemplate = new LocalFilesystem(workspace, true, 10, null);
 
         Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
-        routes.put("AGENTS.md", rootFs);
-        routes.put("MEMORY.md", rootFs);
-        routes.put("memory/", memoryFs);
-        routes.put("skills/", skillsFs);
-        routes.put("subagents/", subagentsFs);
-        routes.put("knowledge/", knowledgeFs);
-        routes.put("agents/" + effectiveAgentId + "/sessions/", sessionsFs);
-        routes.put("agents/" + effectiveAgentId + "/tasks/", tasksFs);
+        routes.put("AGENTS.md", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
+        routes.put("MEMORY.md", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
+        routes.put("tools.json", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
+        routes.put(
+                "memory/", overlayRoute(workspace.resolve("memory"), "memory", effectiveAgentId));
+        routes.put(
+                "skills/", overlayRoute(workspace.resolve("skills"), "skills", effectiveAgentId));
+        routes.put(
+                "subagents/",
+                overlayRoute(workspace.resolve("subagents"), "subagents", effectiveAgentId));
+        routes.put(
+                "knowledge/",
+                overlayRoute(workspace.resolve("knowledge"), "knowledge", effectiveAgentId));
+        routes.put(
+                "agents/" + effectiveAgentId + "/sessions/",
+                overlayRoute(
+                        workspace.resolve("agents").resolve(effectiveAgentId).resolve("sessions"),
+                        "sessions",
+                        effectiveAgentId));
+        routes.put(
+                "agents/" + effectiveAgentId + "/tasks/",
+                overlayRoute(
+                        workspace.resolve("agents").resolve(effectiveAgentId).resolve("tasks"),
+                        "tasks",
+                        effectiveAgentId));
         for (String extra : extraSharedPrefixes) {
             String segment = routeSegmentFromPrefix(extra);
-            routes.put(extra, remoteForRoute(segment, effectiveAgentId));
+            routes.put(extra, overlayRoute(workspace.resolve(segment), segment, effectiveAgentId));
         }
         return new CompositeFilesystem(local, routes);
+    }
+
+    /**
+     * Builds an {@link OverlayFilesystem} for a workspace-prefix route. The upper layer is the
+     * per-user {@link RemoteFilesystem} backed by {@link BaseStore}; the lower layer is a read-only
+     * {@link LocalFilesystem} rooted at {@code localTemplateDir} so scaffolded template content is
+     * visible as the baseline. {@code virtualMode=true} on the lower so it reports paths anchored
+     * to its own root, which is what {@link CompositeFilesystem}'s route remapping expects.
+     */
+    private OverlayFilesystem overlayRoute(
+            Path localTemplateDir, String routeSegment, String agentId) {
+        RemoteFilesystem upper = remoteForRoute(routeSegment, agentId);
+        LocalFilesystem lower = new LocalFilesystem(localTemplateDir, true, 10, null);
+        return new OverlayFilesystem(upper, lower);
+    }
+
+    /**
+     * Builds an {@link OverlayFilesystem} for an exact-file route (e.g. {@code AGENTS.md}).
+     * The upper layer is the per-user {@link RemoteFilesystem} on the {@code root} namespace
+     * segment; the lower layer is the shared workspace-root {@link LocalFilesystem} so the
+     * scaffolded template file ({@code workspace/<filename>}) is visible as the baseline.
+     */
+    private OverlayFilesystem exactFileOverlay(
+            String routeSegment, String agentId, LocalFilesystem workspaceTemplate) {
+        RemoteFilesystem upper = remoteForRoute(routeSegment, agentId);
+        return new OverlayFilesystem(upper, workspaceTemplate);
     }
 
     private RemoteFilesystem remoteForRoute(String routeSegment, String agentId) {

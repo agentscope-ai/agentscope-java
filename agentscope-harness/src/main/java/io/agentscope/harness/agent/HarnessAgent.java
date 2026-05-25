@@ -1938,8 +1938,11 @@ public class HarnessAgent implements Agent, StateModule {
             if (taskRepository != null) {
                 repo = taskRepository;
             } else if (wsManager != null) {
-                String resolvedName = name != null ? name : "HarnessAgent";
-                repo = new WorkspaceTaskRepository(wsManager, resolvedName);
+                String taskAgentId =
+                        agentId != null && !agentId.isBlank()
+                                ? agentId
+                                : (name != null && !name.isBlank() ? name : "HarnessAgent");
+                repo = new WorkspaceTaskRepository(wsManager, taskAgentId);
             } else {
                 repo = new DefaultTaskRepository();
             }
@@ -1971,8 +1974,11 @@ public class HarnessAgent implements Agent, StateModule {
             if (taskRepository != null) {
                 repo = taskRepository;
             } else if (wsManager != null) {
-                String resolvedName = name != null ? name : "HarnessAgent";
-                repo = new WorkspaceTaskRepository(wsManager, resolvedName);
+                String taskAgentId =
+                        agentId != null && !agentId.isBlank()
+                                ? agentId
+                                : (name != null && !name.isBlank() ? name : "HarnessAgent");
+                repo = new WorkspaceTaskRepository(wsManager, taskAgentId);
             } else {
                 repo = new DefaultTaskRepository();
             }

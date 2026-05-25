@@ -372,7 +372,18 @@ public class LocalFilesystem implements AbstractFilesystem {
                 effectivePattern.startsWith("**") ? effectivePattern : "**/" + effectivePattern;
         FileSystem fs = FileSystems.getDefault();
         PathMatcher matcher = fs.getPathMatcher("glob:" + globExpr);
-        PathMatcher directMatcher = fs.getPathMatcher("glob:" + effectivePattern);
+        // Java's PathMatcher requires at least one separator for `**/<x>`, so depth-1 files
+        // never satisfy patterns like `**/*`. Strip the leading `**/` so the direct matcher
+        // catches files at the search root too.
+        String directExpr;
+        if (effectivePattern.startsWith("**/")) {
+            directExpr = effectivePattern.substring(3);
+        } else if (effectivePattern.equals("**")) {
+            directExpr = "*";
+        } else {
+            directExpr = effectivePattern;
+        }
+        PathMatcher directMatcher = fs.getPathMatcher("glob:" + directExpr);
 
         List<FileInfo> results = new ArrayList<>();
         try {

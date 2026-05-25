@@ -28,6 +28,9 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -95,22 +98,29 @@ public class CompositeFilesystem implements AbstractFilesystem {
             AbstractFilesystem backend, String backendPath, String routePrefix) {}
 
     private RouteResult routeForPath(String path) {
+        // Canonicalize both sides by stripping any leading slash before matching so callers can
+        // pass either "/skills/foo" (the {@link AbstractFilesystem} contract) or "skills/foo"
+        // (the convention used by {@code WorkspaceManager.writeUtf8WorkspaceRelative}) and route
+        // to the same backend. The original {@code entry.prefix()} is preserved in the
+        // {@link RouteResult} so path remapping output stays in the prefix's stored form.
+        String matchPath = stripLeadingSlash(path);
         for (RouteEntry entry : sortedRoutes) {
+            String canonicalPrefix = stripLeadingSlash(entry.prefix());
             String prefixNoSlash =
-                    entry.prefix().endsWith("/")
-                            ? entry.prefix().substring(0, entry.prefix().length() - 1)
-                            : entry.prefix();
-            if (path.equals(prefixNoSlash)) {
-                if (entry.prefix().endsWith("/")) {
+                    canonicalPrefix.endsWith("/")
+                            ? canonicalPrefix.substring(0, canonicalPrefix.length() - 1)
+                            : canonicalPrefix;
+            if (matchPath.equals(prefixNoSlash)) {
+                if (canonicalPrefix.endsWith("/")) {
                     return new RouteResult(entry.backend(), "/", entry.prefix());
                 }
                 String backendPath = path.startsWith("/") ? path : "/" + path;
                 return new RouteResult(entry.backend(), backendPath, entry.prefix());
             }
             String normalizedPrefix =
-                    entry.prefix().endsWith("/") ? entry.prefix() : entry.prefix() + "/";
-            if (path.startsWith(normalizedPrefix)) {
-                String suffix = path.substring(normalizedPrefix.length());
+                    canonicalPrefix.endsWith("/") ? canonicalPrefix : canonicalPrefix + "/";
+            if (matchPath.startsWith(normalizedPrefix)) {
+                String suffix = matchPath.substring(normalizedPrefix.length());
                 String backendPath = suffix.isEmpty() ? "/" : "/" + suffix;
                 return new RouteResult(entry.backend(), backendPath, entry.prefix());
             }
@@ -118,13 +128,27 @@ public class CompositeFilesystem implements AbstractFilesystem {
         return new RouteResult(defaultBackend, path, null);
     }
 
+    private static String stripLeadingSlash(String s) {
+        if (s == null || s.isEmpty()) {
+            return s == null ? "" : s;
+        }
+        int i = 0;
+        while (i < s.length() && s.charAt(i) == '/') {
+            i++;
+        }
+        return s.substring(i);
+    }
+
     // ==================== Path remapping helpers ====================
 
     private static String prependRoute(String routePrefix, String backendPath) {
-        String base =
-                routePrefix.endsWith("/")
-                        ? routePrefix.substring(0, routePrefix.length() - 1)
-                        : routePrefix;
+        // Exact-file route: the backend holds one logical key, so the externally visible path
+        // is the route prefix itself — appending the backend's "/<file>" would yield
+        // "AGENTS.md/AGENTS.md".
+        if (!routePrefix.endsWith("/")) {
+            return routePrefix;
+        }
+        String base = routePrefix.substring(0, routePrefix.length() - 1);
         return base + backendPath;
     }
 
@@ -171,12 +195,15 @@ public class CompositeFilesystem implements AbstractFilesystem {
                 results.addAll(defaultResult.entries());
             }
             for (RouteEntry entry : sortedRoutes) {
-                if (!entry.prefix().endsWith("/")) {
+                if (entry.prefix().endsWith("/")) {
+                    results.add(FileInfo.ofDir(entry.prefix(), ""));
                     continue;
                 }
-                String dirPath =
-                        entry.prefix().endsWith("/") ? entry.prefix() : entry.prefix() + "/";
-                results.add(FileInfo.ofDir(dirPath, ""));
+                // Exact-file route: surface as a file entry iff the backend has it.
+                String exactPath = "/" + entry.prefix();
+                if (entry.backend().exists(runtimeContext, exactPath)) {
+                    results.add(FileInfo.ofFile(entry.prefix(), 0L, ""));
+                }
             }
             results.sort(Comparator.comparing(FileInfo::path));
             return LsResult.success(results);
@@ -252,6 +279,25 @@ public class CompositeFilesystem implements AbstractFilesystem {
                 allMatches.addAll(defaultResult.matches());
             }
             for (RouteEntry entry : sortedRoutes) {
+                if (!entry.prefix().endsWith("/")) {
+                    // Exact-file route: scope grep to the single addressable file so we don't
+                    // scan unrelated keys in the same backend namespace.
+                    String exactPath = "/" + entry.prefix();
+                    if (!entry.backend().exists(runtimeContext, exactPath)) {
+                        continue;
+                    }
+                    GrepResult routeResult =
+                            entry.backend().grep(runtimeContext, pattern, exactPath, glob);
+                    if (!routeResult.isSuccess()) {
+                        return routeResult;
+                    }
+                    if (routeResult.matches() != null) {
+                        for (GrepMatch m : routeResult.matches()) {
+                            allMatches.add(remapGrepMatch(m, entry.prefix()));
+                        }
+                    }
+                    continue;
+                }
                 GrepResult routeResult = entry.backend().grep(runtimeContext, pattern, "/", glob);
                 if (!routeResult.isSuccess()) {
                     return routeResult;
@@ -284,12 +330,50 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return GlobResult.success(remapped);
         }
 
+        // Non-root path that didn't match any route: delegate to default backend only.
+        // Route scanning only makes sense for root-level recursive globs.
+        if (path != null && !"/".equals(path)) {
+            return defaultBackend.glob(runtimeContext, pattern, path);
+        }
+
         List<FileInfo> results = new ArrayList<>();
         GlobResult defaultResult = defaultBackend.glob(runtimeContext, pattern, path);
         if (defaultResult.isSuccess() && defaultResult.matches() != null) {
             results.addAll(defaultResult.matches());
         }
+        String effectivePattern = pattern.startsWith("/") ? pattern.substring(1) : pattern;
+        PathMatcher fileMatcher =
+                FileSystems.getDefault().getPathMatcher("glob:" + effectivePattern);
+        // Java NIO's PathMatcher requires at least one separator for patterns like `**/*`, so
+        // root-level files (e.g. AGENTS.md, MEMORY.md, tools.json — registered as exact-file
+        // routes with no separator in their prefix) never satisfy the recursive matcher alone.
+        // Mirror what {@link LocalFilesystem#glob} does: build a "direct" matcher by stripping
+        // the leading `**/` so depth-1 entries also match. A pattern that already lacks the
+        // recursive prefix falls through unchanged.
+        String directExpr;
+        if (effectivePattern.startsWith("**/")) {
+            directExpr = effectivePattern.substring(3);
+        } else if (effectivePattern.equals("**")) {
+            directExpr = "*";
+        } else {
+            directExpr = effectivePattern;
+        }
+        PathMatcher directFileMatcher =
+                FileSystems.getDefault().getPathMatcher("glob:" + directExpr);
         for (RouteEntry entry : sortedRoutes) {
+            if (!entry.prefix().endsWith("/")) {
+                // Exact-file route: check existence AND match against the glob pattern so
+                // a glob("*.json", "/") does not surface AGENTS.md or other non-matching files.
+                Path entryPath = Path.of(entry.prefix());
+                if (!fileMatcher.matches(entryPath) && !directFileMatcher.matches(entryPath)) {
+                    continue;
+                }
+                String exactPath = "/" + entry.prefix();
+                if (entry.backend().exists(runtimeContext, exactPath)) {
+                    results.add(FileInfo.ofFile(entry.prefix(), 0L, ""));
+                }
+                continue;
+            }
             String routePattern = stripRouteFromPattern(pattern, entry.prefix());
             GlobResult routeResult = entry.backend().glob(runtimeContext, routePattern, "/");
             if (routeResult.isSuccess() && routeResult.matches() != null) {
