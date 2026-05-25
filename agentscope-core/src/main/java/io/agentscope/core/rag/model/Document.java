@@ -203,20 +203,19 @@ public class Document {
      *
      * <p>This method creates a UUID v3 (name-based with MD5) from a JSON representation
      * of the document's key fields (doc_id, chunk_id, content). This ensures that the
-     * same document content always generates the same ID, which is compatible with the
-     * Python implementation's _map_text_to_uuid function.
+     * same document content always generates the same ID.
      *
      * @param metadata the document metadata
      * @return a deterministic UUID string
      */
     private static String generateDocumentId(DocumentMetadata metadata) {
-        // Create a map with doc_id, chunk_id, and content (matching Python implementation)
+        // Create a map with doc_id, chunk_id, and content
         Map<String, Object> keyMap = new LinkedHashMap<>();
         keyMap.put("doc_id", metadata.getDocId());
         keyMap.put("chunk_id", metadata.getChunkId());
         keyMap.put("content", metadata.getContent());
 
-        // Serialize to JSON (ensure_ascii=False in Python, so we use default UTF-8)
+        // Serialize to JSON using default UTF-8
         String jsonKey = JsonUtils.getJsonCodec().toJson(keyMap);
 
         // Generate UUID v3 (name-based with MD5) from the JSON string

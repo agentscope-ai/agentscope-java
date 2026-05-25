@@ -36,7 +36,7 @@ import io.agentscope.core.state.State;
  *   <li>{@link ToolUseBlock} - Tool execution requests
  *   <li>{@link ToolResultBlock} - Tool execution results
  *   <li>{@link HintBlock} - Hints for LLM reasoning (e.g., from RAG)
- *   <li>{@link DataBlock} - Generic binary data block unifying image/audio/video (Python 2.0 alignment)
+ *   <li>{@link DataBlock} - Generic binary data block unifying image/audio/video
  * </ul>
  *
  * <p>Uses Jackson annotations for polymorphic JSON serialization with the "type" discriminator

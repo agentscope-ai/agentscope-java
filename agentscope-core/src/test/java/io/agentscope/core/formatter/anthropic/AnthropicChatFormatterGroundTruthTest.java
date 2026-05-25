@@ -35,7 +35,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** Ground truth tests for AnthropicChatFormatter - compares with Python implementation. */
+/** Ground truth tests for AnthropicChatFormatter. */
 class AnthropicChatFormatterGroundTruthTest {
 
     private AnthropicChatFormatter formatter;
@@ -157,7 +157,6 @@ class AnthropicChatFormatterGroundTruthTest {
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
-        // Ground truth from Python implementation
         String groundTruthJson =
                 """
                 [

@@ -28,8 +28,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Behaviour spec for {@link DataBlock} — the unified Python 2.0 multimedia
- * container that replaces the legacy image/audio/video subclasses.
+ * Behaviour spec for {@link DataBlock} — the unified multimedia container that
+ * replaces the legacy image/audio/video subclasses.
  */
 class DataBlockTest {
 
