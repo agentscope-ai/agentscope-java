@@ -175,17 +175,17 @@ class Agent2Test {
     }
 
     @Test
-    void callIsNotYetImplemented() {
+    void structuredCallIsNotYetImplemented() {
         Agent2 agent = newAgent();
-        StepVerifier.create(agent.call(List.of()))
+        StepVerifier.create(agent.call(List.of(), Object.class))
                 .expectError(UnsupportedOperationException.class)
                 .verify();
     }
 
     @Test
-    void streamIsNotYetImplemented() {
+    void structuredStreamIsNotYetImplemented() {
         Agent2 agent = newAgent();
-        StepVerifier.create(agent.stream(List.of(), StreamOptions.defaults()))
+        StepVerifier.create(agent.stream(List.of(), StreamOptions.defaults(), Object.class))
                 .expectError(UnsupportedOperationException.class)
                 .verify();
     }
