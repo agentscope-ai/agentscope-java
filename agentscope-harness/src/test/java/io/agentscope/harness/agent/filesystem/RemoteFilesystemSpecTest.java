@@ -28,7 +28,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,13 +40,12 @@ class RemoteFilesystemSpecTest {
     @Test
     void routesSharedPathsToStoreAndOthersToLocal() throws Exception {
         InMemoryStore store = new InMemoryStore();
-        AtomicReference<String> userRef = new AtomicReference<>();
-        NamespaceFactory localNs = () -> List.of("local-user");
+        NamespaceFactory localNs = rc -> List.of("local-user");
 
         AbstractFilesystem fs =
                 new RemoteFilesystemSpec(store)
                         .anonymousUserId("anon")
-                        .toFilesystem(workspace, "agent-a", localNs, userRef::get);
+                        .toFilesystem(workspace, "agent-a", localNs);
 
         fs.uploadFiles(
                 RT,
@@ -68,14 +66,13 @@ class RemoteFilesystemSpecTest {
     @Test
     void resolvesNamespaceByRuntimeUserId() {
         InMemoryStore store = new InMemoryStore();
-        AtomicReference<String> userRef = new AtomicReference<>("user-1");
 
         AbstractFilesystem fs =
-                new RemoteFilesystemSpec(store)
-                        .toFilesystem(workspace, "agent-a", List::of, userRef::get);
+                new RemoteFilesystemSpec(store).toFilesystem(workspace, "agent-a", rc -> List.of());
 
+        RuntimeContext rcUser1 = RuntimeContext.builder().userId("user-1").sessionId(null).build();
         fs.uploadFiles(
-                RT,
+                rcUser1,
                 List.of(java.util.Map.entry("MEMORY.md", "v1".getBytes(StandardCharsets.UTF_8))));
         assertNotNull(
                 store.get(List.of("agents", "agent-a", "users", "user-1", "root"), "/MEMORY.md"));
@@ -90,8 +87,7 @@ class RemoteFilesystemSpecTest {
     void compositeModeIsNotASandboxFilesystem() {
         InMemoryStore store = new InMemoryStore();
         AbstractFilesystem fs =
-                new RemoteFilesystemSpec(store)
-                        .toFilesystem(workspace, "agent-a", List::of, () -> null);
+                new RemoteFilesystemSpec(store).toFilesystem(workspace, "agent-a", rc -> List.of());
 
         assertFalse(
                 fs instanceof AbstractSandboxFilesystem,

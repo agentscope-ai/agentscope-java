@@ -79,7 +79,8 @@ class HarnessAgentTest {
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
 
-        assertTrue(agent.getWorkspaceManager().readAgentsMd().contains(marker));
+        assertTrue(
+                agent.getWorkspaceManager().readAgentsMd(RuntimeContext.empty()).contains(marker));
     }
 
     @Test
@@ -333,7 +334,8 @@ class HarnessAgentTest {
                         .session(mock(Session.class))
                         .build();
 
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "shared-memory");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(RuntimeContext.empty(), "MEMORY.md", "shared-memory");
 
         assertTrue(
                 store.get(List.of("agents", "agent-a", "users", "_default", "root"), "/MEMORY.md")

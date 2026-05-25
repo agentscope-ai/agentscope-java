@@ -42,7 +42,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -109,8 +108,6 @@ public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
      * @param subagentTool the agent-spawn tool to expose
      * @param taskRepository repository backing {@link TaskTool}; may be {@code null} for a default
      *     in-memory store
-     * @param userIdSupplier propagates parent user id into spawned children; ignored when an
-     *     external {@code subagentTool} is supplied
      */
     public DynamicSubagentsHook(
             List<SubagentEntry> staticEntries,
@@ -119,8 +116,7 @@ public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
             Function<SubagentDeclaration, SubagentFactory> factoryBuilder,
             DefaultAgentManager agentManager,
             Object subagentTool,
-            TaskRepository taskRepository,
-            Supplier<String> userIdSupplier) {
+            TaskRepository taskRepository) {
         this.staticEntries = List.copyOf(staticEntries != null ? staticEntries : List.of());
         this.filesystem = filesystem;
         this.mainWorkspace = mainWorkspace;
@@ -129,9 +125,7 @@ public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
         TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
         this.taskRepository = repo;
         this.subagentTool =
-                subagentTool != null
-                        ? subagentTool
-                        : new AgentSpawnTool(agentManager, repo, 0, userIdSupplier);
+                subagentTool != null ? subagentTool : new AgentSpawnTool(agentManager, repo, 0);
         this.taskTool = new TaskTool(repo);
     }
 

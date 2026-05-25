@@ -105,7 +105,9 @@ class RemoteFilesystemIsolationScopeExampleTest {
 
         // Call as session-1 and write MEMORY.md
         agent.call(userMsg("from session-1"), ctx("session-1", "alice")).block();
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "session-1 notes");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(
+                        ctx("session-1", "alice"), "MEMORY.md", "session-1 notes");
 
         // Verify the data landed in the session-1 namespace
         assertNotNull(
@@ -143,7 +145,9 @@ class RemoteFilesystemIsolationScopeExampleTest {
 
         // First call writes MEMORY.md under session-1
         agent.call(userMsg("call 1"), ctx("session-1", "alice")).block();
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "shared memory");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(
+                        ctx("session-1", "alice"), "MEMORY.md", "shared memory");
 
         // Second call with same session can read it
         agent.call(userMsg("call 2"), ctx("session-1", "alice")).block();
@@ -182,7 +186,9 @@ class RemoteFilesystemIsolationScopeExampleTest {
 
         // Call as alice / session-a and write MEMORY.md
         agent.call(userMsg("hi from session-a"), ctx("session-a", "alice")).block();
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "alice's memory");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(
+                        ctx("session-a", "alice"), "MEMORY.md", "alice's memory");
 
         // The entry lands in the user-scoped namespace
         assertNotNull(
@@ -215,7 +221,8 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .build();
 
         agent.call(userMsg("alice writes"), ctx("s1", "alice")).block();
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "alice's data");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice's data");
 
         // Bob's namespace should be empty
         assertNull(
@@ -251,7 +258,8 @@ class RemoteFilesystemIsolationScopeExampleTest {
 
         // Alice writes
         agent.call(userMsg("alice"), ctx("s1", "alice")).block();
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "shared knowledge");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "shared knowledge");
 
         assertNotNull(
                 store.get(List.of("agents", "shared-assistant", "shared", "root"), "/MEMORY.md"),

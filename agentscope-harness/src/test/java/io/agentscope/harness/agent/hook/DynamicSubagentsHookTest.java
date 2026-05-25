@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -40,7 +41,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -109,19 +109,18 @@ class DynamicSubagentsHookTest {
 
         // Bob has nothing in his namespace.
 
-        AtomicReference<String> userRef = new AtomicReference<>();
         NamespaceFactory ns =
-                () ->
-                        userRef.get() == null || userRef.get().isEmpty()
+                rc ->
+                        rc == null || rc.getUserId() == null || rc.getUserId().isEmpty()
                                 ? List.of()
-                                : List.of(userRef.get());
+                                : List.of(rc.getUserId());
         LocalFilesystem fs = new LocalFilesystem(workspace, false, 0, ns);
 
         DefaultAgentManager dam = new DefaultAgentManager(List.of(), null);
         DynamicSubagentsHook hook = newHook(List.of(), fs, workspace, dam);
 
         // --- Alice's view ---
-        userRef.set("alice");
+        hook.setRuntimeContext(RuntimeContext.builder().userId("alice").build());
         fireOnce(hook);
         assertTrue(dam.hasAgent("reviewer"), "Alice sees reviewer");
         assertTrue(dam.hasAgent("scribe"), "Alice sees her private scribe");
@@ -131,7 +130,7 @@ class DynamicSubagentsHookTest {
                 "Layer 1 (alice's override) must win over Layer 2 (local disk)");
 
         // --- Bob's view ---
-        userRef.set("bob");
+        hook.setRuntimeContext(RuntimeContext.builder().userId("bob").build());
         fireOnce(hook);
         assertTrue(dam.hasAgent("reviewer"), "Bob still sees reviewer (Layer 2 fallback)");
         assertEquals(
@@ -156,8 +155,8 @@ class DynamicSubagentsHookTest {
                 frontMatter("Dynamic-loaded reviewer."),
                 StandardCharsets.UTF_8);
 
-        AtomicReference<String> userRef = new AtomicReference<>("alice");
-        NamespaceFactory ns = () -> userRef.get() == null ? List.of() : List.of(userRef.get());
+        NamespaceFactory ns =
+                rc -> rc == null || rc.getUserId() == null ? List.of() : List.of(rc.getUserId());
         LocalFilesystem fs = new LocalFilesystem(workspace, false, 0, ns);
 
         SubagentEntry staticReviewer =
@@ -177,6 +176,7 @@ class DynamicSubagentsHookTest {
                 new DefaultAgentManager(List.of(staticReviewer, staticOnly), null);
         DynamicSubagentsHook hook =
                 newHook(List.of(staticReviewer, staticOnly), fs, workspace, dam);
+        hook.setRuntimeContext(RuntimeContext.builder().userId("alice").build());
         fireOnce(hook);
 
         assertTrue(dam.hasAgent("librarian"), "Static-only entries must survive replaceAgents");
@@ -249,8 +249,7 @@ class DynamicSubagentsHookTest {
                 factoryBuilder,
                 dam,
                 /* subagentTool= */ new Object(),
-                new DefaultTaskRepository(),
-                () -> null);
+                new DefaultTaskRepository());
     }
 
     private static void fireOnce(DynamicSubagentsHook hook) {

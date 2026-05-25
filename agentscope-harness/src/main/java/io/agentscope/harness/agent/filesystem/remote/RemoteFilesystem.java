@@ -139,11 +139,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
             throw new IllegalArgumentException("namespace must not be empty");
         }
         List<String> frozen = List.copyOf(namespace);
-        return () -> frozen;
+        return rc -> frozen;
     }
 
-    private List<String> getNamespace() {
-        List<String> ns = namespaceFactory.getNamespace();
+    private List<String> getNamespace(RuntimeContext rc) {
+        List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             throw new IllegalStateException("NamespaceFactory returned null or empty namespace");
         }
@@ -176,7 +176,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
         }
 
         // Fallback: full remote scan
-        List<StoreItem> items = searchAllItems();
+        List<StoreItem> items = searchAllItems(runtimeContext);
         List<FileInfo> infos = new ArrayList<>();
         Set<String> subdirs = new LinkedHashSet<>();
 
@@ -213,7 +213,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
-        StoreItem item = store.get(getNamespace(), filePath);
+        StoreItem item = store.get(getNamespace(runtimeContext), filePath);
         if (item == null) {
             return ReadResult.fail("File '" + filePath + "' not found");
         }
@@ -259,7 +259,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
-        List<String> ns = getNamespace();
+        List<String> ns = getNamespace(runtimeContext);
         FileData fileData = FileData.create(content);
         // CAS create-if-absent: atomic under concurrent writers across nodes.
         boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
@@ -283,7 +283,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
-        List<String> ns = getNamespace();
+        List<String> ns = getNamespace(runtimeContext);
         // Bounded CAS retry loop: re-read the current version on each attempt and retry on
         // version mismatch. After EDIT_MAX_RETRIES failed CAS attempts we surface a conflict
         // error rather than spinning indefinitely.
@@ -357,7 +357,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
                         continue;
                     }
                 }
-                StoreItem item = store.get(getNamespace(), key);
+                StoreItem item = store.get(getNamespace(runtimeContext), key);
                 if (item == null) {
                     continue;
                 }
@@ -381,7 +381,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
         }
 
         // Fallback: full remote scan
-        List<StoreItem> items = searchAllItems();
+        List<StoreItem> items = searchAllItems(runtimeContext);
         List<GrepMatch> matches = new ArrayList<>();
         for (StoreItem item : items) {
             String key = item.key();
@@ -452,7 +452,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
         }
 
         // Fallback: full remote scan
-        List<StoreItem> items = searchAllItems();
+        List<StoreItem> items = searchAllItems(runtimeContext);
         List<FileInfo> results = new ArrayList<>();
         for (StoreItem item : items) {
             String key = item.key();
@@ -483,7 +483,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     @Override
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-        List<String> ns = getNamespace();
+        List<String> ns = getNamespace(runtimeContext);
         List<FileUploadResponse> responses = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : files) {
             String filePath = entry.getKey();
@@ -513,7 +513,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        List<String> ns = getNamespace();
+        List<String> ns = getNamespace(runtimeContext);
         List<FileDownloadResponse> responses = new ArrayList<>();
         for (String filePath : paths) {
             StoreItem item = store.get(ns, filePath);
@@ -557,12 +557,12 @@ public class RemoteFilesystem implements AbstractFilesystem {
             // Index miss — fall through to remote (may not be indexed yet)
         }
 
-        List<String> ns = getNamespace();
+        List<String> ns = getNamespace(runtimeContext);
         if (store.get(ns, normalized) != null) {
             return true;
         }
         // Also check if any child exists (directory-like)
-        List<StoreItem> items = searchAllItems();
+        List<StoreItem> items = searchAllItems(runtimeContext);
         for (StoreItem item : items) {
             if (item.key().startsWith(normalized + "/")) {
                 return true;
@@ -575,8 +575,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
     @Override
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
-        List<String> ns = getNamespace();
-        List<StoreItem> items = searchAllItems();
+        List<String> ns = getNamespace(runtimeContext);
+        List<StoreItem> items = searchAllItems(runtimeContext);
         String normalizedPath = normalizePath(path);
         for (StoreItem item : items) {
             if (item.key().equals(normalizedPath) || item.key().startsWith(normalizedPath + "/")) {
@@ -594,8 +594,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
     public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
         AbstractFilesystem.validatePath(fromPath);
         AbstractFilesystem.validatePath(toPath);
-        List<String> ns = getNamespace();
-        List<StoreItem> items = searchAllItems();
+        List<String> ns = getNamespace(runtimeContext);
+        List<StoreItem> items = searchAllItems(runtimeContext);
         String normFrom = normalizePath(fromPath);
         String normTo = normalizePath(toPath);
         boolean found = false;
@@ -619,8 +619,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     // ==================== Internal helpers ====================
 
-    private List<StoreItem> searchAllItems() {
-        List<String> ns = getNamespace();
+    private List<StoreItem> searchAllItems(RuntimeContext runtimeContext) {
+        List<String> ns = getNamespace(runtimeContext);
         List<StoreItem> all = new ArrayList<>();
         int offset = 0;
         int pageSize = 100;

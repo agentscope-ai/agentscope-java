@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -63,7 +64,7 @@ class MemoryConsolidatorFilesystemTest {
 
         MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
-        assertEquals(Instant.EPOCH, consolidator.readWatermark());
+        assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
     }
 
     // ======================================================================
@@ -80,9 +81,10 @@ class MemoryConsolidatorFilesystemTest {
         MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
         Instant ts = Instant.parse("2025-06-15T12:00:00Z");
-        wsm.writeUtf8WorkspaceRelative(MemoryConsolidator.STATE_REL_PATH, ts.toString());
+        wsm.writeUtf8WorkspaceRelative(
+                RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
-        assertEquals(ts, consolidator.readWatermark());
+        assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
     }
 
     // ======================================================================
@@ -99,7 +101,8 @@ class MemoryConsolidatorFilesystemTest {
         MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
         Instant ts = Instant.now();
-        wsm.writeUtf8WorkspaceRelative(MemoryConsolidator.STATE_REL_PATH, ts.toString());
+        wsm.writeUtf8WorkspaceRelative(
+                RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
         // local disk must NOT have the state file — it lives only in the store
         Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);
@@ -108,7 +111,7 @@ class MemoryConsolidatorFilesystemTest {
                 "state file should not be written to local disk when using RemoteFilesystem");
 
         // but consolidator reads it correctly from the store
-        assertEquals(ts, consolidator.readWatermark());
+        assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
     }
 
     // ======================================================================
@@ -131,13 +134,14 @@ class MemoryConsolidatorFilesystemTest {
         MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
         // No file → EPOCH
-        assertEquals(Instant.EPOCH, consolidator.readWatermark());
+        assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
 
         // Write via WorkspaceManager (falls to local disk)
         Instant ts = Instant.parse("2025-03-10T09:00:00Z");
-        wsm.writeUtf8WorkspaceRelative(MemoryConsolidator.STATE_REL_PATH, ts.toString());
+        wsm.writeUtf8WorkspaceRelative(
+                RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
-        assertEquals(ts, consolidator.readWatermark());
+        assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
 
         // Verify the local file actually exists
         Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);

@@ -94,8 +94,6 @@ import org.slf4j.LoggerFactory;
  */
 public class WorkspaceManager {
 
-    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
-
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
     private static final ObjectMapper SESSION_STORE_JSON = new ObjectMapper();
     private static final ObjectMapper TASK_RECORD_JSON =
@@ -174,7 +172,7 @@ public class WorkspaceManager {
         boolean agentsMdExists = Files.isRegularFile(workspace.resolve(AGENTS_MD));
         if (!agentsMdExists && filesystem != null) {
             try {
-                agentsMdExists = filesystem.exists(DEFAULT_FS_RUNTIME, AGENTS_MD);
+                agentsMdExists = filesystem.exists(RuntimeContext.empty(), AGENTS_MD);
             } catch (Exception e) {
                 log.debug(
                         "Filesystem not available at build time, skipping exists check: {}",
@@ -196,12 +194,15 @@ public class WorkspaceManager {
     /**
      * Resolves a workspace-relative path for runtime user data, applying namespace prefix.
      * Use for paths that contain per-user data (sessions, tasks, memory).
+     *
+     * <p>The runtime context is forwarded to the {@link NamespaceFactory} so per-call
+     * identity (user/session) drives the namespace, not a shared mutable reference.
      */
-    public Path resolveRuntimeDataPath(String relativePath) {
+    public Path resolveRuntimeDataPath(RuntimeContext rc, String relativePath) {
         if (namespaceFactory == null) {
             return workspace.resolve(relativePath);
         }
-        List<String> ns = namespaceFactory.getNamespace();
+        List<String> ns = namespaceFactory.getNamespace(rc != null ? rc : RuntimeContext.empty());
         if (ns == null || ns.isEmpty()) {
             return workspace.resolve(relativePath);
         }
@@ -209,25 +210,25 @@ public class WorkspaceManager {
     }
 
     /** Reads AGENTS.md content, returns empty string if not found. */
-    public String readAgentsMd() {
-        return readWithOverride(AGENTS_MD);
+    public String readAgentsMd(RuntimeContext rc) {
+        return readWithOverride(rc, AGENTS_MD);
     }
 
     /** Reads KNOWLEDGE.md content from the knowledge directory. */
-    public String readKnowledgeMd() {
-        return readWithOverride(KNOWLEDGE_DIR + "/" + KNOWLEDGE_MD);
+    public String readKnowledgeMd(RuntimeContext rc) {
+        return readWithOverride(rc, KNOWLEDGE_DIR + "/" + KNOWLEDGE_MD);
     }
 
     /** Reads MEMORY.md content (two-layer: filesystem override, local fallback). */
-    public String readMemoryMd() {
-        return readWithOverride(MEMORY_MD);
+    public String readMemoryMd(RuntimeContext rc) {
+        return readWithOverride(rc, MEMORY_MD);
     }
 
     /**
      * Reads a UTF-8 file under the workspace, using the two-layer pattern:
      * filesystem first, then local disk fallback.
      */
-    public String readManagedWorkspaceFileUtf8(String relativePath) {
+    public String readManagedWorkspaceFileUtf8(RuntimeContext rc, String relativePath) {
         if (relativePath == null || relativePath.isBlank()) {
             return "";
         }
@@ -239,11 +240,11 @@ public class WorkspaceManager {
         if (!resolved.startsWith(workspace)) {
             return "";
         }
-        return readWithOverride(normalized);
+        return readWithOverride(rc, normalized);
     }
 
-    public Path getMemoryDir() {
-        return resolveRuntimeDataPath(MEMORY_DIR);
+    public Path getMemoryDir(RuntimeContext rc) {
+        return resolveRuntimeDataPath(rc, MEMORY_DIR);
     }
 
     public Path getSkillsDir() {
@@ -255,11 +256,11 @@ public class WorkspaceManager {
     }
 
     /** Lists all files under the knowledge directory tree (union of filesystem + local disk). */
-    public List<Path> listKnowledgeFiles() {
+    public List<Path> listKnowledgeFiles(RuntimeContext rc) {
         Set<String> relativePaths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            GlobResult glob = filesystem.glob(DEFAULT_FS_RUNTIME, "*", KNOWLEDGE_DIR);
+            GlobResult glob = filesystem.glob(rc, "*", KNOWLEDGE_DIR);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
@@ -294,28 +295,30 @@ public class WorkspaceManager {
         return result;
     }
 
-    public Path getSessionDir(String agentId) {
-        return resolveRuntimeDataPath(AGENTS_DIR + "/" + agentId + "/" + SESSIONS_DIR);
+    public Path getSessionDir(RuntimeContext rc, String agentId) {
+        return resolveRuntimeDataPath(rc, AGENTS_DIR + "/" + agentId + "/" + SESSIONS_DIR);
     }
 
     /**
      * Returns the legacy session file path (.json) without creating directories.
      *
-     * @deprecated Use {@link #resolveSessionContextFile(String, String)} for the JSONL format.
+     * @deprecated Use {@link #resolveSessionContextFile(RuntimeContext, String, String)} for the
+     *     JSONL format.
      */
     @Deprecated
-    public Path resolveSessionFile(String agentId, String sessionId) {
-        return getSessionDir(agentId).resolve(sessionId + ".json");
+    public Path resolveSessionFile(RuntimeContext rc, String agentId, String sessionId) {
+        return getSessionDir(rc, agentId).resolve(sessionId + ".json");
     }
 
     /** Returns the JSONL session context file path (LLM-facing, compacted). */
-    public Path resolveSessionContextFile(String agentId, String sessionId) {
-        return getSessionDir(agentId).resolve(sessionId + WorkspaceConstants.SESSION_CONTEXT_EXT);
+    public Path resolveSessionContextFile(RuntimeContext rc, String agentId, String sessionId) {
+        return getSessionDir(rc, agentId)
+                .resolve(sessionId + WorkspaceConstants.SESSION_CONTEXT_EXT);
     }
 
     /** Returns the JSONL session log file path (full history, append-only). */
-    public Path resolveSessionLogFile(String agentId, String sessionId) {
-        return getSessionDir(agentId).resolve(sessionId + WorkspaceConstants.SESSION_LOG_EXT);
+    public Path resolveSessionLogFile(RuntimeContext rc, String agentId, String sessionId) {
+        return getSessionDir(rc, agentId).resolve(sessionId + WorkspaceConstants.SESSION_LOG_EXT);
     }
 
     /**
@@ -327,7 +330,8 @@ public class WorkspaceManager {
      * deployments the {@link AbstractFilesystem} backend must additionally provide server-side
      * concurrency control.
      */
-    public void appendUtf8WorkspaceRelative(String relativePath, String content) {
+    public void appendUtf8WorkspaceRelative(
+            RuntimeContext rc, String relativePath, String content) {
         if (relativePath == null || content == null) {
             return;
         }
@@ -342,15 +346,14 @@ public class WorkspaceManager {
                 appendLocalFile(normalized, content);
                 return;
             }
-            ReadResult rr = filesystem.read(DEFAULT_FS_RUNTIME, normalized, 0, 0);
+            ReadResult rr = filesystem.read(rc, normalized, 0, 0);
             String existing = "";
             if (rr.isSuccess() && rr.fileData() != null && rr.fileData().content() != null) {
                 existing = rr.fileData().content();
             }
             String merged = existing + content;
             filesystem.uploadFiles(
-                    DEFAULT_FS_RUNTIME,
-                    List.of(Map.entry(normalized, merged.getBytes(StandardCharsets.UTF_8))));
+                    rc, List.of(Map.entry(normalized, merged.getBytes(StandardCharsets.UTF_8))));
         } finally {
             lock.unlock();
         }
@@ -363,7 +366,8 @@ public class WorkspaceManager {
      * <p>A per-path {@link ReentrantLock} serialises concurrent callers so that the
      * read→merge→write cycle is atomic within this process.
      */
-    public void updateSessionIndex(String agentId, String sessionId, String summary) {
+    public void updateSessionIndex(
+            RuntimeContext rc, String agentId, String sessionId, String summary) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
             return;
         }
@@ -371,7 +375,7 @@ public class WorkspaceManager {
         ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
         lock.lock();
         try {
-            String existing = readWritableWorkspaceRelativeUtf8(rel);
+            String existing = readWritableWorkspaceRelativeUtf8(rc, rel);
             ObjectNode root = parseSessionStoreOrEmpty(existing);
             ObjectNode sessions = ensureSessionsObject(root);
             ObjectNode entry = SESSION_STORE_JSON.createObjectNode();
@@ -386,7 +390,7 @@ public class WorkspaceManager {
                         SESSION_STORE_JSON
                                 .writerWithDefaultPrettyPrinter()
                                 .writeValueAsString(root);
-                writeUtf8WorkspaceRelative(rel, serialized);
+                writeUtf8WorkspaceRelative(rc, rel, serialized);
             } catch (IOException e) {
                 log.warn("Failed to write session store {}: {}", rel, e.getMessage());
             }
@@ -404,7 +408,8 @@ public class WorkspaceManager {
      * writes the updated map back. Acquires a per-file {@link ReentrantLock} to prevent
      * concurrent read-modify-write races when multiple tasks share the same session file.
      */
-    public void writeTaskRecord(String agentId, String sessionId, TaskRecord record) {
+    public void writeTaskRecord(
+            RuntimeContext rc, String agentId, String sessionId, TaskRecord record) {
         if (agentId == null
                 || agentId.isBlank()
                 || sessionId == null
@@ -419,7 +424,7 @@ public class WorkspaceManager {
         try {
             Map<String, TaskRecord> map;
             try {
-                map = readTaskMap(rel); // already holding lock
+                map = readTaskMap(rc, rel); // already holding lock
             } catch (IOException e) {
                 // Never overwrite a malformed store with partial data from a failed parse.
                 log.error(
@@ -430,7 +435,7 @@ public class WorkspaceManager {
             }
             record.touch();
             map.put(record.getTaskId(), record);
-            persistTaskMap(rel, map);
+            persistTaskMap(rc, rel, map);
         } finally {
             lock.unlock();
         }
@@ -439,7 +444,8 @@ public class WorkspaceManager {
     /**
      * Reads a single {@link TaskRecord} by task ID, or {@link Optional#empty()} if not found.
      */
-    public Optional<TaskRecord> readTaskRecord(String agentId, String sessionId, String taskId) {
+    public Optional<TaskRecord> readTaskRecord(
+            RuntimeContext rc, String agentId, String sessionId, String taskId) {
         if (agentId == null
                 || agentId.isBlank()
                 || sessionId == null
@@ -449,19 +455,20 @@ public class WorkspaceManager {
             return Optional.empty();
         }
         String rel = taskRecordPath(agentId, sessionId);
-        Map<String, TaskRecord> map = readTaskMapLocked(rel);
+        Map<String, TaskRecord> map = readTaskMapLocked(rc, rel);
         return Optional.ofNullable(map.get(taskId));
     }
 
     /**
      * Returns all {@link TaskRecord}s for the given agent and session, in insertion order.
      */
-    public Collection<TaskRecord> listTaskRecords(String agentId, String sessionId) {
+    public Collection<TaskRecord> listTaskRecords(
+            RuntimeContext rc, String agentId, String sessionId) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
             return Collections.emptyList();
         }
         String rel = taskRecordPath(agentId, sessionId);
-        return List.copyOf(readTaskMapLocked(rel).values());
+        return List.copyOf(readTaskMapLocked(rc, rel).values());
     }
 
     /**
@@ -481,7 +488,8 @@ public class WorkspaceManager {
      * @param recentWindow only consider files modified within this duration; files known to be
      *     older are assumed to contain only terminal tasks and are skipped
      */
-    public Collection<TaskRecord> listAllTaskRecords(String agentId, Duration recentWindow) {
+    public Collection<TaskRecord> listAllTaskRecords(
+            RuntimeContext rc, String agentId, Duration recentWindow) {
         if (agentId == null || agentId.isBlank()) {
             return Collections.emptyList();
         }
@@ -492,7 +500,7 @@ public class WorkspaceManager {
         Map<String, Optional<Instant>> relPaths = new LinkedHashMap<>();
 
         if (filesystem != null) {
-            GlobResult glob = filesystem.glob(DEFAULT_FS_RUNTIME, "*.json", tasksRelDir);
+            GlobResult glob = filesystem.glob(rc, "*.json", tasksRelDir);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() == null || fi.path().isBlank()) {
@@ -505,7 +513,7 @@ public class WorkspaceManager {
             }
         }
 
-        Path tasksDir = resolveRuntimeDataPath(AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR);
+        Path tasksDir = resolveRuntimeDataPath(rc, AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR);
         if (Files.isDirectory(tasksDir)) {
             try (Stream<Path> stream = Files.list(tasksDir)) {
                 stream.filter(Files::isRegularFile)
@@ -529,7 +537,7 @@ public class WorkspaceManager {
             if (mtime.isPresent() && mtime.get().isBefore(cutoff)) {
                 continue;
             }
-            all.addAll(readTaskMapLocked(entry.getKey()).values());
+            all.addAll(readTaskMapLocked(rc, entry.getKey()).values());
         }
         return all;
     }
@@ -560,12 +568,12 @@ public class WorkspaceManager {
      * <p>Stored in {@code agents/<agentId>/tasks/_sweep.marker} as a plain ISO-8601 string. Any
      * node can write to this path, so it naturally propagates through the shared filesystem layer.
      */
-    public Optional<Instant> readSweepMarker(String agentId) {
+    public Optional<Instant> readSweepMarker(RuntimeContext rc, String agentId) {
         if (agentId == null || agentId.isBlank()) {
             return Optional.empty();
         }
         String rel = sweepMarkerPath(agentId);
-        String content = readWritableWorkspaceRelativeUtf8(rel);
+        String content = readWritableWorkspaceRelativeUtf8(rc, rel);
         return Optional.ofNullable(parseInstantQuiet(content == null ? null : content.strip()));
     }
 
@@ -574,13 +582,13 @@ public class WorkspaceManager {
      * this agent. Subsequent nodes that read this marker within the sweep interval will skip their
      * own sweep, reducing redundant workspace I/O in multi-node deployments.
      */
-    public void writeSweepMarker(String agentId) {
+    public void writeSweepMarker(RuntimeContext rc, String agentId) {
         if (agentId == null || agentId.isBlank()) {
             return;
         }
         String rel = sweepMarkerPath(agentId);
         try {
-            writeUtf8WorkspaceRelative(rel, Instant.now().toString());
+            writeUtf8WorkspaceRelative(rc, rel, Instant.now().toString());
         } catch (Exception e) {
             log.warn("Failed to write sweep marker for agent {}: {}", agentId, e.getMessage());
         }
@@ -600,12 +608,12 @@ public class WorkspaceManager {
      * prevents a concurrent writer's non-atomic file update (truncate → write) from being observed
      * as a partial JSON read.
      */
-    private Map<String, TaskRecord> readTaskMapLocked(String rel) {
+    private Map<String, TaskRecord> readTaskMapLocked(RuntimeContext rc, String rel) {
         ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
         lock.lock();
         try {
             try {
-                return readTaskMap(rel);
+                return readTaskMap(rc, rel);
             } catch (IOException e) {
                 // Surface corruption loudly, but do not mutate or reinitialize the backing file.
                 log.error(
@@ -619,8 +627,8 @@ public class WorkspaceManager {
         }
     }
 
-    private Map<String, TaskRecord> readTaskMap(String rel) throws IOException {
-        String json = readWritableWorkspaceRelativeUtf8(rel);
+    private Map<String, TaskRecord> readTaskMap(RuntimeContext rc, String rel) throws IOException {
+        String json = readWritableWorkspaceRelativeUtf8(rc, rel);
         if (json == null || json.isBlank()) {
             return new LinkedHashMap<>();
         }
@@ -628,11 +636,11 @@ public class WorkspaceManager {
         return map != null ? new LinkedHashMap<>(map) : new LinkedHashMap<>();
     }
 
-    private void persistTaskMap(String rel, Map<String, TaskRecord> map) {
+    private void persistTaskMap(RuntimeContext rc, String rel, Map<String, TaskRecord> map) {
         try {
             String serialized =
                     TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
-            writeUtf8WorkspaceRelative(rel, serialized);
+            writeUtf8WorkspaceRelative(rc, rel, serialized);
         } catch (IOException e) {
             log.warn("Failed to write task record store {}: {}", rel, e.getMessage());
         }
@@ -663,16 +671,16 @@ public class WorkspaceManager {
         return fresh;
     }
 
-    private String readWritableWorkspaceRelativeUtf8(String relativePath) {
+    private String readWritableWorkspaceRelativeUtf8(RuntimeContext rc, String relativePath) {
         String normalized = normalizeRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return "";
         }
-        return readWithOverride(normalized);
+        return readWithOverride(rc, normalized);
     }
 
     /** Overwrites a workspace-relative UTF-8 file. All writes go through the filesystem. */
-    public void writeUtf8WorkspaceRelative(String relativePath, String content) {
+    public void writeUtf8WorkspaceRelative(RuntimeContext rc, String relativePath, String content) {
         if (relativePath == null || content == null) {
             return;
         }
@@ -685,8 +693,7 @@ public class WorkspaceManager {
             return;
         }
         filesystem.uploadFiles(
-                DEFAULT_FS_RUNTIME,
-                List.of(Map.entry(normalized, content.getBytes(StandardCharsets.UTF_8))));
+                rc, List.of(Map.entry(normalized, content.getBytes(StandardCharsets.UTF_8))));
         // Best-effort: record upload size in index (no local file to stat from)
         if (index != null) {
             index.upsert(normalized, content.getBytes(StandardCharsets.UTF_8).length, null);
@@ -699,8 +706,8 @@ public class WorkspaceManager {
      * Two-layer read: filesystem first (namespaced by {@link
      * NamespaceFactory}), local disk fallback.
      */
-    private String readWithOverride(String relativePath) {
-        String fsContent = readTextThroughFilesystem(relativePath);
+    private String readWithOverride(RuntimeContext rc, String relativePath) {
+        String fsContent = readTextThroughFilesystem(rc, relativePath);
         if (!fsContent.isEmpty()) {
             return fsContent;
         }
@@ -719,11 +726,11 @@ public class WorkspaceManager {
         }
     }
 
-    private String readTextThroughFilesystem(String filePath) {
+    private String readTextThroughFilesystem(RuntimeContext rc, String filePath) {
         if (filesystem == null) {
             return "";
         }
-        ReadResult r = filesystem.read(DEFAULT_FS_RUNTIME, filePath, 0, 0);
+        ReadResult r = filesystem.read(rc, filePath, 0, 0);
         if (!r.isSuccess() || r.fileData() == null) {
             return "";
         }
@@ -812,15 +819,15 @@ public class WorkspaceManager {
      * memory/*.md}). Unions results from the {@link AbstractFilesystem} layer and the local disk,
      * deduplicating by relative path.
      */
-    public List<String> listMemoryFilePaths() {
+    public List<String> listMemoryFilePaths(RuntimeContext rc) {
         Set<String> paths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            ReadResult memMd = filesystem.read(DEFAULT_FS_RUNTIME, MEMORY_MD, 0, 1);
+            ReadResult memMd = filesystem.read(rc, MEMORY_MD, 0, 1);
             if (memMd.isSuccess()) {
                 paths.add(MEMORY_MD);
             }
-            GlobResult glob = filesystem.glob(DEFAULT_FS_RUNTIME, "*.md", MEMORY_DIR);
+            GlobResult glob = filesystem.glob(rc, "*.md", MEMORY_DIR);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
@@ -833,10 +840,10 @@ public class WorkspaceManager {
             }
         }
 
-        if (Files.isRegularFile(resolveRuntimeDataPath(MEMORY_MD))) {
+        if (Files.isRegularFile(resolveRuntimeDataPath(rc, MEMORY_MD))) {
             paths.add(MEMORY_MD);
         }
-        Path memDir = getMemoryDir();
+        Path memDir = getMemoryDir(rc);
         if (Files.isDirectory(memDir)) {
             try (Stream<Path> walk = Files.list(memDir)) {
                 walk.filter(p -> p.toString().endsWith(".md"))
@@ -853,11 +860,11 @@ public class WorkspaceManager {
      * Lists workspace-relative paths of all session log files ({@code *.log.jsonl}).
      * Unions results from the {@link AbstractFilesystem} layer and the local disk.
      */
-    public List<String> listSessionLogFiles() {
+    public List<String> listSessionLogFiles(RuntimeContext rc) {
         Set<String> paths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            GlobResult glob = filesystem.glob(DEFAULT_FS_RUNTIME, "*.log.jsonl", AGENTS_DIR);
+            GlobResult glob = filesystem.glob(rc, "*.log.jsonl", AGENTS_DIR);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
                     if (fi.path() != null && !fi.path().isBlank()) {
@@ -870,7 +877,7 @@ public class WorkspaceManager {
             }
         }
 
-        Path agentsDir = resolveRuntimeDataPath(AGENTS_DIR);
+        Path agentsDir = resolveRuntimeDataPath(rc, AGENTS_DIR);
         if (Files.isDirectory(agentsDir)) {
             try (Stream<Path> walk = Files.walk(agentsDir)) {
                 walk.filter(Files::isRegularFile)

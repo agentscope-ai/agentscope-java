@@ -67,7 +67,12 @@ import org.slf4j.LoggerFactory;
  */
 public class SessionTree {
 
-    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
+    /**
+     * Captured at construction time (or via {@link #setRuntimeContext}); used as the
+     * {@code RuntimeContext} for all remote filesystem operations so that namespace-aware backends
+     * resolve to the writer's namespace even when invoked from the async mirror thread.
+     */
+    private volatile RuntimeContext fsRc = RuntimeContext.empty();
 
     private static final Logger log = LoggerFactory.getLogger(SessionTree.class);
 
@@ -156,6 +161,19 @@ public class SessionTree {
         } else {
             this.logRelativePath = null;
         }
+    }
+
+    /**
+     * Binds a {@link RuntimeContext} to this tree so that all subsequent remote filesystem reads
+     * and writes (including async mirror operations) propagate the caller's identity into
+     * namespace-aware backends. Defaults to {@link RuntimeContext#empty()} when never set.
+     *
+     * @param rc the runtime context to bind; {@code null} resets to empty
+     * @return this tree, for fluent chaining
+     */
+    public SessionTree setRuntimeContext(RuntimeContext rc) {
+        this.fsRc = rc != null ? rc : RuntimeContext.empty();
+        return this;
     }
 
     /**
@@ -461,7 +479,7 @@ public class SessionTree {
         if (relativePath == null || relativePath.isBlank()) {
             return List.of();
         }
-        ReadResult read = filesystem.read(DEFAULT_FS_RUNTIME, relativePath, 0, 0);
+        ReadResult read = filesystem.read(fsRc, relativePath, 0, 0);
         if (!read.isSuccess() || read.fileData() == null || read.fileData().content() == null) {
             return List.of();
         }
@@ -564,7 +582,7 @@ public class SessionTree {
         }
         try {
             byte[] bytes = Files.readAllBytes(file);
-            filesystem.uploadFiles(DEFAULT_FS_RUNTIME, List.of(Map.entry(relativePath, bytes)));
+            filesystem.uploadFiles(fsRc, List.of(Map.entry(relativePath, bytes)));
             // Best-effort: the local file already exists — update index with its current stats
             if (index != null) {
                 index.upsertFromLocalFile(relativePath, file);
@@ -586,7 +604,7 @@ public class SessionTree {
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
-        ReadResult read = filesystem.read(DEFAULT_FS_RUNTIME, relativePath, 0, 0);
+        ReadResult read = filesystem.read(fsRc, relativePath, 0, 0);
         if (!read.isSuccess() || read.fileData() == null || read.fileData().content() == null) {
             return;
         }

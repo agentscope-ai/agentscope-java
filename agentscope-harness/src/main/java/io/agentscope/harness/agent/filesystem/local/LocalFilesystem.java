@@ -182,7 +182,7 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        Path dirPath = resolvePath(path);
+        Path dirPath = resolvePath(runtimeContext, path);
         if (!Files.exists(dirPath) || !Files.isDirectory(dirPath)) {
             return LsResult.success(List.of());
         }
@@ -193,7 +193,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                 try {
                     BasicFileAttributes attrs =
                             Files.readAttributes(entry, BasicFileAttributes.class);
-                    String entryPath = resolveEntryPath(entry);
+                    String entryPath = resolveEntryPath(runtimeContext, entry);
                     String modifiedAt =
                             Instant.ofEpochMilli(attrs.lastModifiedTime().toMillis()).toString();
 
@@ -216,7 +216,7 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     @Override
     public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
-        Path resolved = resolvePath(filePath);
+        Path resolved = resolvePath(runtimeContext, filePath);
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {
             return ReadResult.fail("File '" + filePath + "' not found");
@@ -266,7 +266,7 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
-        Path resolved = resolvePath(filePath);
+        Path resolved = resolvePath(runtimeContext, filePath);
 
         if (Files.exists(resolved)) {
             return WriteResult.fail(
@@ -294,7 +294,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
-        Path resolved = resolvePath(filePath);
+        Path resolved = resolvePath(runtimeContext, filePath);
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {
             return EditResult.fail("Error: File '" + filePath + "' not found");
@@ -334,7 +334,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
         Path basePath;
         try {
-            basePath = resolvePath(path != null ? path : ".");
+            basePath = resolvePath(runtimeContext, path != null ? path : ".");
         } catch (SecurityException e) {
             return GrepResult.success(List.of());
         }
@@ -343,9 +343,9 @@ public class LocalFilesystem implements AbstractFilesystem {
             return GrepResult.success(List.of());
         }
 
-        List<GrepMatch> matches = ripgrepSearch(pattern, basePath, glob);
+        List<GrepMatch> matches = ripgrepSearch(runtimeContext, pattern, basePath, glob);
         if (matches == null) {
-            matches = javaSearch(pattern, basePath, glob);
+            matches = javaSearch(runtimeContext, pattern, basePath, glob);
         }
         return GrepResult.success(matches);
     }
@@ -359,9 +359,9 @@ public class LocalFilesystem implements AbstractFilesystem {
 
         Path searchPath;
         if ("/".equals(path) || path == null) {
-            searchPath = hasNamespace() ? resolvePath(".") : cwd;
+            searchPath = hasNamespace(runtimeContext) ? resolvePath(runtimeContext, ".") : cwd;
         } else {
-            searchPath = resolvePath(path);
+            searchPath = resolvePath(runtimeContext, path);
         }
 
         if (!Files.exists(searchPath) || !Files.isDirectory(searchPath)) {
@@ -386,8 +386,8 @@ public class LocalFilesystem implements AbstractFilesystem {
                                 String filePath;
                                 if (virtualMode) {
                                     filePath = toVirtualPath(file);
-                                } else if (hasNamespace()) {
-                                    filePath = stripNamespacePrefix(file);
+                                } else if (hasNamespace(runtimeContext)) {
+                                    filePath = stripNamespacePrefix(runtimeContext, file);
                                 } else {
                                     filePath = file.toAbsolutePath().toString();
                                 }
@@ -420,7 +420,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             String filePath = entry.getKey();
             byte[] content = entry.getValue();
             try {
-                Path resolved = resolvePath(filePath);
+                Path resolved = resolvePath(runtimeContext, filePath);
                 if (resolved.getParent() != null) {
                     Files.createDirectories(resolved.getParent());
                 }
@@ -441,7 +441,7 @@ public class LocalFilesystem implements AbstractFilesystem {
         List<FileDownloadResponse> responses = new ArrayList<>();
         for (String filePath : paths) {
             try {
-                Path resolved = resolvePath(filePath);
+                Path resolved = resolvePath(runtimeContext, filePath);
                 if (!Files.exists(resolved)) {
                     responses.add(FileDownloadResponse.fail(filePath, "file_not_found"));
                     continue;
@@ -464,7 +464,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     @Override
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
-        Path resolved = resolvePath(path);
+        Path resolved = resolvePath(runtimeContext, path);
         if (!Files.exists(resolved)) {
             return WriteResult.ok(path); // idempotent
         }
@@ -494,8 +494,8 @@ public class LocalFilesystem implements AbstractFilesystem {
     public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
         AbstractFilesystem.validatePath(fromPath);
         AbstractFilesystem.validatePath(toPath);
-        Path from = resolvePath(fromPath);
-        Path to = resolvePath(toPath);
+        Path from = resolvePath(runtimeContext, fromPath);
+        Path to = resolvePath(runtimeContext, toPath);
         if (!Files.exists(from)) {
             return WriteResult.fail("Source does not exist: " + fromPath);
         }
@@ -517,7 +517,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             return false;
         }
         try {
-            return Files.exists(resolvePath(path));
+            return Files.exists(resolvePath(runtimeContext, path));
         } catch (SecurityException e) {
             return false;
         }
@@ -529,8 +529,8 @@ public class LocalFilesystem implements AbstractFilesystem {
         return namespaceFactory;
     }
 
-    protected Path resolvePath(String key) {
-        String effectiveKey = applyNamespacePrefix(key);
+    protected Path resolvePath(RuntimeContext rc, String key) {
+        String effectiveKey = applyNamespacePrefix(rc, key);
         if (effectiveKey == null || effectiveKey.isBlank()) {
             return cwd;
         }
@@ -554,11 +554,11 @@ public class LocalFilesystem implements AbstractFilesystem {
         return cwd.resolve(target).normalize();
     }
 
-    private String applyNamespacePrefix(String key) {
+    private String applyNamespacePrefix(RuntimeContext rc, String key) {
         if (namespaceFactory == null || key == null || key.isBlank()) {
             return key;
         }
-        List<String> ns = namespaceFactory.getNamespace();
+        List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             return key;
         }
@@ -576,30 +576,30 @@ public class LocalFilesystem implements AbstractFilesystem {
                         .replaceFirst("^/+", "");
     }
 
-    private boolean hasNamespace() {
+    private boolean hasNamespace(RuntimeContext rc) {
         if (namespaceFactory == null) {
             return false;
         }
-        List<String> ns = namespaceFactory.getNamespace();
+        List<String> ns = namespaceFactory.getNamespace(rc);
         return ns != null && !ns.isEmpty();
     }
 
-    private String resolveEntryPath(Path entry) {
+    private String resolveEntryPath(RuntimeContext rc, Path entry) {
         if (virtualMode) {
             return toVirtualPath(entry);
         }
-        if (hasNamespace()) {
-            return stripNamespacePrefix(entry);
+        if (hasNamespace(rc)) {
+            return stripNamespacePrefix(rc, entry);
         }
         return entry.toAbsolutePath().toString();
     }
 
-    private String stripNamespacePrefix(Path absolutePath) {
+    private String stripNamespacePrefix(RuntimeContext rc, Path absolutePath) {
         String relPath =
                 cwd.relativize(absolutePath.toAbsolutePath().normalize())
                         .toString()
                         .replace('\\', '/');
-        String nsPrefix = String.join("/", namespaceFactory.getNamespace());
+        String nsPrefix = String.join("/", namespaceFactory.getNamespace(rc));
         if (relPath.startsWith(nsPrefix + "/")) {
             return relPath.substring(nsPrefix.length() + 1);
         }
@@ -608,7 +608,8 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     // ==================== Grep implementations ====================
 
-    private List<GrepMatch> ripgrepSearch(String pattern, Path basePath, String includeGlob) {
+    private List<GrepMatch> ripgrepSearch(
+            RuntimeContext rc, String pattern, Path basePath, String includeGlob) {
         List<String> cmd = new ArrayList<>();
         cmd.add("rg");
         cmd.add("--json");
@@ -632,7 +633,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                             new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    GrepMatch match = parseRipgrepJsonLine(line);
+                    GrepMatch match = parseRipgrepJsonLine(rc, line);
                     if (match != null) {
                         matches.add(match);
                     }
@@ -650,7 +651,7 @@ public class LocalFilesystem implements AbstractFilesystem {
         }
     }
 
-    private GrepMatch parseRipgrepJsonLine(String jsonLine) {
+    private GrepMatch parseRipgrepJsonLine(RuntimeContext rc, String jsonLine) {
         try {
             if (!jsonLine.contains("\"type\":\"match\"")) {
                 return null;
@@ -665,8 +666,8 @@ public class LocalFilesystem implements AbstractFilesystem {
             String filePath;
             if (virtualMode) {
                 filePath = toVirtualPath(Path.of(pathText));
-            } else if (hasNamespace()) {
-                filePath = stripNamespacePrefix(Path.of(pathText));
+            } else if (hasNamespace(rc)) {
+                filePath = stripNamespacePrefix(rc, Path.of(pathText));
             } else {
                 filePath = pathText;
             }
@@ -716,7 +717,8 @@ public class LocalFilesystem implements AbstractFilesystem {
         return json.substring(start, end).trim();
     }
 
-    private List<GrepMatch> javaSearch(String pattern, Path basePath, String includeGlob) {
+    private List<GrepMatch> javaSearch(
+            RuntimeContext rc, String pattern, Path basePath, String includeGlob) {
         Pattern compiledPattern = Pattern.compile(Pattern.quote(pattern));
         PathMatcher globMatcher = null;
         if (includeGlob != null && !includeGlob.isBlank()) {
@@ -754,8 +756,8 @@ public class LocalFilesystem implements AbstractFilesystem {
                                             String filePath;
                                             if (virtualMode) {
                                                 filePath = toVirtualPath(file);
-                                            } else if (hasNamespace()) {
-                                                filePath = stripNamespacePrefix(file);
+                                            } else if (hasNamespace(rc)) {
+                                                filePath = stripNamespacePrefix(rc, file);
                                             } else {
                                                 filePath = file.toAbsolutePath().toString();
                                             }

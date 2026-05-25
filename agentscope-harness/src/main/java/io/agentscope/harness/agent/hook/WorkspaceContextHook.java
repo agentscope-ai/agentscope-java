@@ -137,14 +137,15 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
     }
 
     private void injectWorkspaceContext(PreCallEvent event) {
-        String agentsContent = workspaceManager.readAgentsMd().strip();
-        String memoryContent = workspaceManager.readMemoryMd().strip();
-        String knowledgeContent = workspaceManager.readKnowledgeMd().strip();
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+        String agentsContent = workspaceManager.readAgentsMd(rc).strip();
+        String memoryContent = workspaceManager.readMemoryMd(rc).strip();
+        String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
         Path workspace = workspaceManager.getWorkspace();
         String sessionContext = buildSessionContextSection(workspace);
 
-        String knowledgeBlock = buildKnowledgeBlock(knowledgeContent, workspace);
-        String additionalBlock = buildAdditionalContextBlock();
+        String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
+        String additionalBlock = buildAdditionalContextBlock(rc);
 
         int fixedTokens =
                 estimateTokens(sessionContext)
@@ -238,13 +239,13 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
     /**
      * Renders additional user-configured files as XML blocks under {@code <loaded_context>}.
      */
-    private String buildAdditionalContextBlock() {
+    private String buildAdditionalContextBlock(RuntimeContext rc) {
         if (additionalContextFiles.isEmpty()) {
             return "";
         }
         StringBuilder sb = new StringBuilder();
         for (String relPath : additionalContextFiles) {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(relPath);
+            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relPath);
             if (content != null && !content.isBlank()) {
                 String tag = relPath.replace("/", "_").replace(".", "_").toLowerCase();
                 sb.append("  <").append(tag).append(">\n");
@@ -270,8 +271,8 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
         return text.substring(0, maxChars) + TRUNCATION_NOTICE;
     }
 
-    private String buildKnowledgeBlock(String knowledgeContent, Path workspace) {
-        List<Path> knowledgeFiles = workspaceManager.listKnowledgeFiles();
+    private String buildKnowledgeBlock(RuntimeContext rc, String knowledgeContent, Path workspace) {
+        List<Path> knowledgeFiles = workspaceManager.listKnowledgeFiles(rc);
         StringBuilder sb = new StringBuilder();
 
         if (!knowledgeContent.isBlank()) {

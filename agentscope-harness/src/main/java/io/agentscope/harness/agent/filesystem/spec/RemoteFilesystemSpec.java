@@ -31,7 +31,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 
 /**
  * Specification for the non-sandbox "composite" filesystem mode.
@@ -143,28 +142,17 @@ public class RemoteFilesystemSpec {
      * </ul>
      */
     public AbstractFilesystem toFilesystem(
-            Path workspace,
-            String agentId,
-            NamespaceFactory localNamespaceFactory,
-            Supplier<String> userIdSupplier,
-            Supplier<String> sessionIdSupplier) {
+            Path workspace, String agentId, NamespaceFactory localNamespaceFactory) {
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
         AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
 
-        RemoteFilesystem rootFs =
-                remoteForRoute("root", effectiveAgentId, userIdSupplier, sessionIdSupplier);
-        RemoteFilesystem memoryFs =
-                remoteForRoute("memory", effectiveAgentId, userIdSupplier, sessionIdSupplier);
-        RemoteFilesystem skillsFs =
-                remoteForRoute("skills", effectiveAgentId, userIdSupplier, sessionIdSupplier);
-        RemoteFilesystem subagentsFs =
-                remoteForRoute("subagents", effectiveAgentId, userIdSupplier, sessionIdSupplier);
-        RemoteFilesystem knowledgeFs =
-                remoteForRoute("knowledge", effectiveAgentId, userIdSupplier, sessionIdSupplier);
-        RemoteFilesystem sessionsFs =
-                remoteForRoute("sessions", effectiveAgentId, userIdSupplier, sessionIdSupplier);
-        RemoteFilesystem tasksFs =
-                remoteForRoute("tasks", effectiveAgentId, userIdSupplier, sessionIdSupplier);
+        RemoteFilesystem rootFs = remoteForRoute("root", effectiveAgentId);
+        RemoteFilesystem memoryFs = remoteForRoute("memory", effectiveAgentId);
+        RemoteFilesystem skillsFs = remoteForRoute("skills", effectiveAgentId);
+        RemoteFilesystem subagentsFs = remoteForRoute("subagents", effectiveAgentId);
+        RemoteFilesystem knowledgeFs = remoteForRoute("knowledge", effectiveAgentId);
+        RemoteFilesystem sessionsFs = remoteForRoute("sessions", effectiveAgentId);
+        RemoteFilesystem tasksFs = remoteForRoute("tasks", effectiveAgentId);
 
         Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
         routes.put("AGENTS.md", rootFs);
@@ -177,37 +165,16 @@ public class RemoteFilesystemSpec {
         routes.put("agents/" + effectiveAgentId + "/tasks/", tasksFs);
         for (String extra : extraSharedPrefixes) {
             String segment = routeSegmentFromPrefix(extra);
-            routes.put(
-                    extra,
-                    remoteForRoute(segment, effectiveAgentId, userIdSupplier, sessionIdSupplier));
+            routes.put(extra, remoteForRoute(segment, effectiveAgentId));
         }
         return new CompositeFilesystem(local, routes);
     }
 
-    /**
-     * Builds the effective filesystem without session-level isolation.
-     *
-     * <p>Convenience overload for callers that don't provide a session-id supplier.
-     * Equivalent to calling {@link #toFilesystem(Path, String, NamespaceFactory, Supplier, Supplier)}
-     * with {@code () -> null} as the sessionIdSupplier.
-     */
-    public AbstractFilesystem toFilesystem(
-            Path workspace,
-            String agentId,
-            NamespaceFactory localNamespaceFactory,
-            Supplier<String> userIdSupplier) {
-        return toFilesystem(workspace, agentId, localNamespaceFactory, userIdSupplier, () -> null);
-    }
-
-    private RemoteFilesystem remoteForRoute(
-            String routeSegment,
-            String agentId,
-            Supplier<String> userIdSupplier,
-            Supplier<String> sessionIdSupplier) {
-        NamespaceFactory base = storeNamespace(agentId, userIdSupplier, sessionIdSupplier);
+    private RemoteFilesystem remoteForRoute(String routeSegment, String agentId) {
+        NamespaceFactory base = storeNamespace(agentId);
         NamespaceFactory extended =
-                () -> {
-                    List<String> ns = new ArrayList<>(base.getNamespace());
+                rc -> {
+                    List<String> ns = new ArrayList<>(base.getNamespace(rc));
                     ns.add(routeSegment);
                     return ns;
                 };
@@ -222,11 +189,10 @@ public class RemoteFilesystemSpec {
         return segment.isEmpty() ? "extra" : segment;
     }
 
-    private NamespaceFactory storeNamespace(
-            String agentId, Supplier<String> userIdSupplier, Supplier<String> sessionIdSupplier) {
-        return () -> {
-            String uid = userIdSupplier != null ? userIdSupplier.get() : null;
-            String sid = sessionIdSupplier != null ? sessionIdSupplier.get() : null;
+    private NamespaceFactory storeNamespace(String agentId) {
+        return rc -> {
+            String uid = rc != null ? rc.getUserId() : null;
+            String sid = rc != null ? rc.getSessionId() : null;
 
             return switch (isolationScope) {
                 case SESSION -> {

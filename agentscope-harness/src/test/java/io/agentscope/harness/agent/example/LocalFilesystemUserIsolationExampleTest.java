@@ -84,7 +84,11 @@ class LocalFilesystemUserIsolationExampleTest {
 
         // Alice writes MEMORY.md
         agent.call(userMsg("alice here"), ctx("s1", "alice")).block();
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "alice's notes");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(
+                        RuntimeContext.builder().userId("alice").build(),
+                        "MEMORY.md",
+                        "alice's notes");
 
         // Verify alice's data is under workspace/alice/
         Path aliceMemory = workspace.resolve("alice/MEMORY.md");
@@ -262,7 +266,9 @@ class LocalFilesystemUserIsolationExampleTest {
         // Write session data through the workspace manager
         agent.getWorkspaceManager()
                 .writeUtf8WorkspaceRelative(
-                        "agents/assistant/sessions/session-1.jsonl", "session data");
+                        RuntimeContext.builder().userId("alice").build(),
+                        "agents/assistant/sessions/session-1.jsonl",
+                        "session data");
 
         // Verify session data is under alice's namespace
         Path aliceSessionFile =
@@ -295,7 +301,10 @@ class LocalFilesystemUserIsolationExampleTest {
 
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
-        Path sessionDir = agent.getWorkspaceManager().getSessionDir("assistant");
+        Path sessionDir =
+                agent.getWorkspaceManager()
+                        .getSessionDir(
+                                RuntimeContext.builder().userId("alice").build(), "assistant");
         assertTrue(
                 sessionDir.toString().contains("alice"),
                 "getSessionDir should include namespace: " + sessionDir);
@@ -318,7 +327,9 @@ class LocalFilesystemUserIsolationExampleTest {
 
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
-        Path memDir = agent.getWorkspaceManager().getMemoryDir();
+        Path memDir =
+                agent.getWorkspaceManager()
+                        .getMemoryDir(RuntimeContext.builder().userId("alice").build());
         assertTrue(
                 memDir.toString().contains("alice"),
                 "getMemoryDir should include namespace: " + memDir);
@@ -342,8 +353,14 @@ class LocalFilesystemUserIsolationExampleTest {
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
 
         // Write memory and session data
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "memory content");
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("memory/note.md", "note");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(
+                        RuntimeContext.builder().userId("alice").build(),
+                        "MEMORY.md",
+                        "memory content");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(
+                        RuntimeContext.builder().userId("alice").build(), "memory/note.md", "note");
 
         // Only AGENTS.md should exist at workspace root (it's a shared config file, pre-existing)
         // Namespace-isolated runtime data should be under alice/

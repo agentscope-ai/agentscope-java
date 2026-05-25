@@ -35,7 +35,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -87,7 +86,6 @@ public class AgentSpawnTool {
     private final DefaultAgentManager agentManager;
     private final TaskRepository taskRepository;
     private final int parentSpawnDepth;
-    private final Supplier<String> userIdSupplier;
 
     private record SpawnedAgent(
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
@@ -96,22 +94,19 @@ public class AgentSpawnTool {
     private final ConcurrentHashMap<String, String> labelToKey = new ConcurrentHashMap<>();
 
     /**
-     * Creates an {@code AgentSpawnTool} with a supplier for the parent agent's current user-id.
+     * Creates an {@code AgentSpawnTool} that derives the active user-id from each tool call's
+     * {@link RuntimeContext}, rather than a shared supplier — this prevents identity races when a
+     * single agent instance serves concurrent callers.
      *
      * @param agentManager factory and invoker for subagents
      * @param taskRepository background task store
      * @param parentSpawnDepth current spawn-depth of the parent (0 for top-level main agent)
-     * @param userIdSupplier provides the parent's current user-id at spawn time (may return null)
      */
     public AgentSpawnTool(
-            DefaultAgentManager agentManager,
-            TaskRepository taskRepository,
-            int parentSpawnDepth,
-            Supplier<String> userIdSupplier) {
+            DefaultAgentManager agentManager, TaskRepository taskRepository, int parentSpawnDepth) {
         this.agentManager = Objects.requireNonNull(agentManager, "agentManager");
         this.taskRepository = taskRepository;
         this.parentSpawnDepth = parentSpawnDepth;
-        this.userIdSupplier = userIdSupplier != null ? userIdSupplier : () -> null;
     }
 
     @Tool(
@@ -176,7 +171,7 @@ public class AgentSpawnTool {
         Agent agent = agentOpt.get();
         String key = "agent:" + agentId + ":" + UUID.randomUUID();
         String sessionId = "sub-" + UUID.randomUUID();
-        String currentUserId = userIdSupplier.get();
+        String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
 
         SpawnedAgent spawned =
                 new SpawnedAgent(key, agentId, sessionId, canonLabel, agent, nextDepth);
@@ -228,7 +223,7 @@ public class AgentSpawnTool {
                                     }
                                 });
             }
-            taskRepository.putTask(taskId, agentId, parentSessionId, spec);
+            taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
             return Mono.just(
                     spawnInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId));
         }
@@ -238,6 +233,7 @@ public class AgentSpawnTool {
             return Mono.fromCallable(
                     () ->
                             runRemoteSync(
+                                    runtimeContext,
                                     spawnInfo,
                                     agentId,
                                     parentSessionId,
@@ -334,7 +330,7 @@ public class AgentSpawnTool {
         }
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
-        String currentUserId = userIdSupplier.get();
+        String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         var declOpt = agentManager.getDeclaration(spawned.agentId());
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
@@ -370,7 +366,8 @@ public class AgentSpawnTool {
                                     }
                                 });
             }
-            taskRepository.putTask(taskId, spawned.agentId(), parentSessionId, spec);
+            taskRepository.putTask(
+                    runtimeContext, taskId, spawned.agentId(), parentSessionId, spec);
             return Mono.just(String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId));
         }
 
@@ -380,6 +377,7 @@ public class AgentSpawnTool {
             return Mono.fromCallable(
                     () ->
                             runRemoteSync(
+                                    runtimeContext,
                                     "agent_key: " + finalKey,
                                     spawned.agentId(),
                                     parentSessionId,
@@ -536,6 +534,7 @@ public class AgentSpawnTool {
      * conversation compaction, just like async remote tasks do.
      */
     private String runRemoteSync(
+            RuntimeContext runtimeContext,
             String header,
             String agentId,
             String parentSessionId,
@@ -545,7 +544,8 @@ public class AgentSpawnTool {
         String taskId = "task_" + UUID.randomUUID();
         TaskRunSpec spec =
                 new TaskRunSpec.RemoteTaskRunSpec(decl.getUrl(), decl.getHeaders(), agentId, input);
-        BackgroundTask bgTask = taskRepository.putTask(taskId, agentId, parentSessionId, spec);
+        BackgroundTask bgTask =
+                taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
         try {
             boolean done = bgTask.waitForCompletion(timeoutMs);
             if (!done) {

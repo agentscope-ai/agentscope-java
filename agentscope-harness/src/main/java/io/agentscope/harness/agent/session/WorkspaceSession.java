@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.session;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.harness.agent.store.NamespaceFactory;
@@ -31,9 +32,13 @@ import java.util.List;
  * &lt;workspace&gt;/[namespace/]agents/&lt;agentId&gt;/context/&lt;sessionId&gt;/{key}.jsonl
  * </pre>
  *
- * <p>When a {@link NamespaceFactory} is provided, the namespace prefix (typically the userId)
- * is inserted between the workspace root and the {@code agents/} directory, ensuring per-user
- * isolation of session state on the local filesystem.
+ * <p>This is the local, single-tenant default {@link io.agentscope.core.session.Session}
+ * implementation; multi-user production deployments must configure a distributed Session
+ * backend (e.g. RedisSession) and never reach this class. Because the underlying {@link
+ * JsonSession#getSessionDir(SessionKey)} hook is invoked without a {@link RuntimeContext},
+ * any {@link NamespaceFactory} passed here is resolved with {@link RuntimeContext#empty()}
+ * — RC-driven factories therefore degrade to no namespace. Callers needing per-user folder
+ * scoping must bake the user identity into the factory at construction time.
  */
 public class WorkspaceSession extends JsonSession {
 
@@ -63,7 +68,7 @@ public class WorkspaceSession extends JsonSession {
             Path workspace, String agentId, NamespaceFactory namespaceFactory) {
         Path base = workspace;
         if (namespaceFactory != null) {
-            List<String> ns = namespaceFactory.getNamespace();
+            List<String> ns = namespaceFactory.getNamespace(RuntimeContext.empty());
             if (ns != null && !ns.isEmpty()) {
                 base = base.resolve(String.join("/", ns));
             }

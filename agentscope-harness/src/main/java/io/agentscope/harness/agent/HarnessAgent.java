@@ -50,6 +50,7 @@ import io.agentscope.core.state.StatePersistence;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -160,31 +161,47 @@ public class HarnessAgent implements Agent, StateModule {
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
     private final CompactionHook compactionHook;
-    private final AtomicReference<String> userIdRef;
-    private final AtomicReference<String> sessionIdRef;
     private final Session defaultSession;
     private final SandboxContext defaultSandboxContext;
     private final List<AgentSkillRepository> skillRepositories;
-    private RuntimeContext runtimeContext;
+
+    /**
+     * Factory for ctx-bound {@link WorkspaceManager} views — see {@link #workspaceFor(String,
+     * String)}. Captured at build time so per-call views can be produced without depending on
+     * mutable shared state on the agent instance.
+     */
+    private final java.util.function.BiFunction<String, String, WorkspaceManager> workspaceFactory;
+
+    /**
+     * Factory for per-userId {@link WorkspaceSession} views. Used to bake the calling userId into
+     * the {@link io.agentscope.harness.agent.store.NamespaceFactory} so that
+     * {@link io.agentscope.core.session.JsonSession#getSessionDir} (which has no
+     * {@link RuntimeContext} on the API surface) still produces a per-user path. Returns {@code
+     * null} when the default session is not a {@link WorkspaceSession}; callers must fall back to
+     * {@link #defaultSession}.
+     */
+    private final java.util.function.Function<String, Session> sessionFactory;
+
+    private volatile RuntimeContext runtimeContext;
 
     private HarnessAgent(
             ReActAgent delegate,
             WorkspaceManager workspaceManager,
             CompactionHook compactionHook,
-            AtomicReference<String> userIdRef,
-            AtomicReference<String> sessionIdRef,
             Session defaultSession,
             SandboxContext defaultSandboxContext,
-            List<AgentSkillRepository> skillRepositories) {
+            List<AgentSkillRepository> skillRepositories,
+            java.util.function.BiFunction<String, String, WorkspaceManager> workspaceFactory,
+            java.util.function.Function<String, Session> sessionFactory) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.compactionHook = compactionHook;
-        this.userIdRef = userIdRef;
-        this.sessionIdRef = sessionIdRef;
         this.defaultSession = defaultSession;
         this.defaultSandboxContext = defaultSandboxContext;
         this.skillRepositories =
                 skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
+        this.workspaceFactory = workspaceFactory;
+        this.sessionFactory = sessionFactory;
     }
 
     /** Calls the agent with a runtime context, which provides sessionId and other metadata. */
@@ -256,7 +273,7 @@ public class HarnessAgent implements Agent, StateModule {
         ConversationCompactor compactor = new ConversationCompactor(delegate.getModel(), fm);
 
         return compactor
-                .compactIfNeeded(allMsgs, forceConfig, agentId, sessionId)
+                .compactIfNeeded(coreRuntimeForRecovery(), allMsgs, forceConfig, agentId, sessionId)
                 .flatMap(
                         opt -> {
                             if (opt.isPresent()) {
@@ -301,16 +318,6 @@ public class HarnessAgent implements Agent, StateModule {
         }
         RuntimeContext effective = ensureSessionDefaults(ctx);
         this.runtimeContext = effective;
-        if (userIdRef != null) {
-            userIdRef.set(effective.getUserId());
-        }
-        if (sessionIdRef != null) {
-            String sid =
-                    effective.getSessionKey() != null
-                            ? effective.getSessionKey().toIdentifier()
-                            : effective.getSessionId();
-            sessionIdRef.set(sid);
-        }
         if (effective.getSession() != null && effective.getSessionKey() != null) {
             try {
                 delegate.loadIfExists(effective.getSession(), effective.getSessionKey());
@@ -327,7 +334,20 @@ public class HarnessAgent implements Agent, StateModule {
      * available, or {@code SimpleSessionKey.of(agentName)} as a last resort.
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
-        Session session = ctx.getSession() != null ? ctx.getSession() : defaultSession;
+        Session session = ctx.getSession();
+        if (session == null) {
+            // When the agent's default session is a WorkspaceSession (single-tenant local store),
+            // produce a per-call view with the caller's userId baked into its NamespaceFactory so
+            // session state lands under <workspace>/<userId>/agents/.../context/ instead of the
+            // shared workspace root.
+            String uid = ctx.getUserId();
+            if (sessionFactory != null && uid != null && !uid.isBlank()) {
+                Session perCall = sessionFactory.apply(uid);
+                session = perCall != null ? perCall : defaultSession;
+            } else {
+                session = defaultSession;
+            }
+        }
         SessionKey sessionKey = ctx.getSessionKey();
         if (sessionKey == null) {
             String id = ctx.getSessionId();
@@ -431,6 +451,38 @@ public class HarnessAgent implements Agent, StateModule {
 
     public WorkspaceManager getWorkspaceManager() {
         return workspaceManager;
+    }
+
+    /**
+     * Returns a {@link WorkspaceManager} view whose filesystem and namespace are bound to the
+     * given {@code (userId, sessionId)} for the duration of the returned view's IO. Unlike
+     * {@link #getWorkspaceManager()}, this does <strong>not</strong> mutate the shared {@link
+     * RuntimeContext} state used by the chat path ({@link #call} / {@link #stream}) — so it is
+     * safe to call concurrently from per-request controllers without racing with active chats or
+     * other requests on the same agent.
+     *
+     * <p>Semantics by filesystem mode:
+     *
+     * <ul>
+     *   <li><b>Remote (composite)</b> — a fresh composite filesystem is built whose per-route
+     *       {@link io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem}s use the
+     *       supplied {@code userId} / {@code sessionId} directly (no mutable reference). IO
+     *       lands in {@code [agents, <agentId>, users, <userId>, <route>, ...]} per the
+     *       configured {@link io.agentscope.harness.agent.IsolationScope}.
+     *   <li><b>Local / Sandbox / Custom</b> — the existing shared filesystem is reused (these
+     *       modes do not have a per-user race in their backend); only the workspace-relative
+     *       namespace factory is rebound for the disk-fallback subtree.
+     * </ul>
+     *
+     * <p>Pass {@code null} for either parameter to opt out of that dimension. The returned view
+     * is lightweight and may be created per request; callers should not cache it across requests
+     * with different users.
+     */
+    public WorkspaceManager workspaceFor(String userId, String sessionId) {
+        if (workspaceFactory == null) {
+            return workspaceManager;
+        }
+        return workspaceFactory.apply(userId, sessionId);
     }
 
     /**
@@ -539,6 +591,7 @@ public class HarnessAgent implements Agent, StateModule {
 
         // Core ReActAgent params
         private String name;
+        private String agentId;
         private String description;
         private String sysPrompt;
         private Model model;
@@ -690,6 +743,22 @@ public class HarnessAgent implements Agent, StateModule {
 
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Sets the stable identifier used as the agent's namespace key in the composite filesystem
+         * (e.g. {@code [agents, <agentId>, users, <userId>, ...]}). This is distinct from
+         * {@link #name(String)}, which is the human-facing display name and may change without
+         * rewriting any keys.
+         *
+         * <p>When unset, {@code build()} falls back to {@link #name(String)} for the namespace key,
+         * preserving prior behavior. Callers that need rename-safe storage (e.g. multi-tenant
+         * platforms whose agents have a stable catalog/URL id distinct from the display name)
+         * should set this explicitly.
+         */
+        public Builder agentId(String agentId) {
+            this.agentId = agentId;
             return this;
         }
 
@@ -1396,15 +1465,23 @@ public class HarnessAgent implements Agent, StateModule {
                             ? workspace
                             : Paths.get(System.getProperty("user.dir"))
                                     .resolve(".agentscope/workspace");
-            String resolvedAgentId = name != null ? name : "HarnessAgent";
+            String resolvedAgentId =
+                    agentId != null && !agentId.isBlank()
+                            ? agentId
+                            : (name != null && !name.isBlank() ? name : "HarnessAgent");
             Session effectiveSession =
                     sandboxDistributedOptions != null
                                     && sandboxDistributedOptions.getSession() != null
                             ? sandboxDistributedOptions.getSession()
                             : session;
-            AtomicReference<String> userIdRef = new AtomicReference<>();
-            AtomicReference<String> sessionIdRef = new AtomicReference<>();
-            NamespaceFactory nsFactory = buildDynamicNamespaceFactory(userIdRef);
+            // RC-driven NamespaceFactory: every store operation passes its current
+            // RuntimeContext, and the namespace is derived from rc.getUserId() at call time.
+            // No shared mutable state.
+            NamespaceFactory nsFactory =
+                    rc -> {
+                        String uid = rc != null ? rc.getUserId() : null;
+                        return (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
+                    };
             if (effectiveSession == null) {
                 effectiveSession =
                         new WorkspaceSession(resolvedWorkspace, resolvedAgentId, nsFactory);
@@ -1423,12 +1500,7 @@ public class HarnessAgent implements Agent, StateModule {
                     remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
             AbstractFilesystem filesystem =
                     resolveFilesystem(
-                            resolvedWorkspace,
-                            resolvedAgentId,
-                            userIdRef,
-                            sessionIdRef,
-                            workspaceIndex,
-                            nsFactory);
+                            resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
 
             // ---- Sandbox integration ----
             SandboxLifecycleHook sandboxLifecycleHook = null;
@@ -1481,6 +1553,42 @@ public class HarnessAgent implements Agent, StateModule {
             WorkspaceManager wsManager =
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
             wsManager.validate();
+
+            // Capture a per-ctx WorkspaceManager factory. Built once at build time so per-request
+            // callers (controllers, etc.) can produce a view bound to an explicit (userId,
+            // sessionId) without depending on the chat path's per-call RuntimeContext.
+            // The returned WorkspaceManager wraps the shared filesystem with a
+            // BakedContextFilesystem
+            // that substitutes the supplied (uid, sid) RC on every call — so even when callers pass
+            // RuntimeContext.empty(), the underlying namespace factories still see the baked
+            // identity. See HarnessAgent.workspaceFor(...) for the public entry point.
+            final AbstractFilesystem sharedFilesystemRef = filesystem;
+            final Path capturedWorkspace = resolvedWorkspace;
+            final WorkspaceIndex capturedIndex = workspaceIndex;
+            java.util.function.BiFunction<String, String, WorkspaceManager> workspaceFactoryFn =
+                    (uid, sid) -> {
+                        RuntimeContext bakedRc = buildBakedRuntimeContext(uid, sid);
+                        NamespaceFactory ctxNs =
+                                rc -> (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
+                        AbstractFilesystem ctxFs =
+                                new BakedContextFilesystem(sharedFilesystemRef, bakedRc);
+                        return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
+                    };
+
+            // Per-userId Session factory: only produces userId-baked WorkspaceSession views when
+            // the agent's defaultSession is itself a WorkspaceSession. Other (distributed)
+            // session backends are returned unchanged via {@code null} so callers fall back to
+            // defaultSession.
+            final Session capturedDefaultSession = effectiveSession;
+            final String capturedAgentId = resolvedAgentId;
+            java.util.function.Function<String, Session> sessionFactoryFn =
+                    capturedDefaultSession instanceof WorkspaceSession
+                            ? uid -> {
+                                NamespaceFactory baked = rc -> List.of(uid);
+                                return new WorkspaceSession(
+                                        capturedWorkspace, capturedAgentId, baked);
+                            }
+                            : null;
 
             Memory memory = new InMemoryMemory();
 
@@ -1536,14 +1644,13 @@ public class HarnessAgent implements Agent, StateModule {
                 if (filesystem != null && !disableDynamicSubagents) {
                     DynamicSubagentsHook dynamicSubagentsHook =
                             buildDynamicSubagentsHook(
-                                    wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
+                                    wsManager, resolvedWorkspace, capturedSandboxFs);
                     if (dynamicSubagentsHook != null) {
                         allHooks.add(dynamicSubagentsHook);
                     }
                 } else {
                     SubagentsHook subagentsHook =
-                            buildSubagentsHook(
-                                    wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
+                            buildSubagentsHook(wsManager, resolvedWorkspace, capturedSandboxFs);
                     if (subagentsHook != null) {
                         allHooks.add(subagentsHook);
                     }
@@ -1590,8 +1697,20 @@ public class HarnessAgent implements Agent, StateModule {
             // non-empty AND dynamic skills are enabled → DynamicSkillHook owns SkillBox lifecycle.
             // When dynamic is disabled (legacy / static) → build the merged set once into a static
             // SkillBox and let ReActAgent's legacy SkillHook render it.
+            // Skill repositories live alongside the agent and load on every reasoning step
+            // through DynamicSkillHook. The Layer-4 (per-user namespaced) repository needs the
+            // current call's RC, but composeSkillRepositories runs before HarnessAgent exists;
+            // we wire it via a self-reference that is populated at the end of build().
+            final AtomicReference<HarnessAgent> selfRef = new AtomicReference<>();
+            Supplier<RuntimeContext> currentRcSupplier =
+                    () -> {
+                        HarnessAgent self = selfRef.get();
+                        return self != null && self.runtimeContext != null
+                                ? self.runtimeContext
+                                : RuntimeContext.empty();
+                    };
             List<AgentSkillRepository> orderedSkillRepos =
-                    composeSkillRepositories(wsManager, filesystem, userIdRef, sessionIdRef);
+                    composeSkillRepositories(wsManager, filesystem, currentRcSupplier);
             SkillBox effectiveSkillBox = null;
             if (!orderedSkillRepos.isEmpty()) {
                 if (disableDynamicSkills) {
@@ -1668,15 +1787,18 @@ public class HarnessAgent implements Agent, StateModule {
                     filesystem.getClass().getSimpleName(),
                     !leafSubagent && !disableSubagents && model != null);
 
-            return new HarnessAgent(
-                    delegate,
-                    wsManager,
-                    compactionHook,
-                    userIdRef,
-                    sessionIdRef,
-                    effectiveSession,
-                    defaultSandboxContext,
-                    orderedSkillRepos);
+            HarnessAgent harnessAgent =
+                    new HarnessAgent(
+                            delegate,
+                            wsManager,
+                            compactionHook,
+                            effectiveSession,
+                            defaultSandboxContext,
+                            orderedSkillRepos,
+                            workspaceFactoryFn,
+                            sessionFactoryFn);
+            selfRef.set(harnessAgent);
+            return harnessAgent;
         }
 
         // @formatter:off
@@ -1739,8 +1861,6 @@ public class HarnessAgent implements Agent, StateModule {
         private AbstractFilesystem resolveFilesystem(
                 Path workspace,
                 String agentId,
-                AtomicReference<String> userIdRef,
-                AtomicReference<String> sessionIdRef,
                 WorkspaceIndex workspaceIndex,
                 NamespaceFactory nsFactory) {
             if (abstractFilesystem != null) {
@@ -1750,8 +1870,7 @@ public class HarnessAgent implements Agent, StateModule {
                 if (workspaceIndex != null) {
                     remoteFilesystemSpec.workspaceIndex(workspaceIndex);
                 }
-                return remoteFilesystemSpec.toFilesystem(
-                        workspace, agentId, nsFactory, userIdRef::get, sessionIdRef::get);
+                return remoteFilesystemSpec.toFilesystem(workspace, agentId, nsFactory);
             }
             if (localFilesystemSpec != null) {
                 return localFilesystemSpec.toFilesystem(workspace, nsFactory);
@@ -1786,15 +1905,26 @@ public class HarnessAgent implements Agent, StateModule {
             }
         }
 
-        private static NamespaceFactory buildDynamicNamespaceFactory(
-                AtomicReference<String> userIdRef) {
-            return () -> {
-                String userId = userIdRef.get();
-                if (userId == null || userId.isBlank()) {
-                    return List.of();
-                }
-                return List.of(userId);
-            };
+        /**
+         * Builds a {@link RuntimeContext} that bakes in the supplied {@code userId} and
+         * {@code sessionId} for out-of-band IO performed via
+         * {@link HarnessAgent#workspaceFor(String, String)}. Used together with
+         * {@link BakedContextFilesystem} so the underlying namespace factories see this
+         * identity regardless of what the caller passes downstream.
+         */
+        private static RuntimeContext buildBakedRuntimeContext(String userId, String sessionId) {
+            if ((userId == null || userId.isBlank())
+                    && (sessionId == null || sessionId.isBlank())) {
+                return RuntimeContext.empty();
+            }
+            RuntimeContext.Builder b = RuntimeContext.builder();
+            if (userId != null && !userId.isBlank()) {
+                b.userId(userId);
+            }
+            if (sessionId != null && !sessionId.isBlank()) {
+                b.sessionId(sessionId);
+            }
+            return b.build();
         }
 
         // -----------------------------------------------------------------
@@ -1802,10 +1932,7 @@ public class HarnessAgent implements Agent, StateModule {
         // -----------------------------------------------------------------
 
         private SubagentsHook buildSubagentsHook(
-                WorkspaceManager wsManager,
-                Path workspace,
-                SandboxBackedFilesystem sandboxFs,
-                AtomicReference<String> userIdRef) {
+                WorkspaceManager wsManager, Path workspace, SandboxBackedFilesystem sandboxFs) {
             List<SubagentEntry> entries = buildSubagentEntries(workspace, sandboxFs);
             TaskRepository repo;
             if (taskRepository != null) {
@@ -1824,8 +1951,7 @@ public class HarnessAgent implements Agent, StateModule {
             AbstractFilesystem fs = wsManager.getFilesystem();
             Function<SubagentDeclaration, SubagentFactory> factoryFn =
                     decl -> buildDeclaredFactory(decl, workspace, sandboxFs);
-            return new SubagentsHook(
-                    entries, repo, wsManager, userIdRef::get, fs, workspace, factoryFn);
+            return new SubagentsHook(entries, repo, wsManager, fs, workspace, factoryFn);
         }
 
         /**
@@ -1839,10 +1965,7 @@ public class HarnessAgent implements Agent, StateModule {
          * external one was supplied) its own {@link io.agentscope.harness.agent.tool.AgentSpawnTool}.
          */
         private DynamicSubagentsHook buildDynamicSubagentsHook(
-                WorkspaceManager wsManager,
-                Path workspace,
-                SandboxBackedFilesystem sandboxFs,
-                AtomicReference<String> userIdRef) {
+                WorkspaceManager wsManager, Path workspace, SandboxBackedFilesystem sandboxFs) {
             List<SubagentEntry> staticEntries = buildStaticSubagentEntries(workspace, sandboxFs);
             TaskRepository repo;
             if (taskRepository != null) {
@@ -1859,14 +1982,7 @@ public class HarnessAgent implements Agent, StateModule {
                     decl -> buildDeclaredFactory(decl, workspace, sandboxFs);
             DefaultAgentManager manager = new DefaultAgentManager(staticEntries, wsManager);
             return new DynamicSubagentsHook(
-                    staticEntries,
-                    fs,
-                    workspace,
-                    factoryFn,
-                    manager,
-                    externalSubagentTool,
-                    repo,
-                    userIdRef::get);
+                    staticEntries, fs, workspace, factoryFn, manager, externalSubagentTool, repo);
         }
 
         /**
@@ -2198,8 +2314,7 @@ public class HarnessAgent implements Agent, StateModule {
         private List<AgentSkillRepository> composeSkillRepositories(
                 WorkspaceManager wsManager,
                 AbstractFilesystem filesystem,
-                AtomicReference<String> userIdRef,
-                AtomicReference<String> sessionIdRef) {
+                Supplier<RuntimeContext> currentRcSupplier) {
             List<AgentSkillRepository> ordered = new ArrayList<>();
 
             // Layer 1 (lowest priority): project-global skills directory.
@@ -2231,26 +2346,12 @@ public class HarnessAgent implements Agent, StateModule {
             }
 
             // Layer 4 (highest priority): per-user namespaced filesystem view.
+            // currentRcSupplier resolves the active chat call's RuntimeContext at supplier-call
+            // time, so per-user namespacing follows whatever user owns the current invocation.
             if (filesystem != null) {
-                Supplier<RuntimeContext> ctxSupplier =
-                        () -> {
-                            String uid = userIdRef != null ? userIdRef.get() : null;
-                            String sid = sessionIdRef != null ? sessionIdRef.get() : null;
-                            if ((uid == null || uid.isEmpty()) && (sid == null || sid.isEmpty())) {
-                                return RuntimeContext.empty();
-                            }
-                            RuntimeContext.Builder b = RuntimeContext.builder();
-                            if (uid != null && !uid.isEmpty()) {
-                                b.userId(uid);
-                            }
-                            if (sid != null && !sid.isEmpty()) {
-                                b.sessionId(sid);
-                            }
-                            return b.build();
-                        };
                 ordered.add(
                         new FilesystemBackedSkillRepository(
-                                filesystem, "skills", ctxSupplier, "workspace-namespaced"));
+                                filesystem, "skills", currentRcSupplier, "workspace-namespaced"));
             }
 
             return ordered;

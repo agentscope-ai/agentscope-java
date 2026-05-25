@@ -39,7 +39,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -173,11 +172,12 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
     /**
      * Default mode: creates {@link AgentSpawnTool} + {@link DefaultAgentManager} internally.
      *
+     * <p>The user-id is derived from each tool invocation's {@link RuntimeContext} rather than a
+     * shared supplier — this avoids identity races when a single agent serves concurrent callers.
+     *
      * @param entries subagent descriptors (agent_id, description, factory)
      * @param taskRepository background task store for async operations
      * @param workspaceManager workspace accessor for session file path resolution
-     * @param userIdSupplier provides the parent agent's current user-id at spawn time; may be
-     *     {@code null} if userId propagation is not required
      * @param filesystem the filesystem layer for dynamic subagent discovery (may be {@code null})
      * @param mainWorkspace the parent workspace path for resolving subagent workspace paths
      * @param factoryBuilder creates a {@link SubagentFactory} from a {@link SubagentDeclaration};
@@ -187,7 +187,6 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
             List<SubagentEntry> entries,
             TaskRepository taskRepository,
             WorkspaceManager workspaceManager,
-            Supplier<String> userIdSupplier,
             AbstractFilesystem filesystem,
             Path mainWorkspace,
             Function<SubagentDeclaration, SubagentFactory> factoryBuilder) {
@@ -198,7 +197,7 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
         this.agentManager = dam;
         TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
         this.taskRepository = repo;
-        this.subagentTool = new AgentSpawnTool(dam, repo, 0, userIdSupplier);
+        this.subagentTool = new AgentSpawnTool(dam, repo, 0);
         this.taskTool = new TaskTool(repo);
         this.filesystem = filesystem;
         this.mainWorkspace = mainWorkspace;
@@ -212,9 +211,8 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
     public SubagentsHook(
             List<SubagentEntry> entries,
             TaskRepository taskRepository,
-            WorkspaceManager workspaceManager,
-            Supplier<String> userIdSupplier) {
-        this(entries, taskRepository, workspaceManager, userIdSupplier, null, null, null);
+            WorkspaceManager workspaceManager) {
+        this(entries, taskRepository, workspaceManager, null, null, null);
     }
 
     /**
@@ -242,7 +240,7 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
     }
 
     public SubagentsHook(List<SubagentEntry> entries) {
-        this(entries, null, null, null);
+        this(entries, (TaskRepository) null, (WorkspaceManager) null);
     }
 
     @Override
@@ -351,7 +349,7 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
             return null;
         }
         String sessionId = ctx != null ? ctx.getSessionId() : null;
-        Collection<BackgroundTask> tasks = repo.listTasks(sessionId, null);
+        Collection<BackgroundTask> tasks = repo.listTasks(ctx, sessionId, null);
         if (tasks.isEmpty()) {
             return null;
         }

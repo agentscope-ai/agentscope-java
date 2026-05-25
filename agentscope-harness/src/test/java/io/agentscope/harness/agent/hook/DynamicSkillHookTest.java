@@ -103,13 +103,13 @@ class DynamicSkillHookTest {
 
         AtomicReference<String> userRef = new AtomicReference<>();
         NamespaceFactory ns =
-                () ->
-                        userRef.get() == null || userRef.get().isEmpty()
+                rc ->
+                        rc == null || rc.getUserId() == null || rc.getUserId().isEmpty()
                                 ? List.of()
-                                : List.of(userRef.get());
+                                : List.of(rc.getUserId());
         LocalFilesystem fs = new LocalFilesystem(workspace, false, 0, ns);
         Toolkit toolkit = new Toolkit();
-        DynamicSkillHook hook = newHook(toolkit, workspace, fs);
+        DynamicSkillHook hook = newHookWithUser(toolkit, workspace, fs, userRef);
 
         // --- Alice's view ---
         userRef.set("alice");
@@ -163,10 +163,10 @@ class DynamicSkillHookTest {
 
         AtomicReference<String> userRef = new AtomicReference<>();
         NamespaceFactory ns =
-                () ->
-                        userRef.get() == null || userRef.get().isEmpty()
+                rc ->
+                        rc == null || rc.getUserId() == null || rc.getUserId().isEmpty()
                                 ? List.of()
-                                : List.of(userRef.get());
+                                : List.of(rc.getUserId());
         LocalFilesystem fs = new LocalFilesystem(workspace, false, 0, ns);
         Toolkit toolkit = new Toolkit();
 
@@ -176,7 +176,13 @@ class DynamicSkillHookTest {
         repos.add(new FileSystemSkillRepository(workspace.resolve("skills"))); // Layer 3
         repos.add(
                 new FilesystemBackedSkillRepository(
-                        fs, "skills", RuntimeContext::empty, "ns")); // Layer 4
+                        fs,
+                        "skills",
+                        () ->
+                                userRef.get() == null
+                                        ? RuntimeContext.empty()
+                                        : RuntimeContext.builder().userId(userRef.get()).build(),
+                        "ns")); // Layer 4
         DynamicSkillHook hook = new DynamicSkillHook(repos, toolkit);
 
         // --- No user: workspace overrides marketplace, marketplace-only stays. ---
@@ -279,6 +285,31 @@ class DynamicSkillHookTest {
         repos.add(
                 new FilesystemBackedSkillRepository(
                         fs, "skills", RuntimeContext::empty, "test-ns"));
+        return new DynamicSkillHook(repos, toolkit);
+    }
+
+    /**
+     * Like {@link #newHook(Toolkit, Path, LocalFilesystem)} but threads a per-user RuntimeContext
+     * through the namespace-aware skill repository so tests can simulate per-user views by mutating
+     * a single {@link AtomicReference}.
+     */
+    private static DynamicSkillHook newHookWithUser(
+            Toolkit toolkit, Path workspace, LocalFilesystem fs, AtomicReference<String> userRef)
+            throws IOException {
+        List<AgentSkillRepository> repos = new ArrayList<>();
+        Path workspaceSkills = workspace.resolve("skills");
+        if (Files.isDirectory(workspaceSkills)) {
+            repos.add(new FileSystemSkillRepository(workspaceSkills));
+        }
+        repos.add(
+                new FilesystemBackedSkillRepository(
+                        fs,
+                        "skills",
+                        () ->
+                                userRef.get() == null
+                                        ? RuntimeContext.empty()
+                                        : RuntimeContext.builder().userId(userRef.get()).build(),
+                        "test-ns"));
         return new DynamicSkillHook(repos, toolkit);
     }
 
