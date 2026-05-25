@@ -13,8 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.tool.permission;
+package io.agentscope.core.state;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -34,7 +38,12 @@ import reactor.core.scheduler.Schedulers;
  * total bytes. Cache reads are validated against the file's current mtime; stale entries are
  * evicted on access. All filesystem interaction runs on {@link Schedulers#boundedElastic()} so
  * Reactor's non-blocking schedulers are never blocked.
+ *
+ * <p>Only configuration fields ({@code maxCacheFiles}, {@code maxCacheBytes},
+ * {@code activatedGroups}) participate in JSON serialization. The in-memory LRU cache itself is
+ * runtime state and is reconstructed empty on deserialization.
  */
+@JsonPropertyOrder({"max_cache_files", "max_cache_bytes", "activated_groups"})
 public final class ToolContext {
 
     private final int maxCacheFiles;
@@ -54,21 +63,43 @@ public final class ToolContext {
         this.activatedGroups = new ArrayList<>(builder.activatedGroups);
     }
 
+    @JsonCreator
+    static ToolContext fromJson(
+            @JsonProperty("max_cache_files") Integer maxCacheFiles,
+            @JsonProperty("max_cache_bytes") Double maxCacheBytes,
+            @JsonProperty("activated_groups") List<String> activatedGroups) {
+        Builder b = builder();
+        if (maxCacheFiles != null) {
+            b.maxCacheFiles(maxCacheFiles);
+        }
+        if (maxCacheBytes != null) {
+            b.maxCacheBytes(maxCacheBytes);
+        }
+        if (activatedGroups != null) {
+            activatedGroups.forEach(b::addActivatedGroup);
+        }
+        return b.build();
+    }
+
+    @JsonProperty("max_cache_files")
     public int getMaxCacheFiles() {
         return maxCacheFiles;
     }
 
+    @JsonProperty("max_cache_bytes")
     public double getMaxCacheBytes() {
         return maxCacheBytes;
     }
 
     /** Snapshot of the cache list at call time. Modifications do not affect the live cache. */
+    @JsonIgnore
     public List<ReadCacheEntry> getReadFileCache() {
         synchronized (readFileCache) {
             return List.copyOf(readFileCache);
         }
     }
 
+    @JsonProperty("activated_groups")
     public List<String> getActivatedGroups() {
         return List.copyOf(activatedGroups);
     }

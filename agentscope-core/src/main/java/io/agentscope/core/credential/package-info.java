@@ -15,10 +15,13 @@
  */
 
 /**
- * Model-provider credential abstraction for AgentScope Java.
+ * Provider credentials for model authentication.
  *
- * <p>The package will host {@code CredentialBase} exposing {@code getChatModelClass}
- * and {@code listModels}, unifying authentication metadata and available-model
- * discovery across providers.
+ * <p>{@link io.agentscope.core.credential.CredentialBase} carries the {@code id} field and exposes
+ * {@code getChatModelClass()} (the consuming {@link io.agentscope.core.model.ChatModelBase}
+ * subclass) plus {@code listModels()} (model catalog discovery). Concrete subclasses cover
+ * Anthropic, OpenAI, DashScope, Gemini, Ollama, DeepSeek, Kimi, and xAI. Credentials whose Java
+ * model class is not yet implemented throw {@link UnsupportedOperationException} from {@code
+ * getChatModelClass()} while still round-tripping through JSON for storage compatibility.
  */
 package io.agentscope.core.credential;
