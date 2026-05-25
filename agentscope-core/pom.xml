@@ -146,6 +146,18 @@
             <artifactId>snakeyaml</artifactId>
         </dependency>
 
+        <!-- Tree-sitter Java bindings + Bash grammar for the Bash tool's AST-based safety
+             analysis. The base 'tree-sitter' artifact is declared explicitly so its classes are
+             available at compile time; tree-sitter-bash brings it in only at runtime by default. -->
+        <dependency>
+            <groupId>io.github.bonede</groupId>
+            <artifactId>tree-sitter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.bonede</groupId>
+            <artifactId>tree-sitter-bash</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-api</artifactId>

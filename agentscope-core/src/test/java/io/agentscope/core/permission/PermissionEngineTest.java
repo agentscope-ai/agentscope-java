@@ -21,11 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.state.ToolContext;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.builtin.Bash;
+import io.agentscope.core.tool.builtin.Edit;
+import io.agentscope.core.tool.builtin.Read;
+import io.agentscope.core.tool.builtin.Write;
 import io.agentscope.core.tool.permission.ToolBase;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -36,9 +40,8 @@ import reactor.test.StepVerifier;
  * Behaviour spec for the {@link PermissionEngine}.
  *
  * <p>Engine-only behaviours (rule priority, mode fallbacks, default ASK/DENY) are exercised
- * directly against a {@link FakePermissionTool}. Test cases that depend on real built-in tools
- * ({@code Bash}, {@code Read}, {@code Write}, {@code Edit}) remain {@link Disabled} until the
- * built-in tools land — they document the contract the built-ins will need to satisfy.
+ * directly against a {@link FakePermissionTool}. Tool-specific behaviours exercise the real
+ * built-in tools ({@link Bash}, {@link Read}, {@link Write}, {@link Edit}).
  *
  * <p>Coverage targets:
  *
@@ -110,6 +113,21 @@ class PermissionEngineTest {
 
     private static PermissionContext contextWithMode(PermissionMode mode) {
         return PermissionContext.builder().mode(mode).build();
+    }
+
+    private static PermissionContext contextWithWorkingDir(PermissionMode mode, String path) {
+        return PermissionContext.builder()
+                .mode(mode)
+                .addWorkingDirectory(path, new AdditionalWorkingDirectory(path, "test"))
+                .build();
+    }
+
+    private static ToolContext freshToolContext() {
+        return ToolContext.builder().build();
+    }
+
+    private static PermissionRule rule(String tool, String content, PermissionBehavior behavior) {
+        return new PermissionRule(tool, content, behavior, "test");
     }
 
     @Nested
@@ -199,9 +217,20 @@ class PermissionEngineTest {
         }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Write tool with dangerous-path check")
         @DisplayName("Dangerous path is bypass-immune (returns ASK in BYPASS)")
-        void bypassAsksOnDangerousPath() {}
+        void bypassAsksOnDangerousPath() {
+            Write write = new Write(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.BYPASS));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    write,
+                                    Map.of("file_path", "/home/user/.bashrc", "content", "x")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
         @DisplayName("DONT_ASK converts default ASK into DENY")
@@ -220,14 +249,46 @@ class PermissionEngineTest {
         }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Write/Read/Edit tools with working-dir awareness")
         @DisplayName("ACCEPT_EDITS allows Write/Read/Edit within working dir")
-        void acceptEditsAllowsInsideWorkingDir() {}
+        void acceptEditsAllowsInsideWorkingDir() {
+            Write write = new Write(freshToolContext());
+            PermissionEngine engine =
+                    new PermissionEngine(
+                            contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, "/tmp/workdir"));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    write,
+                                    Map.of("file_path", "/tmp/workdir/foo.txt", "content", "x")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Edit tool with working-dir awareness")
         @DisplayName("ACCEPT_EDITS asks for edits outside working dir")
-        void acceptEditsAsksOutsideWorkingDir() {}
+        void acceptEditsAsksOutsideWorkingDir() {
+            Edit edit = new Edit(freshToolContext());
+            PermissionEngine engine =
+                    new PermissionEngine(
+                            contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, "/tmp/workdir"));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    edit,
+                                    Map.of(
+                                            "file_path",
+                                            "/elsewhere/foo.txt",
+                                            "old_string",
+                                            "a",
+                                            "new_string",
+                                            "b")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
         @DisplayName("EXPLORE allows read-only tools")
@@ -395,19 +456,58 @@ class PermissionEngineTest {
     class BashRules {
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Bash tool with prefix matcher")
-        @DisplayName("\"git:*\" matches \"git\", \"git status\", \"git add .\"")
-        void bashPrefixWildcardMatches() {}
+        @DisplayName("\"git:*\" matches non-read-only git subcommands")
+        void bashPrefixWildcardMatches() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(rule("Bash", "git:*", PermissionBehavior.ALLOW));
+
+            // "git commit" is not read-only so it must reach the allow-rule layer.
+            StepVerifier.create(
+                            engine.checkPermission(bash, Map.of("command", "git commit -m hello")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Bash tool with substring matcher")
-        @DisplayName("Substring pattern \"install\" matches mid-command")
-        void bashSubstringMatch() {}
+        @DisplayName("Wildcard pattern \"*install*\" matches mid-command")
+        void bashSubstringMatch() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(rule("Bash", "*install*", PermissionBehavior.ALLOW));
+
+            StepVerifier.create(
+                            engine.checkPermission(bash, Map.of("command", "npm install lodash")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Bash tool with multi-rule resolution")
-        @DisplayName("Mixed rules resolve by tool+pattern match precedence")
-        void bashMultipleRules() {}
+        @DisplayName("Deny git push:* wins over allow git:* on the same tool")
+        void bashMultipleRules() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(rule("Bash", "git push:*", PermissionBehavior.DENY));
+            engine.addRule(rule("Bash", "git:*", PermissionBehavior.ALLOW));
+
+            StepVerifier.create(
+                            engine.checkPermission(bash, Map.of("command", "git push origin main")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.DENY, decision.getBehavior()))
+                    .verifyComplete();
+
+            StepVerifier.create(
+                            engine.checkPermission(bash, Map.of("command", "git commit -m hello")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
     }
 
     @Nested
@@ -415,14 +515,36 @@ class PermissionEngineTest {
     class FileRules {
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Read tool with glob matcher")
-        @DisplayName("Glob pattern \"*.py\" matches Python file paths")
-        void fileGlobPattern() {}
+        @DisplayName("Glob pattern \"**/*.py\" matches Python file paths")
+        void fileGlobPattern() {
+            Read read = new Read(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(rule("Read", "**/*.py", PermissionBehavior.ALLOW));
+
+            StepVerifier.create(
+                            engine.checkPermission(read, Map.of("file_path", "/some/dir/foo.py")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Write tool with directory glob matcher")
         @DisplayName("Directory glob \"src/**\" matches nested paths")
-        void fileDirectoryPattern() {}
+        void fileDirectoryPattern() {
+            Write write = new Write(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(rule("Write", "src/**", PermissionBehavior.ALLOW));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    write,
+                                    Map.of("file_path", "src/main/Foo.java", "content", "x")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
     }
 
     @Nested
@@ -430,41 +552,123 @@ class PermissionEngineTest {
     class DangerousPath {
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Write tool with dangerous-file check")
         @DisplayName("Write to dangerous file (.bashrc) requires ASK")
-        void dangerousFileBlocksWrite() {}
+        void dangerousFileBlocksWrite() {
+            Write write = new Write(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    write,
+                                    Map.of("file_path", "/home/user/.bashrc", "content", "x")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Edit tool with dangerous-file check")
         @DisplayName("Edit on dangerous file requires ASK")
-        void dangerousFileBlocksEdit() {}
+        void dangerousFileBlocksEdit() {
+            Edit edit = new Edit(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    edit,
+                                    Map.of(
+                                            "file_path",
+                                            "/home/user/.gitconfig",
+                                            "old_string",
+                                            "a",
+                                            "new_string",
+                                            "b")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Write tool with dangerous-directory check")
         @DisplayName("Write inside dangerous dir (.ssh) requires ASK")
-        void dangerousDirectoryBlocksWrite() {}
+        void dangerousDirectoryBlocksWrite() {
+            Write write = new Write(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    write,
+                                    Map.of("file_path", "/home/user/.ssh/id_rsa", "content", "x")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Bash tool with dangerous-path inspection")
         @DisplayName("Bash command touching dangerous path requires ASK")
-        void dangerousPathInBashCommand() {}
+        void dangerousPathInBashCommand() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    bash, Map.of("command", "rm /home/user/.bashrc")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Write tool with bypass-immune dangerous-path")
         @DisplayName("Dangerous path is bypass-immune")
-        void dangerousPathBypassImmune() {}
+        void dangerousPathBypassImmune() {
+            Write write = new Write(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.BYPASS));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    write,
+                                    Map.of("file_path", "/home/user/.bashrc", "content", "x")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled(
-                "Stage 4 unlocks: requires real Write tool with dangerous-path overriding"
-                        + " ACCEPT_EDITS")
         @DisplayName("Dangerous path overrides ACCEPT_EDITS inside working dir")
-        void dangerousPathInAcceptEditsMode() {}
+        void dangerousPathInAcceptEditsMode() {
+            Write write = new Write(freshToolContext());
+            PermissionEngine engine =
+                    new PermissionEngine(
+                            contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, "/home/user"));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    write,
+                                    Map.of("file_path", "/home/user/.bashrc", "content", "x")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Write tool exercising the safe-path path")
         @DisplayName("Safe file does not trigger dangerous-path check")
-        void safeFileAllowsWrite() {}
+        void safeFileAllowsWrite() {
+            Write write = new Write(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(rule("Write", null, PermissionBehavior.ALLOW));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    write, Map.of("file_path", "/tmp/safe.txt", "content", "x")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
     }
 
     @Nested
@@ -472,14 +676,45 @@ class PermissionEngineTest {
     class Suggestions {
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Bash tool with command-prefix suggestions")
-        @DisplayName("Bash ASK suggests command prefix pattern")
-        void bashSuggestions() {}
+        @DisplayName("Bash ASK suggests command prefix patterns")
+        void bashSuggestions() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(engine.checkPermission(bash, Map.of("command", "unknown_tool arg")))
+                    .assertNext(
+                            decision -> {
+                                assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+                                assertNotNull(decision.getSuggestedRules());
+                                assertTrue(
+                                        decision.getSuggestedRules().stream()
+                                                .anyMatch(
+                                                        r ->
+                                                                "unknown_tool:*"
+                                                                        .equals(r.ruleContent())));
+                            })
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires real Read tool with parent-dir glob suggestions")
-        @DisplayName("File tool ASK suggests parent dir glob pattern")
-        void fileSuggestions() {}
+        @DisplayName("Read ASK suggests parent dir glob pattern")
+        void fileSuggestions() {
+            Read read = new Read(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(read, Map.of("file_path", "/var/log/app.log")))
+                    .assertNext(
+                            decision -> {
+                                assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+                                assertNotNull(decision.getSuggestedRules());
+                                assertTrue(
+                                        decision.getSuggestedRules().stream()
+                                                .anyMatch(
+                                                        r -> "/var/log/*".equals(r.ruleContent())));
+                            })
+                    .verifyComplete();
+        }
     }
 
     @Nested
@@ -487,49 +722,133 @@ class PermissionEngineTest {
     class ReadOnly {
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST read-only classification")
-        @DisplayName("git status is read-only")
-        void gitStatusReadOnly() {}
+        @DisplayName("git status is read-only → ALLOW")
+        void gitStatusReadOnly() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(engine.checkPermission(bash, Map.of("command", "git status")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST read-only classification")
-        @DisplayName("ls is read-only")
-        void lsReadOnly() {}
+        @DisplayName("ls is read-only → ALLOW")
+        void lsReadOnly() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(engine.checkPermission(bash, Map.of("command", "ls -la /tmp")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST read-only classification")
-        @DisplayName("cat is read-only")
-        void catReadOnly() {}
+        @DisplayName("cat is read-only → ALLOW")
+        void catReadOnly() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(engine.checkPermission(bash, Map.of("command", "cat /tmp/foo.txt")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST read-only classification")
-        @DisplayName("git commit is not read-only")
-        void gitCommitNotReadOnly() {}
+        @DisplayName("git commit is not read-only → ASK")
+        void gitCommitNotReadOnly() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(bash, Map.of("command", "git commit -m hello")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST compound-command analysis")
         @DisplayName("Compound command with dangerous path triggers ASK")
-        void compoundCommandDangerousPath() {}
+        void compoundCommandDangerousPath() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    bash, Map.of("command", "ls && rm /home/user/.bashrc")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST compound-command analysis")
-        @DisplayName("Compound all-read-only command is allowed in EXPLORE")
-        void compoundAllReadOnly() {}
+        @DisplayName("Compound all-read-only command is allowed")
+        void compoundAllReadOnly() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    bash, Map.of("command", "ls -la && cat /tmp/foo.txt")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST compound-command analysis")
-        @DisplayName("Compound with one write op fails read-only check")
-        void compoundWithWriteOp() {}
+        @DisplayName("Compound with one write op fails read-only check → ASK")
+        void compoundWithWriteOp() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    bash, Map.of("command", "ls && touch /tmp/foo.txt")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST redirect-target analysis")
         @DisplayName("Output redirection to dangerous path triggers ASK")
-        void redirectToDangerousPath() {}
+        void redirectToDangerousPath() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    bash, Map.of("command", "echo x > /home/user/.bashrc")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST redirect-target analysis")
         @DisplayName("Output redirection to safe path is allowed by rule")
-        void redirectToSafePath() {}
+        void redirectToSafePath() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(rule("Bash", "echo:*", PermissionBehavior.ALLOW));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    bash, Map.of("command", "echo x > /tmp/safe.txt")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
     }
 
     @Nested
@@ -537,28 +856,80 @@ class PermissionEngineTest {
     class BypassImmune {
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST injection detection")
         @DisplayName("Injection-style check survives BYPASS")
-        void injectionCheckBypassImmune() {}
+        void injectionCheckBypassImmune() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.BYPASS));
+
+            StepVerifier.create(engine.checkPermission(bash, Map.of("command", "ls $(pwd)")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST injection detection")
         @DisplayName("Injection-style check is not bypassed by allow rule")
-        void injectionCheckNotBypassedByAllow() {}
+        void injectionCheckNotBypassedByAllow() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(rule("Bash", null, PermissionBehavior.ALLOW));
+
+            StepVerifier.create(engine.checkPermission(bash, Map.of("command", "ls $(pwd)")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST dangerous-removal detection")
         @DisplayName("Dangerous removal survives BYPASS")
-        void dangerousRemovalBypassImmune() {}
+        void dangerousRemovalBypassImmune() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.BYPASS));
+
+            StepVerifier.create(engine.checkPermission(bash, Map.of("command", "rm /etc")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Bash AST sed -i constraint detection")
         @DisplayName("sed -i constraint survives BYPASS")
-        void sedConstraintBypassImmune() {}
+        void sedConstraintBypassImmune() {
+            Bash bash = new Bash();
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.BYPASS));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    bash, Map.of("command", "sed -i 's/x/y/' /home/user/.bashrc")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
 
         @Test
-        @Disabled("Stage 4 unlocks: requires Edit tool with dangerous-config-path check")
         @DisplayName("Dangerous config path survives BYPASS")
-        void dangerousConfigPathBypassImmune() {}
+        void dangerousConfigPathBypassImmune() {
+            Edit edit = new Edit(freshToolContext());
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.BYPASS));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    edit,
+                                    Map.of(
+                                            "file_path",
+                                            "/home/user/.bashrc",
+                                            "old_string",
+                                            "a",
+                                            "new_string",
+                                            "b")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
     }
 }
