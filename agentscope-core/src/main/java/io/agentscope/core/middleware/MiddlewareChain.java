@@ -42,7 +42,7 @@ public final class MiddlewareChain {
      * @return a function that, when applied to an input, runs the full chain
      */
     public static <I> Function<I, Flux<AgentEvent>> build(
-            List<Middleware> middlewares,
+            List<? extends MiddlewareBase> middlewares,
             Agent agent,
             MiddlewareMethod<I> method,
             Function<I, Flux<AgentEvent>> core) {
@@ -51,7 +51,7 @@ public final class MiddlewareChain {
         }
         Function<I, Flux<AgentEvent>> chain = core;
         for (int i = middlewares.size() - 1; i >= 0; i--) {
-            Middleware mw = middlewares.get(i);
+            MiddlewareBase mw = middlewares.get(i);
             Function<I, Flux<AgentEvent>> next = chain;
             chain = input -> method.apply(mw, agent, input, next);
         }
@@ -66,6 +66,6 @@ public final class MiddlewareChain {
     @FunctionalInterface
     public interface MiddlewareMethod<I> {
         Flux<AgentEvent> apply(
-                Middleware mw, Agent agent, I input, Function<I, Flux<AgentEvent>> next);
+                MiddlewareBase mw, Agent agent, I input, Function<I, Flux<AgentEvent>> next);
     }
 }

@@ -72,6 +72,7 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.Middleware;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -521,7 +522,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .doOnError(e -> activeEventSink.set(null));
 
-        return MiddlewareChain.build(middlewares, this, Middleware::onReply, core)
+        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onReply, core)
                 .apply(new ReplyInput(msgs));
     }
 
@@ -723,7 +724,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                     MiddlewareChain.build(
                                                     middlewares,
                                                     ReActAgent.this,
-                                                    Middleware::onReasoning,
+                                                    MiddlewareBase::onReasoning,
                                                     reasoningCore)
                                             .apply(new ReasoningInput(modelInput, tools, options));
                             return stream.then(
@@ -809,7 +810,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
                 mci -> modelCallStream(context, mci, true);
 
-        return MiddlewareChain.build(middlewares, this, Middleware::onModelCall, modelCallCore)
+        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onModelCall, modelCallCore)
                 .apply(new ModelCallInput(messages, tools, options, model))
                 .doOnNext(this::publishEvent);
     }
@@ -952,7 +953,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                     MiddlewareChain.build(
                                                     middlewares,
                                                     this,
-                                                    Middleware::onActing,
+                                                    MiddlewareBase::onActing,
                                                     actingCore)
                                             .apply(new ActingInput(toolCalls));
                             return stream.then(Mono.defer(() -> Mono.just(resultHolder.get())));
@@ -1263,7 +1264,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 mci -> summaryModelCallStream(context, mci, options);
 
         return MiddlewareChain.build(
-                        middlewares, this, Middleware::onModelCall, summaryModelCallCore)
+                        middlewares, this, MiddlewareBase::onModelCall, summaryModelCallCore)
                 .apply(new ModelCallInput(messages, null, options, model))
                 .doOnNext(this::publishEvent);
     }
