@@ -107,6 +107,7 @@ public final class Agent2 implements Agent {
     private final ContextConfig contextConfig;
     private final ReactConfig reactConfig;
     private final PermissionEngine permissionEngine;
+    private final ContextCompressor compressor;
 
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
@@ -132,6 +133,7 @@ public final class Agent2 implements Agent {
         this.contextConfig = contextConfig == null ? ContextConfig.defaults() : contextConfig;
         this.reactConfig = reactConfig == null ? ReactConfig.defaults() : reactConfig;
         this.permissionEngine = new PermissionEngine(state.getPermissionContext());
+        this.compressor = new ContextCompressor(this.contextConfig, this.model);
     }
 
     @Override
@@ -311,7 +313,8 @@ public final class Agent2 implements Agent {
                                                 rctx.replyId, reactConfig.maxIters(), iter));
                     }
                     state.setCurIter(iter);
-                    Flux<AgentEvent> reasoning = runReasoningChain(rctx);
+                    Flux<AgentEvent> reasoning =
+                            compressor.maybeCompress(state).thenMany(runReasoningChain(rctx));
                     return reasoning.concatWith(
                             Flux.defer(
                                     () -> {
@@ -408,7 +411,7 @@ public final class Agent2 implements Agent {
                                                     result.withIdAndName(
                                                             use.getId(), use.getName()))
                                             .build();
-                            state.contextMutable().add(toolMsg);
+                            state.contextMutable().add(compressor.truncateToolResultMsg(toolMsg));
                             return Flux.fromIterable(events);
                         }));
     }
