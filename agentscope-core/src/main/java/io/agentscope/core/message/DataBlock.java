@@ -24,16 +24,12 @@ import java.util.UUID;
 /**
  * Unified data block for arbitrary binary media (image / audio / video / file).
  *
- * <p>Mirrors Python {@code agentscope.message.DataBlock} (v2_dev). Unlike the
- * legacy {@link ImageBlock}, {@link AudioBlock}, {@link VideoBlock} subclasses
- * — which the Java SDK retains for back-compat — {@code DataBlock} is the
- * forward-looking polymorphic container the Python SDK now emits for every
- * binary modality. New code should prefer {@code DataBlock} over the legacy
- * subclasses; the legacy types stay around as valid {@link MsgRole#USER}
- * payloads to keep existing pipelines working.
- *
- * <p>Stage 1 of the 2.0 alignment introduces this type; Stage 11 will mark
- * the legacy image/audio/video blocks as deprecated.
+ * <p>Unlike the legacy {@link ImageBlock}, {@link AudioBlock}, {@link VideoBlock}
+ * subclasses — which the SDK retains for back-compat — {@code DataBlock} is the
+ * forward-looking polymorphic container for every binary modality. New code
+ * should prefer {@code DataBlock} over the legacy subclasses; the legacy types
+ * stay around as valid {@link MsgRole#USER} payloads to keep existing pipelines
+ * working.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public final class DataBlock extends ContentBlock {
@@ -48,8 +44,7 @@ public final class DataBlock extends ContentBlock {
      * Creates a new data block for JSON deserialization.
      *
      * @param source The data source (URL or Base64); required
-     * @param id Stable identifier; if null, a fresh UUID hex is generated to
-     *     mirror Python {@code Field(default_factory=lambda: uuid.uuid4().hex)}
+     * @param id Stable identifier; if null, a fresh UUID hex is generated
      * @param name Optional human-readable name (e.g. file name); may be null
      * @throws NullPointerException if source is null
      */

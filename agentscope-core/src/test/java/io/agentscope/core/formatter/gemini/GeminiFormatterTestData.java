@@ -35,7 +35,7 @@ import java.util.Map;
  */
 public class GeminiFormatterTestData {
 
-    // Mock audio path from Python tests
+    // Mock audio path
     public static final String MOCK_AUDIO_PATH =
             "/var/folders/gf/krg8x_ws409cpw_46b2s6rjc0000gn/T/tmpfymnv2w9.wav";
 

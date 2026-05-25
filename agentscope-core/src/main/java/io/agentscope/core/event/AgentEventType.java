@@ -22,13 +22,10 @@ import com.fasterxml.jackson.annotation.JsonValue;
 /**
  * Fine-grained event types emitted during agent execution.
  *
- * <p>Aligned with AgentScope Python 2.0 EventType. Each value carries a Java-native
- * name plus a {@link JsonAlias} for the Python equivalent so JSON payloads can
- * be round-tripped between the two SDKs without translation. See
- * {@code docs/v2-design/RFC-000-event-naming.md} for the naming-divergence
- * rationale.
+ * <p>Each value carries a canonical name plus optional {@link JsonAlias} entries
+ * for legacy names so older JSON payloads continue to deserialize.
  *
- * <p>Python aliases recognised on deserialization:
+ * <p>Legacy aliases recognised on deserialization:
  * <ul>
  *   <li>{@code RUN_STARTED} → {@link #REPLY_START}</li>
  *   <li>{@code RUN_FINISHED} → {@link #REPLY_END}</li>
@@ -38,7 +35,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  *   <li>{@code TOOL_RESULT_BINARY_DELTA} → {@link #TOOL_RESULT_DATA_DELTA}</li>
  * </ul>
  *
- * <p>Serialization always emits the Java-native form.
+ * <p>Serialization always emits the canonical form.
  */
 public enum AgentEventType {
     @JsonAlias({"RUN_STARTED"})
@@ -95,11 +92,10 @@ public enum AgentEventType {
     }
 
     /**
-     * Resolve an enum value from its Java-native string or any Python alias.
+     * Resolve an enum value from its canonical string or any legacy alias.
      *
      * <p>Falls back to a case-sensitive match against {@link #getValue()} and the
-     * declared aliases when Jackson's default enum lookup misses (e.g. when an
-     * agent reads a payload produced by the Python SDK).
+     * declared aliases when Jackson's default enum lookup misses.
      *
      * @param raw the incoming string value
      * @return the corresponding enum constant
@@ -115,7 +111,7 @@ public enum AgentEventType {
                 return type;
             }
         }
-        // Python aliases — keep the mapping co-located with the enum for grep-ability.
+        // Legacy aliases — keep the mapping co-located with the enum for grep-ability.
         return switch (raw) {
             case "RUN_STARTED" -> REPLY_START;
             case "RUN_FINISHED" -> REPLY_END;

@@ -36,7 +36,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Ground truth tests for AnthropicMultiAgentFormatter - compares with Python implementation.
+ * Ground truth tests for AnthropicMultiAgentFormatter.
  */
 class AnthropicMultiAgentFormatterGroundTruthTest {
 
@@ -217,7 +217,6 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
-        // Ground truth from Python implementation
         String groundTruthJson =
                 """
                 [

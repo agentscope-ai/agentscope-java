@@ -30,19 +30,15 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * Behaviour spec for {@code Msg#validateRoleContent()}, mirroring Python
- * {@code agentscope.message._msg.Msg.validate_role_content} (v2_dev) with the
- * two Java-specific carve-outs decided in Stage 1:
+ * Behaviour spec for {@code Msg#validateRoleContent()}.
  *
  * <ul>
  *   <li>{@link MsgRole#USER} accepts the unified {@link DataBlock} <em>and</em>
  *       the legacy {@link ImageBlock} / {@link AudioBlock} / {@link VideoBlock}
- *       subclasses (Python only has DataBlock, but the Java SDK keeps the
- *       legacy types for back-compat through Stage 11).</li>
- *   <li>{@link MsgRole#TOOL} is Java-only — Python has no TOOL role. Treated
- *       as unrestricted (same as assistant) to avoid cascading changes across
- *       the 27 formatter/converter call sites that already build TOOL
- *       messages with arbitrary block lists.</li>
+ *       subclasses (kept for back-compat).</li>
+ *   <li>{@link MsgRole#TOOL} is treated as unrestricted (same as assistant) to
+ *       avoid cascading changes across the formatter/converter call sites that
+ *       already build TOOL messages with arbitrary block lists.</li>
  * </ul>
  *
  * <p>Matrix actually enforced:
@@ -51,9 +47,9 @@ import org.junit.jupiter.api.Test;
  *   <caption>Role × block compatibility</caption>
  *   <tr><th>Role</th><th>Allowed blocks</th></tr>
  *   <tr><td>{@code USER}</td><td>{@link TextBlock}, {@link DataBlock}, {@link ImageBlock}, {@link AudioBlock}, {@link VideoBlock}</td></tr>
- *   <tr><td>{@code ASSISTANT}</td><td>any (no restriction — matches Python assistant)</td></tr>
+ *   <tr><td>{@code ASSISTANT}</td><td>any (no restriction)</td></tr>
  *   <tr><td>{@code SYSTEM}</td><td>{@link TextBlock} only</td></tr>
- *   <tr><td>{@code TOOL}</td><td>any (Java back-compat carve-out)</td></tr>
+ *   <tr><td>{@code TOOL}</td><td>any (back-compat carve-out)</td></tr>
  * </table>
  */
 class RoleContentValidationTest {
@@ -196,7 +192,7 @@ class RoleContentValidationTest {
     }
 
     @Nested
-    @DisplayName("ASSISTANT role: unrestricted (matches Python)")
+    @DisplayName("ASSISTANT role: unrestricted")
     class AssistantRole {
 
         @Test
@@ -254,7 +250,7 @@ class RoleContentValidationTest {
         }
 
         @Test
-        @DisplayName("ASSISTANT + ToolResultBlock is valid (Python unrestricted)")
+        @DisplayName("ASSISTANT + ToolResultBlock is valid (unrestricted)")
         void assistantAcceptsToolResult() {
             assertDoesNotThrow(
                     () ->

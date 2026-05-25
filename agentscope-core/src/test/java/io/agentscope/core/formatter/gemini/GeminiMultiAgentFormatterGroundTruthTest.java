@@ -39,8 +39,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Ground truth tests for GeminiMultiAgentFormatter.
  * This test validates that the multi-agent formatter output matches the
- * expected Gemini API format
- * exactly as defined in the Python version.
+ * expected Gemini API format.
  */
 class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
@@ -66,7 +65,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
     static void setUp() throws IOException {
         formatter = new GeminiMultiAgentFormatter();
 
-        // Create temporary files matching Python test setup
+        // Create temporary files
         imageTempPath = Files.createTempFile("gemini_test_image", ".png");
         imagePath = imageTempPath.toAbsolutePath().toString();
         Files.write(imageTempPath, "fake image content".getBytes());
@@ -86,9 +85,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         groundTruthMultiAgent = parseGroundTruth(getGroundTruthMultiAgentJson());
         groundTruthMultiAgent2 = parseGroundTruth(getGroundTruthMultiAgent2Json());
 
-        // Build ground truth for "without first conversation" scenario
-        // This corresponds to Python's
-        // ground_truth_multiagent_without_first_conversation
+        // Build ground truth for "without first conversation" scenario.
         // Format: system + tools (without the conversation history wrapper)
         groundTruthMultiAgentWithoutFirstConversation = buildWithoutFirstConversationGroundTruth();
     }
@@ -226,8 +223,6 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
     /**
      * Build ground truth for "without first conversation" scenario.
-     * This is equivalent to Python's
-     * ground_truth_multiagent_without_first_conversation.
      *
      * @return Ground truth data
      */

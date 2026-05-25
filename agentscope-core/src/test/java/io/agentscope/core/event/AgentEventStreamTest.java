@@ -30,18 +30,17 @@ import org.junit.jupiter.api.Test;
  * Contract tests for {@link AgentEventType} and the event-stream emitted by
  * {@code ReActAgent.replyStream(...)}.
  *
- * <p>The {@link JsonAliasRoundTrip} suite runs today — it exercises the
- * Python-name aliases wired up in Stage 0.1 (see
- * {@code docs/v2-design/RFC-000-event-naming.md}).
+ * <p>The {@link JsonAliasRoundTrip} suite exercises the legacy-name aliases
+ * declared on {@link AgentEventType}.
  *
- * <p>The {@link StreamOrdering} suite is {@link Disabled} until Stage 7
- * finishes the Agent re-design. It documents the canonical event sequence so
- * Stage 7 can drop in assertions without re-deriving it.
+ * <p>The {@link StreamOrdering} suite is {@link Disabled} until the Agent
+ * re-design is complete. It documents the canonical event sequence so the
+ * implementation can drop in assertions without re-deriving it.
  */
 class AgentEventStreamTest {
 
     @Nested
-    @DisplayName("Python ↔ Java event-name aliases round-trip via Jackson")
+    @DisplayName("Legacy event-name aliases round-trip via Jackson")
     class JsonAliasRoundTrip {
 
         private final ObjectMapper mapper = new ObjectMapper();
@@ -96,7 +95,7 @@ class AgentEventStreamTest {
         }
 
         @Test
-        @DisplayName("Java-native names round-trip unchanged")
+        @DisplayName("Canonical names round-trip unchanged")
         void javaNativeNamesRoundTrip() throws Exception {
             for (AgentEventType type : AgentEventType.values()) {
                 String json = mapper.writeValueAsString(type);
@@ -123,13 +122,13 @@ class AgentEventStreamTest {
     }
 
     @Nested
-    @DisplayName("AgentEventType enumeration covers Python v2_dev surface")
+    @DisplayName("AgentEventType enumeration covers the full event surface")
     class EnumCoverage {
 
         @Test
-        @DisplayName("All 25 Python EventType values resolve to a Java enum constant")
+        @DisplayName("All 25 supported event names resolve to a Java enum constant")
         void allPythonValuesResolve() {
-            // Python agentscope.event.EventType (v2_dev) values:
+            // Canonical and legacy event-name surface:
             String[] pythonValues = {
                 "RUN_STARTED",
                 "RUN_FINISHED",
@@ -159,7 +158,7 @@ class AgentEventStreamTest {
             };
             for (String name : pythonValues) {
                 AgentEventType resolved = AgentEventType.fromValue(name);
-                assertNotNull(resolved, "Python EventType." + name + " must resolve");
+                assertNotNull(resolved, "EventType " + name + " must resolve");
             }
         }
     }

@@ -40,10 +40,8 @@ import io.agentscope.core.message.Msg;
  *
  * <p><b>Reply contract:</b> a single {@code call(...)} invocation produces exactly one
  * terminal {@link Msg}. Streaming variants (see {@link StreamableAgent}) may emit
- * many events but resolve to a single terminal Msg. This mirrors Python 2.0
- * {@code agent.reply()} which always returns a single Msg, and is enforced by
- * the {@code Mono<Msg>} return type on the call methods. Stage 7 of the 2.0
- * alignment will codify this in the Agent main-class refactor.
+ * many events but resolve to a single terminal Msg. This is enforced by the
+ * {@code Mono<Msg>} return type on the call methods.
  */
 public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
 

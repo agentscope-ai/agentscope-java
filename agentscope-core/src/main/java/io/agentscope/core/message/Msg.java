@@ -113,11 +113,10 @@ public class Msg implements State {
     /**
      * Validates that the content blocks are compatible with the message role.
      *
-     * <p>Mirrors Python {@code Msg.validate_role_content} (v2_dev). The Java
-     * SDK keeps the legacy {@link ImageBlock}/{@link AudioBlock}/{@link VideoBlock}
-     * types valid on {@link MsgRole#USER} alongside the unified
-     * {@link DataBlock}. {@link MsgRole#TOOL} is Java-only legacy and treated
-     * as unrestricted (same as assistant) to preserve back-compat.
+     * <p>The legacy {@link ImageBlock}/{@link AudioBlock}/{@link VideoBlock} types
+     * remain valid on {@link MsgRole#USER} alongside the unified {@link DataBlock}.
+     * {@link MsgRole#TOOL} is legacy and treated as unrestricted (same as assistant)
+     * to preserve back-compat.
      *
      * @param role The message role
      * @param content The content blocks
@@ -152,7 +151,7 @@ public class Msg implements State {
                 }
             }
             case ASSISTANT, TOOL -> {
-                // No restriction. Python assistant matches; TOOL preserved for Java back-compat.
+                // No restriction; TOOL preserved for back-compat.
             }
         }
     }
