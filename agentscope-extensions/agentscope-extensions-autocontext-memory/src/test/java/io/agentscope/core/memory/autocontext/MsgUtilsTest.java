@@ -451,6 +451,20 @@ class MsgUtilsTest {
                 .build();
     }
 
+    private Msg createCompressedAssistantMessage(String text) {
+        Map<String, Object> metadata = new HashMap<>();
+        Map<String, Object> compressMeta = new HashMap<>();
+        compressMeta.put("offloaduuid", "uuid-1");
+        metadata.put("_compress_meta", compressMeta);
+
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .name("assistant")
+                .content(List.of(TextBlock.builder().text(text).build()))
+                .metadata(metadata)
+                .build();
+    }
+
     // ============================================================================
     // Tests for isToolMessage, isToolUseMessage, isToolResultMessage
     // ============================================================================
@@ -598,6 +612,15 @@ class MsgUtilsTest {
                         .metadata(metadata)
                         .build();
 
+        assertFalse(MsgUtils.isFinalAssistantResponse(compressedMsg));
+    }
+
+    @Test
+    @DisplayName("Should return false for synthetic compressed assistant message")
+    void testIsFinalAssistantResponseWithSyntheticCompressedAssistant() {
+        Msg compressedMsg = createCompressedAssistantMessage("Compressed summary");
+
+        assertTrue(MsgUtils.isCompressedMessage(compressedMsg));
         assertFalse(MsgUtils.isFinalAssistantResponse(compressedMsg));
     }
 

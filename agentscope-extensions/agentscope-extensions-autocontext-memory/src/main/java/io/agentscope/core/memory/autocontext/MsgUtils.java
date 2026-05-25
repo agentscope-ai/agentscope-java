@@ -301,7 +301,8 @@ public class MsgUtils {
      *
      * <p>A compressed message is one that has been processed by AutoContextMemory compression
      * strategies. Compressed messages contain metadata with the {@code _compress_meta} key,
-     * which indicates that the message content has been compressed, summarized, or offloaded.
+     * which is the canonical marker for synthetic assistant summaries, offloaded payloads, and
+     * other replacement messages created by compression.
      *
      * <p>Compressed messages may have:
      * <ul>
@@ -333,30 +334,23 @@ public class MsgUtils {
     /**
      * Check if an ASSISTANT message is a final response to the user (not a tool call).
      *
-     * <p>A final assistant response should not contain ToolUseBlock, as those are intermediate
-     * tool invocation messages, not the final response returned to the user.
+     * <p>A final assistant response should not contain ToolUseBlock or ToolResultBlock, and it
+     * must not be a synthetic assistant message produced by compression. Synthetic assistant
+     * messages always carry {@code _compress_meta} metadata.
      *
      * @param msg the message to check
-     * @return true if the message is an ASSISTANT role message that does not contain tool calls
+     * @return true if the message is an ASSISTANT role message that is not synthetic and does not
+     *         contain tool calls
      */
     public static boolean isFinalAssistantResponse(Msg msg) {
         if (msg == null || msg.getRole() != MsgRole.ASSISTANT) {
             return false;
         }
 
-        // Skip compressed current round messages - they are compression results, not real assistant
-        // responses
-        Map<String, Object> metadata = msg.getMetadata();
-        if (metadata != null) {
-            Object compressMeta = metadata.get("_compress_meta");
-            // compressMeta may be null if the key doesn't exist, but instanceof handles null safely
-            if (compressMeta != null && compressMeta instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> compressMetaMap = (Map<String, Object>) compressMeta;
-                if (Boolean.TRUE.equals(compressMetaMap.get("compressed_current_round"))) {
-                    return false;
-                }
-            }
+        // Synthetic assistant messages are created by compression/offload flows and must not be
+        // treated as user-visible final replies.
+        if (isCompressedMessage(msg)) {
+            return false;
         }
 
         // A final response should not contain ToolUseBlock (tool calls)
