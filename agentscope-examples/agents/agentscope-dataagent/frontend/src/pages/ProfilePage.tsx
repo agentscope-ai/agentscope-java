@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AppShell from '../components/AppShell';
 import { UserView, getProfile, changePassword } from '../api/users';
 
 // ── Usage types ──────────────────────────────────────────────────────
@@ -129,7 +128,7 @@ export default function ProfilePage() {
     ms < 1000 ? `${ms}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60_000).toFixed(1)}m`;
 
   return (
-    <AppShell>
+    <>
       <div style={S.page}>
         <h2 style={S.title}>My Profile</h2>
 
@@ -227,6 +226,6 @@ export default function ProfilePage() {
           <button style={S.saveBtn} onClick={handleChangePwd}>Update Password</button>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

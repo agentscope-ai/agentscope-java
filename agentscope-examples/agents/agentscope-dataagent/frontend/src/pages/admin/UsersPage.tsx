@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 import {
   UserView,
@@ -116,7 +115,7 @@ export default function UsersPage() {
   ];
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout tabs={tabs} activeTab={tab} onTabChange={k => setTab(k as Tab)}>
         {error && <div style={S.err}>{error}</div>}
         {info  && <div style={S.info}>{info}</div>}
@@ -212,6 +211,6 @@ export default function UsersPage() {
           </div>
         )}
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

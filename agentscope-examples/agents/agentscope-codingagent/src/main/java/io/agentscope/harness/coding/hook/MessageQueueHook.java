@@ -28,9 +28,6 @@ import reactor.core.publisher.Mono;
 /**
  * Hook that injects queued messages before each LLM reasoning step.
  *
- * <p>Mirrors open-swe's {@code check_message_queue_before_model} middleware. On each
- * {@link PreReasoningEvent}:
- *
  * <ol>
  *   <li>Reads the current thread ID from {@link #CURRENT_THREAD_ID} (set by the dispatcher)
  *   <li>Checks {@code SqliteBaseStore} namespace {@code ["queue", thread_id]}

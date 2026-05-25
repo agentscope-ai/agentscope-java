@@ -25,6 +25,7 @@ const ADMIN_NAV: NavItem[] = [
   { label: 'Instances', path: '/admin/instances', icon: '⚡' },
   { label: 'Agents',    path: '/admin/agents',    icon: '🤖' },
   { label: 'Channels',  path: '/admin/channels',  icon: '📡' },
+  { label: 'Approvals', path: '/admin/approvals', icon: '✅' },
   { label: 'Users',     path: '/admin/users',     icon: '👥' },
   { label: 'Usage',     path: '/admin/usage',     icon: '📈' },
   { label: 'Config',    path: '/admin/config',    icon: '⚙️' },

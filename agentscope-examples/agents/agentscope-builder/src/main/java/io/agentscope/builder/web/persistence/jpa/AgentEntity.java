@@ -85,7 +85,7 @@ public class AgentEntity {
      * User-supplied workspace path for this agent (verbatim, may be {@code null}). When non-null,
      * absolute paths are used as-is on disk; relative paths resolve under
      * {@code ${cwd}/.agentscope/}. When {@code null}, the agent id is used in place of the path.
-     * See {@link io.agentscope.builder.web.workspace.WorkspaceManagerFactory#resolveAgentDataPath}
+     * See {@link io.agentscope.builder.web.workspace.SharedWorkspacePaths#resolveAgentDataPath}
      * for the full resolution rules. Authoritative — runtime code reads this column to locate
      * per-agent data on disk.
      */
@@ -143,6 +143,30 @@ public class AgentEntity {
 
     @Column(name = "fork_of", length = 128)
     private String forkOf;
+
+    /**
+     * JSON-serialised {@link io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry} list
+     * — same wire format as {@code agentscope.json}'s {@code skillRepositories} section so
+     * configs migrate either direction. Null when the agent uses only the implicit workspace
+     * overlay.
+     */
+    @Lob
+    @Column(name = "skill_repositories_json")
+    private String skillRepositoriesJson;
+
+    /**
+     * Sandbox execution mode ({@code local} / {@code sandbox}); null falls back to the platform
+     * default at runtime.
+     */
+    @Column(name = "sandbox_mode", length = 16)
+    private String sandboxMode;
+
+    /**
+     * Sandbox isolation scope ({@code SESSION} / {@code USER} / {@code AGENT} / {@code GLOBAL});
+     * only meaningful when {@link #sandboxMode} is {@code sandbox}.
+     */
+    @Column(name = "sandbox_scope", length = 16)
+    private String sandboxScope;
 
     @Column(name = "created_at")
     private long createdAt;
@@ -309,6 +333,30 @@ public class AgentEntity {
 
     public void setForkOf(String forkOf) {
         this.forkOf = forkOf;
+    }
+
+    public String getSkillRepositoriesJson() {
+        return skillRepositoriesJson;
+    }
+
+    public void setSkillRepositoriesJson(String skillRepositoriesJson) {
+        this.skillRepositoriesJson = skillRepositoriesJson;
+    }
+
+    public String getSandboxMode() {
+        return sandboxMode;
+    }
+
+    public void setSandboxMode(String sandboxMode) {
+        this.sandboxMode = sandboxMode;
+    }
+
+    public String getSandboxScope() {
+        return sandboxScope;
+    }
+
+    public void setSandboxScope(String sandboxScope) {
+        this.sandboxScope = sandboxScope;
     }
 
     public long getCreatedAt() {

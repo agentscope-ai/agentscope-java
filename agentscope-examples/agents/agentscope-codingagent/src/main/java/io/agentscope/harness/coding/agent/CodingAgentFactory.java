@@ -15,21 +15,21 @@
  */
 package io.agentscope.harness.coding.agent;
 
+import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.coding.hook.FallbackModel;
 import io.agentscope.harness.coding.prompt.CodingSystemPrompt;
 import java.nio.file.Path;
 
 /**
  * Factory for the coding agent.
- *
- * <p>Mirrors {@code get_agent()} from open-swe-main's {@code agent/server.py}. Configures a
- * {@link HarnessAgent} with:
  *
  * <ul>
  *   <li>Coding-focused system prompt (workspace env, repo setup, GitHub via {@code
@@ -64,7 +64,7 @@ public final class CodingAgentFactory {
 
         HarnessAgent.Builder builder =
                 HarnessAgent.builder()
-                        .name("open-swe-coding")
+                        .name("agentscope-coding-agent")
                         .model(model)
                         .sysPrompt(sysPrompt)
                         .workspace(workspace)
@@ -97,7 +97,7 @@ public final class CodingAgentFactory {
 
     public static String resolveSandboxType() {
         String env = System.getenv("SANDBOX_TYPE");
-        return (env != null && !env.isBlank()) ? env.toLowerCase() : "docker";
+        return (env != null && !env.isBlank()) ? env.toLowerCase() : "none";
     }
 
     public static String resolveSandboxImage() {
@@ -112,27 +112,50 @@ public final class CodingAgentFactory {
     /**
      * Builds the model from the {@code CODING_MODEL_ID} environment variable.
      *
-     * <p>Supported prefixes:
+     * <p>Supported prefixes: {@code dashscope:<name>} (default), {@code openai:<name>},
+     * {@code anthropic:<name>}.
      *
-     * <ul>
-     *   <li>{@code dashscope:<model-name>} (default: {@code dashscope:qwen-max})
-     *   <li>Future: {@code openai:<model-name>}, {@code anthropic:<model-name>}
-     * </ul>
+     * <p>When {@code FALLBACK_MODEL_ID} is also set, the primary model is wrapped with a
+     * {@link FallbackModel} so retryable errors transparently fail over.
      */
     public static Model buildModel() {
-        String modelId = resolveModelId();
-        if (modelId.startsWith("dashscope:") || !modelId.contains(":")) {
-            String name =
-                    modelId.startsWith("dashscope:")
-                            ? modelId.substring("dashscope:".length())
-                            : modelId;
-            String apiKey = System.getenv("DASHSCOPE_API_KEY");
-            return DashScopeChatModel.builder().apiKey(apiKey).modelName(name).stream(true).build();
+        Model primary = buildModelById(resolveModelId());
+        String fallbackId = System.getenv("FALLBACK_MODEL_ID");
+        if (fallbackId != null && !fallbackId.isBlank()) {
+            return new FallbackModel(primary, buildModelById(fallbackId.trim()));
         }
-        throw new IllegalArgumentException(
-                "Unsupported CODING_MODEL_ID prefix: "
-                        + modelId
-                        + ". Use 'dashscope:<name>' or implement additional model builders.");
+        return primary;
+    }
+
+    private static Model buildModelById(String modelId) {
+        if (modelId.startsWith("openai:")) {
+            String name = modelId.substring("openai:".length());
+            String apiKey = System.getenv("OPENAI_API_KEY");
+            String baseUrl = System.getenv("OPENAI_BASE_URL");
+            OpenAIChatModel.Builder b =
+                    OpenAIChatModel.builder().apiKey(apiKey).modelName(name).stream(true);
+            if (baseUrl != null && !baseUrl.isBlank()) {
+                b.baseUrl(baseUrl);
+            }
+            return b.build();
+        }
+        if (modelId.startsWith("anthropic:")) {
+            String name = modelId.substring("anthropic:".length());
+            String apiKey = System.getenv("ANTHROPIC_API_KEY");
+            String baseUrl = System.getenv("ANTHROPIC_BASE_URL");
+            AnthropicChatModel.Builder b =
+                    AnthropicChatModel.builder().apiKey(apiKey).modelName(name).stream(true);
+            if (baseUrl != null && !baseUrl.isBlank()) {
+                b.baseUrl(baseUrl);
+            }
+            return b.build();
+        }
+        String name =
+                modelId.startsWith("dashscope:")
+                        ? modelId.substring("dashscope:".length())
+                        : modelId;
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        return DashScopeChatModel.builder().apiKey(apiKey).modelName(name).stream(true).build();
     }
 
     public static String resolveModelId() {

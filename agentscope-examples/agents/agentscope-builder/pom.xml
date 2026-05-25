@@ -51,6 +51,24 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
+        <!-- Git skill repository: builder delegates to GitSkillRepository for marketplace listing/fetch -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-skill-git-repository</artifactId>
+        </dependency>
+
+        <!-- Nacos skill repository: reused for ZIP layout utilities; download path still works through AiService -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-nacos-skill</artifactId>
+        </dependency>
+
+        <!-- Nacos maintainer client: required for paged skill listing (SkillMaintainerService) which the regular AiService client does not expose -->
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-maintainer-client</artifactId>
+        </dependency>
+
         <!-- YAML parsing for subagent config -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>

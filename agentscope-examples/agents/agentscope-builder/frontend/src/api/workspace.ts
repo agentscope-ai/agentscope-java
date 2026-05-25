@@ -61,16 +61,14 @@ export async function writeFile(agentId: string, path: string, content: string):
   if (!res.ok) throw new Error('Failed to write file');
 }
 
-export async function createNode(
-  agentId: string,
-  path: string,
-  type: 'file' | 'dir',
-): Promise<void> {
+// Empty directories are not representable on the composite filesystem (intermediate dirs
+// materialize implicitly on first file write), so only file creation is exposed here.
+export async function createNode(agentId: string, path: string): Promise<void> {
   const res = await fetch(
-    `${base(agentId)}/file?path=${encodeURIComponent(path)}&type=${type}`,
+    `${base(agentId)}/file?path=${encodeURIComponent(path)}&type=file`,
     { method: 'POST', headers: authHeaders() },
   );
-  if (!res.ok) throw new Error('Failed to create node');
+  if (!res.ok) throw new Error('Failed to create file');
 }
 
 export async function moveNode(agentId: string, from: string, to: string): Promise<void> {

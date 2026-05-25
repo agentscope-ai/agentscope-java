@@ -23,7 +23,8 @@ import io.agentscope.builder.web.catalog.AgentDefinition;
 import io.agentscope.builder.web.share.AgentAccessGuard;
 import io.agentscope.builder.web.share.AgentAclService.Tier;
 import io.agentscope.builder.web.util.WorkspaceCopier;
-import io.agentscope.builder.web.workspace.WorkspaceManagerFactory;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,8 +48,7 @@ import reactor.core.publisher.Mono;
  * operation works identically against {@code LocalFilesystem} and {@code RemoteFilesystem}.
  *
  * <p>Cloning a global agent is not supported in v1 (returns 409): globals live in
- * {@code agentscope.json}, not in any user namespace, and their workspace layout is not yet wired
- * through the per-user {@link WorkspaceManagerFactory}.
+ * {@code agentscope.json}, not in any user namespace.
  */
 @RestController
 @RequestMapping("/api/agents/{id}/clone")
@@ -58,17 +58,12 @@ public class AgentCloneController {
 
     private final AgentCatalogService catalog;
     private final AgentAccessGuard guard;
-    private final WorkspaceManagerFactory workspaceFactory;
     private final AgentActivityStore activity;
 
     public AgentCloneController(
-            AgentCatalogService catalog,
-            AgentAccessGuard guard,
-            WorkspaceManagerFactory workspaceFactory,
-            AgentActivityStore activity) {
+            AgentCatalogService catalog, AgentAccessGuard guard, AgentActivityStore activity) {
         this.catalog = catalog;
         this.guard = guard;
-        this.workspaceFactory = workspaceFactory;
         this.activity = activity;
     }
 
@@ -95,15 +90,24 @@ public class AgentCloneController {
                     StoredEntryAndDefinition out =
                             catalog.prepareClone(srcOwnerId, sourceAgentId, userId, newId, newName);
 
+                    HarnessAgent srcAgent =
+                            catalog.getOrInstantiateRunningAgent(srcOwnerId, sourceAgentId);
+                    HarnessAgent dstAgent =
+                            catalog.getOrInstantiateRunningAgent(userId, out.entry().id());
+                    if (srcAgent == null || dstAgent == null) {
+                        throw new ResponseStatusException(
+                                HttpStatus.NOT_FOUND, "Agent unavailable after clone preparation");
+                    }
+                    AbstractFilesystem srcFs =
+                            srcAgent.workspaceFor(srcOwnerId, null).getFilesystem();
+                    AbstractFilesystem dstFs = dstAgent.workspaceFor(userId, null).getFilesystem();
+
                     int copied =
                             WorkspaceCopier.copy(
-                                    workspaceFactory,
-                                    srcOwnerId,
-                                    sourceAgentId,
-                                    src.workspacePath(),
-                                    userId,
-                                    out.entry().id(),
-                                    out.entry().workspacePath());
+                                    srcFs,
+                                    dstFs,
+                                    srcOwnerId + "/" + sourceAgentId,
+                                    userId + "/" + out.entry().id());
                     log.info(
                             "Clone {}/{} -> {}/{}: {} files copied",
                             srcOwnerId,

@@ -1,18 +1,20 @@
 # DataAgent cluster deployment
 
-This guide shows a minimal 3-replica deployment with shared workspace and Redis
-coordination. The same shape works on Kubernetes (StatefulSet behind a Service,
-PVC for the workspace, a Redis Deployment) — the docker-compose sample below is
-the smallest reproducible example.
+This guide shows a minimal 3-replica deployment with shared workspace and
+Redis coordination. The same shape works on Kubernetes (StatefulSet behind a
+Service, PVC for the workspace, a Redis Deployment) — the docker-compose
+sample below is the smallest reproducible example.
 
 ## What needs to be shared across replicas
 
 | Subsystem | Shared via | Reason |
 |---|---|---|
-| Sandbox state / session snapshots | Redis (`claw.session.redis.enabled=true`) | A user routed to R2 must be able to resume the sandbox that R1 started. |
+| Per-user workspace (`memory/`, `sessions/`, `tasks/`, `skills/`, …) | Redis-backed `RemoteFilesystem` (`dataagent.session.redis.enabled=true`) | A user routed to R2 must see files R1 wrote against the same `(userId, agentId)` namespace. |
+| Sandbox state / session snapshots | Redis (same flag) | A user routed to R2 must be able to resume the sandbox that R1 started. |
 | Tool-event SSE | Redis Pub/Sub (auto when Redis enabled) | An SSE subscriber on R2 must see tool calls fired by the agent running on R1. |
 | User channel bindings | Redis hash (auto when Redis enabled) | Preferences set on R1 should take effect immediately on R2. |
-| `users.json`, `usage/*`, `sessions/*`, `workspace/` | Shared filesystem (NFS / EFS) | The workspace files are still authoritative; every replica reads/writes the same paths. |
+| JPA tables (`dataagent_user`, `dataagent_agent`, `dataagent_contribution`) | Shared RDBMS (MySQL / PostgreSQL via `jdbc` profile) | The H2 default is single-node only; cluster deployments must point every replica at the same external database. |
+| `${dataagent.workspace}/.agentscope/shared/` | Shared filesystem (NFS / EFS) | The OverlayFilesystem's lower layer; every replica must read the same set of approved contributions. Approval writes from any replica must be visible to all. |
 | In-memory log SSE | (not shared — single-replica view) | Admin "live logs" only show events from the replica serving that connection. Documented behaviour. |
 
 ## docker-compose sample
@@ -25,43 +27,52 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes: ["redis-data:/data"]
 
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set me}
+      MYSQL_DATABASE: dataagent
+      MYSQL_USER: dataagent
+      MYSQL_PASSWORD: ${DATAAGENT_DB_PASSWORD:?set me}
+    volumes: ["mysql-data:/var/lib/mysql"]
+
   # NFS-backed shared workspace; in a real deployment this is an EFS / Filestore
   # / Azure Files mount instead of a local bind.
   workspace-init:
     image: alpine
-    command: ["sh", "-c", "mkdir -p /workspace/.agentscope && chown -R 1000:1000 /workspace"]
-    volumes: ["claw-workspace:/workspace"]
+    command: ["sh", "-c", "mkdir -p /workspace/.agentscope/shared && chown -R 1000:1000 /workspace"]
+    volumes: ["dataagent-workspace:/workspace"]
 
-  claw-1: &claw
-    image: agentscope/claw:latest
-    depends_on: [redis, workspace-init]
+  dataagent-1: &dataagent
+    image: agentscope/dataagent:latest
+    depends_on: [redis, mysql, workspace-init]
     environment:
-      CLAW_JWT_SECRET: ${CLAW_JWT_SECRET:?set me}
+      DATAAGENT_JWT_SECRET: ${DATAAGENT_JWT_SECRET:?set me}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?set me}
-      CLAW_WORKSPACE: /workspace
-      SPRING_PROFILES_ACTIVE: prod
-      CLAW_SESSION_REDIS_ENABLED: "true"
-      CLAW_SESSION_REDIS_HOST: redis
-      CLAW_SESSION_REDIS_PORT: "6379"
-      CLAW_SANDBOX_ENABLED: "true"
-      CLAW_SANDBOX_ISOLATION: USER
-    volumes: ["claw-workspace:/workspace"]
-    # If sandbox=true, the host Docker socket must be mounted so the agent can
-    # spawn its sandbox containers.
-    volumes_extra: &dockersock ["/var/run/docker.sock:/var/run/docker.sock"]
+      DATAAGENT_WORKSPACE: /workspace
+      SPRING_PROFILES_ACTIVE: prod,jdbc
+      DATAAGENT_DB_URL: jdbc:mysql://mysql:3306/dataagent?useSSL=false&serverTimezone=UTC
+      DATAAGENT_DB_USER: dataagent
+      DATAAGENT_DB_PASSWORD: ${DATAAGENT_DB_PASSWORD:?set me}
+      DATAAGENT_JPA_DDL_AUTO: validate
+      DATAAGENT_SESSION_REDIS_ENABLED: "true"
+      DATAAGENT_SESSION_REDIS_HOST: redis
+      DATAAGENT_SESSION_REDIS_PORT: "6379"
+    volumes: ["dataagent-workspace:/workspace"]
 
-  claw-2: { <<: *claw }
-  claw-3: { <<: *claw }
+  dataagent-2: { <<: *dataagent }
+  dataagent-3: { <<: *dataagent }
 
   lb:
     image: nginx:alpine
-    depends_on: [claw-1, claw-2, claw-3]
+    depends_on: [dataagent-1, dataagent-2, dataagent-3]
     ports: ["8080:80"]
     volumes: ["./nginx.conf:/etc/nginx/nginx.conf:ro"]
 
 volumes:
   redis-data:
-  claw-workspace:
+  mysql-data:
+  dataagent-workspace:
     driver_opts:
       type: nfs
       o: "addr=nfs.internal,rw,nfsvers=4"
@@ -74,8 +85,12 @@ session state lives in Redis):
 ```nginx
 events {}
 http {
-  upstream claw_replicas { server claw-1:8080; server claw-2:8080; server claw-3:8080; }
-  server { listen 80; location / { proxy_pass http://claw_replicas; } }
+  upstream dataagent_replicas {
+    server dataagent-1:8080;
+    server dataagent-2:8080;
+    server dataagent-3:8080;
+  }
+  server { listen 80; location / { proxy_pass http://dataagent_replicas; } }
 }
 ```
 
@@ -84,34 +99,55 @@ http {
 1. **Bindings** — create a binding on R1, fetch on R2 within the same second:
 
    ```bash
-   curl -X POST -H 'Authorization: Bearer $JWT' -H 'Content-Type: application/json' \
-     -d '{"channelId":"chatui","language":"zh-CN"}' http://claw-1:8080/api/user/bindings
-   curl -H 'Authorization: Bearer $JWT' http://claw-2:8080/api/user/bindings
-   # → returns the binding created on claw-1
+   curl -X POST -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+     -d '{"channelId":"chatui","language":"zh-CN"}' \
+     http://dataagent-1:8080/api/user/bindings
+   curl -H "Authorization: Bearer $JWT" http://dataagent-2:8080/api/user/bindings
+   # → returns the binding created on dataagent-1
    ```
 
 2. **Session continuity** — send turn #1 to R1, turn #2 to R2:
 
    ```bash
    curl -X POST -H "$AUTH" -H 'Content-Type: application/json' \
-     -d '{"message":"Hi, my name is Alice"}' http://claw-1:8080/api/chat/send
+     -d '{"message":"Hi, my name is Alice"}' \
+     http://dataagent-1:8080/api/chat/send
    curl -X POST -H "$AUTH" -H 'Content-Type: application/json' \
-     -d '{"message":"What name did I just give you?"}' http://claw-2:8080/api/chat/send
+     -d '{"message":"What name did I just give you?"}' \
+     http://dataagent-2:8080/api/chat/send
    # → R2 reply references "Alice"
    ```
 
-3. **Cross-replica SSE** — open the SSE stream on R2, send a chat from R1, see
+3. **Marketplace contribution propagation** — submit a contribution on R1,
+   approve it as admin against R2, confirm a chat on R3 picks up the new
+   skill on the next session reset:
+
+   ```bash
+   curl -X POST -H "$USER_AUTH" -H 'Content-Type: application/json' \
+     -d '{"targetType":"skill","targetPath":"cohort-builder/SKILL.md","payload":"# Cohort builder\n..."}' \
+     http://dataagent-1:8080/api/me/contributions
+   # → { "id": 42, ... "status": "PENDING" }
+
+   curl -X POST -H "$ADMIN_AUTH" -H 'Content-Type: application/json' \
+     -d '{"note":"looks good"}' \
+     http://dataagent-2:8080/api/admin/contributions/42/approve
+   # → 200; file written under /workspace/.agentscope/shared/skills/cohort-builder/SKILL.md
+   # → visible to dataagent-3 because every replica mounts the same NFS volume
+   ```
+
+4. **Cross-replica SSE** — open the SSE stream on R2, send a chat from R1, see
    the `TOOL_CALL` events propagate.
 
 ## Pre-flight checks that fail loudly
 
 Startup will refuse to come up if any of these are misconfigured:
 
-- `claw.jwt.secret` left at the dev placeholder in a non-`dev` profile.
-- `claw.workspace` blank in a non-`dev` profile.
-- `claw.session.redis.enabled=true` with `claw.workspace` pointing at an
-  ephemeral path (`/tmp/`, `/var/tmp/`, `/private/tmp/`, `/dev/shm/`).
-- `claw.sandbox.isolation=SESSION` without `claw.sandbox.enabled=true`.
+- `dataagent.jwt.secret` left at the dev placeholder in a non-`dev` profile.
+- `dataagent.workspace` blank in a non-`dev` profile.
+- `dataagent.session.redis.enabled=true` with `dataagent.workspace` pointing
+  at an ephemeral path (`/tmp/`, `/var/tmp/`, `/private/tmp/`, `/dev/shm/`).
+- `spring.jpa.hibernate.ddl-auto=update` against MySQL/PostgreSQL in a cluster:
+  pin the schema with Flyway / Liquibase and set `DATAAGENT_JPA_DDL_AUTO=validate`.
 
 These are intentional: silent misconfiguration in cluster mode corrupts user
 state in ways that are hard to recover from after the fact.

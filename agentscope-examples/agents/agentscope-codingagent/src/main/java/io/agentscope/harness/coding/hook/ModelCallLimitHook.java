@@ -26,8 +26,7 @@ import reactor.core.publisher.Mono;
 /**
  * Hook that enforces a global model call limit across all threads.
  *
- * <p>Mirrors open-swe's {@code ModelCallLimitMiddleware}. Terminates the run when the total
- * model call count exceeds the configured limit (default: 5000).
+ * Terminates the run when the total model call count exceeds the configured limit (default: 5000).
  */
 public class ModelCallLimitHook implements Hook {
 

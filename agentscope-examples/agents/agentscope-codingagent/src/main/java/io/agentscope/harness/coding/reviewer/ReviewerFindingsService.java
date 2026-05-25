@@ -16,51 +16,102 @@
 package io.agentscope.harness.coding.reviewer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.harness.agent.store.BaseStore;
+import io.agentscope.harness.agent.store.StoreItem;
+import io.agentscope.harness.coding.observability.CodingAgentMetrics;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * CRUD service for reviewer findings. Backed by {@code SqliteBaseStore} (wired in phase 4); uses
- * an in-memory fallback until then.
+ * CRUD service for reviewer findings. Backed by a {@link BaseStore} so a re-review on the same
+ * thread can resume from previously recorded findings, mirroring open-swe's behaviour.
  *
  * <p>Namespace: {@code ["findings", thread_id]} → {@code {finding_id: Finding JSON}}.
  */
 public class ReviewerFindingsService {
 
+    private static final Logger log = LoggerFactory.getLogger(ReviewerFindingsService.class);
+
     private final ObjectMapper mapper = new ObjectMapper();
+    private final BaseStore store;
+    private final CodingAgentMetrics metrics;
 
-    /**
-     * Pluggable store backend. When null, falls back to in-memory store. Phase 4 will inject a
-     * {@code SqliteBaseStore} here.
-     */
-    private final Map<String, Map<String, Finding>> inMemoryStore = new ConcurrentHashMap<>();
-
-    public void addFinding(String threadId, Finding finding) {
-        inMemoryStore
-                .computeIfAbsent(threadId, k -> new ConcurrentHashMap<>())
-                .put(finding.getId(), finding);
+    public ReviewerFindingsService(BaseStore store) {
+        this(store, null);
     }
 
-    public void updateFinding(String threadId, Finding finding) {
-        Map<String, Finding> findings = inMemoryStore.get(threadId);
-        if (findings != null) {
-            findings.put(finding.getId(), finding);
+    public ReviewerFindingsService(BaseStore store, CodingAgentMetrics metrics) {
+        this.store = store;
+        this.metrics = metrics;
+    }
+
+    public void addFinding(String threadId, Finding finding) {
+        try {
+            Map<String, Object> value = mapper.convertValue(finding, Map.class);
+            store.put(namespace(threadId), finding.getId(), value);
+            if (metrics != null) {
+                metrics.recordFindingAdded();
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[reviewer-findings] Failed to persist finding {} for thread {}: {}",
+                    finding.getId(),
+                    threadId,
+                    e.getMessage());
         }
     }
 
+    public void updateFinding(String threadId, Finding finding) {
+        addFinding(threadId, finding);
+    }
+
     public Finding getFinding(String threadId, String findingId) {
-        Map<String, Finding> findings = inMemoryStore.get(threadId);
-        return findings != null ? findings.get(findingId) : null;
+        try {
+            StoreItem item = store.get(namespace(threadId), findingId);
+            return item == null ? null : mapper.convertValue(item.value(), Finding.class);
+        } catch (Exception e) {
+            log.warn(
+                    "[reviewer-findings] Failed to read finding {} for thread {}: {}",
+                    findingId,
+                    threadId,
+                    e.getMessage());
+            return null;
+        }
     }
 
     public List<Finding> listFindings(String threadId) {
-        Map<String, Finding> findings = inMemoryStore.get(threadId);
-        return findings != null ? new ArrayList<>(findings.values()) : new ArrayList<>();
+        List<Finding> findings = new ArrayList<>();
+        try {
+            for (StoreItem item : store.search(namespace(threadId), 1000, 0)) {
+                findings.add(mapper.convertValue(item.value(), Finding.class));
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[reviewer-findings] Failed to list findings for thread {}: {}",
+                    threadId,
+                    e.getMessage());
+        }
+        return findings;
     }
 
     public void clearFindings(String threadId) {
-        inMemoryStore.remove(threadId);
+        try {
+            List<String> ns = namespace(threadId);
+            for (StoreItem item : store.search(ns, 1000, 0)) {
+                store.delete(ns, item.key());
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[reviewer-findings] Failed to clear findings for thread {}: {}",
+                    threadId,
+                    e.getMessage());
+        }
+    }
+
+    private static List<String> namespace(String threadId) {
+        return List.of("findings", threadId);
     }
 }

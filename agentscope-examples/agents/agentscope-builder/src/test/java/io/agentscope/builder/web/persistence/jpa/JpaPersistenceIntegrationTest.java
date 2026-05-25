@@ -145,7 +145,10 @@ class JpaPersistenceIntegrationTest {
                                         "bob-1")),
                         "INVOKER",
                         null,
-                        "/tmp/agentscope-test/demo");
+                        "/tmp/agentscope-test/demo",
+                        null,
+                        null,
+                        null);
 
         StoredEntry saved = agentStore.save("bob-1", entry);
         assertThat(saved.id()).isEqualTo("demo");

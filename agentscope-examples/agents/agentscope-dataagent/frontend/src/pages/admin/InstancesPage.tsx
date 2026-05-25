@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 import {
   listInstances, listAdminSessions,
@@ -102,7 +101,7 @@ export default function InstancesPage() {
   const totalLiveSessions = rows.reduce((sum, r) => sum + r.liveSessionCount, 0);
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout>
         {/* Toolbar */}
         <div style={S.toolbar}>
@@ -177,6 +176,6 @@ export default function InstancesPage() {
           </tbody>
         </table>
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

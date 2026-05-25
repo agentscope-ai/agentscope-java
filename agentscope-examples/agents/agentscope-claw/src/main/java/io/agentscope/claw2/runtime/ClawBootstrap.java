@@ -68,8 +68,9 @@ import org.slf4j.LoggerFactory;
  * with {@link SessionsTool} and a shared {@link SessionAgentManager} + {@link HarnessGateway}.
  *
  * <p>{@code clawHome} is the root for all on-disk state (built-in {@code agentscope.json}, custom
- * agents catalog, per-agent workspaces and session stores). It defaults to {@code ~/.agentscope}
- * for local desktop installs.
+ * agents catalog, per-agent workspaces and session stores). It defaults to
+ * {@code ~/.agentscope/claw} so multiple harness apps (claw, builder, dataagent, codingagent)
+ * each get their own isolated workspace tree.
  *
  * <h2>Runtime phase — two entry points</h2>
  *
@@ -423,7 +424,8 @@ public final class ClawBootstrap {
 
     public static final class Builder {
 
-        private Path cwd = Paths.get(System.getProperty("user.dir"));
+        private Path cwd =
+                Paths.get(System.getProperty("user.home"), ".agentscope", "claw").toAbsolutePath();
         private Path configPath;
         private boolean skipConfigFile;
         private Model model;

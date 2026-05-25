@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.harness.agent.HarnessAgent;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -64,8 +65,26 @@ public class AgentConfigEntry {
     @JsonProperty("environmentMemory")
     private String environmentMemory;
 
+    /**
+     * Legacy single-value skill repository. Retained for backwards-compatible deserialisation of
+     * older {@code agentscope.json} files; if present it is folded into
+     * {@link #skillRepositories} at the head when the effective list is materialised.
+     *
+     * @deprecated Prefer {@link #skillRepositories} which supports the workspace-skills +
+     *     marketplace-installed-skills + builtin layering pattern.
+     */
+    @Deprecated
     @JsonProperty("skillRepository")
     private SkillRepositoryConfigEntry skillRepository;
+
+    /**
+     * Layered skill repositories. Each entry is appended to the agent's effective
+     * {@link io.agentscope.core.skill.repository.SkillRepository} list in order, so earlier entries
+     * win on skill-name conflicts. The {@code workspace/skills/} overlay is implicit and is added
+     * by the harness composite filesystem automatically — do not list it here.
+     */
+    @JsonProperty("skillRepositories")
+    private List<SkillRepositoryConfigEntry> skillRepositories;
 
     /**
      * Optional model id override (e.g. {@code "anthropic/claude-opus-4-7"}). When null the
@@ -145,12 +164,40 @@ public class AgentConfigEntry {
         this.environmentMemory = environmentMemory;
     }
 
+    @Deprecated
     public SkillRepositoryConfigEntry getSkillRepository() {
         return skillRepository;
     }
 
+    @Deprecated
     public void setSkillRepository(SkillRepositoryConfigEntry skillRepository) {
         this.skillRepository = skillRepository;
+    }
+
+    public List<SkillRepositoryConfigEntry> getSkillRepositories() {
+        return skillRepositories;
+    }
+
+    public void setSkillRepositories(List<SkillRepositoryConfigEntry> skillRepositories) {
+        this.skillRepositories = skillRepositories;
+    }
+
+    /**
+     * Returns the effective ordered list of skill repository entries, folding the legacy
+     * {@link #skillRepository} value (if any) into the head so older configs continue to load
+     * unchanged. Never null; may be empty.
+     */
+    public List<SkillRepositoryConfigEntry> effectiveSkillRepositories() {
+        List<SkillRepositoryConfigEntry> out = new ArrayList<>();
+        if (skillRepository != null) {
+            out.add(skillRepository);
+        }
+        if (skillRepositories != null) {
+            for (SkillRepositoryConfigEntry e : skillRepositories) {
+                if (e != null) out.add(e);
+            }
+        }
+        return out;
     }
 
     public String getModel() {

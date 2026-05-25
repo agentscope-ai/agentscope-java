@@ -30,7 +30,7 @@ import reactor.core.publisher.Mono;
  * <p>Tracks cumulative model call counts per thread (using {@link MessageQueueHook#CURRENT_THREAD_ID}).
  * When the limit is reached, raises an exception to terminate the run.
  *
- * <p>Mirrors open-swe's {@code ModelCallLimitMiddleware} + the new per-thread budget concept.
+ * The new per-thread budget concept.
  */
 public class ThreadBudgetHook implements Hook {
 

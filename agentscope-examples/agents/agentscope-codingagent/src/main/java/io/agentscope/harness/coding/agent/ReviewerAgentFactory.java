@@ -24,8 +24,6 @@ import java.nio.file.Path;
 /**
  * Factory for the reviewer agent.
  *
- * <p>Mirrors {@code get_reviewer_agent()} from open-swe-main's {@code agent/reviewer.py}.
- * Configures a read-only {@link HarnessAgent} that:
  *
  * <ul>
  *   <li>Uses the reviewer system prompt with PR context
@@ -63,7 +61,7 @@ public final class ReviewerAgentFactory {
         String sysPrompt = ReviewerSystemPrompt.build(workingDir, repoOwner, repoName, prNumber);
 
         return HarnessAgent.builder()
-                .name("open-swe-reviewer")
+                .name("agentscope-reviewer-agent")
                 .model(model)
                 .sysPrompt(sysPrompt)
                 .workspace(workspace)

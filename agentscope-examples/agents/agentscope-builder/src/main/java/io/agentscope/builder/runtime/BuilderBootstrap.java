@@ -23,16 +23,20 @@ import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.builder.runtime.config.AgentConfigEntry;
 import io.agentscope.builder.runtime.config.AgentscopeConfig;
 import io.agentscope.builder.runtime.config.ChannelConfigEntry;
+import io.agentscope.builder.runtime.config.ChannelFactory;
+import io.agentscope.builder.runtime.config.ChannelTypeRegistry;
 import io.agentscope.builder.runtime.config.SkillRepositorySupport;
 import io.agentscope.builder.runtime.gateway.ChannelManager;
 import io.agentscope.builder.runtime.gateway.Gateway;
 import io.agentscope.builder.runtime.gateway.HarnessGateway;
+import io.agentscope.builder.runtime.outbound.OutboundTool;
 import io.agentscope.builder.runtime.session.AgentManagerConfig;
 import io.agentscope.builder.runtime.session.SessionAgentManager;
 import io.agentscope.builder.runtime.session.SessionStore;
 import io.agentscope.builder.runtime.session.SubagentRunRegistry;
 import io.agentscope.builder.runtime.session.tool.SessionsTool;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.hook.SubagentsHook;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -58,7 +62,8 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Build phase — {@link #builder()}</h2>
  *
- * Loads {@code ${cwd}/.agentscope/agentscope.json}, merges file-based agent definitions with
+ * Loads {@code ~/.agentscope/builder/agentscope.json} (the per-app home, isolated from other
+ * harness apps and from the cwd the JVM was launched in), merges file-based agent definitions with
  * programmatic {@link Builder} configuration, and produces {@link HarnessAgent} instances wired
  * with {@link SessionsTool} and a shared {@link SessionAgentManager} + {@link HarnessGateway}.
  *
@@ -74,6 +79,25 @@ public final class BuilderBootstrap {
 
     private static final Logger log = LoggerFactory.getLogger(BuilderBootstrap.class);
     private static final String DEFAULT_MAIN_ID = "default";
+
+    /**
+     * Default workspace root for every builder instance. Lives outside the project tree so the
+     * shared workspace root (templates, default {@code AGENTS.md} / skills / subagents) and
+     * per-tenant remote namespaces don't pollute the cwd the app was launched from, and so two
+     * different harness apps cannot collide on the same {@code .agentscope/workspace/} directory.
+     */
+    public static final Path DEFAULT_WORKSPACE_ROOT =
+            Paths.get(System.getProperty("user.home"), ".agentscope", "builder", "workspace");
+
+    /**
+     * Default location of the {@code agentscope.json} config file. Pinned to the per-app home
+     * directory ({@code ~/.agentscope/builder/}) so the builder web app never picks up a stale
+     * config left behind by another harness app (e.g. dataagent, codingagent) in the cwd it was
+     * launched from. The {@link io.agentscope.builder.web.config.BuilderConfig} auto-generates this
+     * file on first start if it doesn't exist.
+     */
+    public static final Path DEFAULT_CONFIG_PATH =
+            Paths.get(System.getProperty("user.home"), ".agentscope", "builder", "agentscope.json");
 
     // -----------------------------------------------------------------
     //  Instance state — populated by Builder.build()
@@ -116,8 +140,8 @@ public final class BuilderBootstrap {
         return new Builder();
     }
 
-    public static AgentscopeConfig loadConfig(Path cwd) throws IOException {
-        return loadConfigFile(defaultConfigPath(cwd));
+    public static AgentscopeConfig loadConfig() throws IOException {
+        return loadConfigFile(DEFAULT_CONFIG_PATH);
     }
 
     public static AgentscopeConfig loadConfigFile(Path configPath) throws IOException {
@@ -128,10 +152,6 @@ public final class BuilderBootstrap {
                 new ObjectMapper()
                         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         return mapper.readValue(configPath.toFile(), AgentscopeConfig.class);
-    }
-
-    public static Path defaultConfigPath(Path cwd) {
-        return cwd.resolve(".agentscope").resolve("agentscope.json");
     }
 
     // -----------------------------------------------------------------
@@ -231,8 +251,8 @@ public final class BuilderBootstrap {
      * Resolves the workspace {@link Path} for a given agent id using the same logic as the
      * build phase.
      *
-     * <p>If {@code agentId} is not found in the loaded config the default workspace path
-     * ({@code {cwd}/.agentscope/workspace}) is returned.
+     * <p>If {@code agentId} is not found in the loaded config (or has no explicit workspace) the
+     * default workspace path ({@link #DEFAULT_WORKSPACE_ROOT}) is returned.
      */
     public Path resolveWorkspace(String agentId) {
         AgentscopeConfig cfg = loadedConfig;
@@ -240,7 +260,7 @@ public final class BuilderBootstrap {
         if (entry != null && entry.getWorkspace() != null && !entry.getWorkspace().isBlank()) {
             return cwd.resolve(entry.getWorkspace()).normalize();
         }
-        return cwd.resolve(".agentscope").resolve("workspace").normalize();
+        return DEFAULT_WORKSPACE_ROOT;
     }
 
     // -----------------------------------------------------------------
@@ -273,13 +293,40 @@ public final class BuilderBootstrap {
             if (merged.containsKey(channelId)) {
                 continue;
             }
-            if (ChatUiChannel.CHANNEL_ID.equals(channelId)) {
-                merged.put(channelId, ChatUiChannel.create(ce.toChannelConfig(channelId)));
-            } else {
-                log.debug(
-                        "Channel '{}' configured in file but no implementation registered via"
-                                + " AgentBootstrap.Builder.channel(); skipping auto-creation.",
+            String type = ce.getType();
+            if (type == null || type.isBlank()) {
+                // Back-compat: legacy entries without a `type` keyed by the channel id are
+                // treated as chatui — that's the only built-in that used implicit typing.
+                type = ChatUiChannel.CHANNEL_ID.equals(channelId) ? ChatUiChannel.CHANNEL_ID : null;
+            }
+            if (type == null) {
+                log.warn(
+                        "Channel '{}' has no 'type' field and is not a known built-in; skipping.",
                         channelId);
+                continue;
+            }
+            ChannelFactory factory = ChannelTypeRegistry.get(type).orElse(null);
+            if (factory == null) {
+                log.warn(
+                        "Channel '{}' declares unknown type '{}'; skipping auto-creation."
+                                + " Registered types: {}",
+                        channelId,
+                        type,
+                        ChannelTypeRegistry.registeredTypes());
+                continue;
+            }
+            try {
+                merged.put(
+                        channelId,
+                        factory.create(
+                                channelId, ce.toChannelConfig(channelId), ce.getProperties()));
+            } catch (RuntimeException ex) {
+                log.warn(
+                        "Failed to instantiate channel '{}' of type '{}': {}",
+                        channelId,
+                        type,
+                        ex.getMessage(),
+                        ex);
             }
         }
         return List.copyOf(merged.values());
@@ -316,6 +363,11 @@ public final class BuilderBootstrap {
 
     static void applyFileEntry(
             Path cwd, String agentId, AgentConfigEntry e, HarnessAgent.Builder b) {
+        // Pin the stable namespace key to the catalog/URL agentId. The display name (b.name) may
+        // change without rewriting any composite-filesystem keys; this preserves the agent's
+        // identity in the [agents, <agentId>, ...] namespace prefix across renames.
+        b.agentId(agentId);
+
         String name =
                 (e != null && e.getName() != null && !e.getName().isBlank())
                         ? e.getName()
@@ -332,7 +384,7 @@ public final class BuilderBootstrap {
             Path workspace =
                     e.getWorkspace() != null && !e.getWorkspace().isBlank()
                             ? cwd.resolve(e.getWorkspace()).normalize()
-                            : cwd.resolve(".agentscope").resolve("workspace").normalize();
+                            : DEFAULT_WORKSPACE_ROOT;
             b.workspace(workspace);
 
             if (e.getMaxIters() != null) {
@@ -344,18 +396,16 @@ public final class BuilderBootstrap {
             if (e.getModel() != null && !e.getModel().isBlank()) {
                 b.model(e.getModel());
             }
-            if (e.getSkillRepository() != null) {
-                var repo = SkillRepositorySupport.create(cwd, e.getSkillRepository());
-                if (repo != null) {
-                    b.skillRepository(repo);
-                }
+            var repos = SkillRepositorySupport.createAll(cwd, e.effectiveSkillRepositories());
+            if (!repos.isEmpty()) {
+                b.skillRepositories(repos);
             }
             // identity.name overrides the display name if set
             if (e.getIdentity() != null && e.getIdentity().getName() != null) {
                 b.name(e.getIdentity().getName());
             }
         } else {
-            b.workspace(cwd.resolve(".agentscope").resolve("workspace").normalize());
+            b.workspace(DEFAULT_WORKSPACE_ROOT);
         }
     }
 
@@ -454,16 +504,12 @@ public final class BuilderBootstrap {
          */
         public BuilderBootstrap build() throws IOException {
             Path resolvedConfig =
-                    skipConfigFile
-                            ? null
-                            : (configPath != null ? configPath : defaultConfigPath(cwd));
+                    skipConfigFile ? null : (configPath != null ? configPath : DEFAULT_CONFIG_PATH);
             AgentscopeConfig fileConfig =
                     skipConfigFile
                             ? new AgentscopeConfig()
                             : loadConfigFile(
-                                    resolvedConfig != null
-                                            ? resolvedConfig
-                                            : defaultConfigPath(cwd));
+                                    resolvedConfig != null ? resolvedConfig : DEFAULT_CONFIG_PATH);
 
             Map<String, AgentConfigEntry> fileAgents =
                     fileConfig.getAgents() != null ? fileConfig.getAgents() : Map.of();
@@ -475,8 +521,9 @@ public final class BuilderBootstrap {
 
             if (ids.isEmpty()) {
                 throw new IllegalStateException(
-                        "No agents defined: add entries to .agentscope/agentscope.json or use"
-                                + " AgentBootstrap.builder().agent(id, ...) / configureAgent(...)");
+                        "No agents defined: add entries to ~/.agentscope/builder/agentscope.json"
+                                + " or use AgentBootstrap.builder().agent(id, ...) /"
+                                + " configureAgent(...)");
             }
 
             String main =
@@ -528,6 +575,7 @@ public final class BuilderBootstrap {
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
             TaskRepository taskRepo = new DefaultTaskRepository();
             SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
+            OutboundTool outboundTool = new OutboundTool(channelMgr);
 
             // ---- Phase 2: Build agents with SessionsTool injected ----
 
@@ -551,6 +599,13 @@ public final class BuilderBootstrap {
                     b.model(model);
                 }
                 b.externalSubagentTool(sessionsTool);
+
+                // Pre-populate this agent's toolkit with the outbound-send tool so the agent can
+                // proactively push messages into any registered IM channel. Done before the
+                // customizer so callers may still replace the toolkit if they explicitly want to.
+                Toolkit agentToolkit = new Toolkit();
+                agentToolkit.registerTool(outboundTool);
+                b.toolkit(agentToolkit);
 
                 Consumer<HarnessAgent.Builder> c = configurators.get(id);
                 if (c != null) {
@@ -587,7 +642,7 @@ public final class BuilderBootstrap {
 
             return new BuilderBootstrap(
                     cwd,
-                    resolvedConfig != null ? resolvedConfig : defaultConfigPath(cwd),
+                    resolvedConfig != null ? resolvedConfig : DEFAULT_CONFIG_PATH,
                     main,
                     Map.copyOf(built),
                     fileConfig,

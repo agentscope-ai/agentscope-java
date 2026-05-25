@@ -28,8 +28,7 @@ import reactor.core.publisher.Flux;
 /**
  * {@link Model} decorator that falls back to a secondary model on retryable errors.
  *
- * <p>Mirrors open-swe's {@code ModelFallbackMiddleware}. When the primary model fails with a
- * retryable error (rate-limit, overload, timeout), the call is transparently retried using the
+ * <p>The call is transparently retried using the
  * secondary model.
  *
  * <p>Retryable error signals: {@code RateLimitException}, {@code OverloadedException}, or any

@@ -41,7 +41,7 @@ class NamespacedFilesystemViewTest {
     @TempDir Path tmp;
 
     private static NamespaceFactory namespaceOf(String ownerId, String agentId) {
-        return () -> List.of("users", ownerId, "agents", agentId);
+        return rc -> List.of("users", ownerId, "agents", agentId);
     }
 
     @Test
@@ -91,7 +91,7 @@ class NamespacedFilesystemViewTest {
     void factoryIsInvokedPerCallSoNamespaceCanVary() {
         LocalFilesystem backend = new LocalFilesystem(tmp, true, 10, null);
         String[] currentAgent = {"a"};
-        NamespaceFactory dynamic = () -> List.of("users", "alice", "agents", currentAgent[0]);
+        NamespaceFactory dynamic = rc -> List.of("users", "alice", "agents", currentAgent[0]);
         AbstractFilesystem view = new NamespacedFilesystemView(backend, dynamic);
 
         view.write(RuntimeContext.empty(), "/AGENTS.md", "for-a");
@@ -120,7 +120,7 @@ class NamespacedFilesystemViewTest {
     void rejectsBlankNamespaceSegment() {
         LocalFilesystem backend = new LocalFilesystem(tmp, true, 10, null);
         AbstractFilesystem bad =
-                new NamespacedFilesystemView(backend, () -> List.of("users", "", "agents", "x"));
+                new NamespacedFilesystemView(backend, rc -> List.of("users", "", "agents", "x"));
 
         assertThatThrownBy(() -> bad.write(RuntimeContext.empty(), "/AGENTS.md", "x"))
                 .isInstanceOf(IllegalStateException.class)

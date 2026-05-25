@@ -22,7 +22,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 /**
  * Per-thread metadata stored in {@code SqliteBaseStore} namespace {@code ["threads", thread_id]}.
  *
- * <p>Mirrors the thread metadata fields tracked in open-swe's LangGraph thread store.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.harness.agent.store.InMemoryStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +31,7 @@ class ReviewerFindingsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ReviewerFindingsService();
+        service = new ReviewerFindingsService(new InMemoryStore());
     }
 
     @Test

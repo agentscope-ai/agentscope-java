@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 import { getChannelDetail, ChannelDetailView } from '../../api/admin';
 
@@ -89,7 +88,7 @@ export default function AdminChannelDetailPage() {
   const c = detail?.channel;
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout>
         <div style={S.page}>
           <Link to="/admin/channels" style={S.back}>← Back to Channels</Link>
@@ -206,6 +205,6 @@ export default function AdminChannelDetailPage() {
           )}
         </div>
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

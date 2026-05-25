@@ -18,6 +18,7 @@ package io.agentscope.builder.web.catalog;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.builder.runtime.config.AgentConfigEntry;
+import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
 import io.agentscope.builder.web.share.AgentShareGrant;
 import java.util.List;
 import java.util.Optional;
@@ -85,7 +86,10 @@ public interface UserAgentDefinitionStore {
             List<AgentShareGrant> shares,
             String runAs,
             String forkOf,
-            String workspacePath) {
+            String workspacePath,
+            List<SkillRepositoryConfigEntry> skillRepositories,
+            String sandboxMode,
+            String sandboxScope) {
 
         public AgentDefinition toDefinition(String ownerId) {
             return new AgentDefinition(
@@ -112,6 +116,8 @@ public interface UserAgentDefinitionStore {
                     runAs != null ? runAs : AgentDefinition.RUN_AS_INVOKER,
                     forkOf,
                     workspacePath,
+                    sandboxMode,
+                    sandboxScope,
                     null); // tierForCurrentUser — populated by the controller
         }
 
@@ -146,6 +152,9 @@ public interface UserAgentDefinitionStore {
                 sk.setAllow(skillsAllow);
                 sk.setDeny(skillsDeny);
                 e.setSkills(sk);
+            }
+            if (skillRepositories != null && !skillRepositories.isEmpty()) {
+                e.setSkillRepositories(skillRepositories);
             }
             return e;
         }

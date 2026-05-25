@@ -41,12 +41,16 @@ class AgentAclServiceTest {
     }
 
     @Test
-    void globalAgentsGrantRunToEveryAuthenticatedUser() {
+    void globalAgentsGrantEditToEveryAuthenticatedUser() {
         AgentDefinition global = globalAgent();
-        assertThat(acl.tierFor("alice", global)).isEqualTo(Tier.RUN);
-        assertThat(acl.tierFor("bob", global)).isEqualTo(Tier.RUN);
+        // Globals grant EDIT to every logged-in user — writes are routed to the per-user overlay
+        // via HarnessAgent.workspaceFor(userId, null) and never touch the shared agentscope.json.
+        assertThat(acl.tierFor("alice", global)).isEqualTo(Tier.EDIT);
+        assertThat(acl.tierFor("bob", global)).isEqualTo(Tier.EDIT);
         assertThat(acl.can("alice", global, Tier.RUN)).isTrue();
-        assertThat(acl.can("alice", global, Tier.EDIT)).isFalse();
+        assertThat(acl.can("alice", global, Tier.EDIT)).isTrue();
+        // Anonymous callers get no access.
+        assertThat(acl.tierFor(null, global)).isNull();
     }
 
     @Test
@@ -145,6 +149,8 @@ class AgentAclServiceTest {
                 AgentDefinition.RUN_AS_INVOKER,
                 null,
                 null,
+                null,
+                null,
                 null);
     }
 
@@ -171,6 +177,8 @@ class AgentAclServiceTest {
                 0L,
                 null,
                 AgentDefinition.RUN_AS_INVOKER,
+                null,
+                null,
                 null,
                 null,
                 null);

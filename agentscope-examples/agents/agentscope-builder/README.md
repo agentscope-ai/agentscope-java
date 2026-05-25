@@ -13,7 +13,7 @@ mvn -pl agentscope-examples/agents/agentscope-builder -am clean package -DskipTe
 java -jar agentscope-examples/agents/agentscope-builder/target/agentscope-builder-*.jar
 ```
 
-The server starts on `http://localhost:8080`. On first launch, a default agent config is auto-generated at `.agentscope/agentscope.json`.
+The server starts on `http://localhost:8080`. On first launch, a default agent config is auto-generated at `~/.agentscope/builder/agentscope.json`.
 
 ## Configuration
 
@@ -38,7 +38,11 @@ builder:
   workspace: ${BUILDER_WORKSPACE:}   # Working directory; defaults to JVM cwd
 ```
 
-The agent config file `.agentscope/agentscope.json` is read from this directory. Each agent's workspace defaults to `.agentscope/workspace` unless overridden per-agent.
+The agent config file is read from `~/.agentscope/builder/agentscope.json` — a fixed per-app
+location, independent of `builder.workspace`, so different harness apps (builder, dataagent,
+codingagent, claw) cannot collide on shared cwd. Each agent's workspace defaults to
+`~/.agentscope/builder/workspace` unless overridden per-agent via the `workspace` field in
+`agentscope.json`.
 
 ### JWT
 
@@ -216,7 +220,7 @@ The MySQL (`com.mysql:mysql-connector-j`) and PostgreSQL (`org.postgresql:postgr
 
 ## Agent Configuration
 
-Agents are defined in `.agentscope/agentscope.json`:
+Agents are defined in `~/.agentscope/builder/agentscope.json`:
 
 ```json
 {
@@ -225,7 +229,6 @@ Agents are defined in `.agentscope/agentscope.json`:
     "default": {
       "name": "my-agent",
       "sysPrompt": "You are a helpful assistant.",
-      "workspace": ".agentscope/workspace",
       "maxIters": 10,
       "model": "anthropic/claude-sonnet-4-6",
       "sandbox": {
@@ -236,6 +239,8 @@ Agents are defined in `.agentscope/agentscope.json`:
   }
 }
 ```
+
+Omit the `workspace` field to use the per-app default (`~/.agentscope/builder/workspace`).
 
 Per-agent sandbox config (`sandbox.mode` / `sandbox.scope`) is metadata stored with the agent definition. The runtime sandbox behavior is currently controlled globally via `builder.sandbox.*` properties.
 

@@ -27,9 +27,11 @@ import org.springframework.stereotype.Service;
  *
  * <ul>
  *   <li>Owner of a {@code SCOPE_USER} agent → {@code EDIT}.
- *   <li>Any logged-in user on a {@code SCOPE_GLOBAL} agent → {@code RUN}. Globals stay UI
- *       read-only; edits to globals happen by checking in {@code agentscope.json} and are not
- *       routed through ACL.
+ *   <li>Any logged-in user on a {@code SCOPE_GLOBAL} agent → {@code EDIT}. The shared
+ *       {@code agentscope.json} base is admin-managed and never touched by ACL-gated writes;
+ *       per-user edits land in the caller's per-(user, agent) overlay via
+ *       {@code HarnessAgent.workspaceFor(userId, null)}, so each user gets a private overlay on
+ *       top of the shared global agent.
  *   <li>A grant on {@code (USER, userId)} applies immediately to that user.
  *   <li>A grant on {@code (WORKSPACE, "*")} applies to every logged-in user.
  *   <li>Highest matching tier wins.
@@ -66,7 +68,10 @@ public class AgentAclService {
             return null;
         }
         if (AgentDefinition.SCOPE_GLOBAL.equals(def.scope())) {
-            return Tier.RUN;
+            // EDIT: writes are routed to per-(user, agent) overlay via
+            // HarnessAgent.workspaceFor(userId, null) and never touch agentscope.json. Requires a
+            // logged-in user — anonymous callers get no access.
+            return userId != null ? Tier.EDIT : null;
         }
         if (userId != null && userId.equals(def.ownerId())) {
             return Tier.EDIT;

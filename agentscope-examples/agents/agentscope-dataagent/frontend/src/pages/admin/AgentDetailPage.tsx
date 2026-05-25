@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout, { AdminTab } from '../../components/admin/AdminPageLayout';
 import {
   getAgentDetail,
@@ -774,7 +773,7 @@ export default function AdminAgentDetailPage() {
   );
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout
         tabs={tabs}
         activeTab={pageTab}
@@ -806,6 +805,6 @@ export default function AdminAgentDetailPage() {
           </div>
         )}
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

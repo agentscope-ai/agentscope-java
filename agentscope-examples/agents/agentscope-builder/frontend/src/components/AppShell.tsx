@@ -111,6 +111,29 @@ function UserMenu({ username, admin, onLogout }: {
   );
 }
 
+function NavLink({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const active = location.pathname === to || location.pathname.startsWith(`${to}/`);
+  return (
+    <button
+      onClick={() => navigate(to)}
+      style={{
+        background: active ? '#eef2ff' : 'transparent',
+        border: '1px solid ' + (active ? '#c7d2fe' : 'transparent'),
+        borderRadius: 999,
+        padding: '6px 14px',
+        color: active ? '#4338ca' : '#475569',
+        fontSize: '0.88rem',
+        fontWeight: 600,
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function AppShell() {
   const navigate = useNavigate();
   const username = getUsername();
@@ -131,23 +154,27 @@ export default function AppShell() {
           display: 'flex', alignItems: 'center', padding: '0 28px', flexShrink: 0,
           justifyContent: 'space-between',
         }}>
-          <span
-            onClick={() => navigate('/agents')}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 10,
-              fontWeight: 700, color: '#0f172a', fontSize: '1.05rem',
-              letterSpacing: '-0.01em', cursor: 'pointer',
-            }}
-          >
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 30, height: 30, borderRadius: 8,
-              background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
-              color: '#ffffff', fontSize: '1rem',
-              boxShadow: '0 2px 6px rgba(99,102,241,0.35)',
-            }}>⚙</span>
-            AgentScope Builder
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+            <span
+              onClick={() => navigate('/agents')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 10,
+                fontWeight: 700, color: '#0f172a', fontSize: '1.05rem',
+                letterSpacing: '-0.01em', cursor: 'pointer',
+              }}
+            >
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 30, height: 30, borderRadius: 8,
+                background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
+                color: '#ffffff', fontSize: '1rem',
+                boxShadow: '0 2px 6px rgba(99,102,241,0.35)',
+              }}>⚙</span>
+              AgentScope Builder
+            </span>
+            <NavLink to="/marketplaces" label="My Marketplaces" />
+            {admin && <NavLink to="/channels" label="Channels" />}
+          </div>
           <UserMenu username={username} admin={admin} onLogout={logout} />
         </div>
 

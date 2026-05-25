@@ -16,17 +16,18 @@
 package io.agentscope.builder.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.builder.web.audit.ActivityEvent;
 import io.agentscope.builder.web.audit.AgentActivityStore;
 import io.agentscope.builder.web.catalog.AgentCatalogService;
 import io.agentscope.builder.web.catalog.AgentDefinition;
 import io.agentscope.builder.web.share.AgentAccessGuard;
 import io.agentscope.builder.web.share.AgentAclService.Tier;
-import io.agentscope.builder.web.workspace.WorkspaceManagerFactory;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
@@ -34,17 +35,17 @@ import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
+import java.util.Set;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.security.core.Authentication;
@@ -67,43 +68,48 @@ import reactor.core.publisher.Mono;
  *
  * <ul>
  *   <li>{@code GET    /api/agents/{agentId}/workspace} — workspace summary
- *   <li>{@code POST   /api/agents/{agentId}/workspace/scaffold} — create skeleton dirs + AGENTS.md
+ *   <li>{@code POST   /api/agents/{agentId}/workspace/scaffold} — seed AGENTS.md if absent
  *   <li>{@code GET    /api/agents/{agentId}/workspace/memory} — MEMORY.md + per-day index
  *   <li>{@code GET    /api/agents/{agentId}/workspace/files?recursive=…} — file tree
  *   <li>{@code GET    /api/agents/{agentId}/workspace/file?path=…} — read raw file
  *   <li>{@code PUT    /api/agents/{agentId}/workspace/file?path=…} — write file (body
  *       {@code {content}})
- *   <li>{@code POST   /api/agents/{agentId}/workspace/file?path=…&type=file|dir} — create node
+ *   <li>{@code POST   /api/agents/{agentId}/workspace/file?path=…&type=file} — create empty file
+ *       (type=dir is rejected; empty directories are not representable on the composite
+ *       filesystem)
  *   <li>{@code POST   /api/agents/{agentId}/workspace/file/move} — rename/move (body
  *       {@code {from, to}})
  *   <li>{@code DELETE /api/agents/{agentId}/workspace/file?path=…} — delete file or directory
  *   <li>{@code POST   /api/agents/{agentId}/workspace/upload?path=…} — multipart upload
  * </ul>
  *
- * <p>All paths are relative to the agent's workspace root and validated to live within it.
- * Visibility is enforced via {@link AgentCatalogService#findVisible(String, String)}.
+ * <p>All paths are workspace-relative. All file IO goes through the per-caller
+ * {@link AbstractFilesystem} obtained from {@link HarnessAgent#workspaceFor(String, String)}, so
+ * userId-based isolation (provided by {@code CompositeFilesystem} + per-route
+ * {@code RemoteFilesystem} namespacing) is honored automatically and remote routes
+ * (memory/, skills/, subagents/, …) are visible in the same tree as local-fallback content.
+ *
+ * <p>Visibility is enforced via {@link AgentCatalogService#findVisible(String, String)}; path
+ * traversal is rejected by {@link AbstractFilesystem#validatePath(String)}. The
+ * {@code workspacePath} field returned by {@link #summary} is the agent's shared workspace root,
+ * exposed for display only — it does not point at where the caller's data physically lives.
  */
 @RestController
 @RequestMapping("/api/agents/{agentId}/workspace")
 public class AgentWorkspaceController {
 
     private static final int MAX_FILE_SIZE = 512 * 1024;
+    private static final RuntimeContext FS_RC = RuntimeContext.empty();
 
-    private final BuilderBootstrap builderBootstrap;
     private final AgentCatalogService catalogService;
-    private final WorkspaceManagerFactory workspaceManagerFactory;
     private final AgentAccessGuard guard;
     private final AgentActivityStore activity;
 
     public AgentWorkspaceController(
-            BuilderBootstrap builderBootstrap,
             AgentCatalogService catalogService,
-            WorkspaceManagerFactory workspaceManagerFactory,
             AgentAccessGuard guard,
             AgentActivityStore activity) {
-        this.builderBootstrap = builderBootstrap;
         this.catalogService = catalogService;
-        this.workspaceManagerFactory = workspaceManagerFactory;
         this.guard = guard;
         this.activity = activity;
     }
@@ -118,22 +124,8 @@ public class AgentWorkspaceController {
         return Mono.fromCallable(
                 () -> {
                     guard.require(userId, agentId, Tier.RUN);
-                    Path ws = resolveWorkspace(userId, agentId);
-                    boolean exists = Files.isDirectory(ws);
-                    int skillCount = countEntries(ws.resolve("skills"), true);
-                    int subagentCount = countMdFiles(ws.resolve("subagents"));
-                    int dailyMemoryCount = countMdFiles(ws.resolve("memory"));
-                    boolean agentsMdExists = Files.isRegularFile(ws.resolve("AGENTS.md"));
-                    boolean memoryMdExists = Files.isRegularFile(ws.resolve("MEMORY.md"));
-                    return new WorkspaceSummary(
-                            agentId,
-                            ws.toAbsolutePath().toString(),
-                            exists,
-                            agentsMdExists,
-                            memoryMdExists,
-                            skillCount,
-                            subagentCount,
-                            dailyMemoryCount);
+                    WorkspaceContext ctx = resolveContext(userId, agentId);
+                    return summarize(agentId, ctx);
                 });
     }
 
@@ -146,17 +138,22 @@ public class AgentWorkspaceController {
         return Mono.fromCallable(
                 () -> {
                     guard.require(userId, agentId, Tier.EDIT);
-                    Path ws = resolveWorkspace(userId, agentId);
-                    Files.createDirectories(ws.resolve("skills"));
-                    Files.createDirectories(ws.resolve("subagents"));
-                    Files.createDirectories(ws.resolve("memory"));
-                    if (!Files.exists(ws.resolve("AGENTS.md"))) {
+                    WorkspaceContext ctx = resolveContext(userId, agentId);
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    if (!fs.exists(FS_RC, "/AGENTS.md")) {
                         String displayName = agentName.isBlank() ? agentId : agentName;
-                        writeAtomic(
-                                ws.resolve("AGENTS.md"),
-                                "# " + displayName + "\n\nYou are " + displayName + ".\n");
+                        String body = "# " + displayName + "\n\nYou are " + displayName + ".\n";
+                        fs.uploadFiles(
+                                FS_RC,
+                                List.of(
+                                        Map.entry(
+                                                "AGENTS.md",
+                                                body.getBytes(StandardCharsets.UTF_8))));
                     }
-                    return summarize(agentId, ws);
+                    // skills/, subagents/, memory/ directories are no longer pre-created — they
+                    // materialize implicitly on first write through AbstractFilesystem and live
+                    // under the per-user namespace by design.
+                    return summarize(agentId, ctx);
                 });
     }
 
@@ -209,11 +206,20 @@ public class AgentWorkspaceController {
         return Mono.fromCallable(
                 () -> {
                     guard.require(userId, agentId, Tier.RUN);
-                    Path ws = resolveWorkspace(userId, agentId);
-                    if (!Files.isDirectory(ws)) {
-                        return List.of();
+                    WorkspaceContext ctx = resolveContext(userId, agentId);
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    if (recursive) {
+                        GlobResult gr = fs.glob(FS_RC, "**/*", "/");
+                        if (!gr.isSuccess() || gr.matches() == null) {
+                            return List.<FileNode>of();
+                        }
+                        return buildTreeFromGlob(gr.matches());
                     }
-                    return collectChildren(ws, ws, recursive ? 6 : 1);
+                    LsResult ls = fs.ls(FS_RC, "/");
+                    if (!ls.isSuccess() || ls.entries() == null) {
+                        return List.<FileNode>of();
+                    }
+                    return flattenShallow(ls.entries());
                 });
     }
 
@@ -225,17 +231,31 @@ public class AgentWorkspaceController {
                 () -> {
                     guard.require(userId, agentId, Tier.RUN);
                     WorkspaceContext ctx = resolveContext(userId, agentId);
-                    Path target = guardPath(ctx.workspace().resolve(path), ctx.workspace());
-                    if (!Files.isRegularFile(target)) {
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    String abs = toAbsFsPath(path);
+                    if (!fs.exists(FS_RC, abs)) {
                         throw new ResponseStatusException(
                                 HttpStatus.NOT_FOUND, "File not found: " + path);
                     }
-                    long size = sizeOf(target);
-                    if (size > MAX_FILE_SIZE) {
-                        return "(file too large to display: " + size + " bytes)";
+                    ReadResult rr = fs.read(FS_RC, abs, 0, Integer.MAX_VALUE);
+                    if (!rr.isSuccess() || rr.fileData() == null) {
+                        throw new ResponseStatusException(
+                                HttpStatus.NOT_FOUND, "File not found: " + path);
                     }
-                    String rel = relativize(ctx.workspace(), target);
-                    return ctx.manager().readManagedWorkspaceFileUtf8(rel);
+                    String content = rr.fileData().content();
+                    String encoding = rr.fileData().encoding();
+                    if (content == null) {
+                        return "";
+                    }
+                    if ("base64".equalsIgnoreCase(encoding)) {
+                        // Binary content — editor only handles text. Surface a placeholder rather
+                        // than the base64 blob.
+                        return "(binary file: " + content.length() + " base64 chars; not editable)";
+                    }
+                    if (content.length() > MAX_FILE_SIZE) {
+                        return "(file too large to display: " + content.length() + " bytes)";
+                    }
+                    return content;
                 });
     }
 
@@ -250,15 +270,24 @@ public class AgentWorkspaceController {
                 () -> {
                     guard.require(userId, agentId, Tier.EDIT);
                     WorkspaceContext ctx = resolveContext(userId, agentId);
-                    Path target = guardPath(ctx.workspace().resolve(path), ctx.workspace());
-                    if (Files.isDirectory(target)) {
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    String abs = toAbsFsPath(path);
+                    String rel = toRelFsPath(path);
+                    boolean existedAsDir = fs.exists(FS_RC, abs.endsWith("/") ? abs : abs + "/");
+                    if (existedAsDir) {
                         throw new ResponseStatusException(
                                 HttpStatus.CONFLICT, "Path is a directory: " + path);
                     }
-                    boolean existed = Files.isRegularFile(target);
+                    boolean existed = fs.exists(FS_RC, abs);
                     String content = req != null && req.content() != null ? req.content() : "";
-                    String rel = relativize(ctx.workspace(), target);
-                    ctx.manager().writeUtf8WorkspaceRelative(rel, content);
+                    byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+                    List<FileUploadResponse> ur =
+                            fs.uploadFiles(FS_RC, List.of(Map.entry(rel, bytes)));
+                    if (ur.isEmpty() || !ur.get(0).isSuccess()) {
+                        String err = ur.isEmpty() ? "no response" : ur.get(0).error();
+                        throw new ResponseStatusException(
+                                HttpStatus.INTERNAL_SERVER_ERROR, "Failed to write file: " + err);
+                    }
                     if (ctx.ownerId() != null) {
                         activity.record(
                                 ctx.ownerId(),
@@ -270,7 +299,7 @@ public class AgentWorkspaceController {
                                 path,
                                 null);
                     }
-                    return toNode(ctx.workspace(), target);
+                    return new FileNode(basename(rel), rel, "file", (long) bytes.length, null);
                 });
     }
 
@@ -285,21 +314,32 @@ public class AgentWorkspaceController {
         return Mono.fromCallable(
                 () -> {
                     guard.require(userId, agentId, Tier.EDIT);
+                    if ("dir".equalsIgnoreCase(type)) {
+                        // CompositeFilesystem has no explicit directory-create primitive;
+                        // intermediate dirs materialize implicitly on first file write. Empty
+                        // directories aren't representable, so reject the request outright.
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST,
+                                "Empty directory creation is not supported — create a file inside"
+                                        + " the directory instead.");
+                    }
                     WorkspaceContext ctx = resolveContext(userId, agentId);
-                    Path ws = ctx.workspace();
-                    Path target = guardPath(ws.resolve(path), ws);
-                    if (Files.exists(target)) {
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    String abs = toAbsFsPath(path);
+                    String rel = toRelFsPath(path);
+                    if (fs.exists(FS_RC, abs)
+                            || fs.exists(FS_RC, abs.endsWith("/") ? abs : abs + "/")) {
                         throw new ResponseStatusException(
                                 HttpStatus.CONFLICT, "Already exists: " + path);
                     }
-                    boolean isDir = "dir".equalsIgnoreCase(type);
-                    if (isDir) {
-                        Files.createDirectories(target);
-                    } else {
-                        Files.createDirectories(target.getParent());
-                        writeAtomic(target, "");
+                    List<FileUploadResponse> ur =
+                            fs.uploadFiles(FS_RC, List.of(Map.entry(rel, new byte[0])));
+                    if (ur.isEmpty() || !ur.get(0).isSuccess()) {
+                        String err = ur.isEmpty() ? "no response" : ur.get(0).error();
+                        throw new ResponseStatusException(
+                                HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create file: " + err);
                     }
-                    if (ctx.ownerId() != null && !isDir) {
+                    if (ctx.ownerId() != null) {
                         activity.record(
                                 ctx.ownerId(),
                                 agentId,
@@ -308,7 +348,7 @@ public class AgentWorkspaceController {
                                 path,
                                 null);
                     }
-                    return toNode(ws, target);
+                    return new FileNode(basename(rel), rel, "file", 0L, null);
                 });
     }
 
@@ -324,22 +364,22 @@ public class AgentWorkspaceController {
                     }
                     guard.require(userId, agentId, Tier.EDIT);
                     WorkspaceContext ctx = resolveContext(userId, agentId);
-                    Path ws = ctx.workspace();
-                    Path from = guardPath(ws.resolve(req.from()), ws);
-                    Path to = guardPath(ws.resolve(req.to()), ws);
-                    if (!Files.exists(from)) {
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    String absFrom = toAbsFsPath(req.from());
+                    String absTo = toAbsFsPath(req.to());
+                    if (!fs.exists(FS_RC, absFrom)) {
                         throw new ResponseStatusException(
                                 HttpStatus.NOT_FOUND, "Source not found: " + req.from());
                     }
-                    if (Files.exists(to)) {
+                    if (fs.exists(FS_RC, absTo)
+                            || fs.exists(FS_RC, absTo.endsWith("/") ? absTo : absTo + "/")) {
                         throw new ResponseStatusException(
                                 HttpStatus.CONFLICT, "Target already exists: " + req.to());
                     }
-                    Files.createDirectories(to.getParent());
-                    try {
-                        Files.move(from, to, StandardCopyOption.ATOMIC_MOVE);
-                    } catch (IOException atomicFailed) {
-                        Files.move(from, to);
+                    WriteResult wr = fs.move(FS_RC, absFrom, absTo);
+                    if (!wr.isSuccess()) {
+                        throw new ResponseStatusException(
+                                HttpStatus.INTERNAL_SERVER_ERROR, "Move failed: " + wr.error());
                     }
                     if (ctx.ownerId() != null) {
                         activity.record(
@@ -350,7 +390,8 @@ public class AgentWorkspaceController {
                                 req.to(),
                                 Map.of("from", req.from()));
                     }
-                    return toNode(ws, to);
+                    String relTo = toRelFsPath(req.to());
+                    return new FileNode(basename(relTo), relTo, "file", null, null);
                 });
     }
 
@@ -363,22 +404,17 @@ public class AgentWorkspaceController {
                 () -> {
                     guard.require(userId, agentId, Tier.EDIT);
                     WorkspaceContext ctx = resolveContext(userId, agentId);
-                    Path ws = ctx.workspace();
-                    Path target = guardPath(ws.resolve(path), ws);
-                    if (!Files.exists(target)) {
+                    AbstractFilesystem fs = ctx.manager().getFilesystem();
+                    String abs = toAbsFsPath(path);
+                    String absDir = abs.endsWith("/") ? abs : abs + "/";
+                    if (!fs.exists(FS_RC, abs) && !fs.exists(FS_RC, absDir)) {
                         throw new ResponseStatusException(
                                 HttpStatus.NOT_FOUND, "Not found: " + path);
                     }
-                    try {
-                        if (Files.isDirectory(target)) {
-                            deleteRecursive(target);
-                        } else {
-                            Files.delete(target);
-                        }
-                    } catch (IOException e) {
+                    WriteResult wr = fs.delete(FS_RC, abs);
+                    if (!wr.isSuccess()) {
                         throw new ResponseStatusException(
-                                HttpStatus.INTERNAL_SERVER_ERROR,
-                                "Delete failed: " + e.getMessage());
+                                HttpStatus.INTERNAL_SERVER_ERROR, "Delete failed: " + wr.error());
                     }
                     if (ctx.ownerId() != null) {
                         activity.record(
@@ -406,34 +442,69 @@ public class AgentWorkspaceController {
                         })
                 .flatMap(
                         ctx -> {
-                            Path ws = ctx.workspace();
-                            Path dir = guardPath(ws.resolve(path), ws);
+                            String filename = sanitiseFilename(file.filename());
+                            String relDir = toAbsFsPath(path);
+                            // Build "dir/filename" relative path (no leading slash, for
+                            // uploadFiles).
+                            String dirRel = relDir.equals("/") ? "" : relDir.substring(1);
+                            if (!dirRel.isEmpty() && !dirRel.endsWith("/")) {
+                                dirRel = dirRel + "/";
+                            }
+                            final String rel = dirRel + filename;
+                            // Final defensive validation on the assembled relative path.
                             try {
-                                Files.createDirectories(dir);
-                            } catch (IOException e) {
+                                AbstractFilesystem.validatePath("/" + rel);
+                            } catch (IllegalArgumentException e) {
                                 return Mono.error(
                                         new ResponseStatusException(
-                                                HttpStatus.INTERNAL_SERVER_ERROR,
-                                                "Failed to create dir: " + e.getMessage()));
+                                                HttpStatus.BAD_REQUEST, e.getMessage()));
                             }
-                            String filename = sanitiseFilename(file.filename());
-                            Path target = guardPath(dir.resolve(filename), ws);
-                            return file.transferTo(target)
-                                    .then(
-                                            Mono.fromCallable(
-                                                    () -> {
-                                                        if (ctx.ownerId() != null) {
-                                                            activity.record(
-                                                                    ctx.ownerId(),
-                                                                    agentId,
-                                                                    activity.actor(userId),
-                                                                    ActivityEvent.Action
-                                                                            .UPLOAD_FILE,
-                                                                    relativize(ws, target),
-                                                                    null);
-                                                        }
-                                                        return toNode(ws, target);
-                                                    }));
+                            return DataBufferUtils.join(file.content())
+                                    .map(
+                                            buf -> {
+                                                try {
+                                                    byte[] bytes =
+                                                            new byte[buf.readableByteCount()];
+                                                    buf.read(bytes);
+                                                    return bytes;
+                                                } finally {
+                                                    DataBufferUtils.release(buf);
+                                                }
+                                            })
+                                    .defaultIfEmpty(new byte[0])
+                                    .map(
+                                            bytes -> {
+                                                AbstractFilesystem fs =
+                                                        ctx.manager().getFilesystem();
+                                                List<FileUploadResponse> ur =
+                                                        fs.uploadFiles(
+                                                                FS_RC,
+                                                                List.of(Map.entry(rel, bytes)));
+                                                if (ur.isEmpty() || !ur.get(0).isSuccess()) {
+                                                    String err =
+                                                            ur.isEmpty()
+                                                                    ? "no response"
+                                                                    : ur.get(0).error();
+                                                    throw new ResponseStatusException(
+                                                            HttpStatus.INTERNAL_SERVER_ERROR,
+                                                            "Upload failed: " + err);
+                                                }
+                                                if (ctx.ownerId() != null) {
+                                                    activity.record(
+                                                            ctx.ownerId(),
+                                                            agentId,
+                                                            activity.actor(userId),
+                                                            ActivityEvent.Action.UPLOAD_FILE,
+                                                            rel,
+                                                            null);
+                                                }
+                                                return new FileNode(
+                                                        basename(rel),
+                                                        rel,
+                                                        "file",
+                                                        (long) bytes.length,
+                                                        null);
+                                            });
                         });
     }
 
@@ -495,7 +566,9 @@ public class AgentWorkspaceController {
                     validateSubagentName(name);
                     WorkspaceContext ctx = resolveContext(userId, agentId);
                     String markdown = renderSubagentMarkdown(req);
-                    ctx.manager().writeUtf8WorkspaceRelative("subagents/" + name + ".md", markdown);
+                    ctx.manager()
+                            .writeUtf8WorkspaceRelative(
+                                    RuntimeContext.empty(), "subagents/" + name + ".md", markdown);
                     SubagentDeclaration decl =
                             AgentSpecLoader.parse(markdown, name, ctx.workspace());
                     if (decl == null) {
@@ -553,7 +626,10 @@ public class AgentWorkspaceController {
                     String markdown = renderSubagentMarkdown(upsert);
                     WorkspaceContext ctx = resolveContext(userId, agentId);
                     ctx.manager()
-                            .writeUtf8WorkspaceRelative("subagents/" + subName + ".md", markdown);
+                            .writeUtf8WorkspaceRelative(
+                                    RuntimeContext.empty(),
+                                    "subagents/" + subName + ".md",
+                                    markdown);
                     SubagentDeclaration decl =
                             AgentSpecLoader.parse(markdown, subName, ctx.workspace());
                     if (decl == null) {
@@ -594,22 +670,24 @@ public class AgentWorkspaceController {
     // -----------------------------------------------------------------
 
     /**
-     * Resolves the workspace root for a given agent, enforcing that the agent is visible to the
-     * caller. For global agents the path comes from {@link BuilderBootstrap#resolveWorkspace};
-     * for user-custom agents it is computed by {@link WorkspaceManagerFactory}, which is the
-     * single source of truth for the per-tenant {@code users/{ownerId}/agents/{id}/} namespace.
-     */
-    private Path resolveWorkspace(String userId, String agentId) {
-        return resolveContext(userId, agentId).workspace();
-    }
-
-    /**
-     * Resolves the (workspace path, {@link WorkspaceManager}) tuple for an agent.
+     * Resolves the (display workspace path, {@link WorkspaceManager}, audit-owner) tuple for an
+     * agent.
      *
-     * <p>For SCOPE_USER agents, skills/subagents use an overlay filesystem (user can override
-     * shared). For global agents, skills/subagents are purely shared but memory/sessions/tasks
-     * are still user-isolated. Both cases route through {@link WorkspaceManager} backed by a
-     * {@link io.agentscope.harness.agent.filesystem.CompositeFilesystem}.
+     * <p>The {@link WorkspaceManager} is obtained from the live {@link HarnessAgent} via
+     * {@code workspaceFor(ctxUser, null)} so reads and writes flow through the composite
+     * filesystem (per-pod local with per-user namespacing for the shared content layer,
+     * BaseStore-backed for routed runtime prefixes). The {@code ctxUser} is the agent owner for
+     * SCOPE_USER agents (so EDIT-delegated mutations land in the owner's namespace, matching
+     * pre-PR4 semantics) and the caller for globals (which have no single owner — per-caller
+     * isolation is the right default).
+     *
+     * <p><strong>The {@code workspace} {@link Path} returned by this method is the agent's shared
+     * workspace root, exposed only for {@link #summary} display.</strong> It must not be used for
+     * file IO — go through {@code ctx.manager().getFilesystem()} instead so userId namespacing
+     * and remote routes are honored.
+     *
+     * <p>The {@code ownerId} returned in the context is the value used to key activity-log
+     * records, mirroring the audit semantics described above.
      */
     private WorkspaceContext resolveContext(String userId, String agentId) {
         AgentDefinition def =
@@ -620,29 +698,58 @@ public class AgentWorkspaceController {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Agent not found or not accessible: " + agentId));
-        if (AgentDefinition.SCOPE_USER.equals(def.scope())) {
-            String ownerId = def.ownerId() != null ? def.ownerId() : userId;
-            WorkspaceManager wm =
-                    workspaceManagerFactory.forAgent(ownerId, agentId, def.workspacePath());
-            return new WorkspaceContext(wm.getWorkspace().normalize(), wm, ownerId);
+        HarnessAgent agent = catalogService.getOrInstantiateRunningAgent(userId, agentId);
+        if (agent == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found: " + agentId);
         }
-        WorkspaceManager wm =
-                workspaceManagerFactory.forGlobalAgent(userId, agentId, def.workspacePath());
-        return new WorkspaceContext(wm.getWorkspace().normalize(), wm, userId);
-    }
-
-    private static String relativize(Path workspace, Path target) {
-        return workspace.relativize(target).toString().replace('\\', '/');
+        String ctxUser;
+        if (AgentDefinition.SCOPE_USER.equals(def.scope())) {
+            ctxUser = def.ownerId() != null ? def.ownerId() : userId;
+        } else {
+            ctxUser = userId;
+        }
+        WorkspaceManager wm = agent.workspaceFor(ctxUser, null);
+        return new WorkspaceContext(wm.getWorkspace().normalize(), wm, ctxUser);
     }
 
     private record WorkspaceContext(Path workspace, WorkspaceManager manager, String ownerId) {}
 
-    private static Path guardPath(Path target, Path workspace) {
-        Path normalized = target.normalize();
-        if (!normalized.startsWith(workspace.normalize())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid path");
+    /**
+     * Normalizes a user-supplied workspace-relative path into an {@link AbstractFilesystem}
+     * absolute path (leading {@code /}). Strips any leading slashes from the caller, then routes
+     * through {@link AbstractFilesystem#validatePath(String)} which rejects {@code ..} traversal.
+     *
+     * <p>An empty or blank input maps to {@code "/"} (the workspace root) — useful for listing.
+     */
+    private static String toAbsFsPath(String userPath) {
+        String p = userPath == null ? "" : userPath.trim();
+        while (p.startsWith("/")) {
+            p = p.substring(1);
         }
-        return normalized;
+        if (p.isEmpty()) {
+            return "/";
+        }
+        String abs = "/" + p;
+        try {
+            AbstractFilesystem.validatePath(abs);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return abs;
+    }
+
+    /**
+     * Returns the workspace-relative path (no leading {@code /}) for use with
+     * {@link AbstractFilesystem#uploadFiles(RuntimeContext, List)} — that API takes relative
+     * paths everywhere else in the codebase.
+     */
+    private static String toRelFsPath(String userPath) {
+        String abs = toAbsFsPath(userPath);
+        if ("/".equals(abs)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Path is required for this operation");
+        }
+        return abs.substring(1);
     }
 
     private static String sanitiseFilename(String name) {
@@ -658,127 +765,218 @@ public class AgentWorkspaceController {
         return basename;
     }
 
-    private static String readSafe(Path file) {
-        try {
-            long size = Files.size(file);
-            if (size > MAX_FILE_SIZE) {
-                return "(file too large to display: " + size + " bytes)";
-            }
-            return Files.readString(file, StandardCharsets.UTF_8);
-        } catch (IOException e) {
+    /**
+     * Normalizes a {@link FileInfo} path coming out of an {@link AbstractFilesystem} into a
+     * workspace-relative path: strips leading/trailing slashes. Local backends in namespaced mode
+     * already return relative paths, but virtual-mode backends and composite routes prepend
+     * {@code /}; this collapses both forms.
+     */
+    private static String relPath(String fsPath) {
+        if (fsPath == null) {
             return "";
         }
-    }
-
-    private static void writeAtomic(Path target, String content) {
-        try {
-            Files.createDirectories(target.getParent());
-            Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
-            Files.writeString(tmp, content, StandardCharsets.UTF_8);
-            Files.move(
-                    tmp,
-                    target,
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, "Failed to write file: " + e.getMessage());
+        String p = fsPath;
+        while (p.startsWith("/")) {
+            p = p.substring(1);
         }
-    }
-
-    private static void deleteRecursive(Path dir) throws IOException {
-        if (!Files.exists(dir)) return;
-        try (Stream<Path> walk = Files.walk(dir)) {
-            walk.sorted(Comparator.reverseOrder())
-                    .forEach(
-                            p -> {
-                                try {
-                                    Files.delete(p);
-                                } catch (IOException ex) {
-                                    throw new RuntimeException(ex);
-                                }
-                            });
+        while (p.endsWith("/")) {
+            p = p.substring(0, p.length() - 1);
         }
+        return p;
     }
 
-    private static int countEntries(Path dir, boolean dirOnly) {
-        if (!Files.isDirectory(dir)) return 0;
-        try (Stream<Path> s = Files.list(dir)) {
-            return (int) s.filter(p -> !dirOnly || Files.isDirectory(p)).count();
-        } catch (IOException e) {
-            return 0;
-        }
+    private static String basename(String relPath) {
+        int slash = relPath.lastIndexOf('/');
+        return slash >= 0 ? relPath.substring(slash + 1) : relPath;
     }
 
-    private static int countMdFiles(Path dir) {
-        if (!Files.isDirectory(dir)) return 0;
-        try (Stream<Path> s = Files.list(dir)) {
-            return (int) s.filter(p -> p.getFileName().toString().endsWith(".md")).count();
-        } catch (IOException e) {
-            return 0;
-        }
-    }
+    /**
+     * Folds a flat {@code glob("**&#47;*", "/")} result into the nested {@link FileNode} tree the
+     * UI expects. Each file is placed under the chain of directory nodes derived from its path
+     * components; directories listed explicitly by the backend are merged in by deduplicating on
+     * relative path. Sort: directories first, then files, both alphabetical — same order the old
+     * {@code Files.newDirectoryStream}-based implementation produced.
+     */
+    private static List<FileNode> buildTreeFromGlob(List<FileInfo> files) {
+        // Use ordered maps so the tree-building remains deterministic across runs.
+        Map<String, List<FileNode>> rootChildren = new LinkedHashMap<>();
+        Map<String, List<FileNode>> dirChildren = new LinkedHashMap<>();
+        Map<String, FileNode> dirNodes = new LinkedHashMap<>();
+        Set<String> dirPaths = new LinkedHashSet<>();
 
-    private static long sizeOf(Path p) {
-        try {
-            return Files.size(p);
-        } catch (IOException e) {
-            return 0;
-        }
-    }
-
-    /** Returns the immediate children of {@code dir} as {@link FileNode}s, optionally recursing. */
-    private static List<FileNode> collectChildren(Path base, Path dir, int depth) {
-        List<FileNode> out = new ArrayList<>();
-        if (depth <= 0 || !Files.isDirectory(dir)) return out;
-        try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir)) {
-            for (Path entry : ds) {
-                boolean isDir = Files.isDirectory(entry);
-                String rel = base.relativize(entry).toString();
-                String name = entry.getFileName().toString();
-                if (isDir) {
-                    List<FileNode> children = collectChildren(base, entry, depth - 1);
-                    out.add(new FileNode(name, rel, "dir", null, children));
-                } else {
-                    out.add(new FileNode(name, rel, "file", sizeOf(entry), null));
-                }
+        for (FileInfo fi : files) {
+            String rel = relPath(fi.path());
+            if (rel.isEmpty()) {
+                continue;
             }
-        } catch (IOException e) {
-            // skip unreadable
+            String[] parts = rel.split("/");
+            if (fi.isDirectory()) {
+                ensureDirChain(parts, parts.length, dirPaths, dirNodes, rootChildren, dirChildren);
+                continue;
+            }
+            // Ensure parent directories exist as nodes
+            ensureDirChain(parts, parts.length - 1, dirPaths, dirNodes, rootChildren, dirChildren);
+            FileNode fileNode = new FileNode(parts[parts.length - 1], rel, "file", fi.size(), null);
+            if (parts.length == 1) {
+                rootChildren.computeIfAbsent("", k -> new ArrayList<>()).add(fileNode);
+            } else {
+                String parent = String.join("/", Arrays.copyOf(parts, parts.length - 1));
+                dirChildren.computeIfAbsent(parent, k -> new ArrayList<>()).add(fileNode);
+            }
         }
-        out.sort(
-                Comparator.<FileNode, Integer>comparing(n -> "dir".equals(n.type()) ? 0 : 1)
-                        .thenComparing(FileNode::name));
+
+        // Stitch children into directory nodes (replacing the placeholder dir nodes inline).
+        for (Map.Entry<String, FileNode> e : dirNodes.entrySet()) {
+            List<FileNode> kids = dirChildren.getOrDefault(e.getKey(), new ArrayList<>());
+            sortNodes(kids);
+            // Find the corresponding parent's child list and replace the placeholder with a
+            // populated node that owns these children.
+            FileNode populated =
+                    new FileNode(e.getValue().name(), e.getValue().path(), "dir", null, kids);
+            replaceInParent(e.getKey(), populated, rootChildren, dirChildren);
+        }
+
+        List<FileNode> roots = rootChildren.getOrDefault("", new ArrayList<>());
+        sortNodes(roots);
+        return roots;
+    }
+
+    /**
+     * Walks the parent chain of {@code parts[0..len-1]} and inserts placeholder directory nodes
+     * for any segment we haven't seen yet. Each new dir is hooked into its parent's child list
+     * once (deduplication is done via {@code dirPaths}).
+     */
+    private static void ensureDirChain(
+            String[] parts,
+            int len,
+            Set<String> dirPaths,
+            Map<String, FileNode> dirNodes,
+            Map<String, List<FileNode>> rootChildren,
+            Map<String, List<FileNode>> dirChildren) {
+        for (int i = 1; i <= len; i++) {
+            String dirPath = String.join("/", Arrays.copyOf(parts, i));
+            if (!dirPaths.add(dirPath)) {
+                continue;
+            }
+            FileNode placeholder = new FileNode(parts[i - 1], dirPath, "dir", null, null);
+            dirNodes.put(dirPath, placeholder);
+            if (i == 1) {
+                rootChildren.computeIfAbsent("", k -> new ArrayList<>()).add(placeholder);
+            } else {
+                String parent = String.join("/", Arrays.copyOf(parts, i - 1));
+                dirChildren.computeIfAbsent(parent, k -> new ArrayList<>()).add(placeholder);
+            }
+        }
+    }
+
+    private static void replaceInParent(
+            String dirPath,
+            FileNode populated,
+            Map<String, List<FileNode>> rootChildren,
+            Map<String, List<FileNode>> dirChildren) {
+        int slash = dirPath.lastIndexOf('/');
+        List<FileNode> parentList;
+        if (slash < 0) {
+            parentList = rootChildren.get("");
+        } else {
+            parentList = dirChildren.get(dirPath.substring(0, slash));
+        }
+        if (parentList == null) {
+            return;
+        }
+        for (int i = 0; i < parentList.size(); i++) {
+            if (parentList.get(i).path().equals(dirPath)) {
+                parentList.set(i, populated);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Shallow listing for {@code recursive=false}: take the entries from {@code fs.ls("/")} as a
+     * flat (no children) {@link FileNode} list, deduplicate on path (composite's union view may
+     * surface the same dir from both the default backend and a route placeholder), and apply the
+     * same sort the recursive variant uses.
+     */
+    private static List<FileNode> flattenShallow(List<FileInfo> entries) {
+        Map<String, FileNode> seen = new LinkedHashMap<>();
+        for (FileInfo fi : entries) {
+            String rel = relPath(fi.path());
+            if (rel.isEmpty()) {
+                continue;
+            }
+            seen.putIfAbsent(
+                    rel,
+                    new FileNode(
+                            basename(rel),
+                            rel,
+                            fi.isDirectory() ? "dir" : "file",
+                            fi.isDirectory() ? null : fi.size(),
+                            null));
+        }
+        List<FileNode> out = new ArrayList<>(seen.values());
+        sortNodes(out);
         return out;
     }
 
-    private static FileNode toNode(Path workspace, Path target) {
-        String rel = workspace.relativize(target).toString();
-        boolean isDir = Files.isDirectory(target);
-        return new FileNode(
-                target.getFileName().toString(),
-                rel,
-                isDir ? "dir" : "file",
-                isDir ? null : sizeOf(target),
-                null);
+    private static void sortNodes(List<FileNode> nodes) {
+        nodes.sort(
+                Comparator.<FileNode, Integer>comparing(n -> "dir".equals(n.type()) ? 0 : 1)
+                        .thenComparing(FileNode::name));
     }
 
-    private WorkspaceSummary summarize(String agentId, Path ws) {
-        boolean exists = Files.isDirectory(ws);
-        int skillCount = countEntries(ws.resolve("skills"), true);
-        int subagentCount = countMdFiles(ws.resolve("subagents"));
-        int dailyMemoryCount = countMdFiles(ws.resolve("memory"));
-        boolean agentsMdExists = Files.isRegularFile(ws.resolve("AGENTS.md"));
-        boolean memoryMdExists = Files.isRegularFile(ws.resolve("MEMORY.md"));
+    private static WorkspaceSummary summarize(String agentId, WorkspaceContext ctx) {
+        AbstractFilesystem fs = ctx.manager().getFilesystem();
+        boolean agentsMdExists = fs.exists(FS_RC, "/AGENTS.md");
+        boolean memoryMdExists = fs.exists(FS_RC, "/MEMORY.md");
+        int skillCount = countLs(fs, "/skills", true, null);
+        int subagentCount = countLs(fs, "/subagents", false, ".md");
+        int dailyMemoryCount = countLs(fs, "/memory", false, ".md");
+        // {@code exists} historically meant "the workspace directory is present on disk". With
+        // composite/remote backends the per-caller workspace is logical, not physical — so use
+        // "any expected file or directory present" as a proxy. This keeps the UI's empty-state
+        // behavior consistent across backends.
+        boolean exists =
+                agentsMdExists
+                        || memoryMdExists
+                        || skillCount > 0
+                        || subagentCount > 0
+                        || dailyMemoryCount > 0;
         return new WorkspaceSummary(
                 agentId,
-                ws.toAbsolutePath().toString(),
+                ctx.workspace().toAbsolutePath().toString(),
                 exists,
                 agentsMdExists,
                 memoryMdExists,
                 skillCount,
                 subagentCount,
                 dailyMemoryCount);
+    }
+
+    /**
+     * Counts entries under {@code dirAbsPath} via {@code fs.ls}, optionally restricted to
+     * directories ({@code dirOnly=true}) or to files whose name ends with {@code suffix} (when
+     * non-null). Missing directories count as zero.
+     */
+    private static int countLs(
+            AbstractFilesystem fs, String dirAbsPath, boolean dirOnly, String suffix) {
+        LsResult ls = fs.ls(FS_RC, dirAbsPath);
+        if (!ls.isSuccess() || ls.entries() == null) {
+            return 0;
+        }
+        int n = 0;
+        for (FileInfo fi : ls.entries()) {
+            if (dirOnly) {
+                if (fi.isDirectory()) {
+                    n++;
+                }
+            } else if (!fi.isDirectory()) {
+                if (suffix == null || fi.path().endsWith(suffix)) {
+                    n++;
+                }
+            }
+        }
+        return n;
     }
 
     // -----------------------------------------------------------------

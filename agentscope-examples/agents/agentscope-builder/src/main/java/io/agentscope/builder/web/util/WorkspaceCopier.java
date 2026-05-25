@@ -15,7 +15,6 @@
  */
 package io.agentscope.builder.web.util;
 
-import io.agentscope.builder.web.workspace.WorkspaceManagerFactory;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -29,16 +28,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Copies every file from one agent's namespaced workspace into another agent's namespaced
- * workspace. Operates over {@link AbstractFilesystem} so it works identically against {@code
- * LocalFilesystem}, {@code RemoteFilesystem}, and other backends.
+ * Copies every file from one agent's workspace view into another agent's workspace view. Operates
+ * directly on two {@link AbstractFilesystem} instances obtained via {@code
+ * HarnessAgent#workspaceFor(userId, null).getFilesystem()}, so it works identically against
+ * {@code LocalFilesystem}, {@code RemoteFilesystem}, and the composite filesystem set up by
+ * {@link io.agentscope.builder.web.config.BuilderConfig}.
  *
- * <p>Walks the source namespace with a recursive glob, reads each file's content via the source's
- * namespaced view, then uploads it into the destination's namespaced view. Directories are
- * created implicitly by {@code uploadFiles}; empty directories are not preserved.
+ * <p>Walks the source view with a recursive {@code **&#47;*} glob, reads each matched file's
+ * content, and uploads it into the destination view. Directories are created implicitly by
+ * {@code uploadFiles}; empty directories are not preserved.
  *
- * <p>Activity-log files at the namespace root ({@code activity*.jsonl}) are intentionally
- * excluded so the clone starts with a fresh audit trail.
+ * <p>Activity-log files under {@code activity/} are intentionally excluded so the clone starts
+ * with a fresh audit trail.
  */
 public final class WorkspaceCopier {
 
@@ -47,32 +48,25 @@ public final class WorkspaceCopier {
     private WorkspaceCopier() {}
 
     /**
-     * Copies every user-data file from {@code (srcOwnerId, srcAgentId)} into {@code (dstOwnerId,
-     * dstAgentId)} via the supplied factory. Only the user-isolated layer is copied — shared
-     * workspace content (AGENTS.md, tools.json, shared skills/, ...) lives once at the workspace
-     * root and is not duplicated per agent.
+     * Copies every user-data file from {@code srcFs} into {@code dstFs}. Only the routed/user-data
+     * layer is copied — shared workspace content (AGENTS.md, tools.json, shared skills/, ...) that
+     * lives on the read-only local layer is not duplicated per agent.
      *
-     * @param srcWorkspacePath user-supplied workspace path of the source agent (may be null)
-     * @param dstWorkspacePath user-supplied workspace path of the target agent (may be null)
+     * @param srcFs source workspace view (typically {@code srcAgent.workspaceFor(srcOwner,
+     *     null).getFilesystem()})
+     * @param dstFs destination workspace view (typically {@code dstAgent.workspaceFor(dstOwner,
+     *     null).getFilesystem()})
+     * @param srcLabel human-readable source label used only for log messages (e.g.
+     *     {@code "userA/agent-x"})
+     * @param dstLabel human-readable destination label used only for log messages
      * @return the number of files copied
      */
     public static int copy(
-            WorkspaceManagerFactory factory,
-            String srcOwnerId,
-            String srcAgentId,
-            String srcWorkspacePath,
-            String dstOwnerId,
-            String dstAgentId,
-            String dstWorkspacePath) {
-
-        AbstractFilesystem srcFs = factory.userDataFs(srcOwnerId, srcAgentId, srcWorkspacePath);
-        AbstractFilesystem dstFs = factory.userDataFs(dstOwnerId, dstAgentId, dstWorkspacePath);
-
-        String srcPrefix = factory.userDataPathPrefix(srcOwnerId, srcAgentId, srcWorkspacePath);
+            AbstractFilesystem srcFs, AbstractFilesystem dstFs, String srcLabel, String dstLabel) {
 
         GlobResult globRes = srcFs.glob(null, "**/*", null);
         if (!globRes.isSuccess() || globRes.matches() == null) {
-            log.info("Nothing to copy from {}/{}", srcOwnerId, srcAgentId);
+            log.info("Nothing to copy from {}", srcLabel);
             return 0;
         }
 
@@ -80,16 +74,17 @@ public final class WorkspaceCopier {
         int skipped = 0;
         for (FileInfo info : globRes.matches()) {
             if (info.isDirectory()) continue;
-            String absPath = info.path();
-            String rel = stripPrefix(absPath, srcPrefix);
+            String rel = normalize(info.path());
             if (rel == null || rel.isBlank()) continue;
-            if (rel.startsWith("activity") && rel.endsWith(".jsonl")) {
+            // Excludes both legacy root-level (pre-PR4) and current activity/ layout.
+            if (rel.startsWith("activity/")
+                    || (rel.startsWith("activity") && rel.endsWith(".jsonl"))) {
                 skipped++;
                 continue;
             }
             ReadResult rr = srcFs.read(null, rel, 0, Integer.MAX_VALUE);
             if (!rr.isSuccess() || rr.fileData() == null) {
-                log.warn("Skipping file during clone (read failed): {} -> {}", absPath, rr.error());
+                log.warn("Skipping file during clone (read failed): {} -> {}", rel, rr.error());
                 continue;
             }
             String content = rr.fileData().content();
@@ -99,38 +94,26 @@ public final class WorkspaceCopier {
 
         if (uploads.isEmpty()) {
             log.info(
-                    "Clone {}/{} -> {}/{}: source workspace empty (skipped {} audit files)",
-                    srcOwnerId,
-                    srcAgentId,
-                    dstOwnerId,
-                    dstAgentId,
+                    "Clone {} -> {}: source workspace empty (skipped {} audit files)",
+                    srcLabel,
+                    dstLabel,
                     skipped);
             return 0;
         }
 
         dstFs.uploadFiles(null, uploads);
         log.info(
-                "Cloned {} files from {}/{} to {}/{} (skipped {} audit files)",
+                "Cloned {} files from {} to {} (skipped {} audit files)",
                 uploads.size(),
-                srcOwnerId,
-                srcAgentId,
-                dstOwnerId,
-                dstAgentId,
+                srcLabel,
+                dstLabel,
                 skipped);
         return uploads.size();
     }
 
-    private static String stripPrefix(String absPath, String srcPrefix) {
-        if (absPath == null) return null;
-        if (absPath.startsWith(srcPrefix + "/")) {
-            return absPath.substring(srcPrefix.length() + 1);
-        }
-        if (absPath.equals(srcPrefix)) return "";
-        // Defensive: glob may return paths without leading slash in some backends.
-        String trimmedPrefix = srcPrefix.startsWith("/") ? srcPrefix.substring(1) : srcPrefix;
-        if (absPath.startsWith(trimmedPrefix + "/")) {
-            return absPath.substring(trimmedPrefix.length() + 1);
-        }
-        return absPath; // assume already relative
+    /** Trim any leading slash so the path can be reused unchanged for read and upload. */
+    private static String normalize(String path) {
+        if (path == null) return null;
+        return path.startsWith("/") ? path.substring(1) : path;
     }
 }

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 import {
   getOverview, listInstances,
@@ -142,7 +141,7 @@ export default function OverviewPage() {
   const recentActivity = data?.recentActivity.slice(0, 5) ?? [];
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout>
         {/* Toolbar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
@@ -290,6 +289,6 @@ export default function OverviewPage() {
           ))}
         </div>
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

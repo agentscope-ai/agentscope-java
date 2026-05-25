@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import AppShell from '../components/AppShell';
 
 const STORAGE_KEY = 'claw_appearance';
 
@@ -103,7 +102,7 @@ export default function AppearancePage() {
   }, [settings.accentColor]);
 
   return (
-    <AppShell>
+    <>
       <div style={S.content}>
         <h2 style={S.heading}>Appearance</h2>
         <p style={{ color: '#4b5571', fontSize: '0.82rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
@@ -188,6 +187,6 @@ export default function AppearancePage() {
           {saved && <span style={S.saved}>✓ Saved</span>}
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

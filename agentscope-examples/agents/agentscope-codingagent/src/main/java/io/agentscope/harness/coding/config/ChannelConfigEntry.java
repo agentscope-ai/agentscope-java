@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.harness.coding.CodingBootstrap;
 import io.agentscope.harness.coding.channel.ChannelConfig;
 import io.agentscope.harness.coding.channel.DmScope;
+import java.util.Map;
 
 /**
  * Per-channel section in {@code agentscope.json} under {@code channels.<channelId>}.
@@ -75,6 +76,14 @@ public class ChannelConfigEntry {
     @JsonProperty("disabled")
     private Boolean disabled;
 
+    /**
+     * Provider-specific properties consumed by the channel adapter factory (e.g. {@code appKey},
+     * {@code appSecret}, {@code robotCode} for DingTalk; {@code verificationToken}, {@code
+     * encryptKey} for Feishu). Unknown keys are passed through to the factory.
+     */
+    @JsonProperty("properties")
+    private Map<String, Object> properties;
+
     public String getDefaultAgentId() {
         return defaultAgentId;
     }
@@ -97,6 +106,14 @@ public class ChannelConfigEntry {
 
     public void setDisabled(Boolean disabled) {
         this.disabled = disabled;
+    }
+
+    public Map<String, Object> getProperties() {
+        return properties;
+    }
+
+    public void setProperties(Map<String, Object> properties) {
+        this.properties = properties;
     }
 
     /** Converts this entry into a {@link ChannelConfig} for the given channel id. */

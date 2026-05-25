@@ -19,6 +19,8 @@ import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,6 +33,25 @@ public final class SkillRepositorySupport {
     private static final String TYPE_GIT = "git";
 
     private SkillRepositorySupport() {}
+
+    /**
+     * Materialises every non-null entry in {@code entries} via {@link #create(Path,
+     * SkillRepositoryConfigEntry)} and returns the resulting list, preserving order. Entries that
+     * fail to instantiate (unknown type, missing optional Git dependency, …) are filtered out and
+     * logged at WARN. Never null; may be empty.
+     */
+    public static List<AgentSkillRepository> createAll(
+            Path cwd, List<SkillRepositoryConfigEntry> entries) {
+        if (entries == null || entries.isEmpty()) return List.of();
+        List<AgentSkillRepository> out = new ArrayList<>(entries.size());
+        for (SkillRepositoryConfigEntry entry : entries) {
+            AgentSkillRepository repo = create(cwd, entry);
+            if (repo != null) {
+                out.add(repo);
+            }
+        }
+        return out;
+    }
 
     /**
      * @param cwd   bootstrap working directory (used to resolve relative paths)

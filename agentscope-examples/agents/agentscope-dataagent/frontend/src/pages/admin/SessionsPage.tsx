@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 
 // ── types & fetching ──────────────────────────────────────────────────
@@ -223,7 +222,7 @@ export default function AdminSessionsPage() {
   const uniqueUsers = [...new Set(sessions.map(s => s.userId).filter(Boolean))];
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout>
       <div style={S.page}>
         {/* Toolbar */}
@@ -399,6 +398,6 @@ export default function AdminSessionsPage() {
         </div>
       )}
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

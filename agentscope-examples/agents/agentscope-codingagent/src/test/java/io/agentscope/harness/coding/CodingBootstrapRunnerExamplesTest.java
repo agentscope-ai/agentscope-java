@@ -179,7 +179,11 @@ class AgentBootstrapGatewayExamplesTest {
 
         Model model = stubModel("file-config-reply");
         CodingBootstrap agentBootstrap =
-                CodingBootstrap.builder().cwd(tempDir).model(model).build();
+                CodingBootstrap.builder()
+                        .cwd(tempDir)
+                        .configPath(asDotDir.resolve("agentscope.json"))
+                        .model(model)
+                        .build();
 
         // chatui was auto-created from file config; start() starts it
         agentBootstrap.start();

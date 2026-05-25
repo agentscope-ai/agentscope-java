@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 import { getDebugInfo, DebugInfo, openLogStream } from '../../api/admin';
 
@@ -105,7 +104,7 @@ export default function DebugPage() {
   );
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout
         fullWidth
         tabs={tabs}
@@ -194,6 +193,6 @@ export default function DebugPage() {
           )}
         </div>
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

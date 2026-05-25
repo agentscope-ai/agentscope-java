@@ -17,6 +17,7 @@ package io.agentscope.builder.runtime.session;
 
 import io.agentscope.builder.runtime.session.tool.SessionsTool;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -296,7 +297,7 @@ public class SessionAgentManager {
         String sessionKey = "agent:" + agentId + ":" + sessionId;
         long now = System.currentTimeMillis();
 
-        String sessionFilePath = this.resolveSessionFilePath(agentId, sessionId);
+        String sessionFilePath = this.resolveSessionFilePath(userId, agentId, sessionId);
 
         String spawnedBy =
                 parentSessionKey != null && !parentSessionKey.isBlank()
@@ -373,7 +374,7 @@ public class SessionAgentManager {
         String sessionId = "main-" + UUID.randomUUID();
         String sessionKey = "agent:" + agentId + ":main:" + sessionId;
         long now = System.currentTimeMillis();
-        String sessionFilePath = this.resolveSessionFilePath(agentId, sessionId);
+        String sessionFilePath = this.resolveSessionFilePath(userId, agentId, sessionId);
         String canonLabel = (label != null && !label.isBlank()) ? label.trim() : null;
 
         SessionEntry entry =
@@ -563,7 +564,7 @@ public class SessionAgentManager {
                 e.kind() == SessionKind.MAIN
                         ? "main-" + UUID.randomUUID()
                         : "subagent-" + UUID.randomUUID();
-        String newPath = resolveSessionFilePath(e.agentId(), newSessionId);
+        String newPath = resolveSessionFilePath(e.userId(), e.agentId(), newSessionId);
         long now = System.currentTimeMillis();
         SessionEntry reset =
                 new SessionEntry(
@@ -938,10 +939,20 @@ public class SessionAgentManager {
                 "\n", java.util.Arrays.copyOfRange(lines, lines.length - maxLines, lines.length));
     }
 
-    /** Resolves the session file path for a given agent and session. */
-    public String resolveSessionFilePath(String agentId, String sessionId) {
+    /**
+     * Resolves the session file path for a given agent, session, and owning user. The {@code userId}
+     * is used to bake a per-user {@link RuntimeContext} so the underlying {@code WorkspaceManager}
+     * resolves into the correct per-user namespace.
+     */
+    public String resolveSessionFilePath(String userId, String agentId, String sessionId) {
         if (delegate.getWorkspaceManager() != null) {
-            return delegate.getWorkspaceManager().resolveSessionFile(agentId, sessionId).toString();
+            RuntimeContext rc =
+                    userId != null && !userId.isBlank()
+                            ? RuntimeContext.builder().userId(userId).build()
+                            : RuntimeContext.empty();
+            return delegate.getWorkspaceManager()
+                    .resolveSessionFile(rc, agentId, sessionId)
+                    .toString();
         }
         return "agents/" + agentId + "/sessions/" + sessionId + ".json";
     }

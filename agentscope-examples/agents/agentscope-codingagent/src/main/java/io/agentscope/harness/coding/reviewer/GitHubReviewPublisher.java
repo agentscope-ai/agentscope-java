@@ -16,6 +16,7 @@
 package io.agentscope.harness.coding.reviewer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.harness.coding.observability.CodingAgentMetrics;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -43,10 +44,16 @@ public class GitHubReviewPublisher {
 
     private final HttpClient client;
     private final ObjectMapper mapper;
+    private final CodingAgentMetrics metrics;
 
     public GitHubReviewPublisher() {
+        this(null);
+    }
+
+    public GitHubReviewPublisher(CodingAgentMetrics metrics) {
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build();
         this.mapper = new ObjectMapper();
+        this.metrics = metrics;
     }
 
     /**
@@ -138,6 +145,9 @@ public class GitHubReviewPublisher {
                             + response.statusCode()
                             + " posting review: "
                             + response.body());
+        }
+        if (metrics != null) {
+            metrics.recordReviewPublished();
         }
     }
 

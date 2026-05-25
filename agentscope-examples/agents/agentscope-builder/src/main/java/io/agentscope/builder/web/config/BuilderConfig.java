@@ -85,8 +85,8 @@ import org.springframework.context.annotation.Configuration;
  *
  * <h2>Agent config</h2>
  *
- * <p>If {@code .agentscope/agentscope.json} does not exist in the working directory, a minimal
- * default agent config is auto-generated so the app starts without manual setup.
+ * <p>If {@code ~/.agentscope/builder/agentscope.json} does not exist, a minimal default agent
+ * config is auto-generated so the app starts without manual setup.
  */
 @Configuration
 public class BuilderConfig {
@@ -183,7 +183,7 @@ public class BuilderConfig {
             Optional<Session> sessionOpt)
             throws IOException {
         Path cwd = resolveCwd();
-        ensureAgentscopeConfig(cwd);
+        ensureAgentscopeConfig();
 
         BuilderBootstrap.Builder builder = BuilderBootstrap.builder().cwd(cwd);
 
@@ -213,9 +213,13 @@ public class BuilderConfig {
                 b -> {
                     b.hook(new ToolNotificationHook(toolEventBus));
                     b.session(session);
+                    // `activity/` is routed to the shared BaseStore so the per-agent audit log
+                    // (written by AgentActivityStore) is visible across pods, not pinned to the
+                    // local disk of whichever pod served the write.
                     b.filesystem(
                             new RemoteFilesystemSpec(baseStore)
-                                    .isolationScope(IsolationScope.USER));
+                                    .isolationScope(IsolationScope.USER)
+                                    .addSharedPrefix("activity/"));
                 });
 
         BuilderBootstrap bootstrap = builder.build();
@@ -275,23 +279,24 @@ public class BuilderConfig {
     }
 
     /**
-     * Auto-generates a minimal {@code .agentscope/agentscope.json} if it doesn't exist, so the
-     * app can start without manual setup. The generated config defines a single {@code default}
-     * agent using the configured system prompt.
+     * Auto-generates a minimal {@code ~/.agentscope/builder/agentscope.json} if it doesn't exist,
+     * so the app can start without manual setup. The generated config defines a single
+     * {@code default} agent using the configured system prompt and lets the bootstrap fall through
+     * to {@link BuilderBootstrap#DEFAULT_WORKSPACE_ROOT} for the workspace location.
      *
      * <p>The workspace root is the read-only shared layer of the composite filesystem (template
      * content, default {@code AGENTS.md} / {@code skills/} / {@code subagents/} / {@code knowledge/}
      * shipped on disk). User-writable routes are persisted through the {@link BaseStore}.
      */
-    private void ensureAgentscopeConfig(Path cwd) throws IOException {
-        Path configDir = cwd.resolve(".agentscope");
-        Path configFile = configDir.resolve("agentscope.json");
-        Path workspaceRoot = configDir.resolve("workspace");
+    private void ensureAgentscopeConfig() throws IOException {
+        Path configFile = BuilderBootstrap.DEFAULT_CONFIG_PATH;
+        Path workspaceRoot = BuilderBootstrap.DEFAULT_WORKSPACE_ROOT;
 
         if (Files.exists(configFile)) {
             return;
         }
 
+        Files.createDirectories(configFile.getParent());
         Files.createDirectories(workspaceRoot);
 
         String agentsJson =
@@ -301,8 +306,7 @@ public class BuilderConfig {
                   "agents": {
                     "default": {
                       "name": "%s",
-                      "sysPrompt": "%s",
-                      "workspace": ".agentscope/workspace"
+                      "sysPrompt": "%s"
                     }
                   }
                 }

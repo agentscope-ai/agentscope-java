@@ -58,6 +58,11 @@ import java.util.List;
  * @param workspacePath user-chosen workspace location for this agent's data root. If absolute, used
  *     as-is. If relative or blank, resolved against {@code ~/.agentscope/} (blank defaults to the
  *     agent id). Set at creation time only; not editable afterwards.
+ * @param sandboxMode optional execution isolation backing ({@code "local"} or {@code "sandbox"}).
+ *     When {@code null} the platform-wide default is used at runtime.
+ * @param sandboxScope optional sharing scope when {@code sandboxMode == "sandbox"} ({@code
+ *     "SESSION"} / {@code "USER"} / {@code "AGENT"} / {@code "GLOBAL"}). Maps to {@link
+ *     io.agentscope.harness.agent.IsolationScope}.
  * @param tierForCurrentUser transient: the calling user's effective tier
  *     ({@code "CLONE"}/{@code "RUN"}/{@code "EDIT"}); only populated on read paths and only when
  *     the caller is authenticated. Never persisted.
@@ -87,6 +92,8 @@ public record AgentDefinition(
         String runAs,
         String forkOf,
         String workspacePath,
+        String sandboxMode,
+        String sandboxScope,
         String tierForCurrentUser) {
 
     public static final String SCOPE_GLOBAL = "global";
@@ -121,6 +128,8 @@ public record AgentDefinition(
                 runAs,
                 forkOf,
                 workspacePath,
+                sandboxMode,
+                sandboxScope,
                 tier);
     }
 }

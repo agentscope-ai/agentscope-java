@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 
 interface RegisteredAgentView {
@@ -46,7 +45,7 @@ export default function AdminAgentsPage() {
   useEffect(() => { load(); }, []);
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout>
         {error && <div style={S.err}>{error}</div>}
 
@@ -94,6 +93,6 @@ export default function AdminAgentsPage() {
           <p style={{ color: '#94a3b8', fontSize: '0.92rem', marginTop: 16 }}>No global agents found.</p>
         )}
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

@@ -18,9 +18,10 @@ package io.agentscope.builder.web.persistence.jpa;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
 import io.agentscope.builder.web.share.AgentShareGrant;
-import io.agentscope.builder.web.workspace.WorkspaceManagerFactory;
+import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -35,14 +36,16 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>The {@code workspace_path} column persists the user-supplied workspace path verbatim (null
  * for "use the default location"). Combined with {@link
- * WorkspaceManagerFactory#resolveAgentDataPath}, operators can derive the on-disk root from a
- * single SQL query without re-deriving the convention in application code.
+ * SharedWorkspacePaths#resolveAgentDataPath}, operators can derive the on-disk root from a single
+ * SQL query without re-deriving the convention in application code.
  */
 @Transactional
 public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
+    private static final TypeReference<List<SkillRepositoryConfigEntry>> SKILL_REPO_LIST =
+            new TypeReference<>() {};
 
     private final AgentEntityRepository repository;
 
@@ -94,6 +97,9 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
         entity.setSkillsDenyJson(writeList(entry.skillsDeny()));
         entity.setRunAs(entry.runAs());
         entity.setForkOf(entry.forkOf());
+        entity.setSkillRepositoriesJson(writeSkillRepositories(entry.skillRepositories()));
+        entity.setSandboxMode(entry.sandboxMode());
+        entity.setSandboxScope(entry.sandboxScope());
         entity.setCreatedAt(entry.createdAt());
         entity.setUpdatedAt(entry.updatedAt());
 
@@ -157,7 +163,10 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
                 mapShares(e.getShares(), AgentShareEntity::getCreatedBy),
                 e.getRunAs(),
                 e.getForkOf(),
-                e.getWorkspacePath());
+                e.getWorkspacePath(),
+                readSkillRepositories(e.getSkillRepositoriesJson()),
+                e.getSandboxMode(),
+                e.getSandboxScope());
     }
 
     private static List<AgentShareGrant> mapShares(
@@ -189,6 +198,24 @@ public class JpaUserAgentDefinitionStore implements UserAgentDefinitionStore {
 
     private static String writeList(List<String> list) {
         if (list == null) return null;
+        try {
+            return MAPPER.writeValueAsString(list);
+        } catch (JsonProcessingException ex) {
+            return null;
+        }
+    }
+
+    private static List<SkillRepositoryConfigEntry> readSkillRepositories(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return MAPPER.readValue(json, SKILL_REPO_LIST);
+        } catch (JsonProcessingException ex) {
+            return null;
+        }
+    }
+
+    private static String writeSkillRepositories(List<SkillRepositoryConfigEntry> list) {
+        if (list == null || list.isEmpty()) return null;
         try {
             return MAPPER.writeValueAsString(list);
         } catch (JsonProcessingException ex) {

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 import { getToken } from '../../api/auth';
 import {
@@ -452,7 +451,7 @@ export default function ChannelsPage() {
   );
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout
         tabs={tabs}
         activeTab={tab}
@@ -477,6 +476,6 @@ export default function ChannelsPage() {
 
         {tab === 'identities' && <IdentityLinksPanel />}
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

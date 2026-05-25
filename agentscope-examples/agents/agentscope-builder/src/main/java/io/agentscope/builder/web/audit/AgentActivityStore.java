@@ -17,8 +17,8 @@ package io.agentscope.builder.web.audit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.web.auth.UserStore;
-import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
-import io.agentscope.builder.web.workspace.WorkspaceManagerFactory;
+import io.agentscope.builder.web.catalog.AgentCatalogService;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -43,21 +43,26 @@ import org.springframework.stereotype.Service;
  * <p>Layout (relative to the agent's namespace root):
  *
  * <pre>
- *   activity.jsonl              # the live log
- *   activity-{timestampMs}.jsonl # rotated chunks (most recent first by name)
+ *   activity/activity.jsonl              # the live log
+ *   activity/activity-{timestampMs}.jsonl # rotated chunks (most recent first by name)
  * </pre>
  *
- * <p>Writes go through the same {@link AbstractFilesystem} the workspace uses, so the file lives
- * inside the per-(owner, agent) prefix and inherits the deployment's isolation guarantees (the
- * shared {@link io.agentscope.harness.agent.store.BaseStore} backing {@code RemoteFilesystem} for
- * the user-data routes). Append is implemented as read-modify-write because
- * the abstract filesystem does not expose a streaming append primitive; per-agent in-process
- * locking keeps concurrent appends consistent on a single node. {@code WorkspaceCopier} excludes
- * {@code activity*.jsonl}, so clones start with a fresh audit trail.
+ * <p>All paths live under the {@code activity/} prefix because the harness composite filesystem
+ * (see {@link io.agentscope.builder.web.config.BuilderConfig}) registers {@code activity/} as an
+ * additional shared prefix via {@code RemoteFilesystemSpec.addSharedPrefix("activity/")}. Writes
+ * therefore land on the shared {@link io.agentscope.harness.agent.store.BaseStore} (visible across
+ * pods) rather than on per-pod local disk — critical for a multi-tenant deployment.
  *
- * <p>Rotation: when {@code activity.jsonl} grows beyond {@link #ROTATION_THRESHOLD_BYTES} the next
- * write renames it to {@code activity-{ts}.jsonl} (via copy + delete because the abstract
- * filesystem doesn't expose a {@code rename}/{@code move}) before opening a new live file.
+ * <p>Writes go through the per-agent {@link HarnessAgent#workspaceFor(String, String)} view, which
+ * runs in the owner's namespace ({@code IsolationScope.USER}) so the audit trail is keyed to the
+ * agent owner regardless of which caller triggered the event. Append is implemented as
+ * read-modify-write because the abstract filesystem does not expose a streaming append primitive;
+ * per-agent in-process locking keeps concurrent appends consistent on a single node.
+ * {@code WorkspaceCopier} excludes {@code activity*.jsonl}, so clones start with a fresh trail.
+ *
+ * <p>Rotation: when {@code activity/activity.jsonl} grows beyond {@link #ROTATION_THRESHOLD_BYTES}
+ * the next write copies it to {@code activity/activity-{ts}.jsonl} (the abstract filesystem does
+ * not expose {@code rename}/{@code move}) before opening a new live file.
  *
  * <p>Reads are returned newest-first; rotated chunks are merged in lexicographic order (most
  * recent rotation first) after the live file.
@@ -68,8 +73,9 @@ public class AgentActivityStore {
     private static final Logger log = LoggerFactory.getLogger(AgentActivityStore.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    static final String LIVE_FILE = "activity.jsonl";
-    static final String ROTATED_PREFIX = "activity-";
+    static final String ACTIVITY_DIR = "activity";
+    static final String LIVE_FILE = ACTIVITY_DIR + "/activity.jsonl";
+    static final String ROTATED_PREFIX = ACTIVITY_DIR + "/activity-";
     static final String ROTATED_SUFFIX = ".jsonl";
 
     /** Roll the live log when it crosses this size. */
@@ -78,20 +84,15 @@ public class AgentActivityStore {
     /** Hard cap on a single read response so a log explosion can't blow up the UI. */
     static final int MAX_RETURN = 500;
 
-    private final WorkspaceManagerFactory workspaceFactory;
+    private final AgentCatalogService catalogService;
     private final UserStore userStore;
-    private final UserAgentDefinitionStore agentStore;
 
     /** One lock per (ownerId, agentId) keeps in-process appends consistent. */
     private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
-    public AgentActivityStore(
-            WorkspaceManagerFactory workspaceFactory,
-            UserStore userStore,
-            UserAgentDefinitionStore agentStore) {
-        this.workspaceFactory = workspaceFactory;
+    public AgentActivityStore(AgentCatalogService catalogService, UserStore userStore) {
+        this.catalogService = catalogService;
         this.userStore = userStore;
-        this.agentStore = agentStore;
     }
 
     /**
@@ -166,7 +167,11 @@ public class AgentActivityStore {
     // -----------------------------------------------------------------
 
     private void appendLocked(String ownerId, String agentId, ActivityEvent event) {
-        AbstractFilesystem fs = scopedFs(ownerId, agentId);
+        Optional<AbstractFilesystem> fsOpt = scopedFs(ownerId, agentId);
+        if (fsOpt.isEmpty()) {
+            return; // agent no longer exists; drop the event silently
+        }
+        AbstractFilesystem fs = fsOpt.get();
         String line;
         try {
             line = MAPPER.writeValueAsString(event) + "\n";
@@ -212,7 +217,11 @@ public class AgentActivityStore {
 
     private List<ActivityEvent> readNewestFirst(
             String ownerId, String agentId, Long sinceMs, int cap) {
-        AbstractFilesystem fs = scopedFs(ownerId, agentId);
+        Optional<AbstractFilesystem> fsOpt = scopedFs(ownerId, agentId);
+        if (fsOpt.isEmpty()) {
+            return List.of();
+        }
+        AbstractFilesystem fs = fsOpt.get();
 
         List<String> files = new ArrayList<>();
         files.add(LIVE_FILE);
@@ -224,9 +233,10 @@ public class AgentActivityStore {
                 if (info.isDirectory()) continue;
                 String absPath = info.path();
                 int slash = absPath.lastIndexOf('/');
-                String name = slash >= 0 ? absPath.substring(slash + 1) : absPath;
-                if (name.startsWith(ROTATED_PREFIX) && name.endsWith(ROTATED_SUFFIX)) {
-                    rotated.add(name);
+                String leaf = slash >= 0 ? absPath.substring(slash + 1) : absPath;
+                String rel = ACTIVITY_DIR + "/" + leaf;
+                if (leaf.startsWith("activity-") && leaf.endsWith(ROTATED_SUFFIX)) {
+                    rotated.add(rel);
                 }
             }
             // Most recent rotation first.
@@ -272,13 +282,17 @@ public class AgentActivityStore {
     //  Helpers
     // -----------------------------------------------------------------
 
-    private AbstractFilesystem scopedFs(String ownerId, String agentId) {
-        String workspacePath =
-                agentStore
-                        .findById(ownerId, agentId)
-                        .map(UserAgentDefinitionStore.StoredEntry::workspacePath)
-                        .orElse(null);
-        return workspaceFactory.userDataFs(ownerId, agentId, workspacePath);
+    /**
+     * Returns the owner-scoped filesystem view for {@code (ownerId, agentId)}. Activity events
+     * are owner-keyed (not caller-keyed) so the audit trail follows the agent rather than
+     * fragmenting across every user who interacted with it.
+     */
+    private Optional<AbstractFilesystem> scopedFs(String ownerId, String agentId) {
+        HarnessAgent agent = catalogService.getOrInstantiateRunningAgent(ownerId, agentId);
+        if (agent == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(agent.workspaceFor(ownerId, null).getFilesystem());
     }
 
     private static Optional<String> readUtf8(AbstractFilesystem fs, String path) {

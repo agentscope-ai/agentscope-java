@@ -22,6 +22,8 @@ import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.coding.gateway.Gateway;
 import io.agentscope.harness.coding.gateway.MsgContext;
 import io.agentscope.harness.coding.hook.MessageQueueHook;
+import io.agentscope.harness.coding.observability.CodingAgentMetrics;
+import io.micrometer.core.instrument.Timer;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,8 +34,6 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * Dispatches agent runs, handling busy-thread queueing.
- *
- * <p>Mirrors open-swe's {@code webapp.py} dispatch logic:
  *
  * <ul>
  *   <li>If the thread is idle, dispatch immediately via {@link Gateway#run}
@@ -47,10 +47,21 @@ public class RunDispatcher {
 
     private final Gateway gateway;
     private final BaseStore store;
+    private final CodingAgentMetrics metrics;
 
     public RunDispatcher(Gateway gateway, BaseStore store) {
+        this(gateway, store, null);
+    }
+
+    public RunDispatcher(Gateway gateway, BaseStore store, CodingAgentMetrics metrics) {
         this.gateway = gateway;
         this.store = store;
+        this.metrics = metrics;
+    }
+
+    /** Backwards-compatible overload without {@code userId}. */
+    public Mono<Void> dispatch(String threadId, String agentId, String prompt, String githubToken) {
+        return dispatch(threadId, agentId, prompt, githubToken, null);
     }
 
     /**
@@ -60,8 +71,11 @@ public class RunDispatcher {
      * @param agentId agent to dispatch to (e.g. "coding" or "reviewer")
      * @param prompt user prompt / webhook event description
      * @param githubToken optional decrypted GitHub token for this session
+     * @param userId optional authenticated user identity, propagated to {@link MsgContext} for
+     *     HarnessAgent namespace isolation
      */
-    public Mono<Void> dispatch(String threadId, String agentId, String prompt, String githubToken) {
+    public Mono<Void> dispatch(
+            String threadId, String agentId, String prompt, String githubToken, String userId) {
         Msg userMsg =
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -76,7 +90,7 @@ public class RunDispatcher {
                         threadId,
                         null,
                         agentId != null ? Map.of("agentId", agentId) : Map.of(),
-                        null);
+                        userId);
         if (githubToken != null && !githubToken.isBlank()) {
             ctx =
                     new MsgContext(
@@ -89,6 +103,11 @@ public class RunDispatcher {
                             ctx.userId());
         }
         final MsgContext finalCtx = ctx;
+
+        if (metrics != null) {
+            metrics.recordDispatch();
+        }
+        Timer.Sample sample = metrics != null ? Timer.start() : null;
 
         return Mono.fromCallable(
                         () -> {
@@ -104,8 +123,17 @@ public class RunDispatcher {
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic())
+                .doFinally(
+                        s -> {
+                            if (sample != null) {
+                                sample.stop(metrics.getDispatchDuration());
+                            }
+                        })
                 .onErrorResume(
                         e -> {
+                            if (metrics != null) {
+                                metrics.recordDispatchError();
+                            }
                             log.error(
                                     "[dispatcher] Run failed for thread={} agent={}: {}",
                                     threadId,

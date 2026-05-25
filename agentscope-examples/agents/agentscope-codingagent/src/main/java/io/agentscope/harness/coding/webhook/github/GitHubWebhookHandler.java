@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.coding.control.RunDispatcher;
 import io.agentscope.harness.coding.control.ThreadIdFactory;
+import io.agentscope.harness.coding.observability.CodingAgentMetrics;
 import io.agentscope.harness.coding.store.SqliteBaseStore;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -60,11 +61,18 @@ public class GitHubWebhookHandler {
 
     private final RunDispatcher dispatcher;
     private final SqliteBaseStore store;
+    private final CodingAgentMetrics metrics;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public GitHubWebhookHandler(RunDispatcher dispatcher, SqliteBaseStore store) {
+        this(dispatcher, store, null);
+    }
+
+    public GitHubWebhookHandler(
+            RunDispatcher dispatcher, SqliteBaseStore store, CodingAgentMetrics metrics) {
         this.dispatcher = dispatcher;
         this.store = store;
+        this.metrics = metrics;
     }
 
     @PostMapping("/webhooks/github")
@@ -73,6 +81,10 @@ public class GitHubWebhookHandler {
             @RequestHeader(name = "X-GitHub-Event", defaultValue = "unknown") String event,
             @RequestHeader(name = "X-GitHub-Delivery", defaultValue = "") String deliveryId,
             @RequestBody byte[] rawBody) {
+
+        if (metrics != null) {
+            metrics.recordWebhookReceived();
+        }
 
         // 1. Verify signature
         String webhookSecret = System.getenv("GITHUB_WEBHOOK_SECRET");
@@ -88,6 +100,9 @@ public class GitHubWebhookHandler {
         if (!deliveryId.isBlank()) {
             List<String> dedupNs = List.of("deliveries");
             if (store.get(dedupNs, deliveryId) != null) {
+                if (metrics != null) {
+                    metrics.recordWebhookDuplicate();
+                }
                 log.debug("[github-webhook] Duplicate delivery={}", deliveryId);
                 return Mono.just(ResponseEntity.ok("Already processed"));
             }
@@ -148,6 +163,16 @@ public class GitHubWebhookHandler {
         String comment = payload.path("comment").path("body").asText();
         String commenter = payload.path("comment").path("user").path("login").asText();
 
+        if (isSelfComment(commenter)) {
+            log.debug(
+                    "[github-webhook] Skipping self-comment from bot {} on {}/{}#{}",
+                    commenter,
+                    owner,
+                    repoName,
+                    number);
+            return Mono.empty();
+        }
+
         String threadId = ThreadIdFactory.fromGitHubIssue(owner, repoName, number);
         String prompt =
                 buildIssueCommentPrompt(owner, repoName, number, comment, commenter, payload);
@@ -158,7 +183,7 @@ public class GitHubWebhookHandler {
                 repoName,
                 number,
                 commenter);
-        return dispatcher.dispatch(threadId, "coding", prompt, null);
+        return dispatcher.dispatch(threadId, "coding", prompt, null, commenter);
     }
 
     private Mono<Void> handlePullRequest(JsonNode payload) {
@@ -173,10 +198,11 @@ public class GitHubWebhookHandler {
         String prUrl = pr.path("html_url").asText();
 
         if ("review_requested".equals(action)) {
+            String requester = payload.path("sender").path("login").asText("");
             String threadId = ThreadIdFactory.fromGitHubReviewer(owner, repoName, prNumber);
             String prompt = "Please review the following pull request: " + prUrl;
             log.info("[github-webhook] review_requested: {}/{}#{}", owner, repoName, prNumber);
-            return dispatcher.dispatch(threadId, "reviewer", prompt, null);
+            return dispatcher.dispatch(threadId, "reviewer", prompt, null, requester);
         }
         return Mono.empty();
     }
@@ -193,6 +219,16 @@ public class GitHubWebhookHandler {
         String comment = payload.path("comment").path("body").asText();
         String commenter = payload.path("comment").path("user").path("login").asText();
 
+        if (isSelfComment(commenter)) {
+            log.debug(
+                    "[github-webhook] Skipping self-comment from bot {} on {}/{}#{}",
+                    commenter,
+                    owner,
+                    repoName,
+                    prNumber);
+            return Mono.empty();
+        }
+
         String threadId = ThreadIdFactory.fromGitHubPr(owner, repoName, prNumber);
         String prompt =
                 buildPrCommentPrompt(owner, repoName, prNumber, comment, commenter, payload);
@@ -203,7 +239,7 @@ public class GitHubWebhookHandler {
                 repoName,
                 prNumber,
                 commenter);
-        return dispatcher.dispatch(threadId, "coding", prompt, null);
+        return dispatcher.dispatch(threadId, "coding", prompt, null, commenter);
     }
 
     private Mono<Void> handlePush(JsonNode payload) {
@@ -233,7 +269,7 @@ public class GitHubWebhookHandler {
         String issueTitle = payload.path("issue").path("title").asText("");
         return String.format(
                 "GitHub issue comment on %s/%s#%d (%s):\n\n%s posted:\n\n%s",
-                owner, repo, number, issueTitle, commenter, comment);
+                owner, repo, number, issueTitle, commenter, wrapUntrusted(comment));
     }
 
     private String buildPrCommentPrompt(
@@ -246,7 +282,29 @@ public class GitHubWebhookHandler {
         String prTitle = payload.path("pull_request").path("title").asText("");
         return String.format(
                 "GitHub PR review comment on %s/%s#%d (%s):\n\n%s posted:\n\n%s",
-                owner, repo, number, prTitle, commenter, comment);
+                owner, repo, number, prTitle, commenter, wrapUntrusted(comment));
+    }
+
+    /**
+     * Wraps an external comment body in {@code <UNTRUSTED_GITHUB_COMMENT>} tags so the model
+     * treats it as data — not as instructions to follow. Mirrors open-swe's prompt-injection
+     * defence.
+     */
+    private static String wrapUntrusted(String body) {
+        String safe = body == null ? "" : body;
+        return "<UNTRUSTED_GITHUB_COMMENT>\n" + safe + "\n</UNTRUSTED_GITHUB_COMMENT>";
+    }
+
+    /**
+     * Returns {@code true} when the commenter login matches {@code GITHUB_BOT_LOGIN}, so the
+     * agent doesn't endlessly react to comments it just posted itself.
+     */
+    private static boolean isSelfComment(String commenter) {
+        String botLogin = System.getenv("GITHUB_BOT_LOGIN");
+        if (botLogin == null || botLogin.isBlank() || commenter == null || commenter.isBlank()) {
+            return false;
+        }
+        return commenter.equalsIgnoreCase(botLogin.trim());
     }
 
     // -----------------------------------------------------------------

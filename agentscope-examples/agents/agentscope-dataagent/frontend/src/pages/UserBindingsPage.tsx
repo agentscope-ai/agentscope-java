@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import AppShell from '../components/AppShell';
 import { getToken } from '../api/auth';
 
 interface UserBinding {
@@ -163,7 +162,7 @@ export default function UserBindingsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div style={S.content}>
         <h2 style={S.title}>Channel Preferences</h2>
         <p style={S.intro}>
@@ -231,6 +230,6 @@ export default function UserBindingsPage() {
           onClose={() => setEditing(null)}
         />
       )}
-    </AppShell>
+    </>
   );
 }

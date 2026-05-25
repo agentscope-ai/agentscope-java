@@ -23,7 +23,7 @@ import io.agentscope.builder.web.auth.UserStore.UserRecord;
 import io.agentscope.builder.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.builder.web.share.AgentAclService;
 import io.agentscope.builder.web.template.TemplateRegistry;
-import io.agentscope.builder.web.workspace.WorkspaceManagerFactory;
+import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.io.IOException;
@@ -76,7 +76,7 @@ public class AgentCatalogService {
     private final Model model;
     private final io.agentscope.builder.web.toolbus.ToolEventBus toolEventBus;
     private final TemplateRegistry templateRegistry;
-    private final WorkspaceManagerFactory workspaceManagerFactory;
+    private final SharedWorkspacePaths sharedWorkspacePaths;
     private final UserStore userStore;
     private final AgentAclService aclService;
 
@@ -92,7 +92,7 @@ public class AgentCatalogService {
             Optional<Model> modelOpt,
             io.agentscope.builder.web.toolbus.ToolEventBus toolEventBus,
             TemplateRegistry templateRegistry,
-            WorkspaceManagerFactory workspaceManagerFactory,
+            SharedWorkspacePaths sharedWorkspacePaths,
             UserStore userStore,
             AgentAclService aclService) {
         this.builderBootstrap = builderBootstrap;
@@ -100,7 +100,7 @@ public class AgentCatalogService {
         this.model = modelOpt.orElse(null);
         this.toolEventBus = toolEventBus;
         this.templateRegistry = templateRegistry;
-        this.workspaceManagerFactory = workspaceManagerFactory;
+        this.sharedWorkspacePaths = sharedWorkspacePaths;
         this.userStore = userStore;
         this.aclService = aclService;
     }
@@ -225,7 +225,10 @@ public class AgentCatalogService {
                         null, // shares — new agents start unshared
                         AgentDefinition.RUN_AS_INVOKER,
                         null,
-                        workspacePath);
+                        workspacePath,
+                        req.skillRepositories(),
+                        req.sandboxMode(),
+                        req.sandboxScope());
         store.save(userId, entry);
         log.info("User '{}' created custom agent '{}'", userId, id);
 
@@ -260,7 +263,7 @@ public class AgentCatalogService {
     }
 
     private Path userWorkspacePath(String userId, UserAgentDefinitionStore.StoredEntry entry) {
-        return workspaceManagerFactory.resolveAgentDataPath(entry.workspacePath(), entry.id());
+        return sharedWorkspacePaths.resolveAgentDataPath(entry.workspacePath(), entry.id());
     }
 
     /** Suffix automatically appended to the final segment of user-supplied workspace paths. */
@@ -439,7 +442,12 @@ public class AgentCatalogService {
                                 ? existing.runAs()
                                 : AgentDefinition.RUN_AS_INVOKER,
                         existing.forkOf(),
-                        existing.workspacePath()); // workspacePath is creation-only
+                        existing.workspacePath(), // workspacePath is creation-only
+                        req.skillRepositories() != null
+                                ? req.skillRepositories()
+                                : existing.skillRepositories(),
+                        req.sandboxMode() != null ? req.sandboxMode() : existing.sandboxMode(),
+                        req.sandboxScope() != null ? req.sandboxScope() : existing.sandboxScope());
         store.save(userId, updated);
 
         // Evict cached gateway registration so the next conversation picks up the new definition.
@@ -515,8 +523,11 @@ public class AgentCatalogService {
                         null, // shares — clones start unshared
                         src.runAs(),
                         srcAgentId, // forkOf
-                        id + WORKSPACE_DIR_SUFFIX); // workspacePath — clone uses its own id +
-        // suffix
+                        id + WORKSPACE_DIR_SUFFIX, // workspacePath — clone uses its own id +
+                        // suffix
+                        src.skillRepositories(),
+                        src.sandboxMode(),
+                        src.sandboxScope());
         store.save(newOwnerId, clone);
         log.info(
                 "User '{}' cloned agent '{}/{}' as '{}/{}'",
@@ -557,6 +568,74 @@ public class AgentCatalogService {
         log.info("User '{}' deleted custom agent '{}'", userId, agentId);
     }
 
+    /**
+     * Drops the cached UCA registration for a user-custom agent so the next chat call rebuilds
+     * the {@link HarnessAgent} from the current {@link UserAgentDefinitionStore} entry. The
+     * {@code userId} may be either the caller or the owner — both are resolved to the owner
+     * before eviction so the single canonical cache entry is dropped.
+     */
+    public void invalidateUca(String userId, String agentId) {
+        if (agentId == null) return;
+        if (isGlobal(agentId)) return;
+        String ownerId = findOwnerOf(agentId).orElse(userId);
+        if (ownerId == null) return;
+        registeredUcaIds.remove(ucaCacheKey(ownerId, agentId));
+    }
+
+    /**
+     * Resolves the running {@link HarnessAgent} for {@code (userId, agentId)}, returning {@code
+     * null} if the agent does not exist or was never built. Use {@link
+     * #getOrInstantiateRunningAgent} when the controller needs the agent built on demand.
+     */
+    public HarnessAgent getRunningAgent(String userId, String agentId) {
+        if (agentId == null) return null;
+        if (isGlobal(agentId)) {
+            return builderBootstrap.agents().get(agentId);
+        }
+        if (findVisible(userId, agentId).isEmpty()) {
+            return null;
+        }
+        String ownerId = findOwnerOf(agentId).orElse(null);
+        if (ownerId == null) return null;
+        String gatewayId = peekGatewayAgentId(ownerId, agentId);
+        return builderBootstrap.gateway().findAgent(gatewayId);
+    }
+
+    /**
+     * Resolves the running {@link HarnessAgent} for {@code (userId, agentId)}, building and
+     * registering the UCA on first access if necessary. For globals, returns the
+     * bootstrap-registered instance. Returns {@code null} if the caller has no visibility on
+     * the agent.
+     *
+     * <p>The agent is built once per owner; subsequent callers (including users who have the
+     * agent shared in to them) reuse the same {@link HarnessAgent} and rely on its per-user
+     * composite-filesystem overlay (via {@code workspaceFor(callerUserId, sessionId)}) for
+     * isolation. This is the entry point controllers should use whenever they need to interact
+     * with the agent's runtime state.
+     */
+    public HarnessAgent getOrInstantiateRunningAgent(String userId, String agentId) {
+        if (agentId == null) return null;
+        if (isGlobal(agentId)) {
+            return builderBootstrap.agents().get(agentId);
+        }
+        if (findVisible(userId, agentId).isEmpty()) {
+            return null;
+        }
+        String ownerId = findOwnerOf(agentId).orElse(null);
+        if (ownerId == null) return null;
+        UserAgentDefinitionStore.StoredEntry entry =
+                store.findById(ownerId, agentId)
+                        .orElseThrow(
+                                () ->
+                                        new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Agent not found: " + agentId));
+        String gatewayId =
+                registeredUcaIds.computeIfAbsent(
+                        ucaCacheKey(ownerId, agentId), k -> buildAndRegisterUca(ownerId, entry));
+        return builderBootstrap.gateway().findAgent(gatewayId);
+    }
+
     // -----------------------------------------------------------------
     //  Gateway routing support
     // -----------------------------------------------------------------
@@ -566,8 +645,9 @@ public class AgentCatalogService {
      *
      * <ul>
      *   <li>For global agents: returns the agent id as-is (already in gateway registry).
-     *   <li>For user-custom agents: ensures the agent is built and registered in the gateway,
-     *       then returns the namespaced gateway id ({@code uca-{userId}-{agentId}}).
+     *   <li>For user-custom agents: ensures the agent is built and registered in the gateway
+     *       under the <em>owner</em>'s namespace (so shared-in callers reuse the same instance),
+     *       then returns the namespaced gateway id ({@code uca-{ownerId}-{agentId}}).
      * </ul>
      *
      * @throws ResponseStatusException 404 if the agent is not visible to the user
@@ -576,28 +656,38 @@ public class AgentCatalogService {
         if (isGlobal(agentId)) {
             return agentId;
         }
-
-        UserAgentDefinitionStore.StoredEntry entry =
-                store.findById(userId, agentId)
+        if (findVisible(userId, agentId).isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "Agent not found or not accessible: " + agentId);
+        }
+        String ownerId =
+                findOwnerOf(agentId)
                         .orElseThrow(
                                 () ->
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
-                                                "Agent not found or not accessible: " + agentId));
-
-        String cacheKey = ucaCacheKey(userId, agentId);
-        return registeredUcaIds.computeIfAbsent(cacheKey, k -> buildAndRegisterUca(userId, entry));
+                                                "Agent not found: " + agentId));
+        UserAgentDefinitionStore.StoredEntry entry =
+                store.findById(ownerId, agentId)
+                        .orElseThrow(
+                                () ->
+                                        new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Agent not found: " + agentId));
+        return registeredUcaIds.computeIfAbsent(
+                ucaCacheKey(ownerId, agentId), k -> buildAndRegisterUca(ownerId, entry));
     }
 
     /**
      * Returns the gateway agent id that {@link #resolveGatewayAgentId} would produce, without
-     * building or registering the agent. Useful for read-only lookups (session filtering, audit
-     * checks) that just need the id format.
+     * building or registering the agent. The id is keyed by <em>owner</em> for user-custom
+     * agents so shared-in callers and the owner resolve to the same gateway entry.
      */
     public String peekGatewayAgentId(String userId, String agentId) {
         if (agentId == null) return null;
         if (isGlobal(agentId)) return agentId;
-        return UCA_PREFIX + userId + "-" + agentId;
+        String ownerId = findOwnerOf(agentId).orElse(userId);
+        return UCA_PREFIX + ownerId + "-" + agentId;
     }
 
     // -----------------------------------------------------------------
@@ -652,6 +742,8 @@ public class AgentCatalogService {
                             AgentDefinition.RUN_AS_INVOKER,
                             null, // forkOf
                             cfg != null ? cfg.getWorkspace() : null, // mirror runtime workspace
+                            null, // sandboxMode — globals follow the platform default
+                            null, // sandboxScope
                             null)); // tierForCurrentUser — populated by the controller
         }
         return result;
@@ -667,6 +759,11 @@ public class AgentCatalogService {
         Path workspace = userWorkspacePath(userId, entry);
 
         HarnessAgent.Builder b = HarnessAgent.builder();
+
+        // Pin the stable namespace key to the gateway agentId (unique across users). The display
+        // name (b.name) is human-facing and may change without rewriting any composite-filesystem
+        // keys under [agents, <gatewayAgentId>, ...].
+        b.agentId(gatewayAgentId);
 
         String name = entry.name() != null ? entry.name() : entry.id();
         b.name(name);
@@ -687,6 +784,26 @@ public class AgentCatalogService {
             b.model(model);
         }
         b.workspace(workspace);
+
+        // Layered skill repositories: workspace overlay is implicit; explicit entries from the
+        // user's saved definition are appended in order so earlier entries win on name clashes.
+        if (entry.skillRepositories() != null && !entry.skillRepositories().isEmpty()) {
+            var repos =
+                    io.agentscope.builder.runtime.config.SkillRepositorySupport.createAll(
+                            workspace, entry.skillRepositories());
+            if (!repos.isEmpty()) {
+                b.skillRepositories(repos);
+            }
+        }
+
+        // Pre-populate this user-custom agent's toolkit with the outbound-send tool so the agent
+        // can proactively push messages into any registered IM channel (subject to per-agent
+        // tier ACL enforced at OutboundController + channel-routing check in OutboundService).
+        io.agentscope.core.tool.Toolkit ucaToolkit = new io.agentscope.core.tool.Toolkit();
+        ucaToolkit.registerTool(
+                new io.agentscope.builder.runtime.outbound.OutboundTool(
+                        builderBootstrap.channelManager()));
+        b.toolkit(ucaToolkit);
 
         // Inject ToolNotificationHook so user-custom agents also publish tool-call events.
         b.hook(new io.agentscope.builder.web.toolbus.ToolNotificationHook(toolEventBus));
@@ -744,7 +861,10 @@ public class AgentCatalogService {
             List<String> skillsDeny,
             String workspacePath,
             String templateId,
-            AgentDraft aiDraft) {}
+            AgentDraft aiDraft,
+            List<io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry> skillRepositories,
+            String sandboxMode,
+            String sandboxScope) {}
 
     /**
      * Optional AI-generated draft attached to a creation request. Carries the suggested

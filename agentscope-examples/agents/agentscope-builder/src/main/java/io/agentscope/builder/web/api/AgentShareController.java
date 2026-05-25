@@ -244,7 +244,10 @@ public class AgentShareController {
                 newShares == null || newShares.isEmpty() ? null : List.copyOf(newShares),
                 e.runAs(),
                 e.forkOf(),
-                e.workspacePath());
+                e.workspacePath(),
+                e.skillRepositories(),
+                e.sandboxMode(),
+                e.sandboxScope());
     }
 
     public record AddShareRequest(String granteeType, String granteeId, String tier) {}

@@ -17,6 +17,7 @@ package io.agentscope.harness.coding;
 
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.coding.control.RunDispatcher;
+import io.agentscope.harness.coding.observability.CodingAgentMetrics;
 import io.agentscope.harness.coding.reviewer.GitHubReviewPublisher;
 import io.agentscope.harness.coding.reviewer.ReviewerFindingsService;
 import io.agentscope.harness.coding.store.SqliteBaseStore;
@@ -30,10 +31,12 @@ import io.agentscope.harness.coding.tools.finding.ListFindingsTool;
 import io.agentscope.harness.coding.tools.finding.PublishReviewTool;
 import io.agentscope.harness.coding.tools.finding.UpdateFindingTool;
 import io.agentscope.harness.coding.webhook.github.GitHubWebhookHandler;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -71,24 +74,37 @@ public class CodingAgentApplication {
     }
 
     @Bean
-    public ReviewerFindingsService reviewerFindingsService() {
-        return new ReviewerFindingsService();
+    public CodingAgentMetrics codingAgentMetrics(MeterRegistry registry) {
+        return new CodingAgentMetrics(registry);
     }
 
     @Bean
-    public GitHubReviewPublisher gitHubReviewPublisher() {
-        return new GitHubReviewPublisher();
+    public ReviewerFindingsService reviewerFindingsService(
+            SqliteBaseStore store, CodingAgentMetrics metrics) {
+        return new ReviewerFindingsService(store, metrics);
     }
 
     @Bean
-    public Toolkit codingToolkit(RunDispatcher dispatcher) {
+    public GitHubReviewPublisher gitHubReviewPublisher(CodingAgentMetrics metrics) {
+        return new GitHubReviewPublisher(metrics);
+    }
+
+    @Bean
+    public Toolkit codingToolkit(ObjectProvider<RunDispatcher> dispatcherProvider) {
+        // RunDispatcher depends on CodingBootstrap, which depends on this toolkit — resolve the
+        // dispatcher lazily at tool-invocation time to break the bean-construction cycle.
         Toolkit tk = new Toolkit();
         tk.registerTool(new HttpRequestTool());
         tk.registerTool(new FetchUrlTool());
         tk.registerTool(new WebSearchTool());
         tk.registerTool(new GitHubApiTool());
         tk.registerTool(
-                new RequestPrReviewTool(prUrl -> dispatcher.dispatchReviewer(prUrl).subscribe()));
+                new RequestPrReviewTool(
+                        prUrl ->
+                                dispatcherProvider
+                                        .getObject()
+                                        .dispatchReviewer(prUrl)
+                                        .subscribe()));
         return tk;
     }
 
@@ -106,23 +122,25 @@ public class CodingAgentApplication {
     }
 
     @Bean
-    public CodingBootstrap codingBootstrap(Toolkit codingToolkit, Toolkit reviewerToolkit)
+    public CodingBootstrap codingBootstrap(
+            Toolkit codingToolkit, Toolkit reviewerToolkit, SqliteBaseStore store)
             throws IOException {
         Path cwd = Paths.get(System.getProperty("user.dir"));
         return CodingBootstrap.builder()
                 .cwd(cwd)
-                .withDualCodingAgents(codingToolkit, reviewerToolkit)
+                .withDualCodingAgents(codingToolkit, reviewerToolkit, store)
                 .build();
     }
 
     @Bean
-    public RunDispatcher runDispatcher(CodingBootstrap bootstrap, SqliteBaseStore store) {
-        return new RunDispatcher(bootstrap.gateway(), store);
+    public RunDispatcher runDispatcher(
+            CodingBootstrap bootstrap, SqliteBaseStore store, CodingAgentMetrics metrics) {
+        return new RunDispatcher(bootstrap.gateway(), store, metrics);
     }
 
     @Bean
     public GitHubWebhookHandler gitHubWebhookHandler(
-            RunDispatcher dispatcher, SqliteBaseStore store) {
-        return new GitHubWebhookHandler(dispatcher, store);
+            RunDispatcher dispatcher, SqliteBaseStore store, CodingAgentMetrics metrics) {
+        return new GitHubWebhookHandler(dispatcher, store, metrics);
     }
 }

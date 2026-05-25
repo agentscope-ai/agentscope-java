@@ -38,7 +38,7 @@ public final class ReviewerSystemPrompt {
         String owner = (repoOwner != null && !repoOwner.isBlank()) ? repoOwner : "<owner>";
         String repo = (repoName != null && !repoName.isBlank()) ? repoName : "<repo>";
         String pr = prNumber > 0 ? String.valueOf(prNumber) : "<pr_number>";
-        return TEMPLATE.formatted(workingDir, owner, repo, pr, owner, repo, owner, repo);
+        return TEMPLATE.formatted(workingDir, owner, repo, pr, owner, repo, owner, repo, repo);
     }
 
     /** Builds a generic template prompt (placeholders for dynamic substitution). */

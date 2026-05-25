@@ -28,7 +28,7 @@
 
     <name>AgentScope Java - Coding Agent</name>
     <artifactId>agentscope-codingagent</artifactId>
-    <description>AgentScope Coding Agent - Replication of open-swe coding agent using HarnessAgent</description>
+    <description>AgentScope Coding Agent - Coding agent using HarnessAgent</description>
 
     <dependencyManagement>
         <dependencies>

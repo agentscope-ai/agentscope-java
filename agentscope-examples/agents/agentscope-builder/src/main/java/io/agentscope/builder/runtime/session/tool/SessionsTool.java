@@ -24,6 +24,7 @@ import io.agentscope.builder.runtime.session.SessionConstants;
 import io.agentscope.builder.runtime.session.SessionEntry;
 import io.agentscope.builder.runtime.session.SessionView;
 import io.agentscope.builder.runtime.session.SpawnResult;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -111,6 +112,7 @@ public class SessionsTool {
                     with sessions_send.\
                     """)
     public String sessionsSpawn(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "agent_id", description = "Subagent identifier to instantiate")
                     String agentId,
             @ToolParam(
@@ -169,6 +171,7 @@ public class SessionsTool {
                         String taskId = "task_" + UUID.randomUUID();
                         final String capturedTask = task;
                         taskRepository.putTask(
+                                runtimeContext,
                                 taskId,
                                 e.agentId(),
                                 parentSessionScope(),
@@ -221,6 +224,7 @@ public class SessionsTool {
             final String capturedTask = task;
             final String spawnedSessionKey = reg.sessionKey();
             taskRepository.putTask(
+                    runtimeContext,
                     taskId,
                     agentId,
                     parentSessionScope(),
@@ -259,6 +263,7 @@ public class SessionsTool {
                     timeout_seconds=0 fires and forgets — returns task_id for task_output.\
                     """)
     public String sessionsSend(
+            RuntimeContext runtimeContext,
             @ToolParam(
                             name = "session_key",
                             description =
@@ -316,6 +321,7 @@ public class SessionsTool {
                             .orElse("unknown");
             final String capturedTarget = target;
             taskRepository.putTask(
+                    runtimeContext,
                     taskId,
                     resolvedAgentId,
                     parentSessionScope(),

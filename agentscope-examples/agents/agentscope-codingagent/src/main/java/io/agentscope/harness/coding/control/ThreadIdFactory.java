@@ -24,8 +24,7 @@ import java.util.UUID;
 /**
  * Generates deterministic thread IDs from GitHub issue/PR/reviewer context.
  *
- * <p>Mirrors open-swe's thread ID generation logic in {@code agent/utils/github_comments.py} and
- * {@code agent/reviewer_findings.py}. SHA-256 hash of a canonical key string is converted to a
+ * <p>SHA-256 hash of a canonical key string is converted to a
  * UUID for uniqueness and readability.
  *
  * <p>Slack and Linear thread ID generation are deferred to a later phase.
@@ -76,6 +75,28 @@ public final class ThreadIdFactory {
      */
     public static String fromGitHubComment(String owner, String repo, int issueOrPrNumber) {
         return fromGitHubIssue(owner, repo, issueOrPrNumber);
+    }
+
+    /**
+     * Thread ID for a DingTalk conversation (DM or group). The same conversation always maps to the
+     * same thread, so consecutive messages in the same chat share session state.
+     *
+     * @param appKey enterprise internal app key (namespaces conversation ids across tenants)
+     * @param conversationId DingTalk conversation id (DM senderStaffId or group openConversationId)
+     */
+    public static String fromDingtalkConversation(String appKey, String conversationId) {
+        return toUUID("dingtalk:" + appKey + ":" + conversationId);
+    }
+
+    /**
+     * Thread ID for a Feishu/Lark chat (DM, group, or thread).
+     *
+     * @param tenantKey Feishu tenant key (namespaces chat ids across tenants)
+     * @param chatId Feishu chat id ({@code open_chat_id} for DMs/groups, {@code thread_id} for
+     *     threaded conversations)
+     */
+    public static String fromFeishuChat(String tenantKey, String chatId) {
+        return toUUID("feishu:" + tenantKey + ":" + chatId);
     }
 
     // -----------------------------------------------------------------

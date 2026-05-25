@@ -8,6 +8,9 @@ type TierMin = ShareTier;
 const TABS: { key: string; label: string; icon: string; minTier: TierMin }[] = [
   { key: 'chat',      label: 'Chat',      icon: '💬', minTier: 'RUN'  },
   { key: 'workspace', label: 'Workspace', icon: '📁', minTier: 'RUN'  },
+  { key: 'skills',    label: 'Skills',    icon: '🧩', minTier: 'RUN'  },
+  { key: 'tools',     label: 'Tools',     icon: '🛠️', minTier: 'RUN'  },
+  { key: 'subagents', label: 'Subagents', icon: '🤝', minTier: 'RUN'  },
   { key: 'sessions',  label: 'Sessions',  icon: '📋', minTier: 'EDIT' },
   { key: 'channels',  label: 'Channels',  icon: '📡', minTier: 'RUN'  },
   { key: 'activity',  label: 'Activity',  icon: '🕒', minTier: 'RUN'  },

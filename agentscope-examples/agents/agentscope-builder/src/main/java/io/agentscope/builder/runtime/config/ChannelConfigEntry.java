@@ -23,7 +23,9 @@ import io.agentscope.builder.runtime.channel.ChannelBinding;
 import io.agentscope.builder.runtime.channel.ChannelConfig;
 import io.agentscope.builder.runtime.channel.DmScope;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Per-channel section in {@code agentscope.json} under {@code channels.<channelId>}.
@@ -56,6 +58,23 @@ import java.util.List;
 public class ChannelConfigEntry {
 
     /**
+     * Channel type discriminator, looked up by {@link ChannelTypeRegistry} to select the
+     * {@link ChannelFactory} that builds the channel instance. Built-in types: {@code chatui},
+     * {@code dingtalk}, {@code wecom}, {@code feishu}, {@code github}, {@code gitlab}. Optional
+     * when the channel is registered programmatically via
+     * {@link BuilderBootstrap.Builder#channel(io.agentscope.builder.runtime.channel.Channel...)}.
+     */
+    @JsonProperty("type")
+    private String type;
+
+    /**
+     * Type-specific provider properties (e.g. credentials, endpoints, signing secrets). Forwarded
+     * as-is to {@link ChannelFactory#create(String, ChannelConfig, Map)}.
+     */
+    @JsonProperty("properties")
+    private Map<String, Object> properties;
+
+    /**
      * Fallback agent id when no binding matches. If omitted, falls back to the globally bound main
      * agent.
      */
@@ -85,6 +104,22 @@ public class ChannelConfigEntry {
      */
     @JsonProperty("bindings")
     private List<BindingConfigEntry> bindings;
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+
+    public Map<String, Object> getProperties() {
+        return properties != null ? properties : Map.of();
+    }
+
+    public void setProperties(Map<String, Object> properties) {
+        this.properties = properties == null ? null : new LinkedHashMap<>(properties);
+    }
 
     public String getDefaultAgentId() {
         return defaultAgentId;

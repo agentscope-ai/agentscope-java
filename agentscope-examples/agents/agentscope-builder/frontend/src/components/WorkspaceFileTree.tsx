@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileNode, tree as fetchTree, createNode, deleteNode, moveNode } from '../api/workspace';
+import { FileNode, tree as fetchTree } from '../api/workspace';
 
 interface Props {
   agentId: string;
   selectedPath: string | null;
   onSelect: (path: string) => void;
   refreshKey?: number;
-  onChange?: () => void;
 }
 
 const S: Record<string, React.CSSProperties> = {
@@ -21,9 +20,21 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.78rem', color: '#94a3b8', fontWeight: 700,
     textTransform: 'uppercase', letterSpacing: '0.1em',
   },
-  iconBtn: {
+  refreshBtn: {
     background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569',
-    borderRadius: 7, padding: '5px 10px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 500,
+    borderRadius: 7, padding: '5px 9px', cursor: 'pointer',
+    fontSize: '0.82rem', fontWeight: 500, lineHeight: 1,
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+  },
+  subbar: {
+    padding: '6px 14px', borderBottom: '1px solid #f1f5f9',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    fontSize: '0.74rem', color: '#94a3b8',
+  },
+  miniToggle: {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    background: 'transparent', border: 'none', padding: 0,
+    color: '#64748b', cursor: 'pointer', fontSize: '0.74rem',
   },
   scroll: { flex: 1, overflowY: 'auto', padding: '8px 6px' },
   row: {
@@ -38,21 +49,65 @@ const S: Record<string, React.CSSProperties> = {
   err: { padding: 14, fontSize: '0.88rem', color: '#dc2626' },
 };
 
+// Hide entries that are internal bookkeeping rather than user-authored content.
+// Dotfiles/dotdirs (`.index`, `.git`, …) and the install-meta sidecar are noise in the
+// workspace view; users rarely want to interact with them. Toggleable so power users
+// can still inspect.
+const INTERNAL_BASENAMES = new Set(['_install.meta.json']);
+function isHiddenName(name: string): boolean {
+  return name.startsWith('.') || INTERNAL_BASENAMES.has(name);
+}
+
+function filterTree(nodes: FileNode[]): FileNode[] {
+  const out: FileNode[] = [];
+  for (const n of nodes) {
+    if (isHiddenName(n.name)) continue;
+    if (n.type === 'dir' && n.children) {
+      out.push({ ...n, children: filterTree(n.children) });
+    } else {
+      out.push(n);
+    }
+  }
+  return out;
+}
+
+function countAll(nodes: FileNode[]): number {
+  let c = 0;
+  for (const n of nodes) {
+    c += 1;
+    if (n.type === 'dir' && n.children) c += countAll(n.children);
+  }
+  return c;
+}
+
+function countHidden(nodes: FileNode[]): number {
+  let c = 0;
+  for (const n of nodes) {
+    if (isHiddenName(n.name)) {
+      c += 1;
+      if (n.type === 'dir' && n.children) c += countAll(n.children);
+    } else if (n.type === 'dir' && n.children) {
+      c += countHidden(n.children);
+    }
+  }
+  return c;
+}
+
 interface NodeViewProps {
   node: FileNode;
   depth: number;
   selectedPath: string | null;
   onSelect: (path: string) => void;
-  onContext: (e: React.MouseEvent, node: FileNode) => void;
   expanded: Set<string>;
   toggle: (path: string) => void;
 }
 
-function NodeView({ node, depth, selectedPath, onSelect, onContext, expanded, toggle }: NodeViewProps) {
+function NodeView({ node, depth, selectedPath, onSelect, expanded, toggle }: NodeViewProps) {
   const [hover, setHover] = useState(false);
   const isDir = node.type === 'dir';
   const isOpen = expanded.has(node.path);
   const active = selectedPath === node.path;
+  const dimmed = isHiddenName(node.name);
   const handleClick = () => {
     if (isDir) toggle(node.path);
     else onSelect(node.path);
@@ -64,9 +119,9 @@ function NodeView({ node, depth, selectedPath, onSelect, onContext, expanded, to
           ...S.row,
           paddingLeft: 8 + depth * 12,
           ...(active ? S.rowActive : hover ? S.rowHover : {}),
+          ...(dimmed ? { opacity: 0.55, fontStyle: 'italic' } : {}),
         }}
         onClick={handleClick}
-        onContextMenu={e => onContext(e, node)}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         title={node.path}
@@ -82,7 +137,6 @@ function NodeView({ node, depth, selectedPath, onSelect, onContext, expanded, to
           depth={depth + 1}
           selectedPath={selectedPath}
           onSelect={onSelect}
-          onContext={onContext}
           expanded={expanded}
           toggle={toggle}
         />
@@ -91,13 +145,16 @@ function NodeView({ node, depth, selectedPath, onSelect, onContext, expanded, to
   );
 }
 
-export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, refreshKey, onChange }: Props) {
+export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, refreshKey }: Props) {
   const [nodes, setNodes] = useState<FileNode[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [showHidden, setShowHidden] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   async function reload() {
     setErr(null);
+    setLoading(true);
     try {
       const list = await fetchTree(agentId, true);
       setNodes(list);
@@ -110,6 +167,8 @@ export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, ref
       });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to load files');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -127,67 +186,44 @@ export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, ref
     });
   };
 
-  async function handleNewFile() {
-    const name = window.prompt('New file path (relative, e.g. notes.md or subagents/foo.md)');
-    if (!name) return;
-    try {
-      await createNode(agentId, name, 'file');
-      await reload();
-      onSelect(name);
-      onChange?.();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed');
-    }
-  }
-  async function handleNewDir() {
-    const name = window.prompt('New folder path (e.g. skills/my-skill)');
-    if (!name) return;
-    try {
-      await createNode(agentId, name, 'dir');
-      await reload();
-      onChange?.();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed');
-    }
-  }
-
-  async function handleContext(e: React.MouseEvent, node: FileNode) {
-    e.preventDefault();
-    const action = window.prompt(`(${node.path})\nType: rename | delete`, 'rename');
-    if (!action) return;
-    if (action === 'delete') {
-      if (!window.confirm(`Delete ${node.path}?`)) return;
-      try {
-        await deleteNode(agentId, node.path);
-        if (selectedPath === node.path) onSelect('');
-        await reload();
-        onChange?.();
-      } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : 'Failed');
-      }
-    } else if (action === 'rename') {
-      const to = window.prompt('Rename to (full new path):', node.path);
-      if (!to || to === node.path) return;
-      try {
-        await moveNode(agentId, node.path, to);
-        if (selectedPath === node.path) onSelect(to);
-        await reload();
-        onChange?.();
-      } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : 'Failed');
-      }
-    }
-  }
-
-  const list = useMemo(() => nodes, [nodes]);
+  const visibleNodes = useMemo(
+    () => (showHidden ? nodes : filterTree(nodes)),
+    [nodes, showHidden],
+  );
+  const hiddenCount = useMemo(() => countHidden(nodes), [nodes]);
+  const list = visibleNodes;
 
   return (
     <div style={S.root}>
       <div style={S.header}>
         <span style={{ flex: 1 }}>Files</span>
-        <button style={S.iconBtn} onClick={handleNewFile} title="New file">＋ file</button>
-        <button style={S.iconBtn} onClick={handleNewDir} title="New folder">＋ dir</button>
+        <button
+          type="button"
+          style={S.refreshBtn}
+          onClick={() => reload()}
+          disabled={loading}
+          title="Refresh file tree"
+        >
+          {loading ? '…' : '↻'} <span style={{ fontSize: '0.7rem' }}>refresh</span>
+        </button>
       </div>
+      {hiddenCount > 0 && (
+        <div style={S.subbar}>
+          <span>
+            {showHidden
+              ? `${hiddenCount} hidden item${hiddenCount === 1 ? '' : 's'} shown`
+              : `${hiddenCount} item${hiddenCount === 1 ? '' : 's'} hidden`}
+          </span>
+          <button
+            type="button"
+            style={S.miniToggle}
+            onClick={() => setShowHidden(s => !s)}
+            title={showHidden ? 'Hide internal files' : 'Show internal/dotfile entries'}
+          >
+            {showHidden ? '👁 hide' : '👁 show all'}
+          </button>
+        </div>
+      )}
       <div style={S.scroll}>
         {err && <div style={S.err}>{err}</div>}
         {!err && list.length === 0 && (
@@ -200,7 +236,6 @@ export default function WorkspaceFileTree({ agentId, selectedPath, onSelect, ref
             depth={0}
             selectedPath={selectedPath}
             onSelect={onSelect}
-            onContext={handleContext}
             expanded={expanded}
             toggle={toggle}
           />

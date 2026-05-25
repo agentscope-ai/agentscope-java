@@ -205,6 +205,18 @@ public final class HarnessGateway implements Gateway {
     }
 
     /**
+     * Returns the {@link HarnessAgent} registered under {@code gatewayId} (typically either a
+     * global agent id or a {@code uca-{userId}-{agentId}} namespaced id), or {@code null} if no
+     * agent is currently registered for that id. Exposed so platform controllers can introspect
+     * a built-and-registered agent (e.g. enumerate its skill repositories) without going through
+     * the routing path.
+     */
+    public HarnessAgent findAgent(String gatewayId) {
+        if (gatewayId == null) return null;
+        return agentRegistry.get(gatewayId);
+    }
+
+    /**
      * Direct or channel-originated turn. Resolves or creates a MAIN session keyed by {@link
      * MsgContext#canonicalKey()}, routes to the appropriate agent, and runs the turn under the
      * per-key {@link SessionTurnGate}.

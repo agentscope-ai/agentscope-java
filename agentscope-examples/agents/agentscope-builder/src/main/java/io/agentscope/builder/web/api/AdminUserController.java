@@ -256,7 +256,10 @@ public class AdminUserController {
                 newShares.isEmpty() ? null : newShares,
                 e.runAs(),
                 e.forkOf(),
-                e.workspacePath());
+                e.workspacePath(),
+                e.skillRepositories(),
+                e.sandboxMode(),
+                e.sandboxScope());
     }
 
     private static AdminUserView toView(UserRecord u) {

@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import AppShell from '../../components/admin/AdminAppShell';
 import AdminPageLayout from '../../components/admin/AdminPageLayout';
 import {
   getAgentscopeConfig, putAgentscopeConfig,
@@ -179,7 +178,7 @@ export default function ConfigPage() {
   const [tab, setTab] = useState<'agentscope' | 'runtime'>('agentscope');
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout
         tabs={CONFIG_TABS}
         activeTab={tab}
@@ -188,6 +187,6 @@ export default function ConfigPage() {
         {tab === 'agentscope' && <AgentscopeConfigEditor />}
         {tab === 'runtime' && <RuntimeConfigViewer />}
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

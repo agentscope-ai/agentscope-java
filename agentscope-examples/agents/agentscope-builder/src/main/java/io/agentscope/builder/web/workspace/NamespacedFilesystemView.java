@@ -74,17 +74,17 @@ public final class NamespacedFilesystemView implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        return delegate.ls(runtimeContext, scoped(path));
+        return delegate.ls(runtimeContext, scoped(runtimeContext, path));
     }
 
     @Override
     public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
-        return delegate.read(runtimeContext, scoped(filePath), offset, limit);
+        return delegate.read(runtimeContext, scoped(runtimeContext, filePath), offset, limit);
     }
 
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
-        return delegate.write(runtimeContext, scoped(filePath), content);
+        return delegate.write(runtimeContext, scoped(runtimeContext, filePath), content);
     }
 
     @Override
@@ -94,20 +94,25 @@ public final class NamespacedFilesystemView implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
-        return delegate.edit(runtimeContext, scoped(filePath), oldString, newString, replaceAll);
+        return delegate.edit(
+                runtimeContext, scoped(runtimeContext, filePath), oldString, newString, replaceAll);
     }
 
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
         // path is optional — null means "search current working directory"; preserve that signal.
-        String scopedPath = path == null ? scopedRoot() : scoped(path);
+        String scopedPath =
+                path == null ? scopedRoot(runtimeContext) : scoped(runtimeContext, path);
         return delegate.grep(runtimeContext, pattern, scopedPath, glob);
     }
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        String scopedPath = (path == null || path.isBlank()) ? scopedRoot() : scoped(path);
+        String scopedPath =
+                (path == null || path.isBlank())
+                        ? scopedRoot(runtimeContext)
+                        : scoped(runtimeContext, path);
         return delegate.glob(runtimeContext, pattern, scopedPath);
     }
 
@@ -119,7 +124,9 @@ public final class NamespacedFilesystemView implements AbstractFilesystem {
         }
         List<Map.Entry<String, byte[]>> rewritten = new ArrayList<>(files.size());
         for (Map.Entry<String, byte[]> e : files) {
-            rewritten.add(new AbstractMap.SimpleEntry<>(scoped(e.getKey()), e.getValue()));
+            rewritten.add(
+                    new AbstractMap.SimpleEntry<>(
+                            scoped(runtimeContext, e.getKey()), e.getValue()));
         }
         return delegate.uploadFiles(runtimeContext, rewritten);
     }
@@ -132,19 +139,20 @@ public final class NamespacedFilesystemView implements AbstractFilesystem {
         }
         List<String> rewritten = new ArrayList<>(paths.size());
         for (String p : paths) {
-            rewritten.add(scoped(p));
+            rewritten.add(scoped(runtimeContext, p));
         }
         return delegate.downloadFiles(runtimeContext, rewritten);
     }
 
     @Override
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
-        return delegate.delete(runtimeContext, scoped(path));
+        return delegate.delete(runtimeContext, scoped(runtimeContext, path));
     }
 
     @Override
     public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
-        return delegate.move(runtimeContext, scoped(fromPath), scoped(toPath));
+        return delegate.move(
+                runtimeContext, scoped(runtimeContext, fromPath), scoped(runtimeContext, toPath));
     }
 
     @Override
@@ -152,7 +160,7 @@ public final class NamespacedFilesystemView implements AbstractFilesystem {
         if (path == null || path.isBlank()) {
             return false;
         }
-        return delegate.exists(runtimeContext, scoped(path));
+        return delegate.exists(runtimeContext, scoped(runtimeContext, path));
     }
 
     // ==================== Path scoping ====================
@@ -161,12 +169,12 @@ public final class NamespacedFilesystemView implements AbstractFilesystem {
      * Prefixes {@code path} with the current namespace and returns an absolute (leading-slash)
      * path suitable for the delegate. Validates against {@code ..} traversal first.
      */
-    private String scoped(String path) {
+    private String scoped(RuntimeContext runtimeContext, String path) {
         if (path == null) {
             throw new IllegalArgumentException("Path must not be null");
         }
         AbstractFilesystem.validatePath(path);
-        String prefix = currentPrefix();
+        String prefix = currentPrefix(runtimeContext);
         String key = path.startsWith("/") ? path.substring(1) : path;
         if (prefix.isEmpty()) {
             return "/" + key;
@@ -178,13 +186,13 @@ public final class NamespacedFilesystemView implements AbstractFilesystem {
     }
 
     /** Returns the namespace root as an absolute path (used when caller passes {@code null}). */
-    private String scopedRoot() {
-        String prefix = currentPrefix();
+    private String scopedRoot(RuntimeContext runtimeContext) {
+        String prefix = currentPrefix(runtimeContext);
         return prefix.isEmpty() ? "/" : "/" + prefix;
     }
 
-    private String currentPrefix() {
-        List<String> ns = namespaceFactory.getNamespace();
+    private String currentPrefix(RuntimeContext runtimeContext) {
+        List<String> ns = namespaceFactory.getNamespace(runtimeContext);
         if (ns == null || ns.isEmpty()) {
             return "";
         }

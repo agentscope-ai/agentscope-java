@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import AppShell from '../components/AppShell';
 import AdminPageLayout from '../components/AdminPageLayout';
 import { getToken } from '../api/auth';
 
@@ -261,7 +260,7 @@ export default function UsagePage() {
   }
 
   return (
-    <AppShell>
+    <>
       <AdminPageLayout>
       <div style={S.content}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
@@ -346,6 +345,6 @@ export default function UsagePage() {
         )}
       </div>
       </AdminPageLayout>
-    </AppShell>
+    </>
   );
 }

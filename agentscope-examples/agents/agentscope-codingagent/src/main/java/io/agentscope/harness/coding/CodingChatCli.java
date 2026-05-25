@@ -17,9 +17,13 @@ package io.agentscope.harness.coding;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.coding.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.coding.tools.FetchUrlTool;
+import io.agentscope.harness.coding.tools.GitHubApiTool;
+import io.agentscope.harness.coding.tools.HttpRequestTool;
+import io.agentscope.harness.coding.tools.WebSearchTool;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
@@ -65,13 +69,33 @@ public class CodingChatCli {
         Path cwd = Paths.get(System.getProperty("user.dir"));
         Model model = buildModel();
 
-        CodingBootstrap bootstrap = CodingBootstrap.builder().cwd(cwd).model(model).build();
+        Toolkit codingToolkit = new Toolkit();
+        codingToolkit.registerTool(new HttpRequestTool());
+        codingToolkit.registerTool(new FetchUrlTool());
+        codingToolkit.registerTool(new WebSearchTool());
+        codingToolkit.registerTool(new GitHubApiTool());
+
+        // skipConfigFile: the local CLI configures coding+reviewer entirely in code (the
+        // withDualCodingAgents call below), so the bootstrap must NOT also try to load
+        // ~/.agentscope/codingagent/agentscope.json — if a user has hand-edited that file, its
+        // entries would conflict with (and override) what the CLI wires up here. Reviewer toolkit
+        // is null because the CLI does not wire the dispatcher / findings store — `review <pr_url>`
+        // degrades to a plain prompt.
+        CodingBootstrap bootstrap =
+                CodingBootstrap.builder()
+                        .cwd(cwd)
+                        .model(model)
+                        .skipConfigFile(true)
+                        .withDualCodingAgents(codingToolkit, null)
+                        .build();
 
         ChatUiChannel chat = bootstrap.chatUiChannel();
 
         System.out.println(ANSI_GREEN + "✓ Coding Agent ready" + ANSI_RESET);
-        System.out.println("  Workspace: " + cwd.resolve(".agentscope/coding-workspace"));
-        System.out.println("  Model: " + resolveModelId());
+        System.out.println("  Workspace: " + CodingBootstrap.DEFAULT_WORKSPACE_ROOT);
+        System.out.println(
+                "  Model: "
+                        + io.agentscope.harness.coding.agent.CodingAgentFactory.resolveModelId());
         System.out.println();
         System.out.println("Type your message, or:");
         System.out.println(
@@ -81,6 +105,23 @@ public class CodingChatCli {
                         + ANSI_RESET
                         + "  — trigger reviewer agent on a PR");
         System.out.println("  " + ANSI_CYAN + "/exit" + ANSI_RESET + "             — quit");
+        System.out.println();
+        System.out.println("Try one of these (the agent works inside its own workspace):");
+        System.out.println(
+                "  " + ANSI_CYAN + "\"write hello.txt with a haiku about Java\"" + ANSI_RESET);
+        System.out.println(
+                "  "
+                        + ANSI_CYAN
+                        + "\"fetch"
+                        + " https://github.com/anthropics/anthropic-sdk-python/blob/main/README.md"
+                        + " and summarize it\""
+                        + ANSI_RESET);
+        System.out.println(
+                "  "
+                        + ANSI_CYAN
+                        + "\"clone https://github.com/<owner>/<repo> into the workspace and tell me"
+                        + " what it does\""
+                        + ANSI_RESET);
         System.out.println();
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
@@ -153,48 +194,13 @@ public class CodingChatCli {
     }
 
     private static Model buildModel() {
-        String modelId = resolveModelId();
-        String apiKey = resolveApiKey(modelId);
-
-        if (modelId.startsWith("dashscope:") || !modelId.contains(":")) {
-            String name =
-                    modelId.startsWith("dashscope:")
-                            ? modelId.substring("dashscope:".length())
-                            : modelId;
-            return DashScopeChatModel.builder().apiKey(apiKey).modelName(name).stream(true).build();
-        }
-
-        throw new IllegalArgumentException(
-                "Unsupported model prefix in CODING_MODEL_ID: "
-                        + modelId
-                        + ". Use 'dashscope:<name>' (default) or implement additional model"
-                        + " builders.");
-    }
-
-    private static String resolveModelId() {
-        String env = System.getenv("CODING_MODEL_ID");
-        return (env != null && !env.isBlank()) ? env : "dashscope:qwen-max";
-    }
-
-    private static String resolveApiKey(String modelId) {
-        if (modelId.startsWith("dashscope:") || !modelId.contains(":")) {
-            String key = System.getenv("DASHSCOPE_API_KEY");
-            if (key == null || key.isBlank()) {
-                System.err.println(
-                        "[Warning] DASHSCOPE_API_KEY is not set. Set the environment variable or"
-                                + " use CODING_MODEL_ID to switch models.");
-                return "";
-            }
-            return key;
-        }
-        return "";
+        return io.agentscope.harness.coding.agent.CodingAgentFactory.buildModel();
     }
 
     private static void printBanner() {
         System.out.println(ANSI_BOLD + ANSI_CYAN);
         System.out.println("  ╔═══════════════════════════════════════════╗");
         System.out.println("  ║        AgentScope Coding Agent CLI        ║");
-        System.out.println("  ║     open-swe replicated on HarnessAgent   ║");
         System.out.println("  ╚═══════════════════════════════════════════╝");
         System.out.println(ANSI_RESET);
     }

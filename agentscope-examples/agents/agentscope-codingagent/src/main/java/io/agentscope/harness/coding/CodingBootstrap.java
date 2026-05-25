@@ -19,8 +19,12 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook;
+import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
+import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -30,6 +34,8 @@ import io.agentscope.harness.coding.agent.ReviewerAgentFactory;
 import io.agentscope.harness.coding.channel.Channel;
 import io.agentscope.harness.coding.channel.ChannelConfig;
 import io.agentscope.harness.coding.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.coding.channel.dingtalk.DingtalkChannel;
+import io.agentscope.harness.coding.channel.feishu.FeishuChannel;
 import io.agentscope.harness.coding.config.AgentConfigEntry;
 import io.agentscope.harness.coding.config.AgentscopeConfig;
 import io.agentscope.harness.coding.config.ChannelConfigEntry;
@@ -37,6 +43,9 @@ import io.agentscope.harness.coding.config.SkillRepositorySupport;
 import io.agentscope.harness.coding.gateway.ChannelManager;
 import io.agentscope.harness.coding.gateway.Gateway;
 import io.agentscope.harness.coding.gateway.HarnessGateway;
+import io.agentscope.harness.coding.hook.MessageQueueHook;
+import io.agentscope.harness.coding.hook.ModelCallLimitHook;
+import io.agentscope.harness.coding.hook.ThreadBudgetHook;
 import io.agentscope.harness.coding.session.AgentManagerConfig;
 import io.agentscope.harness.coding.session.SessionAgentManager;
 import io.agentscope.harness.coding.session.SessionStore;
@@ -61,7 +70,8 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Build phase — {@link #builder()}</h2>
  *
- * Loads {@code ${cwd}/.agentscope/agentscope.json}, merges file-based agent definitions with
+ * Loads {@code ~/.agentscope/codingagent/agentscope.json} (the per-app home, isolated from other
+ * harness apps and from the cwd the JVM was launched in), merges file-based agent definitions with
  * programmatic {@link Builder} configuration, and produces {@link HarnessAgent} instances wired
  * with {@link SessionsTool} and a shared {@link SessionAgentManager} + {@link HarnessGateway}.
  *
@@ -77,6 +87,27 @@ public final class CodingBootstrap {
 
     private static final Logger log = LoggerFactory.getLogger(CodingBootstrap.class);
     private static final String DEFAULT_MAIN_ID = "default";
+
+    /**
+     * Default workspace root for every coding-agent instance. Lives outside the project tree so
+     * the agent's skills/memory/sessions don't pollute the cwd it was launched from, and so two
+     * different harness apps (codingagent, builder, dataagent, claw) cannot collide on the same
+     * {@code .agentscope/workspace/} directory.
+     */
+    public static final Path DEFAULT_WORKSPACE_ROOT =
+            Paths.get(System.getProperty("user.home"), ".agentscope", "codingagent", "workspace");
+
+    /**
+     * Default location of the {@code agentscope.json} config file. Pinned to the per-app home
+     * directory ({@code ~/.agentscope/codingagent/}) so the coding agent never picks up a stale
+     * config left behind by another harness app (e.g. dataagent) in the cwd it was launched from.
+     */
+    public static final Path DEFAULT_CONFIG_PATH =
+            Paths.get(
+                    System.getProperty("user.home"),
+                    ".agentscope",
+                    "codingagent",
+                    "agentscope.json");
 
     // -----------------------------------------------------------------
     //  Instance state — populated by Builder.build()
@@ -119,8 +150,8 @@ public final class CodingBootstrap {
         return new Builder();
     }
 
-    public static AgentscopeConfig loadConfig(Path cwd) throws IOException {
-        return loadConfigFile(defaultConfigPath(cwd));
+    public static AgentscopeConfig loadConfig() throws IOException {
+        return loadConfigFile(DEFAULT_CONFIG_PATH);
     }
 
     public static AgentscopeConfig loadConfigFile(Path configPath) throws IOException {
@@ -131,10 +162,6 @@ public final class CodingBootstrap {
                 new ObjectMapper()
                         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         return mapper.readValue(configPath.toFile(), AgentscopeConfig.class);
-    }
-
-    public static Path defaultConfigPath(Path cwd) {
-        return cwd.resolve(".agentscope").resolve("agentscope.json");
     }
 
     // -----------------------------------------------------------------
@@ -259,6 +286,16 @@ public final class CodingBootstrap {
             }
             if (ChatUiChannel.CHANNEL_ID.equals(channelId)) {
                 merged.put(channelId, ChatUiChannel.create(ce.toChannelConfig(channelId)));
+            } else if (DingtalkChannel.TYPE.equals(channelId)) {
+                merged.put(
+                        channelId,
+                        DingtalkChannel.fromProperties(
+                                channelId, ce.toChannelConfig(channelId), ce.getProperties()));
+            } else if (FeishuChannel.TYPE.equals(channelId)) {
+                merged.put(
+                        channelId,
+                        FeishuChannel.fromProperties(
+                                channelId, ce.toChannelConfig(channelId), ce.getProperties()));
             } else {
                 log.debug(
                         "Channel '{}' configured in file but no implementation registered via"
@@ -287,7 +324,7 @@ public final class CodingBootstrap {
             Path workspace =
                     e.getWorkspace() != null && !e.getWorkspace().isBlank()
                             ? cwd.resolve(e.getWorkspace()).normalize()
-                            : cwd.resolve(".agentscope").resolve("workspace").normalize();
+                            : DEFAULT_WORKSPACE_ROOT;
             b.workspace(workspace);
 
             if (e.getMaxIters() != null) {
@@ -303,7 +340,7 @@ public final class CodingBootstrap {
                 }
             }
         } else {
-            b.workspace(cwd.resolve(".agentscope").resolve("workspace").normalize());
+            b.workspace(DEFAULT_WORKSPACE_ROOT);
         }
     }
 
@@ -393,6 +430,20 @@ public final class CodingBootstrap {
         public Builder withDualCodingAgents(
                 io.agentscope.core.tool.Toolkit codingToolkit,
                 io.agentscope.core.tool.Toolkit reviewerToolkit) {
+            return withDualCodingAgents(codingToolkit, reviewerToolkit, null);
+        }
+
+        /**
+         * Same as {@link #withDualCodingAgents(io.agentscope.core.tool.Toolkit,
+         * io.agentscope.core.tool.Toolkit)} but additionally registers the open-swe-style hook
+         * stack ({@link MessageQueueHook}, {@link ThreadBudgetHook}, {@link ModelCallLimitHook})
+         * on both agents when {@code store} is non-null. Without a store the hooks degrade
+         * silently — useful for plain CLI/test usage where no thread-routing exists.
+         */
+        public Builder withDualCodingAgents(
+                io.agentscope.core.tool.Toolkit codingToolkit,
+                io.agentscope.core.tool.Toolkit reviewerToolkit,
+                BaseStore store) {
             this.configureAgent(
                     "coding",
                     b -> {
@@ -406,11 +457,10 @@ public final class CodingBootstrap {
                         }
                         b.sysPrompt(
                                 io.agentscope.harness.coding.prompt.CodingSystemPrompt.build(
-                                        cwd.resolve(".agentscope/coding-workspace")
-                                                .toAbsolutePath()
-                                                .toString(),
-                                        null));
+                                        CodingAgentFactory.resolveSandboxWorkingDir(), null));
                         b.maxIters(50);
+                        configureSandbox(b);
+                        registerOpenSweHooks(b, store);
                     });
             this.configureAgent(
                     "reviewer",
@@ -426,13 +476,65 @@ public final class CodingBootstrap {
                         b.sysPrompt(
                                 io.agentscope.harness.coding.prompt.ReviewerSystemPrompt
                                         .buildTemplate(
-                                                cwd.resolve(".agentscope/reviewer-workspace")
-                                                        .toAbsolutePath()
-                                                        .toString()));
+                                                CodingAgentFactory.resolveSandboxWorkingDir()));
                         b.maxIters(30);
                         b.disableSubagents();
+                        configureSandbox(b);
+                        registerOpenSweHooks(b, store);
                     });
             return this;
+        }
+
+        /**
+         * Attaches a Docker sandbox filesystem when {@code SANDBOX_TYPE=docker}. Other values (e.g. {@code none}) leave the agent on the default
+         * local-host filesystem so unit tests and offline runs continue to work.
+         */
+        private static void configureSandbox(HarnessAgent.Builder b) {
+            String type = CodingAgentFactory.resolveSandboxType();
+            if ("docker".equalsIgnoreCase(type)) {
+                DockerFilesystemSpec spec = new DockerFilesystemSpec();
+                spec.image(CodingAgentFactory.resolveSandboxImage());
+                spec.workspaceRoot(CodingAgentFactory.resolveSandboxWorkingDir());
+                spec.isolationScope(IsolationScope.SESSION);
+                b.filesystem(spec);
+                // Single-node deployment: SqliteBaseStore is local, so a distributed Session
+                // would be inconsistent. Switch to RedisSession + a distributed store together
+                // if this ever runs multi-replica.
+                b.sandboxDistributed(
+                        SandboxDistributedOptions.builder().requireDistributed(false).build());
+            }
+        }
+
+        private static void registerOpenSweHooks(HarnessAgent.Builder b, BaseStore store) {
+            if (store != null) {
+                b.hook(new MessageQueueHook(store));
+            }
+            b.hook(new ThreadBudgetHook(resolveThreadBudget()));
+            b.hook(new ModelCallLimitHook(resolveGlobalModelLimit()));
+        }
+
+        private static int resolveThreadBudget() {
+            String env = System.getenv("THREAD_MODEL_CALL_BUDGET");
+            if (env != null && !env.isBlank()) {
+                try {
+                    return Integer.parseInt(env.trim());
+                } catch (NumberFormatException ignored) {
+                    // fall through
+                }
+            }
+            return 200;
+        }
+
+        private static int resolveGlobalModelLimit() {
+            String env = System.getenv("GLOBAL_MODEL_CALL_LIMIT");
+            if (env != null && !env.isBlank()) {
+                try {
+                    return Integer.parseInt(env.trim());
+                } catch (NumberFormatException ignored) {
+                    // fall through
+                }
+            }
+            return 5000;
         }
 
         /**
@@ -451,16 +553,12 @@ public final class CodingBootstrap {
          */
         public CodingBootstrap build() throws IOException {
             Path resolvedConfig =
-                    skipConfigFile
-                            ? null
-                            : (configPath != null ? configPath : defaultConfigPath(cwd));
+                    skipConfigFile ? null : (configPath != null ? configPath : DEFAULT_CONFIG_PATH);
             AgentscopeConfig fileConfig =
                     skipConfigFile
                             ? new AgentscopeConfig()
                             : loadConfigFile(
-                                    resolvedConfig != null
-                                            ? resolvedConfig
-                                            : defaultConfigPath(cwd));
+                                    resolvedConfig != null ? resolvedConfig : DEFAULT_CONFIG_PATH);
 
             Map<String, AgentConfigEntry> fileAgents =
                     fileConfig.getAgents() != null ? fileConfig.getAgents() : Map.of();
@@ -472,7 +570,8 @@ public final class CodingBootstrap {
 
             if (ids.isEmpty()) {
                 throw new IllegalStateException(
-                        "No agents defined: add entries to .agentscope/agentscope.json or use"
+                        "No agents defined: add entries to"
+                                + " ~/.agentscope/codingagent/agentscope.json or use"
                                 + " AgentBootstrap.builder().agent(id, ...) / configureAgent(...)");
             }
 
@@ -588,7 +687,7 @@ public final class CodingBootstrap {
 
             return new CodingBootstrap(
                     cwd,
-                    resolvedConfig != null ? resolvedConfig : defaultConfigPath(cwd),
+                    resolvedConfig != null ? resolvedConfig : DEFAULT_CONFIG_PATH,
                     main,
                     Map.copyOf(built),
                     globalFileSystem,
@@ -601,7 +700,7 @@ public final class CodingBootstrap {
             if (entry != null && entry.getWorkspace() != null && !entry.getWorkspace().isBlank()) {
                 return cwd.resolve(entry.getWorkspace()).normalize();
             }
-            return cwd.resolve(".agentscope").resolve("workspace").normalize();
+            return DEFAULT_WORKSPACE_ROOT;
         }
     }
 }
