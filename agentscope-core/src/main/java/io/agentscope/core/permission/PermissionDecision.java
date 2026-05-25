@@ -110,6 +110,22 @@ public final class PermissionDecision {
         return builder().behavior(PermissionBehavior.PASSTHROUGH).message(message).build();
     }
 
+    /**
+     * Returns a copy of this decision with the given suggested rules attached.
+     *
+     * @param suggestedRules the rules to attach; may be null to clear
+     * @return a new {@code PermissionDecision} with all other fields preserved
+     */
+    public PermissionDecision withSuggestedRules(List<PermissionRule> suggestedRules) {
+        return builder()
+                .behavior(behavior)
+                .message(message)
+                .decisionReason(decisionReason)
+                .updatedInput(updatedInput)
+                .suggestedRules(suggestedRules)
+                .build();
+    }
+
     public static Builder builder() {
         return new Builder();
     }
