@@ -582,8 +582,82 @@ public final class Agent2 implements Agent {
         return null;
     }
 
+    /**
+     * Maps a fine-grained {@link AgentEvent} to a coarse {@link Event} for the public
+     * {@link #stream(List, StreamOptions)} surface.
+     *
+     * <p>Only events that carry user-visible content are surfaced:
+     * <ul>
+     *   <li>{@link TextBlockDeltaEvent} → {@link EventType#REASONING}, {@code isLast=false}, with
+     *       an assistant message wrapping the delta text.</li>
+     *   <li>{@link ModelCallEndEvent} → {@link EventType#REASONING}, {@code isLast=true}, with the
+     *       just-completed assistant message taken from {@link AgentState#getContext()}.</li>
+     *   <li>{@link ToolResultTextDeltaEvent} → {@link EventType#TOOL_RESULT},
+     *       {@code isLast=false}, with a tool message wrapping the delta text.</li>
+     *   <li>{@link ToolResultEndEvent} → {@link EventType#TOOL_RESULT}, {@code isLast=true}, with
+     *       the most recent tool message taken from {@link AgentState#getContext()}.</li>
+     *   <li>{@link ExceedMaxItersEvent} → {@link EventType#SUMMARY}, {@code isLast=true}, with a
+     *       synthesized assistant message describing the overflow.</li>
+     * </ul>
+     *
+     * <p>Lifecycle bookends (reply/model-call start, block start/end, tool-call events) and
+     * HITL events are intentionally dropped from the coarse stream; subscribers needing those
+     * should consume {@link #streamEvents(List)} directly.
+     */
     private Mono<Event> adaptToCoarseEvent(AgentEvent fine) {
+        if (fine instanceof TextBlockDeltaEvent delta) {
+            Msg partial =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name(name)
+                            .textContent(delta.getDelta())
+                            .build();
+            return Mono.just(new Event(EventType.REASONING, partial, false));
+        }
+        if (fine instanceof ModelCallEndEvent) {
+            Msg assistant = lastAssistantMsg();
+            if (assistant == null) {
+                return Mono.empty();
+            }
+            return Mono.just(new Event(EventType.REASONING, assistant, true));
+        }
+        if (fine instanceof ToolResultTextDeltaEvent delta) {
+            Msg partial =
+                    Msg.builder()
+                            .role(MsgRole.TOOL)
+                            .name(name)
+                            .textContent(delta.getDelta())
+                            .build();
+            return Mono.just(new Event(EventType.TOOL_RESULT, partial, false));
+        }
+        if (fine instanceof ToolResultEndEvent) {
+            Msg toolMsg = lastToolMsg();
+            if (toolMsg == null) {
+                return Mono.empty();
+            }
+            return Mono.just(new Event(EventType.TOOL_RESULT, toolMsg, true));
+        }
+        if (fine instanceof ExceedMaxItersEvent overflow) {
+            String text =
+                    "Agent exceeded maxIters="
+                            + overflow.getMaxIters()
+                            + " at iteration "
+                            + overflow.getCurrentIter();
+            Msg summary =
+                    Msg.builder().role(MsgRole.ASSISTANT).name(name).textContent(text).build();
+            return Mono.just(new Event(EventType.SUMMARY, summary, true));
+        }
         return Mono.empty();
+    }
+
+    private Msg lastToolMsg() {
+        List<Msg> ctx = state.getContext();
+        for (int i = ctx.size() - 1; i >= 0; i--) {
+            if (ctx.get(i).getRole() == MsgRole.TOOL) {
+                return ctx.get(i);
+            }
+        }
+        return null;
     }
 
     private ToolResultState determineToolResultState(ToolResultBlock result) {
