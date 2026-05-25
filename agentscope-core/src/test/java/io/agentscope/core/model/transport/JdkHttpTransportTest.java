@@ -75,7 +75,7 @@ class JdkHttpTransportTest {
                 HttpTransportConfig.builder()
                         .connectTimeout(Duration.ofSeconds(5))
                         .readTimeout(Duration.ofSeconds(2)) // Global timeout for sync calls
-                        .responseTimeout(Duration.ofSeconds(2)) // TTFT for streaming
+                        .responseTimeout(Duration.ofSeconds(2)) // First emitted chunk for streaming
                         .streamIdleTimeout(Duration.ofSeconds(1)) // Inter-token gap for streaming
                         .build();
         transport = new JdkHttpTransport(config);
@@ -1094,7 +1094,7 @@ class JdkHttpTransportTest {
         HttpTransportConfig customConfig =
                 HttpTransportConfig.builder()
                         .readTimeout(Duration.ofSeconds(1)) // Very tight global timeout
-                        .responseTimeout(Duration.ofSeconds(4)) // Ample Time-To-First-Token timeout
+                        .responseTimeout(Duration.ofSeconds(4)) // Ample first-chunk timeout
                         .streamIdleTimeout(Duration.ofSeconds(2))
                         .build();
 
@@ -1129,7 +1129,7 @@ class JdkHttpTransportTest {
 
     @Test
     void testStreamResponseTimeout() {
-        // Test Timeout Strategy 1 (TTFT):
+        // Test Timeout Strategy 1:
         // Delay headers by 3 seconds, which exceeds the configured responseTimeout (2 seconds).
         mockServer.enqueue(
                 new MockResponse()
@@ -1151,6 +1151,42 @@ class JdkHttpTransportTest {
                                 e instanceof HttpTransportException
                                         && e.getMessage().contains("Stream timeout"))
                 .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void testStreamResponseTimeoutSpansRequestStartToFirstChunk() {
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .responseTimeout(Duration.ofSeconds(1))
+                        .streamIdleTimeout(Duration.ofSeconds(2))
+                        .build();
+        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
+
+        try {
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setHeader("Content-Type", "text/event-stream")
+                            .setBody("data: {\"id\":\"late\"}\n\ndata: [DONE]\n\n")
+                            .setHeadersDelay(600, TimeUnit.MILLISECONDS)
+                            .setBodyDelay(700, TimeUnit.MILLISECONDS));
+
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/first-chunk-budget").toString())
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            StepVerifier.create(customTransport.stream(request))
+                    .expectErrorMatches(
+                            e ->
+                                    e instanceof HttpTransportException
+                                            && e.getMessage().contains("Stream timeout"))
+                    .verify(Duration.ofSeconds(3));
+        } finally {
+            customTransport.close();
+        }
     }
 
     @Test

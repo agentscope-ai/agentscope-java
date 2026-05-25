@@ -200,11 +200,16 @@ public class JdkHttpTransport implements HttpTransport {
         return Flux.defer(
                 () -> {
                     AtomicReference<InputStream> responseBody = new AtomicReference<>();
+                    long requestStartNanos = System.nanoTime();
                     return sendInputStreamAsync(jdkRequest, responseBody)
                             .timeout(Mono.delay(streamResponseTimeout()))
                             .flatMapMany(
                                     response ->
-                                            handleStreamResponse(response, request, responseBody))
+                                            handleStreamResponse(
+                                                    response,
+                                                    request,
+                                                    responseBody,
+                                                    requestStartNanos))
                             .doFinally(signal -> closeQuietly(responseBody.getAndSet(null)))
                             .onErrorMap(this::mapStreamError);
                 });
@@ -244,7 +249,8 @@ public class JdkHttpTransport implements HttpTransport {
     private Flux<String> handleStreamResponse(
             java.net.http.HttpResponse<InputStream> response,
             HttpRequest request,
-            AtomicReference<InputStream> responseBody) {
+            AtomicReference<InputStream> responseBody,
+            long requestStartNanos) {
         InputStream inputStream = response.body();
         responseBody.set(inputStream);
 
@@ -273,9 +279,9 @@ public class JdkHttpTransport implements HttpTransport {
 
         return processStreamResponse(inputStream, request)
                 .timeout(
-                        // Timeout strategy 1: Time To First Token (TTFT).
-                        // The maximum time to wait for the first piece of data after headers.
-                        Mono.delay(streamResponseTimeout()),
+                        // Timeout strategy 1: Time To First Chunk.
+                        // This uses the remaining response timeout budget from request start.
+                        Mono.delay(remainingResponseTimeout(requestStartNanos)),
 
                         // Timeout strategy 2: Inter-token gap (Stream Idle Timeout).
                         // The maximum time to wait between receiving two consecutive data chunks.
@@ -438,6 +444,12 @@ public class JdkHttpTransport implements HttpTransport {
         return config.getResponseTimeout() != null
                 ? config.getResponseTimeout()
                 : HttpTransportConfig.DEFAULT_RESPONSE_TIMEOUT;
+    }
+
+    private Duration remainingResponseTimeout(long requestStartNanos) {
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - requestStartNanos);
+        Duration remaining = streamResponseTimeout().minus(elapsed);
+        return remaining.isNegative() || remaining.isZero() ? Duration.ZERO : remaining;
     }
 
     private Duration streamIdleTimeout() {

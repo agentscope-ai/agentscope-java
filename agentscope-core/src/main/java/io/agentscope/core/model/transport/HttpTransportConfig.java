@@ -31,7 +31,7 @@ public class HttpTransportConfig {
     /** Default read timeout: 5 minutes (Overall timeout for non-streaming calls). */
     public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofMinutes(5);
 
-    /** Default response timeout (TTFT): 5 minutes (Time To First Token for streaming). */
+    /** Default response timeout: 5 minutes (request start to first emitted streaming chunk). */
     public static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofMinutes(5);
 
     /** Default stream idle timeout: 5 minutes (maximum wait between consecutive data chunks). */
@@ -74,7 +74,10 @@ public class HttpTransportConfig {
     }
 
     /**
-     * Get the response timeout (Time To First Token for streaming).
+     * Get the response timeout for streaming requests.
+     *
+     * <p>For {@link JdkHttpTransport} streaming requests, this bounds the time from request start
+     * until the first emitted SSE/NDJSON chunk.
      *
      * @return the response timeout duration
      */
@@ -206,7 +209,10 @@ public class HttpTransportConfig {
         }
 
         /**
-         * Set the response timeout (Time To First Byte).
+         * Set the response timeout for streaming requests.
+         *
+         * <p>For {@link JdkHttpTransport} streaming requests, this bounds the time from request
+         * start until the first emitted SSE/NDJSON chunk.
          *
          * @param responseTimeout the response timeout duration
          * @return this builder
