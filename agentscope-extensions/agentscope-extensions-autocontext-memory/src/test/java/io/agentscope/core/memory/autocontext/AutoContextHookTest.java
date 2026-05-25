@@ -350,26 +350,28 @@ class AutoContextHookTest {
                         + testModel.getCallCount());
 
         // Verify input messages were updated to reflect compressed memory
-        // Note: System prompt may be added if compressed messages exist, so size may be
-        // finalMessages.size() + 1
+        // System prompt is now carried separately on the event, so input messages should only
+        // contain non-system turns.
         List<Msg> updatedInputMessages = result.getInputMessages();
         assertNotNull(updatedInputMessages, "Input messages should not be null");
-        // Check if system prompt was added (first message is SYSTEM)
-        boolean hasSystemPrompt =
-                !updatedInputMessages.isEmpty()
-                        && updatedInputMessages.get(0).getRole() == MsgRole.SYSTEM;
-        int expectedSize = hasSystemPrompt ? finalMessages.size() + 1 : finalMessages.size();
+        assertTrue(
+                updatedInputMessages.stream().noneMatch(msg -> msg.getRole() == MsgRole.SYSTEM),
+                "Input messages should not contain system turns");
         assertEquals(
-                expectedSize,
+                finalMessages.size(),
                 updatedInputMessages.size(),
-                "Input messages should be updated to match compressed memory size (plus system"
-                        + " prompt if added). "
-                        + "Initial: "
+                "Input messages should match compressed memory size when system content is stored"
+                        + " separately. Initial: "
                         + initialCount
                         + ", Final: "
                         + finalMessages.size()
                         + ", Updated: "
                         + updatedInputMessages.size());
+        assertNotNull(result.getSystemMessage(), "System message should be available");
+        assertEquals(MsgRole.SYSTEM, result.getSystemMessage().getRole());
+        assertTrue(
+                result.getSystemMessage().getTextContent().contains("context_reload"),
+                "System message should include compressed-context instructions");
 
         // Verify messages were actually compressed (count should be reduced)
         assertTrue(
@@ -423,19 +425,23 @@ class AutoContextHookTest {
         List<Msg> finalMessages = noCompressionMemory.getMessages();
         assertEquals(initialCount, finalMessages.size(), "Message count should not change");
 
-        // Verify input messages - system prompt is always added, so size will be memory size + 1
+        // Input messages should stay system-free; the system prompt is carried separately.
         List<Msg> resultInputMessages = result.getInputMessages();
-        // System prompt is always added, so expected size is memory size + 1
-        int expectedSize = finalMessages.size() + 1;
+        assertTrue(resultInputMessages.stream().noneMatch(msg -> msg.getRole() == MsgRole.SYSTEM));
         assertEquals(
-                expectedSize,
+                finalMessages.size(),
                 resultInputMessages.size(),
-                "Input messages should include system prompt. Memory size: "
+                "Input messages should match memory size when no system turns are present. Memory"
+                        + " size: "
                         + finalMessages.size()
                         + ", Expected: "
-                        + expectedSize
+                        + finalMessages.size()
                         + ", Actual: "
                         + resultInputMessages.size());
+        assertNotNull(result.getSystemMessage(), "System message should be available");
+        assertTrue(
+                result.getSystemMessage().getTextContent().contains("context_reload"),
+                "System message should include compressed-context instructions");
     }
 
     @Test
@@ -578,14 +584,17 @@ class AutoContextHookTest {
                 Mono.defer(() -> hook.onEvent(event)).subscribeOn(Schedulers.parallel()).block();
 
         assertNotNull(result);
-        assertEquals(MsgRole.SYSTEM, result.getInputMessages().get(0).getRole());
+        assertNotNull(result.getSystemMessage(), "System message should be available");
         assertTrue(
-                result.getInputMessages().get(0).getTextContent().contains("context_reload"),
-                "System prompt should include compressed-context instructions");
+                result.getInputMessages().stream()
+                        .noneMatch(msg -> msg.getRole() == MsgRole.SYSTEM));
+        assertTrue(
+                result.getSystemMessage().getTextContent().contains("context_reload"),
+                "System message should include compressed-context instructions");
         assertEquals(
-                compressionMemory.getMessages().size() + 1,
+                compressionMemory.getMessages().size(),
                 result.getInputMessages().size(),
-                "Result should include system prompt plus compressed memory messages");
+                "Result should include compressed memory messages only");
     }
 
     @Test
@@ -595,6 +604,12 @@ class AutoContextHookTest {
                 new AutoContextMemory(
                         createCompressionConfig(), new TestModel("Compressed summary"));
         populateCompressibleConversation(compressionMemory, 3);
+        compressionMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("system")
+                        .content(TextBlock.builder().text("Memory system note").build())
+                        .build());
         compressionMemory.addMessage(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -610,23 +625,32 @@ class AutoContextHookTest {
                         .toolkit(toolkit)
                         .build();
 
-        List<Msg> inputMessages = new ArrayList<>();
-        inputMessages.add(
+        List<Msg> inputMessages = new ArrayList<>(compressionMemory.getMessages());
+
+        PreReasoningEvent event = new PreReasoningEvent(agent, "test-model", null, inputMessages);
+        event.setSystemMessage(
                 Msg.builder()
                         .role(MsgRole.SYSTEM)
                         .name("system")
                         .content(TextBlock.builder().text("Base system prompt").build())
                         .build());
-        inputMessages.addAll(compressionMemory.getMessages());
-
-        PreReasoningEvent event = new PreReasoningEvent(agent, "test-model", null, inputMessages);
         PreReasoningEvent result =
                 Mono.defer(() -> hook.onEvent(event)).subscribeOn(Schedulers.parallel()).block();
 
         assertNotNull(result);
-        String updatedSystemPrompt = result.getInputMessages().get(0).getTextContent();
+        assertNotNull(result.getSystemMessage(), "System message should be available");
+        String updatedSystemPrompt = result.getSystemMessage().getTextContent();
         assertTrue(updatedSystemPrompt.startsWith("Base system prompt"));
+        assertTrue(updatedSystemPrompt.contains("Memory system note"));
         assertTrue(updatedSystemPrompt.contains("context_reload"));
+        assertTrue(
+                result.getInputMessages().stream()
+                        .noneMatch(msg -> msg.getRole() == MsgRole.SYSTEM));
+        long expectedNonSystemCount =
+                compressionMemory.getMessages().stream()
+                        .filter(msg -> msg.getRole() != MsgRole.SYSTEM)
+                        .count();
+        assertEquals(expectedNonSystemCount, result.getInputMessages().size());
     }
 
     private AutoContextConfig createCompressionConfig() {

@@ -22,9 +22,9 @@ import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
@@ -84,6 +84,12 @@ import reactor.core.scheduler.Schedulers;
 public class AutoContextHook implements Hook {
 
     private static final Logger log = LoggerFactory.getLogger(AutoContextHook.class);
+
+    private static final String CONTEXT_OFFLOAD_INSTRUCTION =
+            "You may see compressed messages containing <!-- CONTEXT_OFFLOAD uuid=... -->.\n"
+                    + "- Use the UUID to call context_reload if you need full details.\n"
+                    + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
+                    + " metadata in your response.";
 
     private final AtomicBoolean registered = new AtomicBoolean(false);
 
@@ -228,60 +234,40 @@ public class AutoContextHook implements Hook {
                 .compressIfNeededAsync()
                 .map(
                         ignored -> {
-                            event.setInputMessages(buildInputMessages(event, autoContextMemory));
+                            List<Msg> compressedMessages = autoContextMemory.getMessages();
+                            event.setInputMessages(buildInputMessages(compressedMessages));
+                            mergeSystemMessages(event, compressedMessages);
                             return event;
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    private List<Msg> buildInputMessages(
-            PreReasoningEvent event, AutoContextMemory autoContextMemory) {
-        List<Msg> originalInputMessages = event.getInputMessages();
+    private List<Msg> buildInputMessages(List<Msg> messages) {
         List<Msg> newInputMessages = new ArrayList<>();
-
-        if (!originalInputMessages.isEmpty()
-                && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
-            Msg originalSystemMsg = originalInputMessages.get(0);
-            String originalSystemText = originalSystemMsg.getTextContent();
-            String appendedInstruction =
-                    "\n\n"
-                            + "You may see compressed messages containing <!-- CONTEXT_OFFLOAD"
-                            + " uuid=... -->.\n"
-                            + "- Use the UUID to call context_reload if you need full details.\n"
-                            + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
-                            + " metadata in your response.";
-
-            String newSystemText =
-                    originalSystemText != null
-                            ? originalSystemText + appendedInstruction
-                            : appendedInstruction.trim();
-
-            Msg updatedSystemMsg =
-                    Msg.builder()
-                            .role(MsgRole.SYSTEM)
-                            .name(originalSystemMsg.getName())
-                            .content(TextBlock.builder().text(newSystemText).build())
-                            .metadata(originalSystemMsg.getMetadata())
-                            .build();
-
-            newInputMessages.add(updatedSystemMsg);
-        } else {
-            String instruction =
-                    "You may see compressed messages containing <!-- CONTEXT_OFFLOAD uuid=..."
-                            + " -->.\n"
-                            + "- Use the UUID to call context_reload if you need full details.\n"
-                            + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
-                            + " metadata in your response.";
-
-            newInputMessages.add(
-                    Msg.builder()
-                            .role(MsgRole.SYSTEM)
-                            .name("system")
-                            .content(TextBlock.builder().text(instruction).build())
-                            .build());
+        if (messages == null || messages.isEmpty()) {
+            return newInputMessages;
         }
 
-        newInputMessages.addAll(autoContextMemory.getMessages());
+        for (Msg msg : messages) {
+            if (msg != null && msg.getRole() != MsgRole.SYSTEM) {
+                newInputMessages.add(msg);
+            }
+        }
         return newInputMessages;
+    }
+
+    private void mergeSystemMessages(PreReasoningEvent event, List<Msg> messages) {
+        if (messages != null) {
+            for (Msg msg : messages) {
+                if (msg == null || msg.getRole() != MsgRole.SYSTEM) {
+                    continue;
+                }
+                for (ContentBlock block : msg.getContent()) {
+                    event.appendSystemContent(block);
+                }
+            }
+        }
+
+        event.appendSystemContent(CONTEXT_OFFLOAD_INSTRUCTION);
     }
 }
