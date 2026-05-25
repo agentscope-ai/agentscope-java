@@ -28,13 +28,16 @@ public class HttpTransportConfig {
     /** Default connect timeout: 30 seconds. */
     public static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(30);
 
-    /** Default read timeout: 5 minutes (Overall timeout for non-streaming calls). */
+    /** Default read timeout: 5 minutes. */
     public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofMinutes(5);
 
-    /** Default response timeout: 5 minutes (request start to first emitted streaming chunk). */
+    /**
+     * Default streaming response timeout: 5 minutes (request start to first emitted streaming
+     * chunk).
+     */
     public static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofMinutes(5);
 
-    /** Default stream idle timeout: 5 minutes (maximum wait between consecutive data chunks). */
+    /** Default streaming idle timeout: 5 minutes (maximum wait between data chunks). */
     public static final Duration DEFAULT_STREAM_IDLE_TIMEOUT = DEFAULT_READ_TIMEOUT;
 
     /** Default write timeout: 30 seconds. */
@@ -77,7 +80,8 @@ public class HttpTransportConfig {
      * Get the response timeout for streaming requests.
      *
      * <p>For {@link JdkHttpTransport} streaming requests, this bounds the time from request start
-     * until the first emitted SSE/NDJSON chunk.
+     * until the first emitted SSE/NDJSON chunk. {@link OkHttpTransport} does not consume this
+     * option; it relies on OkHttp's {@link #getReadTimeout()} for stream reads.
      *
      * @return the response timeout duration
      */
@@ -86,7 +90,11 @@ public class HttpTransportConfig {
     }
 
     /**
-     * Get the stream idle timeout (maximum time between two consecutive data chunks).
+     * Get the stream idle timeout.
+     *
+     * <p>For {@link JdkHttpTransport} streaming requests, this bounds the maximum wait between two
+     * consecutive emitted SSE/NDJSON chunks. {@link OkHttpTransport} does not consume this option;
+     * it relies on OkHttp's {@link #getReadTimeout()} for stream reads.
      *
      * @return the stream idle timeout duration
      */
@@ -97,8 +105,10 @@ public class HttpTransportConfig {
     /**
      * Get the read timeout.
      *
-     * <p>For {@link JdkHttpTransport} streaming requests, response and idle timeouts are controlled
-     * by {@link #getResponseTimeout()} and {@link #getStreamIdleTimeout()} instead.
+     * <p>{@link OkHttpTransport} applies this as OkHttp's read timeout for both standard and
+     * streaming requests. {@link JdkHttpTransport} applies this to non-streaming requests only; JDK
+     * streaming requests use {@link #getResponseTimeout()} and {@link #getStreamIdleTimeout()}
+     * instead.
      *
      * @return the read timeout duration
      */
@@ -212,7 +222,8 @@ public class HttpTransportConfig {
          * Set the response timeout for streaming requests.
          *
          * <p>For {@link JdkHttpTransport} streaming requests, this bounds the time from request
-         * start until the first emitted SSE/NDJSON chunk.
+         * start until the first emitted SSE/NDJSON chunk. {@link OkHttpTransport} does not consume
+         * this option; it relies on OkHttp's {@link #getReadTimeout()} for stream reads.
          *
          * @param responseTimeout the response timeout duration
          * @return this builder
@@ -225,6 +236,10 @@ public class HttpTransportConfig {
         /**
          * Set the stream idle timeout.
          *
+         * <p>For {@link JdkHttpTransport} streaming requests, this bounds the maximum wait between
+         * two consecutive emitted SSE/NDJSON chunks. {@link OkHttpTransport} does not consume this
+         * option; it relies on OkHttp's {@link #getReadTimeout()} for stream reads.
+         *
          * @param streamIdleTimeout the stream idle timeout duration
          * @return this builder
          */
@@ -235,6 +250,11 @@ public class HttpTransportConfig {
 
         /**
          * Set the read timeout.
+         *
+         * <p>{@link OkHttpTransport} applies this as OkHttp's read timeout for both standard and
+         * streaming requests. {@link JdkHttpTransport} applies this to non-streaming requests only;
+         * JDK streaming requests use {@link #getResponseTimeout()} and
+         * {@link #getStreamIdleTimeout()} instead.
          *
          * @param readTimeout the read timeout duration
          * @return this builder

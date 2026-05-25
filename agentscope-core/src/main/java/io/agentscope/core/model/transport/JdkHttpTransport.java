@@ -215,6 +215,9 @@ public class JdkHttpTransport implements HttpTransport {
                 });
     }
 
+    /**
+     * Send a streaming request and propagate Reactor cancellation to the JDK future/socket.
+     */
     private Mono<java.net.http.HttpResponse<InputStream>> sendInputStreamAsync(
             java.net.http.HttpRequest request, AtomicReference<InputStream> responseBody) {
         return Mono.create(
@@ -246,6 +249,9 @@ public class JdkHttpTransport implements HttpTransport {
                 });
     }
 
+    /**
+     * Validate the streaming response and apply first-chunk and inter-chunk timeouts.
+     */
     private Flux<String> handleStreamResponse(
             java.net.http.HttpResponse<InputStream> response,
             HttpRequest request,
@@ -288,6 +294,9 @@ public class JdkHttpTransport implements HttpTransport {
                         data -> Mono.delay(streamIdleTimeout()));
     }
 
+    /**
+     * Parse SSE or NDJSON lines on a bounded elastic worker because BufferedReader blocks.
+     */
     private Flux<String> processStreamResponse(InputStream inputStream, HttpRequest request) {
         if (inputStream == null) {
             return Flux.empty();
@@ -309,6 +318,9 @@ public class JdkHttpTransport implements HttpTransport {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    /**
+     * Extract non-empty SSE data payloads and stop before the terminal marker.
+     */
     private Flux<String> readSseLines(BufferedReader reader) {
         return Flux.fromStream(reader.lines())
                 .filter(line -> line.startsWith(SSE_DATA_PREFIX))
@@ -318,6 +330,9 @@ public class JdkHttpTransport implements HttpTransport {
                 .filter(data -> !data.isEmpty());
     }
 
+    /**
+     * Extract non-empty NDJSON records as already-delimited stream chunks.
+     */
     private Flux<String> readNdJsonLines(BufferedReader reader) {
         return Flux.fromStream(reader.lines())
                 .doOnNext(line -> log.debug("Received NDJSON line"))
@@ -434,30 +449,45 @@ public class JdkHttpTransport implements HttpTransport {
         }
     }
 
+    /**
+     * Read an error response body away from the JDK HTTP worker threads.
+     */
     private Mono<String> readInputStreamAsync(InputStream inputStream) {
         return Mono.fromCallable(() -> readInputStream(inputStream))
                 .defaultIfEmpty("")
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    /**
+     * Resolve the configured request-start-to-first-chunk timeout.
+     */
     private Duration streamResponseTimeout() {
         return config.getResponseTimeout() != null
                 ? config.getResponseTimeout()
                 : HttpTransportConfig.DEFAULT_RESPONSE_TIMEOUT;
     }
 
+    /**
+     * Keep the first-chunk timeout as one budget across header wait and body parsing.
+     */
     private Duration remainingResponseTimeout(long requestStartNanos) {
         Duration elapsed = Duration.ofNanos(System.nanoTime() - requestStartNanos);
         Duration remaining = streamResponseTimeout().minus(elapsed);
         return remaining.isNegative() || remaining.isZero() ? Duration.ZERO : remaining;
     }
 
+    /**
+     * Resolve the configured maximum idle gap between emitted stream chunks.
+     */
     private Duration streamIdleTimeout() {
         return config.getStreamIdleTimeout() != null
                 ? config.getStreamIdleTimeout()
                 : HttpTransportConfig.DEFAULT_STREAM_IDLE_TIMEOUT;
     }
 
+    /**
+     * Normalize low-level streaming failures into the transport exception type.
+     */
     private Throwable mapStreamError(Throwable e) {
         if (e instanceof TimeoutException) {
             return new HttpTransportException("Stream timeout: " + e.getMessage(), e);

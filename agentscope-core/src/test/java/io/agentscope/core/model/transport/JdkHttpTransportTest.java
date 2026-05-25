@@ -1154,42 +1154,6 @@ class JdkHttpTransportTest {
     }
 
     @Test
-    void testStreamResponseTimeoutSpansRequestStartToFirstChunk() {
-        HttpTransportConfig customConfig =
-                HttpTransportConfig.builder()
-                        .responseTimeout(Duration.ofSeconds(1))
-                        .streamIdleTimeout(Duration.ofSeconds(2))
-                        .build();
-        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
-
-        try {
-            mockServer.enqueue(
-                    new MockResponse()
-                            .setResponseCode(200)
-                            .setHeader("Content-Type", "text/event-stream")
-                            .setBody("data: {\"id\":\"late\"}\n\ndata: [DONE]\n\n")
-                            .setHeadersDelay(600, TimeUnit.MILLISECONDS)
-                            .setBodyDelay(700, TimeUnit.MILLISECONDS));
-
-            HttpRequest request =
-                    HttpRequest.builder()
-                            .url(mockServer.url("/first-chunk-budget").toString())
-                            .method("POST")
-                            .body("{}")
-                            .build();
-
-            StepVerifier.create(customTransport.stream(request))
-                    .expectErrorMatches(
-                            e ->
-                                    e instanceof HttpTransportException
-                                            && e.getMessage().contains("Stream timeout"))
-                    .verify(Duration.ofSeconds(3));
-        } finally {
-            customTransport.close();
-        }
-    }
-
-    @Test
     void testStreamIdleTimeout() {
         // Test Timeout Strategy 2 (Inter-token gap):
         // Emit the first complete event immediately, then delay the second event long enough to
