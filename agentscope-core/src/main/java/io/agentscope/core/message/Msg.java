@@ -107,6 +107,54 @@ public class Msg implements State {
             }
         }
         this.timestamp = timestamp;
+        validateRoleContent(this.role, this.content);
+    }
+
+    /**
+     * Validates that the content blocks are compatible with the message role.
+     *
+     * <p>Mirrors Python {@code Msg.validate_role_content} (v2_dev). The Java
+     * SDK keeps the legacy {@link ImageBlock}/{@link AudioBlock}/{@link VideoBlock}
+     * types valid on {@link MsgRole#USER} alongside the unified
+     * {@link DataBlock}. {@link MsgRole#TOOL} is Java-only legacy and treated
+     * as unrestricted (same as assistant) to preserve back-compat.
+     *
+     * @param role The message role
+     * @param content The content blocks
+     * @throws IllegalArgumentException if any block is not allowed for the role
+     */
+    private static void validateRoleContent(MsgRole role, List<ContentBlock> content) {
+        if (role == null || content == null || content.isEmpty()) {
+            return;
+        }
+        switch (role) {
+            case USER -> {
+                for (ContentBlock block : content) {
+                    if (!(block instanceof TextBlock
+                            || block instanceof DataBlock
+                            || block instanceof ImageBlock
+                            || block instanceof AudioBlock
+                            || block instanceof VideoBlock)) {
+                        throw new IllegalArgumentException(
+                                "USER message may only contain text/data/image/audio/video blocks,"
+                                        + " got "
+                                        + block.getClass().getSimpleName());
+                    }
+                }
+            }
+            case SYSTEM -> {
+                for (ContentBlock block : content) {
+                    if (!(block instanceof TextBlock)) {
+                        throw new IllegalArgumentException(
+                                "SYSTEM message may only contain text blocks, got "
+                                        + block.getClass().getSimpleName());
+                    }
+                }
+            }
+            case ASSISTANT, TOOL -> {
+                // No restriction. Python assistant matches; TOOL preserved for Java back-compat.
+            }
+        }
     }
 
     /**

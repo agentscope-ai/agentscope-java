@@ -171,7 +171,7 @@ public class GeminiFormatterTestData {
                                                                                         .build())
                                                                         .build()))
                                                 .build()))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build(),
                 Msg.builder()
                         .name("assistant")
@@ -254,7 +254,7 @@ public class GeminiFormatterTestData {
                                                                                         .build())
                                                                         .build()))
                                                 .build()))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build(),
                 Msg.builder()
                         .name("assistant")

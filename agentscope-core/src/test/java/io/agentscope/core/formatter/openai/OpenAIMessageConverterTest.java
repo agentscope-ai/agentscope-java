@@ -878,6 +878,10 @@ class OpenAIMessageConverterTest {
         }
 
         @Test
+        @org.junit.jupiter.api.Disabled(
+                "Stage 1 Msg.validateRoleContent rejects SYSTEM + ToolResultBlock at construction;"
+                        + " the SYSTEM->TOOL fallback inside the converter is unreachable. See"
+                        + " io.agentscope.core.message.Msg#validateRoleContent.")
         @DisplayName("Should handle system message with tool result block")
         void testSystemMessageWithToolResultBlock() {
             ToolResultBlock resultBlock =

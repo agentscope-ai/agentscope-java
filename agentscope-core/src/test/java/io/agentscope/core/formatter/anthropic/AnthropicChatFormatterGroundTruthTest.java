@@ -117,7 +117,7 @@ class AnthropicChatFormatterGroundTruthTest {
                                 .build(),
                         Msg.builder()
                                 .name("system")
-                                .role(MsgRole.SYSTEM)
+                                .role(MsgRole.TOOL)
                                 .content(
                                         List.of(
                                                 ToolResultBlock.builder()
