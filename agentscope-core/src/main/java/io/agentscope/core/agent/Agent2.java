@@ -20,11 +20,13 @@ import io.agentscope.core.agent.config.ContextConfig;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.ReplyEndEvent;
 import io.agentscope.core.event.ReplyStartEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
@@ -37,6 +39,7 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -56,22 +59,28 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionEngine;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.permission.ToolBase;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 /**
  * Single-file ReAct agent for the AgentScope 2.0 contract.
@@ -95,6 +104,17 @@ import reactor.core.publisher.Mono;
  * phases. Stages 7e and 7f layer on context compression and HITL re-entry respectively.
  */
 public final class Agent2 implements Agent {
+
+    /**
+     * Reactor {@link reactor.util.context.Context} key under which callers register a {@link
+     * Sinks.Many} that this agent will read to receive {@link ConfirmResult} responses to {@link
+     * RequireUserConfirmEvent}s. The sink must accept at least one {@code ConfirmResult} for every
+     * pending tool call before the agent will proceed.
+     *
+     * <p>When no sink is registered and at least one tool call requires confirmation, the agent
+     * auto-denies all pending tool calls, mirroring the {@code DONT_ASK} permission mode behaviour.
+     */
+    public static final String CONFIRM_SINK_KEY = "io.agentscope.core.agent.Agent2.confirmSink";
 
     private final String agentId;
     private final String name;
@@ -377,7 +397,127 @@ public final class Agent2 implements Agent {
     }
 
     private Flux<AgentEvent> coreActing(ActingInput input, ReplyContext rctx) {
-        return Flux.fromIterable(input.toolCalls()).concatMap(use -> executeSingleTool(use, rctx));
+        return classifyPendingConfirmation(input.toolCalls())
+                .flatMapMany(
+                        pending -> {
+                            if (pending.isEmpty()) {
+                                return Flux.fromIterable(input.toolCalls())
+                                        .concatMap(use -> executeSingleTool(use, rctx));
+                            }
+                            return gatedExecution(input.toolCalls(), pending, rctx);
+                        });
+    }
+
+    private Flux<AgentEvent> gatedExecution(
+            List<ToolUseBlock> allCalls, List<ToolUseBlock> pending, ReplyContext rctx) {
+        Flux<AgentEvent> requireEvent =
+                Flux.just(new RequireUserConfirmEvent(rctx.replyId, pending));
+        Mono<List<ConfirmResult>> awaited = awaitConfirmation(pending);
+        return requireEvent.concatWith(
+                awaited.flatMapMany(
+                        results -> {
+                            Set<String> deniedIds = collectDeniedIds(results);
+                            Flux<AgentEvent> resultEvent =
+                                    Flux.just(new UserConfirmResultEvent(rctx.replyId, results));
+                            Flux<AgentEvent> executions =
+                                    Flux.fromIterable(allCalls)
+                                            .concatMap(
+                                                    use ->
+                                                            deniedIds.contains(use.getId())
+                                                                    ? emitDeniedToolResult(
+                                                                            use, rctx)
+                                                                    : executeSingleTool(use, rctx));
+                            return resultEvent.concatWith(executions);
+                        }));
+    }
+
+    /**
+     * Classifies tool calls to determine which require user confirmation. Only tools that are
+     * {@link ToolBase} instances are inspected; legacy {@link AgentTool}s that do not extend {@code
+     * ToolBase} are treated as auto-allowed. A tool is added to the pending list when its {@link
+     * ToolBase#checkPermissions} returns {@link PermissionBehavior#ASK}.
+     */
+    private Mono<List<ToolUseBlock>> classifyPendingConfirmation(List<ToolUseBlock> toolCalls) {
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return Mono.just(List.of());
+        }
+        return Flux.fromIterable(toolCalls)
+                .concatMap(
+                        use -> {
+                            AgentTool tool = toolkit.getTool(use.getName());
+                            if (!(tool instanceof ToolBase tb)) {
+                                return Mono.<ToolUseBlock>empty();
+                            }
+                            Map<String, Object> input =
+                                    use.getInput() == null ? Map.of() : use.getInput();
+                            return tb.checkPermissions(input, state.getPermissionContext())
+                                    .flatMap(
+                                            decision -> {
+                                                if (decision != null
+                                                        && decision.getBehavior()
+                                                                == PermissionBehavior.ASK) {
+                                                    return Mono.just(use);
+                                                }
+                                                return Mono.<ToolUseBlock>empty();
+                                            });
+                        })
+                .collectList();
+    }
+
+    /**
+     * Reads a {@link Sinks.Many} of {@link ConfirmResult} from the subscriber's Reactor context
+     * under {@link #CONFIRM_SINK_KEY}, takes one response per pending tool call, and returns the
+     * collected list. When the sink is absent, auto-denies all pending calls.
+     */
+    private Mono<List<ConfirmResult>> awaitConfirmation(List<ToolUseBlock> pending) {
+        return Mono.deferContextual(
+                ctx -> {
+                    if (!ctx.hasKey(CONFIRM_SINK_KEY)) {
+                        List<ConfirmResult> denied = new ArrayList<>(pending.size());
+                        for (ToolUseBlock t : pending) {
+                            denied.add(new ConfirmResult(false, t));
+                        }
+                        return Mono.just(denied);
+                    }
+                    Object raw = ctx.get(CONFIRM_SINK_KEY);
+                    if (!(raw instanceof Sinks.Many<?> rawSink)) {
+                        return Mono.error(
+                                new IllegalStateException(
+                                        "Reactor context value for "
+                                                + CONFIRM_SINK_KEY
+                                                + " is not a Sinks.Many<ConfirmResult>"));
+                    }
+                    @SuppressWarnings("unchecked")
+                    Sinks.Many<ConfirmResult> sink = (Sinks.Many<ConfirmResult>) rawSink;
+                    return sink.asFlux().take(pending.size()).collectList();
+                });
+    }
+
+    private static Set<String> collectDeniedIds(List<ConfirmResult> results) {
+        Set<String> denied = new HashSet<>();
+        if (results == null) {
+            return denied;
+        }
+        for (ConfirmResult r : results) {
+            if (r != null && !r.isConfirmed() && r.getToolCall() != null) {
+                denied.add(r.getToolCall().getId());
+            }
+        }
+        return denied;
+    }
+
+    private Flux<AgentEvent> emitDeniedToolResult(ToolUseBlock use, ReplyContext rctx) {
+        ToolResultBlock denied =
+                ToolResultBlock.text("Permission denied by user")
+                        .withIdAndName(use.getId(), use.getName())
+                        .withState(ToolResultState.DENIED);
+        Msg toolMsg = Msg.builder().role(MsgRole.TOOL).name(name).content(denied).build();
+        state.contextMutable().add(compressor.truncateToolResultMsg(toolMsg));
+        return Flux.just(
+                new ToolResultStartEvent(rctx.replyId, use.getId(), use.getName()),
+                new ToolResultTextDeltaEvent(
+                        rctx.replyId, use.getId(), "Permission denied by user"),
+                new ToolResultEndEvent(rctx.replyId, use.getId(), ToolResultState.DENIED));
     }
 
     private Flux<AgentEvent> executeSingleTool(ToolUseBlock use, ReplyContext rctx) {
