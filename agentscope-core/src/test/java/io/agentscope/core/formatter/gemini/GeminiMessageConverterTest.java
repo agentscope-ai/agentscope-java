@@ -18,6 +18,7 @@ package io.agentscope.core.formatter.gemini;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -770,8 +771,9 @@ class GeminiMessageConverterTest {
         input.put("query", "test");
 
         byte[] thoughtSignature = "test-signature".getBytes();
+        String encodedSignature = Base64.getEncoder().encodeToString(thoughtSignature);
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, encodedSignature);
 
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
@@ -800,6 +802,43 @@ class GeminiMessageConverterTest {
         assertEquals("search", part.functionCall().get().name().get());
 
         // Verify thought signature is attached to Part
+        assertTrue(part.thoughtSignature().isPresent());
+        assertArrayEquals(thoughtSignature, part.thoughtSignature().get());
+    }
+
+    @Test
+    @DisplayName("Should normalize legacy byte[] thoughtSignature metadata to Base64 String")
+    void testConvertToolUseBlockWithLegacyByteArrayThoughtSignature() {
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "test");
+
+        byte[] thoughtSignature = "legacy-signature".getBytes();
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("call_with_legacy_sig")
+                        .name("search")
+                        .input(input)
+                        .metadata(metadata)
+                        .build();
+
+        // Constructor normalizes byte[] to Base64 String so equals/hashCode stay stable
+        Object stored = toolUseBlock.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+        assertInstanceOf(String.class, stored);
+        assertEquals(Base64.getEncoder().encodeToString(thoughtSignature), stored);
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolUseBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
         assertTrue(part.thoughtSignature().isPresent());
         assertArrayEquals(thoughtSignature, part.thoughtSignature().get());
     }
@@ -842,8 +881,9 @@ class GeminiMessageConverterTest {
         input.put("location", "Tokyo");
 
         byte[] signature = "gemini3-thought-sig-abc123".getBytes();
+        String encodedSignature = Base64.getEncoder().encodeToString(signature);
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature);
+        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, encodedSignature);
 
         // Simulate assistant message with tool call (as would be constructed from parsed response)
         ToolUseBlock toolUseBlock =
