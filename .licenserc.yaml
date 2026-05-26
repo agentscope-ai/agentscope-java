@@ -71,6 +71,7 @@ header:
     - 'NOTICE'
     - 'CNAME'
     - 'Jenkinsfile'
+    - '.gitattributes'
     - '**/vendor/**'
     - '**/docs/**'
     - '**/.prettierrc'
