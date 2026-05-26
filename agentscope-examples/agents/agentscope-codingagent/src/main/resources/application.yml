@@ -1,0 +1,34 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: agentscope-codingagent
+
+# Actuator: expose health + prometheus endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLE_RATE:0.1}
+
+# OTel OTLP exporter (set OTEL_EXPORTER_OTLP_ENDPOINT to enable)
+# Example: OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:}
+
+logging:
+  level:
+    io.agentscope: INFO
+    root: INFO

@@ -16,8 +16,7 @@
 package io.agentscope.harness.agent.sandbox.impl.e2b.mounts;
 
 /**
- * Placeholder for E2B cloud bucket mount configuration (phase 2). Implementations will mirror
- * the Python {@code e2b/mounts.py} strategies when bucket mounts are required from Java.
+ * Placeholder for E2B cloud bucket mount configuration.
  */
 public interface E2bCloudBucketMountStrategy {
     // intentionally empty — extend when wiring E2B volume mounts from Harness workspace specs

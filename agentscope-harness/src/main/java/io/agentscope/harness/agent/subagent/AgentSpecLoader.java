@@ -17,6 +17,11 @@ package io.agentscope.harness.agent.subagent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -112,6 +117,55 @@ public final class AgentSpecLoader {
                             });
         } catch (IOException e) {
             log.warn("Failed to list subagents directory {}: {}", subagentsDir, e.getMessage());
+        }
+        return decls;
+    }
+
+    /**
+     * Loads subagent declarations via the {@link AbstractFilesystem}, respecting namespace
+     * isolation. Scans {@code subagents/} for {@code *.md} files using filesystem glob.
+     *
+     * @param filesystem the filesystem layer (applies namespace transparently)
+     * @param mainWorkspace the parent workspace for resolving relative workspace paths; may be
+     *     {@code null}
+     * @return list of parsed declarations; never {@code null}
+     */
+    public static List<SubagentDeclaration> loadFromFilesystem(
+            AbstractFilesystem filesystem, Path mainWorkspace) {
+        if (filesystem == null) {
+            return Collections.emptyList();
+        }
+        RuntimeContext ctx = RuntimeContext.empty();
+        GlobResult glob = filesystem.glob(ctx, "*.md", "subagents");
+        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<SubagentDeclaration> decls = new ArrayList<>();
+        List<FileInfo> sorted = new ArrayList<>(glob.matches());
+        sorted.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.path(), b.path()));
+
+        for (FileInfo fi : sorted) {
+            String path = fi.path();
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            try {
+                ReadResult rr = filesystem.read(ctx, path, 0, 0);
+                if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
+                    continue;
+                }
+                String filename =
+                        path.contains("/") ? path.substring(path.lastIndexOf('/') + 1) : path;
+                String name = stripMdExtension(filename);
+                SubagentDeclaration decl = parse(rr.fileData().content(), name, mainWorkspace);
+                if (decl != null) {
+                    decls.add(decl);
+                    log.debug("Loaded subagent declaration '{}' from filesystem: {}", name, path);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to load subagent declaration from {}: {}", path, e.getMessage());
+            }
         }
         return decls;
     }

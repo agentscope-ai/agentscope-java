@@ -1,0 +1,118 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: agentscope-builder
+  webflux:
+    static-path-pattern: /**
+  resources:
+    static-locations:
+      - classpath:/static/
+
+  # --------------------------------------------------------------------------
+  # User + agent metadata are persisted via Spring Data JPA. The default backend
+  # is an embedded H2 database written to `${user.home}/.agentscope-builder/db.*`
+  # — intentionally NOT placed under `builder.workspace`, so workspace volumes
+  # never accidentally include the catalog tables.
+  #
+  # To switch to MySQL / PostgreSQL in production, activate the `jdbc` Spring
+  # profile (`--spring.profiles.active=jdbc` or `SPRING_PROFILES_ACTIVE=jdbc`)
+  # which sets MySQL-shaped DataSource defaults in `application-jdbc.yml`. You
+  # can also override individual settings directly via `BUILDER_DB_*` env vars
+  # without activating the profile.
+  # --------------------------------------------------------------------------
+  datasource:
+    url: ${BUILDER_DB_URL:jdbc:h2:file:${BUILDER_DB_PATH:${user.home}/.agentscope-builder/db};AUTO_SERVER=TRUE;MODE=MYSQL;DB_CLOSE_DELAY=-1}
+    driver-class-name: ${BUILDER_DB_DRIVER:org.h2.Driver}
+    username: ${BUILDER_DB_USER:sa}
+    password: ${BUILDER_DB_PASSWORD:}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # 'update' is fine for dev / single-node. Production deployments running
+      # against MySQL/PostgreSQL should pin the schema with Flyway/Liquibase and
+      # switch this to `validate`.
+      ddl-auto: ${BUILDER_JPA_DDL_AUTO:update}
+    # Run the SQL init scripts AFTER Hibernate creates the schema. Required so
+    # `data-h2.sql` finds the `builder_user` table to MERGE into.
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  # --------------------------------------------------------------------------
+  # `data-${platform}.sql` seeding. Setting platform=h2 makes Spring only run
+  # `data-h2.sql`; the bundled script seeds two demo accounts (bob / alice,
+  # passwords identical to the usernames) so a fresh local checkout is usable
+  # without first calling the admin API. The script is idempotent (MERGE INTO).
+  #
+  # `mode=always` is intentional: in Spring Boot 4, `mode=embedded` classifies
+  # only `jdbc:h2:mem:` URLs as embedded (see spring-projects/spring-boot#32865),
+  # which would skip the seed against the default `jdbc:h2:file:` DataSource.
+  # `application-jdbc.yml` explicitly overrides this to `never` so MySQL /
+  # PostgreSQL deployments never accidentally run the H2-only script.
+  # --------------------------------------------------------------------------
+  sql:
+    init:
+      mode: ${BUILDER_SQL_INIT_MODE:always}
+      platform: ${BUILDER_SQL_INIT_PLATFORM:h2}
+      continue-on-error: false
+
+# --------------------------------------------------------------------------
+# agentscope-builder configuration
+#
+# Property prefix is `builder.*`. The legacy `claw.*` prefix and `CLAW_*` env
+# vars remain readable as a fallback for migration; new deployments should
+# use `builder.*` / `BUILDER_*`.
+# --------------------------------------------------------------------------
+builder:
+  # JWT signing secret (>= 32 chars). MUST be overridden in production.
+  jwt:
+    secret: ${BUILDER_JWT_SECRET:${CLAW_JWT_SECRET:builder-default-dev-secret-change-in-production-32chars}}
+
+  # Working directory. If blank, defaults to the JVM's current working directory.
+  # .agentscope/agentscope.json is read from (or auto-created in) this directory.
+  workspace: ${BUILDER_WORKSPACE:${CLAW_WORKSPACE:}}
+
+  # ---- Workspace storage topology (multi-tenant filesystem) ----
+  # Builder always runs every HarnessAgent on a CompositeFilesystem: a read-only
+  # LocalFilesystem over `${builder.workspace}/.agentscope/workspace` (templates,
+  # AGENTS.md, default skills/subagents/knowledge shipped on disk) blended with
+  # per-(owner, agent) RemoteFilesystem routes for memory/, MEMORY.md, sessions/,
+  # tasks/, skills/, subagents/. The remote routes are backed by a `BaseStore`
+  # Spring bean — operators MUST provide one (e.g. SqliteBaseStore, a Redis-
+  # backed implementation, etc.); a missing bean fails context refresh fast.
+  workspace-store:
+    local:
+      max-file-size-mb: 10
+
+  # ---- DashScope model (used when no Model Spring bean is present) ----
+  # Set DASHSCOPE_API_KEY env var or override api-key below.
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY:}
+    model-name: ${BUILDER_MODEL_NAME:${CLAW_MODEL_NAME:qwen-max}}
+    stream: true
+
+  # ---- Agent defaults (used when auto-generating agentscope.json) ----
+  agent:
+    name: ${BUILDER_AGENT_NAME:${CLAW_AGENT_NAME:builder-agent}}
+    sys-prompt: >
+      You are a helpful assistant built with AgentScope Builder.
+      Answer in Chinese when the user speaks Chinese, otherwise answer in English.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    io.agentscope: INFO
+    org.springframework.security: WARN

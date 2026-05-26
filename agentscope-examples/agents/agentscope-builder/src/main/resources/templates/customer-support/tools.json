@@ -1,0 +1,19 @@
+{
+  "// description": "Read-only support toolkit: search KB articles, search prior sessions for context, but do not modify the workspace.",
+  "// available":   ["read_file", "write_file", "edit_file", "list_files", "grep_files", "glob_files", "execute", "memory_search", "memory_get", "session_search", "session_list", "session_history"],
+  "allow": [
+    "read_file",
+    "list_files",
+    "grep_files",
+    "glob_files",
+    "memory_search",
+    "memory_get",
+    "session_search",
+    "session_history"
+  ],
+  "deny": [
+    "execute",
+    "write_file",
+    "edit_file"
+  ]
+}

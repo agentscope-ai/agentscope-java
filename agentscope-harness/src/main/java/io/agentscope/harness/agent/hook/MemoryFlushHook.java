@@ -86,10 +86,11 @@ public class MemoryFlushHook implements Hook, RuntimeContextAware {
         }
 
         MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, model);
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
 
         Mono<Void> flushMono =
                 flushManager
-                        .flushMemories(messages)
+                        .flushMemories(rc, messages)
                         .doOnSuccess(v -> log.debug("Memory flush completed"))
                         .onErrorResume(
                                 e -> {
@@ -104,7 +105,10 @@ public class MemoryFlushHook implements Hook, RuntimeContextAware {
                         : "default";
 
         Mono<Void> offloadMono =
-                Mono.fromRunnable(() -> flushManager.offloadMessages(messages, agentId, sessionId))
+                Mono.fromRunnable(
+                                () ->
+                                        flushManager.offloadMessages(
+                                                rc, messages, agentId, sessionId))
                         .then()
                         .doOnSuccess(v -> log.debug("Message offload completed"))
                         .onErrorResume(

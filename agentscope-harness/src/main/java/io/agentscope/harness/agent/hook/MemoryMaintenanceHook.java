@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -45,7 +46,7 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>Expire daily memory files older than {@code dailyFileRetentionDays} by moving
  *       them to {@code memory/archive/}.</li>
- *   <li>Run LLM-based consolidation ({@link MemoryConsolidator#consolidate()}) if a
+ *   <li>Run LLM-based consolidation ({@link MemoryConsolidator#consolidate}) if a
  *       consolidator is configured.</li>
  *   <li>Prune session log files older than {@code sessionRetentionDays}.</li>
  * </ol>
@@ -54,9 +55,7 @@ import reactor.core.publisher.Mono;
  * {@link WorkspaceManager}), making this backend-agnostic across Local, Sandbox, and
  * Remote filesystems.
  */
-public class MemoryMaintenanceHook implements Hook {
-
-    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
+public class MemoryMaintenanceHook implements Hook, RuntimeContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryMaintenanceHook.class);
 
@@ -70,6 +69,13 @@ public class MemoryMaintenanceHook implements Hook {
     private final Duration minGap;
 
     private final AtomicReference<Instant> lastRunAt = new AtomicReference<>(Instant.EPOCH);
+
+    private volatile RuntimeContext runtimeContext;
+
+    @Override
+    public void setRuntimeContext(RuntimeContext runtimeContext) {
+        this.runtimeContext = runtimeContext;
+    }
 
     public MemoryMaintenanceHook(
             WorkspaceManager workspaceManager,
@@ -107,7 +113,8 @@ public class MemoryMaintenanceHook implements Hook {
         if (!lastRunAt.compareAndSet(last, now)) {
             return Mono.just(event);
         }
-        return Mono.fromRunnable(this::runMaintenance)
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+        return Mono.fromRunnable(() -> runMaintenance(rc))
                 .onErrorResume(
                         e -> {
                             log.warn("Memory maintenance failed: {}", e.getMessage());
@@ -116,20 +123,20 @@ public class MemoryMaintenanceHook implements Hook {
                 .thenReturn(event);
     }
 
-    private void runMaintenance() {
+    private void runMaintenance(RuntimeContext rc) {
         log.debug("Running memory maintenance...");
-        expireDailyFiles();
-        consolidateMemory();
-        pruneOldSessions();
+        expireDailyFiles(rc);
+        consolidateMemory(rc);
+        pruneOldSessions(rc);
         log.debug("Memory maintenance completed");
     }
 
-    private void expireDailyFiles() {
+    private void expireDailyFiles(RuntimeContext rc) {
         AbstractFilesystem fs = workspaceManager.getFilesystem();
         if (fs == null) {
             return;
         }
-        GlobResult glob = fs.glob(DEFAULT_FS_RUNTIME, "*.md", WorkspaceConstants.MEMORY_DIR);
+        GlobResult glob = fs.glob(rc, "*.md", WorkspaceConstants.MEMORY_DIR);
         if (glob == null || glob.matches() == null) {
             return;
         }
@@ -152,7 +159,7 @@ public class MemoryMaintenanceHook implements Hook {
                 if (fileDate.isBefore(cutoff)) {
                     String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
                     String toPath = WorkspaceConstants.MEMORY_DIR + "/archive/" + fileName;
-                    fs.move(DEFAULT_FS_RUNTIME, fromPath, toPath);
+                    fs.move(rc, fromPath, toPath);
                     log.debug("Archived expired daily file: {}", fileName);
                 }
             } catch (Exception e) {
@@ -161,23 +168,23 @@ public class MemoryMaintenanceHook implements Hook {
         }
     }
 
-    private void consolidateMemory() {
+    private void consolidateMemory(RuntimeContext rc) {
         if (consolidator == null) {
             return;
         }
         try {
-            consolidator.consolidate().block();
+            consolidator.consolidate(rc).block();
         } catch (Exception e) {
             log.warn("Memory consolidation failed: {}", e.getMessage());
         }
     }
 
-    private void pruneOldSessions() {
+    private void pruneOldSessions(RuntimeContext rc) {
         AbstractFilesystem fs = workspaceManager.getFilesystem();
         if (fs == null) {
             return;
         }
-        GlobResult glob = fs.glob(DEFAULT_FS_RUNTIME, "*.log.jsonl", WorkspaceConstants.AGENTS_DIR);
+        GlobResult glob = fs.glob(rc, "*.log.jsonl", WorkspaceConstants.AGENTS_DIR);
         if (glob == null || glob.matches() == null) {
             return;
         }
@@ -194,7 +201,7 @@ public class MemoryMaintenanceHook implements Hook {
             try {
                 Instant modified = Instant.parse(modifiedAt);
                 if (modified.isBefore(cutoff)) {
-                    fs.delete(DEFAULT_FS_RUNTIME, fi.path());
+                    fs.delete(rc, fi.path());
                     log.debug("Pruned old session file: {}", fi.path());
                 }
             } catch (Exception e) {
