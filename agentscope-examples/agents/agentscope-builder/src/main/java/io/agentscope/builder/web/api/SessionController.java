@@ -24,8 +24,12 @@ import io.agentscope.builder.runtime.session.SessionAgentManager;
 import io.agentscope.builder.runtime.session.SessionEntry;
 import io.agentscope.builder.runtime.session.SessionKind;
 import io.agentscope.builder.web.catalog.AgentCatalogService;
+import io.agentscope.builder.web.catalog.AgentDefinition;
 import io.agentscope.builder.web.session.SessionReadStateStore;
 import io.agentscope.builder.web.session.SessionTurnParser;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -102,7 +106,7 @@ public class SessionController {
                         boolean unread =
                                 readStateStore.isUnread(userId, e.sessionKey(), e.lastActivityMs());
                         if (unreadOnly && !unread) continue;
-                        String preview = lastMessagePreview(e.sessionKey());
+                        String preview = lastMessagePreview(userId, agentId, e);
                         out.add(
                                 new InboxEntry(
                                         e.sessionKey(),
@@ -124,12 +128,8 @@ public class SessionController {
         return Mono.fromCallable(
                 () -> {
                     SessionEntry entry = requireOwnedSession(agentId, key, userId);
-                    HistoryResult raw = sessionAgentManager.history(entry.sessionKey(), 0);
-                    if (raw.error() != null) {
-                        throw new ResponseStatusException(
-                                HttpStatus.INTERNAL_SERVER_ERROR, raw.error());
-                    }
-                    return SessionTurnParser.parse(raw.content() != null ? raw.content() : "");
+                    String content = readSessionLogContent(userId, agentId, entry);
+                    return SessionTurnParser.parse(content);
                 });
     }
 
@@ -230,13 +230,13 @@ public class SessionController {
         return e.gateKey() == null || Objects.equals(e.gateKey(), expectedGateKey);
     }
 
-    private String lastMessagePreview(String sessionKey) {
+    private String lastMessagePreview(String userId, String agentId, SessionEntry entry) {
         try {
-            HistoryResult raw = sessionAgentManager.history(sessionKey, 0);
-            if (raw == null || raw.error() != null || raw.content() == null) {
+            String content = readSessionLogContent(userId, agentId, entry);
+            if (content == null || content.isEmpty()) {
                 return null;
             }
-            List<SessionTurnParser.TurnEntry> turns = SessionTurnParser.parse(raw.content());
+            List<SessionTurnParser.TurnEntry> turns = SessionTurnParser.parse(content);
             for (int i = turns.size() - 1; i >= 0; i--) {
                 SessionTurnParser.TurnEntry t = turns.get(i);
                 if (t.content() != null && !t.content().isBlank()) {
@@ -248,6 +248,72 @@ public class SessionController {
             // fall through
         }
         return null;
+    }
+
+    /**
+     * Reads the chat content for a session. The actual transcript lives at the per-(user, agent)
+     * workspace under {@code agents/<inner-agent-id>/sessions/<sessionId>.log.jsonl} (written by
+     * the harness {@code MemoryFlushHook} / {@code SessionTree}). The {@link SessionAgentManager}
+     * registry stores a stale legacy path ({@code .json}) keyed by the harness UUID rooted at the
+     * main-agent workspace, so it cannot be used directly — that path is what produced the
+     * "history disappears on remount" regression.
+     *
+     * <p>Reads go through {@link WorkspaceManager#readManagedWorkspaceFileUtf8} so the same code
+     * works whether the workspace is backed by {@code LocalFilesystem} or {@code RemoteFilesystem}
+     * — calling {@link Files#readString} on the {@link WorkspaceManager#resolveSessionLogFile}
+     * {@link Path} returned by would fail under remote/store-backed setups (the {@link Path} is a
+     * logical workspace-rooted path, not a real on-disk location). The relative path used here
+     * mirrors {@code SessionTree.logRelativePath} (line 160), so the read is the conjugate of the
+     * harness write.
+     *
+     * <p>{@code ctxUser} mirrors {@code AgentWorkspaceController#resolveContext}: the owner's id
+     * for {@link AgentDefinition#SCOPE_USER} agents (so reads land in the same namespace where
+     * the chat write happened) and the caller's id otherwise.
+     *
+     * <p>Falls back to {@link SessionAgentManager#history} when the per-agent workspace cannot be
+     * resolved (e.g. the user has lost visibility or the agent definition was removed).
+     */
+    private String readSessionLogContent(String userId, String agentId, SessionEntry entry) {
+        try {
+            AgentDefinition def = catalogService.findVisible(userId, agentId).orElse(null);
+            HarnessAgent agent =
+                    def == null
+                            ? null
+                            : catalogService.getOrInstantiateRunningAgent(userId, agentId);
+            if (agent != null) {
+                String ctxUser =
+                        AgentDefinition.SCOPE_USER.equals(def.scope())
+                                ? (def.ownerId() != null ? def.ownerId() : userId)
+                                : userId;
+                WorkspaceManager wm = agent.workspaceFor(ctxUser, null);
+                // Must match the segment SessionTree writes under: MemoryFlushHook reads
+                // `agent.getName()` (the ReActAgent delegate name), not the random UUID
+                // returned by getAgentId(). Mirrors claw's SessionController.
+                String innerAgentId = agent.getName();
+                if (wm != null && innerAgentId != null && !innerAgentId.isBlank()) {
+                    String base = "agents/" + innerAgentId + "/sessions/" + entry.sessionId();
+                    String log =
+                            wm.readManagedWorkspaceFileUtf8(
+                                    RuntimeContext.empty(), base + ".log.jsonl");
+                    if (log != null && !log.isEmpty()) {
+                        return log;
+                    }
+                    String ctx =
+                            wm.readManagedWorkspaceFileUtf8(
+                                    RuntimeContext.empty(), base + ".jsonl");
+                    if (ctx != null && !ctx.isEmpty()) {
+                        return ctx;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // fall through to history()
+        }
+        HistoryResult raw = sessionAgentManager.history(entry.sessionKey(), 0);
+        if (raw == null || raw.error() != null) {
+            return "";
+        }
+        return raw.content() != null ? raw.content() : "";
     }
 
     // -----------------------------------------------------------------
