@@ -17,6 +17,7 @@ package io.agentscope.claw2.runtime.session;
 
 import io.agentscope.claw2.runtime.session.tool.SessionsTool;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -918,7 +919,9 @@ public class SessionAgentManager {
     /** Resolves the session file path for a given agent and session. */
     public String resolveSessionFilePath(String agentId, String sessionId) {
         if (delegate.getWorkspaceManager() != null) {
-            return delegate.getWorkspaceManager().resolveSessionFile(agentId, sessionId).toString();
+            return delegate.getWorkspaceManager()
+                    .resolveSessionFile(RuntimeContext.empty(), agentId, sessionId)
+                    .toString();
         }
         return "agents/" + agentId + "/sessions/" + sessionId + ".json";
     }

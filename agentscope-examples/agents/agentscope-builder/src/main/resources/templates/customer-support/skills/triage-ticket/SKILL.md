@@ -1,3 +1,8 @@
+---
+name: triage-ticket
+description: First-response playbook for an inbound customer message — classifies the ticket, restates the issue, gathers missing context, and routes the reply.
+---
+
 # Triage an inbound ticket
 
 A playbook for the first response to a new customer message.

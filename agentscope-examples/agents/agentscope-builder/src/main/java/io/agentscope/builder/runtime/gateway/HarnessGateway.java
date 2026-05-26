@@ -35,6 +35,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,6 +105,22 @@ public final class HarnessGateway implements Gateway {
      */
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySessionKey =
             new ConcurrentHashMap<>();
+
+    /**
+     * Resolves the {@link RuntimeContext#getUserId()} the gateway should attach to a turn, given
+     * the caller's user id and the routed agent id. Defaults to identity (caller's user id is
+     * used verbatim).
+     *
+     * <p>Platforms that want shared-agent semantics — e.g. multiple users routing to the same
+     * shared agent should all read from the agent owner's filesystem namespace — install a
+     * resolver that maps {@code (callerUserId, agentId) -> ownerUserId} for those agents. The
+     * gateway uses the resolved id only for {@link RuntimeContext#getUserId()} (the dimension
+     * the filesystem {@code NamespaceFactory} consumes); session routing keys still derive from
+     * the original {@link MsgContext#userId()} so each caller keeps their own conversation
+     * thread.
+     */
+    private volatile BiFunction<String, String, String> fsUserIdResolver =
+            (callerUserId, agentId) -> callerUserId;
 
     private final SessionTurnGate sessionTurnGate = new SessionTurnGate();
 
@@ -217,6 +234,41 @@ public final class HarnessGateway implements Gateway {
     }
 
     /**
+     * Installs the resolver that maps {@code (callerUserId, agentId)} to the user id the gateway
+     * should attach to outgoing {@link RuntimeContext#getUserId()}. See the field-level javadoc
+     * on {@link #fsUserIdResolver} for the rationale; passing {@code null} restores the default
+     * identity resolver.
+     */
+    public void setFilesystemUserIdResolver(BiFunction<String, String, String> resolver) {
+        this.fsUserIdResolver =
+                resolver != null ? resolver : (callerUserId, agentId) -> callerUserId;
+    }
+
+    /**
+     * Applies {@link #fsUserIdResolver} defensively: any null/blank/exception return falls back
+     * to {@code callerUserId} so a misbehaving resolver cannot break the chat path.
+     */
+    private String resolveFsUserId(String callerUserId, String agentId) {
+        BiFunction<String, String, String> resolver = this.fsUserIdResolver;
+        if (resolver == null) {
+            return callerUserId;
+        }
+        try {
+            String resolved = resolver.apply(callerUserId, agentId);
+            if (resolved != null && !resolved.isBlank()) {
+                return resolved;
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "fsUserIdResolver failed for caller={} agentId={}: {}; falling back to caller",
+                    callerUserId,
+                    agentId,
+                    e.getMessage());
+        }
+        return callerUserId;
+    }
+
+    /**
      * Direct or channel-originated turn. Resolves or creates a MAIN session keyed by {@link
      * MsgContext#canonicalKey()}, routes to the appropriate agent, and runs the turn under the
      * per-key {@link SessionTurnGate}.
@@ -255,13 +307,18 @@ public final class HarnessGateway implements Gateway {
             lastRouteBySessionKey.put(sessionKey, outboundAddress);
         }
 
+        // Session routing (gateKey) is per-caller so each user keeps their own conversation
+        // thread, but the filesystem-namespacing user id is owner-pinned for shared agents via
+        // {@link #fsUserIdResolver}. Defaults to identity when no resolver is installed.
+        String routedAgentId = resolveAgentId(ha);
+        String fsUserId = resolveFsUserId(ctx.userId(), routedAgentId);
         RuntimeContext.Builder rtcBuilder =
                 RuntimeContext.builder()
                         .sessionId(sessionId)
                         .put("msgContext", ctx)
                         .put("sessionKey", sessionKey);
-        if (ctx.userId() != null) {
-            rtcBuilder.userId(ctx.userId());
+        if (fsUserId != null && !fsUserId.isBlank()) {
+            rtcBuilder.userId(fsUserId);
         }
         RuntimeContext runtimeContext = rtcBuilder.build();
         return withGatedTurn(gateKey, () -> ha.call(messages, runtimeContext));
@@ -333,14 +390,18 @@ public final class HarnessGateway implements Gateway {
                         .map(SessionView::sessionId)
                         .orElse(sessionKey);
 
+        // Mirror the run() path: session is per-caller, filesystem namespace is owner-pinned
+        // for shared agents via the installed resolver.
+        String routedAgentId = resolveAgentId(ha);
+        String fsUserId = resolveFsUserId(sessionUserId, routedAgentId);
         RuntimeContext.Builder ctxBuilder =
                 RuntimeContext.builder()
                         .sessionId(sessionId)
                         .put("announce", Boolean.TRUE)
                         .put("childRunId", completion.runId())
                         .put("childSessionKey", completion.childSessionKey());
-        if (sessionUserId != null) {
-            ctxBuilder.userId(sessionUserId);
+        if (fsUserId != null && !fsUserId.isBlank()) {
+            ctxBuilder.userId(fsUserId);
         }
         RuntimeContext ctx = ctxBuilder.build();
 

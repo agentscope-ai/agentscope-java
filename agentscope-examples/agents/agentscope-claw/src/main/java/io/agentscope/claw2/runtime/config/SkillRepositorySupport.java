@@ -91,9 +91,20 @@ public final class SkillRepositorySupport {
                     Class.forName("io.agentscope.core.skill.repository.GitSkillRepository");
             var ctor =
                     gitRepo.getConstructor(
-                            String.class, String.class, Path.class, String.class, boolean.class);
+                            String.class,
+                            String.class,
+                            Path.class,
+                            String.class,
+                            boolean.class,
+                            String.class);
             return (AgentSkillRepository)
-                    ctor.newInstance(remote, entry.getBranch(), local, entry.getSource(), auto);
+                    ctor.newInstance(
+                            remote,
+                            entry.getBranch(),
+                            local,
+                            entry.getSource(),
+                            auto,
+                            entry.getSkillsRoot());
         } catch (ClassNotFoundException e) {
             log.warn(
                     "GitSkillRepository not on classpath; add dependency"

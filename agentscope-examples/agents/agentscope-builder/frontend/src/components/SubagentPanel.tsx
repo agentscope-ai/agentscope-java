@@ -388,7 +388,7 @@ export default function SubagentPanel({ agentId, onChanged }: Props) {
                 style={S.input}
                 value={form.workspacePath}
                 onChange={e => setForm({ ...form, workspacePath: e.target.value })}
-                placeholder="e.g. ./defs/reviewer (auto-created if blank)"
+                placeholder="~/.agentscope/builder/users/<userId>/agents/<parent>/agents/<name>/workspace (auto-created if blank)"
               />
             </div>
           )}

@@ -40,16 +40,22 @@ public class GitClawMarketplace implements ClawMarketplace {
     private final String remoteUrl;
     private final String branch;
     private final Path localPath;
+    private final String skillsRoot;
     private final GitSkillRepository repo;
 
     /**
-     * @param id        stable marketplace id chosen by the user
-     * @param remoteUrl HTTPS or SSH URL of the upstream git repository
-     * @param branch    optional branch (null → remote default)
-     * @param localPath optional local clone target; when null the underlying repository creates
-     *                  a temp directory and registers a JVM shutdown hook to clean it up
+     * @param id         stable marketplace id chosen by the user
+     * @param remoteUrl  HTTPS or SSH URL of the upstream git repository
+     * @param branch     optional branch (null → remote default)
+     * @param localPath  optional local clone target; when null the underlying repository creates
+     *                   a temp directory and registers a JVM shutdown hook to clean it up
+     * @param skillsRoot optional subdirectory inside the repo containing skill folders; when null
+     *                   or blank the legacy convention applies (use {@code skills/} if present,
+     *                   else the repo root). Must be repo-relative and free of {@code ..} segments;
+     *                   violations surface from the underlying {@link GitSkillRepository}.
      */
-    public GitClawMarketplace(String id, String remoteUrl, String branch, Path localPath) {
+    public GitClawMarketplace(
+            String id, String remoteUrl, String branch, Path localPath, String skillsRoot) {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("id must not be blank");
         }
@@ -60,10 +66,17 @@ public class GitClawMarketplace implements ClawMarketplace {
         this.remoteUrl = remoteUrl.trim();
         this.branch = (branch == null || branch.isBlank()) ? null : branch.trim();
         this.localPath = localPath;
+        this.skillsRoot = (skillsRoot == null || skillsRoot.isBlank()) ? null : skillsRoot.trim();
         // Source string surfaces in installed _install.meta.json; pin it to the marketplace id
         // so users can later reason about which marketplace produced a given workspace skill.
         this.repo =
-                new GitSkillRepository(this.remoteUrl, this.branch, this.localPath, "git:" + id);
+                new GitSkillRepository(
+                        this.remoteUrl,
+                        this.branch,
+                        this.localPath,
+                        "git:" + id,
+                        true,
+                        this.skillsRoot);
     }
 
     @Override

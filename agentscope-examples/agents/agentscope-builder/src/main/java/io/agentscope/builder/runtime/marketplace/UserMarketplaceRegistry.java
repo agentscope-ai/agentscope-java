@@ -185,6 +185,7 @@ public class UserMarketplaceRegistry {
                     "git marketplace '" + id + "' requires a non-empty 'remoteUrl'");
         }
         String branch = stringProp(props, "branch");
+        String skillsRoot = stringProp(props, "skillsRoot");
         // Each user gets a separate clone directory under the platform-wide marketplaces cache so
         // user A's checkout cannot poison user B's read.
         Path localPath =
@@ -195,7 +196,7 @@ public class UserMarketplaceRegistry {
                         .resolve("git")
                         .resolve(safeSegment(userId))
                         .resolve(safeSegment(id));
-        return new GitBuilderMarketplace(id, remoteUrl, branch, localPath);
+        return new GitBuilderMarketplace(id, remoteUrl, branch, localPath, skillsRoot);
     }
 
     private BuilderMarketplace buildNacos(String id, Map<String, Object> props) {

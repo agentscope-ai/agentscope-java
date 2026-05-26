@@ -16,19 +16,51 @@
 package io.agentscope.builder.web.scaffold;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
- * Writes the LangSmith-Fleet-style workspace folder layout that the builder UI edits: {@code
- * AGENTS.md}, {@code tools.json}, an example skill, and {@code subagents/}/{@code memory/}
- * directories. Existing files are left untouched, so calling this on a populated workspace is a
- * no-op for whatever is already there.
+ * Materializes the default builder agent's workspace folder by copying classpath resources from
+ * {@code scaffold/default/} into the target directory with write-if-missing semantics.
  *
- * <p>The templates are intentionally opinionated — they teach a new builder user the workspace
- * conventions without requiring them to read external docs first.
+ * <p>Layout produced (all under the supplied {@code workspace} root):
+ *
+ * <ul>
+ *   <li>{@code AGENTS.md} — generated from {@code scaffold/default/AGENTS.md.template} with the
+ *       supplied {@code displayName} / {@code sysPrompt} substituted into the {@code {{NAME}}} and
+ *       {@code {{SYSPROMPT}}} placeholders.
+ *   <li>{@code tools.json}, {@code skills/example-skill/SKILL.md}, {@code subagents/README.md} —
+ *       copied verbatim from the corresponding resource under {@code scaffold/default/}.
+ *   <li>{@code skills/}, {@code subagents/}, {@code memory/} — empty directories (so the UI's file
+ *       tree always shows the standard slots even before a user adds anything).
+ *   <li>{@code memory/.gitkeep} — empty marker file so the {@code memory/} folder survives a git
+ *       clone of the workspace.
+ * </ul>
+ *
+ * <p>Everything beyond the AGENTS.md placeholders lives as on-disk resources, not Java string
+ * literals — operators who want to customise the default starter content edit the resource files
+ * under {@code src/main/resources/scaffold/default/} rather than touching Java code. Existing
+ * files in the destination workspace are never overwritten, so calling this on a populated
+ * workspace is a no-op for whatever is already there.
+ *
+ * <p>For user-selected starter packs (e.g. a "research-assistant" or "customer-support" template)
+ * see {@link io.agentscope.builder.web.template.TemplateRegistry} instead; that is the opt-in
+ * pathway exposed in the UI and is separate from this auto-scaffolder.
  */
 public final class WorkspaceScaffolder {
+
+    private static final String RESOURCE_ROOT = "scaffold/default";
+
+    /**
+     * Files copied verbatim from {@code scaffold/default/<rel>} into {@code workspace/<rel>}.
+     * Keep this list narrow — anything you add here ships in every fresh workspace, so prefer the
+     * opt-in {@link io.agentscope.builder.web.template.TemplateRegistry} for richer starter packs.
+     */
+    private static final List<String> VERBATIM_RESOURCES =
+            List.of("tools.json", "skills/example-skill/SKILL.md", "subagents/README.md");
 
     private WorkspaceScaffolder() {}
 
@@ -37,8 +69,8 @@ public final class WorkspaceScaffolder {
      * not already exist are created.
      *
      * @param workspace target workspace directory (will be created if missing)
-     * @param displayName human-readable agent name used in the generated AGENTS.md heading
-     * @param sysPrompt optional system-prompt body included in AGENTS.md (may be {@code null})
+     * @param displayName human-readable agent name substituted into the AGENTS.md heading
+     * @param sysPrompt optional system-prompt body substituted into AGENTS.md (may be {@code null})
      */
     public static void scaffold(Path workspace, String displayName, String sysPrompt)
             throws IOException {
@@ -47,121 +79,58 @@ public final class WorkspaceScaffolder {
         Files.createDirectories(workspace.resolve("subagents"));
         Files.createDirectories(workspace.resolve("memory"));
 
-        writeIfMissing(workspace.resolve("AGENTS.md"), agentsMd(displayName, sysPrompt));
-        writeIfMissing(workspace.resolve("tools.json"), toolsJson());
-        writeIfMissing(
-                workspace.resolve("skills").resolve("example-skill").resolve("SKILL.md"),
-                exampleSkillMd());
-        writeIfMissing(workspace.resolve("subagents").resolve("README.md"), subagentsReadme());
+        writeIfMissing(workspace.resolve("AGENTS.md"), renderAgentsMd(displayName, sysPrompt));
+        for (String rel : VERBATIM_RESOURCES) {
+            writeIfMissing(workspace.resolve(rel), readResource(RESOURCE_ROOT + "/" + rel));
+        }
+        // Empty file; carries no content so we don't bother adding it to the resource tree —
+        // a {@code .gitkeep} only needs to exist for {@code git} to track the otherwise-empty
+        // {@code memory/} directory.
         writeIfMissing(workspace.resolve("memory").resolve(".gitkeep"), "");
     }
 
-    private static void writeIfMissing(Path file, String content) throws IOException {
-        if (Files.exists(file)) return;
-        Files.createDirectories(file.getParent());
-        Files.writeString(file, content);
-    }
-
-    private static String agentsMd(String displayName, String sysPrompt) {
+    /**
+     * Loads the AGENTS.md template resource and substitutes the supplied agent identity into the
+     * {@code {{NAME}}} / {@code {{SYSPROMPT}}} placeholders. Falls back to {@code "agent"} and
+     * {@code "You are a helpful assistant."} when either input is blank, so the generated file is
+     * always well-formed even for callers that don't supply customisation.
+     */
+    private static String renderAgentsMd(String displayName, String sysPrompt) throws IOException {
         String name = (displayName == null || displayName.isBlank()) ? "agent" : displayName;
         String prompt =
                 (sysPrompt == null || sysPrompt.isBlank())
                         ? "You are a helpful assistant."
                         : sysPrompt.trim();
-        return """
-        # %s
-
-        %s
-
-        ## How this folder works
-
-        This folder *is* the agent. Anything you put here is picked up at runtime — there is
-        no separate config to keep in sync.
-
-        - **`AGENTS.md`** — this file. Edit the system prompt and behavioral rules in
-          place; they are loaded on the next session.
-        - **`tools.json`** — declare which built-in tools the agent may call. See the
-          generated file for the available tool ids and an `allow` / `deny` example.
-        - **`skills/`** — each subfolder is a skill: a Markdown playbook the agent can
-          invoke by name. A starter `example-skill/SKILL.md` is included.
-        - **`subagents/`** — sub-agent definitions for delegated work. See
-          `subagents/README.md`.
-        - **`memory/`** — long-term memory store managed by the runtime; you usually do
-          not edit it by hand.
-
-        ## Authoring tips
-
-        - Keep this prompt focused on *what the agent does* and *how it should behave*.
-          Push examples, schemas, and one-shot instructions into skills.
-        - When you change tools or skills, current sessions keep their old wiring until
-          reset; new sessions pick up the change immediately.
-        """
-                .formatted(name, prompt);
+        String template = readResource(RESOURCE_ROOT + "/AGENTS.md.template");
+        return template.replace("{{NAME}}", name).replace("{{SYSPROMPT}}", prompt);
     }
 
-    private static String toolsJson() {
-        return """
-        {
-          "// description": "Builder tools allowlist for this agent. Remove this file to allow all tools.",
-          "// available":   ["read_file", "write_file", "edit_file", "list_files", "grep_files", "glob_files", "execute", "memory_search", "memory_get", "session_search", "session_list", "session_history"],
-          "allow": [
-            "read_file",
-            "write_file",
-            "edit_file",
-            "list_files",
-            "grep_files",
-            "glob_files"
-          ],
-          "deny": []
+    /**
+     * Loads a UTF-8 classpath resource as a string. Throws {@link IOException} if the resource is
+     * missing so a packaging mistake (renamed or excluded resource) surfaces loudly at startup
+     * instead of silently producing an empty workspace.
+     */
+    private static String readResource(String classpathPath) throws IOException {
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        if (cl == null) {
+            cl = WorkspaceScaffolder.class.getClassLoader();
         }
-        """;
+        try (InputStream in = cl.getResourceAsStream(classpathPath)) {
+            if (in == null) {
+                throw new IOException(
+                        "Missing scaffold resource on classpath: '"
+                                + classpathPath
+                                + "' (expected under src/main/resources/"
+                                + classpathPath
+                                + ")");
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
-    private static String exampleSkillMd() {
-        return """
-        # Example Skill
-
-        A skill is a named playbook the agent can invoke by referring to this file. The
-        folder name (`example-skill`) is the skill id.
-
-        ## When to use
-
-        Describe the situations in which the agent should reach for this skill. Be
-        concrete — the runtime feeds this section back to the agent when it is selecting
-        between skills.
-
-        ## Steps
-
-        1. State the inputs the skill needs.
-        2. Describe the work — what files to read, what to write, what to summarize.
-        3. State the expected output format.
-
-        Delete this file once you have authored your own skills.
-        """;
-    }
-
-    private static String subagentsReadme() {
-        return """
-        # Subagents
-
-        Each `*.md` file in this directory defines a subagent the parent agent may
-        delegate to. The file name (without extension) is the subagent id; the front
-        matter declares its system prompt and tool allowlist.
-
-        Example skeleton:
-
-        ```markdown
-        ---
-        name: researcher
-        description: Investigates a question and returns a written summary.
-        tools: [read_file, grep_files, glob_files]
-        ---
-
-        You are a research specialist. Stay focused on the task you receive; do not
-        edit files directly.
-        ```
-
-        Delete this README once you have added real subagents.
-        """;
+    private static void writeIfMissing(Path file, String content) throws IOException {
+        if (Files.exists(file)) return;
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content, StandardCharsets.UTF_8);
     }
 }

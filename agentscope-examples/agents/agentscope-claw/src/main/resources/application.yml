@@ -13,14 +13,18 @@ spring:
 # --------------------------------------------------------------------------
 # agentscope-claw configuration
 #
-# All persistent state lives under ${claw.home} (default ~/.agentscope):
+# All persistent state lives under ${claw.home} (default ~/.agentscope/claw),
+# isolating claw from other harness apps (builder, dataagent, codingagent)
+# that also live under ~/.agentscope/.
+#
 #   ${claw.home}/agentscope.json              — built-in agent definitions
 #   ${claw.home}/agents.json                  — custom agent catalog
-#   ${claw.home}/agents/{agentId}/workspace/  — per-agent workspace root
+#   ${claw.home}/workspace/                   — main HarnessAgent workspace
+#   ${claw.home}/agents/{agentId}/workspace/  — fallback per-agent workspace
 #   ${claw.home}/agents/{agentId}/sessions.json — per-agent session store
 # --------------------------------------------------------------------------
 claw:
-  home: ${CLAW_HOME:#{systemProperties['user.home']}/.agentscope}
+  home: ${CLAW_HOME:#{systemProperties['user.home']}/.agentscope/claw}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

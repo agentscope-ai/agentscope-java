@@ -169,8 +169,9 @@ public class ClawMarketplaceRegistry {
                     "git marketplace '" + id + "' requires a non-empty 'remoteUrl'");
         }
         String branch = stringProp(props, "branch");
+        String skillsRoot = stringProp(props, "skillsRoot");
         Path localPath = bootstrap.clawHome().resolve("marketplaces").resolve("git").resolve(id);
-        return new GitClawMarketplace(id, remoteUrl, branch, localPath);
+        return new GitClawMarketplace(id, remoteUrl, branch, localPath, skillsRoot);
     }
 
     private ClawMarketplace buildNacos(String id, Map<String, Object> props) {

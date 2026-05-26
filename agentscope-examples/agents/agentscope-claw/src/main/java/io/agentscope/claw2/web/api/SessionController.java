@@ -26,6 +26,7 @@ import io.agentscope.claw2.runtime.session.SessionKind;
 import io.agentscope.claw2.web.catalog.AgentCatalogService;
 import io.agentscope.claw2.web.session.SessionReadStateStore;
 import io.agentscope.claw2.web.session.SessionTurnParser;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
@@ -262,7 +263,9 @@ public class SessionController {
             WorkspaceManager wm = ha.getWorkspaceManager();
             String innerAgentId = ha.getName();
             if (wm != null && innerAgentId != null && !innerAgentId.isBlank()) {
-                Path logFile = wm.resolveSessionLogFile(innerAgentId, entry.sessionId());
+                Path logFile =
+                        wm.resolveSessionLogFile(
+                                RuntimeContext.empty(), innerAgentId, entry.sessionId());
                 if (Files.isRegularFile(logFile)) {
                     try {
                         return Files.readString(logFile, StandardCharsets.UTF_8);
@@ -270,7 +273,9 @@ public class SessionController {
                         // fall through to history()
                     }
                 }
-                Path contextFile = wm.resolveSessionContextFile(innerAgentId, entry.sessionId());
+                Path contextFile =
+                        wm.resolveSessionContextFile(
+                                RuntimeContext.empty(), innerAgentId, entry.sessionId());
                 if (Files.isRegularFile(contextFile)) {
                     try {
                         return Files.readString(contextFile, StandardCharsets.UTF_8);

@@ -22,6 +22,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.claw2.runtime.ClawBootstrap;
 import io.agentscope.claw2.web.catalog.AgentCatalogService;
 import io.agentscope.claw2.web.catalog.UserAgentDefinitionStore;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -239,7 +240,9 @@ public class AgentToolsController {
                                 HttpStatus.INTERNAL_SERVER_ERROR,
                                 "Failed to serialize tools.json: " + e.getMessage());
                     }
-                    ctx.manager().writeUtf8WorkspaceRelative("tools.json", json + "\n");
+                    ctx.manager()
+                            .writeUtf8WorkspaceRelative(
+                                    RuntimeContext.empty(), "tools.json", json + "\n");
                     return body;
                 });
     }
@@ -251,8 +254,9 @@ public class AgentToolsController {
 
     private ToolsConfig readConfig(Path workspace) {
         try {
-            WorkspaceManager wsm = new WorkspaceManager(workspace, new LocalFilesystem(workspace));
-            String raw = wsm.readManagedWorkspaceFileUtf8("tools.json");
+            WorkspaceManager wsm =
+                    new WorkspaceManager(workspace, new LocalFilesystem(workspace, true, 10, null));
+            String raw = wsm.readManagedWorkspaceFileUtf8(RuntimeContext.empty(), "tools.json");
             if (raw == null || raw.isBlank()) return null;
             return MAPPER.readValue(raw, ToolsConfig.class);
         } catch (Exception e) {
@@ -375,8 +379,11 @@ public class AgentToolsController {
         return ClawBootstrap.defaultAgentWorkspace(clawHome, entry.id());
     }
 
+    // Workspace filesystem uses {@code virtualMode=true} so {@link AbstractFilesystem}-shaped
+    // absolute paths resolve to the workspace root. Mirrors
+    // {@link AgentWorkspaceController#newWorkspaceManager}.
     private static WorkspaceManager newWorkspaceManager(Path workspace) {
-        return new WorkspaceManager(workspace, new LocalFilesystem(workspace));
+        return new WorkspaceManager(workspace, new LocalFilesystem(workspace, true, 10, null));
     }
 
     private static List<McpCatalogEntry> loadMcpCatalog() {

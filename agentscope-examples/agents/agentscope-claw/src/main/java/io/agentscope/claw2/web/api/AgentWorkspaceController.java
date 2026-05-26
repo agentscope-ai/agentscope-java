@@ -179,7 +179,7 @@ public class AgentWorkspaceController {
                         return "(file too large to display: " + size + " bytes)";
                     }
                     String rel = relativize(ctx.workspace(), target);
-                    return ctx.manager().readManagedWorkspaceFileUtf8(rel);
+                    return ctx.manager().readManagedWorkspaceFileUtf8(RuntimeContext.empty(), rel);
                 });
     }
 
@@ -198,7 +198,7 @@ public class AgentWorkspaceController {
                     }
                     String content = req != null && req.content() != null ? req.content() : "";
                     String rel = relativize(ctx.workspace(), target);
-                    ctx.manager().writeUtf8WorkspaceRelative(rel, content);
+                    ctx.manager().writeUtf8WorkspaceRelative(RuntimeContext.empty(), rel, content);
                     return toNode(ctx.workspace(), target);
                 });
     }
@@ -357,8 +357,11 @@ public class AgentWorkspaceController {
                     }
                     validateSubagentName(name);
                     WorkspaceContext ctx = resolveContext(agentId);
-                    String markdown = renderSubagentMarkdown(req);
-                    ctx.manager().writeUtf8WorkspaceRelative("subagents/" + name + ".md", markdown);
+                    SubagentUpsertRequest effective = withDefaultWorkspacePath(req, name);
+                    String markdown = renderSubagentMarkdown(effective);
+                    ctx.manager()
+                            .writeUtf8WorkspaceRelative(
+                                    RuntimeContext.empty(), "subagents/" + name + ".md", markdown);
                     SubagentDeclaration decl =
                             AgentSpecLoader.parse(markdown, name, ctx.workspace());
                     if (decl == null) {
@@ -414,7 +417,10 @@ public class AgentWorkspaceController {
                     String markdown = renderSubagentMarkdown(upsert);
                     WorkspaceContext ctx = resolveContext(agentId);
                     ctx.manager()
-                            .writeUtf8WorkspaceRelative("subagents/" + subName + ".md", markdown);
+                            .writeUtf8WorkspaceRelative(
+                                    RuntimeContext.empty(),
+                                    "subagents/" + subName + ".md",
+                                    markdown);
                     SubagentDeclaration decl =
                             AgentSpecLoader.parse(markdown, subName, ctx.workspace());
                     if (decl == null) {
@@ -478,8 +484,16 @@ public class AgentWorkspaceController {
         return new WorkspaceContext(ws, newWorkspaceManager(ws));
     }
 
+    // The workspace-backing filesystem is constructed in {@code virtualMode=true} so that
+    // {@link AbstractFilesystem}-shaped absolute paths (e.g. {@code "/subagents"}, {@code
+    // "/memory"})
+    // resolve to the agent's workspace root instead of the host process root — the
+    // {@link AbstractFilesystem} contract requires leading-slash paths everywhere and
+    // {@code listSubagents} / {@code memory} depend on this. {@code maxFileSizeMb=10} matches the
+    // {@code LocalFilesystem} default; {@code namespaceFactory=null} keeps claw single-tenant
+    // (multi-user namespacing belongs in agentscope-builder, which uses CompositeFilesystem).
     private static WorkspaceManager newWorkspaceManager(Path workspace) {
-        return new WorkspaceManager(workspace, new LocalFilesystem(workspace));
+        return new WorkspaceManager(workspace, new LocalFilesystem(workspace, true, 10, null));
     }
 
     private Path customAgentWorkspace(UserAgentDefinitionStore.StoredEntry entry) {
@@ -643,6 +657,40 @@ public class AgentWorkspaceController {
                 decl.getWorkspacePath() != null ? decl.getWorkspacePath().toString() : null,
                 decl.getInlineAgentsBody() != null && !decl.getInlineAgentsBody().isBlank(),
                 null);
+    }
+
+    /**
+     * Ensures an ISOLATED subagent gets an absolute default {@code workspacePath} rooted at
+     * {@code <clawHome>/agents/<subName>/workspace} when the caller didn't specify one. This
+     * keeps every subagent's runtime data under the app home ({@code ~/.agentscope/claw/})
+     * rather than nested inside the parent agent's workspace.
+     *
+     * <p>Pass-through cases (returned unchanged):
+     * <ul>
+     *   <li>{@code workspaceMode} is {@code "shared"} (a shared-mode subagent reuses the parent
+     *       workspace; {@code path} is ignored)
+     *   <li>{@code workspacePath} was already supplied by the caller
+     * </ul>
+     */
+    private SubagentUpsertRequest withDefaultWorkspacePath(
+            SubagentUpsertRequest req, String subName) {
+        if (req.workspacePath() != null && !req.workspacePath().isBlank()) {
+            return req;
+        }
+        if ("shared".equalsIgnoreCase(req.workspaceMode())) {
+            return req;
+        }
+        Path defaultPath =
+                bootstrap.clawHome().resolve("agents").resolve(subName).resolve("workspace");
+        return new SubagentUpsertRequest(
+                req.description(),
+                req.model(),
+                req.maxIters(),
+                req.tools(),
+                req.workspaceMode() != null ? req.workspaceMode() : "isolated",
+                defaultPath.toString(),
+                req.inlineBody(),
+                req.sourceAgentId());
     }
 
     static String renderSubagentMarkdown(SubagentUpsertRequest req) {

@@ -33,7 +33,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *
  * <p>Designed for single-user local deployment. No authentication, no multi-user
  * isolation. All persistent state lives under {@code ${claw.home}} (default
- * {@code ~/.agentscope}).
+ * {@code ~/.agentscope/claw}).
  */
 @SpringBootApplication
 public class Claw2App {

@@ -76,8 +76,10 @@ import reactor.core.publisher.Mono;
  *   <li>Marketplace-install uses {@link UserMarketplaceRegistry#find(String, String)} against the
  *       caller's userId — referring to another user's private marketplace id returns 404.
  *   <li>Owner-side writes use {@link AgentCatalogService#findOwnerOf} so a shared-in editor's
- *       changes are persisted in the original owner's namespace (the same namespace the running
- *       {@link HarnessAgent} reads from).
+ *       changes are persisted in the original owner's namespace. The gateway's
+ *       {@code fsUserIdResolver} (installed by {@link AgentCatalogService}) pins chat-time
+ *       reads to the same owner namespace via {@link AgentCatalogService#resolveFilesystemUserId},
+ *       so writes here and reads from the running {@link HarnessAgent} always agree.
  * </ul>
  *
  * <p>Activity: every write records an {@link ActivityEvent} via {@link AgentActivityStore} keyed
@@ -700,10 +702,27 @@ public class AgentSkillsController {
         return r.fileData().content();
     }
 
+    /**
+     * Returns the last path segment of {@code absolutePath}, tolerating the trailing slash that
+     * {@link io.agentscope.harness.agent.filesystem.local.LocalFilesystem#ls} appends to every
+     * directory entry it returns (e.g. {@code "skills/example-skill/"}). A naive
+     * {@code lastIndexOf('/')} on such a path lands on the final {@code /} and yields an empty
+     * string, which previously caused {@link #listWorkspaceSkills} and {@link #walk} to silently
+     * skip every directory.
+     *
+     * <p>The trim is intentionally just <em>one</em> trailing slash — {@code FileInfo.path} never
+     * carries more than that, and stripping greedily would mangle paths that happen to end in
+     * {@code "//"} for any other reason.
+     */
     private static String leafName(String absolutePath) {
-        if (absolutePath == null) return "";
-        int slash = absolutePath.lastIndexOf('/');
-        return slash >= 0 ? absolutePath.substring(slash + 1) : absolutePath;
+        if (absolutePath == null || absolutePath.isEmpty()) return "";
+        String trimmed =
+                absolutePath.endsWith("/")
+                        ? absolutePath.substring(0, absolutePath.length() - 1)
+                        : absolutePath;
+        if (trimmed.isEmpty()) return "";
+        int slash = trimmed.lastIndexOf('/');
+        return slash >= 0 ? trimmed.substring(slash + 1) : trimmed;
     }
 
     private static String parseFrontMatterField(String markdown, Pattern fieldPattern) {

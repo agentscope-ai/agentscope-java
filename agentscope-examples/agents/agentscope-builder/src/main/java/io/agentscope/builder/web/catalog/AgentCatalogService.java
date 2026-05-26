@@ -86,6 +86,15 @@ public class AgentCatalogService {
      */
     private final ConcurrentHashMap<String, String> registeredUcaIds = new ConcurrentHashMap<>();
 
+    /**
+     * Reverse index: gateway agent id -> owner user id. Populated by {@link #buildAndRegisterUca}
+     * so the gateway's {@code fsUserIdResolver} can map a chat-time {@code (callerUserId,
+     * gatewayAgentId)} pair to the owner whose filesystem namespace holds the shared agent's
+     * skills / subagents / memory. Entries are monotonic because the gateway id encodes the
+     * owner ({@code uca-<ownerId>-<entryId>}); owners do not change after creation.
+     */
+    private final ConcurrentHashMap<String, String> gatewayIdToOwner = new ConcurrentHashMap<>();
+
     public AgentCatalogService(
             BuilderBootstrap builderBootstrap,
             UserAgentDefinitionStore store,
@@ -103,6 +112,45 @@ public class AgentCatalogService {
         this.sharedWorkspacePaths = sharedWorkspacePaths;
         this.userStore = userStore;
         this.aclService = aclService;
+        // Install the owner-pinned filesystem user-id resolver on the gateway so chat-time reads
+        // for shared (SCOPE_USER) agents land in the same namespace the controller writes to.
+        // See {@link #resolveFilesystemUserId} for the resolution rules.
+        builderBootstrap.gateway().setFilesystemUserIdResolver(this::resolveFilesystemUserId);
+    }
+
+    /**
+     * Resolves the user id the gateway should attach to a chat turn's {@link
+     * io.agentscope.core.agent.RuntimeContext}, given the caller's user id and the routed gateway
+     * agent id.
+     *
+     * <ul>
+     *   <li><strong>Globals</strong> (e.g. {@code default}): returns the caller's user id, so
+     *       each caller has their own per-user overlay on the shared agent definition.
+     *   <li><strong>SCOPE_USER agents</strong> (id begins with {@link #UCA_PREFIX} once
+     *       registered): returns the agent owner's user id. All callers reading a shared agent
+     *       therefore observe the same skills, subagents, and memory under the owner's namespace
+     *       — matching the namespace the controller writes to via
+     *       {@code AgentSkillsController#resolveOwner}.
+     *   <li>Unknown / not-yet-registered ids: falls back to the caller's user id, so the chat
+     *       path is robust against races between session restore and UCA registration.
+     * </ul>
+     *
+     * <p>Session routing keys are unaffected (the gateway still derives them from {@link
+     * io.agentscope.builder.runtime.gateway.MsgContext#userId()}), so each caller retains an
+     * independent conversation thread on a shared agent.
+     */
+    public String resolveFilesystemUserId(String callerUserId, String agentId) {
+        if (callerUserId == null || callerUserId.isBlank()) {
+            return callerUserId;
+        }
+        if (agentId == null || agentId.isBlank()) {
+            return callerUserId;
+        }
+        if (isGlobal(agentId)) {
+            return callerUserId;
+        }
+        String owner = gatewayIdToOwner.get(agentId);
+        return owner != null ? owner : callerUserId;
     }
 
     // -----------------------------------------------------------------
@@ -687,7 +735,14 @@ public class AgentCatalogService {
         if (agentId == null) return null;
         if (isGlobal(agentId)) return agentId;
         String ownerId = findOwnerOf(agentId).orElse(userId);
-        return UCA_PREFIX + ownerId + "-" + agentId;
+        String gatewayAgentId = UCA_PREFIX + ownerId + "-" + agentId;
+        // Defensive: keep gatewayIdToOwner warm even when the UCA hasn't been built yet (e.g.
+        // session restore paths that reach the gateway before any controller has triggered
+        // {@link #getOrInstantiateRunningAgent}). Entries are monotonic, so this is safe.
+        if (ownerId != null && !ownerId.isBlank()) {
+            gatewayIdToOwner.putIfAbsent(gatewayAgentId, ownerId);
+        }
+        return gatewayAgentId;
     }
 
     // -----------------------------------------------------------------
@@ -812,6 +867,10 @@ public class AgentCatalogService {
 
         HarnessGateway gateway = builderBootstrap.gateway();
         gateway.registerAgent(gatewayAgentId, agent);
+        // Record the gatewayId -> owner mapping so the gateway's fsUserIdResolver can pin
+        // shared-agent chat reads to the owner's filesystem namespace. {@code userId} here is
+        // the owner (see {@link #getOrInstantiateRunningAgent}).
+        gatewayIdToOwner.put(gatewayAgentId, userId);
 
         log.info(
                 "Registered user-custom agent in gateway: userId={}, agentId={}, gatewayId={}",

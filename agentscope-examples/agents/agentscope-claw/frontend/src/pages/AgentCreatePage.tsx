@@ -180,11 +180,11 @@ export default function AgentCreatePage() {
             style={S.input}
             value={workspacePath}
             onChange={e => setWorkspacePath(e.target.value)}
-            placeholder="~/.agentscope/agents/<agentId>/workspace"
+            placeholder="~/.agentscope/claw/agents/<agentId>/workspace"
           />
           <div style={S.hint}>
             Leave blank to use the default at{' '}
-            <code>~/.agentscope/agents/&lt;agentId&gt;/workspace</code>.
+            <code>~/.agentscope/claw/agents/&lt;agentId&gt;/workspace</code>.
             Absolute paths are used as-is. Set at creation only.
           </div>
         </div>

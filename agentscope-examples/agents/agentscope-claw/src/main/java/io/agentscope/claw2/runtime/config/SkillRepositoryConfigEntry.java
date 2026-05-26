@@ -50,6 +50,15 @@ public class SkillRepositoryConfigEntry {
     private String branch;
 
     /**
+     * Optional in-repo subdirectory containing skill folders. Used when {@code type} is {@code
+     * git}; ignored otherwise. When blank, defaults to {@code skills/} if present, else the repo
+     * root. Must be a path relative to the repo root; absolute paths or {@code ..} segments are
+     * rejected by the underlying repository implementation.
+     */
+    @JsonProperty("skillsRoot")
+    private String skillsRoot;
+
+    /**
      * Local clone directory; when set, resolved relative to bootstrap {@code cwd}. Optional for
      * {@code git} (otherwise a temp directory is used by {@code GitSkillRepository}).
      */
@@ -92,6 +101,14 @@ public class SkillRepositoryConfigEntry {
 
     public void setBranch(String branch) {
         this.branch = branch;
+    }
+
+    public String getSkillsRoot() {
+        return skillsRoot;
+    }
+
+    public void setSkillsRoot(String skillsRoot) {
+        this.skillsRoot = skillsRoot;
     }
 
     public String getLocalPath() {

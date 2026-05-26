@@ -1,3 +1,8 @@
+---
+name: synthesize-report
+description: Produces a citation-grounded summary across one or more workspace source files for summaries, briefings, literature reviews, or comparisons.
+---
+
 # Synthesize a report from sources
 
 A playbook for producing a citation-grounded summary across one or more source

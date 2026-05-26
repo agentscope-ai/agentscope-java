@@ -193,13 +193,12 @@ export default function AgentCreatePage() {
             style={S.input}
             value={workspacePath}
             onChange={e => setWorkspacePath(e.target.value)}
-            placeholder=".agentscope/<agentId>-workspace"
+            placeholder="~/.agentscope/builder/workspace/users/<userId>/agents/<agentId>"
           />
           <div style={S.hint}>
-            Leave blank to use <code>{'<agentId>-workspace'}</code> under{' '}
-            <code>.agentscope/</code> (relative to the server's working directory).
-            Absolute paths are used as-is. If the final directory name does not end with{' '}
-            <code>-workspace</code>, the suffix is appended automatically. Set at creation only.
+            Leave blank to use the default per-user path at{' '}
+            <code>~/.agentscope/builder/workspace/users/&lt;userId&gt;/agents/&lt;agentId&gt;</code>.
+            Absolute paths are used as-is. Set at creation only.
           </div>
         </div>
 

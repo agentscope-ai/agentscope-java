@@ -5,13 +5,13 @@
     "default": {
       "name": "Main",
       "description": "Primary harness agent",
-      "workspace": ".agentscope/workspace",
+      "workspace": "workspace",
       "maxIters": 15
     },
     "worker": {
       "name": "Worker",
       "description": "Secondary agent with its own workspace",
-      "workspace": ".agentscope/worker-workspace",
+      "workspace": "agents/worker/workspace",
       "maxIters": 10
     }
   },

@@ -42,7 +42,7 @@ import org.springframework.context.annotation.Configuration;
  * Spring Boot configuration for agentscope-claw — the local single-user assistant.
  *
  * <p>Assembles a {@link ClawBootstrap} rooted at {@code ${claw.home}} (defaults to
- * {@code ~/.agentscope}). The {@code agentscope.json} file defines the built-in agents; if it
+ * {@code ~/.agentscope/claw}). The {@code agentscope.json} file defines the built-in agents; if it
  * does not exist, a minimal default agent is auto-generated so the app starts without manual
  * setup.
  *
@@ -62,7 +62,7 @@ public class BuilderConfig {
 
     private static final Logger log = LoggerFactory.getLogger(BuilderConfig.class);
 
-    @Value("${claw.home:#{systemProperties['user.home']}/.agentscope}")
+    @Value("${claw.home:#{systemProperties['user.home']}/.agentscope/claw}")
     private String clawHome;
 
     @Value("${claw.dashscope.api-key:}")
@@ -182,7 +182,7 @@ public class BuilderConfig {
     // -----------------------------------------------------------------
 
     private Path resolveClawHome() {
-        String raw = clawHome != null && !clawHome.isBlank() ? clawHome : "~/.agentscope";
+        String raw = clawHome != null && !clawHome.isBlank() ? clawHome : "~/.agentscope/claw";
         if (raw.startsWith("~")) {
             raw = System.getProperty("user.home") + raw.substring(1);
         }
@@ -192,11 +192,14 @@ public class BuilderConfig {
     /**
      * Auto-generates a minimal {@code agentscope.json} (and scaffolds the default agent
      * workspace) if it doesn't already exist. The generated config defines a single
-     * {@code default} built-in agent rooted at {@code ${clawHome}/agents/default/workspace}.
+     * {@code default} built-in agent with an explicit {@code workspace} of {@code "workspace"},
+     * resolving to {@code ${clawHome}/workspace} (i.e. {@code ~/.agentscope/claw/workspace} by
+     * default) so the main HarnessAgent's tree is right under {@code clawHome} rather than
+     * buried beneath {@code agents/default/workspace}.
      */
     private void ensureAgentscopeConfig(Path home) throws IOException {
         Path configFile = home.resolve("agentscope.json");
-        Path defaultWorkspace = ClawBootstrap.defaultAgentWorkspace(home, "default");
+        Path defaultWorkspace = home.resolve("workspace").normalize();
 
         if (Files.exists(configFile)) {
             return;
@@ -211,6 +214,7 @@ public class BuilderConfig {
                   "agents": {
                     "default": {
                       "name": "%s",
+                      "workspace": "workspace",
                       "sysPrompt": "%s"
                     }
                   }

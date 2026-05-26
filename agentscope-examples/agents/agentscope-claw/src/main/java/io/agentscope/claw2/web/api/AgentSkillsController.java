@@ -23,6 +23,7 @@ import io.agentscope.claw2.marketplace.MarketSkillContent;
 import io.agentscope.claw2.runtime.ClawBootstrap;
 import io.agentscope.claw2.web.catalog.AgentCatalogService;
 import io.agentscope.claw2.web.catalog.UserAgentDefinitionStore;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
@@ -165,7 +166,9 @@ public class AgentSkillsController {
                     }
                     WorkspaceContext ctx = resolveContext(agentId);
                     String relMd = "skills/" + name + "/SKILL.md";
-                    ctx.manager().writeUtf8WorkspaceRelative(relMd, req.markdown());
+                    ctx.manager()
+                            .writeUtf8WorkspaceRelative(
+                                    RuntimeContext.empty(), relMd, req.markdown());
                     if (req.resources() != null) {
                         for (Map.Entry<String, String> e : req.resources().entrySet()) {
                             String key = e.getKey();
@@ -173,6 +176,7 @@ public class AgentSkillsController {
                             String safe = sanitiseRelativePath(key);
                             ctx.manager()
                                     .writeUtf8WorkspaceRelative(
+                                            RuntimeContext.empty(),
                                             "skills/" + name + "/" + safe,
                                             e.getValue() != null ? e.getValue() : "");
                         }
@@ -338,7 +342,9 @@ public class AgentSkillsController {
                     }
                     ctx.manager()
                             .writeUtf8WorkspaceRelative(
-                                    "skills/" + targetName + "/SKILL.md", markdown);
+                                    RuntimeContext.empty(),
+                                    "skills/" + targetName + "/SKILL.md",
+                                    markdown);
                     Map<String, String> resources = skill.getResources();
                     if (resources != null) {
                         for (Map.Entry<String, String> e : resources.entrySet()) {
@@ -348,7 +354,9 @@ public class AgentSkillsController {
                             String content = e.getValue() != null ? e.getValue() : "";
                             ctx.manager()
                                     .writeUtf8WorkspaceRelative(
-                                            "skills/" + targetName + "/" + safe, content);
+                                            RuntimeContext.empty(),
+                                            "skills/" + targetName + "/" + safe,
+                                            content);
                         }
                     }
                     AgentSkillRepositoryInfo repoInfo = repo.getRepositoryInfo();
@@ -360,6 +368,7 @@ public class AgentSkillsController {
                                     Instant.now().toString());
                     ctx.manager()
                             .writeUtf8WorkspaceRelative(
+                                    RuntimeContext.empty(),
                                     "skills/" + targetName + "/" + INSTALL_META_FILE,
                                     MAPPER.writerWithDefaultPrettyPrinter()
                                             .writeValueAsString(meta));
@@ -434,7 +443,9 @@ public class AgentSkillsController {
                     }
                     ctx.manager()
                             .writeUtf8WorkspaceRelative(
-                                    "skills/" + targetName + "/SKILL.md", content.markdown());
+                                    RuntimeContext.empty(),
+                                    "skills/" + targetName + "/SKILL.md",
+                                    content.markdown());
                     Map<String, String> resources = content.resources();
                     if (resources != null) {
                         for (Map.Entry<String, String> e : resources.entrySet()) {
@@ -444,7 +455,9 @@ public class AgentSkillsController {
                             String body = e.getValue() != null ? e.getValue() : "";
                             ctx.manager()
                                     .writeUtf8WorkspaceRelative(
-                                            "skills/" + targetName + "/" + safe, body);
+                                            RuntimeContext.empty(),
+                                            "skills/" + targetName + "/" + safe,
+                                            body);
                         }
                     }
                     SkillMarketplaceMeta meta =
@@ -455,6 +468,7 @@ public class AgentSkillsController {
                                     Instant.now().toString());
                     ctx.manager()
                             .writeUtf8WorkspaceRelative(
+                                    RuntimeContext.empty(),
                                     "skills/" + targetName + "/" + INSTALL_META_FILE,
                                     MAPPER.writerWithDefaultPrettyPrinter()
                                             .writeValueAsString(meta));
@@ -676,8 +690,12 @@ public class AgentSkillsController {
         return ClawBootstrap.defaultAgentWorkspace(clawHome, entry.id());
     }
 
+    // Workspace filesystem is constructed in {@code virtualMode=true} so leading-slash paths
+    // (the {@link AbstractFilesystem} contract used by {@code /skills} listings) resolve to the
+    // workspace root rather than the host filesystem root. Mirrors
+    // {@link AgentWorkspaceController#newWorkspaceManager}.
     private static WorkspaceManager newWorkspaceManager(Path workspace) {
-        return new WorkspaceManager(workspace, new LocalFilesystem(workspace));
+        return new WorkspaceManager(workspace, new LocalFilesystem(workspace, true, 10, null));
     }
 
     private record WorkspaceContext(Path workspace, WorkspaceManager manager) {}

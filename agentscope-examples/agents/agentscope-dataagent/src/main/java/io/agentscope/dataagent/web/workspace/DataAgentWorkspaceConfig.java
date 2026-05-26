@@ -15,11 +15,11 @@
  */
 package io.agentscope.dataagent.web.workspace;
 
-import io.agentscope.dataagent.runtime.DataAgentBootstrap;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClient;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClientOptions;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +59,14 @@ public class DataAgentWorkspaceConfig {
     private long evictionPollSeconds;
 
     /**
+     * Same property {@code DataAgentConfig} reads for {@code cwd}. Resolved independently here so
+     * {@link #userSandboxRegistry} does not have to inject {@code DataAgentBootstrap} — the
+     * bootstrap itself depends on this registry, which would form a cycle.
+     */
+    @Value("${dataagent.workspace:}")
+    private String workspaceDir;
+
+    /**
      * Default {@link SandboxClient} bean — a no-arg {@link DockerSandboxClient}. Operators can
      * override by declaring their own {@code SandboxClient<DockerSandboxClientOptions>} bean.
      */
@@ -71,8 +79,8 @@ public class DataAgentWorkspaceConfig {
 
     @Bean
     public UserSandboxRegistry userSandboxRegistry(
-            SandboxClient<DockerSandboxClientOptions> sandboxClient, DataAgentBootstrap bootstrap) {
-        Path sharedRoot = bootstrap.cwd().resolve("shared");
+            SandboxClient<DockerSandboxClientOptions> sandboxClient) {
+        Path sharedRoot = resolveCwd().resolve("shared");
         Duration idleTtl = Duration.ofMinutes(idleTtlMinutes);
         Duration evictionPoll = Duration.ofSeconds(evictionPollSeconds);
         log.info(
@@ -81,6 +89,13 @@ public class DataAgentWorkspaceConfig {
                 idleTtl,
                 evictionPoll);
         return new UserSandboxRegistry(sandboxClient, sharedRoot, idleTtl, evictionPoll);
+    }
+
+    private Path resolveCwd() {
+        if (workspaceDir != null && !workspaceDir.isBlank()) {
+            return Paths.get(workspaceDir).toAbsolutePath().normalize();
+        }
+        return Paths.get(System.getProperty("user.dir")).toAbsolutePath().normalize();
     }
 
     @Bean

@@ -16,6 +16,7 @@
 package io.agentscope.builder.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.agentscope.builder.runtime.BuilderBootstrap;
 import io.agentscope.builder.web.audit.ActivityEvent;
 import io.agentscope.builder.web.audit.AgentActivityStore;
 import io.agentscope.builder.web.catalog.AgentCatalogService;
@@ -565,7 +566,9 @@ public class AgentWorkspaceController {
                     }
                     validateSubagentName(name);
                     WorkspaceContext ctx = resolveContext(userId, agentId);
-                    String markdown = renderSubagentMarkdown(req);
+                    SubagentUpsertRequest effective =
+                            withDefaultWorkspacePath(req, userId, agentId, name);
+                    String markdown = renderSubagentMarkdown(effective);
                     ctx.manager()
                             .writeUtf8WorkspaceRelative(
                                     RuntimeContext.empty(), "subagents/" + name + ".md", markdown);
@@ -679,7 +682,9 @@ public class AgentWorkspaceController {
      * BaseStore-backed for routed runtime prefixes). The {@code ctxUser} is the agent owner for
      * SCOPE_USER agents (so EDIT-delegated mutations land in the owner's namespace, matching
      * pre-PR4 semantics) and the caller for globals (which have no single owner — per-caller
-     * isolation is the right default).
+     * isolation is the right default). The gateway pins chat-time reads to the same {@code
+     * ctxUser} via the {@code fsUserIdResolver} installed by {@link AgentCatalogService}, so the
+     * controller-write and chat-read namespaces always agree.
      *
      * <p><strong>The {@code workspace} {@link Path} returned by this method is the agent's shared
      * workspace root, exposed only for {@link #summary} display.</strong> It must not be used for
@@ -994,6 +999,48 @@ public class AgentWorkspaceController {
                 decl.getWorkspacePath() != null ? decl.getWorkspacePath().toString() : null,
                 decl.getInlineAgentsBody() != null && !decl.getInlineAgentsBody().isBlank(),
                 null);
+    }
+
+    /**
+     * Ensures an ISOLATED subagent gets a per-user absolute default {@code workspacePath} rooted
+     * at {@code <builderHome>/users/<userId>/agents/<parentAgentId>/agents/<subName>/workspace}
+     * when the caller didn't specify one. The {@code userId} prefix is what keeps each tenant's
+     * subagent runtime data on disk separated.
+     *
+     * <p>Pass-through cases (returned unchanged):
+     * <ul>
+     *   <li>{@code workspaceMode} is {@code "shared"} (a shared-mode subagent reuses the parent
+     *       workspace; {@code path} is ignored)
+     *   <li>{@code workspacePath} was already supplied by the caller
+     * </ul>
+     */
+    private static SubagentUpsertRequest withDefaultWorkspacePath(
+            SubagentUpsertRequest req, String userId, String parentAgentId, String subName) {
+        if (req.workspacePath() != null && !req.workspacePath().isBlank()) {
+            return req;
+        }
+        if ("shared".equalsIgnoreCase(req.workspaceMode())) {
+            return req;
+        }
+        Path builderHome = BuilderBootstrap.DEFAULT_WORKSPACE_ROOT.getParent();
+        Path defaultPath =
+                builderHome
+                        .resolve("users")
+                        .resolve(userId)
+                        .resolve("agents")
+                        .resolve(parentAgentId)
+                        .resolve("agents")
+                        .resolve(subName)
+                        .resolve("workspace");
+        return new SubagentUpsertRequest(
+                req.description(),
+                req.model(),
+                req.maxIters(),
+                req.tools(),
+                req.workspaceMode() != null ? req.workspaceMode() : "isolated",
+                defaultPath.toString(),
+                req.inlineBody(),
+                req.sourceAgentId());
     }
 
     static String renderSubagentMarkdown(SubagentUpsertRequest req) {

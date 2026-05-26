@@ -1,7 +1,14 @@
 {
   "// description": "Tools allowlist for this agent. Remove this file to allow all tools.",
   "// available":   ["read_file", "write_file", "edit_file", "list_files", "grep_files", "glob_files", "execute", "memory_search", "memory_get", "session_search", "session_list", "session_history"],
-  "// allow": [],
+  "allow": [
+    "read_file",
+    "write_file",
+    "edit_file",
+    "list_files",
+    "grep_files",
+    "glob_files"
+  ],
   "deny": [],
   "mcpServers": {}
 }

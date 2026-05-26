@@ -24,6 +24,7 @@ import io.agentscope.claw2.runtime.session.SessionConstants;
 import io.agentscope.claw2.runtime.session.SessionEntry;
 import io.agentscope.claw2.runtime.session.SessionView;
 import io.agentscope.claw2.runtime.session.SpawnResult;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -169,6 +170,7 @@ public class SessionsTool {
                         String taskId = "task_" + UUID.randomUUID();
                         final String capturedTask = task;
                         taskRepository.putTask(
+                                RuntimeContext.empty(),
                                 taskId,
                                 e.agentId(),
                                 parentSessionScope(),
@@ -221,6 +223,7 @@ public class SessionsTool {
             final String capturedTask = task;
             final String spawnedSessionKey = reg.sessionKey();
             taskRepository.putTask(
+                    RuntimeContext.empty(),
                     taskId,
                     agentId,
                     parentSessionScope(),
@@ -316,6 +319,7 @@ public class SessionsTool {
                             .orElse("unknown");
             final String capturedTarget = target;
             taskRepository.putTask(
+                    RuntimeContext.empty(),
                     taskId,
                     resolvedAgentId,
                     parentSessionScope(),

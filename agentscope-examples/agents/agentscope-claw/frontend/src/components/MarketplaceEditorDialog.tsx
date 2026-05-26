@@ -33,6 +33,12 @@ const TYPE_FIELDS: Record<MarketplaceType, FieldDef[]> = {
       hint: 'HTTPS or SSH; auth uses your system git credentials.',
     },
     { key: 'branch', label: 'Branch', placeholder: 'main (optional)' },
+    {
+      key: 'skillsRoot',
+      label: 'Skills root',
+      placeholder: 'skills (default)',
+      hint: 'Subdirectory inside the repo that contains skill folders. Leave blank to use "skills/" (or repo root if absent).',
+    },
   ],
   nacos: [
     { key: 'serverAddr', label: 'Server', placeholder: 'nacos.example.com:8848', required: true },

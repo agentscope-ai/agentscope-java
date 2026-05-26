@@ -99,6 +99,15 @@ const sourceBadgeStyle: React.CSSProperties = {
   color: '#b45309',
   border: '1px solid #fde68a',
 };
+// Custom (workspace-authored) skills get a distinct cooler badge so users can tell at a glance
+// which entries are local edits vs. marketplace pulls — same visual rhythm as marketplace badges,
+// just a different palette to avoid implying provenance.
+const customBadgeStyle: React.CSSProperties = {
+  ...sourceBadgeStyle,
+  background: '#e0e7ff',
+  color: '#4338ca',
+  border: '1px solid #c7d2fe',
+};
 
 export default function SkillsWorkspacePanel({
   agentId,
@@ -114,22 +123,20 @@ export default function SkillsWorkspacePanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Skills page now strictly shows marketplace-installed skills. Anything authored manually
-  // via the Workspace file tree (origin='custom') is editable from there, not here.
-  const skills = useMemo(
-    () => allSkills.filter(s => s.origin === 'marketplace'),
-    [allSkills],
-  );
+  // The skills page surfaces every workspace skill — both marketplace-installed and
+  // workspace-authored ("custom") entries — so a refresh accurately reflects on-disk state.
+  // Each row carries an origin badge so users can tell at a glance which entries are local
+  // edits and which were pulled from a marketplace.
+  const skills = allSkills;
 
   const refreshList = useCallback(async () => {
     try {
       const list = await listWorkspaceSkills(agentId);
       setAllSkills(list);
-      const filtered = list.filter(s => s.origin === 'marketplace');
-      if (selectedDir && !filtered.some(s => s.dirName === selectedDir)) {
-        setSelectedDir(filtered.length > 0 ? filtered[0].dirName : null);
-      } else if (!selectedDir && filtered.length > 0) {
-        setSelectedDir(filtered[0].dirName);
+      if (selectedDir && !list.some(s => s.dirName === selectedDir)) {
+        setSelectedDir(list.length > 0 ? list[0].dirName : null);
+      } else if (!selectedDir && list.length > 0) {
+        setSelectedDir(list[0].dirName);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -181,7 +188,11 @@ export default function SkillsWorkspacePanel({
 
   const handleDelete = async () => {
     if (!selectedDir) return;
-    if (!window.confirm(`Uninstall skill "${selectedDir}"? This removes the entire directory.`)) return;
+    // Phrase the confirmation by origin so users understand the local impact: marketplace skills
+    // get the "Uninstall" language they're used to, custom skills are framed as a Delete.
+    const isMarketplace = selectedSkill?.origin === 'marketplace';
+    const verb = isMarketplace ? 'Uninstall' : 'Delete';
+    if (!window.confirm(`${verb} skill "${selectedDir}"? This removes the entire directory.`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -221,10 +232,11 @@ export default function SkillsWorkspacePanel({
           {skills.length === 0 ? (
             <div style={{ padding: 16, color: '#94a3b8', fontSize: '0.85rem' }}>
               <div style={{ fontWeight: 600, color: '#475569', marginBottom: 6 }}>
-                No skills installed.
+                No skills yet.
               </div>
-              Click <b>+ Install</b> to browse skills available from the marketplaces this agent is
-              bound to (git, nacos, mysql, …).
+              Click <b>+ Install</b> to pull from a marketplace, or author a skill manually under
+              <code> workspace/skills/&lt;name&gt;/SKILL.md </code>via the Workspace file tree —
+              both show up here.
             </div>
           ) : (
             skills.map(s => (
@@ -248,9 +260,16 @@ export default function SkillsWorkspacePanel({
                   >
                     {s.name || s.dirName}
                   </div>
-                  {s.marketplace?.repoType && (
+                  {s.marketplace?.repoType ? (
                     <span style={sourceBadgeStyle} title={s.marketplace.repoLocation}>
                       {s.marketplace.repoType}
+                    </span>
+                  ) : (
+                    // Custom (workspace-authored) skills get a "custom" badge so they aren't
+                    // visually mistaken for an unbadged marketplace entry — the same visual slot
+                    // is reused so list items stay aligned regardless of origin.
+                    <span style={customBadgeStyle} title="Authored in this workspace">
+                      custom
                     </span>
                   )}
                 </div>
@@ -298,7 +317,7 @@ export default function SkillsWorkspacePanel({
           <>
             <div style={toolbarStyle}>
               <span style={{ fontSize: '0.95rem', fontWeight: 600 }}>{selectedDir}/SKILL.md</span>
-              {selectedSkill?.marketplace && (
+              {selectedSkill?.marketplace ? (
                 <span
                   style={{ fontSize: '0.78rem', color: '#64748b' }}
                   title={`Installed from ${selectedSkill.marketplace.repoType}: ${selectedSkill.marketplace.repoLocation}`}
@@ -308,6 +327,15 @@ export default function SkillsWorkspacePanel({
                     selectedSkill.marketplace.originalName !== selectedDir &&
                     ` (orig: ${selectedSkill.marketplace.originalName})`}
                 </span>
+              ) : (
+                selectedSkill && (
+                  <span
+                    style={{ fontSize: '0.78rem', color: '#64748b' }}
+                    title="Authored directly in this workspace (no marketplace lineage)"
+                  >
+                    · <b>custom</b>
+                  </span>
+                )
               )}
               <span style={{ flex: 1 }} />
               {dirty && <span style={{ fontSize: '0.78rem', color: '#d97706' }}>unsaved</span>}
@@ -324,7 +352,7 @@ export default function SkillsWorkspacePanel({
                 Save
               </button>
               <button onClick={handleDelete} style={dangerButtonStyle} disabled={busy}>
-                Uninstall
+                {selectedSkill?.origin === 'marketplace' ? 'Uninstall' : 'Delete'}
               </button>
             </div>
             <textarea
