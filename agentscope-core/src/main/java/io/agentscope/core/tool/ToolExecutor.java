@@ -358,9 +358,16 @@ class ToolExecutor {
         Duration timeout = config.getTimeout();
         logger.debug("Applied timeout: {} for tool: {}", timeout, toolCall.getName());
 
-        return execution.timeout(
-                timeout,
-                Mono.error(new RuntimeException("Tool execution timeout after " + timeout)));
+        return execution.timeout(timeout, Mono.error(toolExecutionTimeoutError(timeout, toolCall)));
+    }
+
+    private static RuntimeException toolExecutionTimeoutError(
+            Duration timeout, ToolUseBlock toolCall) {
+        String toolName = toolCall.getName() != null ? toolCall.getName() : "unknown";
+        String toolId = toolCall.getId() != null ? toolCall.getId() : "unknown";
+        return new RuntimeException(
+                String.format(
+                        "Tool '%s' (id=%s) execution timeout after %s", toolName, toolId, timeout));
     }
 
     private Mono<ToolResultBlock> applyRetry(

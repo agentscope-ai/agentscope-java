@@ -93,10 +93,12 @@ import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
 import io.agentscope.harness.agent.tool.SessionSearchTool;
 import io.agentscope.harness.agent.tool.ShellExecuteTool;
+import io.agentscope.harness.agent.tool.TaskTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -145,6 +147,9 @@ import reactor.core.publisher.Mono;
 public class HarnessAgent implements Agent, StateModule {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
+
+    private static final Duration SUBAGENT_TOOL_EXECUTION_TIMEOUT =
+            TaskTool.MAX_BLOCK_WAIT.plusMinutes(1);
 
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
@@ -1380,7 +1385,11 @@ public class HarnessAgent implements Agent, StateModule {
                 allHooks.add(new SessionPersistenceHook());
             }
 
-            if (!leafSubagent && !disableSubagents && model != null) {
+            boolean subagentsEnabled = !leafSubagent && !disableSubagents && model != null;
+            ExecutionConfig effectiveToolExecutionConfig = toolExecutionConfig;
+            if (subagentsEnabled) {
+                effectiveToolExecutionConfig =
+                        withSubagentToolExecutionTimeout(toolExecutionConfig);
                 SubagentsHook subagentsHook =
                         buildSubagentsHook(
                                 wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
@@ -1425,8 +1434,8 @@ public class HarnessAgent implements Agent, StateModule {
             if (modelExecutionConfig != null) {
                 reactBuilder.modelExecutionConfig(modelExecutionConfig);
             }
-            if (toolExecutionConfig != null) {
-                reactBuilder.toolExecutionConfig(toolExecutionConfig);
+            if (effectiveToolExecutionConfig != null) {
+                reactBuilder.toolExecutionConfig(effectiveToolExecutionConfig);
             }
             if (generateOptions != null) {
                 reactBuilder.generateOptions(generateOptions);
@@ -1470,7 +1479,7 @@ public class HarnessAgent implements Agent, StateModule {
                     name,
                     resolvedWorkspace,
                     filesystem.getClass().getSimpleName(),
-                    !leafSubagent && !disableSubagents && model != null);
+                    subagentsEnabled);
 
             return new HarnessAgent(
                     delegate,
@@ -1594,6 +1603,20 @@ public class HarnessAgent implements Agent, StateModule {
                 }
                 return List.of(userId);
             };
+        }
+
+        private static ExecutionConfig withSubagentToolExecutionTimeout(
+                ExecutionConfig configured) {
+            ExecutionConfig timeoutOverride =
+                    ExecutionConfig.builder().timeout(SUBAGENT_TOOL_EXECUTION_TIMEOUT).build();
+            if (configured == null) {
+                return timeoutOverride;
+            }
+            Duration timeout = configured.getTimeout();
+            if (timeout == null || timeout.compareTo(TaskTool.MAX_BLOCK_WAIT) <= 0) {
+                return ExecutionConfig.mergeConfigs(timeoutOverride, configured);
+            }
+            return configured;
         }
 
         // -----------------------------------------------------------------
