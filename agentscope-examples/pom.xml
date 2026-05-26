@@ -32,22 +32,7 @@
     <name>AgentScope Java - Examples</name>
 
     <modules>
-        <module>quickstart</module>
         <module>mcp-native-example</module>
-        <module>advanced</module>
-        <module>micronaut</module>
-        <module>quarkus</module>
-        <module>plan-notebook</module>
-        <module>agui</module>
-        <module>werewolf</module>
-        <module>werewolf-hitl</module>
-        <module>model-request-compression</module>
-        <module>boba-tea-shop</module>
-        <module>chat-completions-web</module>
-        <module>hitl-chat</module>
-        <module>a2a</module>
-        <module>chat-tts</module>
-        <module>graceful-shutdown</module>
         <module>documentation/quickstart</module>
         <module>documentation/advanced</module>
         <module>documentation/plan-notebook</module>

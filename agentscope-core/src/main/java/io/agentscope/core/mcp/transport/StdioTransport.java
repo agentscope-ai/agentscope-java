@@ -60,6 +60,13 @@ public class StdioTransport implements Transport {
         this.objectMapper.registerModule(new Jdk8Module());
     }
 
+    public StdioTransport(BufferedReader reader, PrintWriter writer) {
+        this.reader = reader;
+        this.writer = writer;
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.registerModule(new Jdk8Module());
+    }
+
     @Override
     public void send(JsonRpcMessage message) throws TransportException {
         if (!connected) {
@@ -143,6 +150,9 @@ public class StdioTransport implements Transport {
                                         Optional<Object> responseIdOpt = response.getId();
                                         if (responseIdOpt.isPresent()) {
                                             Object responseId = responseIdOpt.get();
+                                            if (responseId instanceof Number) {
+                                                responseId = ((Number) responseId).longValue();
+                                            }
                                             PendingRequest pending =
                                                     pendingRequests.get(responseId);
                                             if (pending != null) {

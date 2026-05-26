@@ -180,6 +180,9 @@ public class TcpTransport implements Transport {
                                         Optional<Object> responseIdOpt = response.getId();
                                         if (responseIdOpt.isPresent()) {
                                             Object responseId = responseIdOpt.get();
+                                            if (responseId instanceof Number) {
+                                                responseId = ((Number) responseId).longValue();
+                                            }
                                             PendingRequest pending =
                                                     pendingRequests.get(responseId);
                                             if (pending != null) {

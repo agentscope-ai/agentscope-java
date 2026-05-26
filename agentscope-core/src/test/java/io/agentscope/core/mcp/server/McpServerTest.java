@@ -19,11 +19,13 @@ package io.agentscope.core.mcp.server;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.mcp.tool.Tool;
 import io.agentscope.core.mcp.transport.Transport;
+import io.agentscope.core.mcp.transport.TransportException;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -74,5 +76,19 @@ class McpServerTest {
 
         verify(tool1, atLeastOnce()).getName();
         verify(tool2, atLeastOnce()).getName();
+    }
+
+    @Test
+    void testServerStartAndStop() throws Exception {
+        when(mockTransport.isConnected()).thenReturn(true).thenReturn(false);
+        when(mockTransport.receive()).thenThrow(new TransportException("EOF"));
+
+        McpServer server = new McpServer(mockTransport);
+        server.start();
+
+        Thread.sleep(100);
+
+        server.stop();
+        verify(mockTransport, times(1)).close();
     }
 }

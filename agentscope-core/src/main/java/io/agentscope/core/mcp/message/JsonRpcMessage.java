@@ -16,6 +16,7 @@
 
 package io.agentscope.core.mcp.message;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -58,6 +59,7 @@ public abstract class JsonRpcMessage {
      *
      * @return optional ID
      */
+    @JsonIgnore
     public abstract Optional<Object> getId();
 
     /**
@@ -65,5 +67,6 @@ public abstract class JsonRpcMessage {
      *
      * @return optional method name
      */
+    @JsonIgnore
     public abstract Optional<String> getMethod();
 }
