@@ -321,9 +321,10 @@ public class DashScopeChatModel extends ChatModelBase {
      * Apply thinking mode configuration to request if enabled.
      */
     private void applyThinkingMode(DashScopeRequest request, GenerateOptions options) {
-        Boolean effectiveEnableThinking = options.getEnableThinking() != null
-                ? options.getEnableThinking()
-                : this.enableThinking;
+        Boolean effectiveEnableThinking =
+                options.getEnableThinking() != null
+                        ? options.getEnableThinking()
+                        : this.enableThinking;
 
         // Validate thinking configuration
         if (options.getThinkingBudget() != null && !Boolean.TRUE.equals(effectiveEnableThinking)) {
