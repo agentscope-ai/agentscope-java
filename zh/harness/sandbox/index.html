@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-15T08:44:29+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="示例" href="../example/index.html"><link rel="prev" title="快速开始" href="../quickstart/index.html">
+    <meta property="article:modified_time" content="2026-05-26T06:00:59+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="AgentRun 沙箱后端" href="agentrun.html"><link rel="prev" title="快速开始" href="../quickstart/index.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/harness/sandbox/index.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
@@ -572,10 +572,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../session.html">会话</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../streaming.html">子 Agent 流式</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/index.html">快速开始</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentrun.html">AgentRun 后端</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../example/index.html">示例</a></li>
 </ul>
 
@@ -1224,7 +1226,43 @@ lease.close()          ← 释放执行权，下一个等待方可进入
 <p>已启用 <code class="docutils literal notranslate"><span class="pre">SubagentsHook</span></code> 时，若主 agent 在沙箱模式下构建，<strong>子 agent 的 filesystem 会复用</strong>同一 <code class="docutils literal notranslate"><span class="pre">SandboxBackedFilesystem</span></code> 的会话绑定策略（以当前实现为准，便于在同一次编排树内共享环境）。子 agent 本身仍是独立 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>；隔离边界与主 agent 的沙箱 spec 一致。</p>
 </section>
 <section id="id16">
-<h2>13. 延伸阅读<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h2>
+<h2>13. 后端选型与详细文档<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code> 内置多个 <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> 实现，可按场景选择：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>后端</p></th>
+<th class="head"><p>适用场景</p></th>
+<th class="head"><p>详细文档</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Docker</p></td>
+<td><p>本地开发 / 单进程 / 信任 shell</p></td>
+<td><p>—</p></td>
+</tr>
+<tr class="row-odd"><td><p>Kubernetes</p></td>
+<td><p>自建 K8s 集群、节点级 bind mount</p></td>
+<td><p><a class="reference internal" href="#57-%E5%8F%AF%E9%80%89%E6%B2%99%E7%AE%B1%E5%90%8E%E7%AB%AFkubernetes--daytona--e2bagentscope-harness-%E5%AD%90%E5%8C%85"><span class="xref myst">§5.7</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p>Daytona</p></td>
+<td><p>通用托管沙箱 HTTP API</p></td>
+<td><p><a class="reference internal" href="#57-%E5%8F%AF%E9%80%89%E6%B2%99%E7%AE%B1%E5%90%8E%E7%AB%AFkubernetes--daytona--e2bagentscope-harness-%E5%AD%90%E5%8C%85"><span class="xref myst">§5.7</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>E2B</p></td>
+<td><p>通用托管沙箱 + 平台快照</p></td>
+<td><p><a class="reference internal" href="#57-%E5%8F%AF%E9%80%89%E6%B2%99%E7%AE%B1%E5%90%8E%E7%AB%AFkubernetes--daytona--e2bagentscope-harness-%E5%AD%90%E5%8C%85"><span class="xref myst">§5.7</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>AgentRun</strong>（阿里云 FC 3.0 Sandbox）</p></td>
+<td><p>已用阿里云、需要中国大陆区域低延迟、想要实例级 NAS/OSS 动态挂载</p></td>
+<td><p><strong><a class="reference internal" href="agentrun.html"><span class="std std-doc">AgentRun 后端</span></a></strong></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="id17">
+<h2>14. 延伸阅读<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="../filesystem.html"><span class="std std-doc">Filesystem</span></a> — 类层次、三种模式、<code class="docutils literal notranslate"><span class="pre">abstractFilesystem</span></code> 逃生口</p></li>
 <li><p><a class="reference internal" href="../tool.html"><span class="std std-doc">工具</span></a> — <code class="docutils literal notranslate"><span class="pre">FilesystemTool</span></code>、<code class="docutils literal notranslate"><span class="pre">ShellExecuteTool</span></code> 入参</p></li>
@@ -1258,12 +1296,12 @@ lease.close()          ← 释放执行权，下一个等待方可进入
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="../example/index.html">
+          <a class="next-page" href="agentrun.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">示例</div>
+                <div class="title">AgentRun 沙箱后端</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -1287,7 +1325,7 @@ lease.close()          ← 释放执行权，下一个等待方可进入
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-05-15</div>
+              Last updated on 2026-05-26</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1368,7 +1406,8 @@ lease.close()          ← 释放执行权，下一个等待方可进入
 <li><a class="reference internal" href="#sandboxdistributed">10. 分布式与 <code class="docutils literal notranslate"><span class="pre">sandboxDistributed</span></code></a></li>
 <li><a class="reference internal" href="#filesystem">11. 与三种 Filesystem 模式怎么选</a></li>
 <li><a class="reference internal" href="#id15">12. 子 Agent</a></li>
-<li><a class="reference internal" href="#id16">13. 延伸阅读</a></li>
+<li><a class="reference internal" href="#id16">13. 后端选型与详细文档</a></li>
+<li><a class="reference internal" href="#id17">14. 延伸阅读</a></li>
 </ul>
 </li>
 </ul>

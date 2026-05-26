@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-15T12:47:50+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Session" href="session.html"><link rel="prev" title="Workspace" href="workspace.html">
+    <meta property="article:modified_time" content="2026-05-26T06:00:59+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Session" href="session.html"><link rel="prev" title="Workspace" href="workspace.html">
         <link rel="canonical" href="https://java.agentscope.io/en/harness/filesystem.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -572,10 +572,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/harness/session.html">会话</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/harness/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/harness/streaming.html">子 Agent 流式</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/harness/quickstart/index.html">快速开始</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/harness/sandbox/index.html">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/harness/sandbox/agentrun.html">AgentRun 后端</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/harness/example/index.html">示例</a></li>
 </ul>
 
@@ -766,6 +768,15 @@
 </div>
 <p>Called on every file operation, returns the current request’s path segments (e.g., <code class="docutils literal notranslate"><span class="pre">[&quot;users&quot;,</span> <span class="pre">&quot;alice&quot;]</span></code>). When building <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>, you can use an <code class="docutils literal notranslate"><span class="pre">AtomicReference</span></code> linked to <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code>, so the same <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> instance routes to different subtrees for different users.</p>
 </section>
+<section id="workspaceindex-and-grep-semantics-mode-1">
+<h2><code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> and <code class="docutils literal notranslate"><span class="pre">grep</span></code> Semantics (Mode 1)<a class="headerlink" href="#workspaceindex-and-grep-semantics-mode-1" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystem</span></code> optionally attaches a local SQLite <code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> (auto-built when using <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>) to accelerate <code class="docutils literal notranslate"><span class="pre">ls</span> <span class="pre">/</span> <span class="pre">glob</span> <span class="pre">/</span> <span class="pre">exists</span> <span class="pre">/</span> <span class="pre">grep</span></code> by avoiding full-store scans. The index is <strong>best-effort</strong> and may not reflect writes made by sibling replicas.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ls</span> <span class="pre">/</span> <span class="pre">glob</span> <span class="pre">/</span> <span class="pre">exists</span></code> consult the index first and fall back to a store scan when no match is found, so cross-replica visibility is preserved.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grep</span></code> follows the same pattern: index-driven candidate enumeration first, store-scan fallback when the index yields zero matches. This ensures <code class="docutils literal notranslate"><span class="pre">grep</span></code> on node B still surfaces files written via node A even if B’s index has not yet been refreshed.</p></li>
+<li><p>Callers needing authoritative enumeration (rather than fast read paths) should refresh the index via <code class="docutils literal notranslate"><span class="pre">WorkspaceIndex.rebuildFromDisk(...)</span></code> or rely on the store-scan fallback path.</p></li>
+</ul>
+</section>
 <section id="configuration-examples">
 <h2>Configuration Examples<a class="headerlink" href="#configuration-examples" title="Link to this heading">¶</a></h2>
 <p><strong>Recommended: choose one of the three modes first, then only touch <code class="docutils literal notranslate"><span class="pre">abstractFilesystem</span></code> when needed:</strong></p>
@@ -872,7 +883,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-05-15</div>
+              Last updated on 2026-05-26</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -919,6 +930,7 @@
 <li><a class="reference internal" href="#implementation-quick-reference">Implementation Quick Reference</a></li>
 <li><a class="reference internal" href="#basesandboxfilesystem-default-implementation-strategy"><code class="docutils literal notranslate"><span class="pre">BaseSandboxFilesystem</span></code> Default Implementation Strategy</a></li>
 <li><a class="reference internal" href="#namespacefactory-and-multi-tenancy"><code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> and Multi-Tenancy</a></li>
+<li><a class="reference internal" href="#workspaceindex-and-grep-semantics-mode-1"><code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> and <code class="docutils literal notranslate"><span class="pre">grep</span></code> Semantics (Mode 1)</a></li>
 <li><a class="reference internal" href="#configuration-examples">Configuration Examples</a></li>
 <li><a class="reference internal" href="#related-pages">Related Pages</a></li>
 </ul>

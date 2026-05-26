@@ -9415,6 +9415,14 @@ public interface NamespaceFactory { List<String> getNamespace(); }
 
 Called on every file operation, returns the current request's path segments (e.g., `["users", "alice"]`). When building `HarnessAgent`, you can use an `AtomicReference` linked to `RuntimeContext.userId`, so the same `AbstractFilesystem` instance routes to different subtrees for different users.
 
+## `WorkspaceIndex` and `grep` Semantics (Mode 1)
+
+`RemoteFilesystem` optionally attaches a local SQLite `WorkspaceIndex` (auto-built when using `RemoteFilesystemSpec`) to accelerate `ls / glob / exists / grep` by avoiding full-store scans. The index is **best-effort** and may not reflect writes made by sibling replicas.
+
+- `ls / glob / exists` consult the index first and fall back to a store scan when no match is found, so cross-replica visibility is preserved.
+- `grep` follows the same pattern: index-driven candidate enumeration first, store-scan fallback when the index yields zero matches. This ensures `grep` on node B still surfaces files written via node A even if B's index has not yet been refreshed.
+- Callers needing authoritative enumeration (rather than fast read paths) should refresh the index via `WorkspaceIndex.rebuildFromDisk(...)` or rely on the store-scan fallback path.
+
 ## Configuration Examples
 
 **Recommended: choose one of the three modes first, then only touch `abstractFilesystem` when needed:**

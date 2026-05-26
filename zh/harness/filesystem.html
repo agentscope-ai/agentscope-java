@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-15T12:47:50+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="会话（Session）" href="session.html"><link rel="prev" title="工作区（Workspace）" href="workspace.html">
+    <meta property="article:modified_time" content="2026-05-26T06:00:59+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="会话（Session）" href="session.html"><link rel="prev" title="工作区（Workspace）" href="workspace.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/harness/filesystem.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -572,10 +572,12 @@
 <li class="toctree-l1"><a class="reference internal" href="session.html">会话</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="streaming.html">子 Agent 流式</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart/index.html">快速开始</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sandbox/index.html">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sandbox/agentrun.html">AgentRun 后端</a></li>
 <li class="toctree-l1"><a class="reference internal" href="example/index.html">示例</a></li>
 </ul>
 
@@ -766,6 +768,15 @@
 </div>
 <p>每次文件操作会调用，返回当前请求的路径段（如 <code class="docutils literal notranslate"><span class="pre">[&quot;users&quot;,</span> <span class="pre">&quot;alice&quot;]</span></code>）。<code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 构建时可用 <code class="docutils literal notranslate"><span class="pre">AtomicReference</span></code> 与 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> 联动，使同一份 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> 实例在不同用户下落在不同子树。</p>
 </section>
+<section id="workspaceindex-grep-1">
+<h2><code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> 与 <code class="docutils literal notranslate"><span class="pre">grep</span></code> 语义（模式 1）<a class="headerlink" href="#workspaceindex-grep-1" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystem</span></code> 可选挂载一份本地 SQLite <code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code>（使用 <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> 时自动构建），用于加速 <code class="docutils literal notranslate"><span class="pre">ls</span> <span class="pre">/</span> <span class="pre">glob</span> <span class="pre">/</span> <span class="pre">exists</span> <span class="pre">/</span> <span class="pre">grep</span></code>，避免全量 Store 扫描。该索引是<strong>尽力而为</strong>的，可能不包含其他副本节点写入的文件。</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ls</span> <span class="pre">/</span> <span class="pre">glob</span> <span class="pre">/</span> <span class="pre">exists</span></code> 先查索引，无命中时回退到 Store 扫描，从而保留跨副本可见性。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grep</span></code> 同样：先用索引枚举候选，索引返回 0 条匹配时回退到 Store 扫描。这样即使节点 B 的索引尚未感知节点 A 的写入，<code class="docutils literal notranslate"><span class="pre">grep</span></code> 仍能在节点 B 上发现 A 写入的内容。</p></li>
+<li><p>若需要权威枚举（而非快速读路径），可通过 <code class="docutils literal notranslate"><span class="pre">WorkspaceIndex.rebuildFromDisk(...)</span></code> 重建索引，或直接依赖 Store 回退路径。</p></li>
+</ul>
+</section>
 <section id="id4">
 <h2>配置示例<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p><strong>推荐：先选三种模式之一，再仅在需要时接触 <code class="docutils literal notranslate"><span class="pre">abstractFilesystem</span></code>：</strong></p>
@@ -872,7 +883,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-05-15</div>
+              Last updated on 2026-05-26</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -919,6 +930,7 @@
 <li><a class="reference internal" href="#id3">各实现速查</a></li>
 <li><a class="reference internal" href="#basesandboxfilesystem"><code class="docutils literal notranslate"><span class="pre">BaseSandboxFilesystem</span></code> 的默认实现策略</a></li>
 <li><a class="reference internal" href="#namespacefactory"><code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> 与多租户</a></li>
+<li><a class="reference internal" href="#workspaceindex-grep-1"><code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> 与 <code class="docutils literal notranslate"><span class="pre">grep</span></code> 语义（模式 1）</a></li>
 <li><a class="reference internal" href="#id4">配置示例</a></li>
 <li><a class="reference internal" href="#id5">相关文档</a></li>
 </ul>

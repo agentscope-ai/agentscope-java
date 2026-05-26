@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-18T13:47:03+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="prev" title="AgentRun 沙箱后端" href="../sandbox/agentrun.html">
-        <link rel="canonical" href="https://java.agentscope.io/zh/harness/example/index.html">
+    <meta property="article:modified_time" content="2026-05-26T06:00:59+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="示例" href="../example/index.html"><link rel="prev" title="沙箱（Sandbox）" href="index.html">
+        <link rel="canonical" href="https://java.agentscope.io/zh/harness/sandbox/agentrun.html">
         <link rel="prefetch" href="../../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>示例 - AgentScope Java</title>
+        <title>AgentRun 沙箱后端 - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
@@ -86,7 +86,7 @@
   <nav
     class="docs-top-tabs"
     aria-label="Documentation sections"
-    data-current-page="zh/harness/example/index"
+    data-current-page="zh/harness/sandbox/agentrun"
     data-current-lang="zh"
   >
     <div class="docs-top-tabs__list">
@@ -427,7 +427,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
       </label>
     </div>
@@ -576,9 +576,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../streaming.html">子 Agent 流式</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/index.html">快速开始</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sandbox/index.html">沙箱</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sandbox/agentrun.html">AgentRun 后端</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">示例</a></li>
+<li class="toctree-l1"><a class="reference internal" href="index.html">沙箱</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">AgentRun 后端</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../example/index.html">示例</a></li>
 </ul>
 
 </div>
@@ -598,7 +598,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/harness/example/index.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/harness/sandbox/agentrun.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -610,24 +610,273 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="id1">
-<h1>示例<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
-<p>本小节收录可运行的 Harness 示例与场景化 walkthrough。</p>
-<p>仓库示例：</p>
+          <section id="agentrun">
+<h1>AgentRun 沙箱后端<a class="headerlink" href="#agentrun" title="Link to this heading">¶</a></h1>
+<p><a class="reference external" href="https://help.aliyun.com/zh/functioncompute/fc/developer-reference/api-agentrun-2025-09-10-createsandbox">AgentRun</a>（阿里云函数计算 FC 3.0 Sandbox API，版本 <code class="docutils literal notranslate"><span class="pre">2025-09-10</span></code>）是阿里云提供的托管沙箱服务。<code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code> 通过 <code class="docutils literal notranslate"><span class="pre">io.agentscope.harness.agent.sandbox.impl.agentrun.AgentRunFilesystemSpec</span></code> 接入该后端，与 Docker / Daytona / E2B / Kubernetes 并列，可在 <code class="docutils literal notranslate"><span class="pre">HarnessAgent#filesystem(...)</span></code> 中直接声明使用。</p>
+<p>实现要点：</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">agentscope-examples/agents/harness-examples/harness-quickstart</span></code></p></li>
+<li><p><strong>数据面优先</strong>：调用 <code class="docutils literal notranslate"><span class="pre">https://{accountId}.agentrun-data.{region}.aliyuncs.com</span></code> + <code class="docutils literal notranslate"><span class="pre">X-API-Key</span></code> + <code class="docutils literal notranslate"><span class="pre">X-Acs-Parent-Id</span></code> 鉴权，不引入完整 Aliyun OpenAPI SDK；</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">sandboxId</span></code> 由 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 派生</strong>：使用 SHA-256 + Crockford Base32 输出 26 字符（ULID 形状）。利用 AgentRun 允许自定义 sandboxId 的特性，把「销毁后同 id 重建」等价于 resume；</p></li>
+<li><p><strong>执行通道走 MCP</strong>：复用 <code class="docutils literal notranslate"><span class="pre">io.agentscope.core.tool.mcp.McpClientBuilder.streamableHttpTransport(...)</span></code>，调用模板预先启用的 <code class="docutils literal notranslate"><span class="pre">process_exec_cmd</span></code> / <code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code>；</p></li>
+<li><p><strong>持久化默认 NAS-first</strong>：<code class="docutils literal notranslate"><span class="pre">workspaceRoot</span></code> 指向 NAS 挂载时，<code class="docutils literal notranslate"><span class="pre">AbstractBaseSandbox</span></code> 的 4-分支起始命中 Branch A，<code class="docutils literal notranslate"><span class="pre">doPersist/Hydrate</span></code> 退化为 no-op；无 NAS 时回退到 tar-via-MCP（与 Daytona/E2B TAR 同形）。</p></li>
 </ul>
-<p>推荐阅读顺序：</p>
+<section id="id1">
+<h2>1. 何时选用 AgentRun<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>场景</p></th>
+<th class="head"><p>推荐后端</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>已使用阿里云 / 业务侧资源在中国大陆区域、需要低延迟</p></td>
+<td><p><strong>AgentRun</strong></p></td>
+</tr>
+<tr class="row-odd"><td><p>需要按沙箱实例独立挂载 NAS/OSS、文件自动持久、不想自己管 tar 快照</p></td>
+<td><p><strong>AgentRun</strong>（NAS-first）</p></td>
+</tr>
+<tr class="row-even"><td><p>单进程开发、本地有 Docker daemon</p></td>
+<td><p>Docker</p></td>
+</tr>
+<tr class="row-odd"><td><p>多副本但暂无 K8s 集群、想要托管 sandbox-as-a-service</p></td>
+<td><p>Daytona / E2B / <strong>AgentRun</strong></p></td>
+</tr>
+<tr class="row-even"><td><p>已有自建 Kubernetes 集群</p></td>
+<td><p>Kubernetes</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>AgentRun 的差异化优势在于<strong>实例级 NAS/OSS 动态挂载</strong>，让工作区文件直接落到云上托管存储，省去手动管理 <code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code> tar 包的开销；同时仍可叠加 harness 的 <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code> 做<strong>可移植冷备</strong>（见 §6）。</p>
+</section>
+<section id="id2">
+<h2>2. 前置准备（必读）<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <ol class="arabic simple">
-<li><p><a class="reference internal" href="../overview.html"><span class="std std-doc">Harness 概览</span></a></p></li>
-<li><p><a class="reference internal" href="../quickstart/index.html"><span class="std std-doc">快速开始</span></a></p></li>
-<li><p><a class="reference internal" href="../sandbox/index.html"><span class="std std-doc">沙箱</span></a></p></li>
+<li><p><strong>AgentRun 模板</strong>：在 <a class="reference external" href="https://help.aliyun.com/zh/functioncompute/fc/">AgentRun 控制台</a>创建 Template，<code class="docutils literal notranslate"><span class="pre">containerConfiguration</span></code> 选择目标运行环境（默认基于 Ubuntu）。</p></li>
+<li><p><strong>激活 MCP 工具</strong>：通过 <code class="docutils literal notranslate"><span class="pre">ActivateTemplateMCP</span></code> 在模板上启用 <code class="docutils literal notranslate"><span class="pre">process_exec_cmd</span></code> / <code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code> 三件套——adapter 仅使用这三个工具。</p></li>
+<li><p><strong>凭据</strong>：准备主账号 ID（<code class="docutils literal notranslate"><span class="pre">X-Acs-Parent-Id</span></code>）和数据面 API Key（<code class="docutils literal notranslate"><span class="pre">X-API-Key</span></code>）；adapter 不签名 ACS3，直接走 API Key。</p></li>
+<li><p><strong>RAM 角色权限</strong>：模板执行角色需具备访问 NAS / OSS 的读写权限；具体策略参考阿里云文档「<a class="reference external" href="https://help.aliyun.com/zh/functioncompute/fc/sandbox-supports-instance-level-dynamic-mount-of-oss-test-invitation">Sandbox 支持实例级别动态挂载 OSS</a>」。</p></li>
+<li><p><strong>NAS 文件系统（推荐）</strong>：准备一个与沙箱<strong>同地域</strong>、同 VPC 可达的 NAS 文件系统，记录 <code class="docutils literal notranslate"><span class="pre">serverAddr</span></code>；或准备<strong>标准存储</strong>、<strong>同地域</strong>的 OSS Bucket。</p></li>
 </ol>
+</section>
+<section id="nas-first">
+<h2>3. 最佳实践配置（NAS-first，核心推荐）<a class="headerlink" href="#nas-first" title="Link to this heading">¶</a></h2>
+<p>NAS 模式下,工作区文件落到 NAS 实例,沙箱销毁/重建之间天然持久,<strong>无需 Snapshot</strong>。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.impl.agentrun.*</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.HarnessAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.IsolationScope</span><span class="p">;</span>
+
+<span class="n">AgentRunNasMountConfig</span><span class="w"> </span><span class="n">nas</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunNasMountConfig</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setServerAddr</span><span class="p">(</span><span class="s">&quot;12345abc-xxx.cn-hangzhou.nas.aliyuncs.com&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setMountDir</span><span class="p">(</span><span class="s">&quot;/mnt/nas&quot;</span><span class="p">)</span><span class="w">     </span><span class="c1">// 必须以 /home、/mnt 或 /data 开头</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setRemotePath</span><span class="p">(</span><span class="s">&quot;/&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setEnableTLS</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
+
+<span class="n">AgentRunFilesystemSpec</span><span class="w"> </span><span class="n">spec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setApiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AGENTRUN_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setAccountId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIYUN_ACCOUNT_ID&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setRegion</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">&quot;agentscope-default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setMcpServerUrl</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AGENTRUN_MCP_URL&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 必填,见 §8</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setNasConfig</span><span class="p">(</span><span class="n">nas</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">&quot;/mnt/nas/workspace&quot;</span><span class="p">)</span><span class="w">               </span><span class="c1">// ★ 工作区落在 NAS 内</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setSandboxIdleTimeoutSeconds</span><span class="p">(</span><span class="mi">1800</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">);</span>
+
+<span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>行为说明：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">workspaceRoot</span></code> 以 <code class="docutils literal notranslate"><span class="pre">nasConfig.mountDir</span></code> 为前缀,adapter 自动判定 <code class="docutils literal notranslate"><span class="pre">workspaceOnNas=true</span></code>,并对 <code class="docutils literal notranslate"><span class="pre">Sandbox#start()</span></code> 的探测分支返回 true（<strong>Branch A 常态命中</strong>）。</p></li>
+<li><p>默认 <code class="docutils literal notranslate"><span class="pre">snapshotSpec=NoopSnapshotSpec</span></code>,<code class="docutils literal notranslate"><span class="pre">AbstractBaseSandbox.stop()</span></code> 内置 short-circuit,不会触发 <code class="docutils literal notranslate"><span class="pre">doPersistWorkspace</span></code>,仅在 NAS 模式下显式 <code class="docutils literal notranslate"><span class="pre">mcp.exec(&quot;sync&quot;,</span> <span class="pre">5)</span></code> 让 ossfs/NFS 落盘。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sandboxIdleTimeoutSeconds</span></code>(默认 1800)是 AgentRun 侧的闲置回收阈值,超时后实例自动销毁;adapter 在下次 <code class="docutils literal notranslate"><span class="pre">start()</span></code> 时通过同 id 重建恢复语义。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 与 <code class="docutils literal notranslate"><span class="pre">sandboxId</span></code> 的映射:<code class="docutils literal notranslate"><span class="pre">AgentRunSandboxClient#deriveSandboxId</span></code> 对 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 做 SHA-256 后截取 26 字符 Crockford Base32 输出,匹配 AgentRun 公开示例 ULID 形状,<strong>同 sessionId → 同 sandboxId</strong>。</p></li>
+</ul>
+</section>
+<section id="a-nas-tar">
+<h2>4. 退路方案 A:无 NAS,纯 tar 快照<a class="headerlink" href="#a-nas-tar" title="Link to this heading">¶</a></h2>
+<p>如果你尚未开通 NAS,或仅做 demo,可以省略 <code class="docutils literal notranslate"><span class="pre">nasConfig</span></code>/<code class="docutils literal notranslate"><span class="pre">ossMountConfigs</span></code>,工作区写到沙箱临时盘:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentRunFilesystemSpec</span><span class="w"> </span><span class="n">spec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setApiKey</span><span class="p">(...)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setAccountId</span><span class="p">(...)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setRegion</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">&quot;agentscope-default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setMcpServerUrl</span><span class="p">(...)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">&quot;/home/agentscope/workspace&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(...));</span><span class="w">     </span><span class="c1">// ← 必须显式挂 SnapshotSpec</span>
+</pre></div>
+</div>
+<p>退路模式的代价:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">doPersistWorkspace</span></code> 在 <code class="docutils literal notranslate"><span class="pre">stop()</span></code> 时通过 MCP 远程执行 <code class="docutils literal notranslate"><span class="pre">tar</span> <span class="pre">-cf</span> <span class="pre">-</span> <span class="pre">-C</span> <span class="pre">&lt;root&gt;</span> <span class="pre">.</span> <span class="pre">|</span> <span class="pre">base64</span> <span class="pre">-w0</span></code>,再走 <code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code> 上传——大工作区(&gt;100MB)上耗时显著;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">doHydrateWorkspace</span></code> 在 <code class="docutils literal notranslate"><span class="pre">start()</span></code> 时分块 base64 写入 <code class="docutils literal notranslate"><span class="pre">/tmp/agentscope-ws.b64</span></code> 后再 <code class="docutils literal notranslate"><span class="pre">python3</span> <span class="pre">-c</span> <span class="pre">&quot;tar</span> <span class="pre">xf</span> <span class="pre">-&quot;</span></code> 解压,链路较长。</p></li>
+</ul>
+<blockquote>
+<div><p>仅在 NAS/OSS 挂载暂时不可用时使用,生产环境优先选 §3。</p>
+</div></blockquote>
+</section>
+<section id="b-nas-oss-snapshot">
+<h2>5. 进阶方案 B:NAS 运行时 + OSS Snapshot 冷备<a class="headerlink" href="#b-nas-oss-snapshot" title="Link to this heading">¶</a></h2>
+<p>NAS 提供低延迟的实时读写,但备份/迁移/审计场景里仍可能希望工作区有<strong>版本化、跨集群可携带</strong>的 tar 归档。可以同时配置:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentRunFilesystemSpec</span><span class="w"> </span><span class="n">spec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setApiKey</span><span class="p">(...).</span><span class="na">setAccountId</span><span class="p">(...).</span><span class="na">setRegion</span><span class="p">(</span><span class="s">&quot;cn-hangzhou&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setTemplateName</span><span class="p">(</span><span class="s">&quot;agentscope-default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setMcpServerUrl</span><span class="p">(...)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setNasConfig</span><span class="p">(</span><span class="n">nas</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">setWorkspaceRoot</span><span class="p">(</span><span class="s">&quot;/mnt/nas/workspace&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(</span><span class="w">                  </span><span class="c1">// 与 NAS 不同的 bucket / key prefix</span>
+<span class="w">        </span><span class="n">ossClient</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;agentscope-snapshots&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;agentrun/workspaces/&quot;</span><span class="p">));</span>
+</pre></div>
+</div>
+<p>注意:</p>
+<ul class="simple">
+<li><p><strong>快照 bucket 必须与挂载 bucket 隔离</strong>(或至少 key prefix 错开),避免循环引用;</p></li>
+<li><p>adapter 在 <code class="docutils literal notranslate"><span class="pre">stop()</span></code> 时:先 <code class="docutils literal notranslate"><span class="pre">mcp.exec(&quot;sync&quot;,</span> <span class="pre">5)</span></code> 让 NAS 落盘 → 再触发上层 <code class="docutils literal notranslate"><span class="pre">SnapshotSpec</span></code> 的 tar 持久化;</p></li>
+<li><p><strong>next start()</strong> 优先走 NAS(Branch A);若 NAS 卷不可达(Branch B/C),从 OSS Snapshot 恢复。</p></li>
+</ul>
+</section>
+<section id="agentrun-vs-sandboxsnapshotspec">
+<h2>6. AgentRun 原生持久化 vs <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code><a class="headerlink" href="#agentrun-vs-sandboxsnapshotspec" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>维度</p></th>
+<th class="head"><p>AgentRun 原生 NAS/OSS 挂载</p></th>
+<th class="head"><p>harness <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code></p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>定位</strong></p></td>
+<td><p><strong>运行时存储层</strong>(挂载到文件系统的 mount point)</p></td>
+<td><p><strong>可移植归档接口</strong>(打包 tar 到外部 KV/对象存储)</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>延迟</strong></p></td>
+<td><p>接近本地盘(NFS / ossfs FUSE)</p></td>
+<td><p>取决于 spec(OSS/Redis/Local)</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>触发时机</strong></p></td>
+<td><p>每次写文件实时同步</p></td>
+<td><p>仅在 <code class="docutils literal notranslate"><span class="pre">Sandbox#stop()</span></code> 整体打包</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>粒度</strong></p></td>
+<td><p>文件级</p></td>
+<td><p>工作区级 tar</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>跨集群可携带</strong></p></td>
+<td><p>NAS 跨 region 受限;OSS 可跨 region 复制</p></td>
+<td><p>tar 任何 spec 后端都能读取</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>依赖资源</strong></p></td>
+<td><p>NAS 文件系统 / OSS Bucket(同地域、同 VPC 可达)</p></td>
+<td><p>任何 KV/对象存储</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>耦合度</strong></p></td>
+<td><p>与 AgentRun 模板配置强耦合</p></td>
+<td><p>adapter 无关、跨后端可复用</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>三种组合决策树</strong>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>question: 你需要工作区跨「沙箱销毁/重建」恢复吗?
+├── 否(短时任务、CI 场景) → NoopSnapshotSpec, 无 NAS  → §4 退路模式纯运行时
+├── 是 + 单一 region/账号 + 低延迟优先 → §3 NAS-only
+└── 是 + 需要跨 region 备份 / 审计 / 离线分析 → §5 NAS + OSS Snapshot
+</pre></div>
+</div>
+</section>
+<section id="id3">
+<h2>7. 限制清单<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>单实例 ≤ 5 个 OSS 挂载点</strong>(<code class="docutils literal notranslate"><span class="pre">AgentRunSandboxClientOptions.MAX_OSS_MOUNTS</span></code>),超出 adapter 在 <code class="docutils literal notranslate"><span class="pre">validate()</span></code> 阶段抛 <code class="docutils literal notranslate"><span class="pre">SandboxConfigurationException</span></code>;</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">mountDir</span></code> 必须以 <code class="docutils literal notranslate"><span class="pre">/home/</span></code>、<code class="docutils literal notranslate"><span class="pre">/mnt/</span></code> 或 <code class="docutils literal notranslate"><span class="pre">/data/</span></code> 开头</strong>(AgentRun 模板侧约束),否则 <code class="docutils literal notranslate"><span class="pre">validate()</span></code> 失败;</p></li>
+<li><p><strong>OSS Bucket 必须是标准存储,且与沙箱同地域</strong>;归档/低频存储不支持(平台限制,adapter 不主动校验);</p></li>
+<li><p><strong>沙箱实例最小内存 ≥ 512 MiB</strong>(AgentRun 模板侧;adapter 不校验);</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">StopSandbox</span></code> 在 AgentRun 侧是终态</strong>,不可恢复——adapter <strong>不调用</strong> <code class="docutils literal notranslate"><span class="pre">StopSandbox</span></code>,而是通过 <code class="docutils literal notranslate"><span class="pre">DeleteSandbox</span></code> + 同 <code class="docutils literal notranslate"><span class="pre">sandboxId</span></code> 重建模拟 resume 语义;</p></li>
+<li><p><strong>MCP URL 必填</strong>:adapter <strong>不从 <code class="docutils literal notranslate"><span class="pre">GetSandbox</span></code> 响应自动发现</strong> MCP URL,需要从控制台/控制面查到完整 URL 后填入 <code class="docutils literal notranslate"><span class="pre">setMcpServerUrl(...)</span></code>(后续若 AgentRun 暴露 <code class="docutils literal notranslate"><span class="pre">accessEndpoint</span></code>,会升级为自动发现);</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">SandboxIdleTimeoutSeconds</span></code></strong>:超时后实例被回收,任何未 sync 到 NAS 的临时文件丢失;NAS 模式下 adapter 在 <code class="docutils literal notranslate"><span class="pre">stop()</span></code> 显式 <code class="docutils literal notranslate"><span class="pre">sync</span></code>,但建议把关键文件写到 <code class="docutils literal notranslate"><span class="pre">workspaceRoot</span></code> 子目录里。</p></li>
+</ul>
+</section>
+<section id="id4">
+<h2>8. 排错速查<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>现象</p></th>
+<th class="head"><p>可能原因</p></th>
+<th class="head"><p>处理</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AgentRun</span> <span class="pre">API</span> <span class="pre">key</span> <span class="pre">is</span> <span class="pre">required</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">setApiKey</span></code> 未调用或环境变量未注入</p></td>
+<td><p>检查 <code class="docutils literal notranslate"><span class="pre">AGENTRUN_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AgentRun</span> <span class="pre">MCP</span> <span class="pre">server</span> <span class="pre">URL</span> <span class="pre">is</span> <span class="pre">required</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">setMcpServerUrl</span></code> 未配置</p></td>
+<td><p>从 AgentRun 控制台拷贝完整 MCP URL,填入 spec</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ossConfigs[i].mountDir</span> <span class="pre">must</span> <span class="pre">start</span> <span class="pre">with</span> <span class="pre">one</span> <span class="pre">of</span> <span class="pre">[/home/,</span> <span class="pre">/mnt/,</span> <span class="pre">/data/]</span></code></p></td>
+<td><p>OSS/NAS 挂载点路径不合法</p></td>
+<td><p>改为合规前缀</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AgentRun</span> <span class="pre">supports</span> <span class="pre">at</span> <span class="pre">most</span> <span class="pre">5</span> <span class="pre">OSS</span> <span class="pre">mounts</span> <span class="pre">...</span> <span class="pre">got</span> <span class="pre">N</span></code></p></td>
+<td><p>超出单实例 OSS 挂载点上限</p></td>
+<td><p>合并或拆分多个 sandbox</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AgentRun</span> <span class="pre">HTTP</span> <span class="pre">403</span> <span class="pre">...</span></code></p></td>
+<td><p>RAM 角色对 OSS/NAS 权限不足,或 API Key 失效</p></td>
+<td><p>检查 RAM Policy / 重新签发 Key</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AgentRun</span> <span class="pre">HTTP</span> <span class="pre">409</span> <span class="pre">...</span> <span class="pre">/</span> <span class="pre">sandbox</span> <span class="pre">already</span> <span class="pre">exists</span></code></p></td>
+<td><p>同 sandboxId 之前未清理(idle timeout 内仍存活)</p></td>
+<td><p>adapter 会自动复用,如人工误操作请等待 idle 超时或显式 DELETE</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AgentRun</span> <span class="pre">sandbox</span> <span class="pre">did</span> <span class="pre">not</span> <span class="pre">become</span> <span class="pre">READY</span> <span class="pre">in</span> <span class="pre">time</span></code></p></td>
+<td><p>模板冷启动 &gt; 5 min(默认),或资源紧张</p></td>
+<td><p>调大 <code class="docutils literal notranslate"><span class="pre">setReadTimeoutSeconds</span></code>,或换更轻量模板</p></td>
+</tr>
+<tr class="row-odd"><td><p>MCP <code class="docutils literal notranslate"><span class="pre">process_exec_cmd</span></code> 失败</p></td>
+<td><p>模板未激活 MCP 工具</p></td>
+<td><p>通过 <code class="docutils literal notranslate"><span class="pre">ActivateTemplateMCP</span></code> 启用 <code class="docutils literal notranslate"><span class="pre">process_exec_cmd</span></code> / <code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">write_file</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>NAS 挂载点存在但 <code class="docutils literal notranslate"><span class="pre">cat</span> <span class="pre">/mnt/nas/x</span></code> 返回空</p></td>
+<td><p>RAM 权限不全 / 跨 region / 跨 VPC 不可达</p></td>
+<td><p>用阿里云控制台「沙箱诊断」+ <code class="docutils literal notranslate"><span class="pre">GetSandbox</span></code> 排查</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>观察沙箱状态</strong>:adapter 在 <code class="docutils literal notranslate"><span class="pre">start()</span></code> 时调用 <code class="docutils literal notranslate"><span class="pre">GetSandbox</span></code> 轮询,若需要在外部观察,可用同 sandboxId 直接调用:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">GET</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="p">{</span><span class="n">accountId</span><span class="p">}</span><span class="o">.</span><span class="n">agentrun</span><span class="o">-</span><span class="n">data</span><span class="o">.</span><span class="p">{</span><span class="n">region</span><span class="p">}</span><span class="o">.</span><span class="n">aliyuncs</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="mi">2025</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">10</span><span class="o">/</span><span class="n">sandboxes</span><span class="o">/</span><span class="p">{</span><span class="n">sandboxId</span><span class="p">}</span>
+   <span class="n">X</span><span class="o">-</span><span class="n">API</span><span class="o">-</span><span class="n">Key</span><span class="p">:</span> <span class="o">...</span>
+   <span class="n">X</span><span class="o">-</span><span class="n">Acs</span><span class="o">-</span><span class="n">Parent</span><span class="o">-</span><span class="n">Id</span><span class="p">:</span> <span class="p">{</span><span class="n">accountId</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>返回的 <code class="docutils literal notranslate"><span class="pre">status</span></code> 字段包含 <code class="docutils literal notranslate"><span class="pre">READY</span></code> / <code class="docutils literal notranslate"><span class="pre">RUNNING</span></code> / <code class="docutils literal notranslate"><span class="pre">FAILED</span></code> 等。</p>
+</section>
+<section id="id5">
+<h2>9. 延伸阅读<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="index.html"><span class="std std-doc">Sandbox</span></a> — 沙箱总体设计与隔离范围</p></li>
+<li><p><a class="reference internal" href="../filesystem.html"><span class="std std-doc">Filesystem</span></a> — 三种 filesystem 模式与选型</p></li>
+<li><p><a class="reference external" href="https://help.aliyun.com/zh/functioncompute/fc/developer-reference/api-agentrun-2025-09-10-createsandbox">AgentRun 官方文档 — CreateSandbox</a></p></li>
+<li><p><a class="reference external" href="https://help.aliyun.com/zh/functioncompute/fc/sandbox-supports-instance-level-dynamic-mount-of-oss-test-invitation">AgentRun 官方文档 — 实例级 OSS/NAS 动态挂载</a></p></li>
+</ul>
+</section>
 </section>
 
     <script type="text/x-thebe-config">
@@ -643,7 +892,7 @@
         },
         kernelOptions: {
             name: "python3",
-            path: "./zh/harness/example"
+            path: "./zh/harness/sandbox"
         },
         predefinedOutput: true
     }
@@ -654,15 +903,23 @@
       <footer>
         
         <div class="related-pages">
-          
-          <a class="prev-page" href="../sandbox/agentrun.html">
+          <a class="next-page" href="../example/index.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">示例</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="index.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">AgentRun 沙箱后端</div>
+                <div class="title">沙箱（Sandbox）</div>
                 
               </div>
             </a>
@@ -675,7 +932,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-05-18</div>
+              Last updated on 2026-05-26</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -698,8 +955,35 @@
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">AgentRun 沙箱后端</a><ul>
+<li><a class="reference internal" href="#id1">1. 何时选用 AgentRun</a></li>
+<li><a class="reference internal" href="#id2">2. 前置准备（必读）</a></li>
+<li><a class="reference internal" href="#nas-first">3. 最佳实践配置（NAS-first，核心推荐）</a></li>
+<li><a class="reference internal" href="#a-nas-tar">4. 退路方案 A:无 NAS,纯 tar 快照</a></li>
+<li><a class="reference internal" href="#b-nas-oss-snapshot">5. 进阶方案 B:NAS 运行时 + OSS Snapshot 冷备</a></li>
+<li><a class="reference internal" href="#agentrun-vs-sandboxsnapshotspec">6. AgentRun 原生持久化 vs <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code></a></li>
+<li><a class="reference internal" href="#id3">7. 限制清单</a></li>
+<li><a class="reference internal" href="#id4">8. 排错速查</a></li>
+<li><a class="reference internal" href="#id5">9. 延伸阅读</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>

@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-17T03:07:28+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Skills（渐进式披露）" href="skills.html"><link rel="prev" title="自定义工作流（Custom Workflow）" href="workflow.html">
-        <link rel="canonical" href="https://java.agentscope.io/zh/multi-agent/routing.html">
+    <meta property="article:modified_time" content="2026-05-26T06:00:59+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="子 Agent（Subagent）" href="subagent.html"><link rel="prev" title="工具（Tool）" href="tool.html">
+        <link rel="canonical" href="https://java.agentscope.io/zh/harness/skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>Routing（路由） - AgentScope Java</title>
+        <title>技能（Skill） - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
@@ -86,7 +86,7 @@
   <nav
     class="docs-top-tabs"
     aria-label="Documentation sections"
-    data-current-page="zh/multi-agent/routing"
+    data-current-page="zh/harness/skill"
     data-current-lang="zh"
   >
     <div class="docs-top-tabs__list">
@@ -122,13 +122,13 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../harness/overview.html"
+              href="overview.html"
               data-tab-id="harness"
               data-mirror-paths="false"
               data-href-en="en/harness/overview"
               data-href-zh="zh/harness/overview"
               data-url-en="../../en/harness/overview.html"
-              data-url-zh="../harness/overview.html"
+              data-url-zh="overview.html"
               data-prefixes-en="en/harness/"
               data-prefixes-zh="zh/harness/"
               data-sections-en="Harness (English)"
@@ -538,16 +538,16 @@
 <li class="toctree-l1"><a class="reference internal" href="../task/online-training.html">在线训练</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
-<ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="overview.html">概览</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pipeline.html">管道</a></li>
-<li class="toctree-l1"><a class="reference internal" href="workflow.html">自定义工作流</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Routing</a></li>
-<li class="toctree-l1"><a class="reference internal" href="skills.html">Skills</a></li>
-<li class="toctree-l1"><a class="reference internal" href="subagent.html">Subagents</a></li>
-<li class="toctree-l1"><a class="reference internal" href="supervisor.html">Supervisor</a></li>
-<li class="toctree-l1"><a class="reference internal" href="handoffs.html">Handoffs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="multiagent-debate.html">多智能体辩论</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/overview.html">概览</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/workflow.html">自定义工作流</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/multiagent-debate.html">多智能体辩论</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">集成</span></p>
 <ul>
@@ -564,21 +564,21 @@
 <li class="toctree-l1"><a class="reference internal" href="../community/contributors.html">核心贡献者</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Harness</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../harness/overview.html">概览</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/workspace.html">工作区</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/filesystem.html">文件系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/session.html">会话</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/memory.html">记忆</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/tool.html">工具</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/skill.html">技能</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/subagent.html">子 Agent</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/streaming.html">子 Agent 流式</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/quickstart/index.html">快速开始</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/sandbox/index.html">沙箱</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/sandbox/agentrun.html">AgentRun 后端</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/example/index.html">示例</a></li>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">概览</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">架构</a></li>
+<li class="toctree-l1"><a class="reference internal" href="workspace.html">工作区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="filesystem.html">文件系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="session.html">会话</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">记忆</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tool.html">工具</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">技能</a></li>
+<li class="toctree-l1"><a class="reference internal" href="subagent.html">子 Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="streaming.html">子 Agent 流式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart/index.html">快速开始</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sandbox/index.html">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sandbox/agentrun.html">AgentRun 后端</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example/index.html">示例</a></li>
 </ul>
 
 </div>
@@ -598,7 +598,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/multi-agent/routing.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/harness/skill.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -615,217 +615,240 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="routing">
-<h1>Routing（路由）<a class="headerlink" href="#routing" title="Link to this heading">¶</a></h1>
-<p>在 <strong>Router</strong> 模式中，路由步骤对输入进行分类并分发给专职智能体。可以调用零个或多个专家（例如并行），再将结果合成为一个回答。适用于存在多个<strong>垂直领域</strong>的场景——每个领域有独立的知识与对应智能体（如 GitHub、Notion、Slack）。</p>
-<p>在 Routing 模式中，路由器对查询进行分解，专家智能体被调用（单个或并行），最后得到组合答案。</p>
+          <section id="skill">
+<h1>技能（Skill）<a class="headerlink" href="#skill" title="Link to this heading">¶</a></h1>
+<p>一个 skill 就是一份写好的能力包：一个目录里放一份 <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code>（说明用途、给 agent 看的指令），可以再带一些参考文档、脚本或样例。写好后丢给 agent，它会在合适的时候自己用。</p>
+<p>harness 让你从两个地方装 skill：</p>
+<ul class="simple">
+<li><p><strong>接 skill 市场</strong>：Git 仓库、Nacos、MySQL、classpath、或者自己写的后端</p></li>
+<li><p><strong>放在工作区</strong>：项目里 <code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> 下的就所有人共用；放在 <code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code> 下的只有那个用户看得到</p></li>
+</ul>
+<p>两类来源同时生效，不需要二选一。</p>
+<blockquote>
+<div><p>关于 skill 自身的结构、<code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> 写法、资源加载、tool 绑定、代码执行这些通用概念，见 <a class="reference internal" href="../task/agent-skill.html"><span class="std std-doc">Agent Skill</span></a>。本文只讲 harness 这一层的用法。</p>
+</div></blockquote>
+<hr class="docutils" />
 <section id="id1">
-<h2>概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<p>核心特点：</p>
-<ul class="simple">
-<li><p><strong>分类步骤</strong>：路由器（如 LLM 或规则分类器）决定调用哪些专家以及向每个专家发送什么子查询。</p></li>
-<li><p><strong>专家智能体</strong>：每个垂直领域有独立智能体（如 GitHub 专家、Notion 专家、Slack 专家），以 <strong>AgentScopeAgent</strong> 与 AgentScope 工具实现。</p></li>
-<li><p><strong>合成</strong>：将专家返回的原始结果合并为一个连贯答案（例如通过一次最终 LLM 调用）。</p></li>
-</ul>
-<p>当输入类别清晰、需要查询多个来源（可并行）并希望得到单一组合回答时，可使用路由模式。</p>
+<h2>一个例子<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<p>把团队的 skill 仓库接进来，agent 立刻就能用：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">&quot;https://github.com/your-org/team-skills.git&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>没了。后续推理时，agent 看得到这个仓库里的 skill，需要用哪个就调 <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> 加载详情。</p>
 </section>
+<hr class="docutils" />
 <section id="id2">
-<h2>架构<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>查询 → Router（分类）→ [智能体 A] → 合成 → 组合答案
-                ↘ [智能体 B] ↗
-                ↘ [智能体 C] ↗
+<h2>接 skill 市场<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> 是统一入口，传什么后端都可以。</p>
+<section id="git">
+<h3>Git<a class="headerlink" href="#git" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-skill-git-repository<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
-<p>在 AgentScope 示例中提供两种实现方式：<strong>Simple</strong>（单一路由智能体 + 服务层合成）与 <strong>Graph</strong>（StateGraph 包装预处理/路由/后处理）。两种方式均使用 AgentScope 的 <code class="docutils literal notranslate"><span class="pre">DashScopeChatModel</span></code> 和 <strong>AgentScopeAgent</strong> 作为各专家（GitHub、Notion、Slack），并配以桩工具（<code class="docutils literal notranslate"><span class="pre">GitHubStubTools</span></code>、<code class="docutils literal notranslate"><span class="pre">NotionStubTools</span></code>、<code class="docutils literal notranslate"><span class="pre">SlackStubTools</span></code>）。</p>
-<section id="simple-graph">
-<h3>Simple 与 Graph 对比<a class="headerlink" href="#simple-graph" title="Link to this heading">¶</a></h3>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>维度</p></th>
-<th class="head"><p>Simple</p></th>
-<th class="head"><p>Graph</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><strong>入口</strong></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RouterService.run(query)</span></code>，内部直接调用 <code class="docutils literal notranslate"><span class="pre">AgentScopeRoutingAgent.invoke(query)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RoutingGraphService.run(query)</span></code>，内部调用 <code class="docutils literal notranslate"><span class="pre">CompiledGraph.invoke(Map.of(&quot;input&quot;,</span> <span class="pre">query))</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>流程</strong></p></td>
-<td><p>一次 invoke 完成：分类 → 并行专家 → 框架内 merge；再由 RouterService 可选地做一次 LLM 合成</p></td>
-<td><p>图：START → preprocess → <strong>routing（子图）</strong> → postprocess → END；routing 内部仍是分类 → 并行专家 → merge</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>状态</strong></p></td>
-<td><p>由 <code class="docutils literal notranslate"><span class="pre">AgentScopeRoutingAgent</span></code> 内部管理；RouterService 从返回的 <code class="docutils literal notranslate"><span class="pre">OverAllState</span></code> 中解析 <code class="docutils literal notranslate"><span class="pre">xxx_key</span></code>、<code class="docutils literal notranslate"><span class="pre">xxx_input</span></code>、<code class="docutils literal notranslate"><span class="pre">RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY</span></code></p></td>
-<td><p>显式 <code class="docutils literal notranslate"><span class="pre">StateGraph</span></code> 状态键：<code class="docutils literal notranslate"><span class="pre">input</span></code>、<code class="docutils literal notranslate"><span class="pre">query</span></code>、<code class="docutils literal notranslate"><span class="pre">messages</span></code>、<code class="docutils literal notranslate"><span class="pre">preprocess_metadata</span></code>、<code class="docutils literal notranslate"><span class="pre">merged_result</span></code>、<code class="docutils literal notranslate"><span class="pre">final_answer</span></code>、<code class="docutils literal notranslate"><span class="pre">postprocess_metadata</span></code>、各专家 <code class="docutils literal notranslate"><span class="pre">xxx_key</span></code>；每键对应 <code class="docutils literal notranslate"><span class="pre">KeyStrategy</span></code>（Replace/Append）</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>扩展性</strong></p></td>
-<td><p>无图结构，无法在“路由前后”插入自定义节点</p></td>
-<td><p>可在 preprocess / postprocess 插入任意逻辑（校验、埋点、格式化）；可增加节点或条件边</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>返回值</strong></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RouterResult(query,</span> <span class="pre">classifications,</span> <span class="pre">results,</span> <span class="pre">finalAnswer)</span></code>，含分类列表与各专家原始输出</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RoutingGraphResult(query,</span> <span class="pre">state,</span> <span class="pre">finalAnswer)</span></code>，含完整图状态，便于调试或下游使用</p></td>
-</tr>
-</tbody>
-</table>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span><span class="s">&quot;https://github.com/your-org/team-skills.git&quot;</span><span class="p">))</span>
+</pre></div>
 </div>
+<p>默认每次读取都会做轻量化的远端检查，HEAD 变了才 pull。仓库里如果有 <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 子目录会优先读它，否则读根目录。想自己控制同步节奏：<code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">GitSkillRepository(url,</span> <span class="pre">false)</span></code>，然后手动 <code class="docutils literal notranslate"><span class="pre">repo.sync()</span></code>。</p>
 </section>
+<section id="nacos">
+<h3>Nacos<a class="headerlink" href="#nacos" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-nacos-skill<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">market</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;namespace&quot;</span><span class="p">);</span>
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">market</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>适合需要在线下发、变更订阅的场景。<code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code> 实现了 <code class="docutils literal notranslate"><span class="pre">AutoCloseable</span></code>，应用退出时记得关掉以释放订阅。</p>
 </section>
-<hr class="docutils" />
-<section id="simple">
-<h2>实现（Simple 变体）<a class="headerlink" href="#simple" title="Link to this heading">¶</a></h2>
+<section id="mysql">
+<h3>MySQL<a class="headerlink" href="#mysql" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">MysqlSkillRepository</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MysqlSkillRepository</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">dataSource</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">databaseName</span><span class="p">(</span><span class="s">&quot;agentscope&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillsTableName</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">resourcesTableName</span><span class="p">(</span><span class="s">&quot;skill_resources&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">registry</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>平台侧统一管理 skill 时常用。<code class="docutils literal notranslate"><span class="pre">writeable(true)</span></code> 之后可以从 agent 侧写回；只读分发就传 <code class="docutils literal notranslate"><span class="pre">false</span></code>。</p>
+</section>
+<section id="classpath">
+<h3>Classpath<a class="headerlink" href="#classpath" title="Link to this heading">¶</a></h3>
+<p>把 skill 跟 JAR 一起发：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>src/main/resources/skills/
+└── code-reviewer/
+    └── SKILL.md
+</pre></div>
+</div>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ClasspathSkillRepository</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>兼容标准 JAR 和 Spring Boot Fat JAR。</p>
+</section>
 <section id="id3">
-<h3>设计要点<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><strong>单一调用完成路由</strong>：业务只调 <code class="docutils literal notranslate"><span class="pre">RouterService.run(query)</span></code>；内部用 <strong>AgentScopeRoutingAgent</strong> 一次 <code class="docutils literal notranslate"><span class="pre">invoke(query)</span></code> 完成分类、并行专家、框架内 merge。</p></li>
-<li><p><strong>合成可选</strong>：若路由框架已写入 <code class="docutils literal notranslate"><span class="pre">RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY</span></code>，则直接用作最终答案；否则由 <strong>RouterService</strong> 用同一 <code class="docutils literal notranslate"><span class="pre">Model</span></code> 再跑一次 LLM，将各专家结果合成为一条回复。</p></li>
-</ul>
-</section>
-<section id="io-agentscope-examples-routing-simple">
-<h3>代码结构（包 <code class="docutils literal notranslate"><span class="pre">io.agentscope.examples.routing.simple</span></code>）<a class="headerlink" href="#io-agentscope-examples-routing-simple" title="Link to this heading">¶</a></h3>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>类</p></th>
-<th class="head"><p>职责</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><strong>RoutingConfig</strong></p></td>
-<td><p>定义 <code class="docutils literal notranslate"><span class="pre">Model</span></code>、三个专家 <strong>AgentScopeAgent</strong>（github、notion、slack）、<strong>AgentScopeRoutingAgent</strong>（router）、<strong>RouterService</strong></p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>RouterService</strong></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">run(query)</span></code>：调用 router.invoke → 从 state 收集 classifications / 各专家输出 → 取 merged 或调用 <code class="docutils literal notranslate"><span class="pre">synthesize()</span></code> → 返回 <strong>RouterResult</strong></p></td>
-</tr>
-<tr class="row-even"><td><p><strong>Classification</strong></p></td>
-<td><p>记录一次路由决策：<code class="docutils literal notranslate"><span class="pre">source</span></code>（专家名）、<code class="docutils literal notranslate"><span class="pre">query</span></code>（发给该专家的子查询）</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>AgentOutput</strong></p></td>
-<td><p>记录单个专家输出：<code class="docutils literal notranslate"><span class="pre">source</span></code>、<code class="docutils literal notranslate"><span class="pre">result</span></code>（文本）</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>RoutingRunner</strong></p></td>
-<td><p>当 <code class="docutils literal notranslate"><span class="pre">routing.runner.enabled=true</span></code> 时启动执行一次示例查询并打日志</p></td>
-</tr>
-</tbody>
-</table>
+<h3>接多个<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> 可以重复调用：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">communityMarket</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">internalRegistry</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">teamGitRepo</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
 </div>
-</section>
-<section id="bean">
-<h3>Bean 与约定<a class="headerlink" href="#bean" title="Link to this heading">¶</a></h3>
-<ol class="arabic simple">
-<li><p><strong>Model</strong>：一个 <code class="docutils literal notranslate"><span class="pre">Model</span></code> Bean（如 <code class="docutils literal notranslate"><span class="pre">DashScopeChatModel</span></code>），供路由与所有专家共用。</p></li>
-<li><p><strong>专家 AgentScopeAgent</strong>：每个领域一个，例如：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> / <code class="docutils literal notranslate"><span class="pre">description</span></code>：供路由分类时识别；</p></li>
-<li><p><strong>instruction</strong>：模板中含占位符 <code class="docutils literal notranslate"><span class="pre">{agentName_input}</span></code>（如 <code class="docutils literal notranslate"><span class="pre">{github_input}</span></code>），由路由节点在运行时填入子查询；</p></li>
-<li><p><strong>outputKey</strong>：该专家结果写入状态的键，如 <code class="docutils literal notranslate"><span class="pre">github_key</span></code>、<code class="docutils literal notranslate"><span class="pre">notion_key</span></code>、<code class="docutils literal notranslate"><span class="pre">slack_key</span></code>；</p></li>
-<li><p><strong>Toolkit</strong>：注册该领域的桩工具（如 <code class="docutils literal notranslate"><span class="pre">GitHubStubTools</span></code> 的 <code class="docutils literal notranslate"><span class="pre">search_code</span></code>、<code class="docutils literal notranslate"><span class="pre">search_issues</span></code>）。</p></li>
-</ul>
-</li>
-<li><p><strong>AgentScopeRoutingAgent</strong>：<code class="docutils literal notranslate"><span class="pre">AgentScopeRoutingAgent.builder().model(...).subAgents(List.of(githubAgent,</span> <span class="pre">notionAgent,</span> <span class="pre">slackAgent)).build()</span></code>；内部实现分类 + 并行调用专家 + 将结果写入各 <code class="docutils literal notranslate"><span class="pre">outputKey</span></code> 及 merge 键。</p></li>
-<li><p><strong>RouterService</strong>：持有 <code class="docutils literal notranslate"><span class="pre">Model</span></code> 与 <code class="docutils literal notranslate"><span class="pre">AgentScopeRoutingAgent</span></code>；<code class="docutils literal notranslate"><span class="pre">run(query)</span></code> 后若需要合成，则用 <code class="docutils literal notranslate"><span class="pre">Model</span></code> 将各专家结果格式化为一段 prompt 再调用一次 chat，得到 <code class="docutils literal notranslate"><span class="pre">finalAnswer</span></code>。</p></li>
-</ol>
-</section>
-<section id="routerservice-run">
-<h3>RouterService.run 逻辑（简要）<a class="headerlink" href="#routerservice-run" title="Link to this heading">¶</a></h3>
-<ol class="arabic simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">routerAgent.invoke(query)</span></code> → 得到 <code class="docutils literal notranslate"><span class="pre">OverAllState</span></code>。</p></li>
-<li><p>遍历 <code class="docutils literal notranslate"><span class="pre">github_key</span></code>、<code class="docutils literal notranslate"><span class="pre">notion_key</span></code>、<code class="docutils literal notranslate"><span class="pre">slack_key</span></code>：若 state 中有该 key，则从 state 取 <code class="docutils literal notranslate"><span class="pre">agentName_input</span></code> 与专家输出，构造 <code class="docutils literal notranslate"><span class="pre">Classification</span></code> 与 <code class="docutils literal notranslate"><span class="pre">AgentOutput</span></code> 列表。</p></li>
-<li><p>若 state 中存在 <code class="docutils literal notranslate"><span class="pre">RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY</span></code>，则将其内容作为 <code class="docutils literal notranslate"><span class="pre">finalAnswer</span></code>；否则调用 <code class="docutils literal notranslate"><span class="pre">synthesize(query,</span> <span class="pre">results)</span></code>（同一 Model，系统提示为“合并多源结果回答原问题”），返回值作为 <code class="docutils literal notranslate"><span class="pre">finalAnswer</span></code>。</p></li>
-<li><p>返回 <code class="docutils literal notranslate"><span class="pre">RouterResult(query,</span> <span class="pre">classifications,</span> <span class="pre">results,</span> <span class="pre">finalAnswer)</span></code>。</p></li>
-</ol>
+<p>或者一次性传一组：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">skillRepositories</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">communityMarket</span><span class="p">,</span><span class="w"> </span><span class="n">internalRegistry</span><span class="p">,</span><span class="w"> </span><span class="n">teamGitRepo</span><span class="p">))</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p>注意 <code class="docutils literal notranslate"><span class="pre">skillRepositories(list)</span></code> 会把之前用 <code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> 加的全部清掉，再用传入的列表替换。</p>
+</div></blockquote>
 </section>
 </section>
 <hr class="docutils" />
-<section id="graph">
-<h2>实现（Graph 变体）<a class="headerlink" href="#graph" title="Link to this heading">¶</a></h2>
 <section id="id4">
-<h3>设计要点<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><strong>路由作为子图嵌入</strong>：整体是 <strong>StateGraph</strong>，其中「路由」不是单个 Bean 调用，而是 <strong>AgentScopeRoutingAgent.getAndCompileGraph()</strong> 返回的已编译子图作为一节节点；子图内部仍是分类 → 并行专家 → merge。</p></li>
-<li><p><strong>显式预处理与后处理</strong>：在路由节点前后增加 <strong>PreprocessNode</strong> 与 <strong>PostprocessNode</strong>，用于校验、规范化、埋点、格式化等，状态在整图上流转，便于扩展和观测。</p></li>
-</ul>
+<h2>把 skill 放到工作区<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<p>工作区里的 skill 不用任何注册，把目录放好就生效。</p>
+<section id="id5">
+<h3>大家共用<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>workspace/skills/
+└── code-reviewer/
+    ├── SKILL.md
+    ├── references/
+    │   └── style-guide.md
+    └── scripts/
+        └── run-checks.sh
+</pre></div>
+</div>
+<p>这个 agent 接到的任何请求都能看到 <code class="docutils literal notranslate"><span class="pre">code-reviewer</span></code>。适合放项目特有的规范、内部约定这类东西。</p>
 </section>
-<section id="io-agentscope-examples-routing-graph">
-<h3>代码结构（包 <code class="docutils literal notranslate"><span class="pre">io.agentscope.examples.routing.graph</span></code>）<a class="headerlink" href="#io-agentscope-examples-routing-graph" title="Link to this heading">¶</a></h3>
+<section id="id6">
+<h3>单个用户用<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<p>如果想给某个用户单独装一个 skill，或者给他覆盖一个共用版本，放在以他 userId 命名的子目录下：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>workspace/
+├── skills/code-reviewer/SKILL.md   ← 共用版
+└── alice/
+    └── skills/
+        └── code-reviewer/
+            └── SKILL.md            ← 只对 alice 生效，且覆盖共用版
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Alice 调用时：拿到自己的覆盖版</p></li>
+<li><p>Bob 调用时：还是用共用版，看不到 Alice 那份</p></li>
+<li><p>Alice 在自己目录下放了一个 <code class="docutils literal notranslate"><span class="pre">notes-taker</span></code>：只有她能用</p></li>
+</ul>
+<blockquote>
+<div><p>这一层的目录前缀是 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> 决定的，所以前提是调用方把 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 传进了 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>。具体怎么按用户切目录见 <a class="reference internal" href="filesystem.html#namespacefactory-与多租户"><span class="std std-ref">文件系统 · NamespaceFactory</span></a>。</p>
+</div></blockquote>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id7">
+<h2>同名 skill 谁说了算<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<p>四个来源都可能给出同名 skill。优先级从低到高：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>类</p></th>
-<th class="head"><p>职责</p></th>
+<tr class="row-odd"><th class="head"><p>优先级</p></th>
+<th class="head"><p>来源</p></th>
+<th class="head"><p>怎么配</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><strong>RoutingGraphConfig</strong></p></td>
-<td><p>定义三个专家 <strong>AgentScopeAgent</strong>、<strong>AgentScopeRoutingAgent</strong>；构建 <strong>StateGraph</strong>（preprocess → routing → postprocess），定义各状态键的 <strong>KeyStrategy</strong>；暴露 <strong>CompiledGraph</strong> 与 <strong>RoutingGraphService</strong></p></td>
+<tr class="row-even"><td><p>1（最低）</p></td>
+<td><p>项目全局目录</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">projectGlobalSkillsDir(Path)</span></code>，比如 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/skills/</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>PreprocessNode</strong></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">NodeAction</span></code>：从 state 取 <code class="docutils literal notranslate"><span class="pre">input</span></code>/<code class="docutils literal notranslate"><span class="pre">query</span></code> → 校验非空、长度 ≥3 → 规范化（trim、截断 2000 字）→ 写入 <code class="docutils literal notranslate"><span class="pre">input</span></code>、<code class="docutils literal notranslate"><span class="pre">messages</span></code>、<code class="docutils literal notranslate"><span class="pre">preprocess_metadata</span></code>（含 traceId、timestamp）</p></td>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>市场</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code>，后注册的覆盖先注册的</p></td>
 </tr>
-<tr class="row-even"><td><p><strong>PostprocessNode</strong></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">NodeAction</span></code>：从 state 取 <code class="docutils literal notranslate"><span class="pre">RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY</span></code> 与 <code class="docutils literal notranslate"><span class="pre">preprocess_metadata</span></code> → 格式化为带 traceId/时间戳的 <code class="docutils literal notranslate"><span class="pre">final_answer</span></code> → 写入 <code class="docutils literal notranslate"><span class="pre">postprocess_metadata</span></code></p></td>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>工作区共用</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>RoutingGraphService</strong></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">run(query)</span></code>：<code class="docutils literal notranslate"><span class="pre">invoke(Map.of(&quot;input&quot;,</span> <span class="pre">query))</span></code> → 从 state 取 <code class="docutils literal notranslate"><span class="pre">final_answer</span></code>（若无则取 <code class="docutils literal notranslate"><span class="pre">merged_result</span></code>）→ 返回 <strong>RoutingGraphResult(query, state, finalAnswer)</strong></p></td>
-</tr>
-<tr class="row-even"><td><p><strong>RoutingGraphRunner</strong></p></td>
-<td><p>当 <code class="docutils literal notranslate"><span class="pre">routing-graph.runner.enabled=true</span></code> 时执行一次示例查询并打日志</p></td>
+<tr class="row-odd"><td><p>4（最高）</p></td>
+<td><p>用户隔离</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-</section>
-<section id="id5">
-<h3>图与状态键<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><strong>StateGraph</strong>：<code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">StateGraph(&quot;routing_graph&quot;,</span> <span class="pre">keyFactory)</span></code>，边为 <code class="docutils literal notranslate"><span class="pre">START</span> <span class="pre">→</span> <span class="pre">preprocess</span> <span class="pre">→</span> <span class="pre">routing</span> <span class="pre">→</span> <span class="pre">postprocess</span> <span class="pre">→</span> <span class="pre">END</span></code>。</p></li>
-<li><p><strong>keyFactory</strong>：为 <code class="docutils literal notranslate"><span class="pre">input</span></code>、<code class="docutils literal notranslate"><span class="pre">query</span></code>、<code class="docutils literal notranslate"><span class="pre">messages</span></code>、<code class="docutils literal notranslate"><span class="pre">preprocess_metadata</span></code>、<code class="docutils literal notranslate"><span class="pre">merged_result</span></code>、<code class="docutils literal notranslate"><span class="pre">final_answer</span></code>、<code class="docutils literal notranslate"><span class="pre">postprocess_metadata</span></code> 以及 <code class="docutils literal notranslate"><span class="pre">github_key</span></code>、<code class="docutils literal notranslate"><span class="pre">notion_key</span></code>、<code class="docutils literal notranslate"><span class="pre">slack_key</span></code> 等配置策略（多为 <code class="docutils literal notranslate"><span class="pre">ReplaceStrategy</span></code>，<code class="docutils literal notranslate"><span class="pre">messages</span></code> 为 <code class="docutils literal notranslate"><span class="pre">AppendStrategy(false)</span></code>）。</p></li>
-<li><p><strong>preprocess 节点</strong>：<code class="docutils literal notranslate"><span class="pre">node_async(new</span> <span class="pre">PreprocessNode())</span></code>，纯函数节点，无 LLM；输出供 routing 子图消费。</p></li>
-<li><p><strong>routing 节点</strong>：<code class="docutils literal notranslate"><span class="pre">routerAgent.getAndCompileGraph()</span></code>，即把「分类 + 并行专家 + merge」整段逻辑作为子图挂到主图的一节，子图输出写入 <code class="docutils literal notranslate"><span class="pre">merged_result</span></code>（及各 <code class="docutils literal notranslate"><span class="pre">xxx_key</span></code>）。</p></li>
-<li><p><strong>postprocess 节点</strong>：<code class="docutils literal notranslate"><span class="pre">node_async(new</span> <span class="pre">PostprocessNode())</span></code>，读取 merge 结果与预处理元数据，写出 <code class="docutils literal notranslate"><span class="pre">final_answer</span></code> 与 <code class="docutils literal notranslate"><span class="pre">postprocess_metadata</span></code>。</p></li>
-</ul>
-</section>
-<section id="preprocessnode-postprocessnode-simple">
-<h3>PreprocessNode / PostprocessNode 与 Simple 的区别<a class="headerlink" href="#preprocessnode-postprocessnode-simple" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><strong>Simple</strong>：无独立预处理；若需要“再合成”，仅在 <strong>RouterService</strong> 内用 Model 做一次调用，无统一的状态键或 trace 元数据。</p></li>
-<li><p><strong>Graph</strong>：预处理集中做校验与规范化，并写入 <code class="docutils literal notranslate"><span class="pre">preprocess_metadata</span></code>（如 traceId）；后处理集中做最终格式与日志，并写入 <code class="docutils literal notranslate"><span class="pre">postprocess_metadata</span></code>；整条链路状态一致，便于扩展（如加条件分支、额外节点）。</p></li>
-</ul>
-</section>
+<p>下层独有的 skill 仍然保留，只在重名时被上层覆盖。</p>
+<p>举例：团队 Git 上有一份通用 <code class="docutils literal notranslate"><span class="pre">code-reviewer</span></code>，项目里 <code class="docutils literal notranslate"><span class="pre">workspace/skills/code-reviewer/</span></code> 写了项目专属版本，那 agent 看到的就是项目版；Alice 又在自己目录下覆盖了一份，那 Alice 调用时拿到的是她自己的版本，其他用户还是项目版。</p>
 </section>
 <hr class="docutils" />
-<section id="id6">
-<h2>示例项目<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
-<p><strong>路径</strong>：<code class="docutils literal notranslate"><span class="pre">agentscope-examples/multiagent-patterns/routing/</span></code></p>
+<section id="builder-api">
+<h2>Builder API<a class="headerlink" href="#builder-api" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>方法</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">skillRepository(repo)</span></code></p></td>
+<td><p>追加一个市场。可重复调用；传 <code class="docutils literal notranslate"><span class="pre">null</span></code> 忽略</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">skillRepositories(list)</span></code></p></td>
+<td><p>一次性替换所有市场（会清掉之前 <code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> 加的）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">projectGlobalSkillsDir(path)</span></code></p></td>
+<td><p>启用项目全局目录。目录不存在则跳过</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">disableDynamicSkills()</span></code></p></td>
+<td><p>关掉「每次调用前重新合并」的行为，改成 build 时合并一次，运行期不再变化</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>子 agent 会自动继承父 agent 的市场列表和项目全局目录，不用再配一遍。</p>
+<p>什么时候用 <code class="docutils literal notranslate"><span class="pre">disableDynamicSkills()</span></code>：</p>
 <ul class="simple">
-<li><p><strong>Simple</strong>：入口为 <code class="docutils literal notranslate"><span class="pre">RouterService.run(query)</span></code>；流程为分类 → 并行专家 →（框架 merge）→ 可选 RouterService 合成。设置 <code class="docutils literal notranslate"><span class="pre">routing.runner.enabled=true</span></code> 可在启动时运行 Simple 演示（见 <strong>RoutingRunner</strong>）。</p></li>
-<li><p><strong>Graph</strong>：入口为 <code class="docutils literal notranslate"><span class="pre">RoutingGraphService.run(query)</span></code>；流程为预处理 → 路由子图 → 后处理。设置 <code class="docutils literal notranslate"><span class="pre">routing-graph.runner.enabled=true</span></code> 可在启动时运行 Graph 演示（见 <strong>RoutingGraphRunner</strong>）。</p></li>
+<li><p>单次任务、跑完就退出，不需要 skill 在运行中热更新</p></li>
+<li><p>接的市场后端比较慢，不想每轮推理都拉一次</p></li>
 </ul>
-<p><strong>构建与运行</strong>（在仓库根目录）：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/routing<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
-./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/routing<span class="w"> </span>spring-boot:run
-</pre></div>
-</div>
-<p><strong>仅运行 Simple 演示</strong>：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/routing<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">&quot;--routing.runner.enabled=true&quot;</span>
-</pre></div>
-</div>
-<p><strong>仅运行 Graph 演示</strong>：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/routing<span class="w"> </span>spring-boot:run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Dspring-boot.run.arguments<span class="o">=</span><span class="s2">&quot;--routing-graph.runner.enabled=true&quot;</span>
-</pre></div>
-</div>
-<p><strong>配置</strong>：需设置 <code class="docutils literal notranslate"><span class="pre">AI_DASHSCOPE_API_KEY</span></code>（或 <code class="docutils literal notranslate"><span class="pre">spring.ai.dashscope.api-key</span></code>）供 DashScope 模型与专家调用。</p>
+<p>平时不用动这个开关。</p>
 </section>
-<section id="id7">
-<h2>相关文档<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<hr class="docutils" />
+<section id="id8">
+<h2>一些建议<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<p><strong><code class="docutils literal notranslate"><span class="pre">description</span></code> 决定 agent 会不会用这个 skill。</strong> agent 一开始只看得到每个 skill 的 name 和 description，看到觉得相关才会 load 详情。写「这是一个数据分析工具」远不如写「当用户要算统计、出报表、做趋势图时使用」有效。</p>
+<p><strong><code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> 保持精简。</strong> 控制在 2k tokens 上下，详细参考资料放 <code class="docutils literal notranslate"><span class="pre">references/</span></code>，脚本放 <code class="docutils literal notranslate"><span class="pre">scripts/</span></code>。agent 需要时会自己读。</p>
+<p><strong>通用能力放市场，项目特有的写工作区。</strong> 代码评审、表格分析这种放团队 Git 上集中维护；公司内部 RPC 规范、本项目的命名约定写到 <code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> 里跟着代码走。</p>
+<p><strong>用户目录用来「覆盖+补充」，不要拿来当主存放。</strong> 关键能力请放在所有用户都能看到的层。</p>
+<p><strong>多市场同名时</strong>约定一个前缀（<code class="docutils literal notranslate"><span class="pre">acme/code-review</span></code> vs <code class="docutils literal notranslate"><span class="pre">community/code-review</span></code>），避免不知道谁覆盖了谁。</p>
+</section>
+<hr class="docutils" />
+<section id="id9">
+<h2>相关文档<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="pipeline.html"><span class="std std-doc">Pipeline</span></a> - 顺序与并行智能体组合</p></li>
-<li><p><a class="reference internal" href="../task/msghub.html"><span class="std std-doc">MsgHub</span></a> - 多智能体消息广播</p></li>
-<li><p><a class="reference internal" href="../task/agent-as-tool.html"><span class="std std-doc">Agent as Tool</span></a> - 将智能体注册为工具</p></li>
+<li><p><a class="reference internal" href="../task/agent-skill.html"><span class="std std-doc">Agent Skill</span></a> — <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> 字段、资源结构、tool 绑定、代码执行</p></li>
+<li><p><a class="reference internal" href="workspace.html"><span class="std std-doc">工作区</span></a> — 工作区目录的整体布局</p></li>
+<li><p><a class="reference internal" href="filesystem.html"><span class="std std-doc">文件系统</span></a> — 多租户与按用户隔离怎么配</p></li>
+<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">工具</span></a> — <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> 等内置工具</p></li>
 </ul>
 </section>
 </section>
@@ -843,7 +866,7 @@
         },
         kernelOptions: {
             name: "python3",
-            path: "./zh/multi-agent"
+            path: "./zh/harness"
         },
         predefinedOutput: true
     }
@@ -854,23 +877,23 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="skills.html">
+          <a class="next-page" href="subagent.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Skills（渐进式披露）</div>
+                <div class="title">子 Agent（Subagent）</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="workflow.html">
+          <a class="prev-page" href="tool.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">自定义工作流（Custom Workflow）</div>
+                <div class="title">工具（Tool）</div>
                 
               </div>
             </a>
@@ -883,7 +906,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-17</div>
+              Last updated on 2026-05-26</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -918,28 +941,25 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">Routing（路由）</a><ul>
-<li><a class="reference internal" href="#id1">概述</a></li>
-<li><a class="reference internal" href="#id2">架构</a><ul>
-<li><a class="reference internal" href="#simple-graph">Simple 与 Graph 对比</a></li>
+<li><a class="reference internal" href="#">技能（Skill）</a><ul>
+<li><a class="reference internal" href="#id1">一个例子</a></li>
+<li><a class="reference internal" href="#id2">接 skill 市场</a><ul>
+<li><a class="reference internal" href="#git">Git</a></li>
+<li><a class="reference internal" href="#nacos">Nacos</a></li>
+<li><a class="reference internal" href="#mysql">MySQL</a></li>
+<li><a class="reference internal" href="#classpath">Classpath</a></li>
+<li><a class="reference internal" href="#id3">接多个</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#simple">实现（Simple 变体）</a><ul>
-<li><a class="reference internal" href="#id3">设计要点</a></li>
-<li><a class="reference internal" href="#io-agentscope-examples-routing-simple">代码结构（包 <code class="docutils literal notranslate"><span class="pre">io.agentscope.examples.routing.simple</span></code>）</a></li>
-<li><a class="reference internal" href="#bean">Bean 与约定</a></li>
-<li><a class="reference internal" href="#routerservice-run">RouterService.run 逻辑（简要）</a></li>
+<li><a class="reference internal" href="#id4">把 skill 放到工作区</a><ul>
+<li><a class="reference internal" href="#id5">大家共用</a></li>
+<li><a class="reference internal" href="#id6">单个用户用</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#graph">实现（Graph 变体）</a><ul>
-<li><a class="reference internal" href="#id4">设计要点</a></li>
-<li><a class="reference internal" href="#io-agentscope-examples-routing-graph">代码结构（包 <code class="docutils literal notranslate"><span class="pre">io.agentscope.examples.routing.graph</span></code>）</a></li>
-<li><a class="reference internal" href="#id5">图与状态键</a></li>
-<li><a class="reference internal" href="#preprocessnode-postprocessnode-simple">PreprocessNode / PostprocessNode 与 Simple 的区别</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#id6">示例项目</a></li>
-<li><a class="reference internal" href="#id7">相关文档</a></li>
+<li><a class="reference internal" href="#id7">同名 skill 谁说了算</a></li>
+<li><a class="reference internal" href="#builder-api">Builder API</a></li>
+<li><a class="reference internal" href="#id8">一些建议</a></li>
+<li><a class="reference internal" href="#id9">相关文档</a></li>
 </ul>
 </li>
 </ul>
