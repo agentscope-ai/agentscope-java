@@ -1,6 +1,82 @@
 # AgentScope Builder
 
-AgentScope Builder is a multi-tenant web application for building, configuring, and running LLM agents. It provides a REST API and chat UI for managing agents, workspaces, skills, and subagents.
+> 🇨🇳 中文版：[README_zh.md](README_zh.md)
+
+## Overview
+
+Builder is the multi-tenant cousin of [claw](../agentscope-claw/) — the same
+self-evolving agent, but wrapped into a hosted platform that a whole team or
+company can share. People log in through a browser, build their own agents
+without writing code, and each gets their own workspace to evolve them in.
+When someone has built something good, they can share it — privately with a
+teammate, with a group, or with everyone in the org.
+
+A few things this means in practice:
+
+- Building an agent is a few clicks in a UI, not a Maven build. Pick the
+  skills, sub-agents, tools and MCP servers you want; save; you have an agent.
+- One person's tweaks to a skill never leak into anyone else's workspace.
+  Each `(user, agent)` pair has its own slice — the same starting agent
+  grows up differently in different hands.
+- Sharing comes with tiers: run-only, edit, or fork. An owner can let
+  others use an agent without letting them rewrite it.
+- The runtime underneath is the same self-evolving agent claw uses; Builder
+  just adds the auth, the tenancy, and the operations console around it.
+
+If it's just for you, use claw. When the same idea needs to scale to a team
+or a company, that's Builder.
+
+### At a glance
+
+| | Builder |
+|---|---|
+| **Use it when** | A whole team or organisation needs to build and run self-evolving agents |
+| **Users** | Many — every authenticated user has their own workspace |
+| **Isolation** | Per-`(userId, agentId)` workspace namespaces; optional Docker sandbox per user |
+| **Self-evolution** | ✅ Same as claw — but inside each user's own workspace |
+| **Sharing** | ✅ With specific users, groups, or globally — and with run / edit / fork tiers |
+| **Distribution** | ✅ Horizontally scalable once the remote filesystem and a distributed session backend are configured |
+| **Filesystem** | `CompositeFilesystem` — composes per-user namespaced storage with optional sandbox / remote backends |
+
+### Architecture
+
+Builder runs every agent through a **HarnessAgent on a `CompositeFilesystem`**.
+The composite splits each agent's filesystem into namespaced layers, so the
+same `WorkspaceManager` API serves a tenant locally, in a Docker sandbox, or
+against a distributed `BaseStore` — all driven by the `builder.workspace-store.fs-spec`
+switch.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  AgentScope Builder (Spring Boot, port 8080)                        │
+│                                                                     │
+│   React SPA ──▶  REST API (JWT)                                     │
+│                  │                                                  │
+│                  ▼                                                  │
+│   ┌──────────────────────────────────────────────────────────────┐  │
+│   │  HarnessGateway                                              │  │
+│   │   ├─ Agent (alice, agent-A) ──┐                              │  │
+│   │   ├─ Agent (alice, agent-B)   │  HarnessAgent per (user,id)  │  │
+│   │   └─ Agent (bob,   agent-A) ──┘                              │  │
+│   └──────────────────────────────────┬───────────────────────────┘  │
+│                                      ▼                              │
+│   ┌──────────────────────────────────────────────────────────────┐  │
+│   │  CompositeFilesystem  (per-(userId, agentId) namespace)      │  │
+│   │   ┌──────────────┬──────────────┬─────────────────────────┐  │  │
+│   │   │  local       │  sandbox     │  remote                 │  │  │
+│   │   │  (default)   │  (Docker)    │  (BaseStore: Redis/OSS) │  │  │
+│   │   └──────────────┴──────────────┴─────────────────────────┘  │  │
+│   └──────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│   User & agent records  (H2 by default; switch to MySQL/PG for prod)│
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+The three `fs-spec` modes (`local` / `sandbox` / `remote`) all reuse the
+**same** `CompositeFilesystem` shape — only the underlying storage engine
+changes. See **[Filesystem Modes](#filesystem-modes)** below for picking one.
+
+---
 
 ## Quick Start
 
@@ -138,83 +214,9 @@ Both agent runtime and workspace management use a distributed `BaseStore` backen
 
 ---
 
-## Persistence (users & agent metadata)
+## Persistence
 
-Builder persists two kinds of records via Spring Data JPA: **user accounts** (id, username, password hash, roles) and **agent definitions** (id, owner, workspace path, system prompt, tool / skill allow-lists, share grants, ...). The default backend is an embedded H2 database; production deployments switch to MySQL / PostgreSQL via the bundled `jdbc` Spring profile.
-
-> The database file is **intentionally not stored under `builder.workspace`** so workspace volumes and Docker / sandbox mounts never accidentally pull in catalog tables. The two locations are unrelated.
-
-### Default: embedded H2
-
-```yaml
-spring:
-  datasource:
-    url: ${BUILDER_DB_URL:jdbc:h2:file:${BUILDER_DB_PATH:${user.home}/.agentscope-builder/db};AUTO_SERVER=TRUE;MODE=MYSQL;DB_CLOSE_DELAY=-1}
-    driver-class-name: ${BUILDER_DB_DRIVER:org.h2.Driver}
-    username: ${BUILDER_DB_USER:sa}
-    password: ${BUILDER_DB_PASSWORD:}
-  jpa:
-    hibernate:
-      ddl-auto: ${BUILDER_JPA_DDL_AUTO:update}
-```
-
-On first start, Hibernate creates the schema and `JpaUserStore` seeds a default `admin/admin` user. The DB lives at `${user.home}/.agentscope-builder/db.mv.db` unless `BUILDER_DB_PATH` (the bare file prefix, no `.mv.db`) or `BUILDER_DB_URL` overrides it.
-
-`AUTO_SERVER=TRUE` lets external tools (H2 Console, DBeaver) connect to the running DB; drop the flag if that exposure is unwanted.
-
-#### Bundled demo accounts (H2 only)
-
-For the local quick-start path, [`src/main/resources/data-h2.sql`](src/main/resources/data-h2.sql) seeds two additional regular-user accounts so you can poke at the UI without first calling the admin API:
-
-| Username | Password | Role |
-|---|---|---|
-| `admin` | `admin` | `user, admin` (seeded by `JpaUserStore`) |
-| `bob` | `bob` | `user` |
-| `alice` | `alice` | `user` |
-
-The seed script is gated to H2 (`spring.sql.init.platform=h2` + `spring.sql.init.mode=embedded`) and is **always disabled** under the `jdbc` Spring profile, so MySQL / PostgreSQL deployments never pick up the demo accounts. Statements use `MERGE INTO ... KEY (user_id)` so re-running the script across restarts is idempotent. Set `BUILDER_SQL_INIT_MODE=never` to disable the H2 seed even in dev.
-
-**When to use:** Single-node deployments, local development, demos.
-
-### Switching to MySQL / PostgreSQL
-
-Activate the bundled `jdbc` Spring profile and override the DataSource:
-
-```bash
-export SPRING_PROFILES_ACTIVE=jdbc
-
-# MySQL example (profile defaults already point at MySQL on localhost; override per env)
-export BUILDER_DB_URL="jdbc:mysql://db:3306/agentscope_builder?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC"
-export BUILDER_DB_USER=agentscope
-export BUILDER_DB_PASSWORD=agentscope
-export BUILDER_DB_DRIVER=com.mysql.cj.jdbc.Driver
-
-# PostgreSQL example
-# export BUILDER_DB_URL="jdbc:postgresql://db:5432/agentscope_builder"
-# export BUILDER_DB_DRIVER=org.postgresql.Driver
-
-export BUILDER_JPA_DDL_AUTO=update   # use 'validate' once schema is managed by Flyway/Liquibase
-
-java -jar agentscope-builder-*.jar
-```
-
-You can also stay on the default (no-profile) configuration and just set `BUILDER_DB_*` env vars directly; the profile mainly exists so a bare `SPRING_PROFILES_ACTIVE=jdbc` is a sensible MySQL default.
-
-The MySQL (`com.mysql:mysql-connector-j`) and PostgreSQL (`org.postgresql:postgresql`) JDBC drivers are bundled at runtime scope; Hibernate auto-detects the dialect from the JDBC URL.
-
-### Schema overview
-
-(Managed by Hibernate when `ddl-auto` is `update`; pin the schema with Flyway / Liquibase in production and switch to `BUILDER_JPA_DDL_AUTO=validate`.)
-
-| Table | Key columns | Notes |
-|---|---|---|
-| `builder_user` | `user_id` (PK), `username` (unique, case-insensitive), `password_hash`, `roles_csv`, `created_at` | Default `admin/admin` is seeded on first boot if empty. |
-| `builder_agent` | `row_id` (PK, identity), `owner_id` (soft FK → `builder_user.user_id`, indexed), `agent_id`, `workspace_path`, agent metadata, ... | `(owner_id, agent_id)` uniquely identifies an agent definition. `workspace_path` stores the user-supplied agent workspace path verbatim so external tools can join SQL rows to on-disk workspaces. |
-| `builder_agent_share` | `id` (PK), `agent_row_id` (hard FK → `builder_agent.row_id`, ON DELETE CASCADE via JPA orphan-removal), `grantee_type`, `grantee_id`, `tier`, `created_at`, `created_by` | One row per share grant. Deleting the agent removes all grants. |
-
-> List-shaped agent settings (tools allow / deny, skills allow / deny, group-chat mention patterns) are stored as JSON strings in single columns — schema stays portable across H2 / MySQL / PostgreSQL.
-
-> `owner_id` is a *soft* foreign key on purpose: deleting a user is an application-level flow (`AdminUserController#delete`) that first revokes shares and removes the user's agents. Add a hard `FOREIGN KEY ... ON DELETE CASCADE` via your migration tool when desired.
+Builder ships with embedded H2 for instant local quick-start — users, agent definitions and share grants are persisted automatically; default `admin/admin`, `bob/bob` and `alice/alice` accounts are seeded so you can log in immediately. For production, switch to MySQL or PostgreSQL by activating the bundled `jdbc` Spring profile and overriding the JDBC URL / credentials (`BUILDER_DB_URL`, `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD`); both drivers are already on the classpath.
 
 ---
 
@@ -259,12 +261,5 @@ Per-agent sandbox config (`sandbox.mode` / `sandbox.scope`) is metadata stored w
 | `BUILDER_SANDBOX_IMAGE` | `builder.sandbox.image` | `agentscope/python-sandbox:py311-slim` | Sandbox Docker image |
 | `BUILDER_SANDBOX_ISOLATION` | `builder.sandbox.isolation` | `USER` | Sandbox isolation scope |
 | `BUILDER_AGENT_NAME` | `builder.agent.name` | `builder-agent` | Default agent name |
-| `SPRING_PROFILES_ACTIVE` | `spring.profiles.active` | (none) | Set to `jdbc` to switch DataSource defaults from H2 to MySQL |
-| `BUILDER_DB_URL` | `spring.datasource.url` | `jdbc:h2:file:${BUILDER_DB_PATH:...}` (no profile) / MySQL localhost (`jdbc` profile) | Full JDBC URL override |
-| `BUILDER_DB_PATH` | (substituted into `spring.datasource.url`) | `${user.home}/.agentscope-builder/db` | Bare H2 file path prefix (no `.mv.db`); only used when `BUILDER_DB_URL` is left at its default |
-| `BUILDER_DB_USER` | `spring.datasource.username` | `sa` (H2) / `agentscope` (jdbc profile) | Database username |
-| `BUILDER_DB_PASSWORD` | `spring.datasource.password` | (empty / `agentscope`) | Database password |
-| `BUILDER_DB_DRIVER` | `spring.datasource.driver-class-name` | `org.h2.Driver` / `com.mysql.cj.jdbc.Driver` | JDBC driver class (`org.postgresql.Driver` for PostgreSQL) |
-| `BUILDER_JPA_DDL_AUTO` | `spring.jpa.hibernate.ddl-auto` | `update` | Hibernate schema mode; use `validate` once Flyway / Liquibase manages the schema |
-| `BUILDER_SQL_INIT_MODE` | `spring.sql.init.mode` | `always` | `always` runs `data-h2.sql` on every startup (idempotent MERGE); `never` disables the seed. Spring Boot 4 only treats `jdbc:h2:mem:` as `embedded`, so we don't use that mode by default |
-| `BUILDER_SQL_INIT_PLATFORM` | `spring.sql.init.platform` | `h2` | Picks `data-${platform}.sql`. Leave on `h2` for local; the `jdbc` profile is unaffected because it forces `mode=never` |
+| `SPRING_PROFILES_ACTIVE` | `spring.profiles.active` | (none) | Set to `jdbc` to switch the database from H2 to MySQL / PostgreSQL |
+| `BUILDER_DB_URL` / `BUILDER_DB_USER` / `BUILDER_DB_PASSWORD` | `spring.datasource.*` | H2 file under `${user.home}/.agentscope-builder/` | Production database connection — see [Persistence](#persistence) |

@@ -1,15 +1,95 @@
 # agentscope-dataagent
 
-**DataAgent** — a multi-tenant data-analysis assistant built on **HarnessAgent**.
-This module is the deployable shell: a single Spring Boot fat JAR that hosts a
-curated `data-agent` (SQL / chart / explorer / report-writer) for every
-authenticated user, with fully-isolated per-user workspaces, optional side
-channels (DingTalk, generic webhook), and an admin-curated capability
-marketplace.
+> 🇨🇳 中文版：[README_zh.md](README_zh.md)
 
-Run it and users log in through a React UI to converse with the agent. The
-same agent is reachable from a second tab via a generic webhook for use as a
-side tool from external systems (CI, IM bots, ticketing).
+## Overview
+
+dataagent is a place where every analyst in your company gets their own data
+agent — one that learns the team's data sources, picks up the team's
+reporting conventions, remembers the team's gotchas, and gets sharper the
+more they use it.
+
+Three things shape the design:
+
+- **Side-by-side evolution.** Each user has their own private workspace.
+  Whatever skills they teach, whatever sub-agents they shape, whatever
+  memory their agent builds up — it stays theirs, and doesn't bleed into
+  anyone else's. Everyone starts from the same agent; how it grows up is
+  personal.
+- **A capability marketplace, not a free-for-all.** When someone grows
+  something genuinely useful — a SQL skill, a sub-agent, a note in memory —
+  they can nominate it for sharing. An admin reviews it, and if approved,
+  it lands in a shared library that every other user's agent picks up
+  automatically. Knowledge moves bottom-up, but with a gate.
+- **You decide what the sandbox is.** Every script the agent runs goes
+  through an isolated execution sandbox. Unlike codingagent — which spins
+  containers up and down per session on its own — dataagent leaves
+  sandbox lifecycle to *you*: provision it the way your data security and
+  ops teams want, recycle it on whatever cadence makes sense, plug in
+  whatever drivers and notebook tooling fit the stack.
+
+dataagent is built to be deployed distributed from day one — flip on the
+shared-state switch and any replica can serve any user, no sticky sessions
+required.
+
+### At a glance
+
+| | dataagent |
+|---|---|
+| **Use it when** | A team of analysts each needs their own evolving SQL / chart / report agent, with a shared library of in-house know-how |
+| **Users** | Many — each gets a private workspace, plus optional side channels |
+| **Isolation** | Private workspace per `(user, agent)`; scripts run in an isolated sandbox |
+| **Self-evolution** | ✅ Per user — **plus** approved contributions are shared with everyone |
+| **Sandbox lifecycle** | **Owned by the application** — provisioned, sized and recycled outside the agent runtime |
+| **Channels** | Built-in web UI · DingTalk · generic HTTP webhook |
+| **Distribution** | ✅ First-class — turn on shared state and any replica serves any user |
+| **Filesystem** | `SandboxFilesystem` for script execution + `OverlayFilesystem` for blending shared / private skills |
+
+### Architecture
+
+dataagent is built on **HarnessAgent + `SandboxFilesystem`** with sandbox
+lifecycle owned by the application (you decide when, where, and how the
+sandbox lives — not the runtime). Above the sandbox sits an `OverlayFilesystem`
+that blends a per-user `RemoteFilesystem` (top, writable) with the global
+`shared/` directory (bottom, read-only, populated by the marketplace approval
+flow).
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│  agentscope-dataagent (port 8080, Spring Boot WebFlux)                │
+│                                                                       │
+│   React SPA ──▶ REST API (JWT)                                        │
+│                  │                                                    │
+│                  ▼                                                    │
+│   ┌─────────────────────────────────────────────────────────────────┐ │
+│   │  HarnessGateway                                                 │ │
+│   │   ├ data-agent              (built-in skeleton, GLOBAL)         │ │
+│   │   └ uda-{userId}-{agentId}  (per-user fork, per-tenant)         │ │
+│   └────────────────────────┬────────────────────────────────────────┘ │
+│                            ▼                                          │
+│   ┌─────────────────────────────────────────────────────────────────┐ │
+│   │  Per-(userId, agentId) Filesystem stack                         │ │
+│   │   ┌──────────────────────────────────────────────────────────┐  │ │
+│   │   │ OverlayFilesystem (skills/, subagents/)                  │  │ │
+│   │   │   ┌── upper: per-user RemoteFilesystem  (writable) ──┐   │  │ │
+│   │   │   └── lower: shared/{skills,subagents}    (RO)        │   │  │ │
+│   │   └──────────────────────────────────────────────────────────┘  │ │
+│   │   memory/, MEMORY.md, sessions/, tasks/  ← per-user RemoteFS    │ │
+│   │   knowledge/, AGENTS.md                  ← shared (RO)          │ │
+│   │                                                                 │ │
+│   │   SandboxFilesystem (script execution)                          │ │
+│   │     ▲ lifecycle managed by the application (not the runtime)    │ │
+│   └─────────────────────────────────────────────────────────────────┘ │
+│                                                                       │
+│   Marketplace:  user contributes ─▶ admin approves ─▶ shared/ grows   │
+│   Channels:     chatui · dingtalk · generic webhook                   │
+│   Storage:      embedded H2 by default (swap for MySQL/PG in prod)    │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+With shared state enabled, the per-user filesystem, sessions and tool-event
+bus are all backed by Redis, so any replica can serve any user. See
+[`docs/cluster-deploy.md`](docs/cluster-deploy.md).
 
 ---
 
@@ -33,41 +113,6 @@ side tool from external systems (CI, IM bots, ticketing).
   ships interface-only stubs plus an `InMemoryDataSourceRegistry` so admins
   can seed sources via `agentscope.json`; concrete JDBC connectors are out of
   scope and slot in via `DataSourceRegistry` / `ChartRenderer` Spring beans.
-
----
-
-## Architecture
-
-```
-agentscope-dataagent (port 8080)
-┌──────────────────────────────────────────────┐
-│  Spring Boot WebFlux                         │
-│  ┌─────────────────────────────────────────┐ │
-│  │ DataAgentBootstrap                      │ │
-│  │   └ HarnessGateway                      │ │
-│  │       ├ data-agent          (GLOBAL)    │ │
-│  │       └ uda-{userId}-{aid}  (per user)  │ │
-│  │ Channels                                │ │
-│  │   ├ chatui                              │ │
-│  │   ├ dingtalk            (opt-in)        │ │
-│  │   └ webhook (HMAC + callback/poll)      │ │
-│  │ Marketplace + approval flow             │ │
-│  │   ├ ContributeWorkspaceTool             │ │
-│  │   └ shared/{skills,subagents,memory}    │ │
-│  └─────────────────────────────────────────┘ │
-│  React SPA  (chat / workspace / approvals)   │
-│  JWT auth (BCrypt)                           │
-│  JPA: users, agents, contributions           │
-│                                              │
-│  ~/.agentscope/dataagent/                    │
-│    agentscope.json      ← per-app config     │
-│    workspace/           ← templates, shared  │
-│      shared/{skills,subagents,memory}/       │
-│                                              │
-│  ${user.home}/.agentscope-dataagent/db/      │
-│    H2 by default; switch via `jdbc` profile  │
-└──────────────────────────────────────────────┘
-```
 
 ---
 
@@ -214,9 +259,10 @@ accounts: `bob` / `bob` and `alice` / `alice`. The first user with
 | `dataagent.marketplace.max-contribution-bytes` | `1048576` | Max payload accepted by `POST /api/me/contributions`. |
 | `server.port` | `8080` | HTTP port. |
 
-JPA / DataSource settings (H2 by default) are under the standard
-`spring.datasource.*` and `spring.jpa.*` keys; override via `DATAAGENT_DB_*`
-env vars or activate the `jdbc` profile for MySQL/PostgreSQL.
+User accounts, agents and contributions are persisted to embedded H2 by
+default for instant local quick-start. For production deployments, activate
+the `jdbc` Spring profile and set `DATAAGENT_DB_URL` / `DATAAGENT_DB_USER`
+/ `DATAAGENT_DB_PASSWORD` to switch to MySQL or PostgreSQL.
 
 ---
 

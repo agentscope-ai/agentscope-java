@@ -1,7 +1,64 @@
 # agentscope-claw
 
-A single-user local assistant built on top of [AgentScope Java]. Runs entirely
-on your machine — no login, no multi-tenant isolation, no remote sandbox.
+> 🇨🇳 中文版：[README_zh.md](README_zh.md)
+
+## Overview
+
+claw is the Java port of [OpenClaw] — a personal assistant you install on your
+own machine. It runs as you, on your filesystem and your shell, and it gets
+better over time: the skills it learns, the sub-agents it spawns, and the
+memory it keeps are all just files in a workspace it edits for itself.
+
+The other thing it does well is meet you where you already work. Out of the
+box it talks to DingTalk, WeCom, Feishu/Lark, GitHub and GitLab, so you can
+ping it from a DM or @-mention it on an issue instead of opening yet another
+browser tab.
+
+claw deliberately doesn't try to be more than that. There's no login, no
+multi-tenant isolation, no Docker sandbox, no horizontal scaling. If you need
+any of those — host claw-style agents for a team, or run untrusted code in
+isolation — the sister projects [agentscope-builder](../agentscope-builder/)
+and [agentscope-dataagent](../agentscope-dataagent/) cover those use cases.
+
+### At a glance
+
+| | claw |
+|---|---|
+| **Use it when** | You want a personal assistant on your own laptop / workstation |
+| **Users** | One — the operator of the machine |
+| **Isolation** | None — runs as you, with full access to your shell |
+| **Self-evolution** | ✅ Skills, sub-agents, memory and `AGENTS.md` are all just files the agent grows over time |
+| **Channels** | Built-in web UI + DingTalk · WeCom · Feishu/Lark · GitHub · GitLab |
+| **Distribution** | ❌ Single process, single node |
+| **Filesystem** | `LocalFilesystemWithShell` — direct host filesystem + shell |
+
+### Architecture
+
+claw is a thin Spring Boot shell around a **HarnessAgent** wired onto a
+`LocalFilesystemWithShell`. There is no auth layer, no sandbox, no remote
+store: every read, write, and shell command goes straight to the host OS.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                          your laptop                            │
+│  ┌─────────────────────┐   ┌─────────────────────────────────┐  │
+│  │  Channels           │   │  HarnessAgent (per agent)       │  │
+│  │  ├ chatui (web UI)  │──▶│   ├ Reasoning (LLM)             │  │
+│  │  ├ dingtalk         │   │   ├ Skills · Sub-agents · MCP   │  │
+│  │  ├ wecom · feishu   │   │   └ Self-evolution loop         │  │
+│  │  └ github · gitlab  │   └────────────┬────────────────────┘  │
+│  └─────────────────────┘                ▼                       │
+│                          ┌──────────────────────────────────┐   │
+│                          │  LocalFilesystemWithShell        │   │
+│                          │   ├ Host FS  (~/.agentscope/...) │   │
+│                          │   └ Host shell (bash / zsh)      │   │
+│                          └──────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+[OpenClaw]: https://github.com/agentscope-ai/openclaw
+
+---
 
 ## Quick start
 

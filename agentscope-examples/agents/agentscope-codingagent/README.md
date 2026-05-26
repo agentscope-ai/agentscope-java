@@ -1,8 +1,108 @@
 # agentscope-codingagent
 
-Coding agent built on top of **HarnessAgent** from the AgentScope Java library.
+> 🇨🇳 中文版：[README_zh.md](README_zh.md)
 
 ## Overview
+
+codingagent is an autonomous coding bot you can host inside your own
+organisation. Comment on an issue and it clones the repo, makes the change
+and opens a pull request. Request it as a reviewer on a PR and it reads the
+diff and posts a real review back. Reply to one of its review comments and
+it edits the same branch and answers in thread.
+
+Two things make it safe to give it that much rope:
+
+- It never touches your laptop or your build server's filesystem. Every
+  session runs in its own throw-away Docker container — `git clone`,
+  `npm install`, `mvn test`, `git push`, all of it happens inside the
+  sandbox.
+- The framework owns sandbox lifecycle. The agent doesn't decide when to
+  spin a container up or tear it down — the runtime does, per session, and
+  reuses it across turns in the same conversation.
+
+The same JAR runs as a single process for one team's monorepo or scales
+across replicas behind a load balancer — the dispatcher, queue and dedup
+store can be shared so any replica can pick up any conversation.
+
+Compared to its siblings: it's more locked-down than [claw] (claw runs on
+your shell) and more single-purpose than [builder] (Builder hosts arbitrary
+agents). codingagent is the one that **writes the code**.
+
+### What it does
+
+- **Issue → PR.** Drop a request in a GitHub issue and the agent does the
+  work — clone, branch, implement, push, open or update a PR.
+- **PR review.** Request it as a reviewer; it reads the diff, records
+  structured findings, and posts one consolidated GitHub review.
+- **Iterating in PR threads.** Leave a line comment on a PR and the agent
+  edits the same branch in response, replying inline.
+- **Several ways to reach it.** GitHub webhooks, a local CLI for trying
+  things out, DingTalk Stream, and Feishu/Lark callbacks.
+- **Safety rails on by default.** Webhook signature checks, duplicate-event
+  drop, per-conversation throttling, model-call budgets, and transparent
+  retry on upstream rate limits.
+
+### At a glance
+
+| | codingagent |
+|---|---|
+| **Use it when** | You want autonomous coding inside the org but the execution must stay off the host |
+| **Users** | Many — every issue / PR thread or chat peer is a separate session |
+| **Isolation** | ✅ Each session runs in its own ephemeral Docker container |
+| **Sandbox lifecycle** | **Auto-managed by the framework** — created, reused and disposed per session |
+| **Channels** | GitHub webhook · CLI · DingTalk Stream · Feishu callback |
+| **Distribution** | ✅ Single-node by default; horizontally scalable with a shared store |
+| **Filesystem** | `SandboxFilesystem` — every read / write / shell goes through the sandbox |
+
+### Architecture
+
+codingagent is built on **HarnessAgent + `SandboxFilesystem`** with sandbox
+lifecycle owned by the runtime. A request from any channel maps deterministically
+to a `threadId`, the dispatcher claims that thread (or queues the event if it
+is busy), and the agent executes inside a per-session Docker container that is
+created on first use and reused across turns.
+
+```
+   GitHub webhook · CLI · DingTalk · Feishu
+                   │
+                   ▼
+        ┌───────────────────────┐
+        │ Channel adapters      │  HMAC verify · dedup · self-comment filter
+        └─────────┬─────────────┘
+                  ▼
+        ┌───────────────────────┐
+        │ ThreadIdFactory       │  github:issue:owner/repo#42 → SHA-256 → UUID
+        └─────────┬─────────────┘
+                  ▼
+        ┌───────────────────────┐
+        │ RunDispatcher         │  immediate dispatch · enqueue when busy
+        │   ├ MessageQueueHook  │
+        │   ├ ThreadBudgetHook  │
+        │   └ ModelCallLimitHook│
+        └─────────┬─────────────┘
+                  ▼
+        ┌──────────────────────────────────────────┐
+        │ HarnessGateway                           │
+        │   ├ CodingAgent  (issue / PR loops)      │
+        │   └ ReviewerAgent (review_requested)     │
+        └─────────┬────────────────────────────────┘
+                  ▼
+        ┌──────────────────────────────────────────┐
+        │ SandboxFilesystem  (per-thread Docker)   │
+        │   agentscope/coding-sandbox:latest       │
+        │   ├ git · shell · build tools            │
+        │   └ runtime-managed lifecycle (auto)     │
+        └─────────┬────────────────────────────────┘
+                  ▼
+            GitHub API · target repo
+```
+
+[claw]: ../agentscope-claw/
+[builder]: ../agentscope-builder/
+
+---
+
+## Channels at a glance
 
 The agent has no UI of its own — every interaction comes through a **channel adapter**. All
 adapters implement the same `Channel` interface and share the routing, session, and HarnessAgent

@@ -33,7 +33,7 @@ import java.util.Objects;
  * would otherwise leak content across tenants.
  *
  * <p>The {@link Path} returned by {@link WorkspaceManager#getWorkspace()} is a host-side label
- * (used for display, audit, and {@link RuntimeContext} metadata), <em>not</em> the on-disk
+ * (used for display, audit, and RuntimeContext metadata), <em>not</em> the on-disk
  * location of the file data. Actual reads/writes go through {@link SharedSandboxFilesystem} into
  * the container at {@code /workspace}.
  */

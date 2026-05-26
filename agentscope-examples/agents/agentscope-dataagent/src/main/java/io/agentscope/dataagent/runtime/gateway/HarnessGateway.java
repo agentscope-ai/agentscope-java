@@ -181,8 +181,9 @@ public final class HarnessGateway implements Gateway {
 
     /**
      * Attach (or replace) the per-user sandbox registry. Intended for one-shot wiring at
-     * application startup — typically called by Spring config after {@link DataAgentBootstrap}
-     * has produced the gateway, since the bootstrap layer doesn't depend on the web layer.
+     * application startup — typically called by Spring config after {@link
+     * io.agentscope.dataagent.runtime.DataAgentBootstrap} has produced the gateway, since the
+     * bootstrap layer doesn't depend on the web layer.
      */
     public void setUserSandboxRegistry(UserSandboxRegistry registry) {
         this.userSandboxRegistry = registry;
