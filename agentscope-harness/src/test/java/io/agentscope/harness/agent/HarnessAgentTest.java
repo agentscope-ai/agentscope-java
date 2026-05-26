@@ -325,21 +325,25 @@ class HarnessAgentTest {
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
         InMemoryStore store = new InMemoryStore();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("agent-a")
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .filesystem(new RemoteFilesystemSpec(store))
                         .session(mock(Session.class))
-                        .build();
+                        .build()) {
 
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(RuntimeContext.empty(), "MEMORY.md", "shared-memory");
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            RuntimeContext.empty(), "MEMORY.md", "shared-memory");
 
-        assertTrue(
-                store.get(List.of("agents", "agent-a", "users", "_default", "root"), "/MEMORY.md")
-                        != null);
+            assertTrue(
+                    store.get(
+                                    List.of("agents", "agent-a", "users", "_default", "root"),
+                                    "/MEMORY.md")
+                            != null);
+        }
     }
 
     private static Msg userText(String text) {

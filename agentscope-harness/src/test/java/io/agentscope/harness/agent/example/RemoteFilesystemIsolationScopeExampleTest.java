@@ -92,7 +92,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
         Files.createDirectories(workspace);
         InMemoryStore store = new InMemoryStore();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
@@ -101,27 +101,28 @@ class RemoteFilesystemIsolationScopeExampleTest {
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
                         .session(mock(Session.class))
-                        .build();
+                        .build()) {
 
-        // Call as session-1 and write MEMORY.md
-        agent.call(userMsg("from session-1"), ctx("session-1", "alice")).block();
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(
-                        ctx("session-1", "alice"), "MEMORY.md", "session-1 notes");
+            // Call as session-1 and write MEMORY.md
+            agent.call(userMsg("from session-1"), ctx("session-1", "alice")).block();
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            ctx("session-1", "alice"), "MEMORY.md", "session-1 notes");
 
-        // Verify the data landed in the session-1 namespace
-        assertNotNull(
-                store.get(
-                        List.of("agents", "assistant", "sessions", "session-1", "root"),
-                        "/MEMORY.md"),
-                "MEMORY.md should be stored under the session-1 namespace");
+            // Verify the data landed in the session-1 namespace
+            assertNotNull(
+                    store.get(
+                            List.of("agents", "assistant", "sessions", "session-1", "root"),
+                            "/MEMORY.md"),
+                    "MEMORY.md should be stored under the session-1 namespace");
 
-        // Verify session-2 namespace is empty (isolated)
-        assertNull(
-                store.get(
-                        List.of("agents", "assistant", "sessions", "session-2", "root"),
-                        "/MEMORY.md"),
-                "session-2 namespace should be empty");
+            // Verify session-2 namespace is empty (isolated)
+            assertNull(
+                    store.get(
+                            List.of("agents", "assistant", "sessions", "session-2", "root"),
+                            "/MEMORY.md"),
+                    "session-2 namespace should be empty");
+        }
     }
 
     /**
@@ -132,7 +133,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
         Files.createDirectories(workspace);
         InMemoryStore store = new InMemoryStore();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
@@ -141,22 +142,23 @@ class RemoteFilesystemIsolationScopeExampleTest {
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
                         .session(mock(Session.class))
-                        .build();
+                        .build()) {
 
-        // First call writes MEMORY.md under session-1
-        agent.call(userMsg("call 1"), ctx("session-1", "alice")).block();
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(
-                        ctx("session-1", "alice"), "MEMORY.md", "shared memory");
+            // First call writes MEMORY.md under session-1
+            agent.call(userMsg("call 1"), ctx("session-1", "alice")).block();
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            ctx("session-1", "alice"), "MEMORY.md", "shared memory");
 
-        // Second call with same session can read it
-        agent.call(userMsg("call 2"), ctx("session-1", "alice")).block();
+            // Second call with same session can read it
+            agent.call(userMsg("call 2"), ctx("session-1", "alice")).block();
 
-        assertNotNull(
-                store.get(
-                        List.of("agents", "assistant", "sessions", "session-1", "root"),
-                        "/MEMORY.md"),
-                "MEMORY.md should persist in the session-1 namespace across calls");
+            assertNotNull(
+                    store.get(
+                            List.of("agents", "assistant", "sessions", "session-1", "root"),
+                            "/MEMORY.md"),
+                    "MEMORY.md should persist in the session-1 namespace across calls");
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -174,7 +176,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
         Files.createDirectories(workspace);
         InMemoryStore store = new InMemoryStore();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
@@ -182,24 +184,27 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .filesystem(
                                 new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
                         .session(mock(Session.class))
-                        .build();
+                        .build()) {
 
-        // Call as alice / session-a and write MEMORY.md
-        agent.call(userMsg("hi from session-a"), ctx("session-a", "alice")).block();
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(
-                        ctx("session-a", "alice"), "MEMORY.md", "alice's memory");
+            // Call as alice / session-a and write MEMORY.md
+            agent.call(userMsg("hi from session-a"), ctx("session-a", "alice")).block();
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            ctx("session-a", "alice"), "MEMORY.md", "alice's memory");
 
-        // The entry lands in the user-scoped namespace
-        assertNotNull(
-                store.get(List.of("agents", "assistant", "users", "alice", "root"), "/MEMORY.md"),
-                "MEMORY.md should be stored under alice's user namespace");
+            // The entry lands in the user-scoped namespace
+            assertNotNull(
+                    store.get(
+                            List.of("agents", "assistant", "users", "alice", "root"), "/MEMORY.md"),
+                    "MEMORY.md should be stored under alice's user namespace");
 
-        // Call as alice / session-b — sees the same store namespace
-        agent.call(userMsg("hi from session-b"), ctx("session-b", "alice")).block();
-        assertNotNull(
-                store.get(List.of("agents", "assistant", "users", "alice", "root"), "/MEMORY.md"),
-                "alice's MEMORY.md should still be accessible from session-b");
+            // Call as alice / session-b — sees the same store namespace
+            agent.call(userMsg("hi from session-b"), ctx("session-b", "alice")).block();
+            assertNotNull(
+                    store.get(
+                            List.of("agents", "assistant", "users", "alice", "root"), "/MEMORY.md"),
+                    "alice's MEMORY.md should still be accessible from session-b");
+        }
     }
 
     /**
@@ -210,7 +215,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
         Files.createDirectories(workspace);
         InMemoryStore store = new InMemoryStore();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
@@ -218,16 +223,17 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .filesystem(
                                 new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
                         .session(mock(Session.class))
-                        .build();
+                        .build()) {
 
-        agent.call(userMsg("alice writes"), ctx("s1", "alice")).block();
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice's data");
+            agent.call(userMsg("alice writes"), ctx("s1", "alice")).block();
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice's data");
 
-        // Bob's namespace should be empty
-        assertNull(
-                store.get(List.of("agents", "assistant", "users", "bob", "root"), "/MEMORY.md"),
-                "bob's namespace should be isolated from alice's");
+            // Bob's namespace should be empty
+            assertNull(
+                    store.get(List.of("agents", "assistant", "users", "bob", "root"), "/MEMORY.md"),
+                    "bob's namespace should be isolated from alice's");
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -245,7 +251,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
         Files.createDirectories(workspace);
         InMemoryStore store = new InMemoryStore();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("shared-assistant")
                         .model(stubModel("done"))
@@ -254,22 +260,26 @@ class RemoteFilesystemIsolationScopeExampleTest {
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.AGENT))
                         .session(mock(Session.class))
-                        .build();
+                        .build()) {
 
-        // Alice writes
-        agent.call(userMsg("alice"), ctx("s1", "alice")).block();
-        agent.getWorkspaceManager()
-                .writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "shared knowledge");
+            // Alice writes
+            agent.call(userMsg("alice"), ctx("s1", "alice")).block();
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            ctx("s1", "alice"), "MEMORY.md", "shared knowledge");
 
-        assertNotNull(
-                store.get(List.of("agents", "shared-assistant", "shared", "root"), "/MEMORY.md"),
-                "MEMORY.md should be in the agent-scoped shared namespace");
+            assertNotNull(
+                    store.get(
+                            List.of("agents", "shared-assistant", "shared", "root"), "/MEMORY.md"),
+                    "MEMORY.md should be in the agent-scoped shared namespace");
 
-        // Bob's call also reads from the same shared namespace
-        agent.call(userMsg("bob"), ctx("s2", "bob")).block();
-        assertNotNull(
-                store.get(List.of("agents", "shared-assistant", "shared", "root"), "/MEMORY.md"),
-                "shared namespace should still contain the data after bob's call");
+            // Bob's call also reads from the same shared namespace
+            agent.call(userMsg("bob"), ctx("s2", "bob")).block();
+            assertNotNull(
+                    store.get(
+                            List.of("agents", "shared-assistant", "shared", "root"), "/MEMORY.md"),
+                    "shared namespace should still contain the data after bob's call");
+        }
     }
 
     // -------------------------------------------------------------------------

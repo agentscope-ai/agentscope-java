@@ -56,15 +56,15 @@ class MemoryConsolidatorFilesystemTest {
     // ======================================================================
 
     @Test
-    void readWatermark_returnsEpochWhenStateAbsent(@TempDir Path tmp) {
+    void readWatermark_returnsEpochWhenStateAbsent(@TempDir Path tmp) throws Exception {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
         RemoteFilesystem fs = new RemoteFilesystem(store, ns);
-        WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
-        MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
-
-        assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
+            assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
+        }
     }
 
     // ======================================================================
@@ -72,19 +72,19 @@ class MemoryConsolidatorFilesystemTest {
     // ======================================================================
 
     @Test
-    void watermark_roundTripThroughFilesystem(@TempDir Path tmp) {
+    void watermark_roundTripThroughFilesystem(@TempDir Path tmp) throws Exception {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
         RemoteFilesystem fs = new RemoteFilesystem(store, ns);
-        WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
-        MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
+            Instant ts = Instant.parse("2025-06-15T12:00:00Z");
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
-        Instant ts = Instant.parse("2025-06-15T12:00:00Z");
-        wsm.writeUtf8WorkspaceRelative(
-                RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
-
-        assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
+            assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
+        }
     }
 
     // ======================================================================
@@ -92,26 +92,26 @@ class MemoryConsolidatorFilesystemTest {
     // ======================================================================
 
     @Test
-    void watermark_doesNotCreateLocalFile(@TempDir Path tmp) {
+    void watermark_doesNotCreateLocalFile(@TempDir Path tmp) throws Exception {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
         RemoteFilesystem fs = new RemoteFilesystem(store, ns);
-        WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
-        MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
+            Instant ts = Instant.now();
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
-        Instant ts = Instant.now();
-        wsm.writeUtf8WorkspaceRelative(
-                RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
+            // local disk must NOT have the state file — it lives only in the store
+            Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);
+            assertFalse(
+                    Files.exists(localState),
+                    "state file should not be written to local disk when using RemoteFilesystem");
 
-        // local disk must NOT have the state file — it lives only in the store
-        Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);
-        assertFalse(
-                Files.exists(localState),
-                "state file should not be written to local disk when using RemoteFilesystem");
-
-        // but consolidator reads it correctly from the store
-        assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
+            // but consolidator reads it correctly from the store
+            assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
+        }
     }
 
     // ======================================================================

@@ -92,7 +92,7 @@ import org.slf4j.LoggerFactory;
  * └── agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.log.jsonl
  * </pre>
  */
-public class WorkspaceManager {
+public class WorkspaceManager implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
     private static final ObjectMapper SESSION_STORE_JSON = new ObjectMapper();
@@ -121,16 +121,24 @@ public class WorkspaceManager {
 
     private final NamespaceFactory namespaceFactory;
 
+    /**
+     * {@code true} when this manager allocated its own {@link #index} (via the {@code (workspace,
+     * filesystem)} constructor) and is therefore responsible for closing it. When the index is
+     * supplied externally (e.g. by {@link io.agentscope.harness.agent.HarnessAgent}'s builder), the
+     * external owner manages its lifecycle and {@link #close()} here is a no-op.
+     */
+    private final boolean ownsIndex;
+
     public WorkspaceManager(Path workspace) {
-        this(workspace, null, null, null);
+        this(workspace, null, null, null, false);
     }
 
     public WorkspaceManager(Path workspace, AbstractFilesystem filesystem) {
-        this(workspace, filesystem, WorkspaceIndex.open(workspace), null);
+        this(workspace, filesystem, WorkspaceIndex.open(workspace), null, true);
     }
 
     public WorkspaceManager(Path workspace, AbstractFilesystem filesystem, WorkspaceIndex index) {
-        this(workspace, filesystem, index, null);
+        this(workspace, filesystem, index, null, false);
     }
 
     public WorkspaceManager(
@@ -138,10 +146,34 @@ public class WorkspaceManager {
             AbstractFilesystem filesystem,
             WorkspaceIndex index,
             NamespaceFactory namespaceFactory) {
+        this(workspace, filesystem, index, namespaceFactory, false);
+    }
+
+    private WorkspaceManager(
+            Path workspace,
+            AbstractFilesystem filesystem,
+            WorkspaceIndex index,
+            NamespaceFactory namespaceFactory,
+            boolean ownsIndex) {
         this.workspace = workspace;
         this.filesystem = filesystem;
         this.index = index;
         this.namespaceFactory = namespaceFactory;
+        this.ownsIndex = ownsIndex;
+    }
+
+    /**
+     * Releases the SQLite-backed {@link WorkspaceIndex} when this manager owns it.
+     *
+     * <p>Required for tests that use {@code @TempDir} on Windows: the JDBC driver keeps a file
+     * handle on {@code .index/workspace.db}, and Windows refuses to delete the temp directory
+     * while the handle is open.
+     */
+    @Override
+    public void close() {
+        if (ownsIndex && index != null) {
+            index.close();
+        }
     }
 
     public NamespaceFactory getNamespaceFactory() {

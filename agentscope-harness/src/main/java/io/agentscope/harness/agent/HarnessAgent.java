@@ -154,7 +154,7 @@ import reactor.core.publisher.Mono;
  * ).block();
  * }</pre>
  */
-public class HarnessAgent implements Agent, StateModule {
+public class HarnessAgent implements Agent, StateModule, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
@@ -164,6 +164,15 @@ public class HarnessAgent implements Agent, StateModule {
     private final Session defaultSession;
     private final SandboxContext defaultSandboxContext;
     private final List<AgentSkillRepository> skillRepositories;
+
+    /**
+     * SQLite-backed workspace index allocated during {@link Builder#build()} when the agent is
+     * configured with a {@link io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec},
+     * shared across the main {@link #workspaceManager} and any per-ctx views produced by
+     * {@link #workspaceFor(String, String)}. Owned by this agent; released by {@link #close()}.
+     * {@code null} when no index was created.
+     */
+    private final WorkspaceIndex ownedWorkspaceIndex;
 
     /**
      * Factory for ctx-bound {@link WorkspaceManager} views — see {@link #workspaceFor(String,
@@ -192,7 +201,8 @@ public class HarnessAgent implements Agent, StateModule {
             SandboxContext defaultSandboxContext,
             List<AgentSkillRepository> skillRepositories,
             java.util.function.BiFunction<String, String, WorkspaceManager> workspaceFactory,
-            java.util.function.Function<String, Session> sessionFactory) {
+            java.util.function.Function<String, Session> sessionFactory,
+            WorkspaceIndex ownedWorkspaceIndex) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.compactionHook = compactionHook;
@@ -202,6 +212,25 @@ public class HarnessAgent implements Agent, StateModule {
                 skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
         this.workspaceFactory = workspaceFactory;
         this.sessionFactory = sessionFactory;
+        this.ownedWorkspaceIndex = ownedWorkspaceIndex;
+    }
+
+    /**
+     * Releases resources owned by this agent — currently the SQLite-backed
+     * {@link WorkspaceIndex} created when {@code RemoteFilesystemSpec} is configured.
+     *
+     * <p>Required for tests using {@code @TempDir} on Windows: while the JDBC connection holds
+     * a file handle on {@code .index/workspace.db}, Windows refuses to delete the temp directory
+     * and JUnit fails extension cleanup. Calling close releases the handle.
+     *
+     * <p>After close, the agent and any {@link WorkspaceManager} views produced from it must
+     * not be used.
+     */
+    @Override
+    public void close() {
+        if (ownedWorkspaceIndex != null) {
+            ownedWorkspaceIndex.close();
+        }
     }
 
     /** Calls the agent with a runtime context, which provides sessionId and other metadata. */
@@ -1796,7 +1825,8 @@ public class HarnessAgent implements Agent, StateModule {
                             defaultSandboxContext,
                             orderedSkillRepos,
                             workspaceFactoryFn,
-                            sessionFactoryFn);
+                            sessionFactoryFn,
+                            workspaceIndex);
             selfRef.set(harnessAgent);
             return harnessAgent;
         }
