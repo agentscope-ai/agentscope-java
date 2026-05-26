@@ -43,8 +43,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
@@ -338,14 +336,16 @@ class LocalFilesystemUserIsolationExampleTest {
     }
 
     /**
-     * Verifies that no un-namespaced duplicate data appears at workspace root.
+     * Verifies that no un-namespaced duplicate user data appears at workspace root.
      *
-     * <p>Disabled on Windows: the assertion holds on Linux/macOS but fails on Windows CI with an
-     * unexplained {@code agents/} entry at the workspace root. The other tests in this class
-     * (memory/session/glob/grep/ls round-trips) cover the same isolation contract from different
-     * angles and do pass on Windows.
+     * <p>Exception: {@code WorkspaceTaskRepository} runs a background scheduler that periodically
+     * writes an agent-scoped orphan-sweep coordination marker at
+     * {@code workspace/agents/<agentId>/tasks/_sweep.marker} using {@code RuntimeContext.empty()}.
+     * The marker is shared across all users of the agent by design, so it is intentionally not
+     * subject to per-user namespace prefixing. The sweep fires at a random offset within a
+     * 5-minute window, so on any given test run the file may or may not be present; we tolerate
+     * {@code agents/} at the workspace root but assert it contains only this whitelisted marker.
      */
-    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "flaky on Windows CI; see test javadoc")
     @Test
     void noDuplicateDataAtWorkspaceRoot() throws Exception {
         Files.createDirectories(workspace);
@@ -370,18 +370,40 @@ class LocalFilesystemUserIsolationExampleTest {
                 .writeUtf8WorkspaceRelative(
                         RuntimeContext.builder().userId("alice").build(), "memory/note.md", "note");
 
-        // Only AGENTS.md should exist at workspace root (it's a shared config file, pre-existing)
-        // Namespace-isolated runtime data should be under alice/
+        // Only AGENTS.md should exist at workspace root (it's a shared config file, pre-existing).
+        // Namespace-isolated runtime data should be under alice/.
+        // agents/ is permitted as it may hold the agent-scoped orphan-sweep marker; verified below.
         try (Stream<Path> rootEntries = Files.list(workspace)) {
             List<String> rootNames =
                     rootEntries
                             .map(p -> p.getFileName().toString())
-                            .filter(n -> !n.equals("AGENTS.md") && !n.equals("alice"))
+                            .filter(
+                                    n ->
+                                            !n.equals("AGENTS.md")
+                                                    && !n.equals("alice")
+                                                    && !n.equals("agents"))
                             .toList();
             assertTrue(
                     rootNames.isEmpty(),
-                    "Only AGENTS.md and alice/ should exist at workspace root, but found: "
+                    "Only AGENTS.md, alice/, and (optionally) agents/ should exist at workspace"
+                            + " root, but found: "
                             + rootNames);
+        }
+
+        // If agents/ exists at the root, it must only contain the orphan-sweep marker.
+        Path rootAgents = workspace.resolve("agents");
+        if (Files.isDirectory(rootAgents)) {
+            try (Stream<Path> walk = Files.walk(rootAgents)) {
+                List<String> unexpected =
+                        walk.filter(Files::isRegularFile)
+                                .map(p -> rootAgents.relativize(p).toString().replace('\\', '/'))
+                                .filter(rel -> !rel.endsWith("/tasks/_sweep.marker"))
+                                .toList();
+                assertTrue(
+                        unexpected.isEmpty(),
+                        "workspace/agents/ should contain only tasks/_sweep.marker but found: "
+                                + unexpected);
+            }
         }
     }
 
