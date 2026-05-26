@@ -29,8 +29,7 @@ import java.util.Base64;
 /**
  * Token encryption/decryption using Google Tink AEAD.
  *
- * <p>Mirrors open-swe's {@code agent/encryption.py} (Fernet → Tink AEAD). Used to store GitHub
- * tokens encrypted at rest in {@code SqliteBaseStore}.
+ * <p>Used to store GitHub tokens encrypted at rest in {@code SqliteBaseStore}.
  *
  * <h2>Key management</h2>
  *

@@ -40,8 +40,6 @@ import reactor.core.publisher.Mono;
 /**
  * Spring WebFlux handler for GitHub webhooks.
  *
- * <p>Mirrors open-swe's {@code agent/webapp.py} GitHub webhook processing:
- *
  * <ul>
  *   <li>HMAC SHA-256 signature verification ({@code X-Hub-Signature-256})
  *   <li>Delivery dedup ({@code X-GitHub-Delivery})
@@ -287,8 +285,7 @@ public class GitHubWebhookHandler {
 
     /**
      * Wraps an external comment body in {@code <UNTRUSTED_GITHUB_COMMENT>} tags so the model
-     * treats it as data — not as instructions to follow. Mirrors open-swe's prompt-injection
-     * defence.
+     * treats it as data — not as instructions to follow.
      */
     private static String wrapUntrusted(String body) {
         String safe = body == null ? "" : body;

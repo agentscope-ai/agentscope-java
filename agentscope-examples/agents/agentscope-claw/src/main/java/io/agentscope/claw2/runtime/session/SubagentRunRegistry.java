@@ -18,8 +18,8 @@ package io.agentscope.claw2.runtime.session;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-process registry for subagent spawn / run metadata (OpenClaw {@code subagent-registry}
- * analogue). Used for observability and correlation; not durable across JVM restarts.
+ * In-process registry for subagent spawn / run metadata. Used for observability and correlation;
+ * not durable across JVM restarts.
  */
 public final class SubagentRunRegistry {
 

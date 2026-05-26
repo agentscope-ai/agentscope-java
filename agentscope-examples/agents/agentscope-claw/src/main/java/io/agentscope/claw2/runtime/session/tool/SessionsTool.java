@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Tool facade exposing managed subagent session operations to the agent.
  *
- * <p>Mirrors the OpenClaw sessions tool set:
+ * <p>Provides the following tools:
  *
  * <ul>
  *   <li>{@code sessions_spawn} — spawn an isolated subagent session
@@ -470,10 +470,10 @@ public class SessionsTool {
             name = "sessions_pending_completions",
             description =
                     """
-                    Drain structured subagent completion events for this requester session \
-                    (OpenClaw-style announce queue). Use requester_session_key matching your \
-                    session_key when you spawned children, or omit for the top-level harness. \
-                    Each entry includes announce_text for merging into your next reply.\
+                    Drain structured subagent completion events for this requester session. \
+                    Use requester_session_key matching your session_key when you spawned \
+                    children, or omit for the top-level harness. Each entry includes \
+                    announce_text for merging into your next reply.\
                     """)
     public String sessionsPendingCompletions(
             @ToolParam(

@@ -17,7 +17,7 @@ package io.agentscope.claw2.runtime.session;
 
 /**
  * Policy controlling when a session is considered "stale" and should be rolled over to a new
- * session, mirroring OpenClaw's {@code resolveSessionResetPolicy}.
+ * session.
  *
  * @param mode reset mode: NEVER (default), DAILY, IDLE, or BOTH
  * @param dailyResetHour hour of day (0-23) for daily reset boundary; only used when mode is DAILY

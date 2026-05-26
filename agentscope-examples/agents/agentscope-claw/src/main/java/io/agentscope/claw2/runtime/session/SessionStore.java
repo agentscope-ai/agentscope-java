@@ -34,8 +34,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Durable session registry backed by a JSON file ({@code sessions.json}). Mirrors OpenClaw's
- * {@code sessions.json} store that tracks session metadata across restarts.
+ * Durable session registry backed by a JSON file ({@code sessions.json}) that tracks session
+ * metadata across restarts.
  *
  * <p>Thread-safe: uses a read-write lock so concurrent reads are non-blocking and writes are
  * serialized. File writes are atomic (write to temp, then rename).

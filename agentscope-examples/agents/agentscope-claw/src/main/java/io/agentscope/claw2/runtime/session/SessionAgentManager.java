@@ -528,8 +528,8 @@ public class SessionAgentManager {
      * transcript is left on disk (deleted only by maintenance) but the cached in-memory agent is
      * evicted so the next call starts from a clean slate.
      *
-     * <p>Used to implement OpenClaw's {@code /new} and {@code /reset} chat commands and
-     * the daily / idle auto-reset triggers configured via {@link
+     * <p>Used to implement the {@code /new} and {@code /reset} chat commands and the daily / idle
+     * auto-reset triggers configured via {@link
      * io.agentscope.claw2.runtime.config.SessionLifecycleConfig}.
      *
      * @param sessionKey the session to reset

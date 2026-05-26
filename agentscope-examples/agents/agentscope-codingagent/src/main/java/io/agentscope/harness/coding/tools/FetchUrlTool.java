@@ -26,8 +26,7 @@ import java.time.Duration;
 import java.util.regex.Pattern;
 
 /**
- * Mirrors open-swe's {@code fetch_url} tool. Fetches a URL and returns a simplified text
- * representation (strips most HTML tags).
+ * Fetches a URL and returns a simplified text representation (strips most HTML tags).
  */
 public class FetchUrlTool {
 

@@ -24,7 +24,7 @@ import io.agentscope.harness.coding.tools.GitHubApiTool;
 
 /**
  * Publishes the accumulated reviewer findings as a single GitHub PR review. Must be called exactly
- * once at the end of a reviewer run. Mirrors open-swe's {@code publish_review} tool.
+ * once at the end of a reviewer run.
  */
 public class PublishReviewTool {
 

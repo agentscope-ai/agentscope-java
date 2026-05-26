@@ -22,7 +22,7 @@ import io.agentscope.harness.coding.reviewer.ReviewerFindingsService;
 import java.util.List;
 
 /**
- * Lists all current reviewer findings. Mirrors open-swe's {@code list_findings} tool.
+ * Lists all current reviewer findings.
  */
 public class ListFindingsTool {
 

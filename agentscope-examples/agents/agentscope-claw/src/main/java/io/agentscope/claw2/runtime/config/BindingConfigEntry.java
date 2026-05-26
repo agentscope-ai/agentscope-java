@@ -27,7 +27,7 @@ import java.util.Set;
 /**
  * JSON-serializable counterpart of {@link ChannelBinding}.
  *
- * <p>Field order corresponds to the OpenClaw routing priority tiers evaluated by {@link
+ * <p>Field order corresponds to the routing priority tiers evaluated by {@link
  * io.agentscope.claw2.runtime.channel.ChannelRouter}:
  *
  * <ol>

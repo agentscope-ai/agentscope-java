@@ -17,7 +17,7 @@ package io.agentscope.claw2.runtime.session;
 
 /**
  * Configuration for session store maintenance. Controls automated pruning of stale sessions and
- * capping total entry count, mirroring OpenClaw's session maintenance modes.
+ * capping total entry count.
  *
  * @param enabled whether maintenance runs automatically on session creation/touch
  * @param pruneAfterMs remove sessions not updated within this duration (0 = disabled)

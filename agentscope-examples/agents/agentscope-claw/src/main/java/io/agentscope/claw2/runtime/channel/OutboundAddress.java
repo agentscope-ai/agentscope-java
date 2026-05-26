@@ -22,8 +22,6 @@ import java.util.Objects;
  * inbound routing and stored by the gateway as the session's "last route" so that proactive replies
  * (e.g. subagent completion announces) can be delivered back to the correct channel and peer.
  *
- * <p>Mirrors the outbound delivery address concept in OpenClaw's {@code resolveAgentDeliveryPlan}.
- *
  * @param channelId the channel adapter to deliver through (e.g. {@code "chatui"}, {@code "slack"})
  * @param accountId optional multi-account identifier (nullable for single-account channels)
  * @param to delivery address in {@code "channelId:<peerKind>:<peerId>"} format (e.g. {@code

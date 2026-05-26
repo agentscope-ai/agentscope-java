@@ -16,8 +16,8 @@
 package io.agentscope.claw2.runtime.channel;
 
 /**
- * Classification of the conversation peer, mirroring OpenClaw's peer kinds used for session key
- * construction and DM-scope resolution.
+ * Classification of the conversation peer, used for session key construction and DM-scope
+ * resolution.
  *
  * <ul>
  *   <li>{@link #DIRECT} — one-to-one DM / private conversation

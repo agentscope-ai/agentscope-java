@@ -31,9 +31,8 @@ import java.util.regex.Pattern;
 /**
  * Publishes reviewer findings to a GitHub PR as inline comments.
  *
- * <p>Mirrors open-swe's {@code agent/reviewer_publish.py}. Creates a single GitHub pull request
- * review with inline comment for each finding. Resolves existing GitHub review threads for
- * findings that transition to {@code resolved}.
+ * <p>Creates a single GitHub pull request review with inline comment for each finding. Resolves
+ * existing GitHub review threads for findings that transition to {@code resolved}.
  */
 public class GitHubReviewPublisher {
 

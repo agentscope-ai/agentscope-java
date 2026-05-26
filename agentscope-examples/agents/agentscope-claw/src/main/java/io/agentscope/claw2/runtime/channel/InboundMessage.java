@@ -25,11 +25,7 @@ import java.util.Set;
  * identity and context metadata needed by {@link ChannelRouter} to resolve an agent and build a
  * stable session key.
  *
- * <p>Mirrors OpenClaw's normalized routing context (channel, accountId, peer/chat shape, optional
- * guild/team/roles/thread metadata).
- *
- * <p>Two identity fields are deliberately separate (mirroring OpenClaw's {@code sender} vs {@code
- * peer} split):
+ * <p>Two identity fields are deliberately separate ({@code sender} vs {@code peer} split):
  * <ul>
  *   <li>{@link #peer} — the <em>conversation</em> identifier used to construct the session key
  *       (DM user id, group chat id, channel id)

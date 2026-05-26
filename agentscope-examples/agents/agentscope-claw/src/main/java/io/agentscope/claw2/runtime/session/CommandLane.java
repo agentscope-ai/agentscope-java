@@ -16,8 +16,7 @@
 package io.agentscope.claw2.runtime.session;
 
 /**
- * Scheduling lane for subagent / main work, aligned with OpenClaw gateway {@code CommandLane}
- * semantics.
+ * Scheduling lane for subagent / main work.
  *
  * <p>Session serialization (one embedded run at a time per {@code sessionKey}) is implemented
  * separately via per-session locks; lanes bound <strong>global</strong> concurrency across sessions

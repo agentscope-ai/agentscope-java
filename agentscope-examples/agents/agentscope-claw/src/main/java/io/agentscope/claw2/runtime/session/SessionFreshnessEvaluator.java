@@ -22,7 +22,7 @@ import java.time.ZonedDateTime;
 
 /**
  * Evaluates whether a session is still "fresh" based on its last activity time and the configured
- * {@link SessionResetPolicy}. Mirrors OpenClaw's {@code evaluateSessionFreshness}.
+ * {@link SessionResetPolicy}.
  *
  * <p>Two independent staleness criteria:
  * <ul>

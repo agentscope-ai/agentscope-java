@@ -32,7 +32,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * }
  * }</pre>
  *
- * <p>Mirrors OpenClaw's session-level config. Mapped at runtime to:
+ * <p>Mapped at runtime to:
  *
  * <ul>
  *   <li>{@link io.agentscope.claw2.runtime.session.SessionMaintenanceConfig} for prune/cap policy

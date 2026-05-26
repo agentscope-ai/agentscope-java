@@ -43,8 +43,7 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * Gateway-style gateway: routes inbound turns by {@link MsgContext}, and dispatches subagent
- * completion announces as new {@link HarnessAgent} runs on the root requester (OpenClaw gateway
- * analogue).
+ * completion announces as new {@link HarnessAgent} runs on the root requester.
  *
  * <p>Session management is delegated to {@link SessionAgentManager}. The gateway wires itself as
  * the {@link SessionAgentManager.AnnounceDispatcher} and {@link

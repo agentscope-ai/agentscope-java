@@ -22,7 +22,7 @@ import io.agentscope.harness.coding.reviewer.Finding;
 import io.agentscope.harness.coding.reviewer.ReviewerFindingsService;
 
 /**
- * Updates an existing reviewer finding. Mirrors open-swe's {@code update_finding} tool.
+ * Updates an existing reviewer finding.
  */
 public class UpdateFindingTool {
 

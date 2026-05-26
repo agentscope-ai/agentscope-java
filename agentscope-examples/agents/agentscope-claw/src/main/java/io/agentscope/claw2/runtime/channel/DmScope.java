@@ -18,7 +18,7 @@ package io.agentscope.claw2.runtime.channel;
 /**
  * Controls how DM ({@link PeerKind#DIRECT}) session keys are scoped.
  *
- * <p>Mirrors OpenClaw's {@code session.dmScope} config options:
+ * <p>Options for {@code session.dmScope}:
  *
  * <ul>
  *   <li>{@link #MAIN} — all DMs for a given agent share a single session ({@code

@@ -26,8 +26,8 @@ import java.util.Objects;
 /**
  * Root document for {@code ${cwd}/.agentscope/agentscope.json}.
  *
- * <p>Shape is intentionally similar to OpenClaw's top-level config: a {@code main} entry id, an
- * {@code agents} map keyed by agent id, and an optional {@code channels} map keyed by channel id.
+ * <p>Contains a {@code main} entry id, an {@code agents} map keyed by agent id, and an optional
+ * {@code channels} map keyed by channel id.
  */
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 @JsonIgnoreProperties(ignoreUnknown = true)

@@ -27,7 +27,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 /**
- * Web search tool using the Tavily API. Mirrors open-swe's {@code web_search} tool.
+ * Web search tool using the Tavily API.
  *
  * <p>Requires {@code TAVILY_API_KEY} environment variable.
  */

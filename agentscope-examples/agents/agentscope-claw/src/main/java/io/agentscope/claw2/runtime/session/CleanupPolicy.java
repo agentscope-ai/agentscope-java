@@ -16,8 +16,7 @@
 package io.agentscope.claw2.runtime.session;
 
 /**
- * Controls what happens to a session's records and transcript after the run completes. Mirrors
- * OpenClaw's {@code cleanup} parameter on subagent spawns.
+ * Controls what happens to a session's records and transcript after the run completes.
  *
  * <ul>
  *   <li>{@link #KEEP} — retain session metadata and transcript (default for session mode)

@@ -22,8 +22,6 @@ import java.util.function.Consumer;
 /**
  * Tool for triggering the reviewer agent on a GitHub PR. When called by the coding agent, this
  * tool enqueues a reviewer run via the {@link Consumer} callback injected at construction time.
- *
- * <p>Mirrors open-swe's {@code request_pr_review} tool in {@code agent/tools/__init__.py}.
  */
 public class RequestPrReviewTool {
 

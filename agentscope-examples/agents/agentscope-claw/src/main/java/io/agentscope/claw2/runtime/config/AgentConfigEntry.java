@@ -28,8 +28,6 @@ import java.util.List;
  * workspace-scoped configuration (for example {@code subagents/*.md}) from the resolved {@link
  * #workspace} directory.
  *
- * <p>Fields mirror OpenClaw's agent definition schema:
- *
  * <ul>
  *   <li>{@link #model} — override model id (e.g. {@code "anthropic/claude-opus-4-7"})
  *   <li>{@link #tools} — allow/deny lists for built-in tools

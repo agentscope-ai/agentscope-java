@@ -15,7 +15,7 @@
  */
 package io.agentscope.claw2.runtime.session;
 
-/** Session classification, matching OpenClaw session kinds. */
+/** Session classification. */
 public enum SessionKind {
     SUBAGENT("subagent"),
     MAIN("main");

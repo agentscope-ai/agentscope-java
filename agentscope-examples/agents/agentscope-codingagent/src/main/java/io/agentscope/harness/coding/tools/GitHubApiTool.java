@@ -34,9 +34,6 @@ import java.util.Objects;
  * from the session context (via {@code RuntimeContext.extra("github_token")}) or falls back to
  * {@code GITHUB_TOKEN} / {@code GH_TOKEN} environment variables. The agent never sees the raw
  * token.
- *
- * <p>Mirrors open-swe's {@code http_request} + GitHub proxy approach, providing a dedicated tool
- * that automatically injects auth headers.
  */
 public class GitHubApiTool {
 

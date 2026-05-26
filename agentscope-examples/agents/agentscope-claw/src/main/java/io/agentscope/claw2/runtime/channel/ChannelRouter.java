@@ -22,8 +22,7 @@ import java.util.Objects;
 
 /**
  * Resolves the target {@code agentId} and stable {@link MsgContext} for an {@link InboundMessage}
- * by evaluating {@link ChannelBinding} rules in deterministic priority order — mirroring OpenClaw's
- * {@code resolveAgentRoute} binding tiers.
+ * by evaluating {@link ChannelBinding} rules in deterministic priority order.
  *
  * <h2>Binding evaluation tiers (highest → lowest priority)</h2>
  *
@@ -108,7 +107,7 @@ public final class ChannelRouter {
             matchedBy = "global-default";
         }
 
-        // Binding-level sessionScope overrides channel-level dmScope (mirrors OpenClaw behaviour)
+        // Binding-level sessionScope overrides channel-level dmScope
         DmScope effectiveScope =
                 matchedBinding != null && matchedBinding.sessionScope() != null
                         ? matchedBinding.sessionScope()

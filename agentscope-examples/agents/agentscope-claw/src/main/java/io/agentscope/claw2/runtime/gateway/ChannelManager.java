@@ -29,9 +29,6 @@ import org.slf4j.LoggerFactory;
  * Registry and lifecycle manager for {@link Channel} adapters. Provides outbound dispatch so the
  * gateway can deliver proactive messages (e.g. subagent announces) through the correct channel.
  *
- * <p>Mirrors OpenClaw's {@code createChannelManager} which handles channel start/stop and outbound
- * delivery routing.
- *
  * <h2>Lifecycle</h2>
  *
  * <ol>

@@ -22,7 +22,7 @@ import java.util.Set;
  * One routing rule that maps a set of inbound-message conditions to a target {@code agentId}.
  *
  * <p>A binding is evaluated by {@link ChannelRouter} at the tier corresponding to the most
- * specific non-null condition field it carries (OpenClaw priority order):
+ * specific non-null condition field it carries (priority order):
  *
  * <ol>
  *   <li>{@link #peer} — exact peer-key match ({@code "direct:u_123"} or {@code "channel:c_help"})
@@ -38,8 +38,8 @@ import java.util.Set;
  * wins. Only one condition tier is active per binding: the most specific non-null field determines
  * the tier.
  *
- * <p>The optional {@link #sessionScope} field mirrors OpenClaw's per-binding session override:
- * when non-null it takes precedence over the channel-level {@link ChannelConfig#dmScope()} for DM
+ * <p>The optional {@link #sessionScope} field provides a per-binding session override: when
+ * non-null it takes precedence over the channel-level {@link ChannelConfig#dmScope()} for DM
  * session key construction. This allows fine-grained control — e.g. a guild binding can use
  * {@link DmScope#PER_PEER} while the channel default remains {@link DmScope#MAIN}.
  *

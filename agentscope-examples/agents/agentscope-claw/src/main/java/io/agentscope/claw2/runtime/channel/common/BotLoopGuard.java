@@ -23,8 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * Per-peer sliding-window throttle for inbound channel events. Protects the bot from being looped
  * into runaway interaction with another bot (or a stuck user/script).
  *
- * <p>Defaults follow OpenClaw: {@code 20} events / {@code 60s} window. Once tripped the peer is
- * placed in a {@code 60s} cooldown during which {@link #allow(String)} returns {@code false}.
+ * <p>Defaults: {@code 20} events / {@code 60s} window. Once tripped the peer is placed in a
+ * {@code 60s} cooldown during which {@link #allow(String)} returns {@code false}.
  */
 public final class BotLoopGuard {
 
