@@ -482,7 +482,19 @@ SandboxExecutionGuard jvmGuard = key -> {
 
 已启用 `SubagentsHook` 时，若主 agent 在沙箱模式下构建，**子 agent 的 filesystem 会复用**同一 `SandboxBackedFilesystem` 的会话绑定策略（以当前实现为准，便于在同一次编排树内共享环境）。子 agent 本身仍是独立 `ReActAgent`；隔离边界与主 agent 的沙箱 spec 一致。
 
-## 13. 延伸阅读
+## 13. 后端选型与详细文档
+
+`agentscope-harness` 内置多个 `SandboxFilesystemSpec` 实现，可按场景选择：
+
+| 后端 | 适用场景 | 详细文档 |
+|------|---------|---------|
+| Docker | 本地开发 / 单进程 / 信任 shell | — |
+| Kubernetes | 自建 K8s 集群、节点级 bind mount | [§5.7](#57-可选沙箱后端kubernetes--daytona--e2bagentscope-harness-子包) |
+| Daytona | 通用托管沙箱 HTTP API | [§5.7](#57-可选沙箱后端kubernetes--daytona--e2bagentscope-harness-子包) |
+| E2B | 通用托管沙箱 + 平台快照 | [§5.7](#57-可选沙箱后端kubernetes--daytona--e2bagentscope-harness-子包) |
+| **AgentRun**（阿里云 FC 3.0 Sandbox） | 已用阿里云、需要中国大陆区域低延迟、想要实例级 NAS/OSS 动态挂载 | **[AgentRun 后端](./agentrun.md)** |
+
+## 14. 延伸阅读
 
 - [Filesystem](../filesystem.md) — 类层次、三种模式、`abstractFilesystem` 逃生口
 - [工具](../tool.md) — `FilesystemTool`、`ShellExecuteTool` 入参
