@@ -57,7 +57,10 @@ import reactor.core.publisher.Mono;
  * }</pre>
  *
  * @see <a href="https://help.aliyun.com/document_detail/2950054.html">DashScope TTS API Documentation</a>
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
+@Deprecated(since = "2.0.0")
 public class DashScopeTTSModel implements TTSModel {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeTTSModel.class);

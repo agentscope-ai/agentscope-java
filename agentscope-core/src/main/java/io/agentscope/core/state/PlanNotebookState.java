@@ -40,5 +40,8 @@ import io.agentscope.core.plan.model.Plan;
  * @see State
  * @see io.agentscope.core.plan.PlanNotebook
  * @see Plan
+ * @deprecated since 2.0.0. The plan package is removed; manage task hints in application code.
  */
+@Deprecated(since = "2.0.0")
+@SuppressWarnings("deprecation")
 public record PlanNotebookState(Plan currentPlan) implements State {}

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequireUserConfirmEvent;
@@ -35,7 +36,6 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContext;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.state.AgentState;
@@ -53,8 +53,8 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.util.context.Context;
 
-/** End-to-end tests for the Stage 7f HITL gating via {@link Sinks.Many}. */
-class Agent2HitlTest {
+/** End-to-end tests for HITL gating via {@link Sinks.Many}. */
+class ReActAgentHitlTest {
 
     private static AgentState newState() {
         return AgentState.builder().sessionId("session-hitl").build();
@@ -104,7 +104,6 @@ class Agent2HitlTest {
                 .build();
     }
 
-    /** ToolBase whose checkPermissions always returns {@link PermissionBehavior#ASK}. */
     private static final class AskingTool extends ToolBase {
         AskingTool(String name) {
             super(name, "asks for permission", schemaFor(), false, true, false, null, false, false);
@@ -134,7 +133,6 @@ class Agent2HitlTest {
         }
     }
 
-    /** ToolBase whose checkPermissions always returns {@link PermissionBehavior#ALLOW}. */
     private static final class AllowingTool extends ToolBase {
         AllowingTool(String name) {
             super(name, "auto-allow", schemaFor(), true, true, false, null, false, false);
@@ -172,8 +170,13 @@ class Agent2HitlTest {
         return tk;
     }
 
-    private static Agent2 buildAgent(ChatModelBase model, Toolkit toolkit) {
-        return new Agent2("asst", null, model, toolkit, List.of(), newState(), null, null, null);
+    private static ReActAgent buildAgent(ChatModelBase model, Toolkit toolkit) {
+        return ReActAgent.builder()
+                .name("asst")
+                .model(model)
+                .toolkit(toolkit)
+                .agentState(newState())
+                .build();
     }
 
     private static int indexOf(List<AgentEvent> events, Class<?> type) {
@@ -195,8 +198,6 @@ class Agent2HitlTest {
         return c;
     }
 
-    // ==================== Auto-deny path (no sink registered) ====================
-
     @Test
     void askingToolWithoutSinkAutoDeniesAndEmitsDeniedToolResult() {
         ChatModelBase model =
@@ -204,7 +205,7 @@ class Agent2HitlTest {
                         List.of(
                                 () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
                                 () -> Flux.just(textResponse("done"))));
-        Agent2 agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
 
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);
@@ -231,8 +232,6 @@ class Agent2HitlTest {
         assertEquals(ToolResultState.DENIED, end.getState());
     }
 
-    // ==================== Confirmed path (sink emits allow) ====================
-
     @Test
     void askingToolWithConfirmedSinkExecutesNormally() {
         ChatModelBase model =
@@ -240,15 +239,14 @@ class Agent2HitlTest {
                         List.of(
                                 () -> Flux.just(toolUseResponse("tc1", "ask", "ping")),
                                 () -> Flux.just(textResponse("done"))));
-        Agent2 agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
 
         Sinks.Many<ConfirmResult> sink = Sinks.many().multicast().onBackpressureBuffer();
 
         Flux<AgentEvent> stream =
                 agent.streamEvents(List.of())
-                        .contextWrite(Context.of(Agent2.CONFIRM_SINK_KEY, sink));
+                        .contextWrite(Context.of(ReActAgent.CONFIRM_SINK_KEY, sink));
 
-        // Pre-emit before subscribing: multicast().onBackpressureBuffer() buffers until subscribed.
         ToolUseBlock pending = ToolUseBlock.builder().id("tc1").name("ask").input(Map.of()).build();
         sink.tryEmitNext(new ConfirmResult(true, pending));
 
@@ -270,8 +268,6 @@ class Agent2HitlTest {
                 ToolResultState.SUCCESS, end.getState(), "confirmed call must produce SUCCESS");
     }
 
-    // ==================== Denied path (sink emits deny) ====================
-
     @Test
     void askingToolWithDeniedSinkEmitsDeniedToolResult() {
         ChatModelBase model =
@@ -279,7 +275,7 @@ class Agent2HitlTest {
                         List.of(
                                 () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
                                 () -> Flux.just(textResponse("done"))));
-        Agent2 agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
 
         Sinks.Many<ConfirmResult> sink = Sinks.many().multicast().onBackpressureBuffer();
         ToolUseBlock pending = ToolUseBlock.builder().id("tc1").name("ask").input(Map.of()).build();
@@ -287,7 +283,7 @@ class Agent2HitlTest {
 
         List<AgentEvent> events =
                 agent.streamEvents(List.of())
-                        .contextWrite(Context.of(Agent2.CONFIRM_SINK_KEY, sink))
+                        .contextWrite(Context.of(ReActAgent.CONFIRM_SINK_KEY, sink))
                         .collectList()
                         .block();
         assertNotNull(events);
@@ -301,8 +297,6 @@ class Agent2HitlTest {
         assertEquals(ToolResultState.DENIED, end.getState());
     }
 
-    // ==================== Bypass when no tool needs confirmation ====================
-
     @Test
     void allowingToolBypassesHitlEntirely() {
         ChatModelBase model =
@@ -310,7 +304,7 @@ class Agent2HitlTest {
                         List.of(
                                 () -> Flux.just(toolUseResponse("tc1", "allow", "x")),
                                 () -> Flux.just(textResponse("done"))));
-        Agent2 agent = buildAgent(model, toolkitWith(new AllowingTool("allow")));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AllowingTool("allow")));
 
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);

@@ -38,7 +38,10 @@ import java.util.Objects;
  *   <li>Filter or sanitize output</li>
  *   <li>Log outgoing responses</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(since = "2.0.0")
 public final class PostCallEvent extends HookEvent {
 
     private Msg finalMessage;

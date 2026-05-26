@@ -78,7 +78,12 @@ import reactor.core.publisher.Mono;
  *   <li>This exporter performs blocking file IO on an internal single-threaded queue to keep file
  *       order, step IDs, and run IDs consistent.</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. The hook system is replaced by
+ *     {@link io.agentscope.core.middleware.MiddlewareBase}.
  */
+@Deprecated(since = "2.0.0")
+@SuppressWarnings("deprecation")
 public final class JsonlTraceExporter implements Hook, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(JsonlTraceExporter.class);

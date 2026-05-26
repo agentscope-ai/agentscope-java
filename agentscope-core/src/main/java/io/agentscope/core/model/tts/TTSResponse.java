@@ -28,7 +28,11 @@ import java.util.Base64;
  *
  * <p>The response can contain either raw audio bytes or a URL to the audio file,
  * depending on the TTS provider and configuration.
+ *
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
+@Deprecated(since = "2.0.0")
 public class TTSResponse {
 
     /** Raw audio data bytes. */

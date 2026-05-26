@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
@@ -109,8 +110,8 @@ class HarnessAgentModelStringTest {
         SubagentEntry entry =
                 entries.stream().filter(e -> "sa".equals(e.name())).findFirst().orElseThrow();
 
-        HarnessAgent subAgent = (HarnessAgent) entry.factory().create();
-        assertSame(sub, subAgent.getDelegate().getModel());
+        ReActAgent subAgent = (ReActAgent) entry.factory().create();
+        assertSame(sub, subAgent.getModel());
     }
 
     private static Model stubModel(String assistantText) {

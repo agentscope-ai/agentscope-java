@@ -66,7 +66,10 @@ package io.agentscope.core.state;
  * @param statefulToolsManaged whether to manage stateful Tool states
  * @see StateModule
  * @see io.agentscope.core.ReActAgent
+ * @deprecated since 2.0.0. Persist via {@link AgentState} together with an external storage
+ *     backend.
  */
+@Deprecated(since = "2.0.0")
 public record StatePersistence(
         boolean memoryManaged,
         boolean toolkitManaged,

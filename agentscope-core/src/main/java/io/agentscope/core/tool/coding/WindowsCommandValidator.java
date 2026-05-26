@@ -44,7 +44,12 @@ import org.slf4j.LoggerFactory;
  *   <li>Removes extensions: {@code .exe}, {@code .bat}, {@code .cmd} (case-insensitive)</li>
  *   <li>Converts result to lowercase for consistent matching</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Use the replacements in {@link io.agentscope.core.tool.builtin}
+ *     ({@code Bash}, {@code Glob}, {@code Grep}).
  */
+@Deprecated(since = "2.0.0")
+@SuppressWarnings("deprecation")
 public class WindowsCommandValidator implements CommandValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(WindowsCommandValidator.class);

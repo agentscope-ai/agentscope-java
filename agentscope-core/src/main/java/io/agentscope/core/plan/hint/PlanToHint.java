@@ -23,7 +23,10 @@ import io.agentscope.core.plan.model.Plan;
  *
  * <p>Implementations analyze the plan and its subtasks to generate appropriate guidance messages
  * that help the agent understand what actions to take next.
+ *
+ * @deprecated since 2.0.0. The plan package is removed.
  */
+@Deprecated(since = "2.0.0")
 public interface PlanToHint {
 
     /**

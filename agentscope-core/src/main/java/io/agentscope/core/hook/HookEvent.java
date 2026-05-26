@@ -70,7 +70,9 @@ import java.util.Objects;
  *
  * @see Hook
  * @see HookEventType
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(since = "2.0.0")
 public abstract sealed class HookEvent
         permits PreCallEvent, PostCallEvent, ReasoningEvent, ActingEvent, SummaryEvent, ErrorEvent {
 

@@ -38,7 +38,11 @@ package io.agentscope.core.skill.repository;
  *     true
  * );
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
  */
+@Deprecated(since = "2.0.0")
 public class AgentSkillRepositoryInfo {
     private final String type;
     private final String location;

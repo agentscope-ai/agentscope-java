@@ -25,7 +25,12 @@ import java.util.List;
  * <p>Memory extends StateModule to provide state persistence capabilities, allowing conversation
  * history to be saved and restored through sessions. Different memory implementations can provide
  * various storage strategies such as in-memory, database-backed, or window-based storage.
+ *
+ * @deprecated since 2.0.0. Conversation context is now held on
+ *     {@link io.agentscope.core.state.AgentState#getContext()}. This interface is retained as a
+ *     write-only mirror for source compatibility with 1.0.x user code.
  */
+@Deprecated(since = "2.0.0")
 public interface Memory extends StateModule {
 
     /**

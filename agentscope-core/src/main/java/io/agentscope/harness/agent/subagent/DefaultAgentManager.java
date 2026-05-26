@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventSource;
@@ -151,9 +152,11 @@ public final class DefaultAgentManager {
      * @param prompt the user message to send
      */
     public Mono<Msg> invokeAgent(Agent agent, String sessionId, String userId, String prompt) {
+        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        if (agent instanceof ReActAgent react) {
+            return react.call(List.of(userMessage(prompt)), ctx);
+        }
         if (agent instanceof HarnessAgent harness) {
-            RuntimeContext ctx =
-                    RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
             return harness.call(userMessage(prompt), ctx);
         }
         return agent.call(List.of(userMessage(prompt)));
@@ -186,13 +189,13 @@ public final class DefaultAgentManager {
             EventSource source,
             StreamOptions options) {
         Flux<Event> childFlux;
-        if (agent instanceof HarnessAgent harness) {
-            RuntimeContext ctx =
-                    RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
-            StreamOptions effective = options != null ? options : StreamOptions.defaults();
+        StreamOptions effective = options != null ? options : StreamOptions.defaults();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        if (agent instanceof ReActAgent react) {
+            childFlux = react.stream(List.of(userMessage(prompt)), effective, ctx);
+        } else if (agent instanceof HarnessAgent harness) {
             childFlux = harness.stream(List.of(userMessage(prompt)), effective, ctx);
         } else {
-            StreamOptions effective = options != null ? options : StreamOptions.defaults();
             childFlux = agent.stream(List.of(userMessage(prompt)), effective);
         }
         return childFlux.map(event -> event.withSource(source));

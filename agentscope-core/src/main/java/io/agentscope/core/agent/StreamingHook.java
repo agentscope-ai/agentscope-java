@@ -40,6 +40,7 @@ import reactor.core.publisher.Mono;
  * <p>Intercepts hook callbacks and emits {@link Event} instances to a FluxSink. Handles event
  * filtering and chunk mode processing.
  */
+@SuppressWarnings("deprecation")
 class StreamingHook implements Hook {
 
     private final FluxSink<Event> sink;

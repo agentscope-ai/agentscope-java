@@ -24,7 +24,11 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * <p>The {@code voiceId} values correspond to the {@code voice} parameter
  * accepted by qwen3-tts-flash and qwen3-tts-flash-realtime.
+ *
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
+@Deprecated(since = "2.0.0")
 public enum Qwen3TTSFlashVoice {
 
     /**

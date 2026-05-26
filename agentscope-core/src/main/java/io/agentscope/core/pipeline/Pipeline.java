@@ -25,7 +25,10 @@ import reactor.core.publisher.Mono;
  * such as sequential, parallel (fanout), or custom flows.
  *
  * @param <T> Type of the pipeline result
+ * @deprecated since 2.0.0. The pipeline package is removed; compose flows using
+ *     {@link reactor.core.publisher.Flux} directly.
  */
+@Deprecated(since = "2.0.0")
 public interface Pipeline<T> {
 
     /**

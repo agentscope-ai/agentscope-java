@@ -48,7 +48,9 @@ package io.agentscope.core.memory;
  *
  * @see LongTermMemory
  * @see io.agentscope.core.ReActAgent
+ * @deprecated since 2.0.0. Long-term memory is removed.
  */
+@Deprecated(since = "2.0.0")
 public enum LongTermMemoryMode {
 
     /**

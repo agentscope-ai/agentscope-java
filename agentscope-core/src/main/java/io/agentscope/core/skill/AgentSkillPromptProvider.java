@@ -32,7 +32,11 @@ import java.util.regex.Pattern;
  * AgentSkillPromptProvider provider = new AgentSkillPromptProvider(registry);
  * String prompt = provider.getSkillSystemPrompt();
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
  */
+@Deprecated(since = "2.0.0")
 public class AgentSkillPromptProvider {
     private static final String INDENT = "  ";
     private static final Pattern XML_TAG_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");

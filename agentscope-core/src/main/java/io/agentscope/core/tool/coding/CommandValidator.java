@@ -38,7 +38,10 @@ import java.util.Set;
  * @see UnixCommandValidator
  * @see WindowsCommandValidator
  * @see ShellCommandTool
+ * @deprecated since 2.0.0. Use the replacements in {@link io.agentscope.core.tool.builtin}
+ *     ({@code Bash}, {@code Glob}, {@code Grep}).
  */
+@Deprecated(since = "2.0.0")
 public interface CommandValidator {
 
     /**

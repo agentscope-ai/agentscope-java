@@ -96,7 +96,10 @@ import reactor.core.publisher.Mono;
  * @see Agent
  * @see AgentBase#resetSubscribers(String, List)
  * @see AgentBase#removeSubscribers(String)
+ * @deprecated since 2.0.0. The pipeline package is removed; coordinate multi-agent broadcast in
+ *     user code.
  */
+@Deprecated(since = "2.0.0")
 public class MsgHub implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(MsgHub.class);

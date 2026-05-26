@@ -39,7 +39,12 @@ import reactor.core.publisher.Mono;
  *
  * <p>Security: When baseDir is specified, all file operations are restricted to that directory
  * to prevent unauthorized file access.
+ *
+ * @deprecated since 2.0.0. Use the replacements in {@link io.agentscope.core.tool.builtin}
+ *     ({@code Read}, {@code Write}, {@code Edit}).
  */
+@Deprecated(since = "2.0.0")
+@SuppressWarnings("deprecation")
 public class WriteFileTool {
 
     private static final Logger logger = LoggerFactory.getLogger(WriteFileTool.class);

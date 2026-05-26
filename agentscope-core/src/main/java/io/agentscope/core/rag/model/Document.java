@@ -30,7 +30,11 @@ import java.util.UUID;
  * <p>The document ID is automatically generated as a deterministic UUID based on
  * the document metadata (doc_id, chunk_id, and content), ensuring consistent IDs
  * for the same content across different runs.
+ *
+ * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
+ *     layer.
  */
+@Deprecated(since = "2.0.0")
 public class Document {
 
     private final String id;

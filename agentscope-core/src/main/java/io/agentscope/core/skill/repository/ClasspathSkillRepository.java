@@ -70,7 +70,11 @@ import org.slf4j.LoggerFactory;
  *     List<AgentSkill> allSkills = repository.getAllSkills();
  * }
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
  */
+@Deprecated(since = "2.0.0")
 public class ClasspathSkillRepository implements AgentSkillRepository {
 
     private final Logger logger = LoggerFactory.getLogger(ClasspathSkillRepository.class);

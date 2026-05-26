@@ -73,6 +73,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
             value = RealtimeTTSResponseEvent.SessionFinishedEvent.class,
             name = "session.finished")
 })
+@Deprecated(since = "2.0.0")
 public abstract class RealtimeTTSResponseEvent {
 
     @JsonProperty("type")

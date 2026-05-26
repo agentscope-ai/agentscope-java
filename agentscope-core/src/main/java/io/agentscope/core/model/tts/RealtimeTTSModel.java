@@ -63,7 +63,10 @@ import reactor.core.publisher.Flux;
  *
  * @see TTSModel
  * @see DashScopeRealtimeTTSModel
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
+@Deprecated(since = "2.0.0")
 public interface RealtimeTTSModel extends TTSModel {
 
     /**

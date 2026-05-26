@@ -45,7 +45,10 @@ import java.util.Objects;
  *   <li>Log intermediate tool outputs</li>
  *   <li>Monitor long-running tool operations</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(since = "2.0.0")
 public final class ActingChunkEvent extends ActingEvent {
 
     private final ToolResultBlock chunk;

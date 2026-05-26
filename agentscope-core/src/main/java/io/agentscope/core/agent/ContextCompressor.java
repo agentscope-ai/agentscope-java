@@ -21,9 +21,9 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
 import java.util.List;
@@ -62,9 +62,9 @@ public final class ContextCompressor {
     public static final String TRUNCATION_SUFFIX = "...[truncated]";
 
     private final ContextConfig config;
-    private final ChatModelBase model;
+    private final Model model;
 
-    public ContextCompressor(ContextConfig config, ChatModelBase model) {
+    public ContextCompressor(ContextConfig config, Model model) {
         this.config = Objects.requireNonNull(config, "config");
         this.model = Objects.requireNonNull(model, "model");
     }

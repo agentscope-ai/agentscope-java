@@ -40,7 +40,10 @@ import java.util.Objects;
  *   <li>Track agent invocation metrics</li>
  *   <li>Filter or modify input messages before agent processing</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(since = "2.0.0")
 public final class PreCallEvent extends HookEvent {
 
     private List<Msg> inputMessages;

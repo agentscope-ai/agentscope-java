@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ReplyEndEvent;
@@ -33,7 +34,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
-import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.Middleware;
 import io.agentscope.core.middleware.ReplyInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
@@ -60,7 +61,7 @@ import reactor.core.publisher.Mono;
  * End-to-end ReAct loop: tool-use → tool-result → text-terminate, with two tools and a recording
  * middleware. Verifies the canonical event order and the final reply text.
  */
-class Agent2E2ETest {
+class ReActAgentNewLoopE2ETest {
 
     private static final class ScriptedModel extends ChatModelBase {
         private final List<Supplier<Flux<ChatResponse>>> scripts;
@@ -133,7 +134,7 @@ class Agent2E2ETest {
         }
     }
 
-    private static final class RecordingMiddleware implements MiddlewareBase {
+    private static final class RecordingMiddleware implements Middleware {
         final List<String> trace = new ArrayList<>();
 
         @Override
@@ -153,7 +154,6 @@ class Agent2E2ETest {
 
     @Test
     void twoToolReactLoopProducesOrderedEventsAndFinalText() {
-        // Script: iter 1 → call tool "search" ; iter 2 → call tool "lookup" ; iter 3 → text reply.
         ScriptedModel model =
                 new ScriptedModel(
                         List.of(
@@ -167,17 +167,15 @@ class Agent2E2ETest {
         AgentState state = AgentState.builder().sessionId("e2e").build();
         RecordingMiddleware mw = new RecordingMiddleware();
 
-        Agent2 agent =
-                new Agent2(
-                        "asst",
-                        "you are helpful",
-                        model,
-                        tk,
-                        List.<MiddlewareBase>of(mw),
-                        state,
-                        null,
-                        null,
-                        null);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .middleware(mw)
+                        .agentState(state)
+                        .build();
 
         List<AgentEvent> events =
                 agent.streamEvents(
@@ -190,25 +188,20 @@ class Agent2E2ETest {
                         .block();
         assertNotNull(events);
 
-        // Model invoked 3 times (matches script length).
         assertEquals(3, model.calls.get(), "model must be called once per ReAct iteration");
 
-        // Event order: ReplyStart at index 0; ReplyEnd at last index.
         assertTrue(events.get(0) instanceof ReplyStartEvent, "first event must be ReplyStartEvent");
         assertTrue(
                 events.get(events.size() - 1) instanceof ReplyEndEvent,
                 "last event must be ReplyEndEvent");
 
-        // Three ModelCallEndEvent (one per reasoning step).
         long modelEnds = events.stream().filter(e -> e instanceof ModelCallEndEvent).count();
         assertEquals(3L, modelEnds);
 
-        // Two ToolCallEndEvent + two ToolResultEndEvent (one per tool call).
         assertEquals(2L, events.stream().filter(e -> e instanceof ToolCallEndEvent).count());
         long toolResEnds = events.stream().filter(e -> e instanceof ToolResultEndEvent).count();
         assertEquals(2L, toolResEnds);
 
-        // Every ToolResultEndEvent reports SUCCESS (both tools auto-allow).
         events.stream()
                 .filter(e -> e instanceof ToolResultEndEvent)
                 .forEach(
@@ -217,15 +210,12 @@ class Agent2E2ETest {
                                         ToolResultState.SUCCESS,
                                         ((ToolResultEndEvent) e).getState()));
 
-        // Middleware saw onReply + onActing enter/exit pairs.
         assertTrue(mw.trace.contains("reply:enter"), mw.trace.toString());
         assertTrue(mw.trace.contains("reply:exit"), mw.trace.toString());
         assertTrue(mw.trace.contains("acting:enter"), mw.trace.toString());
         assertTrue(mw.trace.contains("acting:exit"), mw.trace.toString());
 
-        // Final state.context has the user input + 3 assistant turns + 2 tool result msgs.
         List<Msg> ctx = state.getContext();
-        // At minimum the user input + the final assistant text reply must be present.
         boolean hasFinalText =
                 ctx.stream()
                         .filter(m -> m.getRole() == MsgRole.ASSISTANT)

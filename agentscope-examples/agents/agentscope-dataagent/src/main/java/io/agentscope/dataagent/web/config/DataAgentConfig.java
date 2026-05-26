@@ -248,15 +248,24 @@ public class DataAgentConfig {
      * {@code UserMarketplaceRegistry} can hydrate per-user marketplaces backed by approved
      * contributions on disk.
      *
-     * <p>The factory ignores the per-user / per-marketplace properties and always reads from
-     * {@code ${dataagent.shared-root}/skills} — the shared root is the same directory every
-     * agent's OverlayFilesystem points at as its lower layer, so an approved skill is
-     * immediately visible to every tenant without extra wiring.
+     * <p>The factory reads from {@code ${dataagent.shared-root}/agents/data-agent/skills} — the
+     * per-agent slice for the built-in {@code data-agent}, which is the same directory the
+     * per-(user, data-agent) sandbox projects in as its lower layer, so an approved skill is
+     * immediately visible to every tenant of {@code data-agent} without extra wiring. Skills
+     * approved for other agents live under their own {@code shared/agents/<agentId>/skills/}
+     * slices and surface through those agents' own overlays; this local marketplace does not
+     * cross-list them.
      */
     @Bean
     public DataAgentMarketplaceFactoryRegistration localMarketplaceFactory(
             DataAgentBootstrap bootstrap) {
-        Path sharedSkills = bootstrap.cwd().resolve("shared").resolve("skills");
+        Path sharedSkills =
+                bootstrap
+                        .cwd()
+                        .resolve("shared")
+                        .resolve("agents")
+                        .resolve("data-agent")
+                        .resolve("skills");
         return new DataAgentMarketplaceFactoryRegistration(
                 LocalApprovalMarketplace.TYPE,
                 (userId, id, props, wsf) -> new LocalApprovalMarketplace(id, sharedSkills));

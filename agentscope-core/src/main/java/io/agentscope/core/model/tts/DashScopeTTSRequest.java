@@ -40,8 +40,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *   }
  * }
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Deprecated(since = "2.0.0")
 public class DashScopeTTSRequest {
 
     @JsonProperty("model")

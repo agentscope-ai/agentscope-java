@@ -225,6 +225,8 @@ parts:
     title: 全部文章
   - file: zh/blogs/agentscope-v1-harness
     title: AgentScope Java 1.1 · Harness
+  - file: zh/blogs/agentscope-v1-builder
+    title: AgentScope Builder 发布
 
 - caption: 社区
   chapters:

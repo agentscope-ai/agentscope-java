@@ -90,6 +90,7 @@ import reactor.core.scheduler.Schedulers;
  * });
  * }</pre>
  */
+@SuppressWarnings("deprecation")
 public abstract class AgentBase implements StateModule, Agent {
 
     private final String agentId;

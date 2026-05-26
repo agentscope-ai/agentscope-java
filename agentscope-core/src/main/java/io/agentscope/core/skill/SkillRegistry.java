@@ -35,7 +35,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * This is a pure storage layer. All parameters are assumed to be non-null
  * unless explicitly documented. Parameter validation should be performed
  * at the Toolkit layer.
+ *
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
  */
+@Deprecated(since = "2.0.0")
 class SkillRegistry {
     private final Map<String, AgentSkill> skills = new ConcurrentHashMap<>();
     private final Map<String, RegisteredSkill> registeredSkills = new ConcurrentHashMap<>();

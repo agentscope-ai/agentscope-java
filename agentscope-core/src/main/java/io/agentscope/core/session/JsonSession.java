@@ -54,7 +54,11 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Graceful handling of missing sessions
  *   <li>Configurable storage directory
  * </ul>
+ *
+ * @deprecated since 2.0.0. The session package is removed; persist conversation state via
+ *     {@code AgentState} together with an external storage backend.
  */
+@Deprecated(since = "2.0.0")
 public class JsonSession implements Session {
 
     private final Path sessionDirectory;

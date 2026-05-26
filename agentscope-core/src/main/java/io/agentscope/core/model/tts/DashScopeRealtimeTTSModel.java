@@ -79,7 +79,11 @@ import reactor.core.publisher.Sinks;
  * // Finish and get remaining audio
  * tts.finish().subscribe(audio -> player.play(audio));
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
+@Deprecated(since = "2.0.0")
 public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeRealtimeTTSModel.class);

@@ -35,7 +35,10 @@ import reactor.core.publisher.Mono;
  * - State propagation through the pipeline
  * - Error handling and recovery
  * - Support for empty agent lists
+ *
+ * @deprecated since 2.0.0. The pipeline package is removed.
  */
+@Deprecated(since = "2.0.0")
 public class SequentialPipeline implements Pipeline<Msg> {
 
     private final List<AgentBase> agents;

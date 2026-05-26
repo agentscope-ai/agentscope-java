@@ -30,7 +30,11 @@ import java.util.List;
  * AgentSkillRepository repo = new GitHubSkillRepository("owner/repo");
  * AgentSkill skill = repo.getByName("calculate").orElseThrow();
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
  */
+@Deprecated(since = "2.0.0")
 public interface AgentSkillRepository extends AutoCloseable {
 
     /**

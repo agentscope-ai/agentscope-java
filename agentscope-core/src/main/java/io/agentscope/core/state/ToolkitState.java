@@ -38,5 +38,8 @@ import java.util.List;
  * @param activeGroups the list of currently active tool group names
  * @see State
  * @see io.agentscope.core.tool.Toolkit
+ * @deprecated since 2.0.0. Toolkit state is managed via
+ *     {@link io.agentscope.core.permission.PermissionContext}.
  */
+@Deprecated(since = "2.0.0")
 public record ToolkitState(List<String> activeGroups) implements State {}

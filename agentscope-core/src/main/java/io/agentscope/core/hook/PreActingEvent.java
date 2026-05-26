@@ -43,7 +43,10 @@ import java.util.Objects;
  *   <li>Implement per-tool authorization checks</li>
  *   <li>Log or monitor individual tool invocations</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(since = "2.0.0")
 public final class PreActingEvent extends ActingEvent {
 
     /**

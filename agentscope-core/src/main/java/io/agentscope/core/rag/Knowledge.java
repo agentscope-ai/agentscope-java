@@ -26,7 +26,11 @@ import reactor.core.publisher.Mono;
  * <p>This interface provides a unified API for storing and retrieving documents
  * in a knowledge base. Knowledge bases are used in RAG (Retrieval-Augmented Generation)
  * systems to provide context to language models.
+ *
+ * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
+ *     layer.
  */
+@Deprecated(since = "2.0.0")
 public interface Knowledge {
 
     /**

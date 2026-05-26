@@ -34,7 +34,10 @@ import io.agentscope.core.plan.model.SubTask;
  *   <li><b>No Subtask In Progress:</b> Some tasks done, but none currently in progress
  *   <li><b>At the End:</b> All subtasks are done or abandoned
  * </ul>
+ *
+ * @deprecated since 2.0.0. The plan package is removed.
  */
+@Deprecated(since = "2.0.0")
 public class DefaultPlanToHint implements PlanToHint {
 
     // Prompt templates for plan execution guidance

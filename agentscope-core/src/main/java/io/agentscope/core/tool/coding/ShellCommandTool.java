@@ -69,7 +69,11 @@ import reactor.core.scheduler.Schedulers;
  * @see CommandValidator
  * @see UnixCommandValidator
  * @see WindowsCommandValidator
+ * @deprecated since 2.0.0. Use the replacements in {@link io.agentscope.core.tool.builtin}
+ *     ({@code Bash}, {@code Glob}, {@code Grep}).
  */
+@Deprecated(since = "2.0.0")
+@SuppressWarnings("deprecation")
 public class ShellCommandTool implements AgentTool {
 
     private static final Logger logger = LoggerFactory.getLogger(ShellCommandTool.class);

@@ -57,7 +57,11 @@ import reactor.core.publisher.Mono;
  * </ul>
  *
  * @hidden
+ * @deprecated since 2.0.0. The hook system is replaced by
+ *     {@link io.agentscope.core.middleware.MiddlewareBase}.
  */
+@Deprecated(since = "2.0.0")
+@SuppressWarnings("deprecation")
 public class StructuredOutputHook implements Hook {
 
     private static final Logger log = LoggerFactory.getLogger(StructuredOutputHook.class);

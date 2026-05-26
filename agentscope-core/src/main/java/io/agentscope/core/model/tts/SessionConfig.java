@@ -23,7 +23,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *
  * <p>This class represents the session configuration sent to the TTS service
  * via WebSocket, including voice settings, format, and mode.
+ *
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
+@Deprecated(since = "2.0.0")
 public class SessionConfig {
 
     @JsonProperty("mode")

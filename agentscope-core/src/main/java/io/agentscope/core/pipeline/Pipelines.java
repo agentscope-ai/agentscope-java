@@ -28,7 +28,10 @@ import reactor.core.publisher.Mono;
  *
  * These methods are stateless and suitable for one-time use, while the
  * class-based Pipeline implementations are better for reusable configurations.
+ *
+ * @deprecated since 2.0.0. The pipeline package is removed.
  */
+@Deprecated(since = "2.0.0")
 public class Pipelines {
 
     private Pipelines() {

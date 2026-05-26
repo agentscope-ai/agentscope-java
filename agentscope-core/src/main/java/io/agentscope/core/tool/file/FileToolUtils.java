@@ -24,7 +24,11 @@ import java.util.List;
 
 /**
  * Utility methods shared by text file tools.
+ *
+ * @deprecated since 2.0.0. Use the replacements in {@link io.agentscope.core.tool.builtin}
+ *     ({@code Read}, {@code Write}, {@code Edit}).
  */
+@Deprecated(since = "2.0.0")
 public class FileToolUtils {
 
     private FileToolUtils() {

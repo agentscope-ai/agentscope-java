@@ -42,6 +42,13 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Manages a collection of {@link AgentSkill} instances and exposes them as tools.
+ *
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
+ */
+@Deprecated(since = "2.0.0")
 public class SkillBox implements StateModule {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
     private static final String BASE64_PREFIX = "base64:";

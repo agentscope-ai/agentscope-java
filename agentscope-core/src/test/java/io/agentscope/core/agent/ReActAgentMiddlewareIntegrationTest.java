@@ -19,13 +19,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ReplyEndEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.ActingInput;
-import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.Middleware;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.middleware.ReplyInput;
@@ -43,8 +44,8 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-/** Integration tests asserting the onion middleware ordering around the core Agent2 phases. */
-class Agent2MiddlewareIntegrationTest {
+/** Integration tests asserting the onion middleware ordering around the core ReAct phases. */
+class ReActAgentMiddlewareIntegrationTest {
 
     private static AgentState newState() {
         return AgentState.builder().sessionId("session-mw").build();
@@ -73,7 +74,7 @@ class Agent2MiddlewareIntegrationTest {
     }
 
     /** Records entry/exit at every middleware hook to a shared trace list. */
-    private static final class RecordingMiddleware implements MiddlewareBase {
+    private static final class RecordingMiddleware implements Middleware {
         private final String tag;
         private final List<String> trace;
 
@@ -121,23 +122,21 @@ class Agent2MiddlewareIntegrationTest {
         }
     }
 
-    private static Agent2 buildAgent(ChatModelBase model, List<MiddlewareBase> middlewares) {
-        return new Agent2(
-                "asst",
-                "hello-system",
-                model,
-                new Toolkit(),
-                middlewares,
-                newState(),
-                null,
-                null,
-                null);
+    private static ReActAgent buildAgent(ChatModelBase model, List<Middleware> middlewares) {
+        return ReActAgent.builder()
+                .name("asst")
+                .sysPrompt("hello-system")
+                .model(model)
+                .toolkit(new Toolkit())
+                .middlewares(middlewares)
+                .agentState(newState())
+                .build();
     }
 
     @Test
     void singleMiddlewareSeesReplyAndReasoningAndModelCall() {
         List<String> trace = new ArrayList<>();
-        Agent2 agent =
+        ReActAgent agent =
                 buildAgent(new FixedTextModel("ok"), List.of(new RecordingMiddleware("A", trace)));
 
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
@@ -155,7 +154,7 @@ class Agent2MiddlewareIntegrationTest {
     @Test
     void onionOrderingFollowsRegistrationForReplyHook() {
         List<String> trace = new CopyOnWriteArrayList<>();
-        Agent2 agent =
+        ReActAgent agent =
                 buildAgent(
                         new FixedTextModel("ok"),
                         List.of(
@@ -174,7 +173,7 @@ class Agent2MiddlewareIntegrationTest {
     @Test
     void middlewareSeesEveryHookCategoryOnPlainTextReply() {
         List<String> trace = new ArrayList<>();
-        Agent2 agent =
+        ReActAgent agent =
                 buildAgent(new FixedTextModel("ok"), List.of(new RecordingMiddleware("A", trace)));
         agent.streamEvents(List.of()).collectList().block();
 

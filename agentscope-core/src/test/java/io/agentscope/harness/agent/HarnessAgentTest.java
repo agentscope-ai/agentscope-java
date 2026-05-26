@@ -26,6 +26,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -386,7 +387,7 @@ class HarnessAgentTest {
 
         SubagentEntry entry =
                 entries.stream().filter(e -> "reviewer".equals(e.name())).findFirst().orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        ReActAgent child = (ReActAgent) entry.factory().create();
 
         assertEquals(
                 defWorkspace.normalize(),
@@ -419,7 +420,7 @@ class HarnessAgentTest {
                         .filter(e -> "isolated-auto".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        ReActAgent child = (ReActAgent) entry.factory().create();
 
         Path expected = workspace.resolve("agents/isolated-auto/workspace").normalize();
         assertEquals(
@@ -459,7 +460,7 @@ class HarnessAgentTest {
                         .filter(e -> "shared-ext".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        ReActAgent child = (ReActAgent) entry.factory().create();
 
         assertEquals(
                 workspace.normalize(),
@@ -492,7 +493,7 @@ class HarnessAgentTest {
                         .filter(e -> "shared-inline".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        ReActAgent child = (ReActAgent) entry.factory().create();
 
         assertEquals(
                 workspace.normalize(),
@@ -516,7 +517,7 @@ class HarnessAgentTest {
                         .filter(e -> "general-purpose".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) gp.factory().create();
+        ReActAgent child = (ReActAgent) gp.factory().create();
 
         assertEquals(
                 workspace.normalize(),
@@ -538,8 +539,8 @@ class HarnessAgentTest {
                         .disableFilesystemTools()
                         .buildSubagentEntries(workspace);
 
-        HarnessAgent child =
-                (HarnessAgent)
+        ReActAgent child =
+                (ReActAgent)
                         entries.stream()
                                 .filter(e -> "general-purpose".equals(e.name()))
                                 .findFirst()
@@ -547,9 +548,7 @@ class HarnessAgentTest {
                                 .factory()
                                 .create();
         List<String> toolNames =
-                child.getDelegate().getToolkit().getToolSchemas().stream()
-                        .map(ToolSchema::getName)
-                        .toList();
+                child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
         assertFalse(toolNames.contains("read_file"), "disableFilesystemTools should be mirrored");
     }
 
@@ -564,8 +563,8 @@ class HarnessAgentTest {
                         .compaction(cfg)
                         .buildSubagentEntries(workspace);
 
-        HarnessAgent child =
-                (HarnessAgent)
+        ReActAgent child =
+                (ReActAgent)
                         entries.stream()
                                 .filter(e -> "general-purpose".equals(e.name()))
                                 .findFirst()
@@ -609,16 +608,16 @@ class HarnessAgentTest {
                         .subagent(decl2)
                         .buildSubagentEntries(workspace);
 
-        HarnessAgent childA =
-                (HarnessAgent)
+        ReActAgent childA =
+                (ReActAgent)
                         entries.stream()
                                 .filter(e -> "agent-a".equals(e.name()))
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
                                 .create();
-        HarnessAgent childB =
-                (HarnessAgent)
+        ReActAgent childB =
+                (ReActAgent)
                         entries.stream()
                                 .filter(e -> "agent-b".equals(e.name()))
                                 .findFirst()
@@ -662,8 +661,8 @@ class HarnessAgentTest {
                         .subagent(decl)
                         .buildSubagentEntries(workspace);
 
-        HarnessAgent child =
-                (HarnessAgent)
+        ReActAgent child =
+                (ReActAgent)
                         entries.stream()
                                 .filter(e -> "narrow".equals(e.name()))
                                 .findFirst()
@@ -671,9 +670,7 @@ class HarnessAgentTest {
                                 .factory()
                                 .create();
         List<String> toolNames =
-                child.getDelegate().getToolkit().getToolSchemas().stream()
-                        .map(ToolSchema::getName)
-                        .toList();
+                child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
         assertTrue(
                 toolNames.contains("parent_allowed"), "allowlisted inherited tool should remain");
         assertFalse(

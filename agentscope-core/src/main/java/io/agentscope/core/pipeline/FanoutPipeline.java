@@ -45,7 +45,11 @@ import reactor.core.scheduler.Schedulers;
  * - Enhanced error handling with detailed agent failure information
  * - Composite exception collection for multiple agent failures
  * - Individual agent error isolation without affecting others
+ *
+ * @deprecated since 2.0.0. The pipeline package is removed; compose multi-agent flows using
+ *     {@link reactor.core.publisher.Flux} directly in user code.
  */
+@Deprecated(since = "2.0.0")
 public class FanoutPipeline implements Pipeline<List<Msg>> {
 
     private final List<AgentBase> agents;

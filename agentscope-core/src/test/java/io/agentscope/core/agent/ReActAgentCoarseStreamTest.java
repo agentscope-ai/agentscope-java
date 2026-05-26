@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -45,11 +46,11 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Exercises the coarse {@code Flux<Event>} surface produced by {@link Agent2#stream(List,
+ * Exercises the coarse {@code Flux<Event>} surface produced by {@link ReActAgent#stream(List,
  * StreamOptions)} — verifies that the real {@code adaptToCoarseEvent} translation produces
  * REASONING / TOOL_RESULT / SUMMARY events with the expected {@code isLast} flags.
  */
-class Agent2CoarseStreamTest {
+class ReActAgentCoarseStreamTest {
 
     private static final class ScriptedModel extends ChatModelBase {
         private final List<Supplier<Flux<ChatResponse>>> scripts;
@@ -132,14 +133,19 @@ class Agent2CoarseStreamTest {
 
         AgentState state = AgentState.builder().sessionId("coarse").build();
 
-        Agent2 agent = new Agent2("asst", null, model, tk, List.of(), state, null, null, null);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(tk)
+                        .agentState(state)
+                        .build();
 
         List<Event> events =
                 agent.stream(List.of(), StreamOptions.defaults()).collectList().block();
         assertNotNull(events);
         assertTrue(events.size() > 0, "coarse stream must be non-empty");
 
-        // At least one terminal REASONING (isLast=true) — from ModelCallEndEvent.
         long terminalReasoning =
                 events.stream()
                         .filter(e -> e.getType() == EventType.REASONING && e.isLast())
@@ -148,7 +154,6 @@ class Agent2CoarseStreamTest {
                 terminalReasoning >= 1,
                 "expected at least one terminal REASONING event, got " + terminalReasoning);
 
-        // Exactly one terminal TOOL_RESULT (isLast=true) — from the single ToolResultEndEvent.
         long terminalToolResult =
                 events.stream()
                         .filter(e -> e.getType() == EventType.TOOL_RESULT && e.isLast())
@@ -161,20 +166,27 @@ class Agent2CoarseStreamTest {
 
     @Test
     void coarseStreamEmitsSummaryWhenMaxItersExceeded() {
-        // Always return a tool call → reactLoop will never terminate via text; ReactConfig with
-        // tiny maxIters triggers ExceedMaxItersEvent → mapped to SUMMARY(isLast=true).
         ScriptedModel model =
                 new ScriptedModel(
                         List.of(
                                 () -> Flux.just(toolUseResponse("c1", "echo", "x1")),
-                                () -> Flux.just(toolUseResponse("c2", "echo", "x2"))));
+                                () -> Flux.just(toolUseResponse("c2", "echo", "x2")),
+                                () -> Flux.just(textResponse("forced-summary"))));
         Toolkit tk = new Toolkit();
         tk.registerAgentTool(new EchoTool());
 
         AgentState state = AgentState.builder().sessionId("coarse-max").build();
         ReactConfig react = new ReactConfig(1, false);
 
-        Agent2 agent = new Agent2("asst", null, model, tk, List.of(), state, null, null, react);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(tk)
+                        .agentState(state)
+                        .reactConfig(react)
+                        .maxIters(1)
+                        .build();
 
         List<Event> events =
                 agent.stream(List.of(), StreamOptions.defaults()).collectList().block();

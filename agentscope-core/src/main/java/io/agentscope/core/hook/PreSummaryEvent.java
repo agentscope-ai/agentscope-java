@@ -45,7 +45,10 @@ import java.util.Objects;
  *   <li>Change generation parameters for summary</li>
  *   <li>Log summary generation input</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(since = "2.0.0")
 public final class PreSummaryEvent extends SummaryEvent {
 
     private List<Msg> inputMessages;

@@ -34,6 +34,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = TTSEvent.ClearEvent.class, name = "input_text_buffer.clear"),
     @JsonSubTypes.Type(value = TTSEvent.FinishEvent.class, name = "session.finish")
 })
+@Deprecated(since = "2.0.0")
 public abstract class TTSEvent {
 
     @JsonProperty("type")

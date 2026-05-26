@@ -86,12 +86,6 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-harness</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- AgentScope All -->
             <dependency>
                 <groupId>io.agentscope</groupId>

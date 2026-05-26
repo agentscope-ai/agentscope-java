@@ -113,7 +113,12 @@ import reactor.core.publisher.Mono;
  *
  * @see HookEvent
  * @see HookEventType
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
+ *     Middleware exposes {@code onReply}, {@code onReasoning}, {@code onActing},
+ *     {@code onModelCall}, and {@code onSystemPrompt} hook points and replaces this entire
+ *     hook system.
  */
+@Deprecated(since = "2.0.0")
 public interface Hook {
 
     /**

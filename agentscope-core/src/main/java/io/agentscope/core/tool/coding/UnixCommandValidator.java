@@ -41,7 +41,12 @@ import org.slf4j.LoggerFactory;
  *   <li>Extracts first token before space/tab</li>
  *   <li>Removes script extensions: {@code .sh}, {@code .py}, {@code .rb}, {@code .pl}, {@code .bash}, {@code .zsh}</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Use the replacements in {@link io.agentscope.core.tool.builtin}
+ *     ({@code Bash}, {@code Glob}, {@code Grep}).
  */
+@Deprecated(since = "2.0.0")
+@SuppressWarnings("deprecation")
 public class UnixCommandValidator implements CommandValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(UnixCommandValidator.class);

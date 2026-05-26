@@ -20,7 +20,11 @@ package io.agentscope.core.model.tts;
  *
  * <p>This exception encapsulates errors that occur during text-to-speech
  * synthesis, including API errors, network issues, and invalid configurations.
+ *
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
+@Deprecated(since = "2.0.0")
 public class TTSException extends RuntimeException {
 
     /** HTTP status code (if applicable). */

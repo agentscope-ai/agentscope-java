@@ -47,7 +47,10 @@ import java.util.List;
  *   <li>Add metadata</li>
  *   <li>Request to stop the agent for human review via {@link #stopAgent()}</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(since = "2.0.0")
 public final class PostReasoningEvent extends ReasoningEvent {
 
     private Msg reasoningMessage;

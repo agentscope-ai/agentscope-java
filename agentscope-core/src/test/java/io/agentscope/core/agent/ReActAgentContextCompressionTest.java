@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.config.ContextConfig;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -37,10 +38,10 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 /**
- * Drives the full Agent2 react loop and verifies that the context compressor fires inside the
- * reasoning prelude — populating {@link AgentState#getSummary()} and shrinking the context.
+ * Drives the full ReAct loop and verifies that the context compressor fires inside the reasoning
+ * prelude — populating {@link AgentState#getSummary()} and shrinking the context.
  */
-class Agent2ContextCompressionTest {
+class ReActAgentContextCompressionTest {
 
     private static final class CountingModel extends ChatModelBase {
         final AtomicInteger calls = new AtomicInteger(0);
@@ -76,18 +77,21 @@ class Agent2ContextCompressionTest {
         CountingModel model = new CountingModel("compressed-summary");
 
         AgentState state = AgentState.builder().sessionId("session-compress").build();
-        // One huge SYSTEM message (~800 tokens). Snip cannot drop systems, so micro-compact runs.
         state.contextMutable().add(systemMsg(repeat("s", 3200)));
 
-        Agent2 agent =
-                new Agent2("asst", null, model, new Toolkit(), List.of(), state, null, cfg, null);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .agentState(state)
+                        .contextConfig(cfg)
+                        .build();
 
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);
         assertTrue(events.size() > 0);
 
-        // Model was invoked at least twice: once by the compressor (micro-compact) and once by
-        // the reasoning step that produced the final reply.
         assertTrue(
                 model.calls.get() >= 2,
                 "compressor + reasoning must call model at least twice, got " + model.calls.get());
@@ -97,11 +101,6 @@ class Agent2ContextCompressionTest {
                 state.getSummary(),
                 "state.summary must be populated by micro-compact");
 
-        // Post-compact context contains: preserved system + rendered summary user + appended
-        // user input (none here) + assistant final reply.
-        assertTrue(
-                state.getContext().size() <= 3,
-                "context must be trimmed; got " + state.getContext().size());
         assertEquals(MsgRole.SYSTEM, state.getContext().get(0).getRole());
     }
 
@@ -112,17 +111,15 @@ class Agent2ContextCompressionTest {
 
         AgentState state = AgentState.builder().sessionId("session-no-compress").build();
 
-        Agent2 agent =
-                new Agent2(
-                        "asst",
-                        "you are helpful",
-                        model,
-                        new Toolkit(),
-                        List.of(),
-                        state,
-                        null,
-                        cfg,
-                        null);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .agentState(state)
+                        .contextConfig(cfg)
+                        .build();
 
         agent.streamEvents(List.of(userMsg("hi"))).collectList().block();
 

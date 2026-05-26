@@ -37,6 +37,9 @@ package io.agentscope.core.state;
  * @param systemPrompt the system prompt used to configure agent behavior
  * @see State
  * @see StateModule
+ * @deprecated since 2.0.0. Use {@link AgentState} for conversation context; persistence is now
+ *     performed externally via a storage backend.
  */
+@Deprecated(since = "2.0.0")
 public record AgentMetaState(String id, String name, String description, String systemPrompt)
         implements State {}

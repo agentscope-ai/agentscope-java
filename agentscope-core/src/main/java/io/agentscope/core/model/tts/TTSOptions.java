@@ -30,7 +30,11 @@ package io.agentscope.core.model.tts;
  *     .speed(1.0f)
  *     .build();
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The TTS module is removed; integrate text-to-speech outside the
+ *     framework.
  */
+@Deprecated(since = "2.0.0")
 public class TTSOptions {
 
     /** Voice name/ID for synthesis (e.g., "Cherry", "zhimao"). */

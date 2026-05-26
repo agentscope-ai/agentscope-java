@@ -54,7 +54,11 @@ import java.util.stream.Collectors;
  * // Load state
  * Optional<AgentMetaState> meta = session.get(sessionKey, "agent_meta", AgentMetaState.class);
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The session package is removed; persist conversation state via
+ *     {@code AgentState} together with an external storage backend.
  */
+@Deprecated(since = "2.0.0")
 public class InMemorySession implements Session {
 
     /** Storage for session states. Key: sessionKey string, Value: state data map */

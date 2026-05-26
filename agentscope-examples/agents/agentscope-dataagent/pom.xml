@@ -48,7 +48,7 @@
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-harness</artifactId>
+            <artifactId>agentscope-core</artifactId>
         </dependency>
 
         <!-- Git skill repository: GitDataAgentMarketplace delegates clone/fetch to GitSkillRepository -->

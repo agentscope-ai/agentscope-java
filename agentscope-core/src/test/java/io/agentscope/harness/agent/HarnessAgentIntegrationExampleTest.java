@@ -218,7 +218,7 @@ class HarnessAgentIntegrationExampleTest {
                                 () -> new AssertionError("missing subagent entry: " + childId));
 
         Agent sub = child.factory().create();
-        assertInstanceOf(HarnessAgent.class, sub);
+        assertInstanceOf(io.agentscope.core.ReActAgent.class, sub);
         assertEquals(childId, sub.getName());
 
         Msg subReply = sub.call(List.of(userText("task for child"))).block();

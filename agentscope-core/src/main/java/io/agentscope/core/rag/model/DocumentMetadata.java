@@ -48,7 +48,11 @@ import java.util.Map;
  * TextBlock content = TextBlock.builder().text("Document content").build();
  * DocumentMetadata metadata = new DocumentMetadata(content, "doc-123", "chunk-0", payload);
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
+ *     layer.
  */
+@Deprecated(since = "2.0.0")
 public class DocumentMetadata {
 
     private final ContentBlock content;
