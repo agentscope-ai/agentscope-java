@@ -371,15 +371,15 @@ HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
 ### Higress 示例
 
 查看完整的 Higress 示例：
-- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
+- `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
 
 ## 完整示例
 
 查看完整的 MCP 示例：
-- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
+- `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
 
 运行示例：
 ```bash
-cd agentscope-examples/quickstart
+cd agentscope-examples/documentation/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.McpToolExample"
 ```
