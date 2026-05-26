@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.1.0-maas-SNAPSHOT</revision>
+        <revision>1.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -494,9 +494,15 @@
     </dependencyManagement>
 
     <distributionManagement>
+        <repository>
+            <id>sonatype-nexus-staging</id>
+            <name>Nexus Release Repository</name>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
         <snapshotRepository>
-            <id>snapshots</id>
-            <url>http://mvnrepo.alibaba-inc.com/mvn/snapshots</url>
+            <id>sonatype-nexus-snapshots</id>
+            <name>Sonatype Nexus Snapshots</name>
+            <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
         </snapshotRepository>
     </distributionManagement>
 
