@@ -75,6 +75,7 @@ header:
     - '**/docs/**'
     - '**/.prettierrc'
     - 'agentscope-examples/**/frontend/**'
+    - '**/Dockerfile'
     - '**/src/main/resources/**'
     - '**/src/test/resources/**'
   comment: on-failure
