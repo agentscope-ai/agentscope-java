@@ -163,7 +163,10 @@ public final class Read extends ToolBase {
         if (filePath instanceof String path && !path.isBlank()) {
             Path parent = Path.of(path).getParent();
             if (parent != null) {
-                String parentGlob = parent.toString() + "/*";
+                // Normalise to forward slashes so the suggested glob looks the same on Windows
+                // (where Path.toString uses '\\') as on POSIX. The matchRule glob matcher and
+                // the user-visible rule are both expected to use '/'.
+                String parentGlob = parent.toString().replace('\\', '/') + "/*";
                 suggestions.add(
                         new PermissionRule(
                                 getName(), parentGlob, PermissionBehavior.ALLOW, "suggested"));

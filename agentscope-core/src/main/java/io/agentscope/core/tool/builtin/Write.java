@@ -186,12 +186,12 @@ public final class Write extends ToolBase {
         if (filePath instanceof String path && !path.isBlank()) {
             Path parent = Path.of(path).getParent();
             if (parent != null) {
+                // Normalise to forward slashes so the suggested glob looks the same on Windows
+                // (where Path.toString uses '\\') as on POSIX.
+                String parentGlob = parent.toString().replace('\\', '/') + "/*";
                 suggestions.add(
                         new PermissionRule(
-                                getName(),
-                                parent.toString() + "/*",
-                                PermissionBehavior.ALLOW,
-                                "suggested"));
+                                getName(), parentGlob, PermissionBehavior.ALLOW, "suggested"));
             }
         }
         suggestions.add(new PermissionRule(getName(), null, PermissionBehavior.ALLOW, "suggested"));
