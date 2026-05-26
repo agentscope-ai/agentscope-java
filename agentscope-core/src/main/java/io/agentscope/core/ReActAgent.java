@@ -1016,55 +1016,70 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             String replyId,
             AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
 
-        return Flux.<AgentEvent>create(
-                        sink -> {
-                            for (ToolUseBlock tool : toolCalls) {
-                                sink.next(
-                                        new ToolResultStartEvent(
-                                                replyId, tool.getId(), tool.getName()));
-                            }
-
-                            toolkit.setInternalChunkCallback(
-                                    (toolUse, chunk) -> {
-                                        if (chunk.getOutput() != null) {
-                                            for (ContentBlock block : chunk.getOutput()) {
-                                                if (block instanceof TextBlock tb) {
-                                                    sink.next(
-                                                            new ToolResultTextDeltaEvent(
-                                                                    replyId,
-                                                                    toolUse.getId(),
-                                                                    tb.getText()));
-                                                } else {
-                                                    sink.next(
-                                                            new ToolResultDataDeltaEvent(
-                                                                    replyId,
-                                                                    toolUse.getId(),
-                                                                    block));
-                                                }
+        // Capture the parent Reactor Context (set by AgentBase.createEventStream, which puts the
+        // SubagentEventBus there) so we can forward it into the inner executeToolCalls subscribe.
+        // Without this, the bare .subscribe() below detaches from the upstream chain and tools
+        // like AgentSpawnTool see an empty ContextView, breaking child-event forwarding.
+        return Flux.<AgentEvent>deferContextual(
+                        parentCtx ->
+                                Flux.<AgentEvent>create(
+                                        sink -> {
+                                            for (ToolUseBlock tool : toolCalls) {
+                                                sink.next(
+                                                        new ToolResultStartEvent(
+                                                                replyId,
+                                                                tool.getId(),
+                                                                tool.getName()));
                                             }
-                                        }
-                                        notifyActingChunk(toolUse, chunk).subscribe();
-                                    });
 
-                            executeToolCalls(toolCalls)
-                                    .subscribe(
-                                            results -> {
-                                                resultHolder.set(results);
-                                                for (Map.Entry<ToolUseBlock, ToolResultBlock>
-                                                        entry : results) {
-                                                    ToolResultState state =
-                                                            determineToolResultState(
-                                                                    entry.getValue());
-                                                    sink.next(
-                                                            new ToolResultEndEvent(
-                                                                    replyId,
-                                                                    entry.getKey().getId(),
-                                                                    state));
-                                                }
-                                                sink.complete();
-                                            },
-                                            sink::error);
-                        })
+                                            toolkit.setInternalChunkCallback(
+                                                    (toolUse, chunk) -> {
+                                                        if (chunk.getOutput() != null) {
+                                                            for (ContentBlock block :
+                                                                    chunk.getOutput()) {
+                                                                if (block instanceof TextBlock tb) {
+                                                                    sink.next(
+                                                                            new ToolResultTextDeltaEvent(
+                                                                                    replyId,
+                                                                                    toolUse.getId(),
+                                                                                    tb.getText()));
+                                                                } else {
+                                                                    sink.next(
+                                                                            new ToolResultDataDeltaEvent(
+                                                                                    replyId,
+                                                                                    toolUse.getId(),
+                                                                                    block));
+                                                                }
+                                                            }
+                                                        }
+                                                        notifyActingChunk(toolUse, chunk)
+                                                                .subscribe();
+                                                    });
+
+                                            executeToolCalls(toolCalls)
+                                                    .contextWrite(ctx -> ctx.putAll(parentCtx))
+                                                    .subscribe(
+                                                            results -> {
+                                                                resultHolder.set(results);
+                                                                for (Map.Entry<
+                                                                                ToolUseBlock,
+                                                                                ToolResultBlock>
+                                                                        entry : results) {
+                                                                    ToolResultState state =
+                                                                            determineToolResultState(
+                                                                                    entry
+                                                                                            .getValue());
+                                                                    sink.next(
+                                                                            new ToolResultEndEvent(
+                                                                                    replyId,
+                                                                                    entry.getKey()
+                                                                                            .getId(),
+                                                                                    state));
+                                                                }
+                                                                sink.complete();
+                                                            },
+                                                            sink::error);
+                                        }))
                 .doOnNext(this::publishEvent);
     }
 
