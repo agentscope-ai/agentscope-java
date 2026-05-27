@@ -28,7 +28,13 @@ public final class ToolDangerousPathConstants {
 
     private ToolDangerousPathConstants() {}
 
-    /** Sensitive files that should never be auto-edited (shell rc, SSH, credential stores). */
+    /**
+     * Sensitive files that should never be auto-edited.
+     *
+     * <p>Includes shell rc files, SSH config, credential stores, and {@code .env}
+     * variants that commonly hold secrets. Aligned with Python
+     * {@code tool/_constants.py} (PR #1656).
+     */
     public static final List<String> DEFAULT_DANGEROUS_FILES =
             List.of(
                     ".gitconfig",
@@ -42,7 +48,17 @@ public final class ToolDangerousPathConstants {
                     ".ssh/authorized_keys",
                     ".netrc",
                     ".npmrc",
-                    ".pypirc");
+                    ".pypirc",
+                    ".env",
+                    ".envrc",
+                    ".env.local",
+                    ".env.development",
+                    ".env.development.local",
+                    ".env.test",
+                    ".env.test.local",
+                    ".env.staging",
+                    ".env.production",
+                    ".env.production.local");
 
     /** Directory names whose presence anywhere in a path marks it sensitive. */
     public static final List<String> DEFAULT_DANGEROUS_DIRECTORIES =

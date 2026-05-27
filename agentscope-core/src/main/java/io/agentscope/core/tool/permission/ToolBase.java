@@ -22,6 +22,8 @@ import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
@@ -184,13 +186,31 @@ public abstract class ToolBase implements AgentTool {
 
     /**
      * @return {@code true} when {@code filePath}'s filename matches one of {@link #dangerousFiles}
-     *     (case-insensitive), or when any segment matches one of {@link #dangerousDirectories}
+     *     (case-insensitive), or when any segment matches one of {@link #dangerousDirectories}.
+     *     Also resolves symlinks and re-checks the real path to prevent bypass via symlink
+     *     pointing at a dangerous target.
      */
     protected boolean isDangerousPath(String filePath) {
         if (filePath == null || filePath.isBlank()) {
             return false;
         }
         Path absolute = Path.of(expandTilde(filePath)).toAbsolutePath().normalize();
+        if (isDangerousAbsolute(absolute)) {
+            return true;
+        }
+        // Resolve symlinks and re-check the real path
+        try {
+            Path resolved = Files.exists(absolute) ? absolute.toRealPath() : absolute;
+            if (!resolved.equals(absolute) && isDangerousAbsolute(resolved)) {
+                return true;
+            }
+        } catch (IOException ignored) {
+            // If we can't resolve, stick with the logical-path result
+        }
+        return false;
+    }
+
+    private boolean isDangerousAbsolute(Path absolute) {
         Path fileNamePath = absolute.getFileName();
         String fileNameLower =
                 fileNamePath == null ? "" : fileNamePath.toString().toLowerCase(Locale.ROOT);
