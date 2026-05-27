@@ -27,23 +27,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.hook.PostSummaryEvent;
-import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.legacy.hook.PostActingEvent;
+import io.agentscope.core.legacy.hook.PostReasoningEvent;
+import io.agentscope.core.legacy.hook.PostSummaryEvent;
+import io.agentscope.core.legacy.hook.PreCallEvent;
+import io.agentscope.core.legacy.session.InMemorySession;
+import io.agentscope.core.legacy.session.Session;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -303,25 +305,53 @@ class GracefulShutdownTest {
         }
 
         @Test
-        @DisplayName("bindSession and checkAndClearShutdownInterrupted work together")
-        void sessionBindingAndInterruptedCheck() {
-            Session session = new InMemorySession();
-            SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session");
+        @DisplayName("bindStateSaver and checkAndClearShutdownInterrupted work together")
+        void stateSaverAndInterruptedCheck() {
             TestableAgent agent = createTestAgent("agent-1");
+            AtomicReference<AgentState> savedState = new AtomicReference<>();
 
-            manager.bindSession(agent, session, sessionKey);
+            manager.bindStateSaver(agent, savedState::set);
 
             assertFalse(manager.checkAndClearShutdownInterrupted(agent));
 
             manager.registerRequest(agent);
             manager.saveOnInterruptObserved(agent);
 
+            assertTrue(agent.getAgentState().isShutdownInterrupted());
+            assertNotNull(savedState.get());
+
             assertTrue(manager.checkAndClearShutdownInterrupted(agent));
             assertFalse(manager.checkAndClearShutdownInterrupted(agent));
         }
 
         @Test
-        @DisplayName("bindSession with null arguments is no-op")
+        @DisplayName("bindStateSaver with null arguments is no-op")
+        void bindStateSaverNullArgs() {
+            TestableAgent agent = createTestAgent("agent-1");
+
+            assertDoesNotThrow(() -> manager.bindStateSaver(null, s -> {}));
+            assertDoesNotThrow(() -> manager.bindStateSaver(agent, null));
+        }
+
+        @Test
+        @DisplayName("deprecated bindSession delegates to bindStateSaver")
+        @SuppressWarnings("deprecation")
+        void bindSessionCompat() {
+            Session session = new InMemorySession();
+            SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session");
+            TestableAgent agent = createTestAgent("agent-1");
+
+            manager.bindSession(agent, session, sessionKey);
+            manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(agent);
+
+            assertTrue(agent.getAgentState().isShutdownInterrupted());
+            assertTrue(session.get(sessionKey, "agent_state", AgentState.class).isPresent());
+        }
+
+        @Test
+        @DisplayName("deprecated bindSession with null arguments is no-op")
+        @SuppressWarnings("deprecation")
         void bindSessionNullArgs() {
             TestableAgent agent = createTestAgent("agent-1");
             Session session = new InMemorySession();
@@ -338,9 +368,9 @@ class GracefulShutdownTest {
         }
 
         @Test
-        @DisplayName("checkAndClearShutdownInterrupted with no binding returns false")
-        void checkInterruptedNoBinding() {
-            TestableAgent agent = createTestAgent("agent-1");
+        @DisplayName("checkAndClearShutdownInterrupted with no state returns false")
+        void checkInterruptedNoState() {
+            TestableAgent agent = new TestableAgent("no-state", false, false, false);
             assertFalse(manager.checkAndClearShutdownInterrupted(agent));
         }
 
@@ -536,13 +566,8 @@ class GracefulShutdownTest {
         @Test
         @DisplayName("PreCallEvent deduplicates input when shutdown-interrupted")
         void preCallDeduplication() {
-            Session session = new InMemorySession();
-            SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session");
             TestableAgent agent = createTestAgent("agent-1");
-
-            manager.bindSession(agent, session, sessionKey);
-            manager.registerRequest(agent);
-            manager.saveOnInterruptObserved(agent);
+            agent.getAgentState().setShutdownInterrupted(true);
 
             List<Msg> inputMsgs = List.of(buildMsg("user input"));
             PreCallEvent event = new PreCallEvent(agent, inputMsgs);
@@ -550,6 +575,7 @@ class GracefulShutdownTest {
             StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
 
             assertTrue(event.getInputMessages().isEmpty());
+            assertFalse(agent.getAgentState().isShutdownInterrupted());
         }
 
         @Test
@@ -569,8 +595,9 @@ class GracefulShutdownTest {
         @DisplayName("Unrelated events pass through unchanged")
         void unrelatedEventsPassThrough() {
             TestableAgent agent = createTestAgent("agent-1");
-            io.agentscope.core.hook.ErrorEvent event =
-                    new io.agentscope.core.hook.ErrorEvent(agent, new RuntimeException("test"));
+            io.agentscope.core.legacy.hook.ErrorEvent event =
+                    new io.agentscope.core.legacy.hook.ErrorEvent(
+                            agent, new RuntimeException("test"));
 
             StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
         }
@@ -603,10 +630,11 @@ class GracefulShutdownTest {
         }
     }
 
-    // ==================== ShutdownSessionBinding ====================
+    // ==================== ShutdownSessionBinding (deprecated) ====================
 
     @Nested
-    @DisplayName("ShutdownSessionBinding")
+    @DisplayName("ShutdownSessionBinding (deprecated)")
+    @SuppressWarnings("deprecation")
     class SessionBindingTests {
 
         @Test
@@ -634,23 +662,6 @@ class GracefulShutdownTest {
 
             assertSame(session, binding.session());
             assertSame(key, binding.sessionKey());
-        }
-    }
-
-    // ==================== ShutdownInterruptedState ====================
-
-    @Nested
-    @DisplayName("ShutdownInterruptedState")
-    class InterruptedStateTests {
-
-        @Test
-        @DisplayName("Records interrupted flag")
-        void recordsInterruptedFlag() {
-            ShutdownInterruptedState state = new ShutdownInterruptedState(true);
-            assertTrue(state.interrupted());
-
-            ShutdownInterruptedState notInterrupted = new ShutdownInterruptedState(false);
-            assertFalse(notInterrupted.interrupted());
         }
     }
 
@@ -732,7 +743,7 @@ class GracefulShutdownTest {
         @DisplayName("interruptForShutdown is idempotent (returns false on second call)")
         void interruptIdempotent() {
             TestableAgent agent = createTestAgent("ctx-1");
-            ActiveRequestContext ctx = new ActiveRequestContext("req-1", agent, null, null);
+            ActiveRequestContext ctx = new ActiveRequestContext("req-1", agent, null);
 
             assertTrue(ctx.interruptForShutdown());
             assertFalse(ctx.interruptForShutdown());
@@ -741,69 +752,45 @@ class GracefulShutdownTest {
         }
 
         @Test
-        @DisplayName("hasSessionBinding returns true when both session and key present")
-        void hasSessionBindingTrue() {
+        @DisplayName("saveState sets shutdownInterrupted and invokes saver")
+        void saveStatePersists() {
             TestableAgent agent = createTestAgent("ctx-2");
-            Session session = new InMemorySession();
-            SimpleSessionKey key = SimpleSessionKey.of("test");
-            ActiveRequestContext ctx = new ActiveRequestContext("req-2", agent, session, key);
+            AtomicReference<AgentState> savedState = new AtomicReference<>();
+            ActiveRequestContext ctx = new ActiveRequestContext("req-2", agent, savedState::set);
 
-            assertTrue(ctx.hasSessionBinding());
+            ctx.saveState();
+
+            assertTrue(agent.getAgentState().isShutdownInterrupted());
+            assertNotNull(savedState.get());
+            assertTrue(savedState.get().isShutdownInterrupted());
         }
 
         @Test
-        @DisplayName("hasSessionBinding returns false when session is null")
-        void hasSessionBindingNullSession() {
+        @DisplayName("saveState is no-op when no saver")
+        void saveStateNoSaver() {
             TestableAgent agent = createTestAgent("ctx-3");
-            ActiveRequestContext ctx =
-                    new ActiveRequestContext("req-3", agent, null, SimpleSessionKey.of("t"));
+            ActiveRequestContext ctx = new ActiveRequestContext("req-3", agent, null);
 
-            assertFalse(ctx.hasSessionBinding());
+            assertDoesNotThrow(ctx::saveState);
+            assertFalse(agent.getAgentState().isShutdownInterrupted());
         }
 
         @Test
-        @DisplayName("hasSessionBinding returns false when sessionKey is null")
-        void hasSessionBindingNullKey() {
-            TestableAgent agent = createTestAgent("ctx-4");
-            ActiveRequestContext ctx =
-                    new ActiveRequestContext("req-4", agent, new InMemorySession(), null);
+        @DisplayName("saveState is no-op when agent has no state")
+        void saveStateNoAgentState() {
+            TestableAgent agent = new TestableAgent("ctx-4", false, false, false);
+            AtomicReference<AgentState> savedState = new AtomicReference<>();
+            ActiveRequestContext ctx = new ActiveRequestContext("req-4", agent, savedState::set);
 
-            assertFalse(ctx.hasSessionBinding());
-        }
-
-        @Test
-        @DisplayName("saveToSession is no-op when no session binding")
-        void saveToSessionNoBinding() {
-            TestableAgent agent = createTestAgent("ctx-5");
-            ActiveRequestContext ctx = new ActiveRequestContext("req-5", agent, null, null);
-
-            assertDoesNotThrow(ctx::saveToSession);
-        }
-
-        @Test
-        @DisplayName("saveToSession persists agent state and interrupted flag")
-        void saveToSessionPersists() {
-            TestableAgent agent = createTestAgent("ctx-6");
-            Session session = new InMemorySession();
-            SimpleSessionKey key = SimpleSessionKey.of("persist-test");
-            ActiveRequestContext ctx = new ActiveRequestContext("req-6", agent, session, key);
-
-            ctx.saveToSession();
-
-            var flag =
-                    session.get(
-                            key,
-                            ActiveRequestContext.SHUTDOWN_INTERRUPTED_KEY,
-                            ShutdownInterruptedState.class);
-            assertTrue(flag.isPresent());
-            assertTrue(flag.get().interrupted());
+            assertDoesNotThrow(ctx::saveState);
+            assertNull(savedState.get());
         }
 
         @Test
         @DisplayName("getRequestId returns the id")
         void getRequestId() {
-            TestableAgent agent = createTestAgent("ctx-7");
-            ActiveRequestContext ctx = new ActiveRequestContext("my-request-id", agent, null, null);
+            TestableAgent agent = createTestAgent("ctx-5");
+            ActiveRequestContext ctx = new ActiveRequestContext("my-request-id", agent, null);
 
             assertEquals("my-request-id", ctx.getRequestId());
         }
@@ -815,15 +802,22 @@ class GracefulShutdownTest {
 
         private final boolean shouldFail;
         private final boolean shouldBeSlow;
+        private final AgentState agentState;
 
-        TestableAgent(String name, boolean shouldFail, boolean shouldBeSlow) {
+        TestableAgent(String name, boolean shouldFail, boolean shouldBeSlow, boolean hasState) {
             super(name);
             this.shouldFail = shouldFail;
             this.shouldBeSlow = shouldBeSlow;
+            this.agentState = hasState ? AgentState.builder().build() : null;
         }
 
         public boolean isInterruptFlagSet() {
             return getInterruptFlag().get();
+        }
+
+        @Override
+        public AgentState getAgentState() {
+            return agentState;
         }
 
         @Override
@@ -869,15 +863,15 @@ class GracefulShutdownTest {
     }
 
     private static TestableAgent createTestAgent(String name) {
-        return new TestableAgent(name, false, false);
+        return new TestableAgent(name, false, false, true);
     }
 
     private static TestableAgent createFailingAgent(String name) {
-        return new TestableAgent(name, true, false);
+        return new TestableAgent(name, true, false, true);
     }
 
     private static TestableAgent createSlowAgent(String name) {
-        return new TestableAgent(name, false, true);
+        return new TestableAgent(name, false, true, true);
     }
 
     private static Msg buildMsg(String text) {

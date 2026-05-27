@@ -47,17 +47,19 @@ import java.util.UUID;
     "context",
     "reply_id",
     "cur_iter",
+    "shutdown_interrupted",
     "permission_context",
     "tool_context",
     "tasks_context"
 })
-public final class AgentState {
+public final class AgentState implements State {
 
     private final String sessionId;
     private String summary;
     private final List<Msg> context;
     private String replyId;
     private int curIter;
+    private boolean shutdownInterrupted;
     private final PermissionContext permissionContext;
     private final ToolContext toolContext;
     private final TaskContext tasksContext;
@@ -68,6 +70,7 @@ public final class AgentState {
         this.context = new ArrayList<>(builder.context);
         this.replyId = builder.replyId == null ? newHex() : builder.replyId;
         this.curIter = builder.curIter;
+        this.shutdownInterrupted = builder.shutdownInterrupted;
         this.permissionContext =
                 builder.permissionContext == null
                         ? PermissionContext.builder().build()
@@ -84,6 +87,7 @@ public final class AgentState {
             @JsonProperty("context") List<Msg> context,
             @JsonProperty("reply_id") String replyId,
             @JsonProperty("cur_iter") Integer curIter,
+            @JsonProperty("shutdown_interrupted") Boolean shutdownInterrupted,
             @JsonProperty("permission_context") PermissionContext permissionContext,
             @JsonProperty("tool_context") ToolContext toolContext,
             @JsonProperty("tasks_context") TaskContext tasksContext) {
@@ -102,6 +106,9 @@ public final class AgentState {
         }
         if (curIter != null) {
             b.curIter(curIter);
+        }
+        if (shutdownInterrupted != null) {
+            b.shutdownInterrupted(shutdownInterrupted);
         }
         if (permissionContext != null) {
             b.permissionContext(permissionContext);
@@ -162,6 +169,15 @@ public final class AgentState {
         this.curIter = curIter;
     }
 
+    @JsonProperty("shutdown_interrupted")
+    public boolean isShutdownInterrupted() {
+        return shutdownInterrupted;
+    }
+
+    public void setShutdownInterrupted(boolean shutdownInterrupted) {
+        this.shutdownInterrupted = shutdownInterrupted;
+    }
+
     @JsonProperty("permission_context")
     public PermissionContext getPermissionContext() {
         return permissionContext;
@@ -181,6 +197,23 @@ public final class AgentState {
         return new Builder();
     }
 
+    /**
+     * Serialize this state to a pretty-printed JSON string.
+     *
+     * <p>Intended for external storage backends to persist the entire agent state as a single
+     * JSON document (e.g., {@code agent_state.json}).
+     */
+    public String toJson() {
+        return io.agentscope.core.util.JsonUtils.getJsonCodec().toPrettyJson(this);
+    }
+
+    /**
+     * Deserialize an {@link AgentState} from a JSON string produced by {@link #toJson()}.
+     */
+    public static AgentState fromJsonString(String json) {
+        return io.agentscope.core.util.JsonUtils.getJsonCodec().fromJson(json, AgentState.class);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -190,6 +223,7 @@ public final class AgentState {
             return false;
         }
         return curIter == other.curIter
+                && shutdownInterrupted == other.shutdownInterrupted
                 && Objects.equals(sessionId, other.sessionId)
                 && Objects.equals(summary, other.summary)
                 && Objects.equals(context, other.context)
@@ -207,6 +241,7 @@ public final class AgentState {
                 context,
                 replyId,
                 curIter,
+                shutdownInterrupted,
                 permissionContext,
                 toolContext,
                 tasksContext);
@@ -220,6 +255,8 @@ public final class AgentState {
                 + replyId
                 + ", curIter="
                 + curIter
+                + ", shutdownInterrupted="
+                + shutdownInterrupted
                 + ", contextSize="
                 + context.size()
                 + '}';
@@ -231,6 +268,7 @@ public final class AgentState {
         private List<Msg> context = new ArrayList<>();
         private String replyId;
         private int curIter;
+        private boolean shutdownInterrupted;
         private PermissionContext permissionContext;
         private ToolContext toolContext;
         private TaskContext tasksContext;
@@ -265,6 +303,11 @@ public final class AgentState {
 
         public Builder curIter(int curIter) {
             this.curIter = curIter;
+            return this;
+        }
+
+        public Builder shutdownInterrupted(boolean shutdownInterrupted) {
+            this.shutdownInterrupted = shutdownInterrupted;
             return this;
         }
 

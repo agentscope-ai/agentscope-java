@@ -27,10 +27,10 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.ReasoningChunkEvent;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.ReasoningChunkEvent;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -98,7 +98,7 @@ class ReActAgentTest {
         assertNotNull(agent.getAgentId(), "Agent ID should not be null");
         assertEquals(
                 TestConstants.TEST_REACT_AGENT_NAME, agent.getName(), "Agent name should match");
-        assertEquals(memory, agent.getMemory(), "Memory should be the same instance");
+        assertNotNull(agent.getMemory(), "Memory accessor should not be null");
         assertEquals(
                 TestConstants.DEFAULT_MAX_ITERS,
                 agent.getMaxIters(),
@@ -422,12 +422,12 @@ class ReActAgentTest {
                         .memory(memory)
                         .build();
 
-        int initialMemorySize = memory.getMessages().size();
+        int initialMemorySize = agent.getMemory().getMessages().size();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Calculate 4 * 7");
         agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        List<Msg> messages = memory.getMessages();
+        List<Msg> messages = agent.getMemory().getMessages();
 
         // Memory should contain: user message, assistant tool call, tool result, final response
         assertTrue(
@@ -941,13 +941,14 @@ class ReActAgentTest {
                 new java.util.concurrent.CopyOnWriteArrayList<>();
 
         // Create a hook to capture ReasoningChunkEvent and check metadata
-        io.agentscope.core.hook.Hook captureHook =
-                new io.agentscope.core.hook.Hook() {
+        io.agentscope.core.legacy.hook.Hook captureHook =
+                new io.agentscope.core.legacy.hook.Hook() {
                     @Override
-                    public <T extends io.agentscope.core.hook.HookEvent>
+                    public <T extends io.agentscope.core.legacy.hook.HookEvent>
                             reactor.core.publisher.Mono<T> onEvent(T event) {
                         if (event
-                                instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
+                                instanceof
+                                io.agentscope.core.legacy.hook.ReasoningChunkEvent chunkEvent) {
                             // Capture accumulated message and check its metadata
                             Msg accumulated = chunkEvent.getAccumulated();
                             if (accumulated != null) {

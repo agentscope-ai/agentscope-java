@@ -20,14 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.session.InMemorySession;
+import io.agentscope.core.legacy.session.JsonSession;
+import io.agentscope.core.legacy.session.Session;
+import io.agentscope.core.legacy.state.StateModule;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.OpenAIChatModel;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -99,13 +100,14 @@ public class StateAndSessionTest {
                         .memory(memory)
                         .build();
 
-        // Add some conversation history
-        memory.addMessage(
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("What's 2+2?").build())
-                        .build());
+        // Add some conversation history via agent's memory accessor
+        agent.getMemory()
+                .addMessage(
+                        Msg.builder()
+                                .name("user")
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("What's 2+2?").build())
+                                .build());
 
         // Save agent state
         agent.saveTo(session, sessionKey);
@@ -114,21 +116,19 @@ public class StateAndSessionTest {
         assertTrue(session.exists(sessionKey));
 
         // Create new agent and load state
-        InMemoryMemory newMemory = new InMemoryMemory();
         ReActAgent newAgent =
                 ReActAgent.builder()
                         .name("EmptyAgent")
                         .sysPrompt("Empty")
                         .model(model)
                         .toolkit(new Toolkit())
-                        .memory(newMemory)
                         .build();
 
         newAgent.loadFrom(session, sessionKey);
 
         // Verify state was restored - only memory state is restored
         // Agent name is configuration, not runtime state
-        assertEquals(1, newMemory.getMessages().size());
+        assertEquals(1, newAgent.getMemory().getMessages().size());
     }
 
     @Test
@@ -164,26 +164,24 @@ public class StateAndSessionTest {
         // Verify session exists
         assertTrue(session.exists(sessionKey));
 
-        // Create new components to load into
-        InMemoryMemory newMemory = new InMemoryMemory();
+        // Create new agent to load into
         ReActAgent newAgent =
                 ReActAgent.builder()
                         .name("EmptyAgent")
                         .sysPrompt("Empty")
                         .model(model)
                         .toolkit(new Toolkit())
-                        .memory(newMemory)
                         .build();
 
         // Load agent state directly
         newAgent.loadFrom(session, sessionKey);
 
-        // Verify state was restored - only memory state is restored
-        // Agent name is configuration, not runtime state
-        assertEquals(1, newMemory.getMessages().size());
+        // Verify state was restored via agent's memory accessor
+        assertEquals(1, newAgent.getMemory().getMessages().size());
         assertEquals(
                 "Hello world",
-                ((TextBlock) newMemory.getMessages().get(0).getFirstContentBlock()).getText());
+                ((TextBlock) newAgent.getMemory().getMessages().get(0).getFirstContentBlock())
+                        .getText());
 
         // Test session listing
         Set<SessionKey> sessionKeys = session.listSessionKeys();

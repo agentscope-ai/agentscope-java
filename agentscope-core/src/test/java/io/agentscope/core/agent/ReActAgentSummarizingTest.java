@@ -24,7 +24,7 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -381,20 +381,20 @@ class ReActAgentSummarizingTest {
                         .build();
 
         // Check initial memory size
-        int initialMemorySize = memory.getMessages().size();
+        int initialMemorySize = agent.getMemory().getMessages().size();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Please help");
         Msg response =
                 agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify memory has grown
-        int finalMemorySize = memory.getMessages().size();
+        int finalMemorySize = agent.getMemory().getMessages().size();
         assertTrue(
                 finalMemorySize > initialMemorySize,
                 "Memory should contain additional messages after summarizing");
 
         // Verify the last message is the summary
-        Msg lastMessage = memory.getMessages().get(finalMemorySize - 1);
+        Msg lastMessage = agent.getMemory().getMessages().get(finalMemorySize - 1);
         assertEquals(response, lastMessage, "Last message in memory should be the summary");
         assertEquals(
                 MsgRole.ASSISTANT, lastMessage.getRole(), "Summary message should be ASSISTANT");
@@ -482,7 +482,7 @@ class ReActAgentSummarizingTest {
         // CRITICAL: Verify that the pending tool call has been resolved in memory
         // Before the fix, memory would have pending tool calls without results
         // After the fix, summarizing() should add error results for pending tools
-        List<Msg> memoryMessages = memory.getMessages();
+        List<Msg> memoryMessages = agent.getMemory().getMessages();
 
         // Find if there's a tool result message for the pending tool
         boolean hasToolResultForPendingTool =
@@ -639,7 +639,7 @@ class ReActAgentSummarizingTest {
         Msg summaryResponse = invokeSummarizing(agent);
         assertNotNull(summaryResponse, "Summary response should not be null");
 
-        List<Msg> memoryMessages = memory.getMessages();
+        List<Msg> memoryMessages = agent.getMemory().getMessages();
 
         long toolId1ToolRoleCount =
                 memoryMessages.stream()

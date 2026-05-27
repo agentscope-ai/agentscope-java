@@ -16,20 +16,22 @@
 package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.agentscope.core.hook.ErrorEvent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.agent.StreamingHook;
+import io.agentscope.core.legacy.hook.ErrorEvent;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.PostCallEvent;
+import io.agentscope.core.legacy.hook.PreCallEvent;
+import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.legacy.memory.Memory;
+import io.agentscope.core.legacy.state.StateModule;
+import io.agentscope.core.legacy.tracing.TracerRegistry;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.shutdown.GracefulShutdownHook;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
-import io.agentscope.core.state.StateModule;
-import io.agentscope.core.tracing.TracerRegistry;
+import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -513,6 +515,14 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Recovery message to return to the user
      */
     protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
+
+    /**
+     * Returns the agent's mutable runtime state, or {@code null} if this agent type does not
+     * maintain an {@link AgentState}.
+     */
+    public AgentState getAgentState() {
+        return null;
+    }
 
     /**
      * Current per-call {@link RuntimeContext} when bound (e.g. by {@code ReActAgent} during a

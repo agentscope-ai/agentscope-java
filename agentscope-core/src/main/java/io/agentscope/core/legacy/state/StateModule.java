@@ -13,9 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.state;
+package io.agentscope.core.legacy.state;
 
-import io.agentscope.core.session.Session;
+import io.agentscope.core.legacy.session.Session;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
 
 /**
  * Interface for all stateful components in AgentScope.
@@ -41,7 +44,11 @@ import io.agentscope.core.session.Session;
  * // Save state
  * agent.saveTo(session, "user_123");
  * }</pre>
+ *
+ * @deprecated since 2.0.0. Persist via {@link AgentState} together with an external storage
+ *     backend. This interface is retained for source compatibility with 1.0.x user code.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface StateModule {
 
     /**

@@ -17,8 +17,7 @@ package io.agentscope.core.shutdown;
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.AgentState;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,34 +33,26 @@ final class ActiveRequestContext {
     private final AgentBase agent;
     private final AtomicBoolean shutdownInterruptIssued = new AtomicBoolean(false);
 
-    private final Session session;
-    private final SessionKey sessionKey;
+    private final ShutdownStateSaver saver;
 
-    ActiveRequestContext(
-            String requestId, AgentBase agent, Session session, SessionKey sessionKey) {
+    ActiveRequestContext(String requestId, AgentBase agent, ShutdownStateSaver saver) {
         this.requestId = requestId;
         this.agent = agent;
-        this.session = session;
-        this.sessionKey = sessionKey;
+        this.saver = saver;
     }
 
     String getRequestId() {
         return requestId;
     }
 
-    boolean hasSessionBinding() {
-        return session != null && sessionKey != null;
-    }
-
-    static final String SHUTDOWN_INTERRUPTED_KEY = "shutdown_interrupted";
-
-    void saveToSession() {
-        if (!hasSessionBinding()) {
+    void saveState() {
+        AgentState state = agent.getAgentState();
+        if (saver == null || state == null) {
             return;
         }
         try {
-            agent.saveTo(session, sessionKey);
-            session.save(sessionKey, SHUTDOWN_INTERRUPTED_KEY, new ShutdownInterruptedState(true));
+            state.setShutdownInterrupted(true);
+            saver.save(state);
         } catch (Exception e) {
             log.warn("Failed to save agent state for request {}", requestId, e);
         }

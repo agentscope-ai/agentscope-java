@@ -15,13 +15,23 @@
  */
 package io.agentscope.core.shutdown;
 
-import io.agentscope.core.state.State;
+import io.agentscope.core.state.AgentState;
 
 /**
- * Persistent flag indicating that an agent was interrupted by graceful shutdown.
+ * Strategy for persisting {@link AgentState} during graceful shutdown.
  *
- * <p>Stored in the {@link io.agentscope.core.session.Session} alongside agent state so
- * the framework can detect a shutdown-interrupted session on the next request and avoid
- * adding a duplicate user prompt.
+ * <p>Implementations are registered via
+ * {@link GracefulShutdownManager#bindStateSaver(io.agentscope.core.agent.Agent, ShutdownStateSaver)}
+ * so the shutdown manager can checkpoint agent state without depending on the legacy
+ * {@link io.agentscope.core.legacy.session.Session} API.
  */
-public record ShutdownInterruptedState(boolean interrupted) implements State {}
+@FunctionalInterface
+public interface ShutdownStateSaver {
+
+    /**
+     * Persist the given agent state snapshot.
+     *
+     * @param state the current agent state (with {@code shutdownInterrupted} already set)
+     */
+    void save(AgentState state);
+}

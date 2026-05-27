@@ -20,7 +20,6 @@ import io.agentscope.core.agent.ContextCompressor;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.agent.config.ContextConfig;
 import io.agentscope.core.agent.config.ModelConfig;
@@ -47,26 +46,42 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
-import io.agentscope.core.hook.ActingChunkEvent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PendingToolRecoveryHook;
-import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.hook.PostSummaryEvent;
-import io.agentscope.core.hook.PreActingEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.hook.PreSummaryEvent;
-import io.agentscope.core.hook.ReasoningChunkEvent;
-import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.LongTermMemory;
-import io.agentscope.core.memory.LongTermMemoryMode;
-import io.agentscope.core.memory.LongTermMemoryTools;
-import io.agentscope.core.memory.Memory;
-import io.agentscope.core.memory.StaticLongTermMemoryHook;
+import io.agentscope.core.legacy.agent.StructuredOutputCapableAgent;
+import io.agentscope.core.legacy.hook.ActingChunkEvent;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PendingToolRecoveryHook;
+import io.agentscope.core.legacy.hook.PostActingEvent;
+import io.agentscope.core.legacy.hook.PostReasoningEvent;
+import io.agentscope.core.legacy.hook.PostSummaryEvent;
+import io.agentscope.core.legacy.hook.PreActingEvent;
+import io.agentscope.core.legacy.hook.PreReasoningEvent;
+import io.agentscope.core.legacy.hook.PreSummaryEvent;
+import io.agentscope.core.legacy.hook.ReasoningChunkEvent;
+import io.agentscope.core.legacy.hook.SummaryChunkEvent;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.LongTermMemory;
+import io.agentscope.core.legacy.memory.LongTermMemoryMode;
+import io.agentscope.core.legacy.memory.LongTermMemoryTools;
+import io.agentscope.core.legacy.memory.Memory;
+import io.agentscope.core.legacy.memory.StateBackedMemory;
+import io.agentscope.core.legacy.memory.StaticLongTermMemoryHook;
+import io.agentscope.core.legacy.plan.PlanNotebook;
+import io.agentscope.core.legacy.rag.GenericRAGHook;
+import io.agentscope.core.legacy.rag.Knowledge;
+import io.agentscope.core.legacy.rag.KnowledgeRetrievalTools;
+import io.agentscope.core.legacy.rag.RAGMode;
+import io.agentscope.core.legacy.rag.model.Document;
+import io.agentscope.core.legacy.rag.model.RetrieveConfig;
+import io.agentscope.core.legacy.session.Session;
+import io.agentscope.core.legacy.skill.SkillBox;
+import io.agentscope.core.legacy.skill.SkillHook;
+import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
+import io.agentscope.core.legacy.state.AgentMetaState;
+import io.agentscope.core.legacy.state.StatePersistence;
+import io.agentscope.core.legacy.state.ToolkitState;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -93,26 +108,12 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContext;
 import io.agentscope.core.permission.PermissionEngine;
-import io.agentscope.core.plan.PlanNotebook;
-import io.agentscope.core.rag.GenericRAGHook;
-import io.agentscope.core.rag.Knowledge;
-import io.agentscope.core.rag.KnowledgeRetrievalTools;
-import io.agentscope.core.rag.RAGMode;
-import io.agentscope.core.rag.model.Document;
-import io.agentscope.core.rag.model.RetrieveConfig;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
-import io.agentscope.core.skill.SkillBox;
-import io.agentscope.core.skill.SkillHook;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
-import io.agentscope.core.state.AgentMetaState;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
-import io.agentscope.core.state.StatePersistence;
-import io.agentscope.core.state.ToolkitState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
@@ -349,7 +350,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 agentToolkit,
                 builder.structuredOutputReminder);
 
-        this.memory = builder.memory;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -380,6 +380,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             .build();
         }
         this.state = resolvedState;
+
+        // Migrate any pre-seeded messages from builder.memory into state context
+        if (builder.memory != null
+                && this.state.contextMutable().isEmpty()
+                && !builder.memory.getMessages().isEmpty()) {
+            this.state.contextMutable().addAll(builder.memory.getMessages());
+        }
+        this.memory = new StateBackedMemory(this.state);
         this.modelConfig =
                 builder.modelConfig != null ? builder.modelConfig : ModelConfig.defaults();
         this.contextConfig =
@@ -677,7 +685,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         // No pending tools -> normal processing
         if (pendingIds.isEmpty()) {
-            addToMemory(msgs);
+            addToContext(msgs);
             return coreReply();
         }
 
@@ -769,14 +777,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /**
-     * Find the last assistant message in memory.
+     * Find the last assistant message in context.
      *
      * @return The last assistant message, or null if not found
      */
     private Msg findLastAssistantMsg() {
-        List<Msg> memoryMsgs = memory.getMessages();
-        for (int i = memoryMsgs.size() - 1; i >= 0; i--) {
-            Msg msg = memoryMsgs.get(i);
+        List<Msg> contextMsgs = state.contextMutable();
+        for (int i = contextMsgs.size() - 1; i >= 0; i--) {
+            Msg msg = contextMsgs.get(i);
             if (msg.getRole() == MsgRole.ASSISTANT) {
                 return msg;
             }
@@ -805,7 +813,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         Set<String> existingResultIds =
-                memory.getMessages().stream()
+                state.contextMutable().stream()
                         .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
                         .map(ToolResultBlock::getId)
                         .collect(Collectors.toSet());
@@ -817,7 +825,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /**
-     * Validate input messages when there are pending tool calls, then add to memory.
+     * Validate input messages when there are pending tool calls, then add to context.
      *
      * <p>Validation rules:
      * <ul>
@@ -884,28 +892,17 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             + pendingIds);
         }
 
-        msgs.forEach(memory::addMessage);
+        state.contextMutable().addAll(msgs);
     }
 
     /**
-     * Add messages to memory if not null.
+     * Add messages to the agent state context if not null.
      *
      * @param msgs The messages to add
      */
-    private void addToMemory(List<Msg> msgs) {
+    private void addToContext(List<Msg> msgs) {
         if (msgs != null) {
-            msgs.forEach(memory::addMessage);
             state.contextMutable().addAll(msgs);
-        }
-    }
-
-    /**
-     * Mirror a message into {@link AgentState#contextMutable()} so the new
-     * {@link AgentState} surface stays in sync with the legacy {@link Memory}.
-     */
-    private void mirrorToState(Msg msg) {
-        if (msg != null) {
-            state.contextMutable().add(msg);
         }
     }
 
@@ -950,7 +947,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         return checkInterruptedAsync()
                 .then(compressor != null ? compressor.maybeCompress(state) : Mono.empty())
-                .then(notifyPreReasoningEvent(memory.getMessages()))
+                .then(notifyPreReasoningEvent(state.contextMutable()))
                 .flatMap(
                         event -> {
                             GenerateOptions options =
@@ -991,8 +988,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                                 .partialReasoningPolicy()
                                                         == PartialReasoningPolicy.DISCARD;
                                 if (!discard) {
-                                    memory.addMessage(msg);
-                                    mirrorToState(msg);
+                                    state.contextMutable().add(msg);
                                 }
                             }
                             return Mono.error(error);
@@ -1002,8 +998,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         event -> {
                             Msg msg = event.getReasoningMessage();
                             if (msg != null) {
-                                memory.addMessage(msg);
-                                mirrorToState(msg);
+                                state.contextMutable().add(msg);
                             }
 
                             // HITL stop
@@ -1017,7 +1012,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             if (event.isGotoReasoningRequested()) {
                                 List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
                                 if (gotoMsgs != null) {
-                                    gotoMsgs.forEach(memory::addMessage);
+                                    state.contextMutable().addAll(gotoMsgs);
                                 }
                                 return reasoning(iter + 1, true);
                             }
@@ -1169,14 +1164,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     /**
      * Execute the acting phase.
      *
-     * <p>This method executes only pending tools (those without results in memory),
+     * <p>This method executes only pending tools (those without results in context),
      * notifies hooks for successful tool results, and decides whether to continue iteration
      * or return (HITL stop, suspended tools, or structured output).
      *
      * <p>For tools that throw {@link io.agentscope.core.tool.ToolSuspendException}:
      * <ul>
      *   <li>The exception is caught by Toolkit and converted to a pending ToolResultBlock</li>
-     *   <li>Successful results are stored in memory, pending results are not</li>
+     *   <li>Successful results are stored in context, pending results are not</li>
      *   <li>Returns Msg with {@link GenerateReason#TOOL_SUSPENDED} containing suspended ToolUseBlocks</li>
      * </ul>
      *
@@ -1588,7 +1583,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /**
-     * Notify PostActingEvent hook for a single tool result, build message and add to memory.
+     * Notify PostActingEvent hook for a single tool result, build message and add to context.
      */
     private Mono<PostActingEvent> notifyPostActingHook(
             Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
@@ -1602,13 +1597,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         PostActingEvent event = new PostActingEvent(this, toolkit, toolUse, result);
         event.setToolResultMsg(toolMsg);
 
-        // Notify hooks and add to memory + mirror to state context
+        // Notify hooks and add to state context
         return notifyHooks(event)
                 .doOnNext(
                         e -> {
                             Msg resultMsg = e.getToolResultMsg();
-                            memory.addMessage(resultMsg);
-                            mirrorToState(resultMsg);
+                            state.contextMutable().add(resultMsg);
                         });
     }
 
@@ -1636,7 +1630,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 Msg errorResultMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
                                 errorResult, toolUse, getName());
-                memory.addMessage(errorResultMsg);
+                state.contextMutable().add(errorResultMsg);
             }
         }
 
@@ -1672,7 +1666,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                                                         .withGenerateReason(
                                                                                                 GenerateReason
                                                                                                         .MAX_ITERATIONS);
-                                                                        memory.addMessage(finalMsg);
+                                                                        state.contextMutable()
+                                                                                .add(finalMsg);
                                                                         return finalMsg;
                                                                     }));
                         })
@@ -1768,7 +1763,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     private List<Msg> prepareSummaryMessages() {
-        List<Msg> messageList = new ArrayList<>(memory.getMessages());
+        List<Msg> messageList = new ArrayList<>(state.contextMutable());
         messageList.add(
                 Msg.builder()
                         .name("user")
@@ -1802,7 +1797,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                         maxIters, error.getMessage()))
                                         .build())
                         .build();
-        memory.addMessage(errorMsg);
+        state.contextMutable().add(errorMsg);
         return Mono.just(errorMsg);
     }
 
@@ -1812,7 +1807,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * Prepends the system message to {@code msgs} if non-null.
      *
      * <p>Called immediately before each {@code model.stream()} invocation to build the final
-     * LLM input without contaminating the in-memory message list.
+     * LLM input without contaminating the context message list.
      */
     private static List<Msg> prependSystemMsg(List<Msg> msgs, Msg systemMsg) {
         if (systemMsg == null) {
@@ -1851,14 +1846,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * Extract tool calls from the most recent assistant message.
      */
     private List<ToolUseBlock> extractRecentToolCalls() {
-        return MessageUtils.extractRecentToolCalls(memory.getMessages(), getName());
+        return MessageUtils.extractRecentToolCalls(state.contextMutable(), getName());
     }
 
     /**
-     * Extract only pending tool calls (those without results in memory) from the most recent
+     * Extract only pending tool calls (those without results in context) from the most recent
      * assistant message.
      *
-     * <p>This method filters out tool calls that already have corresponding results in memory,
+     * <p>This method filters out tool calls that already have corresponding results in context,
      * preventing duplicate execution when resuming from HITL or partial tool result scenarios.
      *
      * @return List of tool use blocks that don't have results yet, or empty list if all tools
@@ -2038,15 +2033,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         .content(TextBlock.builder().text(recoveryText).build())
                         .build();
 
-        memory.addMessage(recoveryMsg);
+        state.contextMutable().add(recoveryMsg);
         return Mono.just(recoveryMsg);
     }
 
     @Override
     protected Mono<Void> doObserve(Msg msg) {
         if (msg != null) {
-            memory.addMessage(msg);
-            mirrorToState(msg);
+            state.contextMutable().add(msg);
         }
         return Mono.empty();
     }
@@ -2107,6 +2101,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     /** Returns the live conversational state (context + summary + permissions). */
     public AgentState getState() {
+        return state;
+    }
+
+    @Override
+    public AgentState getAgentState() {
         return state;
     }
 
@@ -2271,19 +2270,18 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             log.warn(
                     "Context overflow detected, triggering emergency compaction via"
                             + " CompactionHook");
-            return forceCompactAndRetry(getMemory(), msgs, effective);
+            return forceCompactAndRetry(msgs, effective);
         }
         return Mono.error(
                 new RuntimeException(
                         "Context overflow: no compaction configured, unable to recover"));
     }
 
-    private Mono<Msg> forceCompactAndRetry(
-            Memory memory, List<Msg> msgs, RuntimeContext effective) {
-        List<Msg> allMsgs = memory.getMessages();
+    private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
+        List<Msg> allMsgs = state.contextMutable();
         if (allMsgs.isEmpty()) {
             return Mono.error(
-                    new RuntimeException("Context overflow: memory is empty, cannot compact"));
+                    new RuntimeException("Context overflow: context is empty, cannot compact"));
         }
         String agentId = getName();
         String sessionId =
@@ -2305,10 +2303,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 .flatMap(
                         opt -> {
                             if (opt.isPresent()) {
-                                memory.clear();
-                                for (Msg m : opt.get()) {
-                                    memory.addMessage(m);
-                                }
+                                state.contextMutable().clear();
+                                state.contextMutable().addAll(opt.get());
                                 // Bind context and call the bare path (no overflow re-wrap).
                                 this.pendingRuntimeContext =
                                         effective != null ? effective : RuntimeContext.empty();
@@ -2778,7 +2774,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * <p>The skill box is used to manage the skills for this agent. It will be used to register the skills to the toolkit.
          * <ul>
          *   <li>Skill loader tools will be automatically registered to the toolkit</li>
-         *   <li>A skill hook will be added to inject skill prompts on {@link io.agentscope.core.hook.PreCallEvent}
+         *   <li>A skill hook will be added to inject skill prompts on {@link io.agentscope.core.legacy.hook.PreCallEvent}
          *       and manage skill activation</li>
          * </ul>
          * @param skillBox The skill box to use for this agent
@@ -3899,8 +3895,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * <p>This method automatically:
          * <ul>
          *   <li>Registers skill load tool to the toolkit
-         *   <li>Adds the skill hook to inject skill prompts on {@link io.agentscope.core.hook.PreCallEvent}
-         *       (priority {@link io.agentscope.core.skill.SkillHook#SKILL_HOOK_PRIORITY}) and manage skill
+         *   <li>Adds the skill hook to inject skill prompts on {@link io.agentscope.core.legacy.hook.PreCallEvent}
+         *       (priority {@link io.agentscope.core.legacy.skill.SkillHook#SKILL_HOOK_PRIORITY}) and manage skill
          *       activation
          *   <li>Uploads skill files to the upload directory if auto upload is enabled
          * </ul>

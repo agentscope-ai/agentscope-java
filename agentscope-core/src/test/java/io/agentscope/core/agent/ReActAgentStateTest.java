@@ -23,19 +23,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.plan.PlanNotebook;
+import io.agentscope.core.legacy.plan.model.SubTask;
+import io.agentscope.core.legacy.session.InMemorySession;
+import io.agentscope.core.legacy.session.JsonSession;
+import io.agentscope.core.legacy.state.AgentMetaState;
+import io.agentscope.core.legacy.state.StatePersistence;
+import io.agentscope.core.legacy.state.ToolkitState;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.plan.PlanNotebook;
-import io.agentscope.core.plan.model.SubTask;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.AgentMetaState;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
-import io.agentscope.core.state.StatePersistence;
-import io.agentscope.core.state.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.List;
@@ -109,59 +109,43 @@ class ReActAgentStateTest {
         @Test
         @DisplayName("Should save and load memory messages")
         void testMemorySaveLoad() {
-            InMemoryMemory memory = new InMemoryMemory();
-            ReActAgent agent =
-                    ReActAgent.builder().name("TestAgent").model(mockModel).memory(memory).build();
+            ReActAgent agent = ReActAgent.builder().name("TestAgent").model(mockModel).build();
 
-            // Add messages to memory
-            memory.addMessage(createUserMsg("Hello"));
-            memory.addMessage(createAssistantMsg("Hi there!"));
+            // Add messages via agent's memory accessor
+            agent.getMemory().addMessage(createUserMsg("Hello"));
+            agent.getMemory().addMessage(createAssistantMsg("Hi there!"));
 
             agent.saveTo(session, sessionKey);
 
             // Create new agent and load
-            InMemoryMemory newMemory = new InMemoryMemory();
-            ReActAgent newAgent =
-                    ReActAgent.builder()
-                            .name("TestAgent")
-                            .model(mockModel)
-                            .memory(newMemory)
-                            .build();
+            ReActAgent newAgent = ReActAgent.builder().name("TestAgent").model(mockModel).build();
 
             newAgent.loadFrom(session, sessionKey);
 
-            assertEquals(2, newMemory.getMessages().size());
-            assertEquals("Hello", getTextContent(newMemory.getMessages().get(0)));
-            assertEquals("Hi there!", getTextContent(newMemory.getMessages().get(1)));
+            assertEquals(2, newAgent.getMemory().getMessages().size());
+            assertEquals("Hello", getTextContent(newAgent.getMemory().getMessages().get(0)));
+            assertEquals("Hi there!", getTextContent(newAgent.getMemory().getMessages().get(1)));
         }
 
         @Test
         @DisplayName("Should not save memory when memoryManaged is false")
         void testMemoryNotManagedSkipsSave() {
-            InMemoryMemory memory = new InMemoryMemory();
             ReActAgent agent =
                     ReActAgent.builder()
                             .name("TestAgent")
                             .model(mockModel)
-                            .memory(memory)
                             .statePersistence(
                                     StatePersistence.builder().memoryManaged(false).build())
                             .build();
 
-            memory.addMessage(createUserMsg("Test message"));
+            agent.getMemory().addMessage(createUserMsg("Test message"));
             agent.saveTo(session, sessionKey);
 
             // Memory should not be saved, so loading should give empty
-            InMemoryMemory newMemory = new InMemoryMemory();
-            ReActAgent newAgent =
-                    ReActAgent.builder()
-                            .name("TestAgent")
-                            .model(mockModel)
-                            .memory(newMemory)
-                            .build();
+            ReActAgent newAgent = ReActAgent.builder().name("TestAgent").model(mockModel).build();
 
             newAgent.loadFrom(session, sessionKey);
-            assertTrue(newMemory.getMessages().isEmpty());
+            assertTrue(newAgent.getMemory().getMessages().isEmpty());
         }
     }
 
@@ -440,18 +424,12 @@ class ReActAgentStateTest {
 
             agent.saveTo(session, sessionKey);
 
-            InMemoryMemory newMemory = new InMemoryMemory();
-            ReActAgent newAgent =
-                    ReActAgent.builder()
-                            .name("TestAgent")
-                            .model(mockModel)
-                            .memory(newMemory)
-                            .build();
+            ReActAgent newAgent = ReActAgent.builder().name("TestAgent").model(mockModel).build();
 
             boolean exists = newAgent.loadIfExists(session, sessionKey);
 
             assertTrue(exists);
-            assertEquals(1, newMemory.getMessages().size());
+            assertEquals(1, newAgent.getMemory().getMessages().size());
         }
 
         @Test
@@ -500,22 +478,22 @@ class ReActAgentStateTest {
             agent.saveTo(jsonSession, key);
 
             // Load into new agent
-            InMemoryMemory newMemory = new InMemoryMemory();
             Toolkit newToolkit = new Toolkit();
 
             ReActAgent newAgent =
                     ReActAgent.builder()
                             .name("JsonTestAgent")
                             .model(mockModel)
-                            .memory(newMemory)
                             .toolkit(newToolkit)
                             .build();
 
             newAgent.loadFrom(jsonSession, key);
 
             // Verify all state was loaded
-            assertEquals(2, newMemory.getMessages().size());
-            assertEquals("Hello from JsonSession", getTextContent(newMemory.getMessages().get(0)));
+            assertEquals(2, newAgent.getMemory().getMessages().size());
+            assertEquals(
+                    "Hello from JsonSession",
+                    getTextContent(newAgent.getMemory().getMessages().get(0)));
             // Note: Agent uses a copy of toolkit, so we need to check agent's internal toolkit
             Toolkit agentToolkit = newAgent.getToolkit();
             assertEquals(2, agentToolkit.getActiveGroups().size());
@@ -528,34 +506,27 @@ class ReActAgentStateTest {
             JsonSession jsonSession = new JsonSession(tempDir);
             SessionKey key = SimpleSessionKey.of("incremental_test");
 
-            InMemoryMemory memory = new InMemoryMemory();
-            ReActAgent agent =
-                    ReActAgent.builder().name("TestAgent").model(mockModel).memory(memory).build();
+            ReActAgent agent = ReActAgent.builder().name("TestAgent").model(mockModel).build();
 
             // First save
-            memory.addMessage(createUserMsg("Message 1"));
+            agent.getMemory().addMessage(createUserMsg("Message 1"));
             agent.saveTo(jsonSession, key);
 
             // Second save (incremental)
-            memory.addMessage(createUserMsg("Message 2"));
-            memory.addMessage(createUserMsg("Message 3"));
+            agent.getMemory().addMessage(createUserMsg("Message 2"));
+            agent.getMemory().addMessage(createUserMsg("Message 3"));
             agent.saveTo(jsonSession, key);
 
             // Load and verify
-            InMemoryMemory loadedMemory = new InMemoryMemory();
             ReActAgent loadedAgent =
-                    ReActAgent.builder()
-                            .name("TestAgent")
-                            .model(mockModel)
-                            .memory(loadedMemory)
-                            .build();
+                    ReActAgent.builder().name("TestAgent").model(mockModel).build();
 
             loadedAgent.loadFrom(jsonSession, key);
 
-            assertEquals(3, loadedMemory.getMessages().size());
-            assertEquals("Message 1", getTextContent(loadedMemory.getMessages().get(0)));
-            assertEquals("Message 2", getTextContent(loadedMemory.getMessages().get(1)));
-            assertEquals("Message 3", getTextContent(loadedMemory.getMessages().get(2)));
+            assertEquals(3, loadedAgent.getMemory().getMessages().size());
+            assertEquals("Message 1", getTextContent(loadedAgent.getMemory().getMessages().get(0)));
+            assertEquals("Message 2", getTextContent(loadedAgent.getMemory().getMessages().get(1)));
+            assertEquals("Message 3", getTextContent(loadedAgent.getMemory().getMessages().get(2)));
         }
     }
 

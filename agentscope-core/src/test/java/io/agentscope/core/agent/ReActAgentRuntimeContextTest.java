@@ -24,11 +24,11 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PreReasoningEvent;
+import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -139,7 +139,7 @@ class ReActAgentRuntimeContextTest {
         assertNull(r, "unbind should clear setRuntimeContext(null)");
 
         assertTrue(
-                memory.getMessages().stream()
+                agent.getMemory().getMessages().stream()
                         .anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class)));
     }
 
