@@ -61,7 +61,13 @@ import reactor.core.publisher.Mono;
  *   <li>Implement {@link #getMemory()} for memory access</li>
  *   <li>Implement {@link #buildGenerateOptions()} for model options</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Structured output is handled directly by
+ *     {@link io.agentscope.core.ReActAgent} via the new middleware-based loop.
+ *     This class remains as a base class for backward compatibility but will be
+ *     removed in a future release.
  */
+@Deprecated(since = "2.0.0")
 public abstract class StructuredOutputCapableAgent extends AgentBase {
 
     private static final Logger log = LoggerFactory.getLogger(StructuredOutputCapableAgent.class);

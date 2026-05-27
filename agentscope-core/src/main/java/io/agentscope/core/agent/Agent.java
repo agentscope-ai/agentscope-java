@@ -42,6 +42,28 @@ import io.agentscope.core.message.Msg;
  * terminal {@link Msg}. Streaming variants (see {@link StreamableAgent}) may emit
  * many events but resolve to a single terminal Msg. This is enforced by the
  * {@code Mono<Msg>} return type on the call methods.
+ *
+ * <h3>Python 2.0 alignment</h3>
+ * <p>This interface corresponds to Python's {@code agentscope.agent.Agent} class.
+ * Method mapping:
+ * <ul>
+ *   <li>{@code Agent.reply()} &rarr; {@link CallableAgent#call(List)}</li>
+ *   <li>{@code Agent.reply_stream()} &rarr; {@link io.agentscope.core.ReActAgent#streamEvents(List)}</li>
+ *   <li>{@code Agent.observe()} &rarr; {@link ObservableAgent#observe(Msg)}</li>
+ *   <li>{@code Agent.compress_context()} &rarr; {@link io.agentscope.core.ReActAgent#compressContext()}</li>
+ * </ul>
+ * <p>Constructor mapping (Python &rarr; Java {@link io.agentscope.core.ReActAgent.Builder}):
+ * <ul>
+ *   <li>{@code name} &rarr; {@code name()}</li>
+ *   <li>{@code system_prompt} &rarr; {@code sysPrompt()}</li>
+ *   <li>{@code model} &rarr; {@code model()}</li>
+ *   <li>{@code toolkit} &rarr; {@code toolkit()}</li>
+ *   <li>{@code middlewares} &rarr; {@code middlewares()}</li>
+ *   <li>{@code state} &rarr; {@code agentState()}</li>
+ *   <li>{@code model_config} &rarr; {@code modelConfig()}</li>
+ *   <li>{@code context_config} &rarr; {@code contextConfig()}</li>
+ *   <li>{@code react_config} &rarr; {@code reactConfig()}</li>
+ * </ul>
  */
 public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
 
