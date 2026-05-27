@@ -107,6 +107,19 @@ jobs:
           "@ -Encoding Utf8 -Force
           Remove-Item -Path "mvnd", "mvnd.zip" -Recurse -Force
 
+      - name: Tune mvnd for Windows CI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $conf = Join-Path $HOME ".mvnd\conf\mvnd.properties"
+          @"
+          # mvnd client timeout settings (see apache/maven-mvnd#161)
+          mvnd.connectTimeout=120000
+          mvnd.socketConnectTimeout=30000
+          mvnd.cancelConnectTimeout=30000
+          mvnd.maxLostKeepAlive=120
+          "@ | Set-Content -Path $conf -Encoding Utf8 -Force
+
       - name: Build and Test with Coverage [Linux]
         if: runner.os == 'Linux'
         shell: bash
@@ -127,7 +140,8 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           # -T1: single-threaded build so reactor order is respected (see Linux step).
-          & "~\.mvnd\bin\mvnd.cmd" -B -T1 clean verify
+          # -Dmvnd.noDaemon=true: avoid StaleAddressException on long javadoc phases (mvnd#161).
+          & "~\.mvnd\bin\mvnd.cmd" -B -T1 -Dmvnd.noDaemon=true clean verify
 
       - name: Upload coverage reports to Codecov
         if: runner.os == 'Linux'
