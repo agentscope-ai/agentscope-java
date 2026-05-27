@@ -149,7 +149,11 @@ class ToolRegistry {
             String toolName = entry.getKey();
             AgentTool tool = entry.getValue();
             RegisteredToolFunction registered = registeredTools.get(toolName);
-            target.registerTool(toolName, tool, registered);
+            if (registered == null) {
+                continue;
+            }
+
+            target.registerTool(toolName, tool, registered.copy());
         }
     }
 }
