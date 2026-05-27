@@ -16,6 +16,8 @@
 package io.agentscope.core.session;
 
 import io.agentscope.core.state.State;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
 /**
@@ -24,11 +26,11 @@ import java.util.List;
  * <p>This class provides hash computation for change detection in Session implementations. The hash
  * is used to detect if a list has been modified (not just appended) since the last save operation.
  *
- * <p>The hash computation uses a sampling strategy to avoid iterating over large lists:
- *
+ * <p>The hash computation covers all elements to guarantee that any modification
+ * (including edits to middle elements) is reliably detected:
  * <ul>
- *   <li>For small lists (≤5 elements): all elements are included
- *   <li>For large lists: samples at positions 0, 1/4, 1/2, 3/4, and last
+ *   <li>Uses SHA-256 over each element's {@code hashCode()} to avoid 32-bit collision risk
+ *   <li>Includes list size in the hash to detect shrink operations
  * </ul>
  *
  * <p>Usage in Session implementations:
@@ -51,25 +53,15 @@ public final class ListHashUtil {
     /** Empty list hash constant. */
     private static final String EMPTY_HASH = "empty:0";
 
-    /** Threshold for using sampling strategy. */
-    private static final int SAMPLING_THRESHOLD = 5;
-
     private ListHashUtil() {
         // Utility class, prevent instantiation
     }
 
     /**
-     * Compute a hash value for a list of state objects.
+     * Compute a SHA-256 hash value for a list of state objects.
      *
-     * <p>The hash includes:
-     *
-     * <ul>
-     *   <li>List size
-     *   <li>Hash codes of sampled elements
-     * </ul>
-     *
-     * <p>This method is designed to be lightweight and fast, using sampling for large lists to
-     * avoid O(n) iteration.
+     * <p>遍历所有元素计算 hash，确保任意位置的元素变更（包括中间元素）都能被检测到。
+     * 使用 SHA-256 代替 {@code String.hashCode()} 以避免 32 位整数碰撞风险。
      *
      * @param values the list of state objects to hash
      * @return a hex string hash representing the list content
@@ -79,47 +71,34 @@ public final class ListHashUtil {
             return EMPTY_HASH;
         }
 
-        int size = values.size();
-        StringBuilder sb = new StringBuilder();
-        sb.append("size:").append(size).append(";");
-
-        // Get sample indices based on list size
-        int[] sampleIndices = getSampleIndices(size);
-
-        for (int idx : sampleIndices) {
-            State item = values.get(idx);
-            int itemHash = item != null ? item.hashCode() : 0;
-            sb.append(idx).append(":").append(itemHash).append(",");
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            int size = values.size();
+            // 将 size 纳入 hash，防止仅缩短列表时碰撞
+            digest.update(intToBytes(size));
+            for (State item : values) {
+                digest.update(intToBytes(item != null ? item.hashCode() : 0));
+            }
+            byte[] hashBytes = digest.digest();
+            // 取前8字节（64位）转十六进制，已足够唯一
+            StringBuilder hex = new StringBuilder(16);
+            for (int i = 0; i < 8; i++) {
+                hex.append(String.format("%02x", hashBytes[i]));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 是 JVM 标准算法，不会出现此异常
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
         }
-
-        return Integer.toHexString(sb.toString().hashCode());
     }
 
     /**
-     * Get the indices to sample from a list of given size.
-     *
-     * <p>Sampling strategy:
-     *
-     * <ul>
-     *   <li>For size ≤ 5: returns all indices [0, 1, 2, ..., size-1]
-     *   <li>For size > 5: returns [0, size/4, size/2, size*3/4, size-1]
-     * </ul>
-     *
-     * @param size the size of the list
-     * @return array of indices to sample
+     * 将 int 转为大端序 4 字节数组。
      */
-    private static int[] getSampleIndices(int size) {
-        if (size <= SAMPLING_THRESHOLD) {
-            // Small list: sample all elements
-            int[] indices = new int[size];
-            for (int i = 0; i < size; i++) {
-                indices[i] = i;
-            }
-            return indices;
-        }
-
-        // Large list: sample at key positions
-        return new int[] {0, size / 4, size / 2, size * 3 / 4, size - 1};
+    private static byte[] intToBytes(int value) {
+        return new byte[] {
+            (byte) (value >>> 24), (byte) (value >>> 16), (byte) (value >>> 8), (byte) value
+        };
     }
 
     /**

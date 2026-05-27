@@ -110,14 +110,16 @@ public class FileToolUtils {
     /**
      * View a specific range of lines from a text file.
      *
-     * @param filePath The file path
+     * <p>使用已验证的 {@link Path} 对象读取，避免相对路径基于 CWD 而非 baseDir 解析导致读取到错误文件。
+     *
+     * @param path 已验证的文件绝对路径
      * @param startLine Start line number (1-based)
      * @param endLine End line number (1-based, inclusive)
      * @return The content with line numbers
      */
-    static String viewTextFile(String filePath, int startLine, int endLine) {
+    static String viewTextFile(Path path, int startLine, int endLine) {
         try {
-            List<String> lines = Files.readAllLines(Paths.get(filePath), StandardCharsets.UTF_8);
+            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
             StringBuilder result = new StringBuilder();
 
             int start = Math.max(0, startLine - 1);

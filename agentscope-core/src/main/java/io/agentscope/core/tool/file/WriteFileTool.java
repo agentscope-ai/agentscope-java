@@ -196,8 +196,7 @@ public class WriteFileTool {
 
                             // Get the content snippet to show
                             String showContent =
-                                    FileToolUtils.viewTextFile(
-                                            filePath, viewRange[0], viewRange[1]);
+                                    FileToolUtils.viewTextFile(path, viewRange[0], viewRange[1]);
 
                             return ToolResultBlock.text(
                                     String.format(
@@ -328,6 +327,19 @@ public class WriteFileTool {
                                 logger.debug(
                                         "Replacing lines {}-{} in file: {}", start, end, filePath);
 
+                                // WriteFileTool 行号从 1 开始，不支持负数索引；start 不能大于 end
+                                if (start < 1 || start > end) {
+                                    logger.warn(
+                                            "Invalid range [{}, {}]: start must be >= 1 and <= end",
+                                            start,
+                                            end);
+                                    return ToolResultBlock.error(
+                                            String.format(
+                                                    "Invalid range [%d, %d]: start must be >= 1"
+                                                            + " and <= end.",
+                                                    start, end));
+                                }
+
                                 if (start > originalLines.size()) {
                                     logger.warn(
                                             "Start line {} exceeds file length {} for file: {}",
@@ -352,9 +364,9 @@ public class WriteFileTool {
                                             originalLines.subList(end, originalLines.size()));
                                 }
 
-                                // Write the new content
-                                String joinedContent = String.join("\n", newContent);
-                                Files.writeString(path, joinedContent, StandardCharsets.UTF_8);
+                                // 与 insertTextFile 保持一致，用 Files.write 写行列表，
+                                // 每行自动追加系统换行符，并保留文件末尾换行符
+                                Files.write(path, newContent, StandardCharsets.UTF_8);
                                 logger.info(
                                         "Successfully replaced lines {}-{} in file: {}",
                                         start,
@@ -373,7 +385,7 @@ public class WriteFileTool {
                                 // Get content snippet
                                 String snippet =
                                         FileToolUtils.viewTextFile(
-                                                filePath, viewRange[0], viewRange[1]);
+                                                path, viewRange[0], viewRange[1]);
 
                                 return ToolResultBlock.text(
                                         String.format(

@@ -186,6 +186,9 @@ public class MediaUtils {
      * @throws IOException If the resource read failed
      */
     public static InputStream urlToInputStream(String url) throws IOException {
+        if (url == null || url.isBlank()) {
+            throw new IOException("URL cannot be null or blank");
+        }
         if (isFileExists(url)) {
             // Treat as local file
             return Files.newInputStream(Path.of(url));
