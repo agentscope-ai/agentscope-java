@@ -33,10 +33,13 @@ import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,13 +55,26 @@ import reactor.core.publisher.Mono;
  * <p>Thread safety is ensured by using {@link SubAgentProvider} to create a fresh agent instance
  * for each new session.
  *
- * <p>The tool exposes two parameters:
+ * <p>By default, the tool exposes two core parameters:
  *
  * <ul>
  *   <li>{@code session_id} - Optional. Omit to start a new session, provide to continue an
  *       existing one.
  *   <li>{@code message} - Required. The message to send to the agent.
  * </ul>
+ *
+ * <p>Additionally, the tool supports two categories of external parameters defined in
+ * {@link SubAgentConfig}:
+ * <ul>
+ *   <li><b>System Parameters:</b> Extracted strictly from {@link ToolExecutionContext}. These are
+ *       invisible to the LLM and completely tamper-proof.
+ *   <li><b>Custom Parameters:</b> Exposed to the LLM in the JSON schema. If marked as required,
+ *       the LLM MUST provide a value, and the framework will validate its presence BEFORE execution.
+ *       While {@link ToolExecutionContext} can forcefully override the LLM's value at runtime,
+ *       it cannot bypass the initial schema validation. <em>Rule of thumb: If the LLM should
+ *       infer it, use Custom Parameters; if the LLM shouldn't know about it, use System Parameters.</em>
+ * </ul>
+ * Both types of parameters are securely injected into the sub-agent's message {@code metadata}.
  */
 public class SubAgentTool implements AgentTool {
 
@@ -121,6 +137,11 @@ public class SubAgentTool implements AgentTool {
      * <ul>
      *   <li>Session ID generation for new conversations
      *   <li>Agent state loading for continued sessions
+     *   <li>Extraction of external parameters with strict priority:
+     *       {@link ToolExecutionContext} (highest) &gt; LLM input (lowest). For required custom
+     *       parameters, this override occurs after schema validation has already required the LLM
+     *       tool call to contain the field.
+     *   <li>Secure injection of custom parameters into the message metadata
      *   <li>Message execution (streaming or non-streaming based on config)
      *   <li>Agent state persistence after execution
      * </ul>
@@ -147,6 +168,45 @@ public class SubAgentTool implements AgentTool {
                             return Mono.just(ToolResultBlock.error("Message is required"));
                         }
 
+                        // Extract external parameters
+                        Map<String, Object> finalMetadata = new HashMap<>();
+                        ToolExecutionContext context = param.getContext();
+
+                        // 1. Extract system parameters (Securely injected, invisible to LLM)
+                        Set<String> declaredSystemParams = config.getSystemParameters();
+                        if (declaredSystemParams != null && !declaredSystemParams.isEmpty()) {
+                            for (String paramName : declaredSystemParams) {
+                                Object ctxValue = extractFromContext(context, paramName);
+                                if (ctxValue != null) {
+                                    finalMetadata.put(paramName, ctxValue);
+                                } else {
+                                    logger.warn(
+                                            "System parameter '{}' was declared but not provided in"
+                                                    + " ToolExecutionContext",
+                                            paramName);
+                                }
+                            }
+                        }
+
+                        // 2. Extract custom parameters. These are visible in the JSON Schema.
+                        // Required custom parameters are validated by ToolExecutor before this
+                        // method runs; context only overrides the value selected by the LLM.
+                        Map<String, Map<String, Object>> declaredCustomParams =
+                                config.getCustomParameters();
+                        if (declaredCustomParams != null && !declaredCustomParams.isEmpty()) {
+                            for (String paramName : declaredCustomParams.keySet()) {
+                                Object ctxValue = extractFromContext(context, paramName);
+                                if (ctxValue != null) {
+                                    finalMetadata.put(paramName, ctxValue);
+                                    continue;
+                                }
+
+                                if (input.containsKey(paramName) && input.get(paramName) != null) {
+                                    finalMetadata.put(paramName, input.get(paramName));
+                                }
+                            }
+                        }
+
                         // Create agent for this session
                         final String finalSessionId = sessionId;
                         Agent agent = agentProvider.provide();
@@ -161,6 +221,7 @@ public class SubAgentTool implements AgentTool {
                                 Msg.builder()
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
+                                        .metadata(finalMetadata)
                                         .build();
                         RuntimeContext runtimeContext = resolveRuntimeContext(param);
 
@@ -202,6 +263,45 @@ public class SubAgentTool implements AgentTool {
                                 ToolResultBlock.error("Session setup failed: " + e.getMessage()));
                     }
                 });
+    }
+
+    /**
+     * Extracts a value from the ToolExecutionContext by parameter key.
+     *
+     * @param context   The execution context
+     * @param paramName The name of the parameter to extract
+     * @return The extracted value, or null if not found
+     */
+    private Object extractFromContext(ToolExecutionContext context, String paramName) {
+        if (context == null) {
+            return null;
+        }
+
+        Object ctxValue = context.get(paramName);
+        if (ctxValue != null) {
+            return ctxValue;
+        }
+
+        ctxValue = context.get(paramName, String.class);
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Integer.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Boolean.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Double.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Map.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, List.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Object.class);
+        }
+        return ctxValue;
     }
 
     /**
@@ -397,12 +497,18 @@ public class SubAgentTool implements AgentTool {
     /**
      * Builds the JSON schema for tool parameters.
      *
-     * <p>Creates a schema with two properties:
+     * <p>Creates a schema with two core properties:
      *
      * <ul>
      *   <li>{@code session_id} - Optional string for continuing existing conversations
      *   <li>{@code message} - Required string containing the message to send
      * </ul>
+     *
+     * <p>If custom parameters are defined in the configuration, they are merged into the properties
+     * map, and required custom parameters are added to the JSON Schema {@code required} array. This
+     * intentionally keeps required custom parameters model-visible and pre-validated. Use system
+     * parameters for context-only required values. The schema strictly disables {@code
+     * additionalProperties}.
      *
      * @return A map representing the JSON schema for tool parameters
      */
@@ -428,8 +534,22 @@ public class SubAgentTool implements AgentTool {
         messageProp.put("description", "Message to send to the agent");
         properties.put(PARAM_MESSAGE, messageProp);
 
+        // Custom parameters
+        Map<String, Map<String, Object>> customParams = config.getCustomParameters();
+        if (customParams != null && !customParams.isEmpty()) {
+            properties.putAll(customParams);
+        }
+
         schema.put("properties", properties);
-        schema.put("required", List.of(PARAM_MESSAGE));
+        schema.put("additionalProperties", false);
+
+        // Prevent duplicate elements from appearing in the required array
+        Set<String> requiredFields = new LinkedHashSet<>();
+        requiredFields.add(PARAM_MESSAGE);
+        if (config.getRequiredCustomParameters() != null) {
+            requiredFields.addAll(config.getRequiredCustomParameters());
+        }
+        schema.put("required", new ArrayList<>(requiredFields));
 
         return schema;
     }

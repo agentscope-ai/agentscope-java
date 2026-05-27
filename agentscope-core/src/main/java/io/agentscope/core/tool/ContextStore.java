@@ -18,16 +18,17 @@ package io.agentscope.core.tool;
 /**
  * Storage layer abstraction for tool execution context.
  *
- * <p>This interface defines the storage contract for context objects. It supports two retrieval
+ * <p>This interface defines the storage contract for context objects. It supports three retrieval
  * modes:
  * <ol>
  *   <li><b>By type only</b>: {@code get(Class<T>)} - suitable for singleton scenarios</li>
  *   <li><b>By key + type</b>: {@code get(String, Class<T>)} - suitable for multi-instance
- *       scenarios</li>
+ *       scenarios requiring type safety</li>
  * </ol>
  *
- * <p>This design allows handling both simple cases (one UserContext) and complex cases
- * (multiple UserContext instances for different users).
+ * <p>This design allows handling both simple cases (one UserContext), complex cases
+ * (multiple UserContext instances for different users), and dynamic attributes (like a simple
+ * string tenantId).
  *
  * <p>Implementations can be:
  * <ul>
@@ -43,6 +44,9 @@ package io.agentscope.core.tool;
  * // Multiple instances of same type
  * UserContext admin = store.get("admin", UserContext.class);
  * UserContext guest = store.get("guest", UserContext.class);
+ *
+ * // Dynamic property by key only
+ * Object tenantId = store.get("tenantId");
  * }</pre>
  *
  * @see ToolExecutionContext
@@ -72,6 +76,19 @@ public interface ContextStore {
      * @return The object instance, or null if not found
      */
     <T> T get(String key, Class<T> type);
+
+    /**
+     * Retrieves an object by key without requiring the caller to know its registered type.
+     *
+     * <p>This is useful when the key is the public contract and the runtime type may be any
+     * application object.
+     *
+     * @param key The key identifying the specific instance
+     * @return The object instance, or null if not found
+     */
+    default Object get(String key) {
+        return null;
+    }
 
     /**
      * Retrieves an object by type only (without key).
@@ -104,6 +121,16 @@ public interface ContextStore {
      * @return true if the object exists, false otherwise
      */
     boolean contains(String key, Class<?> type);
+
+    /**
+     * Checks whether an object with the specified key exists regardless of type.
+     *
+     * @param key The key identifying the instance
+     * @return true if any object exists with this key, false otherwise
+     */
+    default boolean contains(String key) {
+        return get(key) != null;
+    }
 
     /**
      * Checks whether any object of the specified type exists (regardless of key).

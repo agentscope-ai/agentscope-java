@@ -108,6 +108,86 @@ The example uses **TaskToolsBuilder** to create the **Task** and **TaskOutput** 
 
 **Synchronous vs background**: By default, the Task tool runs the sub-agent and returns its reply. If you pass a flag like `run_in_background=true`, the tool returns a `task_id` instead; the orchestrator (or user) can later call **TaskOutput** with that `task_id` to get the result. This requires a **TaskRepository** to store in-flight tasks.
 
+## Passing Custom Context and Parameters
+
+In real-world applications, you may need to pass additional parameters to a sub-agent alongside the `message`. `SubAgentTool` supports two distinct parameter categories:
+
+1. **Custom parameters (model-visible business variables)**: Declared with `addParameter`. They are included in the tool JSON Schema, so the LLM can infer them from the conversation (for example target language or analysis depth).
+2. **System parameters (backend-only security variables)**: Declared with `addSystemParameter`. They are injected from `ToolExecutionContext`, are not included in the tool JSON Schema, and cannot be supplied by the LLM (for example authenticated `userId` or `tenantId`).
+
+### 1. Declare parameters
+First, declare parameters via `SubAgentConfig`. A parameter name can be declared in only one category: use `addParameter` for values the model should see, and `addSystemParameter` for values that must come only from backend context.
+
+```java
+SubAgentConfig config = SubAgentConfig.builder()
+        // Visible to the LLM. Set required=true when the model must provide it in the tool call.
+        .addParameter("analysis_depth",
+                Map.of("type", "string", "enum", List.of("basic", "detailed")),
+                true)
+        // Invisible to the LLM. Must be supplied through ToolExecutionContext.
+        .addSystemParameter("userId")
+        .build();
+
+SubAgentTool tool = new SubAgentTool(agentProvider, config);
+```
+
+### 2. Examples of injection methods
+
+#### Method 1: Custom parameters (LLM dynamic injection)
+Suitable for **business properties**. Variables declared via `addParameter` (such as `analysis_depth`) are rendered into the JSON Schema passed to the LLM.
+When the user says: *"Help me do an extremely deep code review"*, the LLM can infer and generate the following call:
+```json
+{
+  "message": "Review the codebase",
+  "analysis_depth": "detailed" 
+}
+```
+
+If `required=true`, the parameter is also placed in the JSON Schema `required` array. This means the tool call must include the field before `SubAgentTool` is invoked; `ToolExecutor` performs schema validation before context injection. A same-name value in `ToolExecutionContext` can still override the LLM-provided value at runtime, but it does not bypass the pre-execution schema requirement.
+
+Use `required=false` when the LLM may omit a business parameter. Use `addSystemParameter` when the value must be supplied only by backend context.
+
+#### Method 2: System parameters (backend context injection)
+Suitable for **sensitive security properties** (e.g., `userId`). Variables declared via `addSystemParameter` are **completely invisible** to the LLM. The system injects them directly at runtime.
+```java
+// Register the context at the system entry point
+ToolExecutionContext context = ToolExecutionContext.builder()
+        .register("userId", String.class, "user_123") // Explicitly specify the type as String.class
+        .build();
+
+// Pass the context during execution
+ToolCallParam param = ToolCallParam.builder()
+        .toolUseBlock(toolUseBlock)
+        .input(Map.of("message", "Check my order"))
+        .context(context)
+        .build();
+
+tool.callAsync(param).subscribe();
+```
+
+> **🔒 Security and Priority**
+> Because system parameters (such as `userId`) are declared via `addSystemParameter`, they will not appear in the schema sent to the LLM. At runtime, the framework extracts them strictly from `ToolExecutionContext`. Even if a malicious prompt causes the LLM to emit `"userId": "admin"`, the fake value is ignored because `userId` is not a model-visible custom parameter.
+
+> **Required custom vs. system parameters**
+> A required custom parameter is required from the LLM/tool-call input because it is part of the JSON Schema. A system parameter is required from backend context because it is not part of the schema. Do not use a required custom parameter for security-sensitive context-only values.
+
+### 3. Retrieve parameters in the sub-agent
+Regardless of the injection method, the parameters are ultimately and securely mounted in the `metadata` of the input message received by the sub-agent. The extraction method is identical:
+
+```java
+public Mono<Msg> call(List<Msg> messages) {
+    Msg userMsg = messages.get(messages.size() - 1);
+    Map<String, Object> metadata = userMsg.getMetadata();
+    
+    // Retrieve the system-injected security parameter
+    String userId = (String) metadata.get("userId");
+    // Retrieve the LLM-injected business parameter
+    String depth = (String) metadata.get("analysis_depth");
+    
+    // ... execute specific logic based on these parameters ...
+}
+```
+
 ## Example: Tech Due Diligence Assistant
 
 The AgentScope example implements a **Tech Due Diligence Assistant**: one orchestrator that delegates to four sub-agents.

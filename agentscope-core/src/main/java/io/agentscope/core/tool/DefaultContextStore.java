@@ -33,6 +33,9 @@ class DefaultContextStore implements ContextStore {
     // Two-level map: Class -> (Key -> Object)
     private final Map<Class<?>, Map<String, Object>> objectMap;
 
+    // Direct key index for type-agnostic lookup
+    private final Map<String, Object> keyMap;
+
     private DefaultContextStore(Builder builder) {
         if (builder.objectMap != null) {
             Map<Class<?>, Map<String, Object>> copy = new HashMap<>();
@@ -45,6 +48,10 @@ class DefaultContextStore implements ContextStore {
         } else {
             this.objectMap = Collections.emptyMap();
         }
+        this.keyMap =
+                builder.keyMap != null
+                        ? Collections.unmodifiableMap(new HashMap<>(builder.keyMap))
+                        : Collections.emptyMap();
     }
 
     /**
@@ -68,6 +75,17 @@ class DefaultContextStore implements ContextStore {
             return (T) obj;
         }
         return null;
+    }
+
+    /**
+     * Retrieves an object by key regardless of its registered runtime type.
+     *
+     * @param key The key identifying the instance
+     * @return The object instance, or null if not found
+     */
+    @Override
+    public Object get(String key) {
+        return keyMap.get(key);
     }
 
     /**
@@ -96,6 +114,17 @@ class DefaultContextStore implements ContextStore {
     public boolean contains(String key, Class<?> type) {
         Map<String, Object> keyMap = objectMap.get(type);
         return keyMap != null && keyMap.containsKey(key);
+    }
+
+    /**
+     * Checks whether an object with the specified key exists regardless of its registered type.
+     *
+     * @param key The key identifying the instance
+     * @return true if the object exists, false otherwise
+     */
+    @Override
+    public boolean contains(String key) {
+        return keyMap.containsKey(key);
     }
 
     /**
@@ -146,22 +175,23 @@ class DefaultContextStore implements ContextStore {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DefaultContextStore that = (DefaultContextStore) o;
-        return Objects.equals(objectMap, that.objectMap);
+        return Objects.equals(objectMap, that.objectMap) && Objects.equals(keyMap, that.keyMap);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(objectMap);
+        return Objects.hash(objectMap, keyMap);
     }
 
     @Override
     public String toString() {
-        return "DefaultContextStore{" + "objectMap=" + objectMap + '}';
+        return "DefaultContextStore{" + "objectMap=" + objectMap + ", keyMap=" + keyMap + '}';
     }
 
     /** Builder for DefaultContextStore. */
     public static class Builder {
         private Map<Class<?>, Map<String, Object>> objectMap;
+        private Map<String, Object> keyMap;
 
         private Builder() {}
 
@@ -243,9 +273,14 @@ class DefaultContextStore implements ContextStore {
             if (this.objectMap == null) {
                 this.objectMap = new HashMap<>();
             }
-
             Map<String, Object> keyMap = this.objectMap.computeIfAbsent(type, k -> new HashMap<>());
             keyMap.put(key, object);
+
+            if (this.keyMap == null) {
+                this.keyMap = new HashMap<>();
+            }
+            this.keyMap.put(key, object);
+
             return this;
         }
 
