@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.memory.autocontext;
 
+import io.agentscope.core.message.Msg;
+import java.util.List;
+
 /**
  * Utility class for providing prompts with fallback to defaults.
  *
@@ -40,6 +43,12 @@ public class PromptProvider {
         return Prompts.PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT;
     }
 
+    public static String getPreviousRoundToolCompressPrompt(
+            PromptConfig customPrompt, List<Msg> messages) {
+        return CompressionLanguageHintResolver.appendLanguageRequirement(
+                getPreviousRoundToolCompressPrompt(customPrompt), messages);
+    }
+
     /**
      * Strategy 4: Gets the prompt for summarizing previous round conversations.
      * Returns custom prompt if provided, otherwise returns default from Prompts.
@@ -57,6 +66,12 @@ public class PromptProvider {
         return Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT;
     }
 
+    public static String getPreviousRoundSummaryPrompt(
+            PromptConfig customPrompt, List<Msg> messages) {
+        return CompressionLanguageHintResolver.appendLanguageRequirement(
+                getPreviousRoundSummaryPrompt(customPrompt), messages);
+    }
+
     /**
      * Strategy 5: Gets the prompt for summarizing current round large messages.
      * Returns custom prompt if provided, otherwise returns default from Prompts.
@@ -72,6 +87,12 @@ public class PromptProvider {
             }
         }
         return Prompts.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT;
+    }
+
+    public static String getCurrentRoundLargeMessagePrompt(
+            PromptConfig customPrompt, List<Msg> messages) {
+        return CompressionLanguageHintResolver.appendLanguageRequirement(
+                getCurrentRoundLargeMessagePrompt(customPrompt), messages);
     }
 
     /**
@@ -92,5 +113,11 @@ public class PromptProvider {
             }
         }
         return Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT;
+    }
+
+    public static String getCurrentRoundCompressPrompt(
+            PromptConfig customPrompt, List<Msg> messages) {
+        return CompressionLanguageHintResolver.appendLanguageRequirement(
+                getCurrentRoundCompressPrompt(customPrompt), messages);
     }
 }
