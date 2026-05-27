@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-05-08T05:45:43+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
+    <meta property="article:modified_time" content="2026-05-27T03:47:28+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/model.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -911,7 +911,7 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">enableThinking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自动启用流式输出</span>
+<span class="w">        </span><span class="p">.</span><span class="na">enableThinking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// 启用思考模式，并自动启用流式输出</span>
 <span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">thinkingBudget</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span><span class="w">  </span><span class="c1">// 思考 token 预算</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
@@ -1503,7 +1503,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-05-08</div>
+              Last updated on 2026-05-27</div>
           </div>
           <div class="right-details">
             <div class="icons">
