@@ -112,9 +112,10 @@ public class CompactionHook implements Hook, RuntimeContextAware {
 
         MemoryFlushManager flushManager = buildFlushManager();
         ConversationCompactor compactor = new ConversationCompactor(model, flushManager);
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
 
         return compactor
-                .compactIfNeeded(conversationMsgs, config, agentId, sessionId)
+                .compactIfNeeded(rc, conversationMsgs, config, agentId, sessionId)
                 .flatMap(
                         optResult -> {
                             if (optResult.isEmpty()) {

@@ -15,19 +15,21 @@
  */
 package io.agentscope.harness.agent.store;
 
+import io.agentscope.core.agent.RuntimeContext;
 import java.util.List;
 
 /**
  * Factory that produces a namespace tuple for {@link BaseStore} operations at call time.
  *
  * <p>Unlike a static namespace, a {@code NamespaceFactory} is invoked on <em>every</em> store
- * operation (read, write, ls, etc.), allowing the namespace to vary based on runtime context such
- * as the current session id, user id, or agent id.
+ * operation (read, write, ls, etc.), allowing the namespace to vary based on the per-call {@link
+ * RuntimeContext} (user id, session id) rather than mutable shared state on the agent instance.
  *
  * <p>Example:
  *
  * <pre>{@code
- * NamespaceFactory factory = () -> List.of("sessions", getCurrentSessionId(), "filesystem");
+ * NamespaceFactory factory = rc ->
+ *         List.of("sessions", rc.getSessionId(), "filesystem");
  * RemoteFilesystem fs = new RemoteFilesystem(store, factory);
  * }</pre>
  */
@@ -37,7 +39,9 @@ public interface NamespaceFactory {
     /**
      * Returns the namespace tuple for the current operation context.
      *
+     * @param runtimeContext per-call runtime context; never {@code null} (callers without a real RC
+     *     must pass {@link RuntimeContext#empty()})
      * @return non-null, non-empty list of namespace segments
      */
-    List<String> getNamespace();
+    List<String> getNamespace(RuntimeContext runtimeContext);
 }
