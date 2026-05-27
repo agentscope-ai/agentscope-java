@@ -101,6 +101,21 @@ class AutoContextMemoryTest {
     }
 
     @Test
+    @DisplayName("Should exclude synthetic assistant messages from interaction messages")
+    void testGetInteractionMsgsSkipsSyntheticAssistant() {
+        memory.addMessage(createTextMessage("User message 1", MsgRole.USER));
+        memory.addMessage(createCompressedAssistantMessage("Compressed summary"));
+        memory.addMessage(createTextMessage("User message 2", MsgRole.USER));
+
+        List<Msg> interactionMsgs = memory.getInteractionMsgs();
+        assertEquals(2, interactionMsgs.size());
+        assertEquals(MsgRole.USER, interactionMsgs.get(0).getRole());
+        assertEquals("User message 1", interactionMsgs.get(0).getTextContent());
+        assertEquals(MsgRole.USER, interactionMsgs.get(1).getRole());
+        assertEquals("User message 2", interactionMsgs.get(1).getTextContent());
+    }
+
+    @Test
     @DisplayName("Should return messages when below threshold")
     void testGetMessagesBelowThreshold() {
         // Add messages below threshold
@@ -1082,6 +1097,20 @@ class AutoContextMemoryTest {
                                 .id(callId)
                                 .output(List.of(TextBlock.builder().text(result).build()))
                                 .build())
+                .build();
+    }
+
+    private Msg createCompressedAssistantMessage(String text) {
+        Map<String, Object> metadata = new HashMap<>();
+        Map<String, Object> compressMeta = new HashMap<>();
+        compressMeta.put("offloaduuid", "uuid-1");
+        metadata.put("_compress_meta", compressMeta);
+
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .name("assistant")
+                .content(TextBlock.builder().text(text).build())
+                .metadata(metadata)
                 .build();
     }
 
