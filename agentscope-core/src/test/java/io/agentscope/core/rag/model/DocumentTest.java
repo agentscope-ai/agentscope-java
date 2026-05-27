@@ -70,6 +70,29 @@ class DocumentTest {
     }
 
     @Test
+    @DisplayName("Should generate ID based on text content, not ContentBlock object structure")
+    void testDocumentIdUsesTextNotContentBlockObject() {
+        // Two TextBlock instances with identical text but different object references
+        // must produce the same document ID, proving the ID is derived from the text
+        // string rather than the ContentBlock object's serialized form.
+        TextBlock content1 = TextBlock.builder().text("hello world").build();
+        TextBlock content2 = TextBlock.builder().text("hello world").build();
+        DocumentMetadata metadata1 = new DocumentMetadata(content1, "doc-1", "0");
+        DocumentMetadata metadata2 = new DocumentMetadata(content2, "doc-1", "0");
+
+        Document doc1 = new Document(metadata1);
+        Document doc2 = new Document(metadata2);
+
+        assertEquals(doc1.getId(), doc2.getId());
+
+        // Also verify that different text produces a different ID
+        TextBlock differentContent = TextBlock.builder().text("different text").build();
+        DocumentMetadata metadata3 = new DocumentMetadata(differentContent, "doc-1", "0");
+        Document doc3 = new Document(metadata3);
+        assertFalse(doc1.getId().equals(doc3.getId()));
+    }
+
+    @Test
     @DisplayName("Should generate different IDs for different content")
     void testDocumentIdUniqueness() {
         TextBlock content1 = TextBlock.builder().text("Test content 1").build();
