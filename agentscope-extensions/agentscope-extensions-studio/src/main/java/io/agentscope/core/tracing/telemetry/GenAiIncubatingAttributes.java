@@ -47,6 +47,8 @@ public final class GenAiIncubatingAttributes {
 
     static final AttributeKey<String> GEN_AI_CONVERSATION_ID = stringKey("gen_ai.conversation.id");
 
+    static final AttributeKey<String> GEN_AI_SESSION_ID = stringKey("gen_ai.session.id");
+
     static final AttributeKey<String> GEN_AI_DATA_SOURCE_ID = stringKey("gen_ai.data_source.id");
 
     static final AttributeKey<String> GEN_AI_OPERATION_NAME = stringKey("gen_ai.operation.name");
