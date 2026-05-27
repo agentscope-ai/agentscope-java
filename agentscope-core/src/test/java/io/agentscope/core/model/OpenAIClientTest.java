@@ -685,6 +685,7 @@ class OpenAIClientTest {
         GenerateOptions options =
                 GenerateOptions.builder()
                         .additionalQueryParams(Map.of("custom_param", "custom_value"))
+                        .endpointPath("")
                         .build();
 
         client.call(TEST_API_KEY, baseUrl, request, options);
