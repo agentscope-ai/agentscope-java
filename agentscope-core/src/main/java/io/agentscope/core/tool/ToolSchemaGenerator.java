@@ -34,6 +34,77 @@ import java.util.Set;
 class ToolSchemaGenerator {
 
     /**
+     * Generate parameter schema with additionalProperties control.
+     *
+     * @param method the method to generate schema for
+     * @param excludeParams set of parameter names to exclude (may be null or empty)
+     * @param allowAdditionalProperties whether to allow additional properties in the schema
+     * @return JSON Schema map
+     */
+    @SuppressWarnings("unchecked")
+    Map<String, Object> generateParameterSchema(
+            Method method, Set<String> excludeParams, boolean allowAdditionalProperties) {
+        Map<String, Object> schema = generateParameterSchema(method, excludeParams);
+
+        if (!allowAdditionalProperties) {
+            addAdditionalPropertiesFalseRecursively(schema);
+        }
+
+        return schema;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void addAdditionalPropertiesFalseRecursively(Map<String, Object> schema) {
+        if (!"object".equals(schema.get("type"))) {
+            return;
+        }
+        // Skip if user already set additionalProperties explicitly
+        if (schema.containsKey("additionalProperties")) {
+            return;
+        }
+        schema.put("additionalProperties", false);
+
+        Object propsObj = schema.get("properties");
+        if (propsObj instanceof Map) {
+            Map<String, Object> props = (Map<String, Object>) propsObj;
+            for (Map.Entry<String, Object> entry : props.entrySet()) {
+                if (entry.getValue() instanceof Map) {
+                    addAdditionalPropertiesFalseRecursively((Map<String, Object>) entry.getValue());
+                }
+            }
+        }
+
+        Object itemsObj = schema.get("items");
+        if (itemsObj instanceof Map) {
+            addAdditionalPropertiesFalseRecursively((Map<String, Object>) itemsObj);
+        }
+
+        for (String key : new String[] {"oneOf", "anyOf", "allOf"}) {
+            Object listObj = schema.get(key);
+            if (listObj instanceof Iterable) {
+                for (Object item : (Iterable<?>) listObj) {
+                    if (item instanceof Map) {
+                        addAdditionalPropertiesFalseRecursively((Map<String, Object>) item);
+                    }
+                }
+            }
+        }
+
+        for (String defsKey : new String[] {"$defs", "definitions"}) {
+            Object defsObj = schema.get(defsKey);
+            if (defsObj instanceof Map) {
+                Map<String, Object> defs = (Map<String, Object>) defsObj;
+                for (Map.Entry<String, Object> entry : defs.entrySet()) {
+                    if (entry.getValue() instanceof Map) {
+                        addAdditionalPropertiesFalseRecursively(
+                                (Map<String, Object>) entry.getValue());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Generate parameter schema for a method with excluded parameters.
      *
      * <p>
