@@ -107,19 +107,6 @@ jobs:
           "@ -Encoding Utf8 -Force
           Remove-Item -Path "mvnd", "mvnd.zip" -Recurse -Force
 
-      - name: Tune mvnd for Windows CI
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $conf = Join-Path $HOME ".mvnd\conf\mvnd.properties"
-          @"
-          # mvnd client timeout settings (see apache/maven-mvnd#161)
-          mvnd.connectTimeout=120000
-          mvnd.socketConnectTimeout=30000
-          mvnd.cancelConnectTimeout=30000
-          mvnd.maxLostKeepAlive=120
-          "@ | Set-Content -Path $conf -Encoding Utf8 -Force
-
       - name: Build and Test with Coverage [Linux]
         if: runner.os == 'Linux'
         shell: bash
