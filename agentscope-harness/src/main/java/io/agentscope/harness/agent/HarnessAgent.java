@@ -50,6 +50,7 @@ import io.agentscope.core.state.StatePersistence;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -58,6 +59,8 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.hook.AgentTraceHook;
 import io.agentscope.harness.agent.hook.CompactionHook;
+import io.agentscope.harness.agent.hook.DynamicSkillHook;
+import io.agentscope.harness.agent.hook.DynamicSubagentsHook;
 import io.agentscope.harness.agent.hook.MemoryFlushHook;
 import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
 import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
@@ -79,8 +82,10 @@ import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
+import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
+import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.RemoteSubagentStub;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -93,14 +98,21 @@ import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
 import io.agentscope.harness.agent.tool.SessionSearchTool;
 import io.agentscope.harness.agent.tool.ShellExecuteTool;
+import io.agentscope.harness.agent.tools.McpServerRegistrar;
+import io.agentscope.harness.agent.tools.ToolFilter;
+import io.agentscope.harness.agent.tools.ToolsConfig;
+import io.agentscope.harness.agent.tools.ToolsConfigLoader;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -142,34 +154,83 @@ import reactor.core.publisher.Mono;
  * ).block();
  * }</pre>
  */
-public class HarnessAgent implements Agent, StateModule {
+public class HarnessAgent implements Agent, StateModule, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
     private final CompactionHook compactionHook;
-    private final AtomicReference<String> userIdRef;
-    private final AtomicReference<String> sessionIdRef;
     private final Session defaultSession;
     private final SandboxContext defaultSandboxContext;
-    private RuntimeContext runtimeContext;
+    private final List<AgentSkillRepository> skillRepositories;
+
+    /**
+     * SQLite-backed workspace index allocated during {@link Builder#build()} when the agent is
+     * configured with a {@link io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec},
+     * shared across the main {@link #workspaceManager} and any per-ctx views produced by
+     * {@link #workspaceFor(String, String)}. Owned by this agent; released by {@link #close()}.
+     * {@code null} when no index was created.
+     */
+    private final WorkspaceIndex ownedWorkspaceIndex;
+
+    /**
+     * Factory for ctx-bound {@link WorkspaceManager} views — see {@link #workspaceFor(String,
+     * String)}. Captured at build time so per-call views can be produced without depending on
+     * mutable shared state on the agent instance.
+     */
+    private final java.util.function.BiFunction<String, String, WorkspaceManager> workspaceFactory;
+
+    /**
+     * Factory for per-userId {@link WorkspaceSession} views. Used to bake the calling userId into
+     * the {@link io.agentscope.harness.agent.store.NamespaceFactory} so that
+     * {@link io.agentscope.core.session.JsonSession#getSessionDir} (which has no
+     * {@link RuntimeContext} on the API surface) still produces a per-user path. Returns {@code
+     * null} when the default session is not a {@link WorkspaceSession}; callers must fall back to
+     * {@link #defaultSession}.
+     */
+    private final java.util.function.Function<String, Session> sessionFactory;
+
+    private volatile RuntimeContext runtimeContext;
 
     private HarnessAgent(
             ReActAgent delegate,
             WorkspaceManager workspaceManager,
             CompactionHook compactionHook,
-            AtomicReference<String> userIdRef,
-            AtomicReference<String> sessionIdRef,
             Session defaultSession,
-            SandboxContext defaultSandboxContext) {
+            SandboxContext defaultSandboxContext,
+            List<AgentSkillRepository> skillRepositories,
+            java.util.function.BiFunction<String, String, WorkspaceManager> workspaceFactory,
+            java.util.function.Function<String, Session> sessionFactory,
+            WorkspaceIndex ownedWorkspaceIndex) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.compactionHook = compactionHook;
-        this.userIdRef = userIdRef;
-        this.sessionIdRef = sessionIdRef;
         this.defaultSession = defaultSession;
         this.defaultSandboxContext = defaultSandboxContext;
+        this.skillRepositories =
+                skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
+        this.workspaceFactory = workspaceFactory;
+        this.sessionFactory = sessionFactory;
+        this.ownedWorkspaceIndex = ownedWorkspaceIndex;
+    }
+
+    /**
+     * Releases resources owned by this agent — currently the SQLite-backed
+     * {@link WorkspaceIndex} created when {@code RemoteFilesystemSpec} is configured.
+     *
+     * <p>Required for tests using {@code @TempDir} on Windows: while the JDBC connection holds
+     * a file handle on {@code .index/workspace.db}, Windows refuses to delete the temp directory
+     * and JUnit fails extension cleanup. Calling close releases the handle.
+     *
+     * <p>After close, the agent and any {@link WorkspaceManager} views produced from it must
+     * not be used.
+     */
+    @Override
+    public void close() {
+        if (ownedWorkspaceIndex != null) {
+            ownedWorkspaceIndex.close();
+        }
     }
 
     /** Calls the agent with a runtime context, which provides sessionId and other metadata. */
@@ -241,7 +302,7 @@ public class HarnessAgent implements Agent, StateModule {
         ConversationCompactor compactor = new ConversationCompactor(delegate.getModel(), fm);
 
         return compactor
-                .compactIfNeeded(allMsgs, forceConfig, agentId, sessionId)
+                .compactIfNeeded(coreRuntimeForRecovery(), allMsgs, forceConfig, agentId, sessionId)
                 .flatMap(
                         opt -> {
                             if (opt.isPresent()) {
@@ -286,16 +347,6 @@ public class HarnessAgent implements Agent, StateModule {
         }
         RuntimeContext effective = ensureSessionDefaults(ctx);
         this.runtimeContext = effective;
-        if (userIdRef != null) {
-            userIdRef.set(effective.getUserId());
-        }
-        if (sessionIdRef != null) {
-            String sid =
-                    effective.getSessionKey() != null
-                            ? effective.getSessionKey().toIdentifier()
-                            : effective.getSessionId();
-            sessionIdRef.set(sid);
-        }
         if (effective.getSession() != null && effective.getSessionKey() != null) {
             try {
                 delegate.loadIfExists(effective.getSession(), effective.getSessionKey());
@@ -312,7 +363,20 @@ public class HarnessAgent implements Agent, StateModule {
      * available, or {@code SimpleSessionKey.of(agentName)} as a last resort.
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
-        Session session = ctx.getSession() != null ? ctx.getSession() : defaultSession;
+        Session session = ctx.getSession();
+        if (session == null) {
+            // When the agent's default session is a WorkspaceSession (single-tenant local store),
+            // produce a per-call view with the caller's userId baked into its NamespaceFactory so
+            // session state lands under <workspace>/<userId>/agents/.../context/ instead of the
+            // shared workspace root.
+            String uid = ctx.getUserId();
+            if (sessionFactory != null && uid != null && !uid.isBlank()) {
+                Session perCall = sessionFactory.apply(uid);
+                session = perCall != null ? perCall : defaultSession;
+            } else {
+                session = defaultSession;
+            }
+        }
         SessionKey sessionKey = ctx.getSessionKey();
         if (sessionKey == null) {
             String id = ctx.getSessionId();
@@ -419,6 +483,38 @@ public class HarnessAgent implements Agent, StateModule {
     }
 
     /**
+     * Returns a {@link WorkspaceManager} view whose filesystem and namespace are bound to the
+     * given {@code (userId, sessionId)} for the duration of the returned view's IO. Unlike
+     * {@link #getWorkspaceManager()}, this does <strong>not</strong> mutate the shared {@link
+     * RuntimeContext} state used by the chat path ({@link #call} / {@link #stream}) — so it is
+     * safe to call concurrently from per-request controllers without racing with active chats or
+     * other requests on the same agent.
+     *
+     * <p>Semantics by filesystem mode:
+     *
+     * <ul>
+     *   <li><b>Remote (composite)</b> — a fresh composite filesystem is built whose per-route
+     *       {@link io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem}s use the
+     *       supplied {@code userId} / {@code sessionId} directly (no mutable reference). IO
+     *       lands in {@code [agents, <agentId>, users, <userId>, <route>, ...]} per the
+     *       configured {@link io.agentscope.harness.agent.IsolationScope}.
+     *   <li><b>Local / Sandbox / Custom</b> — the existing shared filesystem is reused (these
+     *       modes do not have a per-user race in their backend); only the workspace-relative
+     *       namespace factory is rebound for the disk-fallback subtree.
+     * </ul>
+     *
+     * <p>Pass {@code null} for either parameter to opt out of that dimension. The returned view
+     * is lightweight and may be created per request; callers should not cache it across requests
+     * with different users.
+     */
+    public WorkspaceManager workspaceFor(String userId, String sessionId) {
+        if (workspaceFactory == null) {
+            return workspaceManager;
+        }
+        return workspaceFactory.apply(userId, sessionId);
+    }
+
+    /**
      * Returns the {@link CompactionHook} instance if compaction was configured, or {@code null}.
      * Exposed for testing to verify compaction mirroring in child agents.
      */
@@ -428,6 +524,16 @@ public class HarnessAgent implements Agent, StateModule {
 
     public RuntimeContext getRuntimeContext() {
         return runtimeContext;
+    }
+
+    /**
+     * Returns the ordered list of {@link AgentSkillRepository} instances bound to this agent.
+     * The list reflects the four-layer composition (project-global → marketplace → workspace
+     * shared → per-user namespace) computed at build time, in priority order from lowest to
+     * highest. The returned list is immutable.
+     */
+    public List<AgentSkillRepository> getSkillRepositories() {
+        return skillRepositories;
     }
 
     // ==================== StateModule delegation ====================
@@ -514,6 +620,7 @@ public class HarnessAgent implements Agent, StateModule {
 
         // Core ReActAgent params
         private String name;
+        private String agentId;
         private String description;
         private String sysPrompt;
         private Model model;
@@ -524,8 +631,18 @@ public class HarnessAgent implements Agent, StateModule {
         private GenerateOptions generateOptions;
         private final List<Hook> hooks = new ArrayList<>();
 
-        /** When {@code null}, skills load from {@code workspace/skills/} via {@link FileSystemSkillRepository}. */
-        private AgentSkillRepository skillRepository;
+        /**
+         * Marketplace / external skill repositories layered between the project-global directory
+         * and the workspace agent-shared directory. Empty by default. {@link
+         * #skillRepository(AgentSkillRepository)} appends to this list.
+         */
+        private final List<AgentSkillRepository> skillRepositories = new ArrayList<>();
+
+        /**
+         * Optional project-global skills directory (lowest precedence in the composition).
+         * When {@code null}, no project-global layer is added.
+         */
+        private Path projectGlobalSkillsDir;
 
         private ToolExecutionContext toolExecutionContext;
 
@@ -621,6 +738,33 @@ public class HarnessAgent implements Agent, StateModule {
          */
         private boolean disableSubagents = false;
 
+        /**
+         * When {@code true}, the dynamic skill hook ({@code DynamicSkillHook}) is not registered
+         * even when a workspace filesystem is configured. The build falls back to the legacy
+         * {@code SkillHook} path via {@code resolveSkillBox()}.
+         */
+        private boolean disableDynamicSkills = false;
+
+        /**
+         * When {@code true}, the dynamic subagents hook ({@code DynamicSubagentsHook}) is not
+         * registered even when a workspace filesystem is configured. The build falls back to the
+         * legacy {@link SubagentsHook} which scans subagent declarations once at build time.
+         */
+        private boolean disableDynamicSubagents = false;
+
+        /**
+         * When {@code true}, {@code workspace/tools.json} is not consulted at build time. MCP
+         * servers and allow/deny lists from that file are skipped entirely; the toolkit keeps
+         * exactly the built-ins registered programmatically.
+         */
+        private boolean disableToolsConfig = false;
+
+        /**
+         * Programmatic override for {@code workspace/tools.json}. When non-null, {@link
+         * ToolsConfigLoader} is bypassed and this value is used directly. Useful for tests.
+         */
+        private ToolsConfig toolsConfigOverride;
+
         // Filesystem mode configuration (at most one of these three is set)
         private SandboxFilesystemSpec sandboxFilesystemSpec;
         private RemoteFilesystemSpec remoteFilesystemSpec;
@@ -628,6 +772,22 @@ public class HarnessAgent implements Agent, StateModule {
 
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Sets the stable identifier used as the agent's namespace key in the composite filesystem
+         * (e.g. {@code [agents, <agentId>, users, <userId>, ...]}). This is distinct from
+         * {@link #name(String)}, which is the human-facing display name and may change without
+         * rewriting any keys.
+         *
+         * <p>When unset, {@code build()} falls back to {@link #name(String)} for the namespace key,
+         * preserving prior behavior. Callers that need rename-safe storage (e.g. multi-tenant
+         * platforms whose agents have a stable catalog/URL id distinct from the display name)
+         * should set this explicitly.
+         */
+        public Builder agentId(String agentId) {
+            this.agentId = agentId;
             return this;
         }
 
@@ -699,13 +859,44 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
-         * Supplies skills from a custom repository (e.g. {@code GitSkillRepository}). A {@link SkillBox} is
-         * assembled automatically from this repository and the agent toolkit. When {@code null} (default),
-         * skills are loaded from {@code &lt;workspace&gt;/skills/} using {@link FileSystemSkillRepository} when
-         * that directory exists.
+         * Adds a marketplace / external skill repository (e.g. {@code GitSkillRepository},
+         * Nacos, HTTP). Repositories compose <em>additively</em> with workspace skills: the
+         * default precedence is project-global → marketplace repos (in registration order) →
+         * workspace agent-shared → per-user namespaced filesystem, with later layers
+         * overriding earlier ones on name collisions. Call this method multiple times to add
+         * multiple sources.
          */
         public Builder skillRepository(AgentSkillRepository skillRepository) {
-            this.skillRepository = skillRepository;
+            if (skillRepository != null) {
+                this.skillRepositories.add(skillRepository);
+            }
+            return this;
+        }
+
+        /**
+         * Replaces the current marketplace repository list with the given collection. Useful
+         * for bulk configuration from an external config; equivalent to clearing the list and
+         * calling {@link #skillRepository(AgentSkillRepository)} for each entry.
+         */
+        public Builder skillRepositories(List<AgentSkillRepository> repositories) {
+            this.skillRepositories.clear();
+            if (repositories != null) {
+                for (AgentSkillRepository repo : repositories) {
+                    if (repo != null) {
+                        this.skillRepositories.add(repo);
+                    }
+                }
+            }
+            return this;
+        }
+
+        /**
+         * Configures a project-global skills directory layered <em>below</em> marketplace and
+         * workspace skills (lowest precedence). Used to ship default skills shared across all
+         * agents started from a project. Pass {@code null} to clear.
+         */
+        public Builder projectGlobalSkillsDir(Path projectGlobalSkillsDir) {
+            this.projectGlobalSkillsDir = projectGlobalSkillsDir;
             return this;
         }
 
@@ -1003,6 +1194,26 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
+         * Disables dynamic per-call skill loading from the workspace filesystem. Forces the build
+         * to use the legacy {@code resolveSkillBox()} path even when a workspace filesystem is
+         * configured.
+         */
+        public Builder disableDynamicSkills() {
+            this.disableDynamicSkills = true;
+            return this;
+        }
+
+        /**
+         * Disables dynamic per-call subagent reload from the workspace filesystem. Forces the
+         * build to use the legacy {@link SubagentsHook} which materialises the entry list once at
+         * build time.
+         */
+        public Builder disableDynamicSubagents() {
+            this.disableDynamicSubagents = true;
+            return this;
+        }
+
+        /**
          * Skips registration of {@link MemorySearchTool}, {@link MemoryGetTool}, and {@link SessionSearchTool}.
          */
         public Builder disableMemoryTools() {
@@ -1043,6 +1254,26 @@ public class HarnessAgent implements Agent, StateModule {
          */
         public Builder disableSubagents() {
             this.disableSubagents = true;
+            return this;
+        }
+
+        /**
+         * Skips reading {@code workspace/tools.json}. No MCP servers from that file are
+         * registered, and allow/deny filtering is not applied. Programmatic {@code disable*}
+         * switches still take effect.
+         */
+        public Builder disableToolsConfig() {
+            this.disableToolsConfig = true;
+            return this;
+        }
+
+        /**
+         * Provides an in-memory {@link ToolsConfig} that bypasses the {@code workspace/tools.json}
+         * file lookup. Setting a non-null value implies the same MCP-server registration and
+         * allow/deny filtering steps as if this object were parsed from the workspace.
+         */
+        public Builder toolsConfig(ToolsConfig toolsConfig) {
+            this.toolsConfigOverride = toolsConfig;
             return this;
         }
 
@@ -1263,14 +1494,26 @@ public class HarnessAgent implements Agent, StateModule {
                             ? workspace
                             : Paths.get(System.getProperty("user.dir"))
                                     .resolve(".agentscope/workspace");
-            String resolvedAgentId = name != null ? name : "HarnessAgent";
+            String resolvedAgentId =
+                    agentId != null && !agentId.isBlank()
+                            ? agentId
+                            : (name != null && !name.isBlank() ? name : "HarnessAgent");
             Session effectiveSession =
                     sandboxDistributedOptions != null
                                     && sandboxDistributedOptions.getSession() != null
                             ? sandboxDistributedOptions.getSession()
                             : session;
+            // RC-driven NamespaceFactory: every store operation passes its current
+            // RuntimeContext, and the namespace is derived from rc.getUserId() at call time.
+            // No shared mutable state.
+            NamespaceFactory nsFactory =
+                    rc -> {
+                        String uid = rc != null ? rc.getUserId() : null;
+                        return (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
+                    };
             if (effectiveSession == null) {
-                effectiveSession = new WorkspaceSession(resolvedWorkspace, resolvedAgentId);
+                effectiveSession =
+                        new WorkspaceSession(resolvedWorkspace, resolvedAgentId, nsFactory);
             }
 
             // Mode 1 (RemoteFilesystemSpec) is inherently distributed: automatically require a
@@ -1282,11 +1525,11 @@ public class HarnessAgent implements Agent, StateModule {
                                 + " WorkspaceSession. Configure a distributed Session backend (for"
                                 + " example RedisSession) via .session(...).");
             }
-
-            AtomicReference<String> userIdRef = new AtomicReference<>();
-            AtomicReference<String> sessionIdRef = new AtomicReference<>();
+            WorkspaceIndex workspaceIndex =
+                    remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
             AbstractFilesystem filesystem =
-                    resolveFilesystem(resolvedWorkspace, resolvedAgentId, userIdRef, sessionIdRef);
+                    resolveFilesystem(
+                            resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
 
             // ---- Sandbox integration ----
             SandboxLifecycleHook sandboxLifecycleHook = null;
@@ -1298,7 +1541,6 @@ public class HarnessAgent implements Agent, StateModule {
                     sandboxFilesystemSpec.snapshotSpec(sandboxDistributedOptions.getSnapshotSpec());
                 }
                 capturedSandboxFs = new SandboxBackedFilesystem();
-                capturedSandboxFs.configureNamespace(buildDynamicNamespaceFactory(userIdRef));
                 filesystem = capturedSandboxFs;
 
                 defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
@@ -1311,10 +1553,20 @@ public class HarnessAgent implements Agent, StateModule {
                     validateDistributedSandboxConfig(effectiveSession, defaultSandboxContext);
                 }
 
+                // SessionSandboxStateStore.slotKey already encodes per-scope discriminators
+                // (sandbox/session/<id>, sandbox/user/<agentId>/<userId>, sandbox/agent/<agentId>,
+                // sandbox/global). When the effective Session is a WorkspaceSession with a
+                // userId-scoped namespace, layering that namespace on top would partition
+                // AGENT/GLOBAL state per user and break their cross-caller sharing contract.
+                Session sandboxStateSession =
+                        effectiveSession instanceof WorkspaceSession
+                                ? new WorkspaceSession(resolvedWorkspace, resolvedAgentId, null)
+                                : effectiveSession;
                 SandboxStateStore stateStore =
                         sandboxFilesystemSpec.getSandboxStateStore() != null
                                 ? sandboxFilesystemSpec.getSandboxStateStore()
-                                : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
+                                : new SessionSandboxStateStore(
+                                        sandboxStateSession, resolvedAgentId);
                 SandboxExecutionGuard executionGuard =
                         sandboxFilesystemSpec.getExecutionGuard() != null
                                 ? sandboxFilesystemSpec.getExecutionGuard()
@@ -1327,8 +1579,45 @@ public class HarnessAgent implements Agent, StateModule {
                                 executionGuard);
                 sandboxLifecycleHook = new SandboxLifecycleHook(sandboxManager, capturedSandboxFs);
             }
-            WorkspaceManager wsManager = new WorkspaceManager(resolvedWorkspace, filesystem);
+            WorkspaceManager wsManager =
+                    new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
             wsManager.validate();
+
+            // Capture a per-ctx WorkspaceManager factory. Built once at build time so per-request
+            // callers (controllers, etc.) can produce a view bound to an explicit (userId,
+            // sessionId) without depending on the chat path's per-call RuntimeContext.
+            // The returned WorkspaceManager wraps the shared filesystem with a
+            // BakedContextFilesystem
+            // that substitutes the supplied (uid, sid) RC on every call — so even when callers pass
+            // RuntimeContext.empty(), the underlying namespace factories still see the baked
+            // identity. See HarnessAgent.workspaceFor(...) for the public entry point.
+            final AbstractFilesystem sharedFilesystemRef = filesystem;
+            final Path capturedWorkspace = resolvedWorkspace;
+            final WorkspaceIndex capturedIndex = workspaceIndex;
+            java.util.function.BiFunction<String, String, WorkspaceManager> workspaceFactoryFn =
+                    (uid, sid) -> {
+                        RuntimeContext bakedRc = buildBakedRuntimeContext(uid, sid);
+                        NamespaceFactory ctxNs =
+                                rc -> (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
+                        AbstractFilesystem ctxFs =
+                                new BakedContextFilesystem(sharedFilesystemRef, bakedRc);
+                        return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
+                    };
+
+            // Per-userId Session factory: only produces userId-baked WorkspaceSession views when
+            // the agent's defaultSession is itself a WorkspaceSession. Other (distributed)
+            // session backends are returned unchanged via {@code null} so callers fall back to
+            // defaultSession.
+            final Session capturedDefaultSession = effectiveSession;
+            final String capturedAgentId = resolvedAgentId;
+            java.util.function.Function<String, Session> sessionFactoryFn =
+                    capturedDefaultSession instanceof WorkspaceSession
+                            ? uid -> {
+                                NamespaceFactory baked = rc -> List.of(uid);
+                                return new WorkspaceSession(
+                                        capturedWorkspace, capturedAgentId, baked);
+                            }
+                            : null;
 
             Memory memory = new InMemoryMemory();
 
@@ -1381,11 +1670,19 @@ public class HarnessAgent implements Agent, StateModule {
             }
 
             if (!leafSubagent && !disableSubagents && model != null) {
-                SubagentsHook subagentsHook =
-                        buildSubagentsHook(
-                                wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
-                if (subagentsHook != null) {
-                    allHooks.add(subagentsHook);
+                if (filesystem != null && !disableDynamicSubagents) {
+                    DynamicSubagentsHook dynamicSubagentsHook =
+                            buildDynamicSubagentsHook(
+                                    wsManager, resolvedWorkspace, capturedSandboxFs);
+                    if (dynamicSubagentsHook != null) {
+                        allHooks.add(dynamicSubagentsHook);
+                    }
+                } else {
+                    SubagentsHook subagentsHook =
+                            buildSubagentsHook(wsManager, resolvedWorkspace, capturedSandboxFs);
+                    if (subagentsHook != null) {
+                        allHooks.add(subagentsHook);
+                    }
                 }
             }
 
@@ -1406,9 +1703,56 @@ public class HarnessAgent implements Agent, StateModule {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
 
-            // ---- Skills (SkillBox assembled from optional AgentSkillRepository or default FS
-            // repo) ----
-            SkillBox effectiveSkillBox = resolveSkillBox(wsManager, agentToolkit);
+            // ---- workspace/tools.json: MCP servers + allow/deny filter ----
+            ToolsConfig resolvedToolsConfig = null;
+            if (!disableToolsConfig) {
+                if (toolsConfigOverride != null) {
+                    resolvedToolsConfig = toolsConfigOverride;
+                } else if (wsManager != null) {
+                    resolvedToolsConfig = ToolsConfigLoader.load(wsManager).orElse(null);
+                }
+            }
+            if (resolvedToolsConfig != null) {
+                McpServerRegistrar.register(agentToolkit, resolvedToolsConfig.getMcpServers());
+            }
+
+            // ---- Skills ----
+            // Compose an ordered repository list (low → high priority):
+            //   1. Project-global directory (~/.agentscope/skills/-equivalent)
+            //   2. Marketplace repos (skillRepository(...) calls, in registration order)
+            //   3. Workspace agent-shared directory (workspace/skills/)
+            //   4. Per-user namespaced filesystem (<userId>/skills/)
+            // Later entries override earlier ones on name collision. When the merged list is
+            // non-empty AND dynamic skills are enabled → DynamicSkillHook owns SkillBox lifecycle.
+            // When dynamic is disabled (legacy / static) → build the merged set once into a static
+            // SkillBox and let ReActAgent's legacy SkillHook render it.
+            // Skill repositories live alongside the agent and load on every reasoning step
+            // through DynamicSkillHook. The Layer-4 (per-user namespaced) repository needs the
+            // current call's RC, but composeSkillRepositories runs before HarnessAgent exists;
+            // we wire it via a self-reference that is populated at the end of build().
+            final AtomicReference<HarnessAgent> selfRef = new AtomicReference<>();
+            Supplier<RuntimeContext> currentRcSupplier =
+                    () -> {
+                        HarnessAgent self = selfRef.get();
+                        return self != null && self.runtimeContext != null
+                                ? self.runtimeContext
+                                : RuntimeContext.empty();
+                    };
+            List<AgentSkillRepository> orderedSkillRepos =
+                    composeSkillRepositories(wsManager, filesystem, currentRcSupplier);
+            SkillBox effectiveSkillBox = null;
+            if (!orderedSkillRepos.isEmpty()) {
+                if (disableDynamicSkills) {
+                    effectiveSkillBox = staticSkillBoxFromRepos(orderedSkillRepos, agentToolkit);
+                } else {
+                    allHooks.add(new DynamicSkillHook(orderedSkillRepos, agentToolkit));
+                }
+            }
+
+            // ---- Apply tools.json allow/deny filter (after MCP + static skill registration) ----
+            if (resolvedToolsConfig != null) {
+                ToolFilter.apply(agentToolkit, resolvedToolsConfig);
+            }
 
             // ---- Build ReActAgent ----
             ReActAgent.Builder reactBuilder =
@@ -1472,14 +1816,19 @@ public class HarnessAgent implements Agent, StateModule {
                     filesystem.getClass().getSimpleName(),
                     !leafSubagent && !disableSubagents && model != null);
 
-            return new HarnessAgent(
-                    delegate,
-                    wsManager,
-                    compactionHook,
-                    userIdRef,
-                    sessionIdRef,
-                    effectiveSession,
-                    defaultSandboxContext);
+            HarnessAgent harnessAgent =
+                    new HarnessAgent(
+                            delegate,
+                            wsManager,
+                            compactionHook,
+                            effectiveSession,
+                            defaultSandboxContext,
+                            orderedSkillRepos,
+                            workspaceFactoryFn,
+                            sessionFactoryFn,
+                            workspaceIndex);
+            selfRef.set(harnessAgent);
+            return harnessAgent;
         }
 
         // @formatter:off
@@ -1542,15 +1891,16 @@ public class HarnessAgent implements Agent, StateModule {
         private AbstractFilesystem resolveFilesystem(
                 Path workspace,
                 String agentId,
-                AtomicReference<String> userIdRef,
-                AtomicReference<String> sessionIdRef) {
+                WorkspaceIndex workspaceIndex,
+                NamespaceFactory nsFactory) {
             if (abstractFilesystem != null) {
                 return abstractFilesystem;
             }
-            NamespaceFactory nsFactory = buildDynamicNamespaceFactory(userIdRef);
             if (remoteFilesystemSpec != null) {
-                return remoteFilesystemSpec.toFilesystem(
-                        workspace, agentId, nsFactory, userIdRef::get, sessionIdRef::get);
+                if (workspaceIndex != null) {
+                    remoteFilesystemSpec.workspaceIndex(workspaceIndex);
+                }
+                return remoteFilesystemSpec.toFilesystem(workspace, agentId, nsFactory);
             }
             if (localFilesystemSpec != null) {
                 return localFilesystemSpec.toFilesystem(workspace, nsFactory);
@@ -1585,15 +1935,26 @@ public class HarnessAgent implements Agent, StateModule {
             }
         }
 
-        private static NamespaceFactory buildDynamicNamespaceFactory(
-                AtomicReference<String> userIdRef) {
-            return () -> {
-                String userId = userIdRef.get();
-                if (userId == null || userId.isBlank()) {
-                    return List.of();
-                }
-                return List.of(userId);
-            };
+        /**
+         * Builds a {@link RuntimeContext} that bakes in the supplied {@code userId} and
+         * {@code sessionId} for out-of-band IO performed via
+         * {@link HarnessAgent#workspaceFor(String, String)}. Used together with
+         * {@link BakedContextFilesystem} so the underlying namespace factories see this
+         * identity regardless of what the caller passes downstream.
+         */
+        private static RuntimeContext buildBakedRuntimeContext(String userId, String sessionId) {
+            if ((userId == null || userId.isBlank())
+                    && (sessionId == null || sessionId.isBlank())) {
+                return RuntimeContext.empty();
+            }
+            RuntimeContext.Builder b = RuntimeContext.builder();
+            if (userId != null && !userId.isBlank()) {
+                b.userId(userId);
+            }
+            if (sessionId != null && !sessionId.isBlank()) {
+                b.sessionId(sessionId);
+            }
+            return b.build();
         }
 
         // -----------------------------------------------------------------
@@ -1601,17 +1962,17 @@ public class HarnessAgent implements Agent, StateModule {
         // -----------------------------------------------------------------
 
         private SubagentsHook buildSubagentsHook(
-                WorkspaceManager wsManager,
-                Path workspace,
-                SandboxBackedFilesystem sandboxFs,
-                AtomicReference<String> userIdRef) {
+                WorkspaceManager wsManager, Path workspace, SandboxBackedFilesystem sandboxFs) {
             List<SubagentEntry> entries = buildSubagentEntries(workspace, sandboxFs);
             TaskRepository repo;
             if (taskRepository != null) {
                 repo = taskRepository;
             } else if (wsManager != null) {
-                String resolvedName = name != null ? name : "HarnessAgent";
-                repo = new WorkspaceTaskRepository(wsManager, resolvedName);
+                String taskAgentId =
+                        agentId != null && !agentId.isBlank()
+                                ? agentId
+                                : (name != null && !name.isBlank() ? name : "HarnessAgent");
+                repo = new WorkspaceTaskRepository(wsManager, taskAgentId);
             } else {
                 repo = new DefaultTaskRepository();
             }
@@ -1619,7 +1980,84 @@ public class HarnessAgent implements Agent, StateModule {
             if (externalSubagentTool != null) {
                 return new SubagentsHook(entries, externalSubagentTool, repo);
             }
-            return new SubagentsHook(entries, repo, wsManager, userIdRef::get);
+
+            AbstractFilesystem fs = wsManager.getFilesystem();
+            Function<SubagentDeclaration, SubagentFactory> factoryFn =
+                    decl -> buildDeclaredFactory(decl, workspace, sandboxFs);
+            return new SubagentsHook(entries, repo, wsManager, fs, workspace, factoryFn);
+        }
+
+        /**
+         * Builds the {@link DynamicSubagentsHook} used by default when a workspace filesystem is
+         * configured. Mirrors {@link #buildSubagentsHook} but feeds the hook only the
+         * <em>static</em> entries (programmatic declarations + {@code general-purpose} + custom
+         * factories); the local-disk {@code subagents/} directory is rescanned by the hook itself
+         * on every reasoning step as Layer 2, and the namespaced filesystem read is Layer 1.
+         *
+         * <p>Returns the hook, which owns its own {@link DefaultAgentManager} and (unless an
+         * external one was supplied) its own {@link io.agentscope.harness.agent.tool.AgentSpawnTool}.
+         */
+        private DynamicSubagentsHook buildDynamicSubagentsHook(
+                WorkspaceManager wsManager, Path workspace, SandboxBackedFilesystem sandboxFs) {
+            List<SubagentEntry> staticEntries = buildStaticSubagentEntries(workspace, sandboxFs);
+            TaskRepository repo;
+            if (taskRepository != null) {
+                repo = taskRepository;
+            } else if (wsManager != null) {
+                String taskAgentId =
+                        agentId != null && !agentId.isBlank()
+                                ? agentId
+                                : (name != null && !name.isBlank() ? name : "HarnessAgent");
+                repo = new WorkspaceTaskRepository(wsManager, taskAgentId);
+            } else {
+                repo = new DefaultTaskRepository();
+            }
+
+            AbstractFilesystem fs = wsManager.getFilesystem();
+            Function<SubagentDeclaration, SubagentFactory> factoryFn =
+                    decl -> buildDeclaredFactory(decl, workspace, sandboxFs);
+            DefaultAgentManager manager = new DefaultAgentManager(staticEntries, wsManager);
+            return new DynamicSubagentsHook(
+                    staticEntries, fs, workspace, factoryFn, manager, externalSubagentTool, repo);
+        }
+
+        /**
+         * Like {@link #buildSubagentEntries(Path, SandboxBackedFilesystem)} but omits the
+         * local-disk {@code subagents/} scan. The {@link DynamicSubagentsHook} performs that scan
+         * itself on every reasoning step (Layer 2), so feeding the same entries in here would
+         * register them twice.
+         */
+        private List<SubagentEntry> buildStaticSubagentEntries(
+                Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            List<SubagentEntry> entries = new ArrayList<>();
+
+            entries.add(
+                    new SubagentEntry(
+                            "general-purpose",
+                            "General-purpose subagent with same capabilities as the main agent."
+                                    + " Use for any isolated task that can be fully delegated.",
+                            buildGeneralPurposeFactory(resolvedWorkspace, sandboxFs),
+                            null));
+
+            for (SubagentDeclaration decl : subagentDeclarations) {
+                entries.add(
+                        new SubagentEntry(
+                                decl.getName(),
+                                decl.getDescription(),
+                                buildDeclaredFactory(decl, resolvedWorkspace, sandboxFs),
+                                decl));
+            }
+
+            for (SubagentFactoryEntry custom : customSubagentFactories) {
+                entries.add(
+                        new SubagentEntry(
+                                custom.name(),
+                                custom.name(),
+                                () -> custom.factory().apply(custom.name()),
+                                null));
+            }
+
+            return entries;
         }
 
         /**
@@ -1650,7 +2088,9 @@ public class HarnessAgent implements Agent, StateModule {
             final GenerateOptions capturedGenOpts = this.generateOptions;
             final String capturedEnvMemory = this.environmentMemory;
             final List<Hook> capturedHooks = List.copyOf(this.hooks);
-            final AgentSkillRepository capturedSkillRepo = this.skillRepository;
+            final List<AgentSkillRepository> capturedSkillRepos =
+                    List.copyOf(this.skillRepositories);
+            final Path capturedProjectGlobalSkillsDir = this.projectGlobalSkillsDir;
             final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
             final boolean capturedDisableFilesystemTools = this.disableFilesystemTools;
             final boolean capturedDisableShellTool = this.disableShellTool;
@@ -1691,7 +2131,10 @@ public class HarnessAgent implements Agent, StateModule {
                 if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
                 if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
 
-                if (capturedSkillRepo != null) sub.skillRepository(capturedSkillRepo);
+                if (!capturedSkillRepos.isEmpty()) sub.skillRepositories(capturedSkillRepos);
+                if (capturedProjectGlobalSkillsDir != null) {
+                    sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
+                }
                 if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
                 if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
                 if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
@@ -1900,45 +2343,91 @@ public class HarnessAgent implements Agent, StateModule {
         //  Skills
         // -----------------------------------------------------------------
 
-        private SkillBox resolveSkillBox(WorkspaceManager wsManager, Toolkit agentToolkit) {
-            if (skillRepository != null) {
-                return skillBoxFromRepository(skillRepository, agentToolkit);
+        /**
+         * Assembles the ordered list of skill repositories used by this build (low → high
+         * priority). Returns an empty list when no source resolves.
+         */
+        private List<AgentSkillRepository> composeSkillRepositories(
+                WorkspaceManager wsManager,
+                AbstractFilesystem filesystem,
+                Supplier<RuntimeContext> currentRcSupplier) {
+            List<AgentSkillRepository> ordered = new ArrayList<>();
+
+            // Layer 1 (lowest priority): project-global skills directory.
+            if (projectGlobalSkillsDir != null && Files.isDirectory(projectGlobalSkillsDir)) {
+                try {
+                    ordered.add(new FileSystemSkillRepository(projectGlobalSkillsDir));
+                } catch (Exception e) {
+                    log.warn(
+                            "Failed to register project-global skills dir {}: {}",
+                            projectGlobalSkillsDir,
+                            e.getMessage());
+                }
             }
-            Path skillsDir = wsManager.getSkillsDir();
-            if (!Files.isDirectory(skillsDir)) {
-                return null;
+
+            // Layer 2: marketplace repositories (user-supplied).
+            ordered.addAll(skillRepositories);
+
+            // Layer 3: workspace agent-shared directory.
+            Path workspaceSkillsDir = wsManager.getSkillsDir();
+            if (workspaceSkillsDir != null && Files.isDirectory(workspaceSkillsDir)) {
+                try {
+                    ordered.add(new FileSystemSkillRepository(workspaceSkillsDir));
+                } catch (Exception e) {
+                    log.warn(
+                            "Failed to load workspace skills from {}: {}",
+                            workspaceSkillsDir,
+                            e.getMessage());
+                }
             }
-            try {
-                return skillBoxFromRepository(
-                        new FileSystemSkillRepository(skillsDir), agentToolkit);
-            } catch (Exception e) {
-                log.warn("Failed to auto-load skills from {}: {}", skillsDir, e.getMessage());
-                return null;
+
+            // Layer 4 (highest priority): per-user namespaced filesystem view.
+            // currentRcSupplier resolves the active chat call's RuntimeContext at supplier-call
+            // time, so per-user namespacing follows whatever user owns the current invocation.
+            if (filesystem != null) {
+                ordered.add(
+                        new FilesystemBackedSkillRepository(
+                                filesystem, "skills", currentRcSupplier, "workspace-namespaced"));
             }
+
+            return ordered;
         }
 
-        private static SkillBox skillBoxFromRepository(
-                AgentSkillRepository repo, Toolkit agentToolkit) {
-            try {
-                List<AgentSkill> skills = repo.getAllSkills();
-                if (skills == null || skills.isEmpty()) {
-                    return null;
+        /**
+         * Eagerly assembles a static {@link SkillBox} from {@code repos} (low → high priority)
+         * so callers using {@link #disableDynamicSkills()} keep the legacy {@code SkillHook}
+         * path while still benefiting from the additive composition.
+         */
+        private static SkillBox staticSkillBoxFromRepos(
+                List<AgentSkillRepository> repos, Toolkit agentToolkit) {
+            LinkedHashMap<String, AgentSkill> merged = new LinkedHashMap<>();
+            for (AgentSkillRepository repo : repos) {
+                try {
+                    List<AgentSkill> skills = repo.getAllSkills();
+                    if (skills == null) {
+                        continue;
+                    }
+                    for (AgentSkill skill : skills) {
+                        if (skill != null && skill.getName() != null) {
+                            merged.put(skill.getName(), skill);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn(
+                            "Failed to load skills from {}: {}",
+                            repo.getClass().getSimpleName(),
+                            e.getMessage());
                 }
-                SkillBox box = new SkillBox(agentToolkit);
-                for (AgentSkill skill : skills) {
-                    box.registerSkill(skill);
-                }
-                log.info(
-                        "Loaded {} skills from {}",
-                        skills.size(),
-                        repo.getRepositoryInfo() != null
-                                ? repo.getRepositoryInfo()
-                                : repo.getClass().getSimpleName());
-                return box;
-            } catch (Exception e) {
-                log.warn("Failed to load skills from repository: {}", e.getMessage());
+            }
+            if (merged.isEmpty()) {
                 return null;
             }
+            SkillBox box = new SkillBox(agentToolkit);
+            for (AgentSkill skill : merged.values()) {
+                box.registerSkill(skill);
+            }
+            log.info("Loaded {} skills from {} repositories (static)", merged.size(), repos.size());
+            return box;
         }
 
         private record SubagentFactoryEntry(String name, Function<String, Agent> factory) {}

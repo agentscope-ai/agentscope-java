@@ -23,7 +23,6 @@ import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.sandbox.SandboxException;
-import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -49,10 +48,6 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
     public SandboxBackedFilesystem() {
         this.fsId = "sandbox-" + UUID.randomUUID().toString().substring(0, 8);
-    }
-
-    public void configureNamespace(NamespaceFactory factory) {
-        setNamespaceFactory(factory);
     }
 
     @Override

@@ -437,6 +437,11 @@
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos-client.version}</version>
             </dependency>
+            <dependency>
+                <groupId>com.alibaba.nacos</groupId>
+                <artifactId>nacos-maintainer-client</artifactId>
+                <version>${nacos-client.version}</version>
+            </dependency>
 
             <!-- JSON Schema Validator (networknt) -->
             <dependency>

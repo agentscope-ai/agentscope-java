@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -48,24 +49,26 @@ public class MemorySearchTool {
                             + " relevant information. Use before answering questions about prior"
                             + " work, decisions, dates, people, preferences, or todos.")
     public String memorySearch(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "query", description = "Keywords to search for in memory files")
                     String query) {
         if (query == null || query.isBlank()) {
             return "No query provided";
         }
 
-        return keywordSearch(query);
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+        return keywordSearch(rc, query);
     }
 
-    private String keywordSearch(String query) {
+    private String keywordSearch(RuntimeContext rc, String query) {
         StringJoiner results = new StringJoiner("\n");
         int matchCount = 0;
 
-        List<String> memoryPaths = workspaceManager.listMemoryFilePaths();
+        List<String> memoryPaths = workspaceManager.listMemoryFilePaths(rc);
         Pattern pattern = Pattern.compile(Pattern.quote(query), Pattern.CASE_INSENSITIVE);
 
         for (String relativePath : memoryPaths) {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(relativePath);
+            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
             if (content == null || content.isEmpty()) {
                 continue;
             }
