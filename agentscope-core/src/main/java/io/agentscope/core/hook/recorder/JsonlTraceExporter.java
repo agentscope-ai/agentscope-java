@@ -82,7 +82,7 @@ import reactor.core.publisher.Mono;
  * @deprecated since 2.0.0. The hook system is replaced by
  *     {@link io.agentscope.core.middleware.MiddlewareBase}.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 @SuppressWarnings("deprecation")
 public final class JsonlTraceExporter implements Hook, AutoCloseable {
 

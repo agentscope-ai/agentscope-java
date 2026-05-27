@@ -63,7 +63,7 @@ import reactor.core.publisher.Mono;
  * @see LongTermMemoryMode
  * @deprecated since 2.0.0. Long-term memory is removed.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class LongTermMemoryTools {
 
     private final LongTermMemory memory;

@@ -37,7 +37,7 @@ import io.agentscope.core.plan.model.SubTask;
  *
  * @deprecated since 2.0.0. The plan package is removed.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class DefaultPlanToHint implements PlanToHint {
 
     // Prompt templates for plan execution guidance

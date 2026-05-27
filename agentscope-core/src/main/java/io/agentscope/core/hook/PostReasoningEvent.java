@@ -50,7 +50,7 @@ import java.util.List;
  *
  * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public final class PostReasoningEvent extends ReasoningEvent {
 
     private Msg reasoningMessage;

@@ -28,7 +28,7 @@ import io.agentscope.core.agent.RuntimeContext;
  *
  * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 @FunctionalInterface
 public interface RuntimeContextAware {
 

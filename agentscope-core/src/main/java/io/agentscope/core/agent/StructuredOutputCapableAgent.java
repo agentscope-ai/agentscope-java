@@ -67,7 +67,7 @@ import reactor.core.publisher.Mono;
  *     This class remains as a base class for backward compatibility but will be
  *     removed in a future release.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public abstract class StructuredOutputCapableAgent extends AgentBase {
 
     private static final Logger log = LoggerFactory.getLogger(StructuredOutputCapableAgent.class);

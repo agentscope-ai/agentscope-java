@@ -44,7 +44,7 @@ import reactor.core.publisher.Mono;
  *     system. Use {@link io.agentscope.core.ReActAgent#streamEvents(java.util.List)} for
  *     fine-grained event streaming.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 @SuppressWarnings("deprecation")
 class StreamingHook implements Hook {
 

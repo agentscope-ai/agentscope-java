@@ -67,7 +67,7 @@ import reactor.core.publisher.Mono;
  *     {@link io.agentscope.core.state.AgentState#getContext()}. Integrate any cross-session
  *     persistence at the application layer.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface LongTermMemory {
 
     /**

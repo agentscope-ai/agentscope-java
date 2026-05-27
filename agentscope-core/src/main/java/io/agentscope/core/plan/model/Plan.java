@@ -44,7 +44,7 @@ import java.util.UUID;
  *
  * @deprecated since 2.0.0. The plan package is removed.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class Plan {
 
     private static final DateTimeFormatter FORMATTER =

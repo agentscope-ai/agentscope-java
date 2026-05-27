@@ -49,7 +49,7 @@ import io.agentscope.core.tool.Toolkit;
  *
  * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public final class PostActingEvent extends ActingEvent {
 
     private ToolResultBlock toolResult;

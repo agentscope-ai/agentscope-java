@@ -28,7 +28,7 @@ package io.agentscope.core.rag;
  * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
  *     layer.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public enum RAGMode {
     /**
      * Generic mode: Knowledge is automatically retrieved and injected

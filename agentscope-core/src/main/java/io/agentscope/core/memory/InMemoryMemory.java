@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
  *     {@link io.agentscope.core.state.AgentState#getContext()}; this class is retained for
  *     source compatibility with 1.0.x user code.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class InMemoryMemory implements Memory {
 
     private final List<Msg> messages = new CopyOnWriteArrayList<>();

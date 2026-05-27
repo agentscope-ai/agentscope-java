@@ -74,7 +74,7 @@ import reactor.core.scheduler.Schedulers;
  * @deprecated since 2.0.0. The TTS module is removed and the hook system is replaced by
  *     {@code MiddlewareBase}; integrate text-to-speech outside the framework.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class TTSHook implements Hook {
 
     private static final Logger log = LoggerFactory.getLogger(TTSHook.class);

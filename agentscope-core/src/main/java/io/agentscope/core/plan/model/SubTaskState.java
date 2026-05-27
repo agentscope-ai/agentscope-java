@@ -22,7 +22,7 @@ package io.agentscope.core.plan.model;
  *
  * @deprecated since 2.0.0. The plan package is removed.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public enum SubTaskState {
     /** Subtask is planned but not yet started. */
     TODO("todo"),

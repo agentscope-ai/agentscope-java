@@ -30,7 +30,7 @@ import java.util.List;
  *     {@link io.agentscope.core.state.AgentState#getContext()}. This interface is retained as a
  *     write-only mirror for source compatibility with 1.0.x user code.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface Memory extends StateModule {
 
     /**

@@ -104,7 +104,7 @@ import reactor.core.publisher.Mono;
  * @deprecated since 2.0.0. The plan package is removed; use
  *     {@link io.agentscope.core.state.Task} together with the built-in task tools.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class PlanNotebook implements StateModule {
 
     public static final String DESCRIPTION =

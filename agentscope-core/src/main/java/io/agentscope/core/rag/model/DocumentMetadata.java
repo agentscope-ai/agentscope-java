@@ -52,7 +52,7 @@ import java.util.Map;
  * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
  *     layer.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class DocumentMetadata {
 
     private final ContentBlock content;

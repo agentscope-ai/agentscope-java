@@ -28,7 +28,7 @@ import reactor.core.publisher.Mono;
  * @deprecated since 2.0.0. The pipeline package is removed; compose flows using
  *     {@link reactor.core.publisher.Flux} directly.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface Pipeline<T> {
 
     /**

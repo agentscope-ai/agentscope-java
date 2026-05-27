@@ -74,7 +74,7 @@ import reactor.core.scheduler.Schedulers;
  * @deprecated since 2.0.0. Long-term memory and the {@code Hook} system are removed; reimplement
  *     as a {@link io.agentscope.core.middleware.MiddlewareBase} if required.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class StaticLongTermMemoryHook implements Hook {
 
     private static final Logger log = LoggerFactory.getLogger(StaticLongTermMemoryHook.class);

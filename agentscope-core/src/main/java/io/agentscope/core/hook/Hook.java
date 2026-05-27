@@ -118,7 +118,7 @@ import reactor.core.publisher.Mono;
  *     {@code onModelCall}, and {@code onSystemPrompt} hook points and replaces this entire
  *     hook system.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface Hook {
 
     /**

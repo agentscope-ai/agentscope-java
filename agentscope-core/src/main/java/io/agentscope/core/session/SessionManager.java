@@ -61,7 +61,7 @@ import java.util.List;
  * @deprecated since 2.0.0. The session package is removed; persist conversation state via
  *     {@code AgentState} together with an external storage backend.
  */
-@Deprecated(since = "2.0.0")
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class SessionManager {
 
     private final String sessionId;
