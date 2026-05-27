@@ -1,0 +1,20 @@
+# Normalize line endings to LF on checkin; check out as LF on all platforms.
+# Prevents Windows CRLF from fighting Spotless (googleJavaFormat enforces LF).
+* text=auto eol=lf
+
+# Windows-only script files keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Common binary types — never touch them.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.jar binary
+*.class binary
