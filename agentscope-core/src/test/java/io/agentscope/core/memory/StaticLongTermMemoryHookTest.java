@@ -338,4 +338,47 @@ class StaticLongTermMemoryHookTest {
 
         verify(mockLongTermMemory, never()).record(anyList());
     }
+
+    @Test
+    void testOnEventSkipsRAGInjectedMessage() {
+        // Simulate GenericRAGHook having already injected a "retrieved_knowledge" message
+        List<Msg> inputMessages = new ArrayList<>();
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is the refund policy?").build())
+                        .build());
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("retrieved_knowledge")
+                        .content(
+                                TextBlock.builder()
+                                        .text("<retrieved_knowledge>...</retrieved_knowledge>")
+                                        .build())
+                        .build());
+
+        PreCallEvent event = new PreCallEvent(mockAgent, inputMessages);
+
+        when(mockLongTermMemory.retrieve(any(Msg.class)))
+                .thenReturn(Mono.just("User prefers dark mode"));
+
+        StepVerifier.create(hook.onEvent(event))
+                .assertNext(
+                        resultEvent -> {
+                            List<Msg> messages = resultEvent.getInputMessages();
+                            assertEquals(3, messages.size());
+                            // The retrieval should use the original user message, not the RAG
+                            // message
+                            assertEquals(
+                                    "What is the refund policy?", messages.get(0).getTextContent());
+                            assertEquals("retrieved_knowledge", messages.get(1).getName());
+                            assertEquals(MsgRole.USER, messages.get(2).getRole());
+                            assertTrue(
+                                    messages.get(2)
+                                            .getTextContent()
+                                            .contains("<long_term_memory>"));
+                        })
+                .verifyComplete();
+    }
 }

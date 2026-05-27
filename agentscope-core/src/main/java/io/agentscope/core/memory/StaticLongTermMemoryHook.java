@@ -263,14 +263,20 @@ public class StaticLongTermMemoryHook implements Hook {
      *
      * <p>Scans the message list from end to start to find the most recent user message,
      * which is typically the current query that should be used for memory retrieval.
+     * Skips messages injected by other hooks (e.g., GenericRAGHook with name "retrieved_knowledge").
      *
      * @param messages the message list
-     * @return the last user message, or null if none found
+     * @return the index of the last user message, or -1 if none found
      */
     private int extractLastUserMessageIndex(List<Msg> messages) {
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
             if (msg.getRole() == MsgRole.USER) {
+                // Skip messages injected by other hooks (e.g., RAG knowledge)
+                String name = msg.getName();
+                if ("retrieved_knowledge".equals(name)) {
+                    continue;
+                }
                 return i;
             }
         }
