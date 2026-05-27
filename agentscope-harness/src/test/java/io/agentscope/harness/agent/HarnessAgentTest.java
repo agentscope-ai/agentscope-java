@@ -26,6 +26,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -739,6 +740,66 @@ class HarnessAgentTest {
         assertTrue(
                 decl.getInlineAgentsBody().contains("inline sysPrompt"),
                 "body should be inline agents body when no workspace.path");
+    }
+
+    // =========================================================================
+    // Custom subagent factory — description (issue #1504)
+    // =========================================================================
+
+    @Test
+    void customSubagentFactory_usesProvidedDescription() throws Exception {
+        Files.createDirectories(workspace);
+        Agent stub = mock(Agent.class);
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagentFactory(
+                                "researcher",
+                                "Performs deep web research and summarizes findings.",
+                                name -> stub)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry entry =
+                entries.stream()
+                        .filter(e -> "researcher".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "Performs deep web research and summarizes findings.",
+                entry.description(),
+                "custom factory description should be exposed to the orchestrator");
+    }
+
+    @Test
+    void customSubagentFactory_fallsBackToNameWhenDescriptionMissing() throws Exception {
+        Files.createDirectories(workspace);
+        Agent stub = mock(Agent.class);
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .subagentFactory("no-desc", name -> stub)
+                        .subagentFactory("blank-desc", "   ", name -> stub)
+                        .buildSubagentEntries(workspace);
+
+        SubagentEntry noDesc =
+                entries.stream().filter(e -> "no-desc".equals(e.name())).findFirst().orElseThrow();
+        SubagentEntry blankDesc =
+                entries.stream()
+                        .filter(e -> "blank-desc".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "no-desc",
+                noDesc.description(),
+                "null description should fall back to the subagent name");
+        assertEquals(
+                "blank-desc",
+                blankDesc.description(),
+                "blank description should fall back to the subagent name");
     }
 
     private static Model stubModel(String assistantText) {

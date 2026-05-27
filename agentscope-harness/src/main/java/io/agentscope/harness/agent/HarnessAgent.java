@@ -1353,7 +1353,16 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
 
         /** Adds a fully custom subagent factory for a given agent id. */
         public Builder subagentFactory(String name, Function<String, Agent> factory) {
-            this.customSubagentFactories.add(new SubagentFactoryEntry(name, factory));
+            return subagentFactory(name, null, factory);
+        }
+
+        /**
+         * Adds a fully custom subagent factory for a given agent id, with a description shown to
+         * the orchestrator. When {@code description} is null or blank, the name is used.
+         */
+        public Builder subagentFactory(
+                String name, String description, Function<String, Agent> factory) {
+            this.customSubagentFactories.add(new SubagentFactoryEntry(name, description, factory));
             return this;
         }
 
@@ -1461,7 +1470,7 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 entries.add(
                         new SubagentEntry(
                                 custom.name(),
-                                custom.name(),
+                                custom.displayDescription(),
                                 () -> custom.factory().apply(custom.name()),
                                 null));
             }
@@ -2052,7 +2061,7 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 entries.add(
                         new SubagentEntry(
                                 custom.name(),
-                                custom.name(),
+                                custom.displayDescription(),
                                 () -> custom.factory().apply(custom.name()),
                                 null));
             }
@@ -2430,7 +2439,14 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
             return box;
         }
 
-        private record SubagentFactoryEntry(String name, Function<String, Agent> factory) {}
+        private record SubagentFactoryEntry(
+                String name, String description, Function<String, Agent> factory) {
+
+            /** Description shown to the orchestrator, falling back to the name when unset. */
+            String displayDescription() {
+                return description != null && !description.isBlank() ? description : name;
+            }
+        }
 
         /** Marks this build as a leaf subagent (no nested subagent orchestration). */
         private Builder asLeafSubagent() {
