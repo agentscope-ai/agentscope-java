@@ -27,6 +27,9 @@ import java.util.concurrent.ConcurrentMap;
  *
  * <p>Items are stored in a ConcurrentHashMap keyed by the concatenation of
  * namespace components and the item key, separated by {@code '\0'}.
+ *
+ * <p>Every successful {@link #put} and {@link #putIfVersion} increments the item's
+ * {@link StoreItem#version()} counter, enabling optimistic concurrency control.
  */
 public class InMemoryStore implements BaseStore {
 
@@ -39,7 +42,38 @@ public class InMemoryStore implements BaseStore {
 
     @Override
     public void put(List<String> namespace, String key, Map<String, Object> value) {
-        store.put(compoundKey(namespace, key), new StoreItem(key, value));
+        String ck = compoundKey(namespace, key);
+        store.compute(
+                ck,
+                (k, existing) -> {
+                    long nextVersion = (existing != null) ? existing.version() + 1 : 1L;
+                    return new StoreItem(key, value, nextVersion);
+                });
+    }
+
+    /**
+     * Atomic compare-and-swap: updates the item only when the stored version equals
+     * {@code expectedVersion}. An {@code expectedVersion} of {@code 0} succeeds only when the
+     * key does not yet exist.
+     *
+     * @return {@code true} if the item was written, {@code false} if the version did not match
+     */
+    @Override
+    public boolean putIfVersion(
+            List<String> namespace, String key, Map<String, Object> value, long expectedVersion) {
+        String ck = compoundKey(namespace, key);
+        boolean[] written = {false};
+        store.compute(
+                ck,
+                (k, existing) -> {
+                    long currentVersion = (existing != null) ? existing.version() : 0L;
+                    if (currentVersion != expectedVersion) {
+                        return existing; // version mismatch — no update
+                    }
+                    written[0] = true;
+                    return new StoreItem(key, value, currentVersion + 1);
+                });
+        return written[0];
     }
 
     @Override

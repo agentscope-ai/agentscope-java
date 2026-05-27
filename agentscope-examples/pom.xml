@@ -48,7 +48,10 @@
         <module>integration/agui</module>
         <module>integration/a2a-rocketmq</module>
         <module>agents/boba-tea-shop</module>
-        <module>agents/harness-examples</module>
+        <module>agents/agentscope-builder</module>
+        <module>agents/agentscope-claw</module>
+        <module>agents/agentscope-dataagent</module>
+        <module>agents/agentscope-codingagent</module>
         <module>multiagent-patterns/handoffs</module>
         <module>multiagent-patterns/routing</module>
         <module>multiagent-patterns/subagent</module>
