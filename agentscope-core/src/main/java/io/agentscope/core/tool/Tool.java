@@ -97,6 +97,17 @@ public @interface Tool {
     boolean strict() default false;
 
     /**
+     * Whether this tool's result should be returned directly to the caller, breaking ReAct loop iterations.
+     *
+     * <p>When {@code true}, after this tool executes successfully, the agent will return the tool
+     * result as the final response immediately — without sending it back to the model for
+     * additional reasoning.
+     *
+     * @return true to enable return directly for this tool
+     */
+    boolean returnDirect() default false;
+
+    /**
      * Custom result converter for this tool.
      *
      * <p>Converters transform tool method return values into {@link io.agentscope.core.message.ToolResultBlock}

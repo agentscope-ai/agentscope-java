@@ -453,7 +453,10 @@ public class Msg implements State {
      * <p>This method helps users understand the context of agent execution:
      * <ul>
      *   <li>{@link GenerateReason#MODEL_STOP} - Task completed normally</li>
+     *   <li>{@link GenerateReason#TOOL_CALLS} - Model returned tool calls (internal tools)</li>
+     *   <li>{@link GenerateReason#STRUCTURED_OUTPUT} - Structured output completed</li>
      *   <li>{@link GenerateReason#TOOL_SUSPENDED} - External tools need user execution</li>
+     *   <li>{@link GenerateReason#TOOL_RETURN_DIRECT} - Tool result marked return_direct</li>
      *   <li>{@link GenerateReason#REASONING_STOP_REQUESTED} - HITL stop in reasoning phase</li>
      *   <li>{@link GenerateReason#ACTING_STOP_REQUESTED} - HITL stop in acting phase</li>
      *   <li>{@link GenerateReason#INTERRUPTED} - Agent was interrupted</li>

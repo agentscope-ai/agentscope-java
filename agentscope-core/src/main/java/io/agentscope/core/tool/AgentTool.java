@@ -101,6 +101,19 @@ public interface AgentTool {
     }
 
     /**
+     * Whether this tool's result should be returned directly, breaking ReAct iterations.
+     *
+     * <p>When {@code true}, after this tool executes successfully, the agent returns the tool
+     * result as the final response without sending it back to the model for additional reasoning.
+     * This corresponds to the {@code returnDirect} attribute on the {@link Tool @Tool} annotation.
+     *
+     * @return true if this tool's result should be returned directly, false by default
+     */
+    default boolean isReturnDirect() {
+        return false;
+    }
+
+    /**
      * Execute the tool with the given parameters (asynchronous).
      *
      * <p>This method accepts a {@link ToolCallParam} object containing all necessary context for

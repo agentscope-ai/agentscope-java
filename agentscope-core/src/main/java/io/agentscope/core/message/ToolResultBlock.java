@@ -20,6 +20,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.tool.ToolSuspendException;
 import java.beans.Transient;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,6 +37,9 @@ public final class ToolResultBlock extends ContentBlock {
 
     /** Metadata key indicating this result is suspended for external execution. */
     public static final String METADATA_SUSPENDED = "agentscope_suspended";
+
+    /** Metadata key indicating this result should be returned directly, breaking ReAct iterations. */
+    public static final String METADATA_RETURN_DIRECT = "agentscope_return_direct";
 
     private final String id;
     private final String name;
@@ -124,6 +128,20 @@ public final class ToolResultBlock extends ContentBlock {
     @JsonInclude
     public boolean isSuspended() {
         return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
+    }
+
+    /**
+     * Checks if this result should be returned directly, breaking ReAct iterations.
+     *
+     * <p>When true, the agent will return this tool result as the final response immediately
+     * without sending it back to the model for additional reasoning.
+     *
+     * @return true if this result should be returned directly
+     */
+    @Transient
+    @JsonInclude
+    public boolean isReturnDirect() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_RETURN_DIRECT));
     }
 
     /**
@@ -287,6 +305,17 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public ToolResultBlock withIdAndName(String id, String name) {
         return new ToolResultBlock(id, name, this.output, this.metadata);
+    }
+
+    /**
+     * Creates a new ToolResultBlock with the return_directly metadata flag set.
+     *
+     * @return A ToolResultBlock with agentscope_return_directly=true
+     */
+    public ToolResultBlock withReturnDirect() {
+        Map<String, Object> newMetadata = new HashMap<>(this.metadata);
+        newMetadata.put(METADATA_RETURN_DIRECT, true);
+        return of(this.id, this.name, this.output, newMetadata);
     }
 
     /**

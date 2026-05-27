@@ -314,6 +314,170 @@ class ReActAgentTest {
     }
 
     @Test
+    @DisplayName("Should return tool result directly when tool is marked as returnDirect")
+    void testToolCallingReturnDirect() {
+        // Register a returnDirect tool
+        mockToolkit.withReturnDirectTool(
+                TestConstants.RETURN_DIRECT_TOOL_NAME, "ReturnDirect tool result");
+
+        final int[] callCount = {0};
+        MockModel toolModel =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                // Return tool call for the returnDirect tool
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                TestConstants.RETURN_DIRECT_TOOL_NAME,
+                                                "tool_call_return_direct_1",
+                                                TestUtils.createToolArguments()));
+                            }
+                            // This should never be reached because returnDirect breaks the loop
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Should not reach this")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", "Call the returnDirect tool");
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(response, "Response should not be null");
+        assertEquals(
+                GenerateReason.TOOL_RETURN_DIRECT,
+                response.getGenerateReason(),
+                "GenerateReason should be TOOL_RETURN_DIRECT");
+
+        // Verify the response contains the tool result content
+        String text = TestUtils.extractTextContent(response);
+        assertTrue(
+                text.contains("ReturnDirect tool result"),
+                "Response should contain the return direct tool result");
+
+        // Verify the model was called only once (no second reasoning iteration)
+        assertEquals(1, toolModel.getCallCount(), "Model should be called only once");
+
+        // Verify tool was called
+        assertTrue(
+                mockToolkit.wasToolCalled(TestConstants.RETURN_DIRECT_TOOL_NAME),
+                "ReturnDirect tool should be called");
+    }
+
+    @Test
+    @DisplayName(
+            "Should return multiple tool results directly when a tool is marked as returnDirect")
+    void testMultipleToolCallingReturnDirect() {
+        mockToolkit.withTool(TestConstants.TEST_TOOL_NAME, "Test tool result");
+        mockToolkit.withReturnDirectTool(
+                TestConstants.RETURN_DIRECT_TOOL_NAME, "ReturnDirect tool result");
+
+        final int[] callCount = {0};
+        MockModel toolModel =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                Map<String, Object> args1 = new HashMap<>();
+                                args1.put("param1", "value1");
+                                Map<String, Object> args2 = new HashMap<>();
+                                args2.put("param2", "value2");
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tool_call_1")
+                                                                        .name(
+                                                                                TestConstants
+                                                                                        .TEST_TOOL_NAME)
+                                                                        .input(args1)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                args1))
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id(
+                                                                                "tool_call_return_direct_1")
+                                                                        .name(
+                                                                                TestConstants
+                                                                                        .RETURN_DIRECT_TOOL_NAME)
+                                                                        .input(args2)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                args2))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Should not reach this")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", "Call multiple returnDirect tools");
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals(
+                GenerateReason.TOOL_RETURN_DIRECT,
+                response.getGenerateReason(),
+                "GenerateReason should be TOOL_RETURN_DIRECT");
+
+        String text = TestUtils.extractTextContent(response);
+        assertTrue(text.contains("Test tool result"), "Response should contain test tool result");
+        assertTrue(
+                text.contains("ReturnDirect tool result"),
+                "Response should contain return direct tool result");
+
+        assertEquals(1, toolModel.getCallCount(), "Model should be called only once");
+
+        assertTrue(
+                mockToolkit.wasToolCalled(TestConstants.TEST_TOOL_NAME),
+                "Test tool should be called");
+        assertTrue(
+                mockToolkit.wasToolCalled(TestConstants.RETURN_DIRECT_TOOL_NAME),
+                "ReturnDirect tool should be called");
+        assertEquals(2, mockToolkit.getCallCount(), "Two tools should be called");
+    }
+
+    @Test
     @DisplayName("Should handle tool execution errors in acting phase")
     void testToolExecutionError() {
         // Register a tool that throws an error
