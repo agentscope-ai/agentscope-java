@@ -36,15 +36,18 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -62,6 +65,14 @@ import reactor.core.publisher.Flux;
 class HarnessAgentTest {
 
     @TempDir Path workspace;
+
+    private static final class HarnessContext {
+        final String value;
+
+        private HarnessContext(String value) {
+            this.value = value;
+        }
+    }
 
     @Test
     void workspaceAgentsMd_readableViaWorkspaceManager() throws Exception {
@@ -344,6 +355,40 @@ class HarnessAgentTest {
                                     "/MEMORY.md")
                             != null);
         }
+    }
+
+    @Test
+    void ensureSessionDefaults_preservesTypedAttributesWhenInjectingDefaultSandbox()
+            throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new InMemorySandboxFilesystemSpec())
+                        .session(mock(Session.class))
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
+                        .build();
+
+        HarnessContext typed = new HarnessContext("typed-value");
+        RuntimeContext input =
+                RuntimeContext.builder()
+                        .sessionId("sid-typed")
+                        .session(mock(Session.class))
+                        .sessionKey(io.agentscope.core.state.SimpleSessionKey.of("sid-typed"))
+                        .put(HarnessContext.class, typed)
+                        .build();
+
+        Method method =
+                HarnessAgent.class.getDeclaredMethod("ensureSessionDefaults", RuntimeContext.class);
+        method.setAccessible(true);
+        RuntimeContext effective = (RuntimeContext) method.invoke(agent, input);
+
+        assertEquals("typed-value", effective.get(HarnessContext.class).value);
     }
 
     private static Msg userText(String text) {

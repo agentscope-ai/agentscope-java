@@ -292,6 +292,27 @@ public class RuntimeContext {
         }
 
         /**
+         * Copies singleton typed attributes from an existing {@link RuntimeContext}.
+         *
+         * <p>Only default-keyed typed values exposed via {@link RuntimeContext#get(Class)} are
+         * copied. Keyed typed entries are intentionally not included because the builder currently
+         * models singleton typed registrations only.
+         */
+        public Builder typedFrom(RuntimeContext source) {
+            if (source == null || source.typedAttributes == null) {
+                return this;
+            }
+            for (Map.Entry<Class<?>, ConcurrentMap<String, Object>> e :
+                    source.typedAttributes.entrySet()) {
+                Object value = e.getValue().get(TYPED_DEFAULT_KEY);
+                if (value != null) {
+                    this.typedSingletons.put(e.getKey(), value);
+                }
+            }
+            return this;
+        }
+
+        /**
          * Nests a {@link ToolExecutionContext} (e.g. agent builder-level tool DI) that will be
          * visible at lower priority than runtime attributes in {@link #asToolExecutionContext()}.
          */

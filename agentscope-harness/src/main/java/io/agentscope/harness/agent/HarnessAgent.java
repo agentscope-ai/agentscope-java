@@ -386,25 +386,27 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 sessionKey = SimpleSessionKey.of(delegate.getName());
             }
         }
+        SandboxContext callerSandbox = ctx.get(SandboxContext.class);
         // Inject default sandbox context if the call doesn't provide one
-        SandboxContext sandboxCtx =
-                ctx.get(SandboxContext.class) != null
-                        ? ctx.get(SandboxContext.class)
-                        : defaultSandboxContext;
+        SandboxContext sandboxCtx = callerSandbox != null ? callerSandbox : defaultSandboxContext;
 
         if (session == ctx.getSession()
                 && sessionKey == ctx.getSessionKey()
                 && sandboxCtx == ctx.get(SandboxContext.class)) {
             return ctx;
         }
-        return RuntimeContext.builder()
-                .sessionId(ctx.getSessionId())
-                .userId(ctx.getUserId())
-                .session(session)
-                .sessionKey(sessionKey)
-                .putAll(ctx.getExtra())
-                .put(SandboxContext.class, sandboxCtx)
-                .build();
+        RuntimeContext.Builder builder =
+                RuntimeContext.builder()
+                        .sessionId(ctx.getSessionId())
+                        .userId(ctx.getUserId())
+                        .session(session)
+                        .sessionKey(sessionKey)
+                        .putAll(ctx.getExtra())
+                        .typedFrom(ctx);
+        if (callerSandbox == null && defaultSandboxContext != null) {
+            builder.put(SandboxContext.class, defaultSandboxContext);
+        }
+        return builder.build();
     }
 
     // ==================== Agent interface delegation ====================
