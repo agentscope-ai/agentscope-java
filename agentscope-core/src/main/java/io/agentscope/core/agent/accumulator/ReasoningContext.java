@@ -166,8 +166,9 @@ public class ReasoningContext {
 
         // Build metadata with accumulated ChatUsage
         Map<String, Object> metadata = new HashMap<>();
+        ChatUsage chatUsage = null;
         if (inputTokens > 0 || outputTokens > 0 || time > 0) {
-            ChatUsage chatUsage =
+            chatUsage =
                     ChatUsage.builder()
                             .inputTokens(inputTokens)
                             .outputTokens(outputTokens)
@@ -182,6 +183,7 @@ public class ReasoningContext {
                 .role(MsgRole.ASSISTANT)
                 .content(blocks)
                 .metadata(metadata)
+                .usage(chatUsage)
                 .build();
     }
 

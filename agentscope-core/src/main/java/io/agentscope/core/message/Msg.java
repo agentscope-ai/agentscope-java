@@ -70,6 +70,8 @@ public class Msg implements State {
 
     private final String timestamp;
 
+    private final ChatUsage usage;
+
     /**
      * Creates a new message with the specified fields.
      *
@@ -87,7 +89,8 @@ public class Msg implements State {
             @JsonProperty("role") MsgRole role,
             @JsonProperty("content") List<ContentBlock> content,
             @JsonProperty("metadata") Map<String, Object> metadata,
-            @JsonProperty("timestamp") String timestamp) {
+            @JsonProperty("timestamp") String timestamp,
+            @JsonProperty("usage") ChatUsage usage) {
         this.id = id;
         this.name = name;
         this.role = role;
@@ -107,6 +110,7 @@ public class Msg implements State {
             }
         }
         this.timestamp = timestamp;
+        this.usage = usage;
         validateRoleContent(this.role, this.content);
     }
 
@@ -217,6 +221,19 @@ public class Msg implements State {
      */
     public String getTimestamp() {
         return timestamp;
+    }
+
+    /**
+     * Gets the token usage information associated with this message.
+     *
+     * <p>Aligns with Python {@code Msg.usage} (PR #1639). When populated,
+     * contains the input/output token counts from the model call that
+     * produced this message.
+     *
+     * @return The usage object, or null if not available
+     */
+    public ChatUsage getUsage() {
+        return usage;
     }
 
     /**
@@ -458,16 +475,19 @@ public class Msg implements State {
     @Transient
     @JsonIgnore
     public ChatUsage getChatUsage() {
+        if (this.usage != null) {
+            return this.usage;
+        }
         if (metadata == null) {
             return null;
         }
-        Object usage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
-        if (usage instanceof ChatUsage) {
-            return (ChatUsage) usage;
+        Object metaUsage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
+        if (metaUsage instanceof ChatUsage) {
+            return (ChatUsage) metaUsage;
         }
-        if (usage instanceof Map) {
+        if (metaUsage instanceof Map) {
             @SuppressWarnings("unchecked")
-            Map<String, Object> map = (Map<String, Object>) usage;
+            Map<String, Object> map = (Map<String, Object>) metaUsage;
             ChatUsage chatUsage =
                     ChatUsage.builder()
                             .inputTokens(toInt(map.get("inputTokens")))
@@ -541,7 +561,14 @@ public class Msg implements State {
     public Msg withGenerateReason(GenerateReason reason) {
         Map<String, Object> newMetadata = new HashMap<>(this.metadata);
         newMetadata.put(METADATA_GENERATE_REASON, reason.name());
-        return new Msg(this.id, this.name, this.role, this.content, newMetadata, this.timestamp);
+        return new Msg(
+                this.id,
+                this.name,
+                this.role,
+                this.content,
+                newMetadata,
+                this.timestamp,
+                this.usage);
     }
 
     public static class Builder {
@@ -557,6 +584,8 @@ public class Msg implements State {
         private Map<String, Object> metadata = Map.of();
 
         private String timestamp = TIMESTAMP_FORMATTER.format(Instant.now());
+
+        private ChatUsage usage;
 
         /**
          * Creates a new builder with a randomly generated message ID.
@@ -677,6 +706,17 @@ public class Msg implements State {
          * @param reason The generate reason
          * @return This builder for chaining
          */
+        /**
+         * Sets the token usage information for this message.
+         *
+         * @param usage The ChatUsage containing token counts
+         * @return This builder for chaining
+         */
+        public Builder usage(ChatUsage usage) {
+            this.usage = usage;
+            return this;
+        }
+
         public Builder generateReason(GenerateReason reason) {
             if (reason != null) {
                 if (this.metadata == null || this.metadata.isEmpty()) {
@@ -696,7 +736,7 @@ public class Msg implements State {
          * @return A new immutable message
          */
         public Msg build() {
-            return new Msg(id, name, role, content, metadata, timestamp);
+            return new Msg(id, name, role, content, metadata, timestamp, usage);
         }
     }
 }
