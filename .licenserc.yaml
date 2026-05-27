@@ -60,6 +60,7 @@ header:
     - '.git/'
     - '.github/**'
     - '**/.gitignore'
+    - '**/.gitattributes'
     - '**/.helmignore'
     - '.repository/'
     - 'compiler/**'
