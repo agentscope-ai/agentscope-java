@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
+import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -30,6 +31,9 @@ import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolChoice;
@@ -37,6 +41,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -312,6 +317,69 @@ class StructuredOutputHookTest {
         assertTrue(
                 textBlocks.get(0).getText().contains("generate_response"),
                 "Should mention generate_response tool");
+    }
+
+    @Test
+    @DisplayName(
+            "Should aggregate advanced ChatUsage properly including reasoning and cached tokens")
+    void testAggregatedUsageWithAdvancedTokens() {
+        // Given: A hook with memory containing intermediate retry messages
+        StructuredOutputHook hook =
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+
+        // Simulate first reasoning round
+        Msg msg1 = Msg.builder().role(MsgRole.ASSISTANT).name("assistant").build();
+        msg1.getMetadata().put(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER, true);
+        msg1.getMetadata()
+                .put(
+                        MessageMetadataKeys.CHAT_USAGE,
+                        ChatUsage.builder()
+                                .inputTokens(10)
+                                .outputTokens(5)
+                                .reasoningTokens(2)
+                                .cachedTokens(8)
+                                .build());
+        memory.addMessage(msg1);
+
+        // Simulate second reasoning round
+        Msg msg2 = Msg.builder().role(MsgRole.ASSISTANT).name("assistant").build();
+        msg2.getMetadata().put(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER, true);
+        msg2.getMetadata()
+                .put(
+                        MessageMetadataKeys.CHAT_USAGE,
+                        ChatUsage.builder()
+                                .inputTokens(20)
+                                .outputTokens(10)
+                                .reasoningTokens(4)
+                                .cachedTokens(12)
+                                .build());
+        memory.addMessage(msg2);
+
+        // When: Tool successfully executed (triggering metadata collection)
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name(StructuredOutputHook.TOOL_NAME).build();
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("1")
+                        .name(StructuredOutputHook.TOOL_NAME)
+                        .metadata(
+                                Map.of(
+                                        "success",
+                                        true,
+                                        "response_msg",
+                                        Msg.builder().role(MsgRole.ASSISTANT).build()))
+                        .build();
+
+        PostActingEvent event = new PostActingEvent(mockAgent, null, toolUse, toolResult);
+        hook.onEvent(event).block();
+
+        // Then: Aggregated usage should sum up all tokens correctly, treating nulls safely
+        ChatUsage aggregated = hook.getAggregatedUsage();
+        assertNotNull(aggregated, "Aggregated usage should not be null");
+        assertEquals(30, aggregated.getInputTokens(), "Total input tokens should be 30");
+        assertEquals(15, aggregated.getOutputTokens(), "Total output tokens should be 15");
+        assertEquals(6, aggregated.getReasoningTokens(), "Total reasoning tokens should be 6");
+        assertEquals(20, aggregated.getCachedTokens(), "Total cached tokens should be 20");
     }
 
     /**

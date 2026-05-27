@@ -96,7 +96,9 @@ public class GeminiResponseParser {
 
                 int inputTokens = metadata.promptTokenCount().orElse(0);
                 int totalOutputTokens = metadata.candidatesTokenCount().orElse(0);
-                int thinkingTokens = metadata.thoughtsTokenCount().orElse(0);
+                Integer reasoningTokens = metadata.thoughtsTokenCount().orElse(null);
+                Integer cachedTokens = metadata.cachedContentTokenCount().orElse(null);
+                int thinkingTokens = reasoningTokens != null ? reasoningTokens : 0;
 
                 // Output tokens exclude thinking tokens (following DashScope behavior)
                 // In Gemini, candidatesTokenCount includes thinking, so we subtract it
@@ -109,6 +111,8 @@ public class GeminiResponseParser {
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
+                                .reasoningTokens(reasoningTokens)
+                                .cachedTokens(cachedTokens)
                                 .build();
             }
 

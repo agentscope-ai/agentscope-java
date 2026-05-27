@@ -980,7 +980,7 @@ class ReActAgentTest {
                                                             TextBlock.builder()
                                                                     .text("Test response")
                                                                     .build()))
-                                            .usage(new ChatUsage(100, 50, 1.5))
+                                            .usage(new ChatUsage(100, 50, 1.5, 20, 30))
                                             .build());
                         });
 
@@ -1012,6 +1012,8 @@ class ReActAgentTest {
         assertEquals(100, capturedUsage.getInputTokens(), "Input tokens should match");
         assertEquals(50, capturedUsage.getOutputTokens(), "Output tokens should match");
         assertEquals(1.5, capturedUsage.getTime(), "Time should match");
+        assertEquals(20, capturedUsage.getReasoningTokens(), "Reasoning tokens should match");
+        assertEquals(30, capturedUsage.getCachedTokens(), "Cached tokens should match");
 
         // Verify accumulated messages were captured
         assertFalse(
@@ -1034,6 +1036,12 @@ class ReActAgentTest {
         assertEquals(
                 50, metadataChatUsage.getOutputTokens(), "Metadata output tokens should match");
         assertEquals(1.5, metadataChatUsage.getTime(), "Metadata time should match");
+        assertEquals(
+                20,
+                metadataChatUsage.getReasoningTokens(),
+                "Metadata reasoning tokens should match");
+        assertEquals(
+                30, metadataChatUsage.getCachedTokens(), "Metadata cached tokens should match");
     }
 
     // Helper method to create tool call response

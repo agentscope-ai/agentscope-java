@@ -382,4 +382,38 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 .expectError(RuntimeException.class)
                 .verify();
     }
+
+    @Test
+    void testParseUsageWithCachedTokens() {
+        // Given
+        Instant startTime = Instant.now();
+        Message mockMessage = mock(Message.class);
+        when(mockMessage.id()).thenReturn("msg_123");
+        when(mockMessage.content()).thenReturn(List.of());
+
+        // Mock Usage correctly for Anthropic Kotlin object behavior
+        Usage mockUsage = mock(Usage.class);
+        when(mockUsage.inputTokens()).thenReturn(100L);
+        when(mockUsage.outputTokens()).thenReturn(50L);
+
+        // Mock Optional behavior for cache tokens
+        when(mockUsage.cacheReadInputTokens()).thenReturn(Optional.of(25L));
+        when(mockMessage.usage()).thenReturn(mockUsage);
+
+        // When
+        ChatResponse response = AnthropicResponseParser.parseMessage(mockMessage, startTime);
+
+        // Then
+        assertNotNull(response);
+        assertNotNull(response.getUsage());
+        assertEquals(100, response.getUsage().getInputTokens());
+        assertEquals(50, response.getUsage().getOutputTokens());
+
+        // Verify advanced tokens
+        assertEquals(
+                25, response.getUsage().getCachedTokens(), "Cached read tokens should be parsed");
+        assertNull(
+                response.getUsage().getReasoningTokens(),
+                "Reasoning tokens should be null as they are not supported yet");
+    }
 }

@@ -104,6 +104,8 @@ public class DashScopeResponseParser {
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
+                                .reasoningTokens(u.getReasoningTokens())
+                                .cachedTokens(u.getCachedTokens())
                                 .build();
             }
 

@@ -44,6 +44,8 @@ final class StreamChatResponseAggregator {
     private int inputTokens;
     private int outputTokens;
     private double time;
+    private Integer reasoningTokens = null;
+    private Integer cachedTokens = null;
 
     private String finishReason;
 
@@ -75,6 +77,18 @@ final class StreamChatResponseAggregator {
             inputTokens = Math.max(inputTokens, usage.getInputTokens());
             outputTokens = Math.max(outputTokens, usage.getOutputTokens());
             time = usage.getTime();
+            if (usage.getReasoningTokens() != null) {
+                reasoningTokens =
+                        (reasoningTokens == null)
+                                ? usage.getReasoningTokens()
+                                : Math.max(reasoningTokens, usage.getReasoningTokens());
+            }
+            if (usage.getCachedTokens() != null) {
+                cachedTokens =
+                        (cachedTokens == null)
+                                ? usage.getCachedTokens()
+                                : Math.max(cachedTokens, usage.getCachedTokens());
+            }
         }
 
         if (chunk.getFinishReason() != null) {
@@ -97,6 +111,8 @@ final class StreamChatResponseAggregator {
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
                                 .time(time)
+                                .reasoningTokens(reasoningTokens)
+                                .cachedTokens(cachedTokens)
                                 .build())
                 .finishReason(finishReason)
                 .build();

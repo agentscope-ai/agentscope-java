@@ -46,7 +46,14 @@ class ReasoningContextTest {
     @Test
     @DisplayName("Should accumulate ChatUsage from single chunk")
     void testSingleChunkUsage() {
-        ChatUsage usage = ChatUsage.builder().inputTokens(100).outputTokens(50).time(1.5).build();
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .time(1.5)
+                        .reasoningTokens(15)
+                        .cachedTokens(20)
+                        .build();
 
         ChatResponse chunk =
                 ChatResponse.builder()
@@ -65,6 +72,8 @@ class ReasoningContextTest {
         assertEquals(50, resultUsage.getOutputTokens());
         assertEquals(150, resultUsage.getTotalTokens());
         assertEquals(1.5, resultUsage.getTime(), 0.001);
+        assertEquals(15, resultUsage.getReasoningTokens());
+        assertEquals(20, resultUsage.getCachedTokens());
 
         resultUsage = context.getChatUsage();
         assertNotNull(resultUsage);
@@ -72,13 +81,21 @@ class ReasoningContextTest {
         assertEquals(50, resultUsage.getOutputTokens());
         assertEquals(150, resultUsage.getTotalTokens());
         assertEquals(1.5, resultUsage.getTime(), 0.001);
+        assertEquals(15, resultUsage.getReasoningTokens());
+        assertEquals(20, resultUsage.getCachedTokens());
     }
 
     @Test
     @DisplayName("Should accumulate ChatUsage from multiple chunks")
     void testMultipleChunksUsageAccumulation() {
         // First chunk
-        ChatUsage usage1 = ChatUsage.builder().inputTokens(100).outputTokens(20).time(0.5).build();
+        ChatUsage usage1 =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(20)
+                        .time(0.5)
+                        .cachedTokens(10)
+                        .build();
 
         ChatResponse chunk1 =
                 ChatResponse.builder()
@@ -88,7 +105,13 @@ class ReasoningContextTest {
                         .build();
 
         // Second chunk
-        ChatUsage usage2 = ChatUsage.builder().inputTokens(100).outputTokens(50).time(0.8).build();
+        ChatUsage usage2 =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .time(0.8)
+                        .reasoningTokens(5)
+                        .build();
 
         ChatResponse chunk2 =
                 ChatResponse.builder()
@@ -98,7 +121,14 @@ class ReasoningContextTest {
                         .build();
 
         // Third chunk
-        ChatUsage usage3 = ChatUsage.builder().inputTokens(130).outputTokens(60).time(1.2).build();
+        ChatUsage usage3 =
+                ChatUsage.builder()
+                        .inputTokens(130)
+                        .outputTokens(60)
+                        .time(1.2)
+                        .reasoningTokens(15)
+                        .cachedTokens(25)
+                        .build();
 
         ChatResponse chunk3 =
                 ChatResponse.builder()
@@ -120,6 +150,8 @@ class ReasoningContextTest {
         assertEquals(60, resultUsage.getOutputTokens());
         assertEquals(190, resultUsage.getTotalTokens());
         assertEquals(1.2, resultUsage.getTime(), 0.001);
+        assertEquals(15, resultUsage.getReasoningTokens());
+        assertEquals(25, resultUsage.getCachedTokens());
     }
 
     @Test

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.model.ChatUsage;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -204,5 +205,31 @@ class MsgTest {
         assertEquals("Hello World", msg.getTextContent());
         assertTrue(msg.getFirstContentBlock() instanceof TextBlock);
         assertEquals("Hello World", ((TextBlock) msg.getFirstContentBlock()).getText());
+    }
+
+    @Test
+    void testGetChatUsageWithAdvancedTokens() {
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .reasoningTokens(20)
+                        .cachedTokens(80)
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .metadata(Map.of(MessageMetadataKeys.CHAT_USAGE, usage))
+                        .build();
+
+        ChatUsage retrieved = msg.getChatUsage();
+        assertNotNull(retrieved, "ChatUsage should be properly retrieved");
+        assertEquals(100, retrieved.getInputTokens());
+        assertEquals(50, retrieved.getOutputTokens());
+        // Verify Integer wrapper classes are properly retrieved
+        assertEquals(20, retrieved.getReasoningTokens());
+        assertEquals(80, retrieved.getCachedTokens());
     }
 }
