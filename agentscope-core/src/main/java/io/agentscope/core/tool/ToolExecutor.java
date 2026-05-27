@@ -341,7 +341,8 @@ class ToolExecutor {
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
-                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
+                                    ToolResultBlock.error("Tool execution failed: " + errorMsg)
+                                            .withIdAndName(toolCall.getId(), toolCall.getName()));
                         });
     }
 
