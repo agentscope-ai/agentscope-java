@@ -32,6 +32,7 @@
     <name>AgentScope Java - Examples</name>
 
     <modules>
+        <module>mcp-native-example</module>
         <module>documentation/quickstart</module>
         <module>documentation/advanced</module>
         <module>documentation/plan-notebook</module>
