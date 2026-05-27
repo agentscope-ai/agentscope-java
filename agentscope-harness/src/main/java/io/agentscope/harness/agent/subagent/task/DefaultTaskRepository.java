@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent.task;
 
+import io.agentscope.core.agent.RuntimeContext;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -60,13 +61,17 @@ public class DefaultTaskRepository implements TaskRepository {
     }
 
     @Override
-    public BackgroundTask getTask(String sessionId, String taskId) {
+    public BackgroundTask getTask(RuntimeContext rc, String sessionId, String taskId) {
         return tasks.get(taskId);
     }
 
     @Override
     public BackgroundTask putTask(
-            String taskId, String subAgentId, String sessionId, TaskRunSpec spec) {
+            RuntimeContext rc,
+            String taskId,
+            String subAgentId,
+            String sessionId,
+            TaskRunSpec spec) {
         if (!(spec instanceof TaskRunSpec.LocalTaskRunSpec local)) {
             throw new UnsupportedOperationException(
                     "DefaultTaskRepository only supports LocalTaskRunSpec; use"
@@ -80,7 +85,7 @@ public class DefaultTaskRepository implements TaskRepository {
     }
 
     @Override
-    public void removeTask(String sessionId, String taskId) {
+    public void removeTask(RuntimeContext rc, String sessionId, String taskId) {
         tasks.remove(taskId);
     }
 
@@ -90,7 +95,8 @@ public class DefaultTaskRepository implements TaskRepository {
     }
 
     @Override
-    public Collection<BackgroundTask> listTasks(String sessionId, TaskStatus filter) {
+    public Collection<BackgroundTask> listTasks(
+            RuntimeContext rc, String sessionId, TaskStatus filter) {
         if (filter == null) {
             return List.copyOf(tasks.values());
         }
@@ -104,7 +110,7 @@ public class DefaultTaskRepository implements TaskRepository {
     }
 
     @Override
-    public boolean cancelTask(String sessionId, String taskId) {
+    public boolean cancelTask(RuntimeContext rc, String sessionId, String taskId) {
         BackgroundTask task = tasks.get(taskId);
         if (task == null) {
             return false;
