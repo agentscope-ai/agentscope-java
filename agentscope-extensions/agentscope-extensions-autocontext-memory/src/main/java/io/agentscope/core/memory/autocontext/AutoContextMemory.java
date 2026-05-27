@@ -423,14 +423,18 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 messagesToCompress.size());
 
         // Step 4: Merge and compress messages (typically tool calls and results)
-        Msg compressedMsg = mergeAndCompressCurrentRoundMessages(messagesToCompress);
+        List<Msg> compressedMessages = mergeAndCompressCurrentRoundMessages(messagesToCompress);
+        if (compressedMessages == null || compressedMessages.isEmpty()) {
+            return false;
+        }
 
         // Build metadata for compression event
         Map<String, Object> metadata = new HashMap<>();
-        if (compressedMsg.getChatUsage() != null) {
-            metadata.put("inputToken", compressedMsg.getChatUsage().getInputTokens());
-            metadata.put("outputToken", compressedMsg.getChatUsage().getOutputTokens());
-            metadata.put("time", compressedMsg.getChatUsage().getTime());
+        Msg eventSourceMsg = compressedMessages.get(0);
+        if (eventSourceMsg.getChatUsage() != null) {
+            metadata.put("inputToken", eventSourceMsg.getChatUsage().getInputTokens());
+            metadata.put("outputToken", eventSourceMsg.getChatUsage().getOutputTokens());
+            metadata.put("time", eventSourceMsg.getChatUsage().getTime());
         }
 
         // Record compression event (before replacing messages to preserve indices)
@@ -439,16 +443,17 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 startIndex,
                 endIndex,
                 rawMessages,
-                compressedMsg,
+                eventSourceMsg,
                 metadata);
 
-        // Step 5: Replace original messages with compressed one
+        // Step 5: Replace original messages with compressed ones
         rawMessages.subList(startIndex, endIndex + 1).clear();
-        rawMessages.add(startIndex, compressedMsg);
+        rawMessages.addAll(startIndex, compressedMessages);
 
         log.info(
-                "Replaced {} messages with 1 compressed message at index {}",
+                "Replaced {} messages with {} compressed messages at index {}",
                 messagesToCompress.size(),
+                compressedMessages.size(),
                 startIndex);
         return true;
     }
@@ -794,7 +799,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * @param messages the messages to merge and compress
      * @return compressed message
      */
-    private Msg mergeAndCompressCurrentRoundMessages(List<Msg> messages) {
+    private List<Msg> mergeAndCompressCurrentRoundMessages(List<Msg> messages) {
         if (messages == null || messages.isEmpty()) {
             return null;
         }
@@ -804,8 +809,101 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         List<Msg> originalMessages = new ArrayList<>(messages);
         offload(uuid, originalMessages);
 
-        // Use model to generate a compressed summary from message list
-        return generateCurrentRoundSummaryFromMessages(messages, uuid);
+        Msg summaryMsg = generateCurrentRoundSummaryFromMessages(messages, uuid);
+        if (!containsToolInteraction(messages)) {
+            return List.of(summaryMsg);
+        }
+
+        return buildToolAwareCurrentRoundCompression(messages, summaryMsg, uuid);
+    }
+
+    private boolean containsToolInteraction(List<Msg> messages) {
+        for (Msg message : messages) {
+            if (MsgUtils.isToolUseMessage(message) || MsgUtils.isToolResultMessage(message)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<Msg> buildToolAwareCurrentRoundCompression(
+            List<Msg> messages, Msg summaryMsg, String offloadUuid) {
+        List<ContentBlock> assistantBlocks = new ArrayList<>();
+        String summaryText = summaryMsg != null ? summaryMsg.getTextContent() : "";
+        if (summaryText != null && !summaryText.isEmpty()) {
+            assistantBlocks.add(TextBlock.builder().text(summaryText).build());
+        }
+
+        List<ContentBlock> toolResultBlocks = new ArrayList<>();
+        for (Msg message : messages) {
+            if (MsgUtils.isToolUseMessage(message)) {
+                assistantBlocks.addAll(message.getContentBlocks(ToolUseBlock.class));
+            }
+            if (MsgUtils.isToolResultMessage(message)) {
+                for (ToolResultBlock toolResult : message.getContentBlocks(ToolResultBlock.class)) {
+                    toolResultBlocks.add(
+                            ToolResultBlock.of(
+                                    toolResult.getId(),
+                                    toolResult.getName(),
+                                    TextBlock.builder()
+                                            .text(
+                                                    buildCurrentRoundToolResultPlaceholder(
+                                                            toolResult, offloadUuid))
+                                            .build(),
+                                    toolResult.getMetadata()));
+                }
+            }
+        }
+
+        if (assistantBlocks.isEmpty()) {
+            assistantBlocks.add(
+                    TextBlock.builder().text(summaryText == null ? "" : summaryText).build());
+        }
+
+        Map<String, Object> assistantMetadata =
+                summaryMsg != null && summaryMsg.getMetadata() != null
+                        ? new HashMap<>(summaryMsg.getMetadata())
+                        : new HashMap<>();
+
+        List<Msg> compressedMessages = new ArrayList<>();
+        compressedMessages.add(
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(assistantBlocks)
+                        .metadata(assistantMetadata)
+                        .build());
+
+        if (!toolResultBlocks.isEmpty()) {
+            Map<String, Object> toolMetadata = new HashMap<>();
+            Map<String, Object> compressMeta = new HashMap<>();
+            if (offloadUuid != null) {
+                compressMeta.put("offloaduuid", offloadUuid);
+            }
+            toolMetadata.put("_compress_meta", compressMeta);
+            compressedMessages.add(
+                    Msg.builder()
+                            .role(MsgRole.TOOL)
+                            .name("tool")
+                            .content(toolResultBlocks)
+                            .metadata(toolMetadata)
+                            .build());
+        }
+
+        return compressedMessages;
+    }
+
+    private String buildCurrentRoundToolResultPlaceholder(
+            ToolResultBlock toolResult, String offloadUuid) {
+        String resultName = toolResult.getName() != null ? toolResult.getName() : "tool";
+        String offloadHint =
+                offloadUuid != null
+                        ? "\n" + String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
+                        : "";
+        return "Tool result for "
+                + resultName
+                + " is summarized in the paired assistant compression message."
+                + offloadHint;
     }
 
     @Override
