@@ -260,7 +260,12 @@ class ToolExecutor {
                                             : e.getClass().getSimpleName();
                             return Mono.just(
                                     ToolResultBlock.error("Tool execution failed: " + errorMsg));
-                        });
+                        })
+                .switchIfEmpty(
+                        Mono.just(
+                                ToolResultBlock.error(
+                                        "Tool execution failed: Tool completed without returning a"
+                                                + " result")));
     }
 
     // ==================== Batch Tool Execution ====================

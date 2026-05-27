@@ -164,25 +164,28 @@ public class AgentSkillsController {
                         throw new ResponseStatusException(
                                 HttpStatus.BAD_REQUEST, "markdown is required");
                     }
-                    WorkspaceContext ctx = resolveContext(agentId);
-                    String relMd = "skills/" + name + "/SKILL.md";
-                    ctx.manager()
-                            .writeUtf8WorkspaceRelative(
-                                    RuntimeContext.empty(), relMd, req.markdown());
-                    if (req.resources() != null) {
-                        for (Map.Entry<String, String> e : req.resources().entrySet()) {
-                            String key = e.getKey();
-                            if (key == null || key.isBlank()) continue;
-                            String safe = sanitiseRelativePath(key);
-                            ctx.manager()
-                                    .writeUtf8WorkspaceRelative(
-                                            RuntimeContext.empty(),
-                                            "skills/" + name + "/" + safe,
-                                            e.getValue() != null ? e.getValue() : "");
-                        }
-                    }
-                    Path dir = ctx.workspace().resolve("skills").resolve(name);
-                    return readWorkspaceSkill(dir);
+                    return withWorkspaceContext(
+                            agentId,
+                            ctx -> {
+                                String relMd = "skills/" + name + "/SKILL.md";
+                                ctx.manager()
+                                        .writeUtf8WorkspaceRelative(
+                                                RuntimeContext.empty(), relMd, req.markdown());
+                                if (req.resources() != null) {
+                                    for (Map.Entry<String, String> e : req.resources().entrySet()) {
+                                        String key = e.getKey();
+                                        if (key == null || key.isBlank()) continue;
+                                        String safe = sanitiseRelativePath(key);
+                                        ctx.manager()
+                                                .writeUtf8WorkspaceRelative(
+                                                        RuntimeContext.empty(),
+                                                        "skills/" + name + "/" + safe,
+                                                        e.getValue() != null ? e.getValue() : "");
+                                    }
+                                }
+                                Path dir = ctx.workspace().resolve("skills").resolve(name);
+                                return readWorkspaceSkill(dir);
+                            });
                 });
     }
 
@@ -318,61 +321,65 @@ public class AgentSkillsController {
                                     : skill.getName();
                     validateSkillName(targetName);
 
-                    WorkspaceContext ctx = resolveContext(agentId);
-                    Path target = ctx.workspace().resolve("skills").resolve(targetName);
-                    if (Files.exists(target) && !Boolean.TRUE.equals(req.overwrite())) {
-                        throw new ResponseStatusException(
-                                HttpStatus.CONFLICT,
-                                "Workspace skill already exists: " + targetName);
-                    }
-                    if (Files.exists(target)) {
-                        try {
-                            deleteRecursive(target);
-                        } catch (IOException e) {
-                            throw new ResponseStatusException(
-                                    HttpStatus.INTERNAL_SERVER_ERROR,
-                                    "Failed to overwrite: " + e.getMessage());
-                        }
-                    }
-                    String markdown = skill.getSkillContent();
-                    if (markdown == null || markdown.isBlank()) {
-                        throw new ResponseStatusException(
-                                HttpStatus.BAD_GATEWAY,
-                                "Repository returned empty SKILL.md for: " + req.skillName());
-                    }
-                    ctx.manager()
-                            .writeUtf8WorkspaceRelative(
-                                    RuntimeContext.empty(),
-                                    "skills/" + targetName + "/SKILL.md",
-                                    markdown);
-                    Map<String, String> resources = skill.getResources();
-                    if (resources != null) {
-                        for (Map.Entry<String, String> e : resources.entrySet()) {
-                            String rel = e.getKey();
-                            if (rel == null || rel.isBlank()) continue;
-                            String safe = sanitiseRelativePath(rel);
-                            String content = e.getValue() != null ? e.getValue() : "";
-                            ctx.manager()
-                                    .writeUtf8WorkspaceRelative(
-                                            RuntimeContext.empty(),
-                                            "skills/" + targetName + "/" + safe,
-                                            content);
-                        }
-                    }
-                    AgentSkillRepositoryInfo repoInfo = repo.getRepositoryInfo();
-                    SkillMarketplaceMeta meta =
-                            new SkillMarketplaceMeta(
-                                    repoInfo != null ? repoInfo.getType() : "unknown",
-                                    repoInfo != null ? repoInfo.getLocation() : "",
-                                    skill.getName(),
-                                    Instant.now().toString());
-                    ctx.manager()
-                            .writeUtf8WorkspaceRelative(
-                                    RuntimeContext.empty(),
-                                    "skills/" + targetName + "/" + INSTALL_META_FILE,
-                                    MAPPER.writerWithDefaultPrettyPrinter()
-                                            .writeValueAsString(meta));
-                    return readWorkspaceSkill(target);
+                    return withWorkspaceContext(
+                            agentId,
+                            ctx -> {
+                                Path target = ctx.workspace().resolve("skills").resolve(targetName);
+                                if (Files.exists(target) && !Boolean.TRUE.equals(req.overwrite())) {
+                                    throw new ResponseStatusException(
+                                            HttpStatus.CONFLICT,
+                                            "Workspace skill already exists: " + targetName);
+                                }
+                                if (Files.exists(target)) {
+                                    try {
+                                        deleteRecursive(target);
+                                    } catch (IOException e) {
+                                        throw new ResponseStatusException(
+                                                HttpStatus.INTERNAL_SERVER_ERROR,
+                                                "Failed to overwrite: " + e.getMessage());
+                                    }
+                                }
+                                String markdown = skill.getSkillContent();
+                                if (markdown == null || markdown.isBlank()) {
+                                    throw new ResponseStatusException(
+                                            HttpStatus.BAD_GATEWAY,
+                                            "Repository returned empty SKILL.md for: "
+                                                    + req.skillName());
+                                }
+                                ctx.manager()
+                                        .writeUtf8WorkspaceRelative(
+                                                RuntimeContext.empty(),
+                                                "skills/" + targetName + "/SKILL.md",
+                                                markdown);
+                                Map<String, String> resources = skill.getResources();
+                                if (resources != null) {
+                                    for (Map.Entry<String, String> e : resources.entrySet()) {
+                                        String rel = e.getKey();
+                                        if (rel == null || rel.isBlank()) continue;
+                                        String safe = sanitiseRelativePath(rel);
+                                        String content = e.getValue() != null ? e.getValue() : "";
+                                        ctx.manager()
+                                                .writeUtf8WorkspaceRelative(
+                                                        RuntimeContext.empty(),
+                                                        "skills/" + targetName + "/" + safe,
+                                                        content);
+                                    }
+                                }
+                                AgentSkillRepositoryInfo repoInfo = repo.getRepositoryInfo();
+                                SkillMarketplaceMeta meta =
+                                        new SkillMarketplaceMeta(
+                                                repoInfo != null ? repoInfo.getType() : "unknown",
+                                                repoInfo != null ? repoInfo.getLocation() : "",
+                                                skill.getName(),
+                                                Instant.now().toString());
+                                ctx.manager()
+                                        .writeUtf8WorkspaceRelative(
+                                                RuntimeContext.empty(),
+                                                "skills/" + targetName + "/" + INSTALL_META_FILE,
+                                                MAPPER.writerWithDefaultPrettyPrinter()
+                                                        .writeValueAsString(meta));
+                                return readWorkspaceSkill(target);
+                            });
                 });
     }
 
@@ -420,59 +427,63 @@ public class AgentSkillsController {
                                     : content.name();
                     validateSkillName(targetName);
 
-                    WorkspaceContext ctx = resolveContext(agentId);
-                    Path target = ctx.workspace().resolve("skills").resolve(targetName);
-                    if (Files.exists(target) && !Boolean.TRUE.equals(req.overwrite())) {
-                        throw new ResponseStatusException(
-                                HttpStatus.CONFLICT,
-                                "Workspace skill already exists: " + targetName);
-                    }
-                    if (Files.exists(target)) {
-                        try {
-                            deleteRecursive(target);
-                        } catch (IOException e) {
-                            throw new ResponseStatusException(
-                                    HttpStatus.INTERNAL_SERVER_ERROR,
-                                    "Failed to overwrite: " + e.getMessage());
-                        }
-                    }
-                    if (content.markdown() == null || content.markdown().isBlank()) {
-                        throw new ResponseStatusException(
-                                HttpStatus.BAD_GATEWAY,
-                                "Marketplace returned empty SKILL.md for: " + req.skillName());
-                    }
-                    ctx.manager()
-                            .writeUtf8WorkspaceRelative(
-                                    RuntimeContext.empty(),
-                                    "skills/" + targetName + "/SKILL.md",
-                                    content.markdown());
-                    Map<String, String> resources = content.resources();
-                    if (resources != null) {
-                        for (Map.Entry<String, String> e : resources.entrySet()) {
-                            String rel = e.getKey();
-                            if (rel == null || rel.isBlank()) continue;
-                            String safe = sanitiseRelativePath(rel);
-                            String body = e.getValue() != null ? e.getValue() : "";
-                            ctx.manager()
-                                    .writeUtf8WorkspaceRelative(
-                                            RuntimeContext.empty(),
-                                            "skills/" + targetName + "/" + safe,
-                                            body);
-                        }
-                    }
-                    SkillMarketplaceMeta meta =
-                            new SkillMarketplaceMeta(
-                                    mp.type(),
-                                    mp.displayLocation(),
-                                    content.name(),
-                                    Instant.now().toString());
-                    ctx.manager()
-                            .writeUtf8WorkspaceRelative(
-                                    RuntimeContext.empty(),
-                                    "skills/" + targetName + "/" + INSTALL_META_FILE,
-                                    MAPPER.writerWithDefaultPrettyPrinter()
-                                            .writeValueAsString(meta));
-                    return readWorkspaceSkill(target);
+                    return withWorkspaceContext(
+                            agentId,
+                            ctx -> {
+                                Path target = ctx.workspace().resolve("skills").resolve(targetName);
+                                if (Files.exists(target) && !Boolean.TRUE.equals(req.overwrite())) {
+                                    throw new ResponseStatusException(
+                                            HttpStatus.CONFLICT,
+                                            "Workspace skill already exists: " + targetName);
+                                }
+                                if (Files.exists(target)) {
+                                    try {
+                                        deleteRecursive(target);
+                                    } catch (IOException e) {
+                                        throw new ResponseStatusException(
+                                                HttpStatus.INTERNAL_SERVER_ERROR,
+                                                "Failed to overwrite: " + e.getMessage());
+                                    }
+                                }
+                                if (content.markdown() == null || content.markdown().isBlank()) {
+                                    throw new ResponseStatusException(
+                                            HttpStatus.BAD_GATEWAY,
+                                            "Marketplace returned empty SKILL.md for: "
+                                                    + req.skillName());
+                                }
+                                ctx.manager()
+                                        .writeUtf8WorkspaceRelative(
+                                                RuntimeContext.empty(),
+                                                "skills/" + targetName + "/SKILL.md",
+                                                content.markdown());
+                                Map<String, String> resources = content.resources();
+                                if (resources != null) {
+                                    for (Map.Entry<String, String> e : resources.entrySet()) {
+                                        String rel = e.getKey();
+                                        if (rel == null || rel.isBlank()) continue;
+                                        String safe = sanitiseRelativePath(rel);
+                                        String body = e.getValue() != null ? e.getValue() : "";
+                                        ctx.manager()
+                                                .writeUtf8WorkspaceRelative(
+                                                        RuntimeContext.empty(),
+                                                        "skills/" + targetName + "/" + safe,
+                                                        body);
+                                    }
+                                }
+                                SkillMarketplaceMeta meta =
+                                        new SkillMarketplaceMeta(
+                                                mp.type(),
+                                                mp.displayLocation(),
+                                                content.name(),
+                                                Instant.now().toString());
+                                ctx.manager()
+                                        .writeUtf8WorkspaceRelative(
+                                                RuntimeContext.empty(),
+                                                "skills/" + targetName + "/" + INSTALL_META_FILE,
+                                                MAPPER.writerWithDefaultPrettyPrinter()
+                                                        .writeValueAsString(meta));
+                                return readWorkspaceSkill(target);
+                            });
                 });
     }
 
@@ -661,13 +672,12 @@ public class AgentSkillsController {
     }
 
     private Path resolveWorkspace(String agentId) {
-        return resolveContext(agentId).workspace();
+        return resolveWorkspacePath(agentId);
     }
 
-    private WorkspaceContext resolveContext(String agentId) {
+    private Path resolveWorkspacePath(String agentId) {
         if (catalogService.isBuiltin(agentId)) {
-            Path ws = bootstrap.resolveWorkspace(agentId).normalize();
-            return new WorkspaceContext(ws, newWorkspaceManager(ws));
+            return bootstrap.resolveWorkspace(agentId).normalize();
         }
         UserAgentDefinitionStore.StoredEntry entry =
                 catalogService
@@ -677,8 +687,31 @@ public class AgentSkillsController {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Agent not found: " + agentId));
-        Path ws = customAgentWorkspace(entry);
+        return customAgentWorkspace(entry);
+    }
+
+    private WorkspaceContext resolveContext(String agentId) {
+        Path ws = resolveWorkspacePath(agentId);
         return new WorkspaceContext(ws, newWorkspaceManager(ws));
+    }
+
+    /**
+     * Runs {@code action} with a short-lived {@link WorkspaceManager} and closes its SQLite index
+     * afterward. Required on Windows where an open {@code .index/workspace.db} handle prevents
+     * {@code @TempDir} cleanup in unit tests.
+     */
+    private <T> T withWorkspaceContext(String agentId, WorkspaceAction<T> action) throws Exception {
+        WorkspaceContext ctx = resolveContext(agentId);
+        try {
+            return action.run(ctx);
+        } finally {
+            ctx.manager().close();
+        }
+    }
+
+    @FunctionalInterface
+    private interface WorkspaceAction<T> {
+        T run(WorkspaceContext ctx) throws Exception;
     }
 
     private Path customAgentWorkspace(UserAgentDefinitionStore.StoredEntry entry) {
