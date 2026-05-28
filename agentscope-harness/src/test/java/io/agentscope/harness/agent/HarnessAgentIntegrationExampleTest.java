@@ -96,28 +96,25 @@ class HarnessAgentIntegrationExampleTest {
 
         Path subagentsDir = workspace.resolve("subagents");
         Files.createDirectories(subagentsDir);
+        // Filename (without .md) is the subagent name — no 'name:' field in front matter
         Files.writeString(
-                subagentsDir.resolve("helper.md"),
+                subagentsDir.resolve(helperSubId + ".md"),
                 """
                 ---
-                name: %s
                 description: First markdown-defined helper for integration example
                 ---
                 Reply with YAML_OK only.
-                """
-                        .formatted(helperSubId));
+                """);
         Files.writeString(
-                subagentsDir.resolve("reviewer.md"),
+                subagentsDir.resolve(reviewerSubId + ".md"),
                 """
                 ---
-                name: %s
                 description: Second markdown-defined helper for integration example
                 maxIters: 5
                 ---
 
                 You only reply MD_OK.
-                """
-                        .formatted(reviewerSubId));
+                """);
 
         Model model = stubModel("integration-main-reply");
         HarnessAgent agent =
@@ -183,19 +180,18 @@ class HarnessAgentIntegrationExampleTest {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# root\n");
 
+        // Filename (without .md) is the subagent name — no 'name:' field in front matter
         String childId = "integration-child-spawn";
         Path subagentsDir = workspace.resolve("subagents");
         Files.createDirectories(subagentsDir);
         Files.writeString(
-                subagentsDir.resolve("child.md"),
+                subagentsDir.resolve(childId + ".md"),
                 """
                 ---
-                name: %s
                 description: Child agent for factory integration
                 ---
                 Child system prompt marker INTEGRATION_CHILD_SYS
-                """
-                        .formatted(childId));
+                """);
 
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub-model");

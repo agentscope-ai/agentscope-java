@@ -149,11 +149,11 @@ function App() {
 
 ## 示例项目
 
-完整示例见 [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui)：
+完整示例见 [agentscope-examples/integration/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/integration/agui)：
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/agui
+cd agentscope-examples/integration/agui
 mvn spring-boot:run
 ```
 

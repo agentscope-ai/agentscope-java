@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Hook for automatically registering AutoContextMemory integration with ReActAgent.
@@ -217,12 +218,10 @@ public class AutoContextHook implements Hook {
     private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
         Agent agent = event.getAgent();
 
-        // Only process ReActAgent instances
         if (!(agent instanceof ReActAgent reActAgent)) {
             return Mono.just(event);
         }
 
-        // Get memory from agent and verify it's an AutoContextMemory instance
         Memory memory = reActAgent.getMemory();
         if (!(memory instanceof AutoContextMemory autoContextMemory)) {
             return Mono.just(event);

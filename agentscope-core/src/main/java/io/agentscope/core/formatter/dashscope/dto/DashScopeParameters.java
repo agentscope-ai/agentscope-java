@@ -60,13 +60,21 @@ public class DashScopeParameters {
     @JsonProperty("enable_thinking")
     private Boolean enableThinking;
 
+    /** Token budget for thinking. */
+    @JsonProperty("thinking_budget")
+    private Integer thinkingBudget;
+
     /** Enable search mode. */
     @JsonProperty("enable_search")
     private Boolean enableSearch;
 
-    /** Token budget for thinking. */
-    @JsonProperty("thinking_budget")
-    private Integer thinkingBudget;
+    /** Strategies for web search. */
+    @JsonProperty("search_options")
+    private DashScopeSearchOptions searchOptions;
+
+    /** Enable code interpreter mode. */
+    @JsonProperty("enable_code_interpreter")
+    private Boolean enableCodeInterpreter;
 
     /** List of available tools. */
     @JsonProperty("tools")
@@ -78,6 +86,10 @@ public class DashScopeParameters {
      */
     @JsonProperty("tool_choice")
     private Object toolChoice;
+
+    /** Whether to enable parallel tool calls. */
+    @JsonProperty("parallel_tool_calls")
+    private Boolean parallelToolCalls;
 
     /** Random seed for reproducibility. */
     @JsonProperty("seed")
@@ -181,6 +193,22 @@ public class DashScopeParameters {
         this.enableSearch = enableSearch;
     }
 
+    public DashScopeSearchOptions getSearchOptions() {
+        return searchOptions;
+    }
+
+    public void setSearchOptions(DashScopeSearchOptions searchOptions) {
+        this.searchOptions = searchOptions;
+    }
+
+    public Boolean getEnableCodeInterpreter() {
+        return enableCodeInterpreter;
+    }
+
+    public void setEnableCodeInterpreter(Boolean enableCodeInterpreter) {
+        this.enableCodeInterpreter = enableCodeInterpreter;
+    }
+
     public List<DashScopeTool> getTools() {
         return tools;
     }
@@ -195,6 +223,14 @@ public class DashScopeParameters {
 
     public void setToolChoice(Object toolChoice) {
         this.toolChoice = toolChoice;
+    }
+
+    public Boolean getParallelToolCalls() {
+        return parallelToolCalls;
+    }
+
+    public void setParallelToolCalls(Boolean parallelToolCalls) {
+        this.parallelToolCalls = parallelToolCalls;
     }
 
     public Integer getSeed() {
@@ -289,6 +325,21 @@ public class DashScopeParameters {
             return this;
         }
 
+        public Builder enableSearch(Boolean enableSearch) {
+            params.setEnableSearch(enableSearch);
+            return this;
+        }
+
+        public Builder searchOptions(DashScopeSearchOptions searchOptions) {
+            params.setSearchOptions(searchOptions);
+            return this;
+        }
+
+        public Builder enableCodeInterpreter(Boolean enableCodeInterpreter) {
+            params.setEnableCodeInterpreter(enableCodeInterpreter);
+            return this;
+        }
+
         public Builder tools(List<DashScopeTool> tools) {
             params.setTools(tools);
             return this;
@@ -296,6 +347,11 @@ public class DashScopeParameters {
 
         public Builder toolChoice(Object toolChoice) {
             params.setToolChoice(toolChoice);
+            return this;
+        }
+
+        public Builder parallelToolCalls(Boolean parallelToolCalls) {
+            params.setParallelToolCalls(parallelToolCalls);
             return this;
         }
 
