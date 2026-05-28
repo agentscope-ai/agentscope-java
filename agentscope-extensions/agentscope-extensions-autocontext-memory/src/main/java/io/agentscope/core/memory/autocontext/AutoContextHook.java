@@ -202,11 +202,14 @@ public class AutoContextHook implements Hook {
      * Handles PreReasoningEvent by triggering compression if needed and updating input messages.
      *
      * <p>This method checks if the agent's memory is an AutoContextMemory instance and
-     * triggers compression before LLM reasoning. After compression, it updates the
+     * triggers compression before LLM reasoning using the fully reactive
+     * {@link AutoContextMemory#compressIfNeededAsync()}. After compression, it updates the
      * input messages in the event to reflect the compressed working memory.
      *
-     * <p>This ensures compression happens at a deterministic point (before reasoning)
-     * and the LLM receives the compressed context.
+     * <p><b>SYSTEM message preservation:</b> All SYSTEM messages from the original
+     * {@code inputMessages} are preserved. The offload-hint instruction is appended to the
+     * <em>first</em> SYSTEM message (or a new SYSTEM message is created if none exists).
+     * Any additional SYSTEM messages are kept as-is after the first one.
      *
      * @param event the PreReasoningEvent
      * @return Mono containing the potentially modified event
@@ -225,61 +228,81 @@ public class AutoContextHook implements Hook {
             return Mono.just(event);
         }
 
-        // Trigger compression if needed (this modifies workingMemoryStorage in place)
-        autoContextMemory.compressIfNeeded();
+        // Trigger compression asynchronously, then rebuild input messages
+        return autoContextMemory
+                .compressIfNeededAsync()
+                .then(
+                        Mono.fromCallable(
+                                () -> {
+                                    List<Msg> originalInputMessages = event.getInputMessages();
+                                    List<Msg> newInputMessages = new ArrayList<>();
 
-        // Always append system prompt instruction about compressed messages
-        List<Msg> originalInputMessages = event.getInputMessages();
-        List<Msg> newInputMessages = new ArrayList<>();
+                                    // Collect all SYSTEM messages; append the offload instruction
+                                    // to the first one, preserve the rest as-is.
+                                    final String appendedInstruction =
+                                            "\n\n"
+                                                    + "You may see compressed messages containing"
+                                                    + " <!-- CONTEXT_OFFLOAD uuid=... -->.\n"
+                                                    + "- Use the UUID to call context_reload if you"
+                                                    + " need full details.\n"
+                                                    + "- NEVER mention, quote, or refer to UUIDs,"
+                                                    + " offload tags, or internal metadata in your"
+                                                    + " response.";
 
-        if (!originalInputMessages.isEmpty()
-                && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
-            // Append instruction to existing system prompt
-            Msg originalSystemMsg = originalInputMessages.get(0);
-            String originalSystemText = originalSystemMsg.getTextContent();
-            String appendedInstruction =
-                    "\n\n"
-                            + "You may see compressed messages containing <!-- CONTEXT_OFFLOAD"
-                            + " uuid=... -->.\n"
-                            + "- Use the UUID to call context_reload if you need full details.\n"
-                            + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
-                            + " metadata in your response.";
+                                    boolean firstSystem = true;
+                                    for (Msg msg : originalInputMessages) {
+                                        if (msg.getRole() != MsgRole.SYSTEM) {
+                                            continue;
+                                        }
+                                        if (firstSystem) {
+                                            // Append offload instruction to the first system msg
+                                            String originalText = msg.getTextContent();
+                                            String newText =
+                                                    originalText != null
+                                                            ? originalText + appendedInstruction
+                                                            : appendedInstruction.trim();
+                                            newInputMessages.add(
+                                                    Msg.builder()
+                                                            .role(MsgRole.SYSTEM)
+                                                            .name(msg.getName())
+                                                            .content(
+                                                                    TextBlock.builder()
+                                                                            .text(newText)
+                                                                            .build())
+                                                            .metadata(msg.getMetadata())
+                                                            .build());
+                                            firstSystem = false;
+                                        } else {
+                                            // Preserve additional SYSTEM messages as-is
+                                            newInputMessages.add(msg);
+                                        }
+                                    }
 
-            String newSystemText =
-                    originalSystemText != null
-                            ? originalSystemText + appendedInstruction
-                            : appendedInstruction.trim();
+                                    if (firstSystem) {
+                                        // No SYSTEM message found — create a default one
+                                        String instruction =
+                                                "You may see compressed messages containing"
+                                                        + " <!-- CONTEXT_OFFLOAD uuid=... -->.\n"
+                                                        + "- Use the UUID to call context_reload if"
+                                                        + " you need full details.\n"
+                                                        + "- NEVER mention, quote, or refer to"
+                                                        + " UUIDs, offload tags, or internal"
+                                                        + " metadata in your response.";
+                                        newInputMessages.add(
+                                                Msg.builder()
+                                                        .role(MsgRole.SYSTEM)
+                                                        .name("system")
+                                                        .content(
+                                                                TextBlock.builder()
+                                                                        .text(instruction)
+                                                                        .build())
+                                                        .build());
+                                    }
 
-            Msg updatedSystemMsg =
-                    Msg.builder()
-                            .role(MsgRole.SYSTEM)
-                            .name(originalSystemMsg.getName())
-                            .content(TextBlock.builder().text(newSystemText).build())
-                            .metadata(originalSystemMsg.getMetadata())
-                            .build();
-
-            newInputMessages.add(updatedSystemMsg);
-        } else {
-            // No system message exists, create a new one with the instruction
-            String instruction =
-                    "You may see compressed messages containing <!-- CONTEXT_OFFLOAD uuid=..."
-                            + " -->.\n"
-                            + "- Use the UUID to call context_reload if you need full details.\n"
-                            + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
-                            + " metadata in your response.";
-
-            newInputMessages.add(
-                    Msg.builder()
-                            .role(MsgRole.SYSTEM)
-                            .name("system")
-                            .content(TextBlock.builder().text(instruction).build())
-                            .build());
-        }
-
-        // Add memory messages (compressed or not)
-        newInputMessages.addAll(autoContextMemory.getMessages());
-        event.setInputMessages(newInputMessages);
-
-        return Mono.just(event);
+                                    // Append compressed (or uncompressed) memory messages
+                                    newInputMessages.addAll(autoContextMemory.getMessages());
+                                    event.setInputMessages(newInputMessages);
+                                    return event;
+                                }));
     }
 }

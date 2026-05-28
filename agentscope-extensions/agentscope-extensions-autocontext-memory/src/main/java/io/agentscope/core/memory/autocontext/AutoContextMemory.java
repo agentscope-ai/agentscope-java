@@ -42,6 +42,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -181,20 +182,33 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      *
      * @return true if compression was performed, false if no compression was needed
      */
-    public boolean compressIfNeeded() {
+    /**
+     * Asynchronously compresses the context if needed.
+     *
+     * <p>This is the primary compression entry point. It runs strategies 1–6 in sequence,
+     * returning as soon as one succeeds ({@code true}). Per-strategy enable/disable flags from
+     * {@link AutoContextConfig} are respected.
+     *
+     * <p>Strategy 4 (summarize previous round conversations) runs eligible rounds
+     * <b>concurrently</b> (up to 5 in-flight) to reduce total latency.
+     *
+     * <p>No {@code .block()} is used anywhere in the reactive chain.
+     *
+     * @return Mono emitting {@code true} if compression was applied, {@code false} if not needed
+     *         or no strategy could compress
+     */
+    public Mono<Boolean> compressIfNeededAsync() {
         List<Msg> currentContextMessages = new ArrayList<>(workingMemoryStorage);
 
-        // Check if compression is needed
         boolean msgCountReached = currentContextMessages.size() >= autoContextConfig.msgThreshold;
         int calculateToken = TokenCounterUtil.calculateToken(currentContextMessages);
         int thresholdToken = (int) (autoContextConfig.maxToken * autoContextConfig.tokenRatio);
         boolean tokenCounterReached = calculateToken >= thresholdToken;
 
         if (!msgCountReached && !tokenCounterReached) {
-            return false;
+            return Mono.just(false);
         }
 
-        // Compression triggered - log threshold information
         log.info(
                 "Compression triggered - msgCount: {}/{}, tokenCount: {}/{}",
                 currentContextMessages.size(),
@@ -202,106 +216,266 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 calculateToken,
                 thresholdToken);
 
+        // Build a sequential chain of strategies; return true at the first that succeeds.
+        // Each strategy is wrapped in Mono.defer so it is only subscribed when reached.
+        Mono<Boolean> chain = Mono.just(false);
+
         // Strategy 1: Compress previous round tool invocations
-        log.info("Strategy 1: Checking for previous round tool invocations to compress");
-        int toolIters = 5;
-        boolean toolCompressed = false;
-        int compressionCount = 0;
-        int cursorStartIndex = 0;
-        while (toolIters > 0) {
-            toolIters--;
-            List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
-            Pair<Integer, Integer> toolMsgIndices =
-                    extractPrevToolMsgsForCompress(
-                            currentMsgs, autoContextConfig.getLastKeep(), cursorStartIndex);
-            if (toolMsgIndices != null) {
-                boolean actuallyCompressed = summaryToolsMessages(currentMsgs, toolMsgIndices);
-                if (actuallyCompressed) {
-                    replaceWorkingMessage(currentMsgs);
-                    toolCompressed = true;
-                    compressionCount++;
-                    cursorStartIndex = toolMsgIndices.first() + 1;
-                } else {
-                    cursorStartIndex = toolMsgIndices.second() + 1;
-                }
-            } else {
-                break;
-            }
-        }
-        if (toolCompressed) {
-            log.info(
-                    "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
-            return true;
+        if (autoContextConfig.isStrategy1Enabled()) {
+            chain =
+                    chain.flatMap(
+                            prev -> {
+                                if (prev) return Mono.just(true);
+                                log.info(
+                                        "Strategy 1: Checking for previous round tool invocations"
+                                                + " to compress");
+                                return Mono.defer(
+                                        () -> {
+                                            List<Msg> msgs = new ArrayList<>(workingMemoryStorage);
+                                            int toolIters = 5;
+                                            int cursorStartIndex = 0;
+                                            // Collect all tool ranges first (sync, cheap)
+                                            List<Pair<Integer, Integer>> ranges = new ArrayList<>();
+                                            while (toolIters-- > 0) {
+                                                Pair<Integer, Integer> indices =
+                                                        extractPrevToolMsgsForCompress(
+                                                                msgs,
+                                                                autoContextConfig.getLastKeep(),
+                                                                cursorStartIndex);
+                                                if (indices == null) break;
+                                                ranges.add(indices);
+                                                cursorStartIndex = indices.second() + 1;
+                                            }
+                                            if (ranges.isEmpty()) {
+                                                log.info(
+                                                        "Strategy 1: SKIPPED - No compressible"
+                                                                + " tool invocations found");
+                                                return Mono.just(false);
+                                            }
+                                            // Process ranges sequentially (order matters)
+                                            Mono<Boolean> toolChain = Mono.just(false);
+                                            for (Pair<Integer, Integer> range : ranges) {
+                                                final Pair<Integer, Integer> r = range;
+                                                toolChain =
+                                                        toolChain.flatMap(
+                                                                p -> {
+                                                                    List<Msg> cur =
+                                                                            new ArrayList<>(
+                                                                                    workingMemoryStorage);
+                                                                    return summaryToolsMessages(
+                                                                                    cur, r)
+                                                                            .doOnNext(
+                                                                                    done -> {
+                                                                                        if (done)
+                                                                                            replaceWorkingMessage(
+                                                                                                    cur);
+                                                                                    })
+                                                                            .map(done -> p || done);
+                                                                });
+                                            }
+                                            return toolChain.doOnNext(
+                                                    applied -> {
+                                                        if (applied)
+                                                            log.info(
+                                                                    "Strategy 1: APPLIED -"
+                                                                            + " Compressed tool"
+                                                                            + " invocations");
+                                                        else
+                                                            log.info(
+                                                                    "Strategy 1: SKIPPED - No"
+                                                                        + " compressible tool"
+                                                                        + " invocations (or skipped"
+                                                                        + " due to low tokens)");
+                                                    });
+                                        });
+                            });
         } else {
-            log.info(
-                    "Strategy 1: SKIPPED - No compressible tool invocations found (or skipped due"
-                            + " to low tokens)");
+            log.debug("Strategy 1: DISABLED by config");
         }
 
         // Strategy 2: Offload previous round large messages (with lastKeep protection)
-        log.info(
-                "Strategy 2: Checking for previous round large messages (with lastKeep"
-                        + " protection)");
-        boolean hasOffloadedLastKeep = offloadingLargePayload(currentContextMessages, true);
-        if (hasOffloadedLastKeep) {
-            log.info(
-                    "Strategy 2: APPLIED - Offloaded previous round large messages (with lastKeep"
-                            + " protection)");
-            replaceWorkingMessage(currentContextMessages);
-            return true;
+        if (autoContextConfig.isStrategy2Enabled()) {
+            chain =
+                    chain.flatMap(
+                            prev -> {
+                                if (prev) return Mono.just(true);
+                                log.info(
+                                        "Strategy 2: Checking for previous round large messages"
+                                                + " (with lastKeep protection)");
+                                return Mono.fromCallable(
+                                                () -> {
+                                                    List<Msg> msgs =
+                                                            new ArrayList<>(workingMemoryStorage);
+                                                    boolean applied =
+                                                            offloadingLargePayload(msgs, true);
+                                                    if (applied) replaceWorkingMessage(msgs);
+                                                    return applied;
+                                                })
+                                        .doOnNext(
+                                                applied -> {
+                                                    if (applied)
+                                                        log.info(
+                                                                "Strategy 2: APPLIED - Offloaded"
+                                                                    + " large messages (lastKeep"
+                                                                    + " protected)");
+                                                    else
+                                                        log.info(
+                                                                "Strategy 2: SKIPPED - No large"
+                                                                        + " messages or all"
+                                                                        + " protected");
+                                                });
+                            });
         } else {
-            log.info("Strategy 2: SKIPPED - No large messages found or protected by lastKeep");
+            log.debug("Strategy 2: DISABLED by config");
         }
 
         // Strategy 3: Offload previous round large messages (without lastKeep protection)
-        log.info(
-                "Strategy 3: Checking for previous round large messages (without lastKeep"
-                        + " protection)");
-        boolean hasOffloaded = offloadingLargePayload(currentContextMessages, false);
-        if (hasOffloaded) {
-            log.info("Strategy 3: APPLIED - Offloaded previous round large messages");
-            replaceWorkingMessage(currentContextMessages);
-            return true;
+        if (autoContextConfig.isStrategy3Enabled()) {
+            chain =
+                    chain.flatMap(
+                            prev -> {
+                                if (prev) return Mono.just(true);
+                                log.info(
+                                        "Strategy 3: Checking for previous round large messages"
+                                                + " (without lastKeep protection)");
+                                return Mono.fromCallable(
+                                                () -> {
+                                                    List<Msg> msgs =
+                                                            new ArrayList<>(workingMemoryStorage);
+                                                    boolean applied =
+                                                            offloadingLargePayload(msgs, false);
+                                                    if (applied) replaceWorkingMessage(msgs);
+                                                    return applied;
+                                                })
+                                        .doOnNext(
+                                                applied -> {
+                                                    if (applied)
+                                                        log.info(
+                                                                "Strategy 3: APPLIED - Offloaded"
+                                                                        + " large messages");
+                                                    else
+                                                        log.info(
+                                                                "Strategy 3: SKIPPED - No large"
+                                                                        + " messages found");
+                                                });
+                            });
         } else {
-            log.info("Strategy 3: SKIPPED - No large messages found");
+            log.debug("Strategy 3: DISABLED by config");
         }
 
-        // Strategy 4: Summarize previous round conversations
-        log.info("Strategy 4: Checking for previous round conversations to summarize");
-        boolean hasSummarized = summaryPreviousRoundMessages(currentContextMessages);
-        if (hasSummarized) {
-            log.info("Strategy 4: APPLIED - Summarized previous round conversations");
-            replaceWorkingMessage(currentContextMessages);
-            return true;
+        // Strategy 4: Summarize previous round conversations (concurrent rounds)
+        if (autoContextConfig.isStrategy4Enabled()) {
+            chain =
+                    chain.flatMap(
+                            prev -> {
+                                if (prev) return Mono.just(true);
+                                log.info(
+                                        "Strategy 4: Checking for previous round conversations"
+                                                + " to summarize");
+                                List<Msg> msgs = new ArrayList<>(workingMemoryStorage);
+                                return summaryPreviousRoundMessages(msgs)
+                                        .doOnNext(
+                                                applied -> {
+                                                    if (applied) {
+                                                        replaceWorkingMessage(msgs);
+                                                        log.info(
+                                                                "Strategy 4: APPLIED - Summarized"
+                                                                        + " previous round"
+                                                                        + " conversations");
+                                                    } else {
+                                                        log.info(
+                                                                "Strategy 4: SKIPPED - No previous"
+                                                                        + " round conversations to"
+                                                                        + " summarize");
+                                                    }
+                                                });
+                            });
         } else {
-            log.info("Strategy 4: SKIPPED - No previous round conversations to summarize");
+            log.debug("Strategy 4: DISABLED by config");
         }
 
         // Strategy 5: Summarize and offload current round large messages
-        log.info("Strategy 5: Checking for current round large messages to summarize");
-        boolean currentRoundLargeSummarized =
-                summaryCurrentRoundLargeMessages(currentContextMessages);
-        if (currentRoundLargeSummarized) {
-            log.info("Strategy 5: APPLIED - Summarized and offloaded current round large messages");
-            replaceWorkingMessage(currentContextMessages);
-            return true;
+        if (autoContextConfig.isStrategy5Enabled()) {
+            chain =
+                    chain.flatMap(
+                            prev -> {
+                                if (prev) return Mono.just(true);
+                                log.info(
+                                        "Strategy 5: Checking for current round large messages to"
+                                                + " summarize");
+                                List<Msg> msgs = new ArrayList<>(workingMemoryStorage);
+                                return summaryCurrentRoundLargeMessages(msgs)
+                                        .doOnNext(
+                                                applied -> {
+                                                    if (applied) {
+                                                        replaceWorkingMessage(msgs);
+                                                        log.info(
+                                                                "Strategy 5: APPLIED - Summarized"
+                                                                        + " current round large"
+                                                                        + " messages");
+                                                    } else {
+                                                        log.info(
+                                                                "Strategy 5: SKIPPED - No current"
+                                                                        + " round large messages");
+                                                    }
+                                                });
+                            });
         } else {
-            log.info("Strategy 5: SKIPPED - No current round large messages found");
+            log.debug("Strategy 5: DISABLED by config");
         }
 
         // Strategy 6: Summarize current round messages
-        log.info("Strategy 6: Checking for current round messages to summarize");
-        boolean currentRoundSummarized = summaryCurrentRoundMessages(currentContextMessages);
-        if (currentRoundSummarized) {
-            log.info("Strategy 6: APPLIED - Summarized current round messages");
-            replaceWorkingMessage(currentContextMessages);
-            return true;
+        if (autoContextConfig.isStrategy6Enabled()) {
+            chain =
+                    chain.flatMap(
+                            prev -> {
+                                if (prev) return Mono.just(true);
+                                log.info(
+                                        "Strategy 6: Checking for current round messages to"
+                                                + " summarize");
+                                List<Msg> msgs = new ArrayList<>(workingMemoryStorage);
+                                return summaryCurrentRoundMessages(msgs)
+                                        .doOnNext(
+                                                applied -> {
+                                                    if (applied) {
+                                                        replaceWorkingMessage(msgs);
+                                                        log.info(
+                                                                "Strategy 6: APPLIED - Summarized"
+                                                                        + " current round"
+                                                                        + " messages");
+                                                    } else {
+                                                        log.info(
+                                                                "Strategy 6: SKIPPED - No current"
+                                                                        + " round messages to"
+                                                                        + " summarize");
+                                                    }
+                                                });
+                            });
         } else {
-            log.info("Strategy 6: SKIPPED - No current round messages to summarize");
+            log.debug("Strategy 6: DISABLED by config");
         }
 
-        log.warn("All compression strategies exhausted but context still exceeds threshold");
-        return false;
+        return chain.doOnNext(
+                applied -> {
+                    if (!applied)
+                        log.warn(
+                                "All compression strategies exhausted but context still"
+                                        + " exceeds threshold");
+                });
+    }
+
+    /**
+     * Synchronously compresses the context if needed.
+     *
+     * @deprecated Use {@link #compressIfNeededAsync()} to stay fully reactive and avoid
+     *             blocking the scheduler thread. This method is kept for backward compatibility
+     *             only and will be removed in a future release.
+     * @return {@code true} if compression was applied, {@code false} otherwise
+     */
+    @Deprecated
+    public boolean compressIfNeeded() {
+        Boolean result = compressIfNeededAsync().block();
+        return Boolean.TRUE.equals(result);
     }
 
     private List<Msg> replaceWorkingMessage(List<Msg> newMessages) {
@@ -365,9 +539,9 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * @param rawMessages the list of messages to process
      * @return true if summary was actually performed, false otherwise
      */
-    private boolean summaryCurrentRoundMessages(List<Msg> rawMessages) {
+    private Mono<Boolean> summaryCurrentRoundMessages(List<Msg> rawMessages) {
         if (rawMessages == null || rawMessages.isEmpty()) {
-            return false;
+            return Mono.just(false);
         }
 
         // Step 1: Find the latest user message
@@ -380,29 +554,24 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             }
         }
 
-        // If no user message found, nothing to summarize
         if (latestUserIndex < 0) {
-            return false;
+            return Mono.just(false);
         }
-
-        // Step 2: Check if there are messages after the user message
         if (latestUserIndex >= rawMessages.size() - 1) {
-            return false;
+            return Mono.just(false);
         }
 
-        // Step 3: Extract messages after the latest user message
+        // Step 2: Extract messages after the latest user message
         int startIndex = latestUserIndex + 1;
         int endIndex = rawMessages.size() - 1;
 
-        // Ensure tool use and tool result are paired: if the last message is ToolUse,
-        // move endIndex back by one to exclude the incomplete tool invocation
+        // Ensure tool use and tool result are paired
         if (endIndex >= startIndex) {
             Msg lastMsg = rawMessages.get(endIndex);
             if (MsgUtils.isToolUseMessage(lastMsg)) {
                 endIndex--;
-                // If no messages left after adjustment, cannot compress
                 if (endIndex < startIndex) {
-                    return false;
+                    return Mono.just(false);
                 }
             }
         }
@@ -417,35 +586,38 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 latestUserIndex,
                 messagesToCompress.size());
 
-        // Step 4: Merge and compress messages (typically tool calls and results)
-        Msg compressedMsg = mergeAndCompressCurrentRoundMessages(messagesToCompress);
+        final int finalStartIndex = startIndex;
+        final int finalEndIndex = endIndex;
 
-        // Build metadata for compression event
-        Map<String, Object> metadata = new HashMap<>();
-        if (compressedMsg.getChatUsage() != null) {
-            metadata.put("inputToken", compressedMsg.getChatUsage().getInputTokens());
-            metadata.put("outputToken", compressedMsg.getChatUsage().getOutputTokens());
-            metadata.put("time", compressedMsg.getChatUsage().getTime());
-        }
-
-        // Record compression event (before replacing messages to preserve indices)
-        recordCompressionEvent(
-                CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS,
-                startIndex,
-                endIndex,
-                rawMessages,
-                compressedMsg,
-                metadata);
-
-        // Step 5: Replace original messages with compressed one
-        rawMessages.subList(startIndex, endIndex + 1).clear();
-        rawMessages.add(startIndex, compressedMsg);
-
-        log.info(
-                "Replaced {} messages with 1 compressed message at index {}",
-                messagesToCompress.size(),
-                startIndex);
-        return true;
+        return mergeAndCompressCurrentRoundMessagesAsync(messagesToCompress)
+                .map(
+                        compressedMsg -> {
+                            Map<String, Object> metadata = new HashMap<>();
+                            if (compressedMsg.getChatUsage() != null) {
+                                metadata.put(
+                                        "inputToken",
+                                        compressedMsg.getChatUsage().getInputTokens());
+                                metadata.put(
+                                        "outputToken",
+                                        compressedMsg.getChatUsage().getOutputTokens());
+                                metadata.put("time", compressedMsg.getChatUsage().getTime());
+                            }
+                            recordCompressionEvent(
+                                    CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS,
+                                    finalStartIndex,
+                                    finalEndIndex,
+                                    rawMessages,
+                                    compressedMsg,
+                                    metadata);
+                            rawMessages.subList(finalStartIndex, finalEndIndex + 1).clear();
+                            rawMessages.add(finalStartIndex, compressedMsg);
+                            log.info(
+                                    "Replaced {} messages with 1 compressed message at index {}",
+                                    messagesToCompress.size(),
+                                    finalStartIndex);
+                            return true;
+                        })
+                .defaultIfEmpty(false);
     }
 
     /**
@@ -465,12 +637,11 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * @param rawMessages the list of messages to process
      * @return true if any messages were summarized and offloaded, false otherwise
      */
-    private boolean summaryCurrentRoundLargeMessages(List<Msg> rawMessages) {
+    private Mono<Boolean> summaryCurrentRoundLargeMessages(List<Msg> rawMessages) {
         if (rawMessages == null || rawMessages.isEmpty()) {
-            return false;
+            return Mono.just(false);
         }
 
-        // Step 1: Find the latest user message
         int latestUserIndex = -1;
         for (int i = rawMessages.size() - 1; i >= 0; i--) {
             Msg msg = rawMessages.get(i);
@@ -480,25 +651,18 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             }
         }
 
-        // If no user message found, nothing to process
         if (latestUserIndex < 0) {
-            return false;
+            return Mono.just(false);
         }
-
-        // Step 2: Check if there are messages after the user message
         if (latestUserIndex >= rawMessages.size() - 1) {
-            return false;
+            return Mono.just(false);
         }
 
-        // Step 3: Process messages after the latest user message
-        // Process in reverse order to avoid index shifting issues when replacing
-        boolean hasSummarized = false;
+        // Collect large messages in reverse order (to preserve insertion indices later)
+        List<Integer> indicesToSummarize = new ArrayList<>();
         long threshold = autoContextConfig.largePayloadThreshold;
-
         for (int i = rawMessages.size() - 1; i > latestUserIndex; i--) {
             Msg msg = rawMessages.get(i);
-
-            // Skip already compressed messages to avoid double compression
             if (MsgUtils.isCompressedMessage(msg)) {
                 log.debug(
                         "Skipping already compressed message at index {} to avoid double"
@@ -506,12 +670,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                         i);
                 continue;
             }
-
             String textContent = msg.getTextContent();
-
-            // Check if message content exceeds threshold
-            // Use calculateMessageCharCount for accurate size check across all block types
-            // (including ToolResultBlock output which getTextContent() doesn't cover)
             if ((textContent == null || textContent.isEmpty())
                     && MsgUtils.calculateMessageCharCount(msg) <= threshold) {
                 continue;
@@ -521,53 +680,83 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     && textContent.length() <= threshold) {
                 continue;
             }
-
-            // Step 4: Offload the original message
-            String uuid = UUID.randomUUID().toString();
-            List<Msg> offloadMsg = new ArrayList<>();
-            offloadMsg.add(msg);
-            offload(uuid, offloadMsg);
-            log.info(
-                    "Offloaded current round large message: index={}, size={} chars, uuid={}",
-                    i,
-                    MsgUtils.calculateMessageCharCount(msg),
-                    uuid);
-
-            // Step 5: Generate summary using LLM
-            Msg summaryMsg = generateLargeMessageSummary(msg, uuid);
-
-            // Build metadata for compression event
-            Map<String, Object> metadata = new HashMap<>();
-            if (summaryMsg.getChatUsage() != null) {
-                metadata.put("inputToken", summaryMsg.getChatUsage().getInputTokens());
-                metadata.put("outputToken", summaryMsg.getChatUsage().getOutputTokens());
-                metadata.put("time", summaryMsg.getChatUsage().getTime());
-            }
-
-            // Record compression event
-            recordCompressionEvent(
-                    CompressionEvent.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY,
-                    i,
-                    i,
-                    rawMessages,
-                    summaryMsg,
-                    metadata);
-
-            // Step 6: Replace the original message with summary
-            rawMessages.set(i, summaryMsg);
-            hasSummarized = true;
-
-            log.info(
-                    "Replaced large message at index {} with summarized version (uuid: {})",
-                    i,
-                    uuid);
+            indicesToSummarize.add(i);
         }
 
-        return hasSummarized;
+        if (indicesToSummarize.isEmpty()) {
+            return Mono.just(false);
+        }
+
+        // Build one Mono per large message, run concurrently (max 5)
+        int concurrency = Math.min(indicesToSummarize.size(), 5);
+        final List<Msg> rawMessagesCopy = rawMessages;
+
+        return Flux.fromIterable(indicesToSummarize)
+                .flatMap(
+                        idx -> {
+                            Msg msg = rawMessagesCopy.get(idx);
+                            String uuid = UUID.randomUUID().toString();
+                            List<Msg> offloadMsg = new ArrayList<>();
+                            offloadMsg.add(msg);
+                            offload(uuid, offloadMsg);
+                            log.info(
+                                    "Offloaded current round large message: index={}, size={}"
+                                            + " chars, uuid={}",
+                                    idx,
+                                    MsgUtils.calculateMessageCharCount(msg),
+                                    uuid);
+                            return generateLargeMessageSummary(msg, uuid)
+                                    .map(summaryMsg -> new Object[] {idx, summaryMsg});
+                        },
+                        concurrency)
+                .collectList()
+                .map(
+                        results -> {
+                            if (results == null || results.isEmpty()) {
+                                return false;
+                            }
+                            // Sort descending by index to avoid shifting
+                            results.sort(
+                                    (a, b) ->
+                                            Integer.compare(
+                                                    (int) ((Object[]) b)[0],
+                                                    (int) ((Object[]) a)[0]));
+                            for (Object item : results) {
+                                Object[] arr = (Object[]) item;
+                                int idx = (int) arr[0];
+                                Msg summaryMsg = (Msg) arr[1];
+                                Map<String, Object> metadata = new HashMap<>();
+                                if (summaryMsg.getChatUsage() != null) {
+                                    metadata.put(
+                                            "inputToken",
+                                            summaryMsg.getChatUsage().getInputTokens());
+                                    metadata.put(
+                                            "outputToken",
+                                            summaryMsg.getChatUsage().getOutputTokens());
+                                    metadata.put("time", summaryMsg.getChatUsage().getTime());
+                                }
+                                recordCompressionEvent(
+                                        CompressionEvent.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY,
+                                        idx,
+                                        idx,
+                                        rawMessagesCopy,
+                                        summaryMsg,
+                                        metadata);
+                                rawMessagesCopy.set(idx, summaryMsg);
+                                log.info(
+                                        "Replaced large message at index {} with summarized"
+                                                + " version",
+                                        idx);
+                            }
+                            return true;
+                        });
     }
 
     /**
      * Generate a summary of a large message using the model.
+     *
+     * <p>Returns a {@link Mono} that emits a fully-built summary {@link Msg}.
+     * No {@code .block()} is used; all LLM calls remain inside the reactive pipeline.
      *
      * <p>For messages containing ToolUseBlock (e.g., ReAct ASSISTANT messages with reasoning +
      * tool call), only the TextBlock content is sent to the model for summarization (to avoid
@@ -580,52 +769,79 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      *
      * @param message the message to summarize
      * @param offloadUuid the UUID of offloaded message
-     * @return a summary message preserving the original role and name
+     * @return a Mono emitting a summary message preserving the original role and name
      */
-    private Msg generateLargeMessageSummary(Msg message, String offloadUuid) {
+    private Mono<Msg> generateLargeMessageSummary(Msg message, String offloadUuid) {
         boolean hasToolUse = message.hasContentBlocks(ToolUseBlock.class);
         boolean hasToolResult = message.hasContentBlocks(ToolResultBlock.class);
 
-        // Step 1: Call model to generate summary
-        Msg block = callModelForSummary(message, hasToolUse, hasToolResult);
+        // Call model to generate summary, then build the final Msg reactively
+        return callModelForSummary(message, hasToolUse, hasToolResult)
+                .map(
+                        block -> {
+                            // Build summary text with optional offload hint
+                            String summaryContent = block != null ? block.getTextContent() : "";
+                            String offloadHint =
+                                    offloadUuid != null
+                                            ? String.format(
+                                                    Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
+                                            : "";
+                            String finalContent =
+                                    offloadHint.isEmpty()
+                                            ? summaryContent
+                                            : summaryContent + offloadHint;
 
-        // Step 2: Build summary text with optional offload hint
-        String summaryContent = block != null ? block.getTextContent() : "";
-        String offloadHint =
-                offloadUuid != null
-                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
-                        : "";
-        String finalContent = offloadHint.isEmpty() ? summaryContent : summaryContent + offloadHint;
+                            // Build metadata
+                            Map<String, Object> metadata =
+                                    buildCompressionMetadata(message, offloadUuid, block);
 
-        // Step 3: Build metadata
-        Map<String, Object> metadata = buildCompressionMetadata(message, offloadUuid, block);
+                            // Build result message content blocks
+                            List<ContentBlock> contentBlocks;
+                            if (hasToolUse) {
+                                contentBlocks = buildToolUsePreservingBlocks(message, finalContent);
+                            } else if (hasToolResult) {
+                                contentBlocks =
+                                        buildToolResultPreservingBlocks(message, finalContent);
+                            } else {
+                                contentBlocks =
+                                        List.of(TextBlock.builder().text(finalContent).build());
+                            }
 
-        // Step 4: Build result message content blocks
-        List<ContentBlock> contentBlocks;
-        if (hasToolUse) {
-            contentBlocks = buildToolUsePreservingBlocks(message, finalContent);
-        } else if (hasToolResult) {
-            contentBlocks = buildToolResultPreservingBlocks(message, finalContent);
-        } else {
-            contentBlocks = List.of(TextBlock.builder().text(finalContent).build());
-        }
-
-        return Msg.builder()
-                .role(message.getRole())
-                .name(message.getName())
-                .content(contentBlocks)
-                .metadata(metadata)
-                .build();
+                            return Msg.builder()
+                                    .role(message.getRole())
+                                    .name(message.getName())
+                                    .content(contentBlocks)
+                                    .metadata(metadata)
+                                    .build();
+                        })
+                .defaultIfEmpty(
+                        Msg.builder()
+                                .role(message.getRole())
+                                .name(message.getName())
+                                .content(
+                                        TextBlock.builder()
+                                                .text(
+                                                        offloadUuid != null
+                                                                ? String.format(
+                                                                        Prompts
+                                                                                .CONTEXT_OFFLOAD_TAG_FORMAT,
+                                                                        offloadUuid)
+                                                                : "")
+                                                .build())
+                                .build());
     }
 
     /**
      * Call model to generate a summary of the message content.
      *
+     * <p>Returns a {@link Mono} that, when subscribed, streams the model response and emits a
+     * single summary {@link Msg}. No {@code .block()} is used; callers must stay reactive.
+     *
      * <p>For messages with ToolUseBlock, only TextBlock content is extracted and sent to the model
      * to avoid triggering tool detection mechanism. For messages with ToolResultBlock, the text
      * content inside ToolResultBlock's output is extracted for summarization.
      */
-    private Msg callModelForSummary(Msg message, boolean hasToolUse, boolean hasToolResult) {
+    private Mono<Msg> callModelForSummary(Msg message, boolean hasToolUse, boolean hasToolResult) {
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("large_message_summary");
 
@@ -665,20 +881,20 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                         .build());
         addPlanAwareHintIfNeeded(newMessages);
 
-        Msg block =
-                model.stream(newMessages, null, options)
-                        .concatMap(chunk -> processChunk(chunk, context))
-                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
-                        .onErrorResume(InterruptedException.class, Mono::error)
-                        .block();
-
-        if (block != null && block.getChatUsage() != null) {
-            log.info(
-                    "Large message summary completed, input tokens: {}, output tokens: {}",
-                    block.getChatUsage().getInputTokens(),
-                    block.getChatUsage().getOutputTokens());
-        }
-        return block;
+        return model.stream(newMessages, null, options)
+                .concatMap(chunk -> processChunk(chunk, context))
+                .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
+                .doOnNext(
+                        block -> {
+                            if (block != null && block.getChatUsage() != null) {
+                                log.info(
+                                        "Large message summary completed, input tokens: {},"
+                                                + " output tokens: {}",
+                                        block.getChatUsage().getInputTokens(),
+                                        block.getChatUsage().getOutputTokens());
+                            }
+                        })
+                .onErrorResume(InterruptedException.class, Mono::error);
     }
 
     /** Build compression metadata including offload UUID and chat usage. */
@@ -786,20 +1002,18 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
     /**
      * Merge and compress current round messages (typically tool calls and tool results).
      *
+     * <p>Returns a {@link Mono} emitting the compressed message. No {@code .block()} used.
+     *
      * @param messages the messages to merge and compress
-     * @return compressed message
+     * @return Mono emitting the compressed message
      */
-    private Msg mergeAndCompressCurrentRoundMessages(List<Msg> messages) {
+    private Mono<Msg> mergeAndCompressCurrentRoundMessagesAsync(List<Msg> messages) {
         if (messages == null || messages.isEmpty()) {
-            return null;
+            return Mono.empty();
         }
-
-        // Offload original messages
         String uuid = UUID.randomUUID().toString();
         List<Msg> originalMessages = new ArrayList<>(messages);
         offload(uuid, originalMessages);
-
-        // Use model to generate a compressed summary from message list
         return generateCurrentRoundSummaryFromMessages(messages, uuid);
     }
 
@@ -822,11 +1036,15 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
     /**
      * Generate a compressed summary of current round messages using the model.
      *
+     * <p>Returns a {@link Mono} that emits the compressed {@link Msg}.
+     * No {@code .block()} is used inside this method.
+     *
      * @param messages the messages to summarize
      * @param offloadUuid the UUID of offloaded content (if any)
-     * @return compressed message
+     * @return Mono emitting the compressed message
      */
-    private Msg generateCurrentRoundSummaryFromMessages(List<Msg> messages, String offloadUuid) {
+    private Mono<Msg> generateCurrentRoundSummaryFromMessages(
+            List<Msg> messages, String offloadUuid) {
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("current_round_compress");
 
@@ -839,8 +1057,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     messages.size() - filteredMessages.size());
         }
 
-        // Calculate original character count (including TextBlock, ToolUseBlock, ToolResultBlock)
-        // Use filtered messages for character count calculation
+        // Calculate original character count
         int originalCharCount = MsgUtils.calculateMessagesCharCount(filteredMessages);
 
         // Get compression ratio and calculate target character count
@@ -863,7 +1080,6 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                         (double) compressionRatioPercent);
 
         List<Msg> newMessages = new ArrayList<>();
-        // First message: main compression prompt (without character count requirement)
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -876,7 +1092,6 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                         .build())
                         .build());
         newMessages.addAll(filteredMessages);
-        // Message list end marker
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -886,78 +1101,77 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                         .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
-        // Character count requirement (placed after message list end)
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
                         .content(TextBlock.builder().text(charRequirement).build())
                         .build());
-        // Insert plan-aware hint message at the end to leverage recency effect
         addPlanAwareHintIfNeeded(newMessages);
 
-        Msg block =
-                model.stream(newMessages, null, options)
-                        .concatMap(chunk -> processChunk(chunk, context))
-                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
-                        .onErrorResume(InterruptedException.class, Mono::error)
-                        .block();
+        return model.stream(newMessages, null, options)
+                .concatMap(chunk -> processChunk(chunk, context))
+                .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
+                .onErrorResume(InterruptedException.class, Mono::error)
+                .map(
+                        block -> {
+                            int inputTokens = 0;
+                            int outputTokens = 0;
+                            if (block != null && block.getChatUsage() != null) {
+                                inputTokens = block.getChatUsage().getInputTokens();
+                                outputTokens = block.getChatUsage().getOutputTokens();
+                            }
+                            int actualCharCount =
+                                    block != null ? MsgUtils.calculateMessageCharCount(block) : 0;
+                            log.info(
+                                    "Current round summary completed - original: {} chars, target:"
+                                            + " {} chars ({}%), actual: {} chars, input tokens: {},"
+                                            + " output tokens: {}",
+                                    originalCharCount,
+                                    targetCharCount,
+                                    compressionRatioPercent,
+                                    actualCharCount,
+                                    inputTokens,
+                                    outputTokens);
 
-        // Extract token usage information
-        int inputTokens = 0;
-        int outputTokens = 0;
-        if (block != null && block.getChatUsage() != null) {
-            inputTokens = block.getChatUsage().getInputTokens();
-            outputTokens = block.getChatUsage().getOutputTokens();
-        }
+                            Map<String, Object> compressMeta = new HashMap<>();
+                            if (offloadUuid != null) {
+                                compressMeta.put("offloaduuid", offloadUuid);
+                            }
+                            compressMeta.put("compressed_current_round", true);
+                            Map<String, Object> metadata = new HashMap<>();
+                            metadata.put("_compress_meta", compressMeta);
+                            if (block != null && block.getChatUsage() != null) {
+                                metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
+                            }
 
-        // Calculate actual output character count (including all content blocks)
-        int actualCharCount = block != null ? MsgUtils.calculateMessageCharCount(block) : 0;
-
-        log.info(
-                "Current round summary completed - original: {} chars, target: {} chars ({}%),"
-                        + " actual: {} chars, input tokens: {}, output tokens: {}",
-                originalCharCount,
-                targetCharCount,
-                compressionRatioPercent,
-                actualCharCount,
-                inputTokens,
-                outputTokens);
-
-        // Build metadata with compression information
-        Map<String, Object> compressMeta = new HashMap<>();
-        if (offloadUuid != null) {
-            compressMeta.put("offloaduuid", offloadUuid);
-        }
-        // Mark this as a compressed current round message to avoid being treated as a real
-        // assistant response
-        compressMeta.put("compressed_current_round", true);
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put("_compress_meta", compressMeta);
-        if (block != null && block.getChatUsage() != null) {
-            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
-        }
-
-        // Create a compressed message
-        return Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .name("assistant")
-                .content(
-                        TextBlock.builder()
-                                .text((block != null ? block.getTextContent() : "") + offloadHint)
-                                .build())
-                .metadata(metadata)
-                .build();
+                            return Msg.builder()
+                                    .role(MsgRole.ASSISTANT)
+                                    .name("assistant")
+                                    .content(
+                                            TextBlock.builder()
+                                                    .text(
+                                                            (block != null
+                                                                            ? block.getTextContent()
+                                                                            : "")
+                                                                    + offloadHint)
+                                                    .build())
+                                    .metadata(metadata)
+                                    .build();
+                        });
     }
 
     /**
-     * Summarize current round of conversation messages.
+     * Summarizes a group of tool-invocation messages and replaces them in {@code rawMessages}.
      *
-     * @param rawMessages the list of messages to process
-     * @param toolMsgIndices the pair of start and end indices
-     * @return true if summary was actually performed, false otherwise
+     * <p>Returns a {@link Mono}{@code <Boolean>} that emits {@code true} if compression was
+     * performed, {@code false} if skipped (e.g. token count below threshold).
+     *
+     * @param rawMessages the working message list (mutated in place on success)
+     * @param toolMsgIndices start/end indices (inclusive) of the tool messages to compress
+     * @return Mono emitting whether compression happened
      */
-    private boolean summaryToolsMessages(
+    private Mono<Boolean> summaryToolsMessages(
             List<Msg> rawMessages, Pair<Integer, Integer> toolMsgIndices) {
         int startIndex = toolMsgIndices.first();
         int endIndex = toolMsgIndices.second();
@@ -973,8 +1187,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             toolsMsg.add(rawMessages.get(i));
         }
 
-        // Check if original token count is sufficient for compression
-        // Skip compression if tokens are below threshold to avoid compression overhead
+        // Skip if token count is below threshold
         int originalTokens = TokenCounterUtil.calculateToken(toolsMsg);
         int threshold = autoContextConfig.getMinCompressionTokenThreshold();
         if (originalTokens < threshold) {
@@ -983,7 +1196,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             + " ({})",
                     originalTokens,
                     threshold);
-            return false;
+            return Mono.just(false);
         }
 
         log.info(
@@ -991,32 +1204,34 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 originalTokens,
                 threshold);
 
-        // Normal compression flow for non-plan tools
+        // Offload originals before async summary
         String uuid = UUID.randomUUID().toString();
         offload(uuid, toolsMsg);
 
-        Msg toolsSummary = compressToolsInvocation(toolsMsg, uuid);
-
-        // Build metadata for compression event
-        Map<String, Object> metadata = new HashMap<>();
-        if (toolsSummary.getChatUsage() != null) {
-            metadata.put("inputToken", toolsSummary.getChatUsage().getInputTokens());
-            metadata.put("outputToken", toolsSummary.getChatUsage().getOutputTokens());
-            metadata.put("time", toolsSummary.getChatUsage().getTime());
-        }
-
-        // Record compression event
-        recordCompressionEvent(
-                CompressionEvent.TOOL_INVOCATION_COMPRESS,
-                startIndex,
-                endIndex,
-                rawMessages,
-                toolsSummary,
-                metadata);
-
-        MsgUtils.replaceMsg(rawMessages, startIndex, endIndex, toolsSummary);
-
-        return true;
+        return compressToolsInvocationAsync(toolsMsg, uuid)
+                .map(
+                        toolsSummary -> {
+                            // Build metadata for compression event
+                            Map<String, Object> metadata = new HashMap<>();
+                            if (toolsSummary.getChatUsage() != null) {
+                                metadata.put(
+                                        "inputToken", toolsSummary.getChatUsage().getInputTokens());
+                                metadata.put(
+                                        "outputToken",
+                                        toolsSummary.getChatUsage().getOutputTokens());
+                                metadata.put("time", toolsSummary.getChatUsage().getTime());
+                            }
+                            recordCompressionEvent(
+                                    CompressionEvent.TOOL_INVOCATION_COMPRESS,
+                                    startIndex,
+                                    endIndex,
+                                    rawMessages,
+                                    toolsSummary,
+                                    metadata);
+                            MsgUtils.replaceMsg(rawMessages, startIndex, endIndex, toolsSummary);
+                            return true;
+                        })
+                .defaultIfEmpty(false);
     }
 
     /**
@@ -1040,49 +1255,52 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * @param rawMessages the list of messages to process
      * @return true if summary was actually performed, false otherwise
      */
-    private boolean summaryPreviousRoundMessages(List<Msg> rawMessages) {
+    /**
+     * Summarize all previous rounds of conversation messages before the latest assistant.
+     *
+     * <p>This method runs all eligible round summaries <b>concurrently</b> (up to 5 at a time)
+     * using {@link Flux#flatMap} with a concurrency limit, then applies the results to
+     * {@code rawMessages} in reverse index order to avoid index-shifting side effects.
+     *
+     * <p>Returns a {@link Mono}{@code <Boolean>} emitting {@code true} if at least one round
+     * was summarized, {@code false} otherwise. No {@code .block()} is used.
+     *
+     * @param rawMessages the working message list (mutated in place after all summaries complete)
+     * @return Mono emitting whether any summarization happened
+     */
+    private Mono<Boolean> summaryPreviousRoundMessages(List<Msg> rawMessages) {
         if (rawMessages == null || rawMessages.isEmpty()) {
-            return false;
+            return Mono.just(false);
         }
 
-        // Step 1: Find the latest assistant message that is a final response (not a tool call)
+        // Step 1: Find the latest final assistant message
         int latestAssistantIndex = -1;
         for (int i = rawMessages.size() - 1; i >= 0; i--) {
-            Msg msg = rawMessages.get(i);
-            if (MsgUtils.isFinalAssistantResponse(msg)) {
+            if (MsgUtils.isFinalAssistantResponse(rawMessages.get(i))) {
                 latestAssistantIndex = i;
                 break;
             }
         }
-
-        // If no assistant message found, nothing to summarize
         if (latestAssistantIndex < 0) {
-            return false;
+            return Mono.just(false);
         }
 
-        // Step 2: Find all user-assistant pairs before the latest assistant
-        // We'll collect them as pairs: (userIndex, assistantIndex)
+        // Step 2: Collect user-assistant pairs before the latest assistant
         List<Pair<Integer, Integer>> userAssistantPairs = new ArrayList<>();
         int currentUserIndex = -1;
-
         for (int i = 0; i < latestAssistantIndex; i++) {
             Msg msg = rawMessages.get(i);
             if (msg.getRole() == MsgRole.USER) {
                 currentUserIndex = i;
             } else if (MsgUtils.isFinalAssistantResponse(msg) && currentUserIndex >= 0) {
-                // Found a user-assistant pair (assistant message is a final response, not a tool
-                // call)
                 if (i - currentUserIndex != 1) {
                     userAssistantPairs.add(new Pair<>(currentUserIndex, i));
                 }
-
-                currentUserIndex = -1; // Reset to find next pair
+                currentUserIndex = -1;
             }
         }
-
-        // If no pairs found, nothing to summarize
         if (userAssistantPairs.isEmpty()) {
-            return false;
+            return Mono.just(false);
         }
 
         log.info(
@@ -1090,52 +1308,39 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 userAssistantPairs.size(),
                 latestAssistantIndex);
 
-        // Step 3: Process pairs from back to front to avoid index shifting issues
-        boolean hasSummarized = false;
+        // Step 3: Build a Mono for each eligible pair
+        // SummaryTask record-like holder
+        record SummaryCandidate(
+                int pairIdx,
+                int userIndex,
+                int startIndex,
+                int endIndex,
+                List<Msg> messagesToSummarize,
+                String uuid) {}
+
+        List<SummaryCandidate> candidates = new ArrayList<>();
         for (int pairIdx = userAssistantPairs.size() - 1; pairIdx >= 0; pairIdx--) {
             Pair<Integer, Integer> pair = userAssistantPairs.get(pairIdx);
             int userIndex = pair.first();
             int assistantIndex = pair.second();
+            int startIndex = userIndex + 1;
+            int endIndex = assistantIndex;
 
-            // Messages to summarize: from user to assistant (inclusive of both)
-            // Include user message for context, but we'll only remove messages after user
-            int startIndex = userIndex + 1; // Messages to remove start after user
-            int endIndex = assistantIndex; // Include assistant message in removal
-
-            // If no messages between user and assistant (including assistant), skip
             if (startIndex > endIndex) {
-                log.info(
-                        "No messages to summarize between user at index {} and assistant at index"
-                                + " {}",
-                        userIndex,
-                        assistantIndex);
                 continue;
             }
 
-            // Include user message in messagesToSummarize for context, but keep it in the final
-            // list
             List<Msg> messagesToSummarize = new ArrayList<>();
-            messagesToSummarize.add(rawMessages.get(userIndex)); // Include user message for context
+            messagesToSummarize.add(rawMessages.get(userIndex));
             for (int i = startIndex; i <= endIndex; i++) {
                 messagesToSummarize.add(rawMessages.get(i));
             }
 
-            log.info(
-                    "Summarizing round {}: user at index {}, messages [{}, {}], totalCount={}"
-                            + " (includes user message for context)",
-                    pairIdx + 1,
-                    userIndex,
-                    startIndex,
-                    endIndex,
-                    messagesToSummarize.size());
-
-            // Step 4: Check if original token count is sufficient for compression
-            // Skip compression if tokens are below threshold to avoid compression overhead
             int originalTokens = TokenCounterUtil.calculateToken(messagesToSummarize);
             int threshold = autoContextConfig.getMinCompressionTokenThreshold();
             if (originalTokens < threshold) {
                 log.info(
-                        "Skipping conversation summary for round {}: original tokens ({}) is below"
+                        "Skipping conversation summary for round {}: original tokens ({}) below"
                                 + " threshold ({})",
                         pairIdx + 1,
                         originalTokens,
@@ -1144,79 +1349,130 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             }
 
             log.info(
-                    "Proceeding with conversation summary for round {}: original tokens: {},"
-                            + " threshold: {}",
+                    "Queuing conversation summary for round {}: user at index {}, messages"
+                            + " [{}, {}], totalCount={} (includes user message for context)",
                     pairIdx + 1,
-                    originalTokens,
-                    threshold);
+                    userIndex,
+                    startIndex,
+                    endIndex,
+                    messagesToSummarize.size());
 
-            // Step 5: Offload original messages if contextOffLoader is available
+            // Offload originals eagerly (synchronous, cheap) before firing the async summary
             String uuid = UUID.randomUUID().toString();
             offload(uuid, messagesToSummarize);
-            log.info("Offloaded messages to be summarized: uuid={}", uuid);
+            log.info("Offloaded messages for round {}: uuid={}", pairIdx + 1, uuid);
 
-            // Step 6: Generate summary
-            Msg summaryMsg = summaryPreviousRoundConversation(messagesToSummarize, uuid);
-
-            // Build metadata for compression event
-            Map<String, Object> metadata = new HashMap<>();
-            if (summaryMsg.getChatUsage() != null) {
-                metadata.put("inputToken", summaryMsg.getChatUsage().getInputTokens());
-                metadata.put("outputToken", summaryMsg.getChatUsage().getOutputTokens());
-                metadata.put("time", summaryMsg.getChatUsage().getTime());
-            }
-
-            // Record compression event (before removing messages to preserve indices)
-            recordCompressionEvent(
-                    CompressionEvent.PREVIOUS_ROUND_CONVERSATION_SUMMARY,
-                    startIndex,
-                    endIndex,
-                    rawMessages,
-                    summaryMsg,
-                    metadata);
-
-            // Step 7: Remove the messages between user and assistant (including assistant), then
-            // replace with summary
-            // Since we're processing from back to front, the indices are still accurate
-            // for the current pair (indices of pairs after this one have already been adjusted)
-
-            // Remove messages from startIndex to endIndex (including assistant, from back to front
-            // to avoid index shifting)
-            int removedCount = endIndex - startIndex + 1;
-            rawMessages.subList(startIndex, endIndex + 1).clear();
-
-            // After removal, the position where assistant was is now: assistantIndex - removedCount
-            // + 1
-            // But since we removed everything including assistant, we insert summary at the
-            // position after user
-            int insertIndex = userIndex + 1;
-
-            // Insert summary after user (replacing the removed messages including assistant)
-            rawMessages.add(insertIndex, summaryMsg);
-
-            log.info(
-                    "Replaced {} messages [indices {}-{}] with summary at index {}",
-                    removedCount,
-                    startIndex,
-                    endIndex,
-                    insertIndex);
-
-            hasSummarized = true;
+            candidates.add(
+                    new SummaryCandidate(
+                            pairIdx, userIndex, startIndex, endIndex, messagesToSummarize, uuid));
         }
 
-        return hasSummarized;
+        if (candidates.isEmpty()) {
+            return Mono.just(false);
+        }
+
+        // Step 4: Run summaries concurrently (max 5 in-flight), collect all results
+        int concurrency = Math.min(candidates.size(), 5);
+
+        return Flux.fromIterable(candidates)
+                .flatMap(
+                        candidate ->
+                                summaryPreviousRoundConversationAsync(
+                                                candidate.messagesToSummarize(), candidate.uuid())
+                                        .filter(
+                                                summaryMsg -> {
+                                                    String content = summaryMsg.getTextContent();
+                                                    return content != null
+                                                            && !content.trim().isEmpty();
+                                                })
+                                        .map(
+                                                summaryMsg -> {
+                                                    Map<String, Object> metadata = new HashMap<>();
+                                                    if (summaryMsg.getChatUsage() != null) {
+                                                        metadata.put(
+                                                                "inputToken",
+                                                                summaryMsg
+                                                                        .getChatUsage()
+                                                                        .getInputTokens());
+                                                        metadata.put(
+                                                                "outputToken",
+                                                                summaryMsg
+                                                                        .getChatUsage()
+                                                                        .getOutputTokens());
+                                                        metadata.put(
+                                                                "time",
+                                                                summaryMsg
+                                                                        .getChatUsage()
+                                                                        .getTime());
+                                                    }
+                                                    return new Object[] {
+                                                        candidate, summaryMsg, metadata
+                                                    };
+                                                }),
+                        concurrency)
+                .collectList()
+                .map(
+                        results -> {
+                            if (results == null || results.isEmpty()) {
+                                return false;
+                            }
+
+                            // Sort results in descending startIndex order to avoid shifting
+                            results.sort(
+                                    (a, b) -> {
+                                        SummaryCandidate ca = (SummaryCandidate) ((Object[]) a)[0];
+                                        SummaryCandidate cb = (SummaryCandidate) ((Object[]) b)[0];
+                                        return Integer.compare(cb.startIndex(), ca.startIndex());
+                                    });
+
+                            for (Object item : results) {
+                                Object[] arr = (Object[]) item;
+                                SummaryCandidate candidate = (SummaryCandidate) arr[0];
+                                Msg summaryMsg = (Msg) arr[1];
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> metadata = (Map<String, Object>) arr[2];
+
+                                recordCompressionEvent(
+                                        CompressionEvent.PREVIOUS_ROUND_CONVERSATION_SUMMARY,
+                                        candidate.startIndex(),
+                                        candidate.endIndex(),
+                                        rawMessages,
+                                        summaryMsg,
+                                        metadata);
+
+                                int removedCount =
+                                        candidate.endIndex() - candidate.startIndex() + 1;
+                                rawMessages
+                                        .subList(candidate.startIndex(), candidate.endIndex() + 1)
+                                        .clear();
+                                int insertIndex = candidate.userIndex() + 1;
+                                rawMessages.add(insertIndex, summaryMsg);
+
+                                log.info(
+                                        "Replaced {} messages [indices {}-{}] with summary at"
+                                                + " index {}",
+                                        removedCount,
+                                        candidate.startIndex(),
+                                        candidate.endIndex(),
+                                        insertIndex);
+                            }
+                            return true;
+                        });
     }
 
     /**
      * Generate a summary of previous round conversation messages using the model.
      *
+     * <p>Returns a {@link Mono} that emits the summary {@link Msg}.
+     * No {@code .block()} is used; all LLM calls stay inside the reactive pipeline.
+     *
      * @param messages the messages to summarize
      * @param offloadUuid the UUID of offloaded messages (if any), null otherwise
-     * @return a summary message
+     * @return Mono emitting the summary message
      */
-    private Msg summaryPreviousRoundConversation(List<Msg> messages, String offloadUuid) {
-        // Filter out plan-related tool calls (user messages are preserved by
-        // filterPlanRelatedToolCalls)
+    private Mono<Msg> summaryPreviousRoundConversationAsync(
+            List<Msg> messages, String offloadUuid) {
+        // Filter out plan-related tool calls (user messages are preserved)
         List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
         if (filteredMessages.size() < messages.size()) {
             log.info(
@@ -1250,63 +1506,50 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                         .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
-        // Insert plan-aware hint message at the end to leverage recency effect
         addPlanAwareHintIfNeeded(newMessages);
 
-        Msg block =
-                model.stream(newMessages, null, options)
-                        .concatMap(chunk -> processChunk(chunk, context))
-                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
-                        .onErrorResume(InterruptedException.class, Mono::error)
-                        .block();
+        return model.stream(newMessages, null, options)
+                .concatMap(chunk -> processChunk(chunk, context))
+                .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
+                .onErrorResume(InterruptedException.class, Mono::error)
+                .map(
+                        block -> {
+                            if (block != null && block.getChatUsage() != null) {
+                                log.info(
+                                        "Conversation summary completed, input tokens: {},"
+                                                + " output tokens: {}",
+                                        block.getChatUsage().getInputTokens(),
+                                        block.getChatUsage().getOutputTokens());
+                            }
 
-        // Extract token usage information
-        int inputTokens = 0;
-        int outputTokens = 0;
-        if (block != null && block.getChatUsage() != null) {
-            inputTokens = block.getChatUsage().getInputTokens();
-            outputTokens = block.getChatUsage().getOutputTokens();
-            log.info(
-                    "Conversation summary completed, input tokens: {}, output tokens: {}",
-                    inputTokens,
-                    outputTokens);
-        }
+                            Map<String, Object> compressMeta = new HashMap<>();
+                            if (offloadUuid != null) {
+                                compressMeta.put("offloaduuid", offloadUuid);
+                            }
+                            Map<String, Object> metadata = new HashMap<>();
+                            metadata.put("_compress_meta", compressMeta);
+                            if (block != null && block.getChatUsage() != null) {
+                                metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
+                            }
 
-        // Build metadata with compression information
-        Map<String, Object> compressMeta = new HashMap<>();
-        if (offloadUuid != null) {
-            compressMeta.put("offloaduuid", offloadUuid);
-        }
+                            String summaryContent = block != null ? block.getTextContent() : "";
+                            String offloadTag =
+                                    offloadUuid != null
+                                            ? String.format(
+                                                    Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
+                                            : "";
+                            String finalContent =
+                                    offloadTag.isEmpty()
+                                            ? summaryContent
+                                            : summaryContent + "\n" + offloadTag;
 
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put("_compress_meta", compressMeta);
-
-        // Preserve _chat_usage from the block if available
-        if (block != null && block.getChatUsage() != null) {
-            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
-        }
-
-        // Build the final message content:
-        // 1. LLM generated summary (contains ASSISTANT summary + tool compression)
-        // 2. Context offload tag with UUID at the end
-        String summaryContent = block != null ? block.getTextContent() : "";
-        String offloadTag =
-                offloadUuid != null
-                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
-                        : "";
-
-        // Combine: summary content + newline + UUID tag
-        String finalContent = summaryContent;
-        if (!offloadTag.isEmpty()) {
-            finalContent = finalContent + "\n" + offloadTag;
-        }
-
-        return Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .name("assistant")
-                .content(TextBlock.builder().text(finalContent).build())
-                .metadata(metadata)
-                .build();
+                            return Msg.builder()
+                                    .role(MsgRole.ASSISTANT)
+                                    .name("assistant")
+                                    .content(TextBlock.builder().text(finalContent).build())
+                                    .metadata(metadata)
+                                    .build();
+                        });
     }
 
     /**
@@ -1719,7 +1962,20 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * @return a new ASSISTANT message containing the compressed tool invocation summary
      * @throws RuntimeException if LLM processing fails or is interrupted
      */
-    private Msg compressToolsInvocation(List<Msg> messages, String offloadUUid) {
+    /**
+     * Compresses a list of tool invocation messages using LLM summarization.
+     *
+     * <p>Returns a {@link Mono} emitting the compressed {@link Msg}.
+     * No {@code .block()} is used; the reactive pipeline is fully non-blocking.
+     *
+     * <p>If an {@code offloadUUid} is provided, the compressed message will include a hint
+     * indicating that the original content can be reloaded via {@link ContextOffloadTool}.
+     *
+     * @param messages the list of tool invocation messages to compress
+     * @param offloadUUid the UUID of the offloaded original messages, or null if not offloaded
+     * @return Mono emitting the compressed tool invocation summary message
+     */
+    private Mono<Msg> compressToolsInvocationAsync(List<Msg> messages, String offloadUUid) {
 
         // Filter out plan-related tool calls before compression
         List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
@@ -1754,62 +2010,50 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                         .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
-        // Insert plan-aware hint message at the end to leverage recency effect
         addPlanAwareHintIfNeeded(newMessages);
-        Msg block =
-                model.stream(newMessages, null, options)
-                        .concatMap(chunk -> processChunk(chunk, context))
-                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
-                        .onErrorResume(InterruptedException.class, Mono::error)
-                        .block();
 
-        // Extract token usage information
-        int inputTokens = 0;
-        int outputTokens = 0;
-        if (block != null && block.getChatUsage() != null) {
-            inputTokens = block.getChatUsage().getInputTokens();
-            outputTokens = block.getChatUsage().getOutputTokens();
-            log.info(
-                    "Tool compression completed, input tokens: {}, output tokens: {}",
-                    inputTokens,
-                    outputTokens);
-        }
+        return model.stream(newMessages, null, options)
+                .concatMap(chunk -> processChunk(chunk, context))
+                .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
+                .onErrorResume(InterruptedException.class, Mono::error)
+                .map(
+                        block -> {
+                            if (block != null && block.getChatUsage() != null) {
+                                log.info(
+                                        "Tool compression completed, input tokens: {},"
+                                                + " output tokens: {}",
+                                        block.getChatUsage().getInputTokens(),
+                                        block.getChatUsage().getOutputTokens());
+                            }
 
-        // Build metadata with compression information
-        Map<String, Object> compressMeta = new HashMap<>();
-        if (offloadUUid != null) {
-            compressMeta.put("offloaduuid", offloadUUid);
-        }
+                            Map<String, Object> compressMeta = new HashMap<>();
+                            if (offloadUUid != null) {
+                                compressMeta.put("offloaduuid", offloadUUid);
+                            }
+                            Map<String, Object> metadata = new HashMap<>();
+                            metadata.put("_compress_meta", compressMeta);
+                            if (block != null && block.getChatUsage() != null) {
+                                metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
+                            }
 
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put("_compress_meta", compressMeta);
+                            String compressedContent = block != null ? block.getTextContent() : "";
+                            String offloadTag =
+                                    offloadUUid != null
+                                            ? String.format(
+                                                    Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUUid)
+                                            : "";
+                            String finalContent =
+                                    offloadTag.isEmpty()
+                                            ? compressedContent
+                                            : compressedContent + "\n" + offloadTag;
 
-        // Preserve _chat_usage from the block if available
-        if (block != null && block.getChatUsage() != null) {
-            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
-        }
-
-        // Build the final message content:
-        // 1. LLM generated compressed tool invocation content
-        // 2. Context offload tag with UUID at the end
-        String compressedContent = block != null ? block.getTextContent() : "";
-        String offloadTag =
-                offloadUUid != null
-                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUUid)
-                        : "";
-
-        // Combine: compressed content + newline + UUID tag
-        String finalContent = compressedContent;
-        if (!offloadTag.isEmpty()) {
-            finalContent = finalContent + "\n" + offloadTag;
-        }
-
-        return Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .name("assistant")
-                .content(TextBlock.builder().text(finalContent).build())
-                .metadata(metadata)
-                .build();
+                            return Msg.builder()
+                                    .role(MsgRole.ASSISTANT)
+                                    .name("assistant")
+                                    .content(TextBlock.builder().text(finalContent).build())
+                                    .metadata(metadata)
+                                    .build();
+                        });
     }
 
     private Mono<Msg> processChunk(ChatResponse chunk, ReasoningContext context) {
