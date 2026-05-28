@@ -411,6 +411,50 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should delete a specific state key from session")
+    void testDeleteStateKey() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(1);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+
+        session.delete(sessionKey, "myStateKey");
+
+        verify(mockStatement).setString(1, "session1");
+        verify(mockStatement).setString(2, "myStateKey");
+        verify(mockStatement).executeUpdate();
+    }
+
+    @Test
+    @DisplayName("Should commit delete state key when connection auto-commit is disabled")
+    void testDeleteStateKeyCommitsWhenAutoCommitDisabled() throws SQLException {
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(1);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+
+        session.delete(sessionKey, "myStateKey");
+
+        verify(mockConnection).commit();
+        verify(mockConnection, never()).setAutoCommit(true);
+    }
+
+    @Test
+    @DisplayName("Should throw RuntimeException when delete state key fails")
+    void testDeleteStateKeyThrowsOnFailure() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenThrow(new SQLException("DB error"));
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+
+        assertThrows(RuntimeException.class, () -> session.delete(sessionKey, "myStateKey"));
+    }
+
+    @Test
     @DisplayName("Should list all session keys when empty")
     void testListSessionKeysEmpty() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
