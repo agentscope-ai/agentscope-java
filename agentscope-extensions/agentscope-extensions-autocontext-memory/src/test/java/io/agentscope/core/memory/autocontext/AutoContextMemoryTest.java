@@ -608,115 +608,191 @@ class AutoContextMemoryTest {
     }
 
     @Test
-    @DisplayName(
-            "Should compress current round messages using mergeAndCompressCurrentRoundMessages")
-    void testMergeAndCompressCurrentRoundMessages() {
-        // Create a test model to track calls
-        TestModel currentRoundTestModel = new TestModel("Compressed current round summary");
+    @DisplayName("Should preserve active tool round before final assistant response")
+    void testPreserveActiveToolRoundBeforeFinalAssistantResponse() {
+        TestModel currentRoundTestModel = new TestModel("Compressed current tool round summary");
         AutoContextConfig currentRoundConfig =
                 AutoContextConfig.builder()
                         .msgThreshold(10)
                         .maxToken(10000)
                         .tokenRatio(0.9)
                         .lastKeep(5)
-                        .minConsecutiveToolMessages(
-                                10) // High threshold to avoid tool compression (strategy 1)
-                        .largePayloadThreshold(
-                                10000) // High threshold to avoid payload offloading (strategy 2 &
-                        // 3)
-                        .minCompressionTokenThreshold(0) // Disable token threshold for testing
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
                         .build();
         AutoContextMemory currentRoundMemory =
                 new AutoContextMemory(currentRoundConfig, currentRoundTestModel);
 
-        // Add some initial messages to exceed threshold but not trigger other strategies
-        // Add messages without user-assistant pairs to avoid strategy 4
         for (int i = 0; i < 8; i++) {
             currentRoundMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
         }
 
-        // Add a user message (this becomes the latest user)
         currentRoundMemory.addMessage(createTextMessage("User query with tools", MsgRole.USER));
+        currentRoundMemory.addMessage(createToolUseMessage("test_tool", "call_0"));
+        currentRoundMemory.addMessage(createToolResultMessage("test_tool", "call_0", "Result 0"));
 
-        // Add tool calls and results after the user message (these should be compressed)
-        // These are not consecutive enough to trigger strategy 1, and are after the latest user
-        for (int i = 0; i < 2; i++) {
-            currentRoundMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
-            currentRoundMemory.addMessage(
-                    createToolResultMessage("test_tool", "call_" + i, "Result " + i));
-        }
-
-        // Reset call count before compression
         currentRoundTestModel.reset();
 
-        // Trigger compression explicitly - this should trigger strategy 6 (current round summary)
-        // which calls mergeAndCompressCurrentRoundMessages
         currentRoundMemory.compressIfNeeded();
         List<Msg> messages = currentRoundMemory.getMessages();
 
-        // Verify that generateCurrentRoundSummaryFromMessages was called (via
-        // mergeAndCompressCurrentRoundMessages)
+        assertEquals(0, currentRoundTestModel.getCallCount());
+        assertEquals(11, messages.size(), "Active tool round should remain uncompressed");
+        assertTrue(messages.stream().anyMatch(MsgUtils::isToolUseMessage));
+        assertTrue(messages.stream().anyMatch(MsgUtils::isToolResultMessage));
+        assertFalse(
+                hasCompressionEvent(
+                        currentRoundMemory, CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS),
+                "Active tool round must not be summarized before final assistant response");
+    }
+
+    @Test
+    @DisplayName("Should preserve multi-step active tool round before final assistant response")
+    void testPreserveMultiStepActiveToolRoundBeforeFinalAssistantResponse() {
+        TestModel currentRoundTestModel = new TestModel("Compressed current tool round summary");
+        AutoContextConfig currentRoundConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(1)
+                        .tokenRatio(0.1)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory currentRoundMemory =
+                new AutoContextMemory(currentRoundConfig, currentRoundTestModel);
+
+        for (int i = 0; i < 8; i++) {
+            currentRoundMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+
+        currentRoundMemory.addMessage(
+                createTextMessage("User query with multiple tools", MsgRole.USER));
+        currentRoundMemory.addMessage(createToolUseMessage("first_tool", "call_1"));
+        currentRoundMemory.addMessage(createToolResultMessage("first_tool", "call_1", "Result 1"));
+        currentRoundMemory.addMessage(createToolUseMessage("second_tool", "call_2"));
+        currentRoundMemory.addMessage(createToolResultMessage("second_tool", "call_2", "Result 2"));
+
+        currentRoundTestModel.reset();
+
+        currentRoundMemory.compressIfNeeded();
+        List<Msg> messages = currentRoundMemory.getMessages();
+
+        assertEquals(0, currentRoundTestModel.getCallCount());
+        assertEquals(
+                13, messages.size(), "Multi-step active tool round should remain uncompressed");
+        assertEquals(2, messages.stream().filter(MsgUtils::isToolUseMessage).count());
+        assertEquals(2, messages.stream().filter(MsgUtils::isToolResultMessage).count());
+        assertFalse(
+                hasCompressionEvent(
+                        currentRoundMemory, CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS),
+                "Multi-step active tool round must not be summarized before final assistant"
+                        + " response");
+    }
+
+    @Test
+    @DisplayName("Should preserve large active tool result before final assistant response")
+    void testPreserveLargeActiveToolResultBeforeFinalAssistantResponse() {
+        TestModel currentRoundTestModel = new TestModel("Compressed current large tool result");
+        AutoContextConfig currentRoundConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(100)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory currentRoundMemory =
+                new AutoContextMemory(currentRoundConfig, currentRoundTestModel);
+
+        for (int i = 0; i < 8; i++) {
+            currentRoundMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+
+        currentRoundMemory.addMessage(
+                createTextMessage("User query with large tool", MsgRole.USER));
+        currentRoundMemory.addMessage(createToolUseMessage("search", "call_large"));
+        String largeResult = "large tool result ".repeat(20);
+        currentRoundMemory.addMessage(createToolResultMessage("search", "call_large", largeResult));
+
+        currentRoundTestModel.reset();
+
+        currentRoundMemory.compressIfNeeded();
+        List<Msg> messages = currentRoundMemory.getMessages();
+
+        assertEquals(0, currentRoundTestModel.getCallCount());
+        assertTrue(
+                currentRoundMemory.getOffloadContext().isEmpty(),
+                "Active tool result should not be offloaded before final assistant response");
+        assertTrue(
+                messages.stream()
+                        .filter(MsgUtils::isToolResultMessage)
+                        .anyMatch(msg -> MsgUtils.calculateMessageCharCount(msg) > 100),
+                "Original large tool result should remain in working memory");
+        assertFalse(
+                hasCompressionEvent(
+                        currentRoundMemory, CompressionEvent.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY),
+                "Active large tool result must not be summarized before final assistant response");
+    }
+
+    @Test
+    @DisplayName("Should still summarize text-only current round messages")
+    void testMergeAndCompressTextOnlyCurrentRoundMessages() {
+        TestModel currentRoundTestModel = new TestModel("Compressed current round summary");
+        AutoContextConfig currentRoundConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(1)
+                        .tokenRatio(0.1)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory currentRoundMemory =
+                new AutoContextMemory(currentRoundConfig, currentRoundTestModel);
+
+        for (int i = 0; i < 8; i++) {
+            currentRoundMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+
+        currentRoundMemory.addMessage(createTextMessage("User query without tools", MsgRole.USER));
+        currentRoundMemory.addMessage(
+                createTextMessage("Assistant draft answer", MsgRole.ASSISTANT));
+        currentRoundMemory.addMessage(
+                createTextMessage("Assistant additional detail", MsgRole.ASSISTANT));
+
+        currentRoundTestModel.reset();
+
+        currentRoundMemory.compressIfNeeded();
+        List<Msg> messages = currentRoundMemory.getMessages();
+
         assertTrue(
                 currentRoundTestModel.getCallCount() > 0,
-                "mergeAndCompressCurrentRoundMessages should call"
-                        + " generateCurrentRoundSummaryFromMessages. Expected at least 1 call, got "
-                        + currentRoundTestModel.getCallCount());
-
-        // Verify that messages were compressed
-        // Original: 8 initial + 1 user + 4 tool messages = 13 messages
-        // After compression: 8 initial + 1 user + 1 compressed = 10 messages (or less)
+                "Text-only current round should still be summarized");
         assertTrue(
-                messages.size() <= 10,
-                "Messages should be compressed. Expected 10 or less, got " + messages.size());
-
-        // Verify that the compressed message contains the expected format
-        boolean hasCompressedMessage = false;
-        for (Msg msg : messages) {
-            String content = msg.getTextContent();
-            if (content != null
-                    && (content.contains("compressed_current_round")
-                            || content.contains("Compressed current round summary"))) {
-                hasCompressedMessage = true;
-                break;
-            }
-        }
-        assertTrue(hasCompressedMessage, "Should contain compressed current round message");
-
-        // Verify that tool messages were offloaded (can be reloaded)
-        boolean hasOffloadHint = false;
-        for (Msg msg : messages) {
-            String content = msg.getTextContent();
-            if (content != null
-                    && (content.contains("uuid:")
-                            || content.contains("uuid=")
-                            || content.contains("CONTEXT_OFFLOAD")
-                            || content.contains("reload")
-                            || content.contains("context_reload")
-                            || content.contains("offloaded"))) {
-                hasOffloadHint = true;
-                break;
-            }
-        }
+                messages.stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent()
+                                                        .contains(
+                                                                "Compressed current round"
+                                                                        + " summary")),
+                "Should contain compressed current round message");
         assertTrue(
-                hasOffloadHint,
-                "Compressed message should contain offload hint for reloading original tool"
-                        + " messages");
+                hasCompressionEvent(
+                        currentRoundMemory, CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS),
+                "Text-only current round summary should record compression event");
+    }
 
-        // Verify original storage contains all messages (uncompressed)
-        List<Msg> originalMessages = currentRoundMemory.getOriginalMemoryMsgs();
-        assertEquals(
-                13, originalMessages.size(), "Original storage should contain all 13 messages");
-
-        // Verify that tool messages were offloaded to offloadContext
-        Map<String, List<Msg>> offloadContext = currentRoundMemory.getOffloadContext();
-        assertTrue(
-                !offloadContext.isEmpty(),
-                "OffloadContext should contain offloaded tool messages from current round"
-                        + " compression");
-        // Should have at least one offloaded entry for the tool messages
-        assertTrue(
-                offloadContext.size() >= 1,
-                "Should have at least 1 offloaded entry. Got " + offloadContext.size());
+    private boolean hasCompressionEvent(AutoContextMemory memory, String eventType) {
+        return memory.getCompressionEvents().stream()
+                .anyMatch(event -> eventType.equals(event.getEventType()));
     }
 
     @Test
@@ -2201,6 +2277,7 @@ class AutoContextMemoryTest {
                                                 .build()))
                         .build();
         testMemory.addMessage(mixedMsg);
+        testMemory.addMessage(createTextMessage("Final response", MsgRole.ASSISTANT));
 
         // Trigger compression
         testMemory.compressIfNeeded();
@@ -2294,6 +2371,7 @@ class AutoContextMemoryTest {
                                                 .input(new HashMap<>())
                                                 .build()))
                         .build());
+        testMemory.addMessage(createTextMessage("Final response", MsgRole.ASSISTANT));
 
         // Create a large TOOL message with ToolResultBlock containing large output
         String largeToolOutput = "y".repeat(200); // exceeds largePayloadThreshold

@@ -278,6 +278,11 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             log.info("Strategy 4: SKIPPED - No previous round conversations to summarize");
         }
 
+        if (isCurrentRoundToolInFlight(currentContextMessages)) {
+            log.info("Strategy 5/6: SKIPPED - current round has in-flight tool invocation");
+            return false;
+        }
+
         // Strategy 5: Summarize and offload current round large messages
         log.info("Strategy 5: Checking for current round large messages to summarize");
         boolean currentRoundLargeSummarized =
@@ -303,6 +308,38 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
         log.warn("All compression strategies exhausted but context still exceeds threshold");
         return false;
+    }
+
+    private boolean isCurrentRoundToolInFlight(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return false;
+        }
+
+        int latestUserIndex = -1;
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            if (msgs.get(i).getRole() == MsgRole.USER) {
+                latestUserIndex = i;
+                break;
+            }
+        }
+
+        if (latestUserIndex < 0) {
+            return false;
+        }
+
+        boolean hasToolBlock = false;
+        boolean hasFinalAssistant = false;
+        for (int i = latestUserIndex + 1; i < msgs.size(); i++) {
+            Msg msg = msgs.get(i);
+            if (MsgUtils.isToolUseMessage(msg) || MsgUtils.isToolResultMessage(msg)) {
+                hasToolBlock = true;
+            }
+            if (MsgUtils.isFinalAssistantResponse(msg)) {
+                hasFinalAssistant = true;
+            }
+        }
+
+        return hasToolBlock && !hasFinalAssistant;
     }
 
     Mono<Boolean> compressIfNeededAsync() {
