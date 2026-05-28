@@ -50,30 +50,11 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.legacy.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
 import io.agentscope.core.legacy.hook.PendingToolRecoveryHook;
 import io.agentscope.core.legacy.hook.PostActingEvent;
-import io.agentscope.core.legacy.hook.PreReasoningEvent;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
-import io.agentscope.core.legacy.memory.LongTermMemory;
-import io.agentscope.core.legacy.memory.LongTermMemoryMode;
-import io.agentscope.core.legacy.memory.LongTermMemoryTools;
 import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.legacy.memory.StateBackedMemory;
-import io.agentscope.core.legacy.memory.StaticLongTermMemoryHook;
-import io.agentscope.core.legacy.plan.PlanNotebook;
-import io.agentscope.core.legacy.rag.GenericRAGHook;
-import io.agentscope.core.legacy.rag.Knowledge;
-import io.agentscope.core.legacy.rag.KnowledgeRetrievalTools;
-import io.agentscope.core.legacy.rag.RAGMode;
-import io.agentscope.core.legacy.rag.model.Document;
-import io.agentscope.core.legacy.rag.model.RetrieveConfig;
-import io.agentscope.core.legacy.skill.SkillBox;
-import io.agentscope.core.legacy.skill.SkillHook;
 import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
-import io.agentscope.core.legacy.state.AgentMetaState;
-import io.agentscope.core.legacy.state.StatePersistence;
-import io.agentscope.core.legacy.state.ToolkitState;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -104,9 +85,9 @@ import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.LegacyStateLoader;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
-import io.agentscope.core.storage.StorageBase;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
@@ -160,7 +141,6 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -250,6 +230,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     // ==================== Core Dependencies ====================
 
     /**
+     * Read-only adapter exposing {@link #state}'s context as a legacy {@link Memory} so legacy
+     * hooks (which call {@link #getMemory()}) keep working. The core flow does not use this; it
+     * mutates {@link AgentState#contextMutable()} directly.
+     *
      * @deprecated since 2.0.0. Conversation context is now held on
      *     {@link io.agentscope.core.state.AgentState#getContext()}.
      */
@@ -263,23 +247,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     private final ExecutionConfig toolExecutionConfig;
     private final GenerateOptions generateOptions;
 
-    /**
-     * @deprecated since 2.0.0. The plan package is removed; manage task hints in application code.
-     */
-    @Deprecated(since = "2.0.0")
-    private final PlanNotebook planNotebook;
-
     private final ToolExecutionContext toolExecutionContext;
-
-    /**
-     * @deprecated since 2.0.0. Persist via {@link io.agentscope.core.state.AgentState} together
-     *     with an external storage backend.
-     */
-    @Deprecated(since = "2.0.0")
-    private final StatePersistence statePersistence;
 
     private final List<Middleware> middlewares;
     private RuntimeContext pendingRuntimeContext;
+
+    // ==================== Persistence ====================
+
+    private final Session session;
+    private final SessionKey sessionKey;
 
     // ==================== 2.0 Core Fields ====================
 
@@ -317,10 +293,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     private WorkspaceManager workspaceManager;
 
     private CompactionHook compactionHook;
-    private Session defaultSession;
     private SandboxContext defaultSandboxContext;
     private List<AgentSkillRepository> skillRepositories = List.of();
-    private StorageBase storage;
 
     /**
      * SQLite-backed workspace index allocated during {@link Builder#build()} when the agent is
@@ -352,41 +326,19 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
-        this.planNotebook = builder.planNotebook;
         this.toolExecutionContext = builder.toolExecutionContext;
-        this.statePersistence =
-                builder.statePersistence != null
-                        ? builder.statePersistence
-                        : StatePersistence.all();
         this.middlewares = List.copyOf(builder.middlewares);
 
-        AgentState resolvedState = builder.agentState;
-        if (resolvedState == null) {
-            AgentState.Builder asb = AgentState.builder().sessionId(getAgentId());
-            if (builder.permissionContext != null) {
-                asb.permissionContext(builder.permissionContext);
-            }
-            resolvedState = asb.build();
-        } else if (builder.permissionContext != null
-                && resolvedState.getPermissionContext() == null) {
-            resolvedState =
-                    AgentState.builder()
-                            .sessionId(resolvedState.getSessionId())
-                            .permissionContext(builder.permissionContext)
-                            .build();
-        }
-        this.state = resolvedState;
+        this.session = builder.session;
+        this.sessionKey =
+                builder.sessionKey != null
+                        ? builder.sessionKey
+                        : SimpleSessionKey.of(builder.name != null ? builder.name : "ReActAgent");
+        this.state = loadOrCreateAgentState(this.session, this.sessionKey, builder, getAgentId());
 
         // Restore toolkit activeGroups from persisted state
         if (agentToolkit != null && !this.state.getToolContext().getActivatedGroups().isEmpty()) {
             agentToolkit.setActiveGroups(this.state.getToolContext().getActivatedGroups());
-        }
-
-        // Migrate any pre-seeded messages from builder.memory into state context
-        if (builder.memory != null
-                && this.state.contextMutable().isEmpty()
-                && !builder.memory.getMessages().isEmpty()) {
-            this.state.contextMutable().addAll(builder.memory.getMessages());
         }
         this.memory = new StateBackedMemory(this.state);
         this.modelConfig =
@@ -403,6 +355,66 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         ? new ContextCompressor(this.contextConfig, builder.model)
                         : null;
         this.hookDispatcher = new LegacyHookDispatcher(this);
+
+        // Wire automatic state save on shutdown / interrupt.
+        if (this.session != null) {
+            shutdownManager.bindStateSaver(
+                    this, agentState -> session.save(sessionKey, "agent_state", agentState));
+        }
+    }
+
+    /**
+     * Initial agent-state load. Tries (in order): the configured Session for an {@code agent_state}
+     * entry, the v1 legacy session keys ({@code memory_messages} + {@code toolkit_activeGroups})
+     * via {@link LegacyStateLoader}, and finally a fresh state if neither yields anything.
+     */
+    private static AgentState loadOrCreateAgentState(
+            Session session, SessionKey sessionKey, Builder builder, String agentId) {
+        AgentState fresh = freshState(builder, agentId);
+        if (session == null) {
+            return fresh;
+        }
+        try {
+            return session.get(sessionKey, "agent_state", AgentState.class)
+                    .orElseGet(
+                            () -> {
+                                AgentState legacy =
+                                        LegacyStateLoader.loadFromLegacySession(
+                                                session, sessionKey);
+                                if (legacy != null
+                                        && (!legacy.getContext().isEmpty()
+                                                || !legacy.getToolContext()
+                                                        .getActivatedGroups()
+                                                        .isEmpty())) {
+                                    return legacy;
+                                }
+                                return fresh;
+                            });
+        } catch (Exception e) {
+            log.warn("Failed to load AgentState from session {}: {}", sessionKey, e.getMessage());
+            return fresh;
+        }
+    }
+
+    private static AgentState freshState(Builder builder, String agentId) {
+        AgentState.Builder asb = AgentState.builder().sessionId(agentId);
+        if (builder.permissionContext != null) {
+            asb.permissionContext(builder.permissionContext);
+        }
+        return asb.build();
+    }
+
+    /**
+     * Persist the current {@link AgentState} via the configured {@link Session}, or {@code
+     * Mono.empty()} when no Session was provided. Synchronises toolkit activeGroups into the state
+     * before writing.
+     */
+    private Mono<Void> saveStateToSession() {
+        if (session == null) {
+            return Mono.empty();
+        }
+        syncToolkitToState();
+        return Mono.fromRunnable(() -> session.save(sessionKey, "agent_state", state));
     }
 
     // ==================== RuntimeContext ====================
@@ -475,24 +487,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * binds the runtime context.
      */
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
-        if (workspaceManager == null && compactionHook == null && storage == null) {
+        if (workspaceManager == null && compactionHook == null) {
             // Not orchestrated: original lightweight behavior.
             this.pendingRuntimeContext = context;
             return call(msgs);
         }
         final RuntimeContext effective =
                 ensureSessionDefaults(context != null ? context : RuntimeContext.empty());
-        if (storage != null) {
-            try {
-                String sid = effective.getSessionId();
-                if (sid == null || sid.isBlank()) {
-                    sid = getName();
-                }
-                loadStateFromStorage(sid).block();
-            } catch (Exception e) {
-                log.warn("Failed to load state from StorageBase: {}", e.getMessage());
-            }
-        }
         this.pendingRuntimeContext = effective;
         Mono<Msg> result = call(msgs);
         if (compactionHook != null) {
@@ -589,104 +590,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return streamEvents(List.of(msg));
     }
 
-    // ==================== New StateModule API ====================
-
-    /**
-     * Save agent state to the session using the new API.
-     *
-     * <p>This method saves the state of all managed components according to the StatePersistence
-     * configuration:
-     *
-     * <ul>
-     *   <li>Agent metadata (always saved)
-     *   <li>Memory messages (if memoryManaged is true)
-     *   <li>Toolkit activeGroups (if toolkitManaged is true)
-     *   <li>PlanNotebook state (if planNotebookManaged is true)
-     * </ul>
-     *
-     * @param session the session to save state to
-     * @param sessionKey the session identifier
-     * @deprecated since 2.0.0. Persist via {@link io.agentscope.core.state.AgentState} together
-     *     with an external storage backend.
-     */
-    @Deprecated(since = "2.0.0")
-    @Override
-    @SuppressWarnings("deprecation")
-    public void saveTo(Session session, SessionKey sessionKey) {
-        // Save agent metadata
-        session.save(
-                sessionKey,
-                "agent_meta",
-                new AgentMetaState(getAgentId(), getName(), getDescription(), sysPrompt));
-
-        // Save memory if managed
-        if (statePersistence.memoryManaged()) {
-            memory.saveTo(session, sessionKey);
-        }
-
-        // Save toolkit activeGroups if managed
-        if (statePersistence.toolkitManaged() && toolkit != null) {
-            session.save(
-                    sessionKey,
-                    "toolkit_activeGroups",
-                    new ToolkitState(toolkit.getActiveGroups()));
-        }
-
-        // Save PlanNotebook if managed
-        if (statePersistence.planNotebookManaged() && planNotebook != null) {
-            planNotebook.saveTo(session, sessionKey);
-        }
-    }
-
-    /**
-     * Load agent state from the session using the new API.
-     *
-     * <p>This method loads the state of all managed components according to the StatePersistence
-     * configuration.
-     *
-     * @param session the session to load state from
-     * @param sessionKey the session identifier
-     * @deprecated since 2.0.0. Persist via {@link io.agentscope.core.state.AgentState} together
-     *     with an external storage backend.
-     */
-    @Deprecated(since = "2.0.0")
-    @Override
-    @SuppressWarnings("deprecation")
-    public boolean loadIfExists(Session session, SessionKey sessionKey) {
-        shutdownManager.bindSession(this, session, sessionKey);
-        return super.loadIfExists(session, sessionKey);
-    }
-
-    /**
-     * @deprecated since 2.0.0. Persist via {@link io.agentscope.core.state.AgentState} together
-     *     with an external storage backend.
-     */
-    @Deprecated(since = "2.0.0")
-    @Override
-    @SuppressWarnings("deprecation")
-    public void loadFrom(Session session, SessionKey sessionKey) {
-        shutdownManager.bindSession(this, session, sessionKey);
-        // Load memory if managed
-        if (statePersistence.memoryManaged()) {
-            memory.loadFrom(session, sessionKey);
-        }
-
-        // Load toolkit activeGroups if managed
-        if (statePersistence.toolkitManaged() && toolkit != null) {
-            session.get(sessionKey, "toolkit_activeGroups", ToolkitState.class)
-                    .ifPresent(state -> toolkit.setActiveGroups(state.activeGroups()));
-        }
-
-        // Load PlanNotebook if managed
-        if (statePersistence.planNotebookManaged() && planNotebook != null) {
-            planNotebook.loadFrom(session, sessionKey);
-        }
-    }
-
     // ==================== Protected API ====================
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
+        return doCallInner(msgs).flatMap(result -> saveStateToSession().thenReturn(result));
+    }
+
+    private Mono<Msg> doCallInner(List<Msg> msgs) {
         Set<String> pendingIds = getPendingToolUseIds();
 
         // No pending tools -> normal processing
@@ -1944,25 +1855,16 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     // ==================== Getters ====================
 
     /**
-     * @deprecated since 2.0.0. Conversation context is now held on
-     *     {@link io.agentscope.core.state.AgentState#getContext()}.
+     * Read-only adapter exposing the agent's conversation context as a legacy {@link Memory}.
+     * Retained so legacy hooks (e.g. {@code PendingToolRecoveryHook}, {@code StructuredOutputHook})
+     * keep compiling against the 1.0.x API; the live state lives on {@link AgentState}.
+     *
+     * @deprecated since 2.0.0. Use {@link #getAgentState()} instead.
      */
     @Deprecated(since = "2.0.0")
-    @Override
     @SuppressWarnings("deprecation")
     public Memory getMemory() {
         return memory;
-    }
-
-    /**
-     * @deprecated since 2.0.0. Memory cannot be replaced after construction; conversation context
-     *     is held on {@link io.agentscope.core.state.AgentState#getContext()}.
-     */
-    @Deprecated(since = "2.0.0")
-    public void setMemory(Memory memory) {
-        throw new UnsupportedOperationException(
-                "Memory cannot be replaced after agent construction. "
-                        + "Create a new agent instance if you need different memory.");
     }
 
     public String getSysPrompt() {
@@ -1975,15 +1877,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     public int getMaxIters() {
         return maxIters;
-    }
-
-    /**
-     * @deprecated since 2.0.0. The plan package is removed; manage task hints in application code.
-     */
-    @Deprecated(since = "2.0.0")
-    @SuppressWarnings("deprecation")
-    public PlanNotebook getPlanNotebook() {
-        return planNotebook;
     }
 
     /**
@@ -2007,83 +1900,19 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return state;
     }
 
+    /** Returns the {@link Session} configured for state persistence, or {@code null}. */
+    public Session getSession() {
+        return session;
+    }
+
+    /** Returns the {@link SessionKey} used when persisting state. */
+    public SessionKey getSessionKey() {
+        return sessionKey;
+    }
+
     private void syncToolkitToState() {
         if (toolkit != null) {
             state.getToolContext().setActivatedGroups(toolkit.getActiveGroups());
-        }
-    }
-
-    /** Returns the configured {@link StorageBase}, or {@code null} if not set. */
-    public StorageBase getStorage() {
-        return storage;
-    }
-
-    /**
-     * Persist the current {@link AgentState} via the configured {@link StorageBase}.
-     *
-     * <p>Synchronises toolkit active groups into the state before saving. Returns
-     * {@link Mono#empty()} when no {@code StorageBase} is configured.
-     */
-    public Mono<Void> saveStateToStorage() {
-        if (storage == null) {
-            return Mono.empty();
-        }
-        syncToolkitToState();
-        return storage.saveAgentState(state.getSessionId(), getAgentId(), state);
-    }
-
-    /**
-     * Load agent state from the configured {@link StorageBase} and merge into the live state.
-     */
-    Mono<Void> loadStateFromStorage(String sessionId) {
-        if (storage == null) {
-            return Mono.empty();
-        }
-        return storage.loadAgentState(sessionId, getAgentId())
-                .doOnNext(this::applyLoadedState)
-                .then();
-    }
-
-    /**
-     * Load agent state from the given {@link StorageBase} and merge into the live state.
-     *
-     * <p>This overload is intended for callers that hold the storage externally (e.g.
-     * {@code SubAgentTool}).
-     *
-     * @param externalStorage the storage to load from
-     * @param sessionId the session identifier
-     */
-    public Mono<Void> loadStateFromStorage(StorageBase externalStorage, String sessionId) {
-        return externalStorage
-                .loadAgentState(sessionId, getAgentId())
-                .doOnNext(this::applyLoadedState)
-                .then();
-    }
-
-    /**
-     * Persist the current {@link AgentState} to the given {@link StorageBase}.
-     *
-     * <p>This overload is intended for callers that hold the storage externally (e.g.
-     * {@code SubAgentTool}).
-     *
-     * @param externalStorage the storage to save to
-     * @param sessionId the session identifier
-     */
-    public Mono<Void> saveStateToStorage(StorageBase externalStorage, String sessionId) {
-        syncToolkitToState();
-        return externalStorage.saveAgentState(sessionId, getAgentId(), state);
-    }
-
-    private void applyLoadedState(AgentState loaded) {
-        state.contextMutable().clear();
-        state.contextMutable().addAll(loaded.getContext());
-        state.setSummary(loaded.getSummary());
-        state.setReplyId(loaded.getReplyId());
-        state.setCurIter(loaded.getCurIter());
-        state.setShutdownInterrupted(loaded.isShutdownInterrupted());
-        state.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
-        if (toolkit != null && !loaded.getToolContext().getActivatedGroups().isEmpty()) {
-            toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
         }
     }
 
@@ -2147,29 +1976,17 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             BiFunction<String, String, WorkspaceManager> workspaceFactory,
             Function<String, Session> sessionFactory,
             WorkspaceIndex ownedWorkspaceIndex,
-            Session defaultSession,
             SandboxContext defaultSandboxContext,
             CompactionHook compactionHook,
-            List<AgentSkillRepository> skillRepositories,
-            StorageBase storage) {
+            List<AgentSkillRepository> skillRepositories) {
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
         this.sessionFactory = sessionFactory;
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
-        this.defaultSession = defaultSession;
         this.defaultSandboxContext = defaultSandboxContext;
         this.compactionHook = compactionHook;
         this.skillRepositories =
                 skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
-        this.storage = storage;
-        if (storage != null) {
-            shutdownManager.bindStateSaver(
-                    this,
-                    agentState ->
-                            storage.saveAgentState(
-                                            agentState.getSessionId(), getAgentId(), agentState)
-                                    .block());
-        }
     }
 
     /**
@@ -2214,23 +2031,23 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * default sandbox context.
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
-        Session session = ctx.getSession();
-        if (session == null) {
+        Session ctxSession = ctx.getSession();
+        if (ctxSession == null) {
             String uid = ctx.getUserId();
             if (sessionFactory != null && uid != null && !uid.isBlank()) {
                 Session perCall = sessionFactory.apply(uid);
-                session = perCall != null ? perCall : defaultSession;
+                ctxSession = perCall != null ? perCall : this.session;
             } else {
-                session = defaultSession;
+                ctxSession = this.session;
             }
         }
-        SessionKey sessionKey = ctx.getSessionKey();
-        if (sessionKey == null) {
+        SessionKey ctxSessionKey = ctx.getSessionKey();
+        if (ctxSessionKey == null) {
             String id = ctx.getSessionId();
             if (id != null && !id.isBlank()) {
-                sessionKey = SimpleSessionKey.of(id);
+                ctxSessionKey = SimpleSessionKey.of(id);
             } else {
-                sessionKey = SimpleSessionKey.of(getName());
+                ctxSessionKey = SimpleSessionKey.of(getName());
             }
         }
         SandboxContext sandboxCtx =
@@ -2238,16 +2055,16 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         ? ctx.get(SandboxContext.class)
                         : defaultSandboxContext;
 
-        if (session == ctx.getSession()
-                && sessionKey == ctx.getSessionKey()
+        if (ctxSession == ctx.getSession()
+                && ctxSessionKey == ctx.getSessionKey()
                 && sandboxCtx == ctx.get(SandboxContext.class)) {
             return ctx;
         }
         return RuntimeContext.builder()
                 .sessionId(ctx.getSessionId())
                 .userId(ctx.getUserId())
-                .session(session)
-                .sessionKey(sessionKey)
+                .session(ctxSession)
+                .sessionKey(ctxSessionKey)
                 .putAll(ctx.getExtra())
                 .put(SandboxContext.class, sandboxCtx)
                 .build();
@@ -2331,13 +2148,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         Model model;
         Toolkit toolkit = new Toolkit();
 
-        /**
-         * @deprecated since 2.0.0. Conversation context is now held on
-         *     {@link io.agentscope.core.state.AgentState#getContext()}.
-         */
-        @Deprecated(since = "2.0.0")
-        private Memory memory = new InMemoryMemory();
-
         int maxIters = 10;
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
@@ -2348,77 +2158,16 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
 
-        /**
-         * @deprecated since 2.0.0. The plan package is removed; manage task hints in application
-         *     code.
-         */
-        @Deprecated(since = "2.0.0")
-        private PlanNotebook planNotebook;
-
-        /**
-         * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs
-         *     in application code.
-         */
-        @Deprecated(since = "2.0.0")
-        private SkillBox skillBox;
-
         private ToolExecutionContext toolExecutionContext;
         private boolean enablePendingToolRecovery = false;
 
-        // Long-term memory configuration
-        /**
-         * @deprecated since 2.0.0. Long-term memory is removed; integrate cross-session
-         *     persistence at the application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        private LongTermMemory longTermMemory;
-
-        /**
-         * @deprecated since 2.0.0. Long-term memory is removed; integrate cross-session
-         *     persistence at the application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
-
-        /**
-         * @deprecated since 2.0.0. Long-term memory is removed; integrate cross-session
-         *     persistence at the application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        private boolean longTermMemoryAsyncRecord = false;
-
-        // State persistence configuration
-        /**
-         * @deprecated since 2.0.0. Persist via {@link io.agentscope.core.state.AgentState}
-         *     together with an external storage backend.
-         */
-        @Deprecated(since = "2.0.0")
-        private StatePersistence statePersistence;
-
-        // RAG configuration
-        /**
-         * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the
-         *     application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        private final Set<Knowledge> knowledgeBases = new LinkedHashSet<>();
-
-        /**
-         * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the
-         *     application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        private RAGMode ragMode = RAGMode.GENERIC;
-
-        private RetrieveConfig retrieveConfig =
-                RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
-
         // 2.0 core fields
-        private AgentState agentState;
         private ModelConfig modelConfig;
         private ContextConfig contextConfig;
         private ReactConfig reactConfig;
         private PermissionContext permissionContext;
+        private Session session;
+        private SessionKey sessionKey;
 
         // ==================== Harness orchestration fields ====================
 
@@ -2437,8 +2186,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         Path workspace;
         String environmentMemory;
         AbstractFilesystem abstractFilesystem;
-        Session session;
-        StorageBase storage;
         SandboxDistributedOptions sandboxDistributedOptions;
 
         boolean leafSubagent = false;
@@ -2543,20 +2290,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          */
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
-            return this;
-        }
-
-        /**
-         * Sets the memory for storing conversation history.
-         *
-         * @param memory The memory implementation, can be null (defaults to InMemoryMemory)
-         * @return This builder instance for method chaining
-         * @deprecated since 2.0.0. Conversation context is now held on
-         *     {@link io.agentscope.core.state.AgentState#getContext()}.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder memory(Memory memory) {
-            this.memory = memory;
             return this;
         }
 
@@ -2738,219 +2471,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * Sets the PlanNotebook for plan-based task execution.
-         *
-         * <p>When provided, the PlanNotebook will be integrated into the agent:
-         * <ul>
-         *   <li>Plan management tools will be automatically registered to the toolkit
-         *   <li>A hook will be added to inject plan hints before each reasoning step
-         * </ul>
-         *
-         * @param planNotebook The configured PlanNotebook instance, can be null
-         * @return This builder instance for method chaining
-         * @deprecated since 2.0.0. The plan package is removed; manage task hints in application
-         *     code.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder planNotebook(PlanNotebook planNotebook) {
-            this.planNotebook = planNotebook;
-            return this;
-        }
-
-        /**
-         * Sets the skill box for this agent.
-         *
-         * <p>The skill box is used to manage the skills for this agent. It will be used to register the skills to the toolkit.
-         * <ul>
-         *   <li>Skill loader tools will be automatically registered to the toolkit</li>
-         *   <li>A skill hook will be added to inject skill prompts on {@link io.agentscope.core.legacy.hook.PreCallEvent}
-         *       and manage skill activation</li>
-         * </ul>
-         * @param skillBox The skill box to use for this agent
-         * @return This builder instance for method chaining
-         * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs
-         *     in application code.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder skillBox(SkillBox skillBox) {
-            this.skillBox = skillBox;
-            return this;
-        }
-
-        /**
-         * Sets the long-term memory for this agent.
-         *
-         * <p>Long-term memory enables the agent to remember information across sessions.
-         * It can be used in combination with {@link #longTermMemoryMode(LongTermMemoryMode)}
-         * to control whether memory management is automatic, agent-controlled, or both.
-         *
-         * @param longTermMemory The long-term memory implementation
-         * @return This builder instance for method chaining
-         * @see LongTermMemoryMode
-         * @deprecated since 2.0.0. Long-term memory is removed; integrate cross-session
-         *     persistence at the application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder longTermMemory(LongTermMemory longTermMemory) {
-            this.longTermMemory = longTermMemory;
-            return this;
-        }
-
-        /**
-         * Sets the long-term memory mode.
-         *
-         * <p>This determines how long-term memory is integrated with the agent:
-         * <ul>
-         *   <li><b>AGENT_CONTROL:</b> Memory tools are registered for agent to call</li>
-         *   <li><b>STATIC_CONTROL:</b> Framework automatically retrieves/records memory</li>
-         *   <li><b>BOTH:</b> Combines both approaches (default)</li>
-         * </ul>
-         *
-         * @param mode The long-term memory mode
-         * @return This builder instance for method chaining
-         * @see LongTermMemoryMode
-         * @deprecated since 2.0.0. Long-term memory is removed; integrate cross-session
-         *     persistence at the application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder longTermMemoryMode(LongTermMemoryMode mode) {
-            this.longTermMemoryMode = mode;
-            return this;
-        }
-
-        /**
-         * Sets whether long-term memory recording should be performed asynchronously.
-         *
-         * <p>When enabled, the framework will record memories to long-term storage
-         * in a fire-and-forget manner, without blocking the agent's main execution flow.
-         * This improves response latency but means memory persistence is not guaranteed
-         * before the agent returns its response.
-         *
-         * <p>When disabled (default), the framework waits for the recording operation
-         * to complete before returning the agent's response. This ensures memory
-         * persistence is finalized but may increase response latency.
-         *
-         * <p>Note: This setting only affects the static control mode (STATIC_CONTROL, BOTH).
-         * Agent-controlled recording through tools is always synchronous.
-         *
-         * @param asyncRecord Whether to record memories asynchronously
-         * @return This builder instance for method chaining
-         * @deprecated since 2.0.0. Long-term memory is removed; integrate cross-session
-         *     persistence at the application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder longTermMemoryAsyncRecord(boolean asyncRecord) {
-            this.longTermMemoryAsyncRecord = asyncRecord;
-            return this;
-        }
-
-        /**
-         * Sets the state persistence configuration.
-         *
-         * <p>Use this to control which components' state is managed by the agent during
-         * saveTo/loadFrom operations. By default, all components are managed.
-         *
-         * <p>Example usage:
-         *
-         * <pre>{@code
-         * ReActAgent agent = ReActAgent.builder()
-         *     .name("assistant")
-         *     .model(model)
-         *     .statePersistence(StatePersistence.builder()
-         *         .planNotebookManaged(false)  // Let user manage PlanNotebook separately
-         *         .build())
-         *     .build();
-         * }</pre>
-         *
-         * @param statePersistence The state persistence configuration
-         * @return This builder instance for method chaining
-         * @see StatePersistence
-         * @deprecated since 2.0.0. Persist via {@link io.agentscope.core.state.AgentState}
-         *     together with an external storage backend.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder statePersistence(StatePersistence statePersistence) {
-            this.statePersistence = statePersistence;
-            return this;
-        }
-
-        /**
-         * Enables plan functionality with default configuration.
-         *
-         * <p>This is a convenience method equivalent to:
-         * <pre>{@code
-         * planNotebook(PlanNotebook.builder().build())
-         * }</pre>
-         *
-         * @return This builder instance for method chaining
-         */
-        public Builder enablePlan() {
-            this.planNotebook = PlanNotebook.builder().build();
-            return this;
-        }
-
-        /**
-         * Adds a knowledge base for RAG (Retrieval-Augmented Generation).
-         *
-         * @param knowledge The knowledge base to add
-         * @return This builder instance for method chaining
-         * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the
-         *     application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder knowledge(Knowledge knowledge) {
-            if (knowledge != null) {
-                this.knowledgeBases.add(knowledge);
-            }
-            return this;
-        }
-
-        /**
-         * Adds multiple knowledge bases for RAG.
-         *
-         * @param knowledges The list of knowledge bases to add
-         * @return This builder instance for method chaining
-         * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the
-         *     application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder knowledges(List<Knowledge> knowledges) {
-            if (knowledges != null) {
-                this.knowledgeBases.addAll(knowledges);
-            }
-            return this;
-        }
-
-        /**
-         * Sets the RAG mode.
-         *
-         * @param mode The RAG mode (GENERIC, AGENTIC, or NONE)
-         * @return This builder instance for method chaining
-         * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the
-         *     application layer.
-         */
-        @Deprecated(since = "2.0.0")
-        public Builder ragMode(RAGMode mode) {
-            if (mode != null) {
-                this.ragMode = mode;
-            }
-            return this;
-        }
-
-        /**
-         * Sets the retrieve configuration for RAG.
-         *
-         * @param config The retrieve configuration
-         * @return This builder instance for method chaining
-         */
-        public Builder retrieveConfig(RetrieveConfig config) {
-            if (config != null) {
-                this.retrieveConfig = config;
-            }
-            return this;
-        }
-
-        /**
          * Sets the tool execution context for this agent.
          *
          * <p>This context will be passed to all tools invoked by this agent and can include
@@ -2967,12 +2487,21 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * Sets the {@link AgentState} carrying conversation context, permission context, tool
-         * context, and tasks context. When unset, the agent constructs a default state with
-         * {@code sessionId = getAgentId()}.
+         * Sets the {@link Session} backing automatic AgentState load (at construction) and save
+         * (after every successful {@code call()} and on graceful shutdown). When {@code null}, the
+         * agent runs purely in-memory and persistence is a no-op.
          */
-        public Builder agentState(AgentState agentState) {
-            this.agentState = agentState;
+        public Builder session(Session session) {
+            this.session = session;
+            return this;
+        }
+
+        /**
+         * Sets the {@link SessionKey} used when reading / writing the {@code agent_state} entry.
+         * Defaults to {@code SimpleSessionKey.of(name)} when unset.
+         */
+        public Builder sessionKey(SessionKey sessionKey) {
+            this.sessionKey = sessionKey;
             return this;
         }
 
@@ -3005,8 +2534,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         /**
          * Sets the {@link PermissionContext} consulted by the {@link PermissionEngine} during tool
-         * execution. When both this and {@link #agentState(AgentState)} are unset, an empty
-         * permission context is used (PASSTHROUGH for all tools).
+         * execution. When unset, an empty permission context is used (PASSTHROUGH for all tools).
          */
         public Builder permissionContext(PermissionContext permissionContext) {
             this.permissionContext = permissionContext;
@@ -3124,20 +2652,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         /** Configures Mode 3 — local filesystem with shell. */
         public Builder filesystem(LocalFilesystemSpec spec) {
             this.localFilesystemSpec = spec;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Sets the default {@link Session} used for state persistence. */
-        public Builder session(Session session) {
-            this.session = session;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Sets the {@link StorageBase} for persisting {@link AgentState}. */
-        public Builder storage(StorageBase storage) {
-            this.storage = storage;
             this.harnessOrchestrationEnabled = true;
             return this;
         }
@@ -3363,7 +2877,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             b.model = agent.getModel();
             b.maxIters = agent.getMaxIters();
             b.generateOptions = agent.getGenerateOptions();
-            b.planNotebook = agent.getPlanNotebook();
             b.toolkit = agent.getToolkit().copy();
             return b;
         }
@@ -3392,26 +2905,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 hooks.add(new PendingToolRecoveryHook());
             }
 
-            // Configure long-term memory if provided
-            if (longTermMemory != null) {
-                configureLongTermMemory(agentToolkit);
-            }
-
-            // Configure RAG if knowledge bases are provided
-            if (!knowledgeBases.isEmpty()) {
-                configureRAG(agentToolkit);
-            }
-
-            // Configure PlanNotebook if provided
-            if (planNotebook != null) {
-                configurePlan(agentToolkit);
-            }
-
-            // Configure SkillBox if provided
-            if (skillBox != null) {
-                configureSkillBox(agentToolkit);
-            }
-
             ReActAgent agent = new ReActAgent(this, agentToolkit);
 
             if (harnessResult != null) {
@@ -3420,11 +2913,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         harnessResult.workspaceFactory,
                         harnessResult.sessionFactory,
                         harnessResult.ownedWorkspaceIndex,
-                        harnessResult.defaultSession,
                         harnessResult.defaultSandboxContext,
                         harnessResult.compactionHook,
-                        harnessResult.skillRepositories,
-                        harnessResult.storage);
+                        harnessResult.skillRepositories);
                 if (harnessResult.selfRef != null) {
                     harnessResult.selfRef.set(agent);
                 }
@@ -3441,12 +2932,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             BiFunction<String, String, WorkspaceManager> workspaceFactory;
             Function<String, Session> sessionFactory;
             WorkspaceIndex ownedWorkspaceIndex;
-            Session defaultSession;
             SandboxContext defaultSandboxContext;
             CompactionHook compactionHook;
             List<AgentSkillRepository> skillRepositories;
             AtomicReference<ReActAgent> selfRef;
-            StorageBase storage;
         }
 
         /**
@@ -3587,9 +3076,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             }
                             : null;
 
-            // ---- Memory: harness builds always use InMemoryMemory ----
-            this.memory = new InMemoryMemory();
-
             // ---- Hooks ----
             if (sandboxLifecycleHook != null) {
                 hooks.add(sandboxLifecycleHook);
@@ -3677,17 +3163,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             List<AgentSkillRepository> orderedSkillRepos =
                     ReActAgentBuilderSupport.composeSkillRepositories(
                             this, wsManager, filesystem, currentRcSupplier);
-            if (!orderedSkillRepos.isEmpty()) {
-                if (disableDynamicSkills) {
-                    SkillBox staticBox =
-                            ReActAgentBuilderSupport.staticSkillBoxFromRepos(
-                                    orderedSkillRepos, agentToolkit);
-                    if (staticBox != null) {
-                        this.skillBox = staticBox;
-                    }
-                } else {
-                    hooks.add(new DynamicSkillHook(orderedSkillRepos, agentToolkit));
-                }
+            if (!orderedSkillRepos.isEmpty() && !disableDynamicSkills) {
+                hooks.add(new DynamicSkillHook(orderedSkillRepos, agentToolkit));
             }
 
             // ---- Apply tools.json allow/deny filter ----
@@ -3708,12 +3185,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             result.workspaceFactory = workspaceFactoryFn;
             result.sessionFactory = sessionFactoryFn;
             result.ownedWorkspaceIndex = workspaceIndex;
-            result.defaultSession = effectiveSession;
             result.defaultSandboxContext = defaultSandboxContext;
             result.compactionHook = compactionHook;
             result.skillRepositories = orderedSkillRepos;
             result.selfRef = selfRef;
-            result.storage = storage;
             return result;
         }
 
@@ -3735,179 +3210,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                     }
                 }
             }
-        }
-
-        /**
-         * Configures long-term memory based on the selected mode.
-         *
-         * <p>This method sets up long-term memory integration:
-         * <ul>
-         *   <li>AGENT_CONTROL: Registers memory tools for agent to call</li>
-         *   <li>STATIC_CONTROL: Registers StaticLongTermMemoryHook for automatic retrieval/recording</li>
-         *   <li>BOTH: Combines both approaches (registers tools + hook)</li>
-         * </ul>
-         */
-        private void configureLongTermMemory(Toolkit agentToolkit) {
-            // If agent control is enabled, register memory tools via adapter
-            if (longTermMemoryMode == LongTermMemoryMode.AGENT_CONTROL
-                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
-                agentToolkit.registerTool(new LongTermMemoryTools(longTermMemory));
-            }
-
-            // If static control is enabled, register the hook for automatic memory management
-            if (longTermMemoryMode == LongTermMemoryMode.STATIC_CONTROL
-                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
-                StaticLongTermMemoryHook hook =
-                        new StaticLongTermMemoryHook(
-                                longTermMemory, memory, longTermMemoryAsyncRecord);
-                hooks.add(hook);
-            }
-        }
-
-        /**
-         * Configures RAG (Retrieval-Augmented Generation) based on the selected mode.
-         *
-         * <p>This method automatically sets up the appropriate hooks or tools based on the RAG mode:
-         * <ul>
-         *   <li>GENERIC: Adds a GenericRAGHook to automatically inject knowledge</li>
-         *   <li>AGENTIC: Registers KnowledgeRetrievalTools for agent-controlled retrieval</li>
-         *   <li>NONE: Does nothing</li>
-         * </ul>
-         */
-        private void configureRAG(Toolkit agentToolkit) {
-            // Aggregate knowledge bases if multiple are provided
-            Knowledge aggregatedKnowledge;
-            if (knowledgeBases.size() == 1) {
-                aggregatedKnowledge = knowledgeBases.iterator().next();
-            } else {
-                aggregatedKnowledge = buildAggregatedKnowledge();
-            }
-
-            // Configure based on mode
-            switch (ragMode) {
-                case GENERIC -> {
-                    // Create and add GenericRAGHook
-                    GenericRAGHook ragHook =
-                            new GenericRAGHook(aggregatedKnowledge, retrieveConfig);
-                    hooks.add(ragHook);
-                }
-                case AGENTIC -> {
-                    // Register knowledge retrieval tools
-                    KnowledgeRetrievalTools tools =
-                            new KnowledgeRetrievalTools(aggregatedKnowledge, retrieveConfig);
-                    agentToolkit.registerTool(tools);
-                }
-                case NONE -> {
-                    // Do nothing
-                }
-            }
-        }
-
-        private Knowledge buildAggregatedKnowledge() {
-            return new Knowledge() {
-                @Override
-                public Mono<Void> addDocuments(List<Document> documents) {
-                    return Flux.fromIterable(knowledgeBases)
-                            .flatMap(kb -> kb.addDocuments(documents))
-                            .then();
-                }
-
-                @Override
-                public Mono<List<Document>> retrieve(String query, RetrieveConfig config) {
-                    return Flux.fromIterable(knowledgeBases)
-                            .flatMap(kb -> kb.retrieve(query, config))
-                            .collectList()
-                            .map(this::mergeAndSortResults);
-                }
-
-                private List<Document> mergeAndSortResults(List<List<Document>> allResults) {
-                    return allResults.stream()
-                            .flatMap(List::stream)
-                            .collect(
-                                    Collectors.toMap(
-                                            Document::getId,
-                                            doc -> doc,
-                                            (doc1, doc2) ->
-                                                    doc1.getScore() != null
-                                                                    && doc2.getScore() != null
-                                                                    && doc1.getScore()
-                                                                            > doc2.getScore()
-                                                            ? doc1
-                                                            : doc2))
-                            .values()
-                            .stream()
-                            .sorted(
-                                    Comparator.comparing(
-                                            Document::getScore,
-                                            Comparator.nullsLast(Comparator.reverseOrder())))
-                            .limit(retrieveConfig.getLimit())
-                            .toList();
-                }
-            };
-        }
-
-        /**
-         * Configures PlanNotebook integration.
-         *
-         * <p>This method automatically:
-         * <ul>
-         *   <li>Registers plan management tools to the toolkit
-         *   <li>Adds a hook to inject plan hints before each reasoning step
-         * </ul>
-         */
-        private void configurePlan(Toolkit agentToolkit) {
-            // Register plan tools to toolkit
-            agentToolkit.registerTool(planNotebook);
-
-            // Add plan hint hook
-            Hook planHintHook =
-                    new Hook() {
-                        @Override
-                        public <T extends HookEvent> Mono<T> onEvent(T event) {
-                            if (event instanceof PreReasoningEvent) {
-                                PreReasoningEvent e = (PreReasoningEvent) event;
-                                return planNotebook
-                                        .getCurrentHint()
-                                        .map(
-                                                hintMsg -> {
-                                                    List<Msg> modifiedMsgs =
-                                                            new ArrayList<>(e.getInputMessages());
-                                                    modifiedMsgs.add(hintMsg);
-                                                    e.setInputMessages(modifiedMsgs);
-                                                    return (T) e;
-                                                })
-                                        .defaultIfEmpty(event);
-                            }
-                            return Mono.just(event);
-                        }
-                    };
-
-            hooks.add(planHintHook);
-        }
-
-        /**
-         * Configures SkillBox integration.
-         *
-         * <p>This method automatically:
-         * <ul>
-         *   <li>Registers skill load tool to the toolkit
-         *   <li>Adds the skill hook to inject skill prompts on {@link io.agentscope.core.legacy.hook.PreCallEvent}
-         *       (priority {@link io.agentscope.core.legacy.skill.SkillHook#SKILL_HOOK_PRIORITY}) and manage skill
-         *       activation
-         *   <li>Uploads skill files to the upload directory if auto upload is enabled
-         * </ul>
-         */
-        private void configureSkillBox(Toolkit agentToolkit) {
-            skillBox.bindToolkit(agentToolkit);
-            // Register skill loader tools to toolkit
-            skillBox.registerSkillLoadTool();
-
-            // If auto upload is enabled, upload skill files
-            if (skillBox.isAutoUploadSkill()) {
-                skillBox.uploadSkillFiles();
-            }
-
-            hooks.add(new SkillHook(skillBox));
         }
     }
 }
