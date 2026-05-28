@@ -98,17 +98,25 @@ public class PendingToolRecoveryHook implements Hook {
             return Mono.just(event);
         }
 
-        // Check if user already provided tool results in the input
+        // event.getInputMessages() = memory snapshot + user callArgs
+        // (see AgentBase.notifyPreCall). Extract just the callArgs portion so we only
+        // check the user's current input for ToolResultBlocks, not the entire memory
+        // history which naturally contains ToolResultBlocks from previous tool calls.
         List<Msg> inputMessages = event.getInputMessages();
+        int memorySize = memory.getMessages().size();
+        List<Msg> callArgs =
+                (inputMessages != null && inputMessages.size() > memorySize)
+                        ? inputMessages.subList(memorySize, inputMessages.size())
+                        : List.of();
 
-        // If input is empty/null, the user is resuming (wants to continue acting).
+        // If callArgs is empty, the user is resuming (wants to continue acting).
         // Do NOT patch — let ReActAgent's doCall handle the resume flow.
-        if (inputMessages == null || inputMessages.isEmpty()) {
+        if (callArgs.isEmpty()) {
             return Mono.just(event);
         }
 
         boolean userProvidedResults =
-                inputMessages.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
+                callArgs.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
         if (userProvidedResults) {
             return Mono.just(event);
         }
