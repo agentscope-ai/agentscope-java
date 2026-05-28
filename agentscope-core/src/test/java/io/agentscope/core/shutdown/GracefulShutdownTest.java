@@ -26,17 +26,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SimpleSessionKey;
@@ -566,6 +569,95 @@ class GracefulShutdownTest {
         }
 
         @Test
+        @DisplayName(
+                "PreCallEvent keeps input when content differs from last user message in memory")
+        void preCallKeepsInputWhenDifferent() {
+            ReActAgent agent = createReActAgentWithMemory("dedup-diff");
+            agent.getMemory().addMessage(buildMsg("old user input"));
+
+            Session session = new InMemorySession();
+            SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session-diff");
+            manager.bindSession(agent, session, sessionKey);
+            manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(agent);
+
+            List<Msg> inputMsgs = List.of(buildMsg("new different input"));
+            PreCallEvent event = new PreCallEvent(agent, inputMsgs);
+
+            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
+
+            assertEquals(1, event.getInputMessages().size());
+            assertEquals("new different input", event.getInputMessages().get(0).getTextContent());
+        }
+
+        @Test
+        @DisplayName("PreCallEvent discards input when content matches last user message in memory")
+        void preCallDiscardsInputWhenMatching() {
+            ReActAgent agent = createReActAgentWithMemory("dedup-match");
+            agent.getMemory().addMessage(buildMsg("same input"));
+
+            Session session = new InMemorySession();
+            SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session-match");
+            manager.bindSession(agent, session, sessionKey);
+            manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(agent);
+
+            List<Msg> inputMsgs = List.of(buildMsg("same input"));
+            PreCallEvent event = new PreCallEvent(agent, inputMsgs);
+
+            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
+
+            assertTrue(event.getInputMessages().isEmpty());
+        }
+
+        @Test
+        @DisplayName("PreCallEvent early returns without clearing when input is empty")
+        void preCallEarlyReturnOnEmptyInput() {
+            ReActAgent agent = createReActAgentWithMemory("dedup-empty");
+            agent.getMemory().addMessage(buildMsg("existing"));
+
+            Session session = new InMemorySession();
+            SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session-empty");
+            manager.bindSession(agent, session, sessionKey);
+            manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(agent);
+
+            List<Msg> inputMsgs = List.of();
+            PreCallEvent event = new PreCallEvent(agent, inputMsgs);
+
+            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
+
+            assertTrue(event.getInputMessages().isEmpty());
+        }
+
+        @Test
+        @DisplayName("PreCallEvent keeps input when no USER message exists in memory")
+        void preCallKeepsInputWhenNoUserInMemory() {
+            ReActAgent agent = createReActAgentWithMemory("dedup-no-user");
+            // Add only an assistant message, no user message
+            agent.getMemory()
+                    .addMessage(
+                            Msg.builder()
+                                    .name("assistant")
+                                    .role(MsgRole.ASSISTANT)
+                                    .content(TextBlock.builder().text("assistant reply").build())
+                                    .build());
+
+            Session session = new InMemorySession();
+            SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session-no-user");
+            manager.bindSession(agent, session, sessionKey);
+            manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(agent);
+
+            List<Msg> inputMsgs = List.of(buildMsg("user input"));
+            PreCallEvent event = new PreCallEvent(agent, inputMsgs);
+
+            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
+
+            assertEquals(1, event.getInputMessages().size());
+        }
+
+        @Test
         @DisplayName("Unrelated events pass through unchanged")
         void unrelatedEventsPassThrough() {
             TestableAgent agent = createTestAgent("agent-1");
@@ -885,6 +977,15 @@ class GracefulShutdownTest {
                 .name("test")
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    private static ReActAgent createReActAgentWithMemory(String name) {
+        Model noopModel = mock(Model.class);
+        return ReActAgent.builder()
+                .name(name)
+                .model(noopModel)
+                .memory(new InMemoryMemory())
                 .build();
     }
 }

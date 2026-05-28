@@ -21,6 +21,9 @@ import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,15 +87,52 @@ public final class GracefulShutdownHook implements Hook {
      * If the agent's session was previously interrupted by shutdown, the client is likely
      * retrying with the same user prompt that already exists in memory. Discard the
      * duplicate input so the agent resumes purely from its saved memory context.
+     *
+     * <p>If the new input differs from the last user message in memory, it is kept
+     * to avoid discarding legitimate new messages.
      */
     private void deduplicateIfResuming(PreCallEvent event) {
         if (manager.checkAndClearShutdownInterrupted(event.getAgent())) {
-            log.info(
-                    "Detected shutdown-interrupted session for agent {}, discarding duplicate"
-                            + " input",
-                    event.getAgent().getName());
-            // todo configurable
-            event.setInputMessages(List.of());
+            List<Msg> newInput = event.getInputMessages();
+
+            // No new input, nothing to deduplicate
+            if (newInput == null || newInput.isEmpty()) {
+                return;
+            }
+
+            // Extract the text of the first incoming message
+            String newInputText = newInput.get(0).getTextContent();
+
+            // Find the last USER message in memory
+            Memory memory = event.getMemory();
+            if (memory == null) {
+                event.setInputMessages(List.of());
+                return;
+            }
+            List<Msg> memoryMsgs = memory.getMessages();
+            String lastUserText = null;
+            for (int i = memoryMsgs.size() - 1; i >= 0; i--) {
+                Msg msg = memoryMsgs.get(i);
+                if (msg.getRole() == MsgRole.USER) {
+                    lastUserText = msg.getTextContent();
+                    break;
+                }
+            }
+
+            // Only discard when content is identical
+            if (newInputText != null && newInputText.equals(lastUserText)) {
+                log.info(
+                        "Detected shutdown-interrupted session for agent {}, "
+                                + "discarding duplicate input (content matches last user message)",
+                        event.getAgent().getName());
+                event.setInputMessages(List.of());
+            } else {
+                log.info(
+                        "Detected shutdown-interrupted session for agent {}, "
+                                + "but input differs from last user message, keeping input",
+                        event.getAgent().getName());
+                // Keep the new input as-is
+            }
         }
     }
 
