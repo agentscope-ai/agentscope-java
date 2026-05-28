@@ -673,6 +673,30 @@ public class MysqlSession implements Session {
     }
 
     @Override
+    public void delete(SessionKey sessionKey, String key) {
+        String sessionId = sessionKey.toIdentifier();
+        validateSessionId(sessionId);
+        validateStateKey(key);
+
+        String deleteSql =
+                "DELETE FROM " + getFullTableName() + " WHERE session_id = ? AND state_key = ?";
+
+        try (Connection conn = dataSource.getConnection()) {
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        try (PreparedStatement stmt = conn.prepareStatement(deleteSql)) {
+                            stmt.setString(1, sessionId);
+                            stmt.setString(2, key);
+                            stmt.executeUpdate();
+                        }
+                    });
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete state: " + key, e);
+        }
+    }
+
+    @Override
     public Set<SessionKey> listSessionKeys() {
         String listSql =
                 "SELECT DISTINCT session_id FROM " + getFullTableName() + " ORDER BY session_id";
