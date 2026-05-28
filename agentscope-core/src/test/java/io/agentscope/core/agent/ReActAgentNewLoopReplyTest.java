@@ -151,7 +151,6 @@ class ReActAgentNewLoopReplyTest {
                         .sysPrompt("you are helpful")
                         .model(model)
                         .toolkit(new Toolkit())
-                        .agentState(newState())
                         .build();
 
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
@@ -168,14 +167,8 @@ class ReActAgentNewLoopReplyTest {
     @Test
     void callResolvesToFinalAssistantMsg() {
         ChatModelBase model = new ScriptedModel(List.of(() -> Flux.just(textResponse("answer"))));
-        AgentState state = newState();
         ReActAgent agent =
-                ReActAgent.builder()
-                        .name("asst")
-                        .model(model)
-                        .toolkit(new Toolkit())
-                        .agentState(state)
-                        .build();
+                ReActAgent.builder().name("asst").model(model).toolkit(new Toolkit()).build();
 
         Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("hi").build();
         Msg result = agent.call(List.of(userMsg)).block();
@@ -185,7 +178,7 @@ class ReActAgentNewLoopReplyTest {
         List<TextBlock> texts = result.getContentBlocks(TextBlock.class);
         assertEquals(1, texts.size());
         assertEquals("answer", texts.get(0).getText());
-        assertTrue(state.getContext().size() >= 2, "user + assistant expected in state");
+        assertTrue(agent.getState().getContext().size() >= 2, "user + assistant expected in state");
     }
 
     @Test
@@ -200,7 +193,6 @@ class ReActAgentNewLoopReplyTest {
                         .name("asst")
                         .model(model)
                         .toolkit(toolkitWith(new EchoTool()))
-                        .agentState(newState())
                         .build();
 
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
@@ -236,7 +228,6 @@ class ReActAgentNewLoopReplyTest {
                         .name("asst")
                         .model(model)
                         .toolkit(toolkitWith(new EchoTool()))
-                        .agentState(newState())
                         .reactConfig(new ReactConfig(2, false))
                         .maxIters(2)
                         .build();

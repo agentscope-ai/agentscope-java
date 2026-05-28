@@ -67,7 +67,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Analyzer")
                         .model(model1)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         ReActAgent agent2 =
@@ -76,7 +75,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Reviewer")
                         .model(model2)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         ReActAgent agent3 =
@@ -85,7 +83,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Finalizer")
                         .model(model3)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         // Create sequential pipeline
@@ -118,7 +115,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Inner 1")
                         .model(model1)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         ReActAgent innerAgent2 =
@@ -127,7 +123,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Inner 2")
                         .model(model2)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         SequentialPipeline innerPipeline =
@@ -146,7 +141,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Outer")
                         .model(model3)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         SequentialPipeline outerPipeline = new SequentialPipeline(List.of(innerAgent1, outerAgent));
@@ -170,7 +164,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Stage 1-1")
                         .model(model1)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         ReActAgent stage1Agent2 =
@@ -179,7 +172,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Stage 1-2")
                         .model(model2)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         SequentialPipeline stage1 = new SequentialPipeline(List.of(stage1Agent1, stage1Agent2));
@@ -197,7 +189,6 @@ class PipelineIntegrationTest {
                         .sysPrompt("Stage 2")
                         .model(model3)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         // Execute second stage with result from first

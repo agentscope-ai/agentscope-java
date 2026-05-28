@@ -89,10 +89,10 @@ import io.agentscope.core.state.LegacyStateLoader;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.permission.ToolBase;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.MessageUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -1186,11 +1186,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             String replyId,
             AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
 
-        return classifyPendingConfirmation(toolCalls)
+        return evaluatePermissions(toolCalls)
                 .flatMapMany(
-                        pending -> {
+                        gate -> {
+                            List<ToolUseBlock> pending = gate.pendingAsk();
+                            Set<String> autoDenied = gate.autoDeniedIds();
                             if (pending.isEmpty()) {
-                                return runToolBatch(toolCalls, Set.of(), replyId, resultHolder);
+                                return runToolBatch(toolCalls, autoDenied, replyId, resultHolder);
                             }
                             return Flux.<AgentEvent>just(
                                             new RequireUserConfirmEvent(replyId, pending))
@@ -1199,8 +1201,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                     .flatMapMany(
                                                             confirmResults -> {
                                                                 Set<String> deniedIds =
+                                                                        new HashSet<>(autoDenied);
+                                                                deniedIds.addAll(
                                                                         collectDeniedIds(
-                                                                                confirmResults);
+                                                                                confirmResults));
                                                                 return Flux.<AgentEvent>just(
                                                                                 new UserConfirmResultEvent(
                                                                                         replyId,
@@ -1343,37 +1347,85 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /**
-     * Classify which tool calls require user confirmation. Only {@link ToolBase} subclasses
-     * are inspected — legacy {@link AgentTool}s pass through unchanged. A tool is added to
-     * the pending list when its {@link ToolBase#checkPermissions} returns
-     * {@link PermissionBehavior#ASK}.
+     * Outcome of running every {@link ToolBase} call through the {@link PermissionEngine}.
+     *
+     * @param pendingAsk tool calls that require user confirmation before execution.
+     * @param autoDeniedIds ids of tool calls whose decision was {@code DENY}; the agent loop
+     *     synthesises denied results for them without invoking the tool.
      */
-    private Mono<List<ToolUseBlock>> classifyPendingConfirmation(List<ToolUseBlock> toolCalls) {
+    private record PermissionGate(List<ToolUseBlock> pendingAsk, Set<String> autoDeniedIds) {}
+
+    /**
+     * Run every tool call through the permission gate.
+     *
+     * <p>When the agent's {@link io.agentscope.core.permission.PermissionContext} is trivial
+     * (default mode, no rules, no working directories — i.e. the user has not opted into the
+     * permission system) we fall back to the lightweight pre-2.0 path: the tool's own
+     * {@link ToolBase#checkPermissions} ASK gates a confirmation, anything else is approved.
+     *
+     * <p>Otherwise we engage the full {@link PermissionEngine} pipeline so deny/ask/allow rules
+     * and EXPLORE/ACCEPT_EDITS/BYPASS/DONT_ASK modes are honoured before execution. Legacy
+     * {@link AgentTool}s that do not extend {@link ToolBase} always pass through approved.
+     */
+    private Mono<PermissionGate> evaluatePermissions(List<ToolUseBlock> toolCalls) {
         if (toolCalls == null || toolCalls.isEmpty()) {
-            return Mono.just(List.of());
+            return Mono.just(new PermissionGate(List.of(), Set.of()));
         }
+        boolean useEngine = !state.getPermissionContext().isTrivial();
         return Flux.fromIterable(toolCalls)
-                .concatMap(
-                        use -> {
-                            AgentTool tool = toolkit.getTool(use.getName());
-                            if (!(tool instanceof ToolBase tb)) {
-                                return Mono.<ToolUseBlock>empty();
+                .concatMap(use -> evaluateOne(use, useEngine))
+                .collectList()
+                .map(
+                        verdicts -> {
+                            List<ToolUseBlock> pending = new ArrayList<>();
+                            Set<String> denied = new HashSet<>();
+                            for (PermissionVerdict v : verdicts) {
+                                switch (v.behavior()) {
+                                    case DENY -> denied.add(v.use().getId());
+                                    case ASK -> pending.add(v.use());
+                                    case ALLOW, PASSTHROUGH -> {
+                                        // auto-approved; falls through to execution
+                                    }
+                                }
                             }
-                            Map<String, Object> input =
-                                    use.getInput() == null ? Map.of() : use.getInput();
-                            return tb.checkPermissions(input, state.getPermissionContext())
-                                    .flatMap(
-                                            decision -> {
-                                                if (decision != null
-                                                        && decision.getBehavior()
-                                                                == PermissionBehavior.ASK) {
-                                                    return Mono.just(use);
-                                                }
-                                                return Mono.<ToolUseBlock>empty();
-                                            });
-                        })
-                .collectList();
+                            return new PermissionGate(pending, denied);
+                        });
     }
+
+    private Mono<PermissionVerdict> evaluateOne(ToolUseBlock use, boolean useEngine) {
+        AgentTool tool = toolkit.getTool(use.getName());
+        if (!(tool instanceof ToolBase tb)) {
+            return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
+        }
+        Map<String, Object> input = use.getInput() == null ? Map.of() : use.getInput();
+        if (useEngine) {
+            return permissionEngine
+                    .checkPermission(tb, input)
+                    .map(
+                            decision ->
+                                    new PermissionVerdict(
+                                            use,
+                                            decision == null
+                                                    ? PermissionBehavior.ASK
+                                                    : decision.getBehavior()));
+        }
+        return tb.checkPermissions(input, state.getPermissionContext())
+                .map(
+                        decision -> {
+                            if (decision == null) {
+                                return new PermissionVerdict(use, PermissionBehavior.ALLOW);
+                            }
+                            // In the legacy lightweight path only an explicit ASK from the tool
+                            // gates execution; PASSTHROUGH and ALLOW both run, DENY is honoured.
+                            return switch (decision.getBehavior()) {
+                                case ASK -> new PermissionVerdict(use, PermissionBehavior.ASK);
+                                case DENY -> new PermissionVerdict(use, PermissionBehavior.DENY);
+                                default -> new PermissionVerdict(use, PermissionBehavior.ALLOW);
+                            };
+                        });
+    }
+
+    private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
 
     /**
      * Read a {@link Sinks.Many} of {@link ConfirmResult} from the subscriber's Reactor context

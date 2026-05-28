@@ -125,7 +125,6 @@ class ReActAgentStructuredOutputTest {
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         // Execute structured output call
@@ -218,7 +217,6 @@ class ReActAgentStructuredOutputTest {
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         Msg inputMsg =
@@ -321,7 +319,6 @@ class ReActAgentStructuredOutputTest {
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         // Call with only structured output class - no new messages
@@ -409,7 +406,6 @@ class ReActAgentStructuredOutputTest {
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         Msg inputMsg =
@@ -506,7 +502,6 @@ class ReActAgentStructuredOutputTest {
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         Msg inputMsg =
@@ -612,7 +607,6 @@ class ReActAgentStructuredOutputTest {
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
                         .toolkit(agentToolkit)
-                        .memory(memory)
                         .build();
 
         Msg inputMsg =

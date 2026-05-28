@@ -76,17 +76,15 @@ class ReActAgentContextCompressionTest {
         ContextConfig cfg = ContextConfig.builder().triggerRatio(0.005).reserveRatio(0.001).build();
         CountingModel model = new CountingModel("compressed-summary");
 
-        AgentState state = AgentState.builder().sessionId("session-compress").build();
-        state.contextMutable().add(systemMsg(repeat("s", 3200)));
-
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("asst")
                         .model(model)
                         .toolkit(new Toolkit())
-                        .agentState(state)
                         .contextConfig(cfg)
                         .build();
+        AgentState state = agent.getState();
+        state.contextMutable().add(systemMsg(repeat("s", 3200)));
 
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);
@@ -109,15 +107,12 @@ class ReActAgentContextCompressionTest {
         ContextConfig cfg = ContextConfig.builder().triggerRatio(0.5).reserveRatio(0.1).build();
         CountingModel model = new CountingModel("ok");
 
-        AgentState state = AgentState.builder().sessionId("session-no-compress").build();
-
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("asst")
                         .sysPrompt("you are helpful")
                         .model(model)
                         .toolkit(new Toolkit())
-                        .agentState(state)
                         .contextConfig(cfg)
                         .build();
 
@@ -127,7 +122,8 @@ class ReActAgentContextCompressionTest {
                 1,
                 model.calls.get(),
                 "no compression — model called once for the single reasoning round");
-        assertEquals("", state.getSummary(), "summary stays empty when no compression fires");
+        assertEquals(
+                "", agent.getState().getSummary(), "summary stays empty when no compression fires");
     }
 
     private static Msg systemMsg(String text) {

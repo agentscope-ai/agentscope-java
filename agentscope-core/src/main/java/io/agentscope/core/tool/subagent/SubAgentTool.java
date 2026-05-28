@@ -25,6 +25,10 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
@@ -198,61 +202,64 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Loads agent state via {@link io.agentscope.core.storage.StorageBase}.
-     *
-     * <p>Requires {@code StorageBase} to be configured on the {@link SubAgentConfig}. Errors are
-     * logged but do not interrupt execution.
-     *
-     * @param sessionId The session ID to load state from
-     * @param agent The agent to restore state into
+     * Loads sub-agent state for the conversation identified by {@code sessionId} from
+     * {@link SubAgentConfig#getSession()} and merges it into the live agent's
+     * {@link AgentState}. Errors are logged but do not interrupt execution.
      */
     private void loadAgentState(String sessionId, Agent agent) {
         if (!(agent instanceof ReActAgent ra)) {
             return;
         }
-        if (config.getStorage() == null) {
-            throw new IllegalStateException(
-                    "StorageBase must be configured on SubAgentConfig for session persistence."
-                            + " Use SubAgentConfig.builder().storage(...).build().");
+        Session subSession = config.getSession();
+        if (subSession == null) {
+            return;
         }
+        SessionKey key = SimpleSessionKey.of(sessionId);
         try {
-            ra.loadStateFromStorage(config.getStorage(), sessionId).block();
-            logger.debug("Loaded state via StorageBase for session: {}", sessionId);
+            subSession
+                    .get(key, "agent_state", AgentState.class)
+                    .ifPresent(loaded -> applyLoadedState(ra, loaded));
+            logger.debug("Loaded sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(
-                    "Failed to load state via StorageBase for session {}: {}",
-                    sessionId,
-                    e.getMessage());
+                    "Failed to load sub-agent state for session {}: {}", sessionId, e.getMessage());
         }
     }
 
     /**
-     * Saves agent state via {@link io.agentscope.core.storage.StorageBase}.
-     *
-     * <p>Requires {@code StorageBase} to be configured on the {@link SubAgentConfig}. Errors are
-     * logged but do not interrupt execution.
-     *
-     * @param sessionId The session ID to save state under
-     * @param agent The agent to save state from
+     * Saves the live {@link AgentState} for the conversation identified by {@code sessionId} into
+     * {@link SubAgentConfig#getSession()}. Errors are logged but do not interrupt execution.
      */
     private void saveAgentState(String sessionId, Agent agent) {
         if (!(agent instanceof ReActAgent ra)) {
             return;
         }
-        if (config.getStorage() == null) {
-            throw new IllegalStateException(
-                    "StorageBase must be configured on SubAgentConfig for session persistence."
-                            + " Use SubAgentConfig.builder().storage(...).build().");
+        Session subSession = config.getSession();
+        if (subSession == null) {
+            return;
         }
+        SessionKey key = SimpleSessionKey.of(sessionId);
         try {
-            ra.saveStateToStorage(config.getStorage(), sessionId).block();
-            logger.debug("Saved state via StorageBase for session: {}", sessionId);
+            subSession.save(key, "agent_state", ra.getAgentState());
+            logger.debug("Saved sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(
-                    "Failed to save state via StorageBase for session {}: {}",
-                    sessionId,
-                    e.getMessage());
+                    "Failed to save sub-agent state for session {}: {}", sessionId, e.getMessage());
         }
+    }
+
+    private static void applyLoadedState(ReActAgent agent, AgentState loaded) {
+        AgentState live = agent.getAgentState();
+        if (live == null) {
+            return;
+        }
+        live.contextMutable().clear();
+        live.contextMutable().addAll(loaded.getContext());
+        live.setSummary(loaded.getSummary());
+        live.setReplyId(loaded.getReplyId());
+        live.setCurIter(loaded.getCurIter());
+        live.setShutdownInterrupted(loaded.isShutdownInterrupted());
+        live.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
     }
 
     /**

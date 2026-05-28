@@ -103,7 +103,6 @@ class ReActAgentSystemMsgTest {
                     ReActAgent.builder()
                             .name("agent")
                             .model(mockModel)
-                            .memory(memory)
                             .sysPrompt("You are a helpful assistant.")
                             .maxIters(1)
                             .hook(
@@ -143,7 +142,6 @@ class ReActAgentSystemMsgTest {
                     ReActAgent.builder()
                             .name("agent")
                             .model(mockModel)
-                            .memory(memory)
                             .maxIters(1)
                             .hook(
                                     new Hook() {
@@ -199,7 +197,6 @@ class ReActAgentSystemMsgTest {
                     ReActAgent.builder()
                             .name("agent")
                             .model(mockModel)
-                            .memory(memory)
                             .sysPrompt("base prompt")
                             .maxIters(1)
                             .hook(
@@ -239,10 +236,6 @@ class ReActAgentSystemMsgTest {
         @Test
         @DisplayName("PreCallEvent inputMessages contains memory snapshot + callArgs")
         void preCallEvent_containsMemoryPlusCallArgs() {
-            // Seed memory with one prior message
-            Msg priorMsg = userMsg("prior turn");
-            memory.addMessage(priorMsg);
-
             AtomicReference<List<Msg>> capturedInput = new AtomicReference<>();
 
             stubModelText("done");
@@ -250,7 +243,6 @@ class ReActAgentSystemMsgTest {
                     ReActAgent.builder()
                             .name("agent")
                             .model(mockModel)
-                            .memory(memory)
                             .maxIters(1)
                             .hook(
                                     new Hook() {
@@ -264,6 +256,10 @@ class ReActAgentSystemMsgTest {
                                         }
                                     })
                             .build();
+
+            // Seed state with one prior message (after build so it lands in agent's own state)
+            Msg priorMsg = userMsg("prior turn");
+            agent.getState().contextMutable().add(priorMsg);
 
             Msg callArg = userMsg("new message");
             agent.call(List.of(callArg)).block(TIMEOUT);
@@ -296,7 +292,6 @@ class ReActAgentSystemMsgTest {
                     ReActAgent.builder()
                             .name("agent")
                             .model(mockModel)
-                            .memory(memory)
                             .maxIters(1)
                             .hook(
                                     new Hook() {

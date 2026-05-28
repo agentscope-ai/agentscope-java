@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -68,7 +67,6 @@ class ReActAgentTimeoutTest {
                         .name("TestAgent")
                         .model(modelWithToolCall)
                         .toolkit(toolkit)
-                        .memory(new InMemoryMemory())
                         .toolExecutionConfig(toolExecutionConfig)
                         .build();
 
@@ -138,7 +136,6 @@ class ReActAgentTimeoutTest {
                         .name("TestAgent")
                         .model(modelWithToolCall)
                         .toolkit(toolkit)
-                        .memory(new InMemoryMemory())
                         // No toolExecutionConfig
                         .build();
 

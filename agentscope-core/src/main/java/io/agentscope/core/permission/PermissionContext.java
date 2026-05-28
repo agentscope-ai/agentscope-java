@@ -16,6 +16,7 @@
 package io.agentscope.core.permission;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.ArrayList;
@@ -94,6 +95,21 @@ public final class PermissionContext {
     @JsonProperty("mode")
     public PermissionMode getMode() {
         return mode;
+    }
+
+    /**
+     * Whether this context is "trivial" — built from {@link Builder#build()} with no further
+     * customisation. Used by ReAct agents to decide whether to engage the full permission engine
+     * (rules + mode + tool self-check) or fall back to the lightweight, pre-2.0 path that only
+     * gates on the tool's own {@code checkPermissions} self-check.
+     */
+    @JsonIgnore
+    public boolean isTrivial() {
+        return mode == PermissionMode.DEFAULT
+                && workingDirectories.isEmpty()
+                && allowRules.isEmpty()
+                && denyRules.isEmpty()
+                && askRules.isEmpty();
     }
 
     @JsonProperty("working_directories")

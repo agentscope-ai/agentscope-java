@@ -87,7 +87,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
     }
 
@@ -153,7 +152,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -211,7 +209,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -285,7 +282,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Execute tools");
@@ -351,7 +347,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Call failing tool");
@@ -419,7 +414,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         int initialMemorySize = agent.getMemory().getMessages().size();
@@ -473,7 +467,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(loopModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(TestConstants.TEST_MAX_ITERS)
                         .build();
         mockModel = loopModel;
@@ -539,7 +532,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -571,7 +563,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -778,7 +769,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 
@@ -902,7 +892,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 
@@ -991,7 +980,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(modelWithUsage)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 

@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
@@ -164,6 +165,10 @@ class ToolMethodInvoker {
             // Special handling: inject Agent automatically
             else if (param.getType() == Agent.class) {
                 args[i] = agent;
+            }
+            // Special handling: inject AgentState (matches @Tool(stateInjected=true))
+            else if (param.getType() == AgentState.class) {
+                args[i] = agent != null ? agent.getAgentState() : null;
             }
             // Special handling: inject ToolExecutionContext automatically
             else if (param.getType() == ToolExecutionContext.class) {

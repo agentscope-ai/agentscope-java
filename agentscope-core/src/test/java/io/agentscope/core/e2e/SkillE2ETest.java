@@ -24,7 +24,6 @@ import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.legacy.hook.Hook;
 import io.agentscope.core.legacy.hook.HookEvent;
 import io.agentscope.core.legacy.hook.PostActingEvent;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.legacy.skill.AgentSkill;
 import io.agentscope.core.legacy.skill.SkillBox;
 import io.agentscope.core.legacy.skill.repository.ClasspathSkillRepository;
@@ -294,9 +293,7 @@ class SkillE2ETest {
 
             ReActAgent agent =
                     provider.createAgentBuilder("SkillRecallAgent-" + targetSkillName, toolkit)
-                            .memory(new InMemoryMemory())
                             .maxIters(3)
-                            .skillBox(skillBox)
                             .hook(
                                     new Hook() {
                                         @Override
@@ -410,9 +407,7 @@ class SkillE2ETest {
 
             ReActAgent agent =
                     provider.createAgentBuilder("CodeExecAgent-" + skillName, toolkit)
-                            .memory(new InMemoryMemory())
                             .maxIters(6)
-                            .skillBox(skillBox)
                             .hook(earlyExitHook)
                             .build();
 

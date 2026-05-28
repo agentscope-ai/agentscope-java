@@ -22,7 +22,6 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -86,7 +85,6 @@ class StreamingBehaviorE2ETest {
                         .name("NonStreamingAgent")
                         .model(model)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         Msg userMsg =
@@ -238,7 +236,6 @@ class StreamingBehaviorE2ETest {
                         .name("StreamingMemoryAgent")
                         .model(streamingModel)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         Msg msg1 =

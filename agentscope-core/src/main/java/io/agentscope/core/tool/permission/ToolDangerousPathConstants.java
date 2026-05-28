@@ -18,64 +18,20 @@ package io.agentscope.core.tool.permission;
 import java.util.List;
 
 /**
- * Defaults for the dangerous-path and dangerous-command lists consulted by tool self-checks.
- *
- * <p>These lists guard sensitive configuration files (shell rc files, SSH config, credentials)
- * and disruptive shell commands. Tools that override the fields on {@link ToolBase} replace the
- * defaults entirely rather than appending to them.
+ * @deprecated Use {@link io.agentscope.core.tool.ToolDangerousPathConstants} directly. This alias
+ *     remains for one minor version and will be removed in the next.
  */
+@Deprecated(forRemoval = true)
 public final class ToolDangerousPathConstants {
 
     private ToolDangerousPathConstants() {}
 
-    /**
-     * Sensitive files that should never be auto-edited.
-     *
-     * <p>Includes shell rc files, SSH config, credential stores, and {@code .env}
-     * variants that commonly hold secrets. Aligned with Python
-     * {@code tool/_constants.py} (PR #1656).
-     */
     public static final List<String> DEFAULT_DANGEROUS_FILES =
-            List.of(
-                    ".gitconfig",
-                    ".gitmodules",
-                    ".bashrc",
-                    ".bash_profile",
-                    ".zshrc",
-                    ".zprofile",
-                    ".profile",
-                    ".ssh/config",
-                    ".ssh/authorized_keys",
-                    ".netrc",
-                    ".npmrc",
-                    ".pypirc",
-                    ".env",
-                    ".envrc",
-                    ".env.local",
-                    ".env.development",
-                    ".env.development.local",
-                    ".env.test",
-                    ".env.test.local",
-                    ".env.staging",
-                    ".env.production",
-                    ".env.production.local");
+            io.agentscope.core.tool.ToolDangerousPathConstants.DEFAULT_DANGEROUS_FILES;
 
-    /** Directory names whose presence anywhere in a path marks it sensitive. */
     public static final List<String> DEFAULT_DANGEROUS_DIRECTORIES =
-            List.of(".git", ".vscode", ".idea", ".ssh");
+            io.agentscope.core.tool.ToolDangerousPathConstants.DEFAULT_DANGEROUS_DIRECTORIES;
 
-    /** Shell command fragments that always require explicit user approval. */
     public static final List<String> DANGEROUS_COMMANDS =
-            List.of(
-                    "rm -rf",
-                    "sudo rm",
-                    "dd",
-                    "mkfs",
-                    "fdisk",
-                    "format",
-                    "chmod 777",
-                    "chmod -R 777",
-                    "chown -R",
-                    "kill -9",
-                    "> /dev/");
+            io.agentscope.core.tool.ToolDangerousPathConstants.DANGEROUS_COMMANDS;
 }

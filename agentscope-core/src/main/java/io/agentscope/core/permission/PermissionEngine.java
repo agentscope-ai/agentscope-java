@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.permission;
 
-import io.agentscope.core.tool.permission.ToolBase;
+import io.agentscope.core.tool.ToolBase;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;

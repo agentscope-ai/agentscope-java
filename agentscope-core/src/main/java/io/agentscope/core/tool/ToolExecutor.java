@@ -23,6 +23,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -188,6 +189,13 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
+        // External tool short-circuit: surface the call to the caller without running schema
+        // validation, preset injection, or scheduling. SchemaOnlyTool and any
+        // @Tool(externalTool=true) method end up here.
+        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
+            return Mono.error(new ToolSuspendException());
+        }
+
         // Check tool activation
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
         if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
@@ -287,20 +295,54 @@ class ToolExecutor {
 
         logger.debug("Executing {} tool calls (parallel={})", toolCalls.size(), parallel);
 
-        // Map each tool call to an execution Mono
-        List<Mono<ToolResultBlock>> monos =
-                toolCalls.stream()
-                        .map(
-                                toolCall ->
-                                        executeWithInfrastructure(
-                                                toolCall, executionConfig, agent, agentContext))
-                        .toList();
-
-        // Parallel or sequential execution
-        if (parallel) {
-            return Flux.mergeSequential(monos).collectList();
+        // Sequential mode: nothing to partition, run in declared order.
+        if (!parallel) {
+            List<Mono<ToolResultBlock>> monos =
+                    toolCalls.stream()
+                            .map(
+                                    toolCall ->
+                                            executeWithInfrastructure(
+                                                    toolCall, executionConfig, agent, agentContext))
+                            .toList();
+            return Flux.concat(monos).collectList();
         }
-        return Flux.concat(monos).collectList();
+
+        // Parallel mode with concurrency-safe partitioning: contiguous runs of safe tools execute
+        // concurrently (output order preserved via mergeSequential); unsafe tools (or unknown
+        // legacy AgentTools we cannot inspect) form their own serial slots so two invocations
+        // that share state never overlap.
+        List<Flux<ToolResultBlock>> chunks = new ArrayList<>();
+        List<Mono<ToolResultBlock>> safeBatch = new ArrayList<>();
+        for (ToolUseBlock toolCall : toolCalls) {
+            Mono<ToolResultBlock> mono =
+                    executeWithInfrastructure(toolCall, executionConfig, agent, agentContext);
+            if (isConcurrencySafe(toolCall)) {
+                safeBatch.add(mono);
+            } else {
+                if (!safeBatch.isEmpty()) {
+                    chunks.add(Flux.mergeSequential(safeBatch));
+                    safeBatch = new ArrayList<>();
+                }
+                chunks.add(mono.flux());
+            }
+        }
+        if (!safeBatch.isEmpty()) {
+            chunks.add(Flux.mergeSequential(safeBatch));
+        }
+        return Flux.concat(chunks).collectList();
+    }
+
+    /**
+     * Whether the tool backing {@code toolCall} can run in parallel with itself. Defaults to
+     * {@code true} for legacy {@link AgentTool} instances that do not extend {@link ToolBase}, so
+     * existing tools keep their pre-2.0 concurrent behaviour.
+     */
+    private boolean isConcurrencySafe(ToolUseBlock toolCall) {
+        AgentTool tool = toolRegistry.getTool(toolCall.getName());
+        if (tool instanceof ToolBase tb) {
+            return tb.isConcurrencySafe();
+        }
+        return true;
     }
 
     /**

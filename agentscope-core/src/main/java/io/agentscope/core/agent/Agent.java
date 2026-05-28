@@ -106,4 +106,16 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * @param msg User message associated with the interruption
      */
     void interrupt(Msg msg);
+
+    /**
+     * Returns the agent's runtime {@link io.agentscope.core.state.AgentState}, or {@code null} if
+     * this agent type does not maintain one.
+     *
+     * <p>This is the canonical access point used by tool methods declared with
+     * {@code @Tool(stateInjected=true)}: the framework binds the live state to the
+     * {@code AgentState} parameter at invocation time.
+     */
+    default io.agentscope.core.state.AgentState getAgentState() {
+        return null;
+    }
 }

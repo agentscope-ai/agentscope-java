@@ -67,7 +67,6 @@ class AgentBoundaryTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
     }
 
@@ -168,7 +167,6 @@ class AgentBoundaryTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         Msg input = TestUtils.createUserMessage("User", "Test invalid tool");

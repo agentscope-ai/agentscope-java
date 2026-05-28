@@ -16,99 +16,117 @@
 package io.agentscope.core.tool.mcp;
 
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.permission.PermissionContext;
+import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * AgentTool implementation that wraps an MCP (Model Context Protocol) tool.
- * This class bridges MCP tools to the AgentScope tool system, allowing
- * agents to invoke remote MCP tools seamlessly.
+ * {@link ToolBase} subclass that wraps an MCP (Model Context Protocol) tool.
+ *
+ * <p>Bridges remote MCP tools to the AgentScope tool system so they participate in permission
+ * evaluation and the agent's pending-confirmation flow alongside built-in and {@code @Tool} tools.
  *
  * <p>Features:
  * <ul>
- *   <li>Converts AgentScope tool calls to MCP protocol calls</li>
- *   <li>Handles parameter merging with preset arguments</li>
- *   <li>Converts MCP results to AgentScope ToolResultBlocks</li>
- *   <li>Supports reactive execution with Mono</li>
+ *   <li>Translates AgentScope tool calls into MCP protocol calls.
+ *   <li>Merges caller arguments with preset arguments configured at registration time.
+ *   <li>Converts MCP results into AgentScope {@link ToolResultBlock}s.
+ *   <li>Surfaces permission policy via {@link #checkPermissions(Map, PermissionContext)}: read-only
+ *       MCP tools auto-allow; everything else requires explicit user authorization (matches the
+ *       Python {@code MCPTool} default).
  * </ul>
- *
- * <p>Example usage:
- * <pre>{@code
- * McpTool tool = new McpTool(
- *     "get_weather",
- *     "Get current weather for a location",
- *     parametersSchema,
- *     mcpClientWrapper,
- *     Map.of("units", "celsius")  // preset args
- * );
- *
- * ToolResultBlock result = tool.callAsync(Map.of("location", "Beijing")).block();
- * }</pre>
  */
-public class McpTool implements AgentTool {
+public class McpTool extends ToolBase {
 
     private static final Logger logger = LoggerFactory.getLogger(McpTool.class);
 
-    private final String name;
-    private final String description;
-    private final Map<String, Object> parameters;
     private final Map<String, Object> outputSchema;
     private final McpClientWrapper clientWrapper;
     private final Map<String, Object> presetArguments;
 
+    /** Preferred constructor used by {@link McpClientManager}. */
+    public McpTool(
+            String name,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly) {
+        super(
+                ToolBase.builder()
+                        .name(Objects.requireNonNull(name, "name cannot be null"))
+                        .description(description != null ? description : "")
+                        .inputSchema(parameters != null ? parameters : new HashMap<>())
+                        .readOnly(readOnly)
+                        .concurrencySafe(false)
+                        .mcp(Objects.requireNonNull(mcpName, "mcpName cannot be null")));
+        this.outputSchema = outputSchema != null ? new HashMap<>(outputSchema) : null;
+        this.clientWrapper = Objects.requireNonNull(clientWrapper, "clientWrapper cannot be null");
+        this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
+    }
+
     /**
-     * Constructs a new McpTool without preset arguments.
-     *
-     * @param name the tool name
-     * @param description the tool description
-     * @param parameters the JSON schema for tool parameters
-     * @param clientWrapper the MCP client wrapper
+     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
+     *     boolean)} so the MCP server name and read-only hint are propagated. Kept for source
+     *     compatibility with callers that pre-date the {@link ToolBase} integration.
      */
+    @Deprecated(since = "2.0.0")
     public McpTool(
             String name,
             String description,
             Map<String, Object> parameters,
             McpClientWrapper clientWrapper) {
-        this(name, description, parameters, null, clientWrapper, null);
+        this(
+                name,
+                description,
+                parameters,
+                null,
+                clientWrapper,
+                null,
+                clientWrapper.getName(),
+                false);
     }
 
     /**
-     * Constructs a new McpTool with preset arguments.
-     *
-     * @param name the tool name
-     * @param description the tool description
-     * @param parameters the JSON schema for tool parameters
-     * @param clientWrapper the MCP client wrapper
-     * @param presetArguments preset arguments to merge with each call (can be null)
+     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
+     *     boolean)} so the MCP server name and read-only hint are propagated.
      */
+    @Deprecated(since = "2.0.0")
     public McpTool(
             String name,
             String description,
             Map<String, Object> parameters,
             McpClientWrapper clientWrapper,
             Map<String, Object> presetArguments) {
-        this(name, description, parameters, null, clientWrapper, presetArguments);
+        this(
+                name,
+                description,
+                parameters,
+                null,
+                clientWrapper,
+                presetArguments,
+                clientWrapper.getName(),
+                false);
     }
 
     /**
-     * Constructs a new McpTool with an optional output schema and preset arguments.
-     *
-     * @param name the tool name
-     * @param description the tool description
-     * @param parameters the JSON schema for tool parameters
-     * @param outputSchema the JSON schema for tool outputs (can be null)
-     * @param clientWrapper the MCP client wrapper
-     * @param presetArguments preset arguments to merge with each call (can be null)
+     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
+     *     boolean)} so the MCP server name and read-only hint are propagated.
      */
+    @Deprecated(since = "2.0.0")
     public McpTool(
             String name,
             String description,
@@ -116,47 +134,35 @@ public class McpTool implements AgentTool {
             Map<String, Object> outputSchema,
             McpClientWrapper clientWrapper,
             Map<String, Object> presetArguments) {
-        this.name = name;
-        this.description = description;
-        this.parameters = parameters;
-        this.outputSchema = outputSchema != null ? new HashMap<>(outputSchema) : null;
-        this.clientWrapper = clientWrapper;
-        this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
-    }
-
-    /**
-     * Returns the name of this MCP tool.
-     *
-     * @return the tool name
-     */
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    /**
-     * Returns the description of this MCP tool.
-     *
-     * @return the tool description
-     */
-    @Override
-    public String getDescription() {
-        return description;
-    }
-
-    /**
-     * Returns the JSON schema parameters for this MCP tool.
-     *
-     * @return the parameters schema map
-     */
-    @Override
-    public Map<String, Object> getParameters() {
-        return parameters;
+        this(
+                name,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                clientWrapper.getName(),
+                false);
     }
 
     @Override
     public Map<String, Object> getOutputSchema() {
         return outputSchema != null ? new HashMap<>(outputSchema) : null;
+    }
+
+    @Override
+    public Mono<PermissionDecision> checkPermissions(
+            Map<String, Object> toolInput, PermissionContext context) {
+        if (isReadOnly()) {
+            return Mono.just(
+                    PermissionDecision.allow(
+                            "Read-only MCP tool '" + getName() + "' allowed without prompt"));
+        }
+        return Mono.just(
+                PermissionDecision.ask(
+                        "MCP tool '"
+                                + getName()
+                                + "' requires explicit authorization before each call"));
     }
 
     /**
@@ -171,18 +177,20 @@ public class McpTool implements AgentTool {
      */
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        logger.debug("Calling MCP tool '{}' with input: {}", name, param.getInput());
+        logger.debug("Calling MCP tool '{}' with input: {}", getName(), param.getInput());
 
         // Merge preset arguments with input arguments
         Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
         return clientWrapper
-                .callTool(name, mergedArgs)
+                .callTool(getName(), mergedArgs)
                 .map(McpContentConverter::convertCallToolResult)
-                .doOnSuccess(result -> logger.debug("MCP tool '{}' completed successfully", name))
+                .doOnSuccess(
+                        result -> logger.debug("MCP tool '{}' completed successfully", getName()))
                 .onErrorResume(
                         e -> {
-                            logger.error("Error calling MCP tool '{}': {}", name, e.getMessage());
+                            logger.error(
+                                    "Error calling MCP tool '{}': {}", getName(), e.getMessage());
                             String errorMsg =
                                     e.getMessage() != null
                                             ? e.getMessage()

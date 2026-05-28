@@ -179,7 +179,6 @@ class SequentialPipelineTest {
                 .sysPrompt("Test agent")
                 .model(model)
                 .toolkit(toolkit)
-                .memory(memory)
                 .build();
     }
 }

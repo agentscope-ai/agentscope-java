@@ -309,18 +309,19 @@ public class Toolkit {
     }
 
     /**
-     * Check if a tool is an external tool (schema-only, requires user execution).
+     * Check if a tool is an external tool (requires execution outside the framework).
      *
-     * <p>External tools are registered using {@link #registerSchema(ToolSchema)} and should
-     * be executed outside the framework. When this method returns true, the framework will
-     * skip execution and return the tool call to the user.
+     * <p>A tool is considered external when it extends {@link ToolBase} and reports
+     * {@code isExternalTool() == true} — for example {@link SchemaOnlyTool}, or any
+     * {@code @Tool(externalTool=true)} method. When this returns true, the framework will skip
+     * execution and surface the tool call to the user via {@code TOOL_SUSPENDED}.
      *
      * @param toolName The name of the tool to check
-     * @return true if the tool is an external tool (SchemaOnlyTool), false otherwise
+     * @return true if the tool is an external tool, false otherwise
      */
     public boolean isExternalTool(String toolName) {
         AgentTool tool = getTool(toolName);
-        return tool instanceof SchemaOnlyTool;
+        return tool instanceof ToolBase tb && tb.isExternalTool();
     }
 
     /**
@@ -335,6 +336,10 @@ public class Toolkit {
 
     /**
      * Register a tool method with group, extended model, and preset parameters.
+     *
+     * <p>Builds a {@link ReflectiveFunctionTool} (a {@link ToolBase} subclass) so the registered
+     * tool participates in permission evaluation, the {@link ToolExecutor} safe-flag machinery,
+     * and the agent's pending-confirmation flow alongside MCP and built-in tools.
      */
     private void registerToolMethod(
             Object toolObject,
@@ -354,40 +359,20 @@ public class Toolkit {
         // Parse custom converter from annotation
         ToolResultConverter customConverter = parseConverterFromAnnotation(toolAnnotation);
 
+        Set<String> presetParamNames =
+                presetParameters != null ? presetParameters.keySet() : Collections.emptySet();
+
         AgentTool tool =
-                new AgentTool() {
-                    @Override
-                    public String getName() {
-                        return toolName;
-                    }
-
-                    @Override
-                    public String getDescription() {
-                        return description;
-                    }
-
-                    @Override
-                    public Map<String, Object> getParameters() {
-                        // Exclude preset parameters from the schema
-                        Set<String> excludeParams =
-                                presetParameters != null
-                                        ? presetParameters.keySet()
-                                        : Collections.emptySet();
-                        return schemaGenerator.generateParameterSchema(method, excludeParams);
-                    }
-
-                    @Override
-                    public Boolean getStrict() {
-                        return toolAnnotation.strict() ? Boolean.TRUE : null;
-                    }
-
-                    @Override
-                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-                        // Pass custom converter to method invoker
-                        return methodInvoker.invokeAsync(
-                                toolObject, method, param, customConverter);
-                    }
-                };
+                ReflectiveFunctionTool.create(
+                        toolObject,
+                        method,
+                        toolAnnotation,
+                        toolName,
+                        description,
+                        schemaGenerator,
+                        methodInvoker,
+                        customConverter,
+                        presetParamNames);
 
         registerAgentTool(tool, groupName, extendedModel, null, presetParameters);
     }

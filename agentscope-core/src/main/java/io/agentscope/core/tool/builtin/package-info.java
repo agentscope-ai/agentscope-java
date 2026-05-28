@@ -15,7 +15,7 @@
  */
 /**
  * Built-in tools that participate in permission evaluation via
- * {@link io.agentscope.core.tool.permission.ToolBase}.
+ * {@link io.agentscope.core.tool.ToolBase}.
  *
  * <p>This package hosts the six core tools used by agents to inspect and modify the local
  * environment:

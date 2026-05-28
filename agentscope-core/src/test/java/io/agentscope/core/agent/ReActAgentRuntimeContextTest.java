@@ -114,7 +114,6 @@ class ReActAgentRuntimeContextTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(model)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .hooks(List.of(hook))
                         .build();
 

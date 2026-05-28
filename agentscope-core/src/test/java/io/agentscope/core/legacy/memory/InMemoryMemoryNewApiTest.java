@@ -16,7 +16,6 @@
 package io.agentscope.core.legacy.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -120,33 +119,16 @@ class InMemoryMemoryNewApiTest {
     class LoadIfExistsTests {
 
         @Test
-        @DisplayName("Should return true and load when session exists")
-        void testLoadIfExistsTrue() {
+        @DisplayName("Should load when session exists via loadFrom")
+        void testLoadFromExisting() {
             InMemoryMemory memory = new InMemoryMemory();
             memory.addMessage(createUserMsg("Test message"));
             memory.saveTo(session, sessionKey);
 
             InMemoryMemory loadedMemory = new InMemoryMemory();
-            boolean exists = loadedMemory.loadIfExists(session, sessionKey);
+            loadedMemory.loadFrom(session, sessionKey);
 
-            assertTrue(exists);
             assertEquals(1, loadedMemory.getMessages().size());
-        }
-
-        @Test
-        @DisplayName("Should return false when session doesn't exist")
-        void testLoadIfExistsFalse() {
-            InMemoryMemory memory = new InMemoryMemory();
-            memory.addMessage(createUserMsg("Pre-existing"));
-
-            // No session saved, so loadIfExists should return false
-            boolean exists = memory.loadIfExists(session, SimpleSessionKey.of("non_existent"));
-
-            // loadIfExists returns false when session doesn't exist
-            assertFalse(exists);
-            // loadFrom is NOT called when session doesn't exist, so memory is preserved
-            assertEquals(1, memory.getMessages().size());
-            assertEquals("Pre-existing", getTextContent(memory.getMessages().get(0)));
         }
     }
 

@@ -18,7 +18,6 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.anthropic.AnthropicChatFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicMultiAgentFormatter;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
@@ -60,11 +59,7 @@ public class AnthropicProvider extends BaseModelProvider {
                                         : new AnthropicChatFormatter())
                         .defaultOptions(GenerateOptions.builder().build());
 
-        return ReActAgent.builder()
-                .name(name)
-                .model(builder.build())
-                .toolkit(toolkit)
-                .memory(new InMemoryMemory());
+        return ReActAgent.builder().name(name).model(builder.build()).toolkit(toolkit);
     }
 
     @Override

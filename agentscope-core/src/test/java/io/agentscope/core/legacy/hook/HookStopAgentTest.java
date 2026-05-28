@@ -188,7 +188,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
                             .build();
@@ -222,7 +221,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
                             .build();
@@ -274,7 +272,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(stopOnceHook)
                             .build();
@@ -313,7 +310,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
                             .build();
@@ -362,7 +358,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
                             .enablePendingToolRecovery(true)
@@ -458,7 +453,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(conditionalStopHook)
                             .build();
@@ -517,7 +511,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(hook1)
                             .hook(hook2)
@@ -567,7 +560,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
                             .build();
@@ -635,7 +627,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
                             .build();
@@ -666,7 +657,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .build();
 
@@ -700,7 +690,6 @@ class HookStopAgentTest {
                             .name("test-agent")
                             .model(mockModel)
                             .toolkit(toolkit)
-                            .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
                             .enablePendingToolRecovery(true)

@@ -91,7 +91,6 @@ class AgentPerformanceTest {
                                                 .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                                                 .model(model)
                                                 .toolkit(mockToolkit)
-                                                .memory(memory)
                                                 .build();
 
                                 Msg input =
@@ -129,7 +128,6 @@ class AgentPerformanceTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(model)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Add many messages to memory
@@ -177,7 +175,6 @@ class AgentPerformanceTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(model)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Measure response time for single interaction

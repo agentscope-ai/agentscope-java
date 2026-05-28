@@ -92,7 +92,6 @@ class ReActAgentThinkingCumulativeTest {
                         .sysPrompt("You are a test agent")
                         .model(mockModel)
                         .toolkit(new EmptyToolkit())
-                        .memory(memory)
                         .hook(cumulativeHook)
                         .build();
 
@@ -148,7 +147,6 @@ class ReActAgentThinkingCumulativeTest {
                         .sysPrompt("You are a test agent")
                         .model(mockModel)
                         .toolkit(new EmptyToolkit())
-                        .memory(memory)
                         .hook(incrementalHook)
                         .build();
 

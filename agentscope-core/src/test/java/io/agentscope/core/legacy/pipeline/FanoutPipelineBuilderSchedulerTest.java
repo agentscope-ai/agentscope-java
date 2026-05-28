@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
@@ -300,8 +299,6 @@ class FanoutPipelineBuilderSchedulerTest {
                 .sysPrompt("Test agent")
                 .model(model)
                 .toolkit(new Toolkit()) // Each agent gets independent toolkit for thread safety
-                .memory(new InMemoryMemory()) // Each agent gets independent memory for thread
-                // safety
                 .build();
     }
 }

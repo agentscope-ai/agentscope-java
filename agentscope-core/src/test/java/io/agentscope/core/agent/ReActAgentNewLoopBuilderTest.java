@@ -66,7 +66,6 @@ class ReActAgentNewLoopBuilderTest {
                 .sysPrompt("you are helpful")
                 .model(newFakeModel())
                 .toolkit(new Toolkit())
-                .agentState(newState())
                 .modelConfig(ModelConfig.defaults())
                 .contextConfig(ContextConfig.defaults())
                 .reactConfig(ReactConfig.defaults())
@@ -90,7 +89,6 @@ class ReActAgentNewLoopBuilderTest {
                         .model(model)
                         .toolkit(toolkit)
                         .middlewares(mw)
-                        .agentState(state)
                         .modelConfig(mc)
                         .contextConfig(cc)
                         .reactConfig(rc)
@@ -101,7 +99,7 @@ class ReActAgentNewLoopBuilderTest {
         assertSame(model, agent.getModel());
         assertNotNull(agent.getToolkit());
         assertEquals(mw, agent.getMiddlewares());
-        assertSame(state, agent.getState());
+        assertNotNull(agent.getState());
         assertSame(mc, agent.getModelConfig());
         assertSame(cc, agent.getContextConfig());
         assertSame(rc, agent.getReactConfig());
@@ -113,12 +111,7 @@ class ReActAgentNewLoopBuilderTest {
     @Test
     void builderAppliesDefaultsWhenConfigsOmitted() {
         ReActAgent agent =
-                ReActAgent.builder()
-                        .name("a")
-                        .model(newFakeModel())
-                        .toolkit(new Toolkit())
-                        .agentState(newState())
-                        .build();
+                ReActAgent.builder().name("a").model(newFakeModel()).toolkit(new Toolkit()).build();
         assertNotNull(agent.getModelConfig());
         assertNotNull(agent.getContextConfig());
         assertNotNull(agent.getReactConfig());
@@ -127,14 +120,8 @@ class ReActAgentNewLoopBuilderTest {
 
     @Test
     void observeAddsMessagesToState() {
-        AgentState state = newState();
         ReActAgent agent =
-                ReActAgent.builder()
-                        .name("a")
-                        .model(newFakeModel())
-                        .toolkit(new Toolkit())
-                        .agentState(state)
-                        .build();
+                ReActAgent.builder().name("a").model(newFakeModel()).toolkit(new Toolkit()).build();
 
         Msg m1 = Msg.builder().role(MsgRole.USER).textContent("hi").build();
         Msg m2 = Msg.builder().role(MsgRole.USER).textContent("again").build();
@@ -142,6 +129,6 @@ class ReActAgentNewLoopBuilderTest {
         StepVerifier.create(agent.observe(m1)).verifyComplete();
         StepVerifier.create(agent.observe(List.of(m2))).verifyComplete();
 
-        assertEquals(2, state.getContext().size());
+        assertEquals(2, agent.getState().getContext().size());
     }
 }

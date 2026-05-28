@@ -18,7 +18,6 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.GLMFormatter;
 import io.agentscope.core.formatter.openai.GLMMultiAgentFormatter;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.HashSet;
@@ -53,11 +52,7 @@ public class GLMProvider extends BaseModelProvider {
                                         : new GLMFormatter())
                         .build();
 
-        return ReActAgent.builder()
-                .name(name)
-                .model(model)
-                .toolkit(toolkit)
-                .memory(new InMemoryMemory());
+        return ReActAgent.builder().name(name).model(model).toolkit(toolkit);
     }
 
     @Override

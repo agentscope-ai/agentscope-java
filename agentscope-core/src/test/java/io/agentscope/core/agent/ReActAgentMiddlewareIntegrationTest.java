@@ -129,7 +129,6 @@ class ReActAgentMiddlewareIntegrationTest {
                 .model(model)
                 .toolkit(new Toolkit())
                 .middlewares(middlewares)
-                .agentState(newState())
                 .build();
     }
 

@@ -171,12 +171,7 @@ class ReActAgentHitlTest {
     }
 
     private static ReActAgent buildAgent(ChatModelBase model, Toolkit toolkit) {
-        return ReActAgent.builder()
-                .name("asst")
-                .model(model)
-                .toolkit(toolkit)
-                .agentState(newState())
-                .build();
+        return ReActAgent.builder().name("asst").model(model).toolkit(toolkit).build();
     }
 
     private static int indexOf(List<AgentEvent> events, Class<?> type) {

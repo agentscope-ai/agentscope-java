@@ -133,13 +133,7 @@ class ReActAgentCoarseStreamTest {
 
         AgentState state = AgentState.builder().sessionId("coarse").build();
 
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("asst")
-                        .model(model)
-                        .toolkit(tk)
-                        .agentState(state)
-                        .build();
+        ReActAgent agent = ReActAgent.builder().name("asst").model(model).toolkit(tk).build();
 
         List<Event> events =
                 agent.stream(List.of(), StreamOptions.defaults()).collectList().block();
@@ -183,7 +177,6 @@ class ReActAgentCoarseStreamTest {
                         .name("asst")
                         .model(model)
                         .toolkit(tk)
-                        .agentState(state)
                         .reactConfig(react)
                         .maxIters(1)
                         .build();

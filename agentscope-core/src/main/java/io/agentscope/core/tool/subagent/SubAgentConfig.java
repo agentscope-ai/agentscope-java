@@ -19,7 +19,6 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.storage.StorageBase;
 
 /**
  * Configuration for sub-agent registration.
@@ -66,7 +65,6 @@ public class SubAgentConfig {
     private final boolean forwardEvents;
     private final StreamOptions streamOptions;
     private final Session session;
-    private final StorageBase storage;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
@@ -74,7 +72,6 @@ public class SubAgentConfig {
         this.forwardEvents = builder.forwardEvents;
         this.streamOptions = builder.streamOptions;
         this.session = builder.session != null ? builder.session : new InMemorySession();
-        this.storage = builder.storage;
     }
 
     /**
@@ -151,15 +148,6 @@ public class SubAgentConfig {
         return session;
     }
 
-    /**
-     * Gets the {@link StorageBase} for persisting sub-agent state via {@code AgentState}.
-     *
-     * @return The storage instance, or {@code null} to fall back to Session-based persistence
-     */
-    public StorageBase getStorage() {
-        return storage;
-    }
-
     /** Builder for SubAgentConfig. */
     public static class Builder {
         private String toolName;
@@ -167,7 +155,6 @@ public class SubAgentConfig {
         private boolean forwardEvents = true;
         private StreamOptions streamOptions;
         private Session session;
-        private StorageBase storage;
 
         private Builder() {}
 
@@ -239,20 +226,6 @@ public class SubAgentConfig {
          */
         public Builder session(Session session) {
             this.session = session;
-            return this;
-        }
-
-        /**
-         * Sets the {@link StorageBase} for persisting sub-agent state via {@code AgentState}.
-         *
-         * <p>When set, the sub-agent tool uses StorageBase for state persistence instead of
-         * the legacy Session path.
-         *
-         * @param storage The storage instance
-         * @return This builder
-         */
-        public Builder storage(StorageBase storage) {
-            this.storage = storage;
             return this;
         }
 

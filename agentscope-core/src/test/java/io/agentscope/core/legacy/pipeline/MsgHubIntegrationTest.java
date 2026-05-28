@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -66,7 +65,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Alice, a student.")
                         .model(model1)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         ReActAgent bob =
@@ -75,7 +73,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Bob, a student.")
                         .model(model2)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         ReActAgent charlie =
@@ -84,7 +81,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Charlie, a student.")
                         .model(model3)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         // Create announcement message
@@ -184,7 +180,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Alice.")
                         .model(model1)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         ReActAgent bob =
@@ -193,7 +188,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Bob.")
                         .model(model2)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         ReActAgent charlie =
@@ -202,7 +196,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Charlie.")
                         .model(model3)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         try (MsgHub hub = MsgHub.builder().name("DynamicChat").participants(alice, bob).build()) {
@@ -263,7 +256,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Alice.")
                         .model(model1)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         ReActAgent bob =
@@ -272,7 +264,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Bob.")
                         .model(model2)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         try (MsgHub hub =
@@ -309,7 +300,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Alice.")
                         .model(model1)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         try (MsgHub hub = MsgHub.builder().participants(alice).build()) {
@@ -333,7 +323,6 @@ class MsgHubIntegrationTest {
                         .sysPrompt("You are Alice.")
                         .model(model1)
                         .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
                         .build();
 
         Msg msg1 =

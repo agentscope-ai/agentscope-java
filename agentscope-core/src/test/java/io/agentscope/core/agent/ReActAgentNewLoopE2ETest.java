@@ -164,7 +164,6 @@ class ReActAgentNewLoopE2ETest {
         tk.registerAgentTool(new AlwaysAllowTool("search"));
         tk.registerAgentTool(new AlwaysAllowTool("lookup"));
 
-        AgentState state = AgentState.builder().sessionId("e2e").build();
         RecordingMiddleware mw = new RecordingMiddleware();
 
         ReActAgent agent =
@@ -174,8 +173,8 @@ class ReActAgentNewLoopE2ETest {
                         .model(model)
                         .toolkit(tk)
                         .middleware(mw)
-                        .agentState(state)
                         .build();
+        AgentState state = agent.getState();
 
         List<AgentEvent> events =
                 agent.streamEvents(
