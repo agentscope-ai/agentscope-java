@@ -2281,4 +2281,44 @@ class AutoContextMemoryTest {
                 foundCompressedTool,
                 "Should find a compressed TOOL message with preserved ToolResultBlock structure");
     }
+
+    @Test
+    @DisplayName("Should skip disabled strategies")
+    void testDisabledStrategies() {
+        // Create a config with ALL strategies explicitly disabled
+        AutoContextConfig disabledConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(2) // Trigger compression easily
+                        .strategy1Enabled(false)
+                        .strategy2Enabled(false)
+                        .strategy3Enabled(false)
+                        .strategy4Enabled(false)
+                        .strategy5Enabled(false)
+                        .strategy6Enabled(false)
+                        .build();
+        TestModel testModelDisabled = new TestModel("Should not be called");
+        AutoContextMemory memoryWithDisabled =
+                new AutoContextMemory(disabledConfig, testModelDisabled);
+
+        // Add enough messages to trigger compression
+        for (int i = 0; i < 5; i++) {
+            memoryWithDisabled.addMessage(createTextMessage("User query", MsgRole.USER));
+            memoryWithDisabled.addMessage(
+                    createTextMessage("Assistant response", MsgRole.ASSISTANT));
+        }
+
+        memoryWithDisabled.compressIfNeeded();
+
+        // Model should not be called because all strategies are disabled
+        assertEquals(
+                0,
+                testModelDisabled.getCallCount(),
+                "Model should not be called when all strategies are disabled");
+
+        // Context should not be modified
+        assertEquals(
+                10,
+                memoryWithDisabled.getMessages().size(),
+                "Message count should not change when all strategies are disabled");
+    }
 }

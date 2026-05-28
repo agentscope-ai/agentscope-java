@@ -231,62 +231,23 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                 + " to compress");
                                 return Mono.defer(
                                         () -> {
-                                            List<Msg> msgs = new ArrayList<>(workingMemoryStorage);
-                                            int toolIters = 5;
-                                            int cursorStartIndex = 0;
-                                            // Collect all tool ranges first (sync, cheap)
-                                            List<Pair<Integer, Integer>> ranges = new ArrayList<>();
-                                            while (toolIters-- > 0) {
-                                                Pair<Integer, Integer> indices =
-                                                        extractPrevToolMsgsForCompress(
-                                                                msgs,
-                                                                autoContextConfig.getLastKeep(),
-                                                                cursorStartIndex);
-                                                if (indices == null) break;
-                                                ranges.add(indices);
-                                                cursorStartIndex = indices.second() + 1;
-                                            }
-                                            if (ranges.isEmpty()) {
-                                                log.info(
-                                                        "Strategy 1: SKIPPED - No compressible"
-                                                                + " tool invocations found");
-                                                return Mono.just(false);
-                                            }
-                                            // Process ranges sequentially (order matters)
-                                            Mono<Boolean> toolChain = Mono.just(false);
-                                            for (Pair<Integer, Integer> range : ranges) {
-                                                final Pair<Integer, Integer> r = range;
-                                                toolChain =
-                                                        toolChain.flatMap(
-                                                                p -> {
-                                                                    List<Msg> cur =
-                                                                            new ArrayList<>(
-                                                                                    workingMemoryStorage);
-                                                                    return summaryToolsMessages(
-                                                                                    cur, r)
-                                                                            .doOnNext(
-                                                                                    done -> {
-                                                                                        if (done)
-                                                                                            replaceWorkingMessage(
-                                                                                                    cur);
-                                                                                    })
-                                                                            .map(done -> p || done);
-                                                                });
-                                            }
-                                            return toolChain.doOnNext(
-                                                    applied -> {
-                                                        if (applied)
-                                                            log.info(
-                                                                    "Strategy 1: APPLIED -"
-                                                                            + " Compressed tool"
-                                                                            + " invocations");
-                                                        else
-                                                            log.info(
-                                                                    "Strategy 1: SKIPPED - No"
-                                                                        + " compressible tool"
-                                                                        + " invocations (or skipped"
-                                                                        + " due to low tokens)");
-                                                    });
+                                            return processStrategy1Async(5, false)
+                                                    .doOnNext(
+                                                            applied -> {
+                                                                if (applied)
+                                                                    log.info(
+                                                                            "Strategy 1: APPLIED -"
+                                                                                + " Compressed tool"
+                                                                                + " invocations");
+                                                                else
+                                                                    log.info(
+                                                                            "Strategy 1: SKIPPED -"
+                                                                                + " No compressible"
+                                                                                + " tool"
+                                                                                + " invocations (or"
+                                                                                + " skipped due to"
+                                                                                + " low tokens)");
+                                                            });
                                         });
                             });
         } else {
@@ -474,8 +435,40 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      */
     @Deprecated
     public boolean compressIfNeeded() {
-        Boolean result = compressIfNeededAsync().block();
+        Boolean result = compressIfNeededAsync().block(java.time.Duration.ofSeconds(60));
         return Boolean.TRUE.equals(result);
+    }
+
+    private Mono<Boolean> processStrategy1Async(int maxIters, boolean anyApplied) {
+        return processStrategy1Async(maxIters, anyApplied, 0);
+    }
+
+    private Mono<Boolean> processStrategy1Async(int maxIters, boolean anyApplied, int cursor) {
+        if (maxIters <= 0) return Mono.just(anyApplied);
+        return Mono.defer(
+                () -> {
+                    List<Msg> msgs = new ArrayList<>(workingMemoryStorage);
+                    Pair<Integer, Integer> range =
+                            extractPrevToolMsgsForCompress(
+                                    msgs, autoContextConfig.getLastKeep(), cursor);
+                    if (range == null) {
+                        return Mono.just(anyApplied);
+                    }
+                    return summaryToolsMessages(msgs, range)
+                            .flatMap(
+                                    done -> {
+                                        if (done) {
+                                            replaceWorkingMessage(msgs);
+                                            // Recursively process the next range now that list is
+                                            // updated
+                                            return processStrategy1Async(maxIters - 1, true, 0);
+                                        } else {
+                                            // Skip this range and find next
+                                            return processStrategy1Async(
+                                                    maxIters - 1, anyApplied, range.second() + 1);
+                                        }
+                                    });
+                });
     }
 
     private List<Msg> replaceWorkingMessage(List<Msg> newMessages) {
@@ -698,15 +691,23 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             String uuid = UUID.randomUUID().toString();
                             List<Msg> offloadMsg = new ArrayList<>();
                             offloadMsg.add(msg);
-                            offload(uuid, offloadMsg);
-                            log.info(
-                                    "Offloaded current round large message: index={}, size={}"
-                                            + " chars, uuid={}",
-                                    idx,
-                                    MsgUtils.calculateMessageCharCount(msg),
-                                    uuid);
-                            return generateLargeMessageSummary(msg, uuid)
-                                    .map(summaryMsg -> new Object[] {idx, summaryMsg});
+                            return Mono.fromRunnable(
+                                            () -> {
+                                                offload(uuid, offloadMsg);
+                                                log.info(
+                                                        "Offloaded current round large message:"
+                                                                + " index={}, size={} chars,"
+                                                                + " uuid={}",
+                                                        idx,
+                                                        MsgUtils.calculateMessageCharCount(msg),
+                                                        uuid);
+                                            })
+                                    .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                                    .then(generateLargeMessageSummary(msg, uuid))
+                                    .map(
+                                            summaryMsg ->
+                                                    reactor.util.function.Tuples.of(
+                                                            idx, summaryMsg));
                         },
                         concurrency)
                 .collectList()
@@ -716,15 +717,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                 return false;
                             }
                             // Sort descending by index to avoid shifting
-                            results.sort(
-                                    (a, b) ->
-                                            Integer.compare(
-                                                    (int) ((Object[]) b)[0],
-                                                    (int) ((Object[]) a)[0]));
-                            for (Object item : results) {
-                                Object[] arr = (Object[]) item;
-                                int idx = (int) arr[0];
-                                Msg summaryMsg = (Msg) arr[1];
+                            results.sort((a, b) -> Integer.compare(b.getT1(), a.getT1()));
+                            for (reactor.util.function.Tuple2<Integer, Msg> item : results) {
+                                int idx = item.getT1();
+                                Msg summaryMsg = item.getT2();
                                 Map<String, Object> metadata = new HashMap<>();
                                 if (summaryMsg.getChatUsage() != null) {
                                     metadata.put(
