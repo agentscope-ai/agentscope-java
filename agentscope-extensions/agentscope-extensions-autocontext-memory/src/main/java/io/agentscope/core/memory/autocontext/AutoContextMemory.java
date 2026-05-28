@@ -56,7 +56,7 @@ import reactor.core.scheduler.Schedulers;
  * <p>Key features:
  * <ul>
  *   <li>Automatic compression when message count or token count exceeds thresholds</li>
- *   <li>Six progressive compression strategies (from lightweight to heavyweight)</li>
+ *   <li>Seven progressive compression strategies (from lightweight to heavyweight)</li>
  *   <li>Intelligent summarization using LLM models</li>
  *   <li>Content offloading to external storage</li>
  *   <li>Tool call interface preservation during compression</li>
@@ -65,6 +65,7 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Compression strategies (applied in order):
  * <ol>
+ *   <li>Roll up historical rounds outside the recent focus window</li>
  *   <li>Compress historical tool invocations</li>
  *   <li>Offload large messages (with lastKeep protection)</li>
  *   <li>Offload large messages (without protection)</li>
@@ -82,6 +83,17 @@ import reactor.core.scheduler.Schedulers;
 public class AutoContextMemory implements StateModule, Memory, ContextOffLoader {
 
     private static final Logger log = LoggerFactory.getLogger(AutoContextMemory.class);
+    // Two complete text rounds: user + assistant, user + assistant.
+    private static final int MIN_HISTORY_ROLLUP_MESSAGES = 4;
+    private static final String COMPRESS_META_KEY = "_compress_meta";
+    private static final String OFFLOAD_UUID_KEY = "offloaduuid";
+    private static final String EVENT_TYPE_KEY = "event_type";
+    private static final String ROLLUP_GENERATION_KEY = "rollupGeneration";
+
+    private record RoundRange(int startIndex, int endIndex) {}
+
+    private record HistoryRollupRange(
+            int startIndex, int endIndex, int roundCount, int previousRollupGeneration) {}
 
     /**
      * Working memory storage for compressed and offloaded messages.
@@ -172,6 +184,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      *
      * <p>Compression strategies are applied in order until one succeeds:
      * <ol>
+     *   <li>Roll up historical rounds outside the recent focus window</li>
      *   <li>Compress previous round tool invocations</li>
      *   <li>Offload previous round large messages (with lastKeep protection)</li>
      *   <li>Offload previous round large messages (without lastKeep protection)</li>
@@ -203,8 +216,21 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 calculateToken,
                 thresholdToken);
 
-        // Strategy 1: Compress previous round tool invocations
-        log.info("Strategy 1: Checking for previous round tool invocations to compress");
+        if (msgCountReached) {
+            log.info("Strategy 1: Checking recent focus window history rollup");
+            boolean historyRolledUp = rollupHistoryOutsideFocusWindow(currentContextMessages);
+            if (historyRolledUp) {
+                replaceWorkingMessage(currentContextMessages);
+                return true;
+            } else {
+                log.info(
+                        "Strategy 1: SKIPPED - No complete historical rounds outside focus"
+                                + " window");
+            }
+        }
+
+        // Strategy 2: Compress previous round tool invocations
+        log.info("Strategy 2: Checking for previous round tool invocations to compress");
         int toolIters = 5;
         boolean toolCompressed = false;
         int compressionCount = 0;
@@ -231,79 +257,87 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         }
         if (toolCompressed) {
             log.info(
-                    "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
+                    "Strategy 2: APPLIED - Compressed {} tool invocation groups", compressionCount);
             return true;
         } else {
             log.info(
-                    "Strategy 1: SKIPPED - No compressible tool invocations found (or skipped due"
+                    "Strategy 2: SKIPPED - No compressible tool invocations found (or skipped due"
                             + " to low tokens)");
         }
 
-        // Strategy 2: Offload previous round large messages (with lastKeep protection)
+        // Strategy 3: Offload previous round large messages (with lastKeep protection)
         log.info(
-                "Strategy 2: Checking for previous round large messages (with lastKeep"
+                "Strategy 3: Checking for previous round large messages (with lastKeep"
                         + " protection)");
         boolean hasOffloadedLastKeep = offloadingLargePayload(currentContextMessages, true);
         if (hasOffloadedLastKeep) {
             log.info(
-                    "Strategy 2: APPLIED - Offloaded previous round large messages (with lastKeep"
+                    "Strategy 3: APPLIED - Offloaded previous round large messages (with lastKeep"
                             + " protection)");
             replaceWorkingMessage(currentContextMessages);
             return true;
         } else {
-            log.info("Strategy 2: SKIPPED - No large messages found or protected by lastKeep");
+            log.info("Strategy 3: SKIPPED - No large messages found or protected by lastKeep");
         }
 
-        // Strategy 3: Offload previous round large messages (without lastKeep protection)
+        // Strategy 4: Offload previous round large messages (without lastKeep protection)
         log.info(
-                "Strategy 3: Checking for previous round large messages (without lastKeep"
+                "Strategy 4: Checking for previous round large messages (without lastKeep"
                         + " protection)");
         boolean hasOffloaded = offloadingLargePayload(currentContextMessages, false);
         if (hasOffloaded) {
-            log.info("Strategy 3: APPLIED - Offloaded previous round large messages");
+            log.info("Strategy 4: APPLIED - Offloaded previous round large messages");
             replaceWorkingMessage(currentContextMessages);
             return true;
         } else {
-            log.info("Strategy 3: SKIPPED - No large messages found");
+            log.info("Strategy 4: SKIPPED - No large messages found");
         }
 
-        // Strategy 4: Summarize previous round conversations
-        log.info("Strategy 4: Checking for previous round conversations to summarize");
+        // Strategy 5: Summarize previous round conversations
+        log.info("Strategy 5: Checking for previous round conversations to summarize");
         boolean hasSummarized = summaryPreviousRoundMessages(currentContextMessages);
         if (hasSummarized) {
-            log.info("Strategy 4: APPLIED - Summarized previous round conversations");
+            log.info("Strategy 5: APPLIED - Summarized previous round conversations");
             replaceWorkingMessage(currentContextMessages);
             return true;
         } else {
-            log.info("Strategy 4: SKIPPED - No previous round conversations to summarize");
+            log.info("Strategy 5: SKIPPED - No previous round conversations to summarize");
         }
 
-        if (isCurrentRoundToolInFlight(currentContextMessages)) {
-            log.info("Strategy 5/6: SKIPPED - current round has in-flight tool invocation");
+        if (msgCountReached && !tokenCounterReached) {
+            log.warn(
+                    "All historical compression strategies exhausted but message count still"
+                            + " exceeds threshold; skipping current round compression to preserve"
+                            + " recent focus window");
             return false;
         }
 
-        // Strategy 5: Summarize and offload current round large messages
-        log.info("Strategy 5: Checking for current round large messages to summarize");
+        if (isCurrentRoundToolInFlight(currentContextMessages)) {
+            log.info("Strategy 6/7: SKIPPED - current round has in-flight tool invocation");
+            return false;
+        }
+
+        // Strategy 6: Summarize and offload current round large messages
+        log.info("Strategy 6: Checking for current round large messages to summarize");
         boolean currentRoundLargeSummarized =
                 summaryCurrentRoundLargeMessages(currentContextMessages);
         if (currentRoundLargeSummarized) {
-            log.info("Strategy 5: APPLIED - Summarized and offloaded current round large messages");
+            log.info("Strategy 6: APPLIED - Summarized and offloaded current round large messages");
             replaceWorkingMessage(currentContextMessages);
             return true;
         } else {
-            log.info("Strategy 5: SKIPPED - No current round large messages found");
+            log.info("Strategy 6: SKIPPED - No current round large messages found");
         }
 
-        // Strategy 6: Summarize current round messages
-        log.info("Strategy 6: Checking for current round messages to summarize");
+        // Strategy 7: Summarize current round messages
+        log.info("Strategy 7: Checking for current round messages to summarize");
         boolean currentRoundSummarized = summaryCurrentRoundMessages(currentContextMessages);
         if (currentRoundSummarized) {
-            log.info("Strategy 6: APPLIED - Summarized current round messages");
+            log.info("Strategy 7: APPLIED - Summarized current round messages");
             replaceWorkingMessage(currentContextMessages);
             return true;
         } else {
-            log.info("Strategy 6: SKIPPED - No current round messages to summarize");
+            log.info("Strategy 7: SKIPPED - No current round messages to summarize");
         }
 
         log.warn("All compression strategies exhausted but context still exceeds threshold");
@@ -340,6 +374,298 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         }
 
         return hasToolBlock && !hasFinalAssistant;
+    }
+
+    /**
+     * Roll up completed historical rounds outside the recent focus window into one summary.
+     *
+     * <p>Strategy 1 is gated by message-count pressure only. It preserves the current round and
+     * then expands the protected focus window backward until both configured guarantees are met:
+     * recent completed round count and recent-focus token floor. Only a contiguous block of
+     * complete historical rounds outside that focus window is summarized. If an existing Strategy 1
+     * rollup summary is immediately adjacent to the new block, it is merged as rolling memory; the
+     * new summary's {@code rollupGeneration} is {@code previous + 1}.
+     */
+    private boolean rollupHistoryOutsideFocusWindow(List<Msg> rawMessages) {
+        if (rawMessages == null || rawMessages.isEmpty()) {
+            return false;
+        }
+
+        int focusWindowStart = findRecentFocusWindowStart(rawMessages);
+        if (focusWindowStart <= 0) {
+            return false;
+        }
+
+        HistoryRollupRange rollupRange = findHistoryRollupRange(rawMessages, focusWindowStart);
+        if (rollupRange == null) {
+            return false;
+        }
+
+        List<Msg> messagesToRollup =
+                new ArrayList<>(
+                        rawMessages.subList(rollupRange.startIndex(), rollupRange.endIndex() + 1));
+        if (messagesToRollup.size() < MIN_HISTORY_ROLLUP_MESSAGES) {
+            return false;
+        }
+
+        String uuid = UUID.randomUUID().toString();
+        offload(uuid, messagesToRollup);
+
+        int rollupGeneration = rollupRange.previousRollupGeneration() + 1;
+        Msg rollupSummary =
+                generateRecentFocusHistoryRollup(messagesToRollup, uuid, rollupGeneration);
+        int messageCountBefore = rawMessages.size();
+        int compactedMessages = rollupRange.endIndex() - rollupRange.startIndex() + 1;
+        int messageCountAfter = messageCountBefore - compactedMessages + 1;
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("roundCount", rollupRange.roundCount());
+        metadata.put("messageCountCompacted", compactedMessages);
+        metadata.put("messageCountBefore", messageCountBefore);
+        metadata.put("messageCountAfter", messageCountAfter);
+        metadata.put(ROLLUP_GENERATION_KEY, rollupGeneration);
+        metadata.put("tokenBefore", TokenCounterUtil.calculateToken(messagesToRollup));
+        metadata.put("tokenAfter", TokenCounterUtil.calculateToken(List.of(rollupSummary)));
+        metadata.put(OFFLOAD_UUID_KEY, uuid);
+        if (rollupSummary.getChatUsage() != null) {
+            metadata.put("inputToken", rollupSummary.getChatUsage().getInputTokens());
+            metadata.put("outputToken", rollupSummary.getChatUsage().getOutputTokens());
+            metadata.put("time", rollupSummary.getChatUsage().getTime());
+        }
+
+        recordCompressionEvent(
+                CompressionEvent.RECENT_FOCUS_WINDOW_COMPACT,
+                rollupRange.startIndex(),
+                rollupRange.endIndex(),
+                rawMessages,
+                rollupSummary,
+                metadata);
+
+        rawMessages.subList(rollupRange.startIndex(), rollupRange.endIndex() + 1).clear();
+        rawMessages.add(rollupRange.startIndex(), rollupSummary);
+
+        log.info(
+                "Strategy 1: APPLIED - Rolled up {} messages across {} old rounds into focus"
+                        + " window summary (working memory: {} -> {})",
+                compactedMessages,
+                rollupRange.roundCount(),
+                messageCountBefore,
+                messageCountAfter);
+        return true;
+    }
+
+    private int findRecentFocusWindowStart(List<Msg> rawMessages) {
+        int latestUserIndex = findLatestUserIndex(rawMessages);
+        int focusWindowStart = latestUserIndex >= 0 ? latestUserIndex : rawMessages.size();
+        int protectedTokens =
+                focusWindowStart < rawMessages.size()
+                        ? TokenCounterUtil.calculateToken(
+                                new ArrayList<>(
+                                        rawMessages.subList(focusWindowStart, rawMessages.size())))
+                        : 0;
+
+        int keepRecentRounds = Math.max(0, autoContextConfig.getHistoryRollupKeepRecentRounds());
+        int keepRecentTokens = Math.max(0, autoContextConfig.getHistoryRollupKeepRecentTokens());
+        List<RoundRange> completedRoundsBeforeCurrent =
+                extractCompleteRounds(rawMessages, focusWindowStart);
+
+        int keptRounds = 0;
+        for (int i = completedRoundsBeforeCurrent.size() - 1; i >= 0; i--) {
+            if (keptRounds >= keepRecentRounds && protectedTokens >= keepRecentTokens) {
+                break;
+            }
+
+            RoundRange round = completedRoundsBeforeCurrent.get(i);
+            protectedTokens +=
+                    TokenCounterUtil.calculateToken(
+                            new ArrayList<>(
+                                    rawMessages.subList(round.startIndex(), round.endIndex() + 1)));
+            focusWindowStart = round.startIndex();
+            keptRounds++;
+        }
+
+        return focusWindowStart;
+    }
+
+    private HistoryRollupRange findHistoryRollupRange(List<Msg> rawMessages, int focusWindowStart) {
+        List<RoundRange> oldRounds = extractCompleteRounds(rawMessages, focusWindowStart);
+        if (oldRounds.isEmpty()) {
+            return null;
+        }
+
+        RoundRange lastRound = oldRounds.get(oldRounds.size() - 1);
+        int startIndex = lastRound.startIndex();
+        int endIndex = lastRound.endIndex();
+        int roundCount = 1;
+
+        for (int i = oldRounds.size() - 2; i >= 0; i--) {
+            RoundRange previousRound = oldRounds.get(i);
+            if (previousRound.endIndex() + 1 != startIndex) {
+                break;
+            }
+            startIndex = previousRound.startIndex();
+            roundCount++;
+        }
+
+        int previousRollupGeneration = 0;
+        if (startIndex > 0 && isRecentFocusWindowRollupSummary(rawMessages.get(startIndex - 1))) {
+            // Only merge an adjacent previous rollup summary. If orphan messages sit between the
+            // old summary and newly aged-out rounds, leave them untouched for safety.
+            startIndex--;
+            previousRollupGeneration = getRollupGeneration(rawMessages.get(startIndex));
+        }
+
+        return new HistoryRollupRange(startIndex, endIndex, roundCount, previousRollupGeneration);
+    }
+
+    private List<RoundRange> extractCompleteRounds(List<Msg> rawMessages, int endExclusive) {
+        List<RoundRange> rounds = new ArrayList<>();
+        int currentUserIndex = -1;
+        int limit = Math.min(endExclusive, rawMessages.size());
+
+        for (int i = 0; i < limit; i++) {
+            Msg msg = rawMessages.get(i);
+            if (msg.getRole() == MsgRole.USER) {
+                currentUserIndex = i;
+            } else if (MsgUtils.isFinalAssistantResponse(msg) && currentUserIndex >= 0) {
+                rounds.add(new RoundRange(currentUserIndex, i));
+                currentUserIndex = -1;
+            }
+        }
+
+        return rounds;
+    }
+
+    private int findLatestUserIndex(List<Msg> rawMessages) {
+        for (int i = rawMessages.size() - 1; i >= 0; i--) {
+            if (rawMessages.get(i).getRole() == MsgRole.USER) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private boolean isRecentFocusWindowRollupSummary(Msg msg) {
+        return CompressionEvent.RECENT_FOCUS_WINDOW_COMPACT.equals(
+                getCompressionMetadata(msg).get(EVENT_TYPE_KEY));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getCompressionMetadata(Msg msg) {
+        if (msg == null || msg.getMetadata() == null) {
+            return Map.of();
+        }
+
+        Object compressMeta = msg.getMetadata().get(COMPRESS_META_KEY);
+        if (compressMeta instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return Map.of();
+    }
+
+    private int getRollupGeneration(Msg msg) {
+        Object generation = getCompressionMetadata(msg).get(ROLLUP_GENERATION_KEY);
+        if (generation instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
+    }
+
+    private Msg generateRecentFocusHistoryRollup(
+            List<Msg> messages, String offloadUuid, int rollupGeneration) {
+        GenerateOptions options = GenerateOptions.builder().build();
+        ReasoningContext context = new ReasoningContext("history_rollup");
+
+        List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
+        if (filteredMessages.size() < messages.size()) {
+            log.info(
+                    "Filtered out {} plan-related tool call messages from history rollup",
+                    messages.size() - filteredMessages.size());
+        }
+
+        List<Msg> rollupInputMessages = buildHistoryRollupInputMessages(filteredMessages);
+        List<Msg> newMessages = new ArrayList<>();
+        newMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.RECENT_FOCUS_WINDOW_HISTORY_ROLLUP_PROMPT)
+                                        .build())
+                        .build());
+        newMessages.addAll(rollupInputMessages);
+        newMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
+                                        .build())
+                        .build());
+        addPlanAwareHintIfNeeded(newMessages);
+
+        Msg block =
+                model.stream(newMessages, null, options)
+                        .concatMap(chunk -> processChunk(chunk, context))
+                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
+                        .onErrorResume(InterruptedException.class, Mono::error)
+                        .block();
+
+        if (block != null && block.getChatUsage() != null) {
+            log.info(
+                    "History rollup summary completed, input tokens: {}, output tokens: {}",
+                    block.getChatUsage().getInputTokens(),
+                    block.getChatUsage().getOutputTokens());
+        }
+
+        Map<String, Object> compressMeta = new HashMap<>();
+        compressMeta.put(OFFLOAD_UUID_KEY, offloadUuid);
+        compressMeta.put(EVENT_TYPE_KEY, CompressionEvent.RECENT_FOCUS_WINDOW_COMPACT);
+        compressMeta.put(ROLLUP_GENERATION_KEY, rollupGeneration);
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(COMPRESS_META_KEY, compressMeta);
+        if (block != null && block.getChatUsage() != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
+        }
+
+        String summaryContent = block != null ? block.getTextContent() : "";
+        String offloadTag = String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid);
+        String finalContent = summaryContent + "\n" + offloadTag;
+
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .name("assistant")
+                .content(TextBlock.builder().text(finalContent).build())
+                .metadata(metadata)
+                .build();
+    }
+
+    private List<Msg> buildHistoryRollupInputMessages(List<Msg> messages) {
+        List<Msg> rollupInputMessages = new ArrayList<>();
+        for (Msg msg : messages) {
+            if (isRecentFocusWindowRollupSummary(msg)) {
+                String textContent = stripContextOffloadTags(msg.getTextContent());
+                rollupInputMessages.add(
+                        Msg.builder()
+                                .role(msg.getRole())
+                                .name(msg.getName())
+                                .content(TextBlock.builder().text(textContent).build())
+                                .build());
+            } else {
+                rollupInputMessages.add(msg);
+            }
+        }
+        return rollupInputMessages;
+    }
+
+    private String stripContextOffloadTags(String text) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        return text.replaceAll("(?s)\\s*<!--\\s*CONTEXT_OFFLOAD:\\s*uuid=[^>]+-->\\s*", "").trim();
     }
 
     Mono<Boolean> compressIfNeededAsync() {
@@ -1367,12 +1693,12 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             return false;
         }
 
-        // Strategy 1: If rawMessages has less than lastKeep messages, skip
+        // Step 1: If rawMessages has less than lastKeep messages, skip
         if (rawMessages.size() < autoContextConfig.getLastKeep()) {
             return false;
         }
 
-        // Strategy 2: Find the latest assistant message that is a final response and protect it and
+        // Step 2: Find the latest assistant message that is a final response and protect it and
         // all messages after it
         int latestAssistantIndex = -1;
         for (int i = rawMessages.size() - 1; i >= 0; i--) {
@@ -1416,7 +1742,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             // text stub. Doing so strips the ToolUseBlock, leaving the subsequent TOOL result
             // messages without a preceding tool_calls assistant message, which violates the API
             // constraint: "messages with role 'tool' must be a response to a preceding message
-            // with 'tool_calls'". These pairs are handled exclusively by Strategy 1.
+            // with 'tool_calls'". These pairs are handled exclusively by Strategy 2.
             if (MsgUtils.isToolUseMessage(msg)) {
                 continue;
             }
@@ -1734,7 +2060,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      *
      * <p>This method uses an LLM model to intelligently compress tool invocation messages,
      * preserving key information such as tool names, parameters, and important results while
-     * reducing the overall token count. The compression is performed as part of Strategy 1
+     * reducing the overall token count. The compression is performed as part of Strategy 2
      * (compress historical tool invocations) to manage context window limits.
      *
      * <p><b>Process:</b>
@@ -2076,9 +2402,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * <p>Offloading occurs when:
      * <ul>
      *   <li>Large messages exceed the {@code largePayloadThreshold}</li>
-     *   <li>Tool invocations are compressed (Strategy 1)</li>
-     *   <li>Previous round conversations are summarized (Strategy 4)</li>
-     *   <li>Current round messages are compressed (Strategy 5 &amp; 6)</li>
+     *   <li>Historical rounds are rolled up (Strategy 1)</li>
+     *   <li>Tool invocations are compressed (Strategy 2)</li>
+     *   <li>Previous round conversations are summarized (Strategy 5)</li>
+     *   <li>Current round messages are compressed (Strategy 6 &amp; 7)</li>
      * </ul>
      *
      * <p>The offloaded content can be accessed via {@link ContextOffloadTool} or by

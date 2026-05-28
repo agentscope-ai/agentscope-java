@@ -262,9 +262,9 @@ class AutoContextHookTest {
         TestModel testModel = new TestModel("Compressed summary");
         AutoContextMemory compressionMemory = new AutoContextMemory(compressionConfig, testModel);
 
-        // Add user-assistant pairs to trigger strategy 4 (summary previous rounds)
+        // Add user-assistant pairs to trigger strategy 5 (summary previous rounds)
         // This strategy will definitely call the model
-        // Strategy 4 requires user-assistant pairs with messages between them (i - currentUserIndex
+        // Strategy 5 requires user-assistant pairs with messages between them (i - currentUserIndex
         // != 1)
         for (int i = 0; i < 3; i++) {
             compressionMemory.addMessage(
@@ -274,7 +274,7 @@ class AutoContextHookTest {
                             .content(TextBlock.builder().text("User message " + i).build())
                             .build());
             // Add tool messages between user and assistant to ensure they form a pair
-            // (strategy 4 requires i - currentUserIndex != 1)
+            // (strategy 5 requires i - currentUserIndex != 1)
             compressionMemory.addMessage(
                     Msg.builder()
                             .role(MsgRole.ASSISTANT)
@@ -342,7 +342,7 @@ class AutoContextHookTest {
         // Process event - this should trigger compression
         PreReasoningEvent result = hook.onEvent(event).block();
 
-        // Verify compression was triggered (model should be called for strategy 4)
+        // Verify compression was triggered (model should be called for strategy 5)
         List<Msg> finalMessages = compressionMemory.getMessages();
         assertTrue(
                 testModel.getCallCount() > 0,

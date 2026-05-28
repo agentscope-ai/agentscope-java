@@ -21,11 +21,12 @@ package io.agentscope.core.memory.autocontext;
  * <p>Prompts are organized by compression strategy in progressive order (from lightweight to
  * heavyweight):
  * <ol>
- *   <li>Strategy 1: Tool invocation compression</li>
- *   <li>Strategy 2-3: Large message offloading</li>
- *   <li>Strategy 4: Previous round conversation summary</li>
- *   <li>Strategy 5: Current round large message summary</li>
- *   <li>Strategy 6: Current round message compression</li>
+ *   <li>Strategy 1: Recent focus window history rollup</li>
+ *   <li>Strategy 2: Tool invocation compression</li>
+ *   <li>Strategy 3-4: Large message offloading</li>
+ *   <li>Strategy 5: Previous round conversation summary</li>
+ *   <li>Strategy 6: Current round large message summary</li>
+ *   <li>Strategy 7: Current round message compression</li>
  * </ol>
  */
 public class Prompts {
@@ -45,7 +46,7 @@ public class Prompts {
             "Above is the message list that needs to be compressed.";
 
     // ============================================================================
-    // Strategy 1: Previous Round Tool Invocation Compression
+    // Strategy 2: Previous Round Tool Invocation Compression
     // ============================================================================
 
     /** Prompt for compressing previous round tool invocations independently. */
@@ -71,11 +72,11 @@ public class Prompts {
                 + "    - If any tool output appears truncated or corrupted, include '[TRUNCATED]'.";
 
     // ============================================================================
-    // Strategy 2-3: Large Message Offloading
+    // Strategy 3-4: Large Message Offloading
     // ============================================================================
 
     // ============================================================================
-    // Strategy 4: Previous Round Conversation Summary
+    // Strategy 5: Previous Round Conversation Summary
     // ============================================================================
 
     /** Prompt for summarizing previous round conversations. */
@@ -121,7 +122,46 @@ public class Prompts {
     public static final String CONTEXT_OFFLOAD_TAG_FORMAT = "<!-- CONTEXT_OFFLOAD: uuid=%s -->";
 
     // ============================================================================
-    // Strategy 5: Current Round Large Message Summary
+    // Strategy 1: Recent Focus Window History Rollup
+    // ============================================================================
+
+    /** Prompt for rolling historical rounds outside the recent focus window into one summary. */
+    public static final String RECENT_FOCUS_WINDOW_HISTORY_ROLLUP_PROMPT =
+            "You are an expert long-term memory consolidator for autonomous agents. Your task is to"
+                + " roll up older completed conversation rounds into a concise, durable memory"
+                + " summary while preserving facts that may matter later.\n"
+                + "\n"
+                + "INPUT STRUCTURE:\n"
+                + "- The input contains historical messages that are outside the recent focus"
+                + " window.\n"
+                + "- It may start with a prior rollup summary. Treat that text as existing"
+                + " long-term memory and merge it with the newly aged-out rounds.\n"
+                + "- Later messages may contain user questions, assistant answers, and tool"
+                + " execution details from completed rounds.\n"
+                + "\n"
+                + "PRESERVE:\n"
+                + "- User-stated requirements, decisions, constraints, preferences, and open"
+                + " questions.\n"
+                + "- Technical facts from assistant answers and tool results, including exact file"
+                + " paths, IDs, URLs, ports, status codes, config keys and values, error messages,"
+                + " versions, commands, and state changes.\n"
+                + "- Outcomes of write/change operations: what changed, where, and whether it"
+                + " succeeded or failed.\n"
+                + "\n"
+                + "SAFE TO COLLAPSE:\n"
+                + "- Repeated low-signal chat turns, redundant confirmations, and boilerplate"
+                + " success text with no durable information.\n"
+                + "- Multiple similar retrieval results if the retained summary keeps the important"
+                + " concrete facts.\n"
+                + "\n"
+                + "OUTPUT REQUIREMENTS:\n"
+                + "- Output one plain-text memory summary.\n"
+                + "- Do not use markdown, JSON, bullets, XML, section headers, or meta-comments.\n"
+                + "- Do not include any <!-- CONTEXT_OFFLOAD --> tag.\n"
+                + "- Do not describe this as a compression task; just write the resulting memory.";
+
+    // ============================================================================
+    // Strategy 6: Current Round Large Message Summary
     // ============================================================================
 
     /** Prompt for summarizing current round large messages. */
@@ -144,7 +184,7 @@ public class Prompts {
                 + " parameters)";
 
     // ============================================================================
-    // Strategy 6: Current Round Message Compression
+    // Strategy 7: Current Round Message Compression
     // ============================================================================
 
     /** Prompt for compressing current round messages (main instruction, without character count requirement). */

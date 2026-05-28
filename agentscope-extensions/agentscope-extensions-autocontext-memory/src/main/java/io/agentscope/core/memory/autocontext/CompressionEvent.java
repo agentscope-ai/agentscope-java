@@ -26,25 +26,28 @@ import java.util.Map;
  */
 public class CompressionEvent implements State {
 
-    /** Event type: Compress historical tool invocations (Strategy 1). */
+    /** Event type: Roll up historical rounds outside the recent focus window (Strategy 1). */
+    public static final String RECENT_FOCUS_WINDOW_COMPACT = "RECENT_FOCUS_WINDOW_COMPACT";
+
+    /** Event type: Compress historical tool invocations (Strategy 2). */
     public static final String TOOL_INVOCATION_COMPRESS = "TOOL_INVOCATION_COMPRESS";
 
-    /** Event type: Offload large messages with lastKeep protection (Strategy 2). */
+    /** Event type: Offload large messages with lastKeep protection (Strategy 3). */
     public static final String LARGE_MESSAGE_OFFLOAD_WITH_PROTECTION =
             "LARGE_MESSAGE_OFFLOAD_WITH_PROTECTION";
 
-    /** Event type: Offload large messages without protection (Strategy 3). */
+    /** Event type: Offload large messages without protection (Strategy 4). */
     public static final String LARGE_MESSAGE_OFFLOAD = "LARGE_MESSAGE_OFFLOAD";
 
-    /** Event type: Summarize previous round conversations (Strategy 4). */
+    /** Event type: Summarize previous round conversations (Strategy 5). */
     public static final String PREVIOUS_ROUND_CONVERSATION_SUMMARY =
             "PREVIOUS_ROUND_CONVERSATION_SUMMARY";
 
-    /** Event type: Summarize current round large messages (Strategy 5). */
+    /** Event type: Summarize current round large messages (Strategy 6). */
     public static final String CURRENT_ROUND_LARGE_MESSAGE_SUMMARY =
             "CURRENT_ROUND_LARGE_MESSAGE_SUMMARY";
 
-    /** Event type: Compress current round messages (Strategy 6). */
+    /** Event type: Compress current round messages (Strategy 7). */
     public static final String CURRENT_ROUND_MESSAGE_COMPRESS = "CURRENT_ROUND_MESSAGE_COMPRESS";
 
     private String eventType;

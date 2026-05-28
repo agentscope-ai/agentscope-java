@@ -23,10 +23,10 @@ package io.agentscope.core.memory.autocontext;
  *
  * <p><b>Configurable Prompts:</b>
  * <ul>
- *   <li><b>Strategy 1:</b> Previous round tool invocation compression</li>
- *   <li><b>Strategy 4:</b> Previous round conversation summarization</li>
- *   <li><b>Strategy 5:</b> Current round large message summarization</li>
- *   <li><b>Strategy 6:</b> Current round message compression</li>
+ *   <li><b>Strategy 2:</b> Previous round tool invocation compression</li>
+ *   <li><b>Strategy 5:</b> Previous round conversation summarization</li>
+ *   <li><b>Strategy 6:</b> Current round large message summarization</li>
+ *   <li><b>Strategy 7:</b> Current round message compression</li>
  * </ul>
  *
  * <p><b>Usage Example:</b>
@@ -55,7 +55,7 @@ package io.agentscope.core.memory.autocontext;
 public class PromptConfig {
 
     /**
-     * Strategy 1: Prompt for compressing previous round tool invocations.
+     * Strategy 2: Prompt for compressing previous round tool invocations.
      *
      * <p>This prompt is used when compressing historical tool invocation sequences. It guides the
      * LLM to compress tool calls while preserving tool names, parameters, and key results.
@@ -66,7 +66,7 @@ public class PromptConfig {
     private String previousRoundToolCompressPrompt;
 
     /**
-     * Strategy 4: Prompt for summarizing previous round conversations.
+     * Strategy 5: Prompt for summarizing previous round conversations.
      *
      * <p>This prompt is used when summarizing entire conversation rounds (user-assistant pairs)
      * from previous rounds. It guides the LLM to create concise summaries while retaining key
@@ -78,7 +78,7 @@ public class PromptConfig {
     private String previousRoundSummaryPrompt;
 
     /**
-     * Strategy 5: Prompt for summarizing current round large messages.
+     * Strategy 6: Prompt for summarizing current round large messages.
      *
      * <p>This prompt is used when summarizing individual large messages in the current round.
      * It guides the LLM to create summaries that preserve critical information while reducing
@@ -90,7 +90,7 @@ public class PromptConfig {
     private String currentRoundLargeMessagePrompt;
 
     /**
-     * Strategy 6: Prompt for compressing current round messages.
+     * Strategy 7: Prompt for compressing current round messages.
      *
      * <p>This prompt is used when compressing all messages in the current round (typically tool
      * calls and results). It guides the LLM to compress content while being conservative to
@@ -129,7 +129,7 @@ public class PromptConfig {
         private PromptConfig config = new PromptConfig();
 
         /**
-         * Sets the prompt for Strategy 1: compressing previous round tool invocations.
+         * Sets the prompt for Strategy 2: compressing previous round tool invocations.
          *
          * @param prompt the custom prompt text, or null/empty to use default
          * @return this builder instance for method chaining
@@ -141,7 +141,7 @@ public class PromptConfig {
         }
 
         /**
-         * Sets the prompt for Strategy 4: summarizing previous round conversations.
+         * Sets the prompt for Strategy 5: summarizing previous round conversations.
          *
          * @param prompt the custom prompt text, or null/empty to use default
          * @return this builder instance for method chaining
@@ -153,7 +153,7 @@ public class PromptConfig {
         }
 
         /**
-         * Sets the prompt for Strategy 5: summarizing current round large messages.
+         * Sets the prompt for Strategy 6: summarizing current round large messages.
          *
          * @param prompt the custom prompt text, or null/empty to use default
          * @return this builder instance for method chaining
@@ -165,7 +165,7 @@ public class PromptConfig {
         }
 
         /**
-         * Sets the prompt for Strategy 6: compressing current round messages.
+         * Sets the prompt for Strategy 7: compressing current round messages.
          *
          * <p><b>Note:</b> This prompt does not include character count requirements.
          * The character count requirement is handled separately and sent as a separate message.
@@ -208,7 +208,7 @@ public class PromptConfig {
     }
 
     /**
-     * Gets the prompt for Strategy 1: compressing previous round tool invocations.
+     * Gets the prompt for Strategy 2: compressing previous round tool invocations.
      *
      * @return the custom prompt, or null if not set (will use default from {@link Prompts})
      * @see #previousRoundToolCompressPrompt
@@ -218,7 +218,7 @@ public class PromptConfig {
     }
 
     /**
-     * Gets the prompt for Strategy 4: summarizing previous round conversations.
+     * Gets the prompt for Strategy 5: summarizing previous round conversations.
      *
      * @return the custom prompt, or null if not set (will use default from {@link Prompts})
      * @see #previousRoundSummaryPrompt
@@ -228,7 +228,7 @@ public class PromptConfig {
     }
 
     /**
-     * Gets the prompt for Strategy 5: summarizing current round large messages.
+     * Gets the prompt for Strategy 6: summarizing current round large messages.
      *
      * @return the custom prompt, or null if not set (will use default from {@link Prompts})
      * @see #currentRoundLargeMessagePrompt
@@ -238,7 +238,7 @@ public class PromptConfig {
     }
 
     /**
-     * Gets the prompt for Strategy 6: compressing current round messages.
+     * Gets the prompt for Strategy 7: compressing current round messages.
      *
      * @return the custom prompt, or null if not set (will use default from {@link Prompts})
      * @see #currentRoundCompressPrompt
