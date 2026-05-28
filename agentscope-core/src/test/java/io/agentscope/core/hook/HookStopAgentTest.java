@@ -420,6 +420,101 @@ class HookStopAgentTest {
                     "Memory should contain an error ToolResultBlock for the pending tool call"
                             + " id='tool1'");
         }
+
+        @Test
+        @DisplayName("Auto-recovery works when memory already contains historical ToolResultBlocks")
+        void testAutoRecoveryWithHistoricalToolResults() {
+            // Pre-populate memory with historical tool call + result pairs.
+            // This simulates a conversation that has used tools before.
+            Msg historicalToolUse = createToolUseMsg("old_tool_1", "odps_query", Map.of());
+            memory.addMessage(historicalToolUse);
+            Msg historicalToolResult =
+                    Msg.builder()
+                            .name("test-agent")
+                            .role(MsgRole.TOOL)
+                            .content(
+                                    ToolResultBlock.builder()
+                                            .id("old_tool_1")
+                                            .output(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("query result")
+                                                                    .build()))
+                                            .build())
+                            .build();
+            memory.addMessage(historicalToolResult);
+            Msg historicalAssistantReply = createAssistantTextMsg("Here is the query result.");
+            memory.addMessage(historicalAssistantReply);
+
+            // Now set up the current scenario: agent makes a new tool call that gets stopped
+            Msg newToolUseMsg = createToolUseMsg("new_tool_1", "test_tool", Map.of());
+            Msg recoveryResponse = createAssistantTextMsg("Recovered successfully");
+
+            when(mockModel.stream(anyList(), anyList(), any()))
+                    .thenReturn(createFluxFromMsg(newToolUseMsg))
+                    .thenReturn(createFluxFromMsg(recoveryResponse));
+
+            Hook stopHook = createPostReasoningStopHook();
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent")
+                            .model(mockModel)
+                            .toolkit(toolkit)
+                            .memory(memory)
+                            .checkRunning(false)
+                            .hook(stopHook)
+                            .enablePendingToolRecovery(true)
+                            .build();
+
+            // First call - agent reasons a tool call, gets stopped by hook
+            Msg result1 = agent.call(createUserMsg("do something")).block(TEST_TIMEOUT);
+            assertTrue(
+                    result1.hasContentBlocks(ToolUseBlock.class),
+                    "First call should return ToolUse message (stopped by hook)");
+
+            // At this point, memory has:
+            //   - historical ASSISTANT msg with ToolUseBlock(id=old_tool_1)
+            //   - historical TOOL msg with ToolResultBlock(id=old_tool_1) ← THIS IS THE KEY
+            //   - historical ASSISTANT text msg
+            //   - user msg
+            //   - new ASSISTANT msg with ToolUseBlock(id=new_tool_1) ← PENDING (no result)
+            //
+            // Bug scenario: the hook's userProvidedResults check scanned the full
+            // inputMessages (memory snapshot + callArgs). The historical ToolResultBlock
+            // for old_tool_1 caused the hook to think "user provided results" and skip
+            // patching. Then doCall threw IllegalStateException.
+
+            // Second call - should auto-recover, NOT throw IllegalStateException
+            Msg result2 = agent.call(createUserMsg("continue")).block(TEST_TIMEOUT);
+
+            assertNotNull(result2, "Agent should auto-recover even with historical ToolResults");
+            assertTrue(
+                    result2.hasContentBlocks(TextBlock.class),
+                    "Recovery result should contain text content");
+
+            // Verify error ToolResultBlock was written for the PENDING tool call
+            List<Msg> memoryMsgs = memory.getMessages();
+            boolean hasErrorResultForNewTool =
+                    memoryMsgs.stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .anyMatch(
+                                    tr ->
+                                            "new_tool_1".equals(tr.getId())
+                                                    && tr.getOutput().stream()
+                                                            .anyMatch(
+                                                                    cb ->
+                                                                            cb instanceof TextBlock
+                                                                                    && ((TextBlock)
+                                                                                                    cb)
+                                                                                            .getText()
+                                                                                            .contains(
+                                                                                                    "[ERROR]")));
+            assertTrue(
+                    hasErrorResultForNewTool,
+                    "Memory should contain an error ToolResultBlock for the PENDING tool call"
+                            + " (new_tool_1), not be confused by historical ToolResults");
+        }
     }
 
     // ==================== E. Hook Integration Tests ====================
