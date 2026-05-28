@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -1071,6 +1072,8 @@ class AutoContextMemoryTest {
                         .findFirst()
                         .orElseThrow();
         assertEquals(1, getRollupGeneration(firstSummary));
+        String firstOffloadUuid = getOffloadUuid(firstSummary);
+        assertFalse(rollupMemory.reload(firstOffloadUuid).isEmpty());
 
         for (int i = 0; i < 4; i++) {
             addTextRound(rollupMemory, "second batch user " + i, "second batch assistant " + i);
@@ -1101,6 +1104,37 @@ class AutoContextMemoryTest {
         assertTrue(
                 secondInput.contains("second batch user"),
                 "Second rollup input should include newly aged-out rounds");
+        assertTrue(
+                rollupMemory.reload(firstOffloadUuid).isEmpty(),
+                "Previous rollup offload entry should be cleared after rolling merge");
+    }
+
+    @Test
+    @DisplayName("Should not retain rollup offload when summary generation fails")
+    void testHistoryRollupClearsNewOffloadOnSummaryFailure() {
+        FailingModel rollupModel = new FailingModel();
+        AutoContextConfig rollupConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(8)
+                        .maxToken(100000)
+                        .tokenRatio(0.99)
+                        .lastKeep(3)
+                        .minConsecutiveToolMessages(100)
+                        .largePayloadThreshold(100000)
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE)
+                        .historyRollupKeepRecentRounds(2)
+                        .historyRollupKeepRecentTokens(0)
+                        .build();
+        AutoContextMemory rollupMemory = new AutoContextMemory(rollupConfig, rollupModel);
+
+        for (int i = 0; i < 6; i++) {
+            addTextRound(rollupMemory, "old user " + i, "old assistant " + i);
+        }
+
+        assertThrows(RuntimeException.class, rollupMemory::compressIfNeeded);
+        assertTrue(
+                rollupMemory.getOffloadContext().isEmpty(),
+                "Failed rollup should not leave an orphaned offload entry");
     }
 
     @Test
@@ -1544,6 +1578,12 @@ class AutoContextMemoryTest {
         return 0;
     }
 
+    private String getOffloadUuid(Msg msg) {
+        Object uuid = getCompressMeta(msg).get("offloaduuid");
+        assertTrue(uuid instanceof String, "Compressed message should contain offload UUID");
+        return (String) uuid;
+    }
+
     /**
      * Simple Model implementation for testing.
      */
@@ -1578,6 +1618,19 @@ class AutoContextMemoryTest {
 
         void reset() {
             callCount = 0;
+        }
+    }
+
+    private static class FailingModel implements Model {
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.error(new RuntimeException("summary failed"));
+        }
+
+        @Override
+        public String getModelName() {
+            return "failing-model";
         }
     }
 

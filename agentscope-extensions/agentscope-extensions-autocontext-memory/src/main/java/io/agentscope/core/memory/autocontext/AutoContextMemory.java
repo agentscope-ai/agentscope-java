@@ -83,7 +83,7 @@ import reactor.core.scheduler.Schedulers;
 public class AutoContextMemory implements StateModule, Memory, ContextOffLoader {
 
     private static final Logger log = LoggerFactory.getLogger(AutoContextMemory.class);
-    // Two complete text rounds: user + assistant, user + assistant.
+    // Minimum raw messages worth an LLM rollup call, regardless of round shape.
     private static final int MIN_HISTORY_ROLLUP_MESSAGES = 4;
     private static final String COMPRESS_META_KEY = "_compress_meta";
     private static final String OFFLOAD_UUID_KEY = "offloaduuid";
@@ -93,7 +93,11 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
     private record RoundRange(int startIndex, int endIndex) {}
 
     private record HistoryRollupRange(
-            int startIndex, int endIndex, int roundCount, int previousRollupGeneration) {}
+            int startIndex,
+            int endIndex,
+            int roundCount,
+            int previousRollupGeneration,
+            String previousRollupOffloadUuid) {}
 
     /**
      * Working memory storage for compressed and offloaded messages.
@@ -409,7 +413,6 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         }
 
         String uuid = UUID.randomUUID().toString();
-        offload(uuid, messagesToRollup);
 
         int rollupGeneration = rollupRange.previousRollupGeneration() + 1;
         Msg rollupSummary =
@@ -441,8 +444,12 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 rollupSummary,
                 metadata);
 
+        offload(uuid, messagesToRollup);
         rawMessages.subList(rollupRange.startIndex(), rollupRange.endIndex() + 1).clear();
         rawMessages.add(rollupRange.startIndex(), rollupSummary);
+        if (rollupRange.previousRollupOffloadUuid() != null) {
+            clear(rollupRange.previousRollupOffloadUuid());
+        }
 
         log.info(
                 "Strategy 1: APPLIED - Rolled up {} messages across {} old rounds into focus"
@@ -508,14 +515,26 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         }
 
         int previousRollupGeneration = 0;
+        String previousRollupOffloadUuid = null;
         if (startIndex > 0 && isRecentFocusWindowRollupSummary(rawMessages.get(startIndex - 1))) {
             // Only merge an adjacent previous rollup summary. If orphan messages sit between the
             // old summary and newly aged-out rounds, leave them untouched for safety.
             startIndex--;
+            Map<String, Object> previousMetadata =
+                    getCompressionMetadata(rawMessages.get(startIndex));
             previousRollupGeneration = getRollupGeneration(rawMessages.get(startIndex));
+            Object oldUuid = previousMetadata.get(OFFLOAD_UUID_KEY);
+            if (oldUuid instanceof String uuid) {
+                previousRollupOffloadUuid = uuid;
+            }
         }
 
-        return new HistoryRollupRange(startIndex, endIndex, roundCount, previousRollupGeneration);
+        return new HistoryRollupRange(
+                startIndex,
+                endIndex,
+                roundCount,
+                previousRollupGeneration,
+                previousRollupOffloadUuid);
     }
 
     private List<RoundRange> extractCompleteRounds(List<Msg> rawMessages, int endExclusive) {
