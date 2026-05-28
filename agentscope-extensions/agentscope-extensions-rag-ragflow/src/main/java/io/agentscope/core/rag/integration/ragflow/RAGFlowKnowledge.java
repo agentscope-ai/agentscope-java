@@ -131,9 +131,17 @@ public class RAGFlowKnowledge implements Knowledge {
 
         logger.debug("RAGFlow retrieve: query={}, config={}", query, config);
 
-        // Extract retrieval parameters
-        Integer topK = config != null ? config.getLimit() : null;
-        Double similarityThreshold = config != null ? config.getScoreThreshold() : null;
+        // Prefer user-explicit RAGFlowConfig values over the framework-supplied RetrieveConfig,
+        // which is auto-populated with defaults by ReActAgent.Builder and would otherwise mask
+        // RAGFlow-specific settings.
+        Integer topK =
+                this.config.getTopK() != null
+                        ? this.config.getTopK()
+                        : (config != null ? config.getLimit() : null);
+        Double similarityThreshold =
+                this.config.getSimilarityThreshold() != null
+                        ? this.config.getSimilarityThreshold()
+                        : (config != null ? config.getScoreThreshold() : null);
 
         // Call RAGFlow API (metadata condition from config)
         return client.retrieve(query, topK, similarityThreshold, null)

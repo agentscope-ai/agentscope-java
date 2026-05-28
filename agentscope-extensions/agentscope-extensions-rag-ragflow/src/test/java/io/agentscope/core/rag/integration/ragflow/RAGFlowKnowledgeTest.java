@@ -20,12 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -237,6 +241,42 @@ class RAGFlowKnowledgeTest {
 
         assertNotNull(documents);
         assertTrue(documents.isEmpty());
+    }
+
+    @Test
+    void testRagFlowConfigTakesPrecedenceOverFrameworkRetrieveConfig() throws Exception {
+        // Regression for #1516: ReActAgent.Builder seeds RetrieveConfig with
+        // limit=5/scoreThreshold=0.5.
+        // RAGFlowConfig values must win so the user's RAGFlow-specific settings are not silently
+        // dropped.
+        mockWebServer.enqueue(createSuccessResponse());
+
+        RAGFlowConfig ragFlowConfig =
+                RAGFlowConfig.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockWebServer.url("").toString().replaceAll("/$", ""))
+                        .addDatasetId("dataset-123")
+                        .topK(10)
+                        .similarityThreshold(0.3)
+                        .maxRetries(0)
+                        .build();
+
+        RAGFlowKnowledge knowledge = RAGFlowKnowledge.builder().config(ragFlowConfig).build();
+
+        RetrieveConfig frameworkDefaults =
+                RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
+
+        knowledge.retrieve("query", frameworkDefaults).block();
+
+        RecordedRequest request = mockWebServer.takeRequest();
+        Map<String, Object> body =
+                JsonUtils.getJsonCodec()
+                        .fromJson(
+                                request.getBody().readUtf8(),
+                                new TypeReference<Map<String, Object>>() {});
+
+        assertEquals(10, body.get("top_k"));
+        assertEquals(0.3, body.get("similarity_threshold"));
     }
 
     // === AddDocuments Tests ===
