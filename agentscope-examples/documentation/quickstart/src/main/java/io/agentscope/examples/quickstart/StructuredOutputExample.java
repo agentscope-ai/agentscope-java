@@ -19,7 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;

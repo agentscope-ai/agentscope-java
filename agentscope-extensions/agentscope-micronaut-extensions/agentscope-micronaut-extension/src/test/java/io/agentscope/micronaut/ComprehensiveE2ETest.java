@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.micronaut.properties.AgentscopeProperties;

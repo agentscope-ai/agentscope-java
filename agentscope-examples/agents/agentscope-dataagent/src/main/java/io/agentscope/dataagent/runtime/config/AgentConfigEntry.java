@@ -79,7 +79,7 @@ public class AgentConfigEntry {
 
     /**
      * Layered skill repositories. Each entry is appended to the agent's effective
-     * {@link io.agentscope.core.skill.repository.SkillRepository} list in order, so earlier entries
+     * {@link io.agentscope.core.legacy.skill.repository.SkillRepository} list in order, so earlier entries
      * win on skill-name conflicts. The {@code workspace/skills/} overlay is implicit and is added
      * by {@link io.agentscope.dataagent.web.workspace.WorkspaceManagerFactory} automatically — do
      * not list it here.

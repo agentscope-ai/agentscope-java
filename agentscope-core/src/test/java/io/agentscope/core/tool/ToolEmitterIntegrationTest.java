@@ -20,10 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
-import io.agentscope.core.hook.ActingChunkEvent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.hook.ActingChunkEvent;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;

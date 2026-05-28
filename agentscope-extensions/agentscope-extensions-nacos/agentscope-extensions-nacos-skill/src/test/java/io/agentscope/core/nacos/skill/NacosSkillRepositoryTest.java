@@ -28,8 +28,8 @@ import static org.mockito.Mockito.when;
 
 import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.exception.NacosException;
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.legacy.skill.AgentSkill;
+import io.agentscope.core.legacy.skill.repository.AgentSkillRepositoryInfo;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

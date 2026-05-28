@@ -16,7 +16,12 @@
 package io.agentscope.core.memory.autocontext;
 
 import io.agentscope.core.agent.accumulator.ReasoningContext;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.Memory;
+import io.agentscope.core.legacy.plan.PlanNotebook;
+import io.agentscope.core.legacy.plan.model.Plan;
+import io.agentscope.core.legacy.plan.model.SubTask;
+import io.agentscope.core.legacy.plan.model.SubTaskState;
+import io.agentscope.core.legacy.session.Session;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -27,13 +32,8 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.plan.PlanNotebook;
-import io.agentscope.core.plan.model.Plan;
-import io.agentscope.core.plan.model.SubTask;
-import io.agentscope.core.plan.model.SubTaskState;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.legacy.state.StateModule;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

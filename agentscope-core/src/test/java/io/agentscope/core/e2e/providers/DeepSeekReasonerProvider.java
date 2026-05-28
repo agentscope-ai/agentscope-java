@@ -18,7 +18,7 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.DeepSeekFormatter;
 import io.agentscope.core.formatter.openai.DeepSeekMultiAgentFormatter;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.Toolkit;

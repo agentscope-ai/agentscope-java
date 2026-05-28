@@ -25,9 +25,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.hook.ErrorEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.legacy.hook.ErrorEvent;
+import io.agentscope.core.legacy.hook.PostCallEvent;
+import io.agentscope.core.legacy.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.training.backend.TrinityClient;

@@ -18,8 +18,8 @@ package io.agentscope.micronaut;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.tool.Toolkit;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.context.annotation.Prototype;

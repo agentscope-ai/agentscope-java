@@ -20,11 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.legacy.rag.model.Document;
+import io.agentscope.core.legacy.rag.model.DocumentMetadata;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.rag.exception.ReaderException;
-import io.agentscope.core.rag.model.Document;
-import io.agentscope.core.rag.model.DocumentMetadata;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;

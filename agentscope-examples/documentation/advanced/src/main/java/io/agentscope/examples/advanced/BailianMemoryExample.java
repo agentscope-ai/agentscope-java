@@ -17,7 +17,7 @@ package io.agentscope.examples.advanced;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.user.UserAgent;
-import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.legacy.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.bailian.BailianLongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;

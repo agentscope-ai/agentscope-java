@@ -23,15 +23,15 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
-import io.agentscope.core.event.ReplyStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ModelCallInput;
-import io.agentscope.core.middleware.ReplyInput;
 import io.agentscope.core.model.ChatUsage;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.StatusCode;
@@ -71,12 +71,12 @@ class OtelTracingMiddlewareTest {
     }
 
     @Test
-    void onReply_createsInvokeAgentSpan() {
+    void onAgent_createsInvokeAgentSpan() {
         Agent agent = stubAgent("test-agent", "agent-001");
-        ReplyInput input = new ReplyInput(List.of());
+        AgentInput input = new AgentInput(List.of());
 
-        ReplyStartEvent rse = new ReplyStartEvent("sess-1", "reply-42", "test-agent");
-        Flux<AgentEvent> result = middleware.onReply(agent, input, in -> Flux.just(rse));
+        AgentStartEvent rse = new AgentStartEvent("sess-1", "reply-42", "test-agent");
+        Flux<AgentEvent> result = middleware.onAgent(agent, input, in -> Flux.just(rse));
         result.collectList().block();
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems();
@@ -112,12 +112,12 @@ class OtelTracingMiddlewareTest {
     }
 
     @Test
-    void onReply_recordsErrorOnFailure() {
+    void onAgent_recordsErrorOnFailure() {
         Agent agent = stubAgent("err-agent", "agent-002");
-        ReplyInput input = new ReplyInput(List.of());
+        AgentInput input = new AgentInput(List.of());
 
         Flux<AgentEvent> result =
-                middleware.onReply(agent, input, in -> Flux.error(new RuntimeException("boom")));
+                middleware.onAgent(agent, input, in -> Flux.error(new RuntimeException("boom")));
         try {
             result.collectList().block();
         } catch (Exception ignored) {

@@ -17,7 +17,7 @@ package io.agentscope.core.shutdown;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.legacy.session.Session;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.SessionKey;
 import java.time.Duration;

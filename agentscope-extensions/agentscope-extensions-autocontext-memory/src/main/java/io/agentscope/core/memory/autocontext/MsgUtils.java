@@ -368,7 +368,7 @@ public class MsgUtils {
     /**
      * Set of plan-related tool names that should be filtered out during compression.
      *
-     * <p>This set includes all tools provided by {@link io.agentscope.core.plan.PlanNotebook}:
+     * <p>This set includes all tools provided by {@link io.agentscope.core.legacy.plan.PlanNotebook}:
      * <ul>
      *   <li>create_plan - Create a new plan</li>
      *   <li>update_plan_info - Update current plan's name, description, or expected outcome</li>

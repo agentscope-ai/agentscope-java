@@ -18,7 +18,7 @@ package io.agentscope.spring.boot;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;

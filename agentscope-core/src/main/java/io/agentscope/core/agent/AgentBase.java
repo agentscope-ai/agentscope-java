@@ -625,7 +625,7 @@ public abstract class AgentBase implements StateModule, Agent {
      *
      * @return Sorted list of hooks
      */
-    protected List<Hook> getSortedHooks() {
+    public List<Hook> getSortedHooks() {
         return hooks;
     }
 

@@ -16,8 +16,8 @@
 package io.agentscope.core.agent.user;
 
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.hook.Hook;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.legacy.hook.Hook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;

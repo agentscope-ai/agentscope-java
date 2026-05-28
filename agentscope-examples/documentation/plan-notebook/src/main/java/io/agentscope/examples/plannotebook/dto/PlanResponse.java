@@ -15,7 +15,7 @@
  */
 package io.agentscope.examples.plannotebook.dto;
 
-import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.legacy.plan.model.Plan;
 import java.util.ArrayList;
 import java.util.List;
 

@@ -15,9 +15,9 @@
  */
 package io.agentscope.harness.coding.hook;
 
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.HookEventType;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.HookEventType;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;

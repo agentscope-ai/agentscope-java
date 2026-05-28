@@ -16,10 +16,10 @@
 package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PostCallEvent;
+import io.agentscope.core.legacy.hook.RuntimeContextAware;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;

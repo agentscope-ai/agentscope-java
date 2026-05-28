@@ -16,18 +16,18 @@
 package io.agentscope.examples.quickstart;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.hook.TTSHook;
+import io.agentscope.core.legacy.hook.TTSHook;
+import io.agentscope.core.legacy.model.tts.AudioPlayer;
+import io.agentscope.core.legacy.model.tts.DashScopeRealtimeTTSModel;
+import io.agentscope.core.legacy.model.tts.DashScopeTTSModel;
+import io.agentscope.core.legacy.model.tts.TTSOptions;
+import io.agentscope.core.legacy.model.tts.TTSResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.tts.AudioPlayer;
-import io.agentscope.core.model.tts.DashScopeRealtimeTTSModel;
-import io.agentscope.core.model.tts.DashScopeTTSModel;
-import io.agentscope.core.model.tts.TTSOptions;
-import io.agentscope.core.model.tts.TTSResponse;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.multimodal.DashScopeMultiModalTool;
 

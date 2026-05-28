@@ -17,10 +17,10 @@ package io.agentscope.examples.quickstart;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PostReasoningEvent;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;

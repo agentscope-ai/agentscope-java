@@ -17,8 +17,8 @@ package io.agentscope.quarkus.deployment;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;

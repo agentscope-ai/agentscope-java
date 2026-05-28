@@ -16,7 +16,7 @@
 package io.agentscope.examples.supervisor;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;

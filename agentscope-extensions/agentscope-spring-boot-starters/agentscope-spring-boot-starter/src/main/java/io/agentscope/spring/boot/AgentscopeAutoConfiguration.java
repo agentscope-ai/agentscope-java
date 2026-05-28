@@ -16,8 +16,8 @@
 package io.agentscope.spring.boot;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.model.ModelProviderType;

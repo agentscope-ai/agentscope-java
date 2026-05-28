@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.state;
 
+import io.agentscope.core.legacy.state.StateModule;
+
 /**
  * Marker interface for persistable state objects.
  *

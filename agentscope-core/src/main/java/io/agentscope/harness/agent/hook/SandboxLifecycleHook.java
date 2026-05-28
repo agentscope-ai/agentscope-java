@@ -16,12 +16,12 @@
 package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.ErrorEvent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
+import io.agentscope.core.legacy.hook.ErrorEvent;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PostCallEvent;
+import io.agentscope.core.legacy.hook.PreCallEvent;
+import io.agentscope.core.legacy.hook.RuntimeContextAware;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;

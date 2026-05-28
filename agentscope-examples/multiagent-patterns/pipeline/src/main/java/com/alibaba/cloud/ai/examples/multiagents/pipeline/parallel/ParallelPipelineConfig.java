@@ -18,7 +18,7 @@ package com.alibaba.cloud.ai.examples.multiagents.pipeline.parallel;
 import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import com.alibaba.cloud.ai.graph.agent.flow.agent.ParallelAgent;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.model.Model;
 import java.util.List;
 import org.springframework.context.annotation.Bean;

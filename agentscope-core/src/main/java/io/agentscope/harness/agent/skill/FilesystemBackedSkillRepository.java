@@ -16,10 +16,10 @@
 package io.agentscope.harness.agent.skill;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
-import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
-import io.agentscope.core.skill.util.SkillUtil;
+import io.agentscope.core.legacy.skill.AgentSkill;
+import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
+import io.agentscope.core.legacy.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.legacy.skill.util.SkillUtil;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;

@@ -105,6 +105,18 @@ public final class ToolContext {
     }
 
     /**
+     * Replace the activated tool groups with the given list.
+     *
+     * @param groups the new activated groups; {@code null} clears the list
+     */
+    public void setActivatedGroups(List<String> groups) {
+        this.activatedGroups.clear();
+        if (groups != null) {
+            this.activatedGroups.addAll(groups);
+        }
+    }
+
+    /**
      * Look up the cached entry for {@code filePath}. Evicts and returns empty if the file's mtime
      * has changed or the file no longer exists.
      */

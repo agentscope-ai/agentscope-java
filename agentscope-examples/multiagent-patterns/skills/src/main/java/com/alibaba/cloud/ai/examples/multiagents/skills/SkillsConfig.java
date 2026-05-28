@@ -16,11 +16,11 @@
 package com.alibaba.cloud.ai.examples.multiagents.skills;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.skill.AgentSkill;
+import io.agentscope.core.legacy.skill.SkillBox;
+import io.agentscope.core.legacy.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.SkillBox;
-import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import java.io.IOException;
 import java.util.List;

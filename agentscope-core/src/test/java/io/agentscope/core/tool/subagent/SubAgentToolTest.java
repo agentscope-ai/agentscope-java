@@ -37,6 +37,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.storage.InMemoryStorage;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolExecutionContext;
@@ -445,10 +446,15 @@ class SubAgentToolTest {
                                         .role(MsgRole.ASSISTANT)
                                         .content(TextBlock.builder().text("ctx-ok").build())
                                         .build()));
+        when(subAgent.saveStateToStorage(any(), any())).thenReturn(Mono.empty());
 
         SubAgentTool tool =
                 new SubAgentTool(
-                        () -> subAgent, SubAgentConfig.builder().forwardEvents(false).build());
+                        () -> subAgent,
+                        SubAgentConfig.builder()
+                                .forwardEvents(false)
+                                .storage(new InMemoryStorage())
+                                .build());
 
         RuntimeContext runtimeContext = RuntimeContext.builder().userId("parent-user").build();
 
@@ -477,6 +483,7 @@ class SubAgentToolTest {
         ReActAgent subAgent = mock(ReActAgent.class);
         when(subAgent.getName()).thenReturn("CtxStreamSubAgent");
         when(subAgent.getDescription()).thenReturn("Sub agent with ctx stream");
+        when(subAgent.saveStateToStorage(any(), any())).thenReturn(Mono.empty());
 
         Msg responseMsg =
                 Msg.builder()
@@ -487,7 +494,10 @@ class SubAgentToolTest {
         when(subAgent.stream(any(List.class), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenReturn(Flux.just(reasoningEvent));
 
-        SubAgentTool tool = new SubAgentTool(() -> subAgent, SubAgentConfig.defaults());
+        SubAgentTool tool =
+                new SubAgentTool(
+                        () -> subAgent,
+                        SubAgentConfig.builder().storage(new InMemoryStorage()).build());
         RuntimeContext runtimeContext = RuntimeContext.builder().userId("parent-user").build();
 
         Map<String, Object> input = new HashMap<>();

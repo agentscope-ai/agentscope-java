@@ -19,13 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.legacy.state.AgentMetaState;
+import io.agentscope.core.legacy.state.ToolkitState;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.state.AgentMetaState;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
-import io.agentscope.core.state.ToolkitState;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;

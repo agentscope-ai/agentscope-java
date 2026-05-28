@@ -18,7 +18,7 @@ package io.agentscope.examples.bobatea.supervisor.agent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.message.Msg;

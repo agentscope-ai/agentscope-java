@@ -27,7 +27,7 @@ import reactor.core.publisher.Mono;
  *
  * <p><b>Onion Pattern</b> (4 hooks — wrap execution with before/after logic):
  * <ul>
- *   <li>{@link #onReply} — intercepts the entire reply process</li>
+ *   <li>{@link #onAgent} — intercepts the entire agent invocation</li>
  *   <li>{@link #onReasoning} — intercepts the reasoning/model-call phase</li>
  *   <li>{@link #onActing} — intercepts individual tool-call execution</li>
  *   <li>{@link #onModelCall} — intercepts the raw model API call</li>
@@ -58,15 +58,15 @@ import reactor.core.publisher.Mono;
 public interface MiddlewareBase {
 
     /**
-     * Intercept the entire reply process.
+     * Intercept the entire agent invocation.
      *
      * @param agent the agent instance
-     * @param input reply input (messages)
-     * @param next  calls the next middleware or the core reply logic
-     * @return event stream from the reply
+     * @param input agent input (messages)
+     * @param next  calls the next middleware or the core agent logic
+     * @return event stream from the agent invocation
      */
-    default Flux<AgentEvent> onReply(
-            Agent agent, ReplyInput input, Function<ReplyInput, Flux<AgentEvent>> next) {
+    default Flux<AgentEvent> onAgent(
+            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
         return next.apply(input);
     }
 

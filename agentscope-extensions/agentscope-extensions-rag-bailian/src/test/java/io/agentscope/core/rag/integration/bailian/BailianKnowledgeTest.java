@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 
 import com.aliyun.bailian20231229.models.RetrieveResponse;
 import com.aliyun.bailian20231229.models.RetrieveResponseBody;
-import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.legacy.rag.model.RetrieveConfig;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

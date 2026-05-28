@@ -17,12 +17,12 @@ package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.ErrorEvent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.legacy.hook.ErrorEvent;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PostCallEvent;
+import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.legacy.state.StateModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -40,7 +40,11 @@ import reactor.core.publisher.Mono;
  *
  * <p>Priority is set to 900 (low) so this hook runs after other hooks like
  * {@link MemoryFlushHook} have completed their work.
+ *
+ * @deprecated since 2.0.0. Use {@link StatePersistenceHook} which persists via
+ *     {@link io.agentscope.core.storage.StorageBase} when available.
  */
+@Deprecated(since = "2.0.0", forRemoval = true)
 public class SessionPersistenceHook implements Hook, RuntimeContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(SessionPersistenceHook.class);

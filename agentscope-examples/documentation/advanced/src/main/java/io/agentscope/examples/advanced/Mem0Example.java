@@ -17,7 +17,7 @@ package io.agentscope.examples.advanced;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.user.UserAgent;
-import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.legacy.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.mem0.Mem0ApiType;
 import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
 import io.agentscope.core.message.Msg;

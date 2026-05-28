@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.rag.integration.dify;
 
-import io.agentscope.core.rag.Knowledge;
-import io.agentscope.core.rag.model.Document;
-import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.legacy.rag.Knowledge;
+import io.agentscope.core.legacy.rag.model.Document;
+import io.agentscope.core.legacy.rag.model.RetrieveConfig;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;

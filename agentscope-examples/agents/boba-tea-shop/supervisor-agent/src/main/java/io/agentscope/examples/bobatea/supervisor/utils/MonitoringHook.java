@@ -16,14 +16,14 @@
 
 package io.agentscope.examples.bobatea.supervisor.utils;
 
-import io.agentscope.core.hook.ActingChunkEvent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreActingEvent;
-import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.legacy.hook.ActingChunkEvent;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PostActingEvent;
+import io.agentscope.core.legacy.hook.PostCallEvent;
+import io.agentscope.core.legacy.hook.PreActingEvent;
+import io.agentscope.core.legacy.hook.PreCallEvent;
+import io.agentscope.core.legacy.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import reactor.core.publisher.Mono;

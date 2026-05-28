@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.legacy.state;
 
-import io.agentscope.core.legacy.session.Session;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;

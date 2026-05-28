@@ -15,9 +15,9 @@
  */
 package io.agentscope.harness.coding.hook;
 
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PreReasoningEvent;
 import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.store.StoreItem;
 import java.util.List;

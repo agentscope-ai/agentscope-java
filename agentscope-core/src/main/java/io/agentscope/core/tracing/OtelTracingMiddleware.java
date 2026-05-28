@@ -17,14 +17,14 @@ package io.agentscope.core.tracing;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
-import io.agentscope.core.event.ReplyStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
-import io.agentscope.core.middleware.ReplyInput;
 import io.agentscope.core.model.Model;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
@@ -74,12 +74,12 @@ public class OtelTracingMiddleware implements MiddlewareBase {
     // with near-zero overhead, so an explicit check is unnecessary.
 
     // ------------------------------------------------------------------
-    // onReply — invoke_agent span
+    // onAgent — invoke_agent span
     // ------------------------------------------------------------------
 
     @Override
-    public Flux<AgentEvent> onReply(
-            Agent agent, ReplyInput input, Function<ReplyInput, Flux<AgentEvent>> next) {
+    public Flux<AgentEvent> onAgent(
+            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
         return Flux.defer(
                 () -> {
                     Tracer tracer = getTracer();
@@ -101,7 +101,7 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                         return next.apply(input)
                                 .doOnNext(
                                         event -> {
-                                            if (event instanceof ReplyStartEvent rse) {
+                                            if (event instanceof AgentStartEvent rse) {
                                                 replyIdRef.set(rse.getReplyId());
                                             }
                                         })

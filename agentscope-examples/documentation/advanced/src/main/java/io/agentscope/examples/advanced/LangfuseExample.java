@@ -17,11 +17,11 @@ package io.agentscope.examples.advanced;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.legacy.tracing.TracerRegistry;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.tracing.telemetry.TelemetryTracer;
 import java.util.Base64;
 import java.util.Scanner;

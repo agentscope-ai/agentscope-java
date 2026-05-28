@@ -21,12 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.config.ReactConfig;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
-import io.agentscope.core.event.ReplyEndEvent;
-import io.agentscope.core.event.ReplyStartEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
@@ -157,8 +157,8 @@ class ReActAgentNewLoopReplyTest {
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);
 
-        assertTrue(events.get(0) instanceof ReplyStartEvent);
-        assertTrue(events.get(events.size() - 1) instanceof ReplyEndEvent);
+        assertTrue(events.get(0) instanceof AgentStartEvent);
+        assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
         long modelStarts = events.stream().filter(e -> e instanceof ModelCallStartEvent).count();
         long modelEnds = events.stream().filter(e -> e instanceof ModelCallEndEvent).count();
         assertEquals(1L, modelStarts);
@@ -206,13 +206,13 @@ class ReActAgentNewLoopReplyTest {
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);
 
-        int iReplyStart = indexOf(events, ReplyStartEvent.class);
+        int iReplyStart = indexOf(events, AgentStartEvent.class);
         int iToolCallStart = indexOf(events, ToolCallStartEvent.class);
         int iToolCallEnd = indexOf(events, ToolCallEndEvent.class);
         int iModelCallEnd1 = indexOf(events, ModelCallEndEvent.class);
         int iToolResultStart = indexOf(events, ToolResultStartEvent.class);
         int iToolResultEnd = indexOf(events, ToolResultEndEvent.class);
-        int iReplyEnd = indexOf(events, ReplyEndEvent.class);
+        int iReplyEnd = indexOf(events, AgentEndEvent.class);
 
         assertTrue(iReplyStart >= 0);
         assertTrue(iToolCallStart > iReplyStart);

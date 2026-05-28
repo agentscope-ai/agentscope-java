@@ -21,14 +21,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.legacy.memory.InMemoryMemory;
-import io.agentscope.core.legacy.session.InMemorySession;
-import io.agentscope.core.legacy.session.JsonSession;
-import io.agentscope.core.legacy.session.Session;
 import io.agentscope.core.legacy.state.StateModule;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.session.InMemorySession;
+import io.agentscope.core.session.JsonSession;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.Optional;

@@ -23,7 +23,7 @@ import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.legacy.hook.PreReasoningEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;

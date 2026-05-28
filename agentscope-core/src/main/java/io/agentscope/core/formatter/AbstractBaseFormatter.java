@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter;
 
+import io.agentscope.core.legacy.tracing.TracerRegistry;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -29,7 +30,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.tracing.TracerRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

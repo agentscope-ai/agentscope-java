@@ -20,10 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
-import io.agentscope.core.event.ReplyEndEvent;
-import io.agentscope.core.event.ReplyStartEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -34,8 +34,8 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.Middleware;
-import io.agentscope.core.middleware.ReplyInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -138,8 +138,8 @@ class ReActAgentNewLoopE2ETest {
         final List<String> trace = new ArrayList<>();
 
         @Override
-        public Flux<AgentEvent> onReply(
-                Agent agent, ReplyInput input, Function<ReplyInput, Flux<AgentEvent>> next) {
+        public Flux<AgentEvent> onAgent(
+                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
             trace.add("reply:enter");
             return next.apply(input).doOnComplete(() -> trace.add("reply:exit"));
         }
@@ -190,10 +190,10 @@ class ReActAgentNewLoopE2ETest {
 
         assertEquals(3, model.calls.get(), "model must be called once per ReAct iteration");
 
-        assertTrue(events.get(0) instanceof ReplyStartEvent, "first event must be ReplyStartEvent");
+        assertTrue(events.get(0) instanceof AgentStartEvent, "first event must be AgentStartEvent");
         assertTrue(
-                events.get(events.size() - 1) instanceof ReplyEndEvent,
-                "last event must be ReplyEndEvent");
+                events.get(events.size() - 1) instanceof AgentEndEvent,
+                "last event must be AgentEndEvent");
 
         long modelEnds = events.stream().filter(e -> e instanceof ModelCallEndEvent).count();
         assertEquals(3L, modelEnds);

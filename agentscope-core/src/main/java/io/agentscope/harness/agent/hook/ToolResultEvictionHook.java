@@ -16,10 +16,10 @@
 package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PostActingEvent;
+import io.agentscope.core.legacy.hook.RuntimeContextAware;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;

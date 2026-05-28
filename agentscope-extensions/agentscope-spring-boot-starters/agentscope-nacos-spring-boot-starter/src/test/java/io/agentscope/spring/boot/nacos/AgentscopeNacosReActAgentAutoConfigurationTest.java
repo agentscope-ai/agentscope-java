@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
 import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.ai.model.prompt.Prompt;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.nacos.prompt.NacosPromptListener;
 import io.agentscope.core.tool.Toolkit;

@@ -45,11 +45,7 @@ import java.util.List;
  *     appendNewItems(values);
  * }
  * }</pre>
- *
- * @deprecated since 2.0.0. The session package is removed; persist conversation state via
- *     {@code AgentState} together with an external storage backend.
  */
-@Deprecated(forRemoval = true, since = "2.0.0")
 public final class ListHashUtil {
 
     /** Empty list hash constant. */

@@ -22,14 +22,14 @@ import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.legacy.skill.AgentSkill;
+import io.agentscope.core.legacy.skill.SkillBox;
+import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
+import io.agentscope.core.legacy.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.legacy.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.SkillBox;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
-import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
-import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
@@ -316,7 +316,7 @@ class DynamicSkillHookTest {
     private static void fireOnce(DynamicSkillHook hook) {
         Agent agent = mock(Agent.class);
         hook.onEvent(
-                        new io.agentscope.core.hook.PreCallEvent(
+                        new io.agentscope.core.legacy.hook.PreCallEvent(
                                 agent,
                                 List.of(
                                         Msg.builder()

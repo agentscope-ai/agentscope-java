@@ -17,9 +17,9 @@ package io.agentscope.examples.advanced;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.user.UserAgent;
+import io.agentscope.core.legacy.rag.RAGMode;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.integration.bailian.BailianConfig;
 import io.agentscope.core.rag.integration.bailian.BailianKnowledge;
 

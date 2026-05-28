@@ -49,11 +49,7 @@ import java.util.Set;
  * Optional<AgentMetaState> meta = session.get(sessionKey, "agent_meta", AgentMetaState.class);
  * List<Msg> messages = session.getList(sessionKey, "memory_messages", Msg.class);
  * }</pre>
- *
- * @deprecated since 2.0.0. The session package is removed; persist conversation state via
- *     {@code AgentState} together with an external storage backend.
  */
-@Deprecated(forRemoval = true, since = "2.0.0")
 public interface Session {
 
     /**

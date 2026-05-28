@@ -18,8 +18,8 @@ package io.agentscope.core.e2e;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;

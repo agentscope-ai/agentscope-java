@@ -16,14 +16,14 @@
 package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.SkillBox;
-import io.agentscope.core.skill.SkillHook;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PreCallEvent;
+import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.legacy.skill.AgentSkill;
+import io.agentscope.core.legacy.skill.SkillBox;
+import io.agentscope.core.legacy.skill.SkillHook;
+import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import java.util.LinkedHashMap;
 import java.util.List;

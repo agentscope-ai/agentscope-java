@@ -17,9 +17,9 @@ package com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.node;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
-import io.agentscope.core.rag.Knowledge;
-import io.agentscope.core.rag.model.Document;
-import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.legacy.rag.Knowledge;
+import io.agentscope.core.legacy.rag.model.Document;
+import io.agentscope.core.legacy.rag.model.RetrieveConfig;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;

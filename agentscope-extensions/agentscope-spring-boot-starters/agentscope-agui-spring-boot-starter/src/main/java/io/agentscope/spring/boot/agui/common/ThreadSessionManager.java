@@ -17,7 +17,7 @@ package io.agentscope.spring.boot.agui.common;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.Memory;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;

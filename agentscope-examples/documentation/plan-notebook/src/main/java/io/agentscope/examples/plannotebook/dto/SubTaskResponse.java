@@ -15,7 +15,7 @@
  */
 package io.agentscope.examples.plannotebook.dto;
 
-import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.legacy.plan.model.SubTask;
 
 /**
  * DTO for subtask response.

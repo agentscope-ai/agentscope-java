@@ -21,14 +21,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.legacy.rag.model.Document;
+import io.agentscope.core.legacy.rag.model.DocumentMetadata;
+import io.agentscope.core.legacy.rag.model.RetrieveConfig;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
-import io.agentscope.core.rag.model.Document;
-import io.agentscope.core.rag.model.DocumentMetadata;
-import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.InMemoryStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;

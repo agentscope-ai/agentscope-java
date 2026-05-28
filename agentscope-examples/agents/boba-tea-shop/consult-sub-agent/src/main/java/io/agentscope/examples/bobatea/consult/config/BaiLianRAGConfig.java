@@ -16,7 +16,7 @@
 
 package io.agentscope.examples.bobatea.consult.config;
 
-import io.agentscope.core.rag.Knowledge;
+import io.agentscope.core.legacy.rag.Knowledge;
 import io.agentscope.core.rag.integration.bailian.BailianConfig;
 import io.agentscope.core.rag.integration.bailian.BailianKnowledge;
 import org.springframework.beans.factory.annotation.Value;

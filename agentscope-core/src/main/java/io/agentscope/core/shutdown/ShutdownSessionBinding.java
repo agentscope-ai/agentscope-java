@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.shutdown;
 
-import io.agentscope.core.legacy.session.Session;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import java.util.Objects;
 

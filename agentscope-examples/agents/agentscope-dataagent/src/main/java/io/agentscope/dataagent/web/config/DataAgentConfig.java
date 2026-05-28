@@ -15,10 +15,10 @@
  */
 package io.agentscope.dataagent.web.config;
 
+import io.agentscope.core.legacy.session.InMemorySession;
+import io.agentscope.core.legacy.session.Session;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.Session;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
 import io.agentscope.dataagent.runtime.channel.ChannelConfig;
 import io.agentscope.dataagent.runtime.channel.DmScope;

@@ -20,16 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.ReplyEndEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.Middleware;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
-import io.agentscope.core.middleware.ReplyInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -84,8 +84,8 @@ class ReActAgentMiddlewareIntegrationTest {
         }
 
         @Override
-        public Flux<AgentEvent> onReply(
-                Agent agent, ReplyInput input, Function<ReplyInput, Flux<AgentEvent>> next) {
+        public Flux<AgentEvent> onAgent(
+                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":reply:enter");
             return next.apply(input).doOnComplete(() -> trace.add(tag + ":reply:exit"));
         }
@@ -141,7 +141,7 @@ class ReActAgentMiddlewareIntegrationTest {
 
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);
-        assertTrue(events.get(events.size() - 1) instanceof ReplyEndEvent);
+        assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
 
         assertTrue(trace.contains("A:reply:enter"), trace.toString());
         assertTrue(trace.contains("A:reasoning:enter"), trace.toString());

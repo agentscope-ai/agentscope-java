@@ -17,10 +17,10 @@ package io.agentscope.examples.chattts;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.user.UserAgent;
-import io.agentscope.core.hook.TTSHook;
+import io.agentscope.core.legacy.hook.TTSHook;
+import io.agentscope.core.legacy.model.tts.DashScopeRealtimeTTSModel;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.tts.DashScopeRealtimeTTSModel;
 
 /**
  * Interactive CLI demo of ReActAgent with real-time TTS.

@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.rag.reader;
 
-import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.legacy.rag.model.Document;
 import java.util.List;
 import reactor.core.publisher.Mono;
 

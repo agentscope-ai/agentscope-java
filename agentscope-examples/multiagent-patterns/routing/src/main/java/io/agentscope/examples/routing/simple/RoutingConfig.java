@@ -18,7 +18,7 @@ package io.agentscope.examples.routing.simple;
 import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import com.alibaba.cloud.ai.agent.agentscope.flow.AgentScopeRoutingAgent;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;

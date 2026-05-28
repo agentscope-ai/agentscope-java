@@ -18,8 +18,8 @@ package io.agentscope.harness.coding.hook;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.legacy.hook.PreCallEvent;
+import io.agentscope.core.legacy.hook.PreReasoningEvent;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

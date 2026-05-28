@@ -46,19 +46,19 @@ class AgentEventStreamTest {
         private final ObjectMapper mapper = new ObjectMapper();
 
         @Test
-        @DisplayName("RUN_STARTED deserializes to REPLY_START and re-serializes as REPLY_START")
+        @DisplayName("RUN_STARTED deserializes to AGENT_START and re-serializes as AGENT_START")
         void runStartedAlias() throws Exception {
             AgentEventType parsed = mapper.readValue("\"RUN_STARTED\"", AgentEventType.class);
-            assertEquals(AgentEventType.REPLY_START, parsed);
-            assertEquals("\"REPLY_START\"", mapper.writeValueAsString(parsed));
+            assertEquals(AgentEventType.AGENT_START, parsed);
+            assertEquals("\"AGENT_START\"", mapper.writeValueAsString(parsed));
         }
 
         @Test
-        @DisplayName("RUN_FINISHED → REPLY_END")
+        @DisplayName("RUN_FINISHED → AGENT_END")
         void runFinishedAlias() throws Exception {
             AgentEventType parsed = mapper.readValue("\"RUN_FINISHED\"", AgentEventType.class);
-            assertEquals(AgentEventType.REPLY_END, parsed);
-            assertEquals("\"REPLY_END\"", mapper.writeValueAsString(parsed));
+            assertEquals(AgentEventType.AGENT_END, parsed);
+            assertEquals("\"AGENT_END\"", mapper.writeValueAsString(parsed));
         }
 
         @Test
@@ -170,16 +170,16 @@ class AgentEventStreamTest {
 
         @Test
         @DisplayName(
-                "Single-iteration reply: REPLY_START → MODEL_CALL_* → TEXT_BLOCK_* → REPLY_END")
+                "Single-iteration reply: AGENT_START → MODEL_CALL_* → TEXT_BLOCK_* → AGENT_END")
         void singleIterationOrder() {
             // GIVEN Agent.builder().model(...).build()
             //   AND user message "hello"
-            // WHEN  agent.replyStream(userMsg).collectList().block()
+            // WHEN  agent.streamEvents(userMsg).collectList().block()
             // THEN  emitted event types in order are:
-            //         REPLY_START,
+            //         AGENT_START,
             //         MODEL_CALL_START, MODEL_CALL_END,
             //         TEXT_BLOCK_START, TEXT_BLOCK_DELTA(*), TEXT_BLOCK_END,
-            //         REPLY_END
+            //         AGENT_END
         }
 
         @Test
@@ -200,7 +200,7 @@ class AgentEventStreamTest {
             //         TOOL_CALL_START, TOOL_CALL_DELTA(*), TOOL_CALL_END,
             //         TOOL_RESULT_START, TOOL_RESULT_TEXT_DELTA(*), TOOL_RESULT_END,
             //         MODEL_CALL_START, MODEL_CALL_END,
-            //         TEXT_BLOCK_*, REPLY_END
+            //         TEXT_BLOCK_*, AGENT_END
         }
 
         @Test
@@ -226,17 +226,17 @@ class AgentEventStreamTest {
         }
 
         @Test
-        @DisplayName("Max-iters guard emits EXCEED_MAX_ITERS before REPLY_END")
+        @DisplayName("Max-iters guard emits EXCEED_MAX_ITERS before AGENT_END")
         void exceedMaxIters() {
             // GIVEN agent with maxIters=1 and a model that keeps requesting tools
-            // WHEN  replyStream(...)
-            // THEN  EXCEED_MAX_ITERS emitted, then REPLY_END
+            // WHEN  streamEvents(...)
+            // THEN  EXCEED_MAX_ITERS emitted, then AGENT_END
         }
 
         @Test
-        @DisplayName("Every stream begins with REPLY_START and ends with REPLY_END")
+        @DisplayName("Every stream begins with AGENT_START and ends with AGENT_END")
         void streamBoundaries() {
-            // FOR ANY reply: first event is REPLY_START, last is REPLY_END
+            // FOR ANY invocation: first event is AGENT_START, last is AGENT_END
         }
     }
 }

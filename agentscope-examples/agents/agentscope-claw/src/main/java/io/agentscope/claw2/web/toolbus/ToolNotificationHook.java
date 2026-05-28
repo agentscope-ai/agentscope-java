@@ -16,10 +16,10 @@
 package io.agentscope.claw2.web.toolbus;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PostReasoningEvent;
+import io.agentscope.core.legacy.hook.RuntimeContextAware;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.LinkedHashMap;

@@ -16,10 +16,10 @@
 package io.agentscope.core.rag.reader;
 
 import io.agentscope.core.formatter.MediaUtils;
+import io.agentscope.core.legacy.rag.model.Document;
+import io.agentscope.core.legacy.rag.model.DocumentMetadata;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.ReaderException;
-import io.agentscope.core.rag.model.Document;
-import io.agentscope.core.rag.model.DocumentMetadata;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;

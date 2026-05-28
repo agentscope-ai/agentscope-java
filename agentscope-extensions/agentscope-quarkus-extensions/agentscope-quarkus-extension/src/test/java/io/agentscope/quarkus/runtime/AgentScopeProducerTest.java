@@ -16,7 +16,7 @@
 package io.agentscope.quarkus.runtime;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.Memory;
+import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.quarkus.test.junit.QuarkusTest;

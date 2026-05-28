@@ -16,7 +16,7 @@
 package io.agentscope.core.studio;
 
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.tracing.TracerRegistry;
+import io.agentscope.core.legacy.tracing.TracerRegistry;
 import io.agentscope.core.tracing.telemetry.TelemetryTracer;
 import java.net.URI;
 import org.slf4j.Logger;

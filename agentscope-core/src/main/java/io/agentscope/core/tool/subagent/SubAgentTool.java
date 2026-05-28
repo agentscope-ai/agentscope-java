@@ -25,8 +25,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
@@ -152,8 +150,8 @@ public class SubAgentTool implements AgentTool {
                         Agent agent = agentProvider.provide();
 
                         // Load existing state if continuing session
-                        if (!isNewSession && agent instanceof StateModule) {
-                            loadAgentState(finalSessionId, (StateModule) agent);
+                        if (!isNewSession) {
+                            loadAgentState(finalSessionId, agent);
                         }
 
                         // Build user message
@@ -190,12 +188,7 @@ public class SubAgentTool implements AgentTool {
                         }
 
                         // Save state after execution
-                        return result.doOnSuccess(
-                                r -> {
-                                    if (agent instanceof StateModule) {
-                                        saveAgentState(finalSessionId, (StateModule) agent);
-                                    }
-                                });
+                        return result.doOnSuccess(r -> saveAgentState(finalSessionId, agent));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
@@ -205,40 +198,60 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Loads agent state from the session storage.
+     * Loads agent state via {@link io.agentscope.core.storage.StorageBase}.
      *
-     * <p>If the session exists, the agent's state is restored. Any errors during loading are logged
-     * but do not interrupt execution.
+     * <p>Requires {@code StorageBase} to be configured on the {@link SubAgentConfig}. Errors are
+     * logged but do not interrupt execution.
      *
      * @param sessionId The session ID to load state from
-     * @param agent The state module to restore state into
+     * @param agent The agent to restore state into
      */
-    private void loadAgentState(String sessionId, StateModule agent) {
-        Session session = config.getSession();
+    private void loadAgentState(String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent ra)) {
+            return;
+        }
+        if (config.getStorage() == null) {
+            throw new IllegalStateException(
+                    "StorageBase must be configured on SubAgentConfig for session persistence."
+                            + " Use SubAgentConfig.builder().storage(...).build().");
+        }
         try {
-            agent.loadIfExists(session, sessionId);
-            logger.debug("Loaded state for session: {}", sessionId);
+            ra.loadStateFromStorage(config.getStorage(), sessionId).block();
+            logger.debug("Loaded state via StorageBase for session: {}", sessionId);
         } catch (Exception e) {
-            logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
+            logger.warn(
+                    "Failed to load state via StorageBase for session {}: {}",
+                    sessionId,
+                    e.getMessage());
         }
     }
 
     /**
-     * Saves agent state to the session storage.
+     * Saves agent state via {@link io.agentscope.core.storage.StorageBase}.
      *
-     * <p>Persists the agent's current state. Any errors during saving are logged but do not
-     * interrupt execution.
+     * <p>Requires {@code StorageBase} to be configured on the {@link SubAgentConfig}. Errors are
+     * logged but do not interrupt execution.
      *
      * @param sessionId The session ID to save state under
-     * @param agent The state module to save state from
+     * @param agent The agent to save state from
      */
-    private void saveAgentState(String sessionId, StateModule agent) {
-        Session session = config.getSession();
+    private void saveAgentState(String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent ra)) {
+            return;
+        }
+        if (config.getStorage() == null) {
+            throw new IllegalStateException(
+                    "StorageBase must be configured on SubAgentConfig for session persistence."
+                            + " Use SubAgentConfig.builder().storage(...).build().");
+        }
         try {
-            agent.saveTo(session, sessionId);
-            logger.debug("Saved state for session: {}", sessionId);
+            ra.saveStateToStorage(config.getStorage(), sessionId).block();
+            logger.debug("Saved state via StorageBase for session: {}", sessionId);
         } catch (Exception e) {
-            logger.warn("Failed to save state for session {}: {}", sessionId, e.getMessage());
+            logger.warn(
+                    "Failed to save state via StorageBase for session {}: {}",
+                    sessionId,
+                    e.getMessage());
         }
     }
 

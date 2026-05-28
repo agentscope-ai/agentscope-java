@@ -17,10 +17,10 @@
 package io.agentscope.core.training.runner;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.HookEvent;
+import io.agentscope.core.legacy.hook.PostCallEvent;
+import io.agentscope.core.legacy.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.training.backend.TrinityClient;
 import io.agentscope.core.training.backend.TrinityModelAdapter;

@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.legacy.rag.model.Document;
 import io.agentscope.core.rag.integration.haystack.model.HayStackDocument;
-import io.agentscope.core.rag.model.Document;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

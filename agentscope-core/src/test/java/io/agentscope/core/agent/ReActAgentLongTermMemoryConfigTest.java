@@ -20,10 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.LongTermMemory;
-import io.agentscope.core.memory.LongTermMemoryMode;
-import io.agentscope.core.memory.StaticLongTermMemoryHook;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.legacy.memory.LongTermMemory;
+import io.agentscope.core.legacy.memory.LongTermMemoryMode;
+import io.agentscope.core.legacy.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -189,8 +189,8 @@ class ReActAgentLongTermMemoryConfigTest {
         StaticLongTermMemoryHook hookWithAccess =
                 new StaticLongTermMemoryHook(asyncMemory, agentMemory, true);
 
-        io.agentscope.core.hook.PostCallEvent event =
-                new io.agentscope.core.hook.PostCallEvent(
+        io.agentscope.core.legacy.hook.PostCallEvent event =
+                new io.agentscope.core.legacy.hook.PostCallEvent(
                         createMockAgent(),
                         Msg.builder()
                                 .role(MsgRole.ASSISTANT)
@@ -198,8 +198,9 @@ class ReActAgentLongTermMemoryConfigTest {
                                 .build());
 
         // Execute hook - should return immediately
-        Mono<io.agentscope.core.hook.PostCallEvent> resultMono = hookWithAccess.onEvent(event);
-        io.agentscope.core.hook.PostCallEvent result = resultMono.block();
+        Mono<io.agentscope.core.legacy.hook.PostCallEvent> resultMono =
+                hookWithAccess.onEvent(event);
+        io.agentscope.core.legacy.hook.PostCallEvent result = resultMono.block();
 
         assertNotNull(result);
 

@@ -15,7 +15,7 @@
  */
 package io.agentscope.examples.plannotebook.service;
 
-import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.legacy.plan.PlanNotebook;
 import io.agentscope.examples.plannotebook.dto.PlanResponse;
 import io.agentscope.examples.plannotebook.dto.SubTaskRequest;
 import java.util.HashMap;

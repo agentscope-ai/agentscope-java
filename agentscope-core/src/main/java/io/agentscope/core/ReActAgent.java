@@ -24,13 +24,13 @@ import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.agent.config.ContextConfig;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
-import io.agentscope.core.event.ReplyEndEvent;
-import io.agentscope.core.event.ReplyStartEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
@@ -49,18 +49,11 @@ import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.legacy.agent.StructuredOutputCapableAgent;
-import io.agentscope.core.legacy.hook.ActingChunkEvent;
 import io.agentscope.core.legacy.hook.Hook;
 import io.agentscope.core.legacy.hook.HookEvent;
 import io.agentscope.core.legacy.hook.PendingToolRecoveryHook;
 import io.agentscope.core.legacy.hook.PostActingEvent;
-import io.agentscope.core.legacy.hook.PostReasoningEvent;
-import io.agentscope.core.legacy.hook.PostSummaryEvent;
-import io.agentscope.core.legacy.hook.PreActingEvent;
 import io.agentscope.core.legacy.hook.PreReasoningEvent;
-import io.agentscope.core.legacy.hook.PreSummaryEvent;
-import io.agentscope.core.legacy.hook.ReasoningChunkEvent;
-import io.agentscope.core.legacy.hook.SummaryChunkEvent;
 import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.legacy.memory.LongTermMemory;
 import io.agentscope.core.legacy.memory.LongTermMemoryMode;
@@ -75,7 +68,6 @@ import io.agentscope.core.legacy.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.legacy.rag.RAGMode;
 import io.agentscope.core.legacy.rag.model.Document;
 import io.agentscope.core.legacy.rag.model.RetrieveConfig;
-import io.agentscope.core.legacy.session.Session;
 import io.agentscope.core.legacy.skill.SkillBox;
 import io.agentscope.core.legacy.skill.SkillHook;
 import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
@@ -84,7 +76,6 @@ import io.agentscope.core.legacy.state.StatePersistence;
 import io.agentscope.core.legacy.state.ToolkitState;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
-import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -93,12 +84,12 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.Middleware;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
-import io.agentscope.core.middleware.ReplyInput;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -108,12 +99,14 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContext;
 import io.agentscope.core.permission.PermissionEngine;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.storage.StorageBase;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
@@ -136,6 +129,7 @@ import io.agentscope.harness.agent.hook.MemoryFlushHook;
 import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
 import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
 import io.agentscope.harness.agent.hook.SessionPersistenceHook;
+import io.agentscope.harness.agent.hook.StatePersistenceHook;
 import io.agentscope.harness.agent.hook.SubagentsHook;
 import io.agentscope.harness.agent.hook.ToolResultEvictionHook;
 import io.agentscope.harness.agent.hook.WorkspaceContextHook;
@@ -310,6 +304,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     private final AtomicReference<FluxSink<AgentEvent>> activeEventSink = new AtomicReference<>();
 
+    @SuppressWarnings("deprecation")
+    private final LegacyHookDispatcher hookDispatcher;
+
     // ==================== Harness fields (set by Builder.build() during orchestration)
     // ====================
 
@@ -325,6 +322,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     private Session defaultSession;
     private SandboxContext defaultSandboxContext;
     private List<AgentSkillRepository> skillRepositories = List.of();
+    private StorageBase storage;
 
     /**
      * SQLite-backed workspace index allocated during {@link Builder#build()} when the agent is
@@ -381,6 +379,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
         this.state = resolvedState;
 
+        // Restore toolkit activeGroups from persisted state
+        if (agentToolkit != null && !this.state.getToolContext().getActivatedGroups().isEmpty()) {
+            agentToolkit.setActiveGroups(this.state.getToolContext().getActivatedGroups());
+        }
+
         // Migrate any pre-seeded messages from builder.memory into state context
         if (builder.memory != null
                 && this.state.contextMutable().isEmpty()
@@ -401,6 +404,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 builder.model != null
                         ? new ContextCompressor(this.contextConfig, builder.model)
                         : null;
+        this.hookDispatcher = new LegacyHookDispatcher(this);
     }
 
     // ==================== RuntimeContext ====================
@@ -473,18 +477,22 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * binds the runtime context.
      */
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
-        if (workspaceManager == null && compactionHook == null) {
+        if (workspaceManager == null && compactionHook == null && storage == null) {
             // Not orchestrated: original lightweight behavior.
             this.pendingRuntimeContext = context;
             return call(msgs);
         }
         final RuntimeContext effective =
                 ensureSessionDefaults(context != null ? context : RuntimeContext.empty());
-        if (effective.getSession() != null && effective.getSessionKey() != null) {
+        if (storage != null) {
             try {
-                loadIfExists(effective.getSession(), effective.getSessionKey());
+                String sid = effective.getSessionId();
+                if (sid == null || sid.isBlank()) {
+                    sid = getName();
+                }
+                loadStateFromStorage(sid).block();
             } catch (Exception e) {
-                log.warn("Failed to load session state: {}", e.getMessage());
+                log.warn("Failed to load state from StorageBase: {}", e.getMessage());
             }
         }
         this.pendingRuntimeContext = effective;
@@ -542,17 +550,17 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * {@code activeEventSink}.
      *
      * @param msgs input messages
-     * @return event stream covering the full reply lifecycle
+     * @return event stream covering the full agent invocation lifecycle
      */
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
         String replyId = UUID.randomUUID().toString().replace("-", "");
-        Function<ReplyInput, Flux<AgentEvent>> core =
+        Function<AgentInput, Flux<AgentEvent>> core =
                 input ->
                         Flux.<AgentEvent>create(
                                         sink -> {
                                             activeEventSink.set(sink);
                                             sink.next(
-                                                    new ReplyStartEvent(null, replyId, getName()));
+                                                    new AgentStartEvent(null, replyId, getName()));
                                             reactor.util.context.Context subscriberCtx =
                                                     reactor.util.context.Context.of(
                                                             sink.contextView());
@@ -560,7 +568,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                     .doFinally(
                                                             signal -> {
                                                                 sink.next(
-                                                                        new ReplyEndEvent(replyId));
+                                                                        new AgentEndEvent(replyId));
                                                                 activeEventSink.set(null);
                                                                 sink.complete();
                                                             })
@@ -569,15 +577,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .doOnError(e -> activeEventSink.set(null));
-        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onReply, core)
-                .apply(new ReplyInput(msgs == null ? List.of() : msgs));
+        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+                .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
     /**
      * Stream fine-grained {@link AgentEvent}s for a single input message.
      *
      * @param msg input message
-     * @return event stream covering the full reply lifecycle
+     * @return event stream covering the full agent invocation lifecycle
      */
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg));
@@ -686,12 +694,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         // No pending tools -> normal processing
         if (pendingIds.isEmpty()) {
             addToContext(msgs);
-            return coreReply();
+            return coreAgent();
         }
 
         // Has pending tools but no input -> resume (execute pending tools directly)
         if (msgs == null || msgs.isEmpty()) {
-            return resumeReply();
+            return resumeAgent();
         }
 
         // Has pending tools + input -> check if user provided tool results
@@ -703,7 +711,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         if (!providedResults.isEmpty()) {
             // User provided tool results -> validate and add
             validateAndAddToolResults(msgs, pendingIds);
-            return hasPendingToolUse() ? resumeReply() : coreReply();
+            return hasPendingToolUse() ? resumeAgent() : coreAgent();
         }
 
         // If PendingToolRecoveryHook is enabled, pending state should have been
@@ -717,32 +725,32 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /**
-     * Execute the full reply as a {@link Flux} of fine-grained {@link AgentEvent}s.
+     * Execute the full agent invocation as a {@link Flux} of fine-grained {@link AgentEvent}s.
      *
      * <p>This method wraps the existing {@code doCall()} logic and captures all events emitted
      * by the internal stream methods ({@code reasoningStream}, {@code actingStream},
-     * {@code summaryStream}). The stream is bookended by {@link ReplyStartEvent} and
-     * {@link ReplyEndEvent}.
+     * {@code summaryStream}). The stream is bookended by {@link AgentStartEvent} and
+     * {@link AgentEndEvent}.
      *
      * @param msgs the input messages
-     * @return event stream covering the full reply lifecycle
+     * @return event stream covering the full agent invocation lifecycle
      */
-    Flux<AgentEvent> replyImpl(List<Msg> msgs) {
+    Flux<AgentEvent> agentImpl(List<Msg> msgs) {
         String replyId = UUID.randomUUID().toString().replace("-", "");
 
-        Function<ReplyInput, Flux<AgentEvent>> core =
+        Function<AgentInput, Flux<AgentEvent>> core =
                 input ->
                         Flux.<AgentEvent>create(
                                         sink -> {
                                             activeEventSink.set(sink);
                                             sink.next(
-                                                    new ReplyStartEvent(null, replyId, getName()));
+                                                    new AgentStartEvent(null, replyId, getName()));
 
                                             doCall(input.msgs())
                                                     .doFinally(
                                                             signal -> {
                                                                 sink.next(
-                                                                        new ReplyEndEvent(replyId));
+                                                                        new AgentEndEvent(replyId));
                                                                 activeEventSink.set(null);
                                                                 sink.complete();
                                                             })
@@ -751,8 +759,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .doOnError(e -> activeEventSink.set(null));
 
-        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onReply, core)
-                .apply(new ReplyInput(msgs));
+        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+                .apply(new AgentInput(msgs));
     }
 
     private void publishEvent(AgentEvent event) {
@@ -909,9 +917,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     // ==================== Core ReAct Loop ====================
 
     /**
-     * Entry point for a fresh reply: kicks off the ReAct loop at iteration 0.
+     * Entry point for a fresh agent invocation: kicks off the ReAct loop at iteration 0.
      */
-    private Mono<Msg> coreReply() {
+    private Mono<Msg> coreAgent() {
         return executeIteration(0);
     }
 
@@ -919,7 +927,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * Resume entry point when pending tool calls remain from a previous turn:
      * jumps directly into the acting phase without another reasoning step.
      */
-    private Mono<Msg> resumeReply() {
+    private Mono<Msg> resumeAgent() {
         return acting(0);
     }
 
@@ -947,7 +955,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         return checkInterruptedAsync()
                 .then(compressor != null ? compressor.maybeCompress(state) : Mono.empty())
-                .then(notifyPreReasoningEvent(state.contextMutable()))
+                .then(
+                        hookDispatcher.firePreReasoning(
+                                state.contextMutable(),
+                                currentSystemMsg.get(),
+                                model.getModelName()))
                 .flatMap(
                         event -> {
                             GenerateOptions options =
@@ -993,7 +1005,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             }
                             return Mono.error(error);
                         })
-                .flatMap(this::notifyPostReasoning)
+                .flatMap(msg -> hookDispatcher.firePostReasoning(msg, model.getModelName()))
                 .flatMap(
                         event -> {
                             Msg msg = event.getReasoningMessage();
@@ -1075,7 +1087,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                 chunk -> {
                                     List<Msg> chunkMsgs = context.processChunk(chunk);
                                     for (Msg msg : chunkMsgs) {
-                                        notifyReasoningChunk(msg, context).subscribe();
+                                        hookDispatcher
+                                                .fireReasoningChunk(
+                                                        msg, context, mci.model().getModelName())
+                                                .subscribe();
                                     }
 
                                     List<AgentEvent> events = new ArrayList<>();
@@ -1189,7 +1204,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
                 new AtomicReference<>();
 
-        return notifyPreActingHooks(pendingToolCalls)
+        return hookDispatcher
+                .firePreActing(pendingToolCalls, toolkit)
                 .flatMap(
                         toolCalls -> {
                             Function<ActingInput, Flux<AgentEvent>> actingCore =
@@ -1375,7 +1391,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                                 }
                                                             }
                                                         }
-                                                        notifyActingChunk(toolUse, chunk)
+                                                        hookDispatcher
+                                                                .fireActingChunk(
+                                                                        toolUse, chunk, toolkit)
                                                                 .subscribe();
                                                     });
 
@@ -1583,22 +1601,17 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /**
-     * Notify PostActingEvent hook for a single tool result, build message and add to context.
+     * Fire PostActingEvent for a single tool result, build message and add to context.
      */
     private Mono<PostActingEvent> notifyPostActingHook(
             Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
         ToolUseBlock toolUse = entry.getKey();
         ToolResultBlock result = entry.getValue();
 
-        // Build tool result message first so hooks can access it
         Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolUse, getName());
 
-        // Create event with toolResultMsg already set
-        PostActingEvent event = new PostActingEvent(this, toolkit, toolUse, result);
-        event.setToolResultMsg(toolMsg);
-
-        // Notify hooks and add to state context
-        return notifyHooks(event)
+        return hookDispatcher
+                .firePostActing(toolUse, result, toolkit, toolMsg)
                 .doOnNext(
                         e -> {
                             Msg resultMsg = e.getToolResultMsg();
@@ -1639,7 +1652,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         ReasoningContext context = new ReasoningContext(getName());
         publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
-        return notifyPreSummaryHook(messageList, generateOptions)
+        return hookDispatcher
+                .firePreSummary(
+                        messageList,
+                        generateOptions,
+                        model.getModelName(),
+                        maxIters,
+                        currentSystemMsg.get())
                 .flatMap(
                         preSummaryEvent -> {
                             List<Msg> effectiveMessages =
@@ -1657,7 +1676,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                                     context.buildFinalMessage())))
                                     .flatMap(
                                             msg ->
-                                                    notifyPostSummaryHook(msg, effectiveOptions)
+                                                    hookDispatcher
+                                                            .firePostSummary(
+                                                                    msg,
+                                                                    effectiveOptions,
+                                                                    model.getModelName())
                                                             .map(
                                                                     postEvent -> {
                                                                         Msg finalMsg =
@@ -1711,7 +1734,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                 chunk -> {
                                     List<Msg> chunkMsgs = context.processChunk(chunk);
                                     for (Msg msg : chunkMsgs) {
-                                        notifySummaryChunk(msg, context, hookOptions).subscribe();
+                                        hookDispatcher
+                                                .fireSummaryChunk(
+                                                        msg,
+                                                        context,
+                                                        hookOptions,
+                                                        model.getModelName())
+                                                .subscribe();
                                     }
 
                                     List<AgentEvent> events = new ArrayList<>();
@@ -1886,137 +1915,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
     }
 
-    // ==================== Hook Notification Methods ====================
-
-    /**
-     * Generic hook notification method.
-     */
-    private <T extends HookEvent> Mono<T> notifyHooks(T event) {
-        Mono<T> result = Mono.just(event);
-        for (Hook hook : getSortedHooks()) {
-            result = result.flatMap(hook::onEvent);
-        }
-        return result;
-    }
-
-    private Mono<PreReasoningEvent> notifyPreReasoningEvent(List<Msg> msgs) {
-        PreReasoningEvent event = new PreReasoningEvent(this, model.getModelName(), null, msgs);
-        event.setSystemMessage(currentSystemMsg.get());
-        return notifyHooks(event);
-    }
-
-    private Mono<PostReasoningEvent> notifyPostReasoning(Msg msg) {
-        return notifyHooks(new PostReasoningEvent(this, model.getModelName(), null, msg));
-    }
-
-    private Mono<List<ToolUseBlock>> notifyPreActingHooks(List<ToolUseBlock> toolCalls) {
-        return Flux.fromIterable(toolCalls)
-                .concatMap(tool -> notifyHooks(new PreActingEvent(this, toolkit, tool)))
-                .map(PreActingEvent::getToolUse)
-                .collectList();
-    }
-
-    private Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        ActingChunkEvent event =
-                new ActingChunkEvent(
-                        this,
-                        toolkit,
-                        toolUse,
-                        chunk.withIdAndName(toolUse.getId(), toolUse.getName()));
-        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-    }
-
-    private Mono<Void> notifyReasoningChunk(Msg chunkMsg, ReasoningContext context) {
-        ContentBlock content = chunkMsg.getFirstContentBlock();
-
-        ContentBlock accumulatedContent = null;
-        if (content instanceof TextBlock) {
-            accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
-        } else if (content instanceof ThinkingBlock) {
-            accumulatedContent =
-                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
-        } else if (content instanceof ToolUseBlock tub) {
-            // Support streaming ToolUseBlock events
-            ToolUseBlock accumulated = context.getAccumulatedToolCall(tub.getId());
-            if (accumulated != null) {
-                accumulatedContent = accumulated;
-            } else {
-                // If no accumulated data, use the current chunk directly
-                accumulatedContent = tub;
-            }
-        }
-
-        if (accumulatedContent != null) {
-            Msg accumulated =
-                    Msg.builder()
-                            .id(chunkMsg.getId())
-                            .name(chunkMsg.getName())
-                            .role(chunkMsg.getRole())
-                            .content(accumulatedContent)
-                            .build();
-            if (context.getChatUsage() != null) {
-                accumulated
-                        .getMetadata()
-                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
-            }
-            ReasoningChunkEvent event =
-                    new ReasoningChunkEvent(
-                            this, model.getModelName(), null, chunkMsg, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-        }
-
-        return Mono.empty();
-    }
-
-    // ==================== Summary Hook Notification Methods ====================
-
-    private Mono<PreSummaryEvent> notifyPreSummaryHook(
-            List<Msg> msgs, GenerateOptions generateOptions) {
-        PreSummaryEvent event =
-                new PreSummaryEvent(
-                        this, model.getModelName(), generateOptions, msgs, maxIters, maxIters);
-        event.setSystemMessage(currentSystemMsg.get());
-        return notifyHooks(event);
-    }
-
-    private Mono<PostSummaryEvent> notifyPostSummaryHook(Msg msg, GenerateOptions generateOptions) {
-        return notifyHooks(new PostSummaryEvent(this, model.getModelName(), generateOptions, msg));
-    }
-
-    private Mono<Void> notifySummaryChunk(
-            Msg chunkMsg, ReasoningContext context, GenerateOptions generateOptions) {
-        ContentBlock content = chunkMsg.getFirstContentBlock();
-
-        ContentBlock accumulatedContent = null;
-        if (content instanceof TextBlock) {
-            accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
-        } else if (content instanceof ThinkingBlock) {
-            accumulatedContent =
-                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
-        }
-
-        if (accumulatedContent != null) {
-            Msg accumulated =
-                    Msg.builder()
-                            .id(chunkMsg.getId())
-                            .name(chunkMsg.getName())
-                            .role(chunkMsg.getRole())
-                            .content(accumulatedContent)
-                            .build();
-            if (context.getChatUsage() != null) {
-                accumulated
-                        .getMetadata()
-                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
-            }
-            SummaryChunkEvent event =
-                    new SummaryChunkEvent(
-                            this, model.getModelName(), generateOptions, chunkMsg, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-        }
-
-        return Mono.empty();
-    }
-
     @Override
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
         if (context.getSource() == InterruptSource.SYSTEM) {
@@ -2101,12 +1999,94 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     /** Returns the live conversational state (context + summary + permissions). */
     public AgentState getState() {
+        syncToolkitToState();
         return state;
     }
 
     @Override
     public AgentState getAgentState() {
+        syncToolkitToState();
         return state;
+    }
+
+    private void syncToolkitToState() {
+        if (toolkit != null) {
+            state.getToolContext().setActivatedGroups(toolkit.getActiveGroups());
+        }
+    }
+
+    /** Returns the configured {@link StorageBase}, or {@code null} if not set. */
+    public StorageBase getStorage() {
+        return storage;
+    }
+
+    /**
+     * Persist the current {@link AgentState} via the configured {@link StorageBase}.
+     *
+     * <p>Synchronises toolkit active groups into the state before saving. Returns
+     * {@link Mono#empty()} when no {@code StorageBase} is configured.
+     */
+    public Mono<Void> saveStateToStorage() {
+        if (storage == null) {
+            return Mono.empty();
+        }
+        syncToolkitToState();
+        return storage.saveAgentState(state.getSessionId(), getAgentId(), state);
+    }
+
+    /**
+     * Load agent state from the configured {@link StorageBase} and merge into the live state.
+     */
+    Mono<Void> loadStateFromStorage(String sessionId) {
+        if (storage == null) {
+            return Mono.empty();
+        }
+        return storage.loadAgentState(sessionId, getAgentId())
+                .doOnNext(this::applyLoadedState)
+                .then();
+    }
+
+    /**
+     * Load agent state from the given {@link StorageBase} and merge into the live state.
+     *
+     * <p>This overload is intended for callers that hold the storage externally (e.g.
+     * {@code SubAgentTool}).
+     *
+     * @param externalStorage the storage to load from
+     * @param sessionId the session identifier
+     */
+    public Mono<Void> loadStateFromStorage(StorageBase externalStorage, String sessionId) {
+        return externalStorage
+                .loadAgentState(sessionId, getAgentId())
+                .doOnNext(this::applyLoadedState)
+                .then();
+    }
+
+    /**
+     * Persist the current {@link AgentState} to the given {@link StorageBase}.
+     *
+     * <p>This overload is intended for callers that hold the storage externally (e.g.
+     * {@code SubAgentTool}).
+     *
+     * @param externalStorage the storage to save to
+     * @param sessionId the session identifier
+     */
+    public Mono<Void> saveStateToStorage(StorageBase externalStorage, String sessionId) {
+        syncToolkitToState();
+        return externalStorage.saveAgentState(sessionId, getAgentId(), state);
+    }
+
+    private void applyLoadedState(AgentState loaded) {
+        state.contextMutable().clear();
+        state.contextMutable().addAll(loaded.getContext());
+        state.setSummary(loaded.getSummary());
+        state.setReplyId(loaded.getReplyId());
+        state.setCurIter(loaded.getCurIter());
+        state.setShutdownInterrupted(loaded.isShutdownInterrupted());
+        state.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
+        if (toolkit != null && !loaded.getToolContext().getActivatedGroups().isEmpty()) {
+            toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
+        }
     }
 
     /** Returns the model-call configuration (retries, timeouts). */
@@ -2172,7 +2152,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             Session defaultSession,
             SandboxContext defaultSandboxContext,
             CompactionHook compactionHook,
-            List<AgentSkillRepository> skillRepositories) {
+            List<AgentSkillRepository> skillRepositories,
+            StorageBase storage) {
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
         this.sessionFactory = sessionFactory;
@@ -2182,6 +2163,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         this.compactionHook = compactionHook;
         this.skillRepositories =
                 skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
+        this.storage = storage;
+        if (storage != null) {
+            shutdownManager.bindStateSaver(
+                    this,
+                    agentState ->
+                            storage.saveAgentState(
+                                            agentState.getSessionId(), getAgentId(), agentState)
+                                    .block());
+        }
     }
 
     /**
@@ -2450,6 +2440,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         String environmentMemory;
         AbstractFilesystem abstractFilesystem;
         Session session;
+        StorageBase storage;
         SandboxDistributedOptions sandboxDistributedOptions;
 
         boolean leafSubagent = false;
@@ -3146,6 +3137,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return this;
         }
 
+        /** Sets the {@link StorageBase} for persisting {@link AgentState}. */
+        public Builder storage(StorageBase storage) {
+            this.storage = storage;
+            this.harnessOrchestrationEnabled = true;
+            return this;
+        }
+
         /** Enables high-level distributed sandbox configuration. */
         public Builder sandboxDistributed(SandboxDistributedOptions options) {
             this.sandboxDistributedOptions = options;
@@ -3427,7 +3425,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         harnessResult.defaultSession,
                         harnessResult.defaultSandboxContext,
                         harnessResult.compactionHook,
-                        harnessResult.skillRepositories);
+                        harnessResult.skillRepositories,
+                        harnessResult.storage);
                 if (harnessResult.selfRef != null) {
                     harnessResult.selfRef.set(agent);
                 }
@@ -3449,6 +3448,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             CompactionHook compactionHook;
             List<AgentSkillRepository> skillRepositories;
             AtomicReference<ReActAgent> selfRef;
+            StorageBase storage;
         }
 
         /**
@@ -3625,7 +3625,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 hooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
             }
             if (!disableSessionPersistence) {
-                hooks.add(new SessionPersistenceHook());
+                hooks.add(new StatePersistenceHook());
             }
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {
@@ -3718,6 +3718,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             result.compactionHook = compactionHook;
             result.skillRepositories = orderedSkillRepos;
             result.selfRef = selfRef;
+            result.storage = storage;
             return result;
         }
 

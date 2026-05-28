@@ -15,8 +15,8 @@
  */
 package io.agentscope.core.legacy.memory;
 
-import io.agentscope.core.legacy.session.Session;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.SessionKey;
 import java.util.ArrayList;
