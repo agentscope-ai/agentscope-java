@@ -94,15 +94,15 @@ public final class GracefulShutdownHook implements Hook {
         if (manager.checkAndClearShutdownInterrupted(event.getAgent())) {
             List<Msg> newInput = event.getInputMessages();
 
-            // 如果没有新输入，不需要处理
+            // No new input, nothing to deduplicate
             if (newInput == null || newInput.isEmpty()) {
                 return;
             }
 
-            // 获取新输入的第一条消息内容
+            // Extract the text of the first incoming message
             String newInputText = newInput.get(0).getTextContent();
 
-            // 获取 memory 中最后一条 USER 消息
+            // Find the last USER message in memory
             List<Msg> memoryMsgs = event.getMemory().getMessages();
             String lastUserText = null;
             for (int i = memoryMsgs.size() - 1; i >= 0; i--) {
@@ -113,7 +113,7 @@ public final class GracefulShutdownHook implements Hook {
                 }
             }
 
-            // 比较内容，只有完全相同时才丢弃
+            // Only discard when content is identical
             if (newInputText != null && newInputText.equals(lastUserText)) {
                 log.info(
                         "Detected shutdown-interrupted session for agent {}, "
@@ -125,7 +125,7 @@ public final class GracefulShutdownHook implements Hook {
                         "Detected shutdown-interrupted session for agent {}, "
                                 + "but input differs from last user message, keeping input",
                         event.getAgent().getName());
-                // 不清空 inputMessages，保留用户的新输入
+                // Keep the new input as-is
             }
         }
     }
