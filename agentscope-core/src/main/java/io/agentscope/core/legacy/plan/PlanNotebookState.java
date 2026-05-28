@@ -13,34 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.legacy.state;
+package io.agentscope.core.legacy.plan;
 
 import io.agentscope.core.legacy.plan.model.Plan;
 import io.agentscope.core.state.State;
 
 /**
- * State record for PlanNotebook.
+ * Persistence shape for {@link PlanNotebook}.
  *
- * <p>This record captures the current plan state for persistence. It wraps the existing {@link
- * Plan} object which contains the full plan structure including subtasks.
- *
- * <p>Example usage:
- *
- * <pre>{@code
- * Plan currentPlan = planNotebook.getCurrentPlan();
- * if (currentPlan != null) {
- *     PlanNotebookState state = new PlanNotebookState(currentPlan);
- *     session.save(sessionKey, "planNotebook_state", state);
- * }
- *
- * // Later, restore the state
- * Optional<PlanNotebookState> loaded = session.get(sessionKey, "planNotebook_state", PlanNotebookState.class);
- * }</pre>
- *
- * @param currentPlan the current active plan, may be null if no plan is active
- * @see State
- * @see io.agentscope.core.legacy.plan.PlanNotebook
- * @see Plan
  * @deprecated since 2.0.0. The plan package is removed; manage task hints in application code.
  */
 @Deprecated(since = "2.0.0")

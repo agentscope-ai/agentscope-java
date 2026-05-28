@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.state;
 
-import io.agentscope.core.legacy.state.ToolkitState;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.session.Session;
+import io.agentscope.core.session.legacy.ToolkitState;
 import java.util.List;
 
 /**
@@ -45,7 +45,6 @@ public final class LegacyStateLoader {
      * @param sessionKey the session identifier
      * @return a new AgentState populated with the legacy data
      */
-    @SuppressWarnings("deprecation")
     public static AgentState loadFromLegacySession(Session session, SessionKey sessionKey) {
         List<Msg> msgs = session.getList(sessionKey, "memory_messages", Msg.class);
 

@@ -128,8 +128,6 @@ import io.agentscope.harness.agent.hook.DynamicSubagentsHook;
 import io.agentscope.harness.agent.hook.MemoryFlushHook;
 import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
 import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
-import io.agentscope.harness.agent.hook.SessionPersistenceHook;
-import io.agentscope.harness.agent.hook.StatePersistenceHook;
 import io.agentscope.harness.agent.hook.SubagentsHook;
 import io.agentscope.harness.agent.hook.ToolResultEvictionHook;
 import io.agentscope.harness.agent.hook.WorkspaceContextHook;
@@ -3289,7 +3287,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return this;
         }
 
-        /** Skips registration of {@link SessionPersistenceHook}. */
+        /** No-op since 2.0; session persistence is owned by ReActAgent itself. */
         public Builder disableSessionPersistence() {
             this.disableSessionPersistence = true;
             return this;
@@ -3623,9 +3621,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             }
             if (toolResultEvictionConfig != null) {
                 hooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
-            }
-            if (!disableSessionPersistence) {
-                hooks.add(new StatePersistenceHook());
             }
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {

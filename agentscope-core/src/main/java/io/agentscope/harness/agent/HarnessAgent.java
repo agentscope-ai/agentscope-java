@@ -22,23 +22,13 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.memory.LongTermMemory;
-import io.agentscope.core.legacy.memory.LongTermMemoryMode;
-import io.agentscope.core.legacy.memory.Memory;
-import io.agentscope.core.legacy.plan.PlanNotebook;
-import io.agentscope.core.legacy.rag.Knowledge;
-import io.agentscope.core.legacy.rag.RAGMode;
-import io.agentscope.core.legacy.rag.model.RetrieveConfig;
 import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
-import io.agentscope.core.legacy.state.StateModule;
-import io.agentscope.core.legacy.state.StatePersistence;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -69,7 +59,7 @@ import reactor.core.publisher.Mono;
  *     release.
  */
 @Deprecated(since = "v2", forRemoval = true)
-public class HarnessAgent implements Agent, StateModule, AutoCloseable {
+public class HarnessAgent implements Agent, AutoCloseable {
 
     private final ReActAgent inner;
 
@@ -171,10 +161,6 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
         return inner;
     }
 
-    public Memory getMemory() {
-        return inner.getMemory();
-    }
-
     public Model getModel() {
         return inner.getModel();
     }
@@ -205,21 +191,6 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
 
     public List<AgentSkillRepository> getSkillRepositories() {
         return inner.getSkillRepositories();
-    }
-
-    @Override
-    public void saveTo(Session session, SessionKey sessionKey) {
-        inner.saveTo(session, sessionKey);
-    }
-
-    @Override
-    public void loadFrom(Session session, SessionKey sessionKey) {
-        inner.loadFrom(session, sessionKey);
-    }
-
-    @Override
-    public boolean loadIfExists(Session session, SessionKey sessionKey) {
-        return inner.loadIfExists(session, sessionKey);
     }
 
     public static Builder builder() {
@@ -333,56 +304,6 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
 
         public Builder toolExecutionContext(ToolExecutionContext ctx) {
             b.toolExecutionContext(ctx);
-            return this;
-        }
-
-        public Builder knowledge(Knowledge knowledge) {
-            b.knowledge(knowledge);
-            return this;
-        }
-
-        public Builder knowledges(List<Knowledge> knowledges) {
-            b.knowledges(knowledges);
-            return this;
-        }
-
-        public Builder ragMode(RAGMode mode) {
-            b.ragMode(mode);
-            return this;
-        }
-
-        public Builder retrieveConfig(RetrieveConfig config) {
-            b.retrieveConfig(config);
-            return this;
-        }
-
-        public Builder planNotebook(PlanNotebook planNotebook) {
-            b.planNotebook(planNotebook);
-            return this;
-        }
-
-        public Builder enablePlan() {
-            b.enablePlan();
-            return this;
-        }
-
-        public Builder longTermMemory(LongTermMemory longTermMemory) {
-            b.longTermMemory(longTermMemory);
-            return this;
-        }
-
-        public Builder longTermMemoryMode(LongTermMemoryMode mode) {
-            b.longTermMemoryMode(mode);
-            return this;
-        }
-
-        public Builder longTermMemoryAsyncRecord(boolean asyncRecord) {
-            b.longTermMemoryAsyncRecord(asyncRecord);
-            return this;
-        }
-
-        public Builder statePersistence(StatePersistence statePersistence) {
-            b.statePersistence(statePersistence);
             return this;
         }
 

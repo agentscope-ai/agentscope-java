@@ -24,8 +24,6 @@ import io.agentscope.core.legacy.hook.Hook;
 import io.agentscope.core.legacy.hook.PostCallEvent;
 import io.agentscope.core.legacy.hook.PreCallEvent;
 import io.agentscope.core.legacy.hook.RuntimeContextAware;
-import io.agentscope.core.legacy.memory.Memory;
-import io.agentscope.core.legacy.state.StateModule;
 import io.agentscope.core.legacy.tracing.TracerRegistry;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -93,7 +91,7 @@ import reactor.core.scheduler.Schedulers;
  * }</pre>
  */
 @SuppressWarnings("deprecation")
-public abstract class AgentBase implements StateModule, Agent {
+public abstract class AgentBase implements Agent {
 
     private final String agentId;
     private final String name;
@@ -670,13 +668,11 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Mono containing the new tail messages that {@code doCall} should add to memory
      */
     private Mono<List<Msg>> notifyPreCall(List<Msg> callArgs) {
-        // Take a memory snapshot before hooks run (pre-hook view)
+        // Take a state snapshot before hooks run (pre-hook view)
         List<Msg> snapshot = List.of();
-        if (this instanceof io.agentscope.core.ReActAgent reactAgent) {
-            Memory mem = reactAgent.getMemory();
-            if (mem != null) {
-                snapshot = mem.getMessages();
-            }
+        AgentState agentState = getAgentState();
+        if (agentState != null) {
+            snapshot = agentState.getContext();
         }
         final int snapshotSize = snapshot.size();
 

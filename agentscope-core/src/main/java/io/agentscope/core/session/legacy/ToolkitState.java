@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,12 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package io.agentscope.core.session.legacy;
+
+import io.agentscope.core.state.State;
+import java.util.List;
 
 /**
- * Persistence boundary for {@link io.agentscope.core.state.AgentState}.
+ * Deserialization shape for the v1 {@code toolkit_activeGroups} session entry.
  *
- * <p>{@link io.agentscope.core.storage.StorageBase} defines the two operations every backend must
- * implement: load and save per (sessionId, agentId) pair. {@link
- * io.agentscope.core.storage.InMemoryStorage} is the default in-process implementation.
+ * <p>Retained only so {@link io.agentscope.core.state.LegacyStateLoader} can read v1 sessions
+ * during the one-time migration to {@link io.agentscope.core.state.AgentState}. New writes never
+ * use this type.
  */
-package io.agentscope.core.storage;
+public record ToolkitState(List<String> activeGroups) implements State {}

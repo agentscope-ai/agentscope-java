@@ -21,9 +21,9 @@ import io.agentscope.core.legacy.hook.Hook;
 import io.agentscope.core.legacy.hook.HookEvent;
 import io.agentscope.core.legacy.hook.PreReasoningEvent;
 import io.agentscope.core.legacy.hook.RuntimeContextAware;
-import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
@@ -41,7 +41,7 @@ import reactor.core.publisher.Mono;
  *   <li>Long-term memories are flushed from the prefix via {@link MemoryFlushManager}.</li>
  *   <li>The full conversation is offloaded to the session JSONL.</li>
  *   <li>The prefix is distilled into a structured summary via one LLM call.</li>
- *   <li>The agent's working {@link Memory} is replaced with
+ *   <li>The agent's working {@link AgentState#contextMutable() context} is replaced with
  *       {@code [summaryMsg] + preservedTail}.</li>
  *   <li>{@link PreReasoningEvent#setInputMessages} is updated to the compacted conversation
  *       ({@code [summaryMsg] + preservedTail}). The system message is managed separately in
@@ -122,7 +122,7 @@ public class CompactionHook implements Hook, RuntimeContextAware {
                                 return Mono.just(event);
                             }
                             List<Msg> compacted = optResult.get();
-                            applyToMemory(reActAgent.getMemory(), compacted);
+                            applyToContext(reActAgent.getAgentState(), compacted);
                             event.setInputMessages(compacted);
                             log.debug(
                                     "Updated PreReasoningEvent to {} compacted messages",
@@ -139,20 +139,23 @@ public class CompactionHook implements Hook, RuntimeContextAware {
     }
 
     /**
-     * Replaces the agent's working memory with the compacted message list.
+     * Replaces the agent's working state context with the compacted message list.
      *
-     * <p>Uses {@link Memory#clear()} + {@link Memory#addMessage(Msg)} to synchronise the
-     * in-memory state so subsequent reasoning rounds start from the compacted baseline.
+     * <p>Mutates {@link AgentState#contextMutable()} in place so subsequent reasoning rounds
+     * start from the compacted baseline.
      */
-    private static void applyToMemory(Memory memory, List<Msg> compacted) {
+    private static void applyToContext(AgentState state, List<Msg> compacted) {
+        if (state == null) {
+            log.warn("Cannot apply compacted messages: AgentState is null");
+            return;
+        }
         try {
-            memory.clear();
-            for (Msg msg : compacted) {
-                memory.addMessage(msg);
-            }
-            log.debug("Applied compacted messages to memory ({} messages)", compacted.size());
+            List<Msg> ctx = state.contextMutable();
+            ctx.clear();
+            ctx.addAll(compacted);
+            log.debug("Applied compacted messages to state ({} messages)", compacted.size());
         } catch (Exception e) {
-            log.warn("Failed to apply compacted messages to memory: {}", e.getMessage());
+            log.warn("Failed to apply compacted messages to state: {}", e.getMessage());
         }
     }
 

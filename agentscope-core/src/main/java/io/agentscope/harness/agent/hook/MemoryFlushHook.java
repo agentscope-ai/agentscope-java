@@ -22,9 +22,9 @@ import io.agentscope.core.legacy.hook.Hook;
 import io.agentscope.core.legacy.hook.HookEvent;
 import io.agentscope.core.legacy.hook.PostCallEvent;
 import io.agentscope.core.legacy.hook.RuntimeContextAware;
-import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.List;
@@ -79,8 +79,11 @@ public class MemoryFlushHook implements Hook, RuntimeContextAware {
             return Mono.empty();
         }
 
-        Memory memory = reActAgent.getMemory();
-        List<Msg> messages = memory.getMessages();
+        AgentState state = reActAgent.getAgentState();
+        if (state == null) {
+            return Mono.empty();
+        }
+        List<Msg> messages = state.getContext();
         if (messages.isEmpty()) {
             return Mono.empty();
         }

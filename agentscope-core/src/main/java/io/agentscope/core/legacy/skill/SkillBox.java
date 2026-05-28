@@ -16,7 +16,6 @@
 package io.agentscope.core.legacy.skill;
 
 import io.agentscope.core.legacy.skill.util.SkillFileSystemHelper;
-import io.agentscope.core.legacy.state.StateModule;
 import io.agentscope.core.legacy.tool.coding.CommandValidator;
 import io.agentscope.core.legacy.tool.coding.ShellCommandTool;
 import io.agentscope.core.legacy.tool.file.ReadFileTool;
@@ -49,7 +48,7 @@ import org.slf4j.LoggerFactory;
  *     application code.
  */
 @Deprecated(since = "2.0.0")
-public class SkillBox implements StateModule {
+public class SkillBox {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
     private static final String BASE64_PREFIX = "base64:";
 
