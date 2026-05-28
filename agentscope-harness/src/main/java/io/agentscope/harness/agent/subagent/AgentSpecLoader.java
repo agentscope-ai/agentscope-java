@@ -17,6 +17,11 @@ package io.agentscope.harness.agent.subagent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -30,33 +35,41 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Loads {@link SubagentSpec} definitions from Markdown files with YAML front matter. Compatible
- * with Spring AI agent spec format.
+ * Loads {@link SubagentDeclaration} instances from Markdown files with YAML front matter placed
+ * in the {@code subagents/} directory of a workspace.
+ *
+ * <p><strong>File naming</strong>: the filename (without the {@code .md} extension) becomes the
+ * subagent's {@code name} / agent-id. The front matter must not contain a {@code name} field.
+ *
+ * <p><strong>Scan strategy</strong>: only <em>direct</em> children of the given directory are
+ * scanned (non-recursive) to prevent accidentally loading files that live inside a definition
+ * workspace that happens to be stored under the same parent.
  *
  * <p>File format:
  *
  * <pre>
  * ---
- * name: Explore
- * description: Fast agent for exploring codebases...
- * tools: Read, Grep, Glob
+ * description: Reviews code for security and performance issues.
+ * workspace:
+ *   mode: isolated          # isolated | shared  (default: isolated)
+ *   path: ./defs/reviewer   # optional; relative to mainWorkspace, or absolute
+ * model: qwen3-max          # optional model override
+ * maxIters: 12              # optional (default 10)
+ * tools: [read_file, grep_files, edit_file]   # optional allowlist
  * ---
  *
- * # System prompt (markdown body)
- * You are a file search specialist...
+ * # Inline body (only when workspace.path is absent)
+ * You are a code reviewer...
  * </pre>
  *
- * <p>Front matter fields:
- *
+ * <p>Rules:
  * <ul>
- *   <li>{@code name} (required) — maps to {@link SubagentSpec#getName()}
- *   <li>{@code description} (required)
- *   <li>{@code tools} (optional, comma-separated) — maps to {@link SubagentSpec#getTools()}
- *   <li>{@code model} (optional) — override model name, maps to {@link SubagentSpec#getModel()}
- *   <li>{@code maxIters} (optional, default 10)
+ *   <li>{@code description} is required.
+ *   <li>When {@code workspace.path} is present, the Markdown body must be blank; the subagent's
+ *       system prompt is read from {@code &lt;workspace.path&gt;/AGENTS.md} at runtime.
+ *   <li>When {@code workspace.path} is absent, the Markdown body (if any) becomes the inline
+ *       {@link SubagentDeclaration#getInlineAgentsBody()}.
  * </ul>
- *
- * <p>The Markdown body becomes the system prompt.
  */
 public final class AgentSpecLoader {
 
@@ -65,96 +78,243 @@ public final class AgentSpecLoader {
 
     private AgentSpecLoader() {}
 
-    /** Recursively scans a directory for {@code .md} files and parses each into a SubagentSpec. */
-    public static List<SubagentSpec> loadFromDirectory(Path rootPath) {
-        if (rootPath == null || !Files.isDirectory(rootPath)) {
+    /**
+     * Non-recursively scans {@code subagentsDir} for {@code .md} files and parses each into a
+     * {@link SubagentDeclaration}.
+     *
+     * @param subagentsDir the {@code subagents/} directory to scan
+     * @param mainWorkspace the parent workspace used to resolve relative {@code workspace.path}
+     *     values; may be {@code null} (relative paths will remain relative)
+     * @return list of parsed declarations; never {@code null}
+     */
+    public static List<SubagentDeclaration> loadFromDirectory(
+            Path subagentsDir, Path mainWorkspace) {
+        if (subagentsDir == null || !Files.isDirectory(subagentsDir)) {
             return Collections.emptyList();
         }
-        List<SubagentSpec> specs = new ArrayList<>();
-        try (Stream<Path> paths = Files.walk(rootPath)) {
+        List<SubagentDeclaration> decls = new ArrayList<>();
+        try (Stream<Path> paths = Files.list(subagentsDir)) {
             paths.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".md"))
+                    .sorted()
                     .forEach(
                             path -> {
                                 try {
-                                    SubagentSpec spec = loadFromFile(path);
-                                    if (spec != null) {
-                                        specs.add(spec);
+                                    SubagentDeclaration decl = loadFromFile(path, mainWorkspace);
+                                    if (decl != null) {
+                                        decls.add(decl);
                                         log.debug(
-                                                "Loaded agent spec '{}' from {}",
-                                                spec.getName(),
+                                                "Loaded subagent declaration '{}' from {}",
+                                                decl.getName(),
                                                 path);
                                     }
                                 } catch (Exception e) {
                                     log.warn(
-                                            "Failed to load agent spec from {}: {}",
+                                            "Failed to load subagent declaration from {}: {}",
                                             path,
                                             e.getMessage());
                                 }
                             });
         } catch (IOException e) {
-            log.warn("Failed to walk directory {}: {}", rootPath, e.getMessage());
+            log.warn("Failed to list subagents directory {}: {}", subagentsDir, e.getMessage());
         }
-        return specs;
-    }
-
-    public static SubagentSpec loadFromFile(Path filePath) throws IOException {
-        String content = Files.readString(filePath, StandardCharsets.UTF_8);
-        return parse(content);
+        return decls;
     }
 
     /**
-     * Parses markdown content with YAML front matter into a {@link SubagentSpec}.
+     * Loads subagent declarations via the {@link AbstractFilesystem}, respecting namespace
+     * isolation. Scans {@code subagents/} for {@code *.md} files using filesystem glob.
      *
-     * @return parsed spec, or null if the content is malformed
+     * @param filesystem the filesystem layer (applies namespace transparently)
+     * @param mainWorkspace the parent workspace for resolving relative workspace paths; may be
+     *     {@code null}
+     * @return list of parsed declarations; never {@code null}
+     */
+    public static List<SubagentDeclaration> loadFromFilesystem(
+            AbstractFilesystem filesystem, Path mainWorkspace) {
+        if (filesystem == null) {
+            return Collections.emptyList();
+        }
+        RuntimeContext ctx = RuntimeContext.empty();
+        GlobResult glob = filesystem.glob(ctx, "*.md", "subagents");
+        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<SubagentDeclaration> decls = new ArrayList<>();
+        List<FileInfo> sorted = new ArrayList<>(glob.matches());
+        sorted.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.path(), b.path()));
+
+        for (FileInfo fi : sorted) {
+            String path = fi.path();
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            try {
+                ReadResult rr = filesystem.read(ctx, path, 0, 0);
+                if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
+                    continue;
+                }
+                String filename =
+                        path.contains("/") ? path.substring(path.lastIndexOf('/') + 1) : path;
+                String name = stripMdExtension(filename);
+                SubagentDeclaration decl = parse(rr.fileData().content(), name, mainWorkspace);
+                if (decl != null) {
+                    decls.add(decl);
+                    log.debug("Loaded subagent declaration '{}' from filesystem: {}", name, path);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to load subagent declaration from {}: {}", path, e.getMessage());
+            }
+        }
+        return decls;
+    }
+
+    /**
+     * Parses a single Markdown declaration file.
+     *
+     * @param filePath the {@code .md} file to parse
+     * @param mainWorkspace workspace root used to resolve relative {@code workspace.path} values;
+     *     may be {@code null}
+     * @return parsed declaration, or {@code null} if the file is malformed / missing required
+     *     fields
+     */
+    public static SubagentDeclaration loadFromFile(Path filePath, Path mainWorkspace)
+            throws IOException {
+        String content = Files.readString(filePath, StandardCharsets.UTF_8);
+        String nameFromFile = stripMdExtension(filePath.getFileName().toString());
+        return parse(content, nameFromFile, mainWorkspace);
+    }
+
+    /**
+     * Parses markdown content with YAML front matter into a {@link SubagentDeclaration}.
+     *
+     * @param markdown the full file content
+     * @param name the subagent name (derived from the filename, without {@code .md})
+     * @param mainWorkspace workspace root used to resolve relative {@code workspace.path} values;
+     *     may be {@code null}
+     * @return parsed declaration, or {@code null} if the content is malformed
      */
     @SuppressWarnings("unchecked")
-    public static SubagentSpec parse(String markdown) {
+    public static SubagentDeclaration parse(String markdown, String name, Path mainWorkspace) {
         if (markdown == null || markdown.isBlank() || !markdown.startsWith("---")) {
             return null;
         }
         int endIdx = markdown.indexOf("---", 3);
         if (endIdx == -1) {
-            log.warn("Agent spec front matter not closed with ---");
+            log.warn("Agent declaration front matter not closed with --- in '{}'", name);
             return null;
         }
 
         String frontMatterStr = markdown.substring(3, endIdx).trim();
         String body = markdown.substring(endIdx + 3).trim();
 
-        Map<String, Object> frontMatter;
+        Map<String, Object> fm;
         try {
-            frontMatter = YAML_MAPPER.readValue(frontMatterStr, Map.class);
+            fm = YAML_MAPPER.readValue(frontMatterStr, Map.class);
         } catch (Exception e) {
-            log.warn("Failed to parse YAML front matter: {}", e.getMessage());
+            log.warn("Failed to parse YAML front matter for '{}': {}", name, e.getMessage());
             return null;
         }
-        if (frontMatter == null || frontMatter.isEmpty()) {
+        if (fm == null || fm.isEmpty()) {
             return null;
         }
 
-        String name = asString(frontMatter.get("name"));
-        String description = asString(frontMatter.get("description"));
-        if (name == null || name.isBlank()) {
-            log.warn("Agent spec missing required 'name' in front matter");
-            return null;
-        }
+        String description = asString(fm.get("description"));
         if (description == null || description.isBlank()) {
-            log.warn("Agent spec missing required 'description' in front matter");
+            log.warn(
+                    "Subagent declaration '{}' missing required 'description' in front matter",
+                    name);
             return null;
         }
 
-        SubagentSpec spec = new SubagentSpec(name, description);
-        spec.setSysPrompt(body.isEmpty() ? null : body);
-        spec.setTools(parseToolNames(asString(frontMatter.get("tools"))));
-        spec.setModel(asString(frontMatter.get("model")));
+        // ---- workspace section ----
+        WorkspaceMode mode = WorkspaceMode.ISOLATED;
+        Path workspacePath = null;
 
-        Object maxItersObj = frontMatter.get("maxIters");
-        if (maxItersObj instanceof Number n) {
-            spec.setMaxIters(n.intValue());
+        Object workspaceObj = fm.get("workspace");
+        if (workspaceObj instanceof Map<?, ?> wsMap) {
+            String modeStr = asString(wsMap.get("mode"));
+            if (modeStr != null) {
+                if ("shared".equalsIgnoreCase(modeStr)) {
+                    mode = WorkspaceMode.SHARED;
+                } else if ("isolated".equalsIgnoreCase(modeStr)) {
+                    mode = WorkspaceMode.ISOLATED;
+                } else {
+                    log.warn(
+                            "Unknown workspace.mode '{}' in declaration '{}', defaulting to"
+                                    + " isolated",
+                            modeStr,
+                            name);
+                }
+            }
+            String pathStr = asString(wsMap.get("path"));
+            if (pathStr != null && !pathStr.isBlank()) {
+                workspacePath = resolvePath(pathStr, mainWorkspace);
+            }
         }
 
-        return spec;
+        // ---- body / inline sysPrompt validation ----
+        if (workspacePath != null && !body.isBlank()) {
+            log.warn(
+                    "Subagent declaration '{}' has both workspace.path and a non-empty body;"
+                            + " body will be ignored — put the system prompt in"
+                            + " {}/AGENTS.md instead",
+                    name,
+                    workspacePath);
+            body = "";
+        }
+
+        // ---- optional fields ----
+        String model = asString(fm.get("model"));
+
+        int maxIters = 10;
+        Object maxItersObj = fm.get("maxIters");
+        if (maxItersObj instanceof Number n) {
+            maxIters = n.intValue();
+        }
+
+        List<String> tools = parseToolNames(asString(fm.get("tools")));
+
+        SubagentDeclaration.Builder builder =
+                SubagentDeclaration.builder()
+                        .name(name)
+                        .description(description)
+                        .workspaceMode(mode)
+                        .model(model)
+                        .maxIters(maxIters)
+                        .tools(tools.isEmpty() ? null : tools);
+
+        if (workspacePath != null) {
+            builder.workspace(workspacePath);
+        } else {
+            builder.inlineAgentsBody(body.isEmpty() ? null : body);
+        }
+
+        return builder.build();
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static String stripMdExtension(String filename) {
+        if (filename.endsWith(".md")) {
+            return filename.substring(0, filename.length() - 3);
+        }
+        return filename;
+    }
+
+    private static Path resolvePath(String pathStr, Path mainWorkspace) {
+        Path p = Path.of(pathStr);
+        if (p.isAbsolute()) {
+            return p;
+        }
+        if (mainWorkspace != null) {
+            Path resolved = mainWorkspace.resolve(p).normalize();
+            return resolved;
+        }
+        return p;
     }
 
     private static String asString(Object v) {
@@ -165,6 +325,11 @@ public final class AgentSpecLoader {
         if (toolsStr == null || toolsStr.isBlank()) {
             return List.of();
         }
-        return Stream.of(toolsStr.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        // Support both comma-separated strings and YAML list representations "[a, b, c]"
+        String cleaned = toolsStr.stripLeading();
+        if (cleaned.startsWith("[") && cleaned.endsWith("]")) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1);
+        }
+        return Stream.of(cleaned.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 }

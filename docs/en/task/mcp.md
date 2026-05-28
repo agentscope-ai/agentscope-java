@@ -280,6 +280,30 @@ System.out.println("Received elicit request: " + request.message());
 
 ## Managing MCP Clients
 
+### Protocol Version Configuration
+
+By default, the MCP client only supports protocol version `2024-11-05`. If the MCP server responds with a different protocol version during initialization (e.g., `2025-03-26`), the connection will fail with "Unsupported protocol version".
+
+Use `protocolVersions()` to declare support for additional protocol versions:
+
+```java
+// Support multiple protocol versions
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .stdioTransport("python", "server.py")
+        .protocolVersions("2024-11-05", "2025-03-26")
+        .buildAsync()
+        .block();
+
+// Works with any transport type
+McpClientWrapper sseClient = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .protocolVersions("2024-11-05", "2025-03-26", "2025-06-18")
+        .buildAsync()
+        .block();
+```
+
+> **Note**: This is useful when connecting to third-party MCP servers that may use newer protocol versions. The MCP specification defines protocol version negotiation as a client-server handshake where the server may respond with a different version than the client requested.
+
 ### List Tools from MCP Server
 
 ```java
@@ -347,15 +371,15 @@ HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
 ### Higress Example
 
 See the complete Higress example:
-- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
+- `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
 
 ## Complete Example
 
 See the complete MCP example:
-- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
+- `agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
 
 Run the example:
 ```bash
-cd agentscope-examples/quickstart
+cd agentscope-examples/documentation/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.McpToolExample"
 ```

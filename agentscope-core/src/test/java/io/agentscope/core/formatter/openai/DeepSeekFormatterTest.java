@@ -327,6 +327,277 @@ class DeepSeekFormatterTest {
             // Same object reference if no changes
             assertEquals(original, result.get(0));
         }
+    }
+
+    @Nested
+    @DisplayName("Reasoning Preservation for Thinking Mode")
+    class ReasoningPreservationTests {
+
+        @Test
+        @DisplayName("Should use original behavior when thinking mode is not enabled")
+        void testShouldUseOriginalBehaviorWithoutThinkingMode() {
+            // No reasoning_content in any message → thinking mode is off.
+            // Falls back to original logic: only current turn keeps reasoning.
+            List<OpenAIMessage> messages =
+                    List.of(
+                            OpenAIMessage.builder().role("user").content("Search it").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .name("Agent")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("call_1")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "web_search",
+                                                                            "{\"q\":\"x\"}"))
+                                                            .build()))
+                                    .build(),
+                            OpenAIMessage.builder().role("user").content("Search again").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .name("Agent")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("call_2")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "web_search",
+                                                                            "{\"q\":\"y\"}"))
+                                                            .build()))
+                                    .build());
+
+            List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
+
+            assertEquals(4, result.size());
+            // name removed in both messages (original behavior still applies)
+            assertNull(result.get(1).getName());
+            assertNull(result.get(3).getName());
+            // tool_calls preserved
+            assertNotNull(result.get(1).getToolCalls());
+            assertNotNull(result.get(3).getToolCalls());
+        }
+
+        @Test
+        @DisplayName("Should preserve reasoning_content across multiple rounds with tool calls")
+        void testShouldPreserveReasoningAcrossMultipleRounds() {
+            // Three consecutive rounds, each with a tool call.
+            // When thinking mode is enabled and tool calls were made, DeepSeek API
+            // requires reasoning_content to be preserved for all rounds (not just
+            // the current turn), even when there are no tool_calls in the message
+            // itself.
+            // See: https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
+            List<OpenAIMessage> messages =
+                    List.of(
+                            OpenAIMessage.builder().role("user").content("Question 1").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .reasoningContent("Reasoning round 1")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("c1")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "tool_a", "{}"))
+                                                            .build()))
+                                    .build(),
+                            OpenAIMessage.builder().role("user").content("Question 2").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .reasoningContent("Reasoning round 2")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("c2")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "tool_b", "{}"))
+                                                            .build()))
+                                    .build(),
+                            OpenAIMessage.builder().role("user").content("Question 3").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .reasoningContent("Reasoning round 3")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("c3")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "tool_c", "{}"))
+                                                            .build()))
+                                    .build());
+
+            List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
+
+            assertEquals(6, result.size());
+            // All three rounds had tool calls, so all reasoning should be preserved
+            assertEquals("Reasoning round 1", result.get(1).getReasoningContent());
+            assertEquals("Reasoning round 2", result.get(3).getReasoningContent());
+            assertEquals("Reasoning round 3", result.get(5).getReasoningContent());
+        }
+
+        @Test
+        @DisplayName("Should only preserve reasoning_content for segments that had tool calls")
+        void testShouldOnlyPreserveReasoningForSegmentsWithToolCalls() {
+            // Round 1: text only, no tool calls → reasoning not needed, should be removed
+            // Round 2: has tool calls → reasoning must be preserved
+            // Round 3: has tool calls → reasoning must be preserved
+            // Round 4: text only, current turn → reasoning preserved as usual
+            List<OpenAIMessage> messages =
+                    List.of(
+                            OpenAIMessage.builder().role("user").content("Hello").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .content("Hi, how can I help?")
+                                    .reasoningContent("Just greeting, reply directly")
+                                    .build(),
+                            OpenAIMessage.builder().role("user").content("Search DeepSeek").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .reasoningContent("Need to call search tool")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("c1")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "web_search",
+                                                                            "{\"q\":\"DeepSeek\"}"))
+                                                            .build()))
+                                    .build(),
+                            OpenAIMessage.builder().role("user").content("Check wiki too").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .reasoningContent("Query wiki")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("c2")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "wiki_search",
+                                                                            "{\"q\":\"DeepSeek\"}"))
+                                                            .build()))
+                                    .build(),
+                            OpenAIMessage.builder().role("user").content("Summarize").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .content("DeepSeek is...")
+                                    .reasoningContent("Summarizing results")
+                                    .build());
+
+            List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
+
+            assertEquals(8, result.size());
+            assertNull(result.get(1).getReasoningContent());
+            assertEquals("Need to call search tool", result.get(3).getReasoningContent());
+            assertEquals("Query wiki", result.get(5).getReasoningContent());
+            assertEquals("Summarizing results", result.get(7).getReasoningContent());
+        }
+
+        @Test
+        @DisplayName(
+                "Should preserve reasoning_content for text-only assistant in a tool-call segment")
+        void testShouldPreserveReasoningForTextOnlyAssistantInToolCallSegment() {
+            // Within a single user turn, the model first calls a tool, then gives a final text
+            // answer. Even the text-only assistant message must keep its reasoning_content
+            // because the segment had tool calls.
+            List<OpenAIMessage> messages =
+                    List.of(
+                            OpenAIMessage.builder().role("user").content("What time is it").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .reasoningContent("Need to call get_time tool")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("call_1")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "get_time", "{}"))
+                                                            .build()))
+                                    .build(),
+                            OpenAIMessage.builder()
+                                    .role("tool")
+                                    .toolCallId("call_1")
+                                    .content("14:06:51")
+                                    .build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .content("It is now 14:06")
+                                    .reasoningContent(
+                                            "The current time based on the tool result is 14:06")
+                                    .build(),
+                            OpenAIMessage.builder().role("user").content("Check again").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .reasoningContent("Fetch time again")
+                                    .toolCalls(
+                                            List.of(
+                                                    OpenAIToolCall.builder()
+                                                            .id("call_2")
+                                                            .type("function")
+                                                            .function(
+                                                                    OpenAIFunction.of(
+                                                                            "get_time", "{}"))
+                                                            .build()))
+                                    .build());
+
+            List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
+
+            assertEquals(6, result.size());
+            assertEquals("Need to call get_time tool", result.get(1).getReasoningContent());
+            assertEquals(
+                    "The current time based on the tool result is 14:06",
+                    result.get(3).getReasoningContent());
+            assertEquals("Fetch time again", result.get(5).getReasoningContent());
+        }
+
+        @Test
+        @DisplayName("Should remove reasoning_content for previous turns without tool calls")
+        void testShouldRemoveReasoningForPreviousTurnsWithoutToolCalls() {
+            // Previous-turn text-only messages without tool calls should have
+            // reasoning_content removed to save context space.
+            List<OpenAIMessage> messages =
+                    List.of(
+                            OpenAIMessage.builder().role("user").content("Hello").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .content("Hi there!")
+                                    .reasoningContent("Just greeting, reply directly")
+                                    .build(),
+                            OpenAIMessage.builder().role("user").content("Goodbye").build(),
+                            OpenAIMessage.builder()
+                                    .role("assistant")
+                                    .content("Goodbye!")
+                                    .reasoningContent("User is saying goodbye")
+                                    .build());
+
+            List<OpenAIMessage> result = DeepSeekFormatter.applyDeepSeekFixes(messages);
+
+            assertEquals(4, result.size());
+            // Previous turn text-only → reasoning removed
+            assertNull(result.get(1).getReasoningContent());
+            // Current turn → reasoning preserved
+            assertEquals("User is saying goodbye", result.get(3).getReasoningContent());
+        }
+    }
+
+    @Nested
+    @DisplayName("applyDeepSeekFixes Tests (continued)")
+    class ApplyDeepSeekFixesContinued {
 
         @Test
         @DisplayName("Should handle no user messages - treat all as current turn")

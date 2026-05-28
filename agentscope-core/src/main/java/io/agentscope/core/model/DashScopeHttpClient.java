@@ -374,6 +374,12 @@ public class DashScopeHttpClient {
      *   <li>Models containing "kimi-k2.5"/"kimi-k2.6" (e.g., kimi-k2.6, kimi/kimi-k2.5)</li>
      * </ul>
      *
+     * <p>Reverse exclusion rules (models matching the patterns above but treated as non-multimodal):
+     * <ul>
+     *   <li>Models starting with "qwen3.6": currently excludes "qwen3.6-max-preview",
+     *       which is a text-only model and should not be routed to the multimodal API.</li>
+     * </ul>
+     *
      * @param modelName the model name
      * @return true if the model is a multimodal model
      */
@@ -382,6 +388,10 @@ public class DashScopeHttpClient {
             return false;
         }
         String lowerModelName = modelName.toLowerCase();
+        // Reverse exclusion: certain qwen3.6-prefixed models are text-only.
+        if (lowerModelName.equals("qwen3.6-max-preview")) {
+            return false;
+        }
         return lowerModelName.startsWith("qvq")
                 || lowerModelName.contains("-vl")
                 || lowerModelName.contains("-asr")
@@ -489,7 +499,7 @@ public class DashScopeHttpClient {
      * @param publicKeyId the public key ID
      * @param publicKey the Base64-encoded public key
      */
-    public static record PublicKeyResult(String publicKeyId, String publicKey) {}
+    public record PublicKeyResult(String publicKeyId, String publicKey) {}
 
     private Map<String, String> buildHeaders(
             boolean streaming, Map<String, String> additionalHeaders, EncryptionContext context) {
