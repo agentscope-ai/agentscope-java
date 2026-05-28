@@ -21,6 +21,7 @@ import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import java.util.List;
@@ -103,7 +104,12 @@ public final class GracefulShutdownHook implements Hook {
             String newInputText = newInput.get(0).getTextContent();
 
             // Find the last USER message in memory
-            List<Msg> memoryMsgs = event.getMemory().getMessages();
+            Memory memory = event.getMemory();
+            if (memory == null) {
+                event.setInputMessages(List.of());
+                return;
+            }
+            List<Msg> memoryMsgs = memory.getMessages();
             String lastUserText = null;
             for (int i = memoryMsgs.size() - 1; i >= 0; i--) {
                 Msg msg = memoryMsgs.get(i);
