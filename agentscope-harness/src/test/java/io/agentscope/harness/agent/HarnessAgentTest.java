@@ -454,6 +454,56 @@ class HarnessAgentTest {
                 "subagent file tool must not write into the Harness state workspace");
     }
 
+    @Test
+    void sharedDeclaredSubagent_inheritsProjectWorkspaceForFileTools() throws Exception {
+        Files.createDirectories(workspace);
+        Path projectWorkspace = Files.createTempDirectory("agentscope-project-workspace");
+        Path projectTarget = projectWorkspace.resolve("from-shared-subagent.txt");
+        Path stateWorkspaceTarget = workspace.resolve("from-shared-subagent.txt");
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("shared-worker")
+                        .description("shared worker")
+                        .workspaceMode(WorkspaceMode.SHARED)
+                        .inlineAgentsBody("Use shared workspace.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .projectWorkspace(projectWorkspace)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent subagent =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(entry -> entry.name().equals("shared-worker"))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create();
+
+        Map<String, Object> writeInput =
+                Map.of("path", "/from-shared-subagent.txt", "content", "shared-project");
+        ToolResultBlock result = callTool(subagent, "write_file", writeInput);
+
+        assertTrue(
+                joinToolResultText(result).contains("Written to /from-shared-subagent.txt"),
+                "shared subagent file tool should write successfully: "
+                        + joinToolResultText(result));
+        assertTrue(
+                Files.readString(projectTarget).contains("shared-project"),
+                "shared declared subagent should use inherited projectWorkspace");
+        assertTrue(
+                Files.notExists(stateWorkspaceTarget),
+                "shared declared subagent file tool must not write into the Harness state"
+                        + " workspace");
+    }
+
     private static Msg userText(String text) {
         return Msg.builder()
                 .role(MsgRole.USER)
