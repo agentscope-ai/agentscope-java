@@ -334,34 +334,6 @@ class GracefulShutdownTest {
         }
 
         @Test
-        @DisplayName("deprecated bindSession delegates to bindStateSaver")
-        @SuppressWarnings("deprecation")
-        void bindSessionCompat() {
-            Session session = new InMemorySession();
-            SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session");
-            TestableAgent agent = createTestAgent("agent-1");
-
-            manager.bindSession(agent, session, sessionKey);
-            manager.registerRequest(agent);
-            manager.saveOnInterruptObserved(agent);
-
-            assertTrue(agent.getAgentState().isShutdownInterrupted());
-            assertTrue(session.get(sessionKey, "agent_state", AgentState.class).isPresent());
-        }
-
-        @Test
-        @DisplayName("deprecated bindSession with null arguments is no-op")
-        @SuppressWarnings("deprecation")
-        void bindSessionNullArgs() {
-            TestableAgent agent = createTestAgent("agent-1");
-            Session session = new InMemorySession();
-
-            assertDoesNotThrow(() -> manager.bindSession(null, session, SimpleSessionKey.of("s")));
-            assertDoesNotThrow(() -> manager.bindSession(agent, null, SimpleSessionKey.of("s")));
-            assertDoesNotThrow(() -> manager.bindSession(agent, session, null));
-        }
-
-        @Test
         @DisplayName("checkAndClearShutdownInterrupted with null agent returns false")
         void checkInterruptedNullAgent() {
             assertFalse(manager.checkAndClearShutdownInterrupted(null));

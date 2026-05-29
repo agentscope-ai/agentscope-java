@@ -394,7 +394,7 @@ class HookStopAgentTest {
 
             // Verify that an error ToolResultBlock was written into context for the
             // pending tool call id, proving the pending state was actually cleared
-            List<Msg> memoryMsgs = agent.getMemory().getMessages();
+            List<Msg> memoryMsgs = agent.getAgentState().getContext();
             boolean hasErrorToolResult =
                     memoryMsgs.stream()
                             .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())

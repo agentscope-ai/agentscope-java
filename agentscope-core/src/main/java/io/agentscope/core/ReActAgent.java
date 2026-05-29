@@ -16,12 +16,10 @@
 package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.agentscope.core.agent.ContextCompressor;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
-import io.agentscope.core.agent.config.ContextConfig;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEndEvent;
@@ -50,10 +48,9 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.legacy.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.legacy.hook.LegacyHookDispatcher;
 import io.agentscope.core.legacy.hook.PendingToolRecoveryHook;
 import io.agentscope.core.legacy.hook.PostActingEvent;
-import io.agentscope.core.legacy.memory.Memory;
-import io.agentscope.core.legacy.memory.StateBackedMemory;
 import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -78,7 +75,7 @@ import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
-import io.agentscope.core.permission.PermissionContext;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionEngine;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
@@ -195,7 +192,6 @@ import reactor.core.publisher.Sinks;
  *     .sysPrompt("You are a helpful assistant.")
  *     .model(model)
  *     .toolkit(toolkit)
- *     .memory(new InMemoryMemory())
  *     .maxIters(10)
  *     .build();
  *
@@ -229,17 +225,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     // ==================== Core Dependencies ====================
 
-    /**
-     * Read-only adapter exposing {@link #state}'s context as a legacy {@link Memory} so legacy
-     * hooks (which call {@link #getMemory()}) keep working. The core flow does not use this; it
-     * mutates {@link AgentState#contextMutable()} directly.
-     *
-     * @deprecated since 2.0.0. Conversation context is now held on
-     *     {@link io.agentscope.core.state.AgentState#getContext()}.
-     */
-    @Deprecated(since = "2.0.0")
-    private final Memory memory;
-
     private final String sysPrompt;
     private final Model model;
     private final int maxIters;
@@ -261,10 +246,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     private final AgentState state;
     private final ModelConfig modelConfig;
-    private final ContextConfig contextConfig;
     private final ReactConfig reactConfig;
     private final PermissionEngine permissionEngine;
-    private final ContextCompressor compressor;
 
     /**
      * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
@@ -340,20 +323,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         if (agentToolkit != null && !this.state.getToolContext().getActivatedGroups().isEmpty()) {
             agentToolkit.setActiveGroups(this.state.getToolContext().getActivatedGroups());
         }
-        this.memory = new StateBackedMemory(this.state);
-        this.modelConfig =
-                builder.modelConfig != null ? builder.modelConfig : ModelConfig.defaults();
-        this.contextConfig =
-                builder.contextConfig != null ? builder.contextConfig : ContextConfig.defaults();
-        this.reactConfig =
-                builder.reactConfig != null
-                        ? builder.reactConfig
-                        : new ReactConfig(builder.maxIters, false);
+        this.modelConfig = assembleModelConfig(builder);
+        this.reactConfig = assembleReactConfig(builder);
         this.permissionEngine = new PermissionEngine(this.state.getPermissionContext());
-        this.compressor =
-                builder.model != null
-                        ? new ContextCompressor(this.contextConfig, builder.model)
-                        : null;
         this.hookDispatcher = new LegacyHookDispatcher(this);
 
         // Wire automatic state save on shutdown / interrupt.
@@ -417,6 +389,29 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return Mono.fromRunnable(() -> session.save(sessionKey, "agent_state", state));
     }
 
+    // ==================== Config assembly helpers ====================
+
+    private static ModelConfig assembleModelConfig(Builder b) {
+        int baseRetries =
+                b.modelConfig != null
+                        ? b.modelConfig.maxRetries()
+                        : ModelConfig.DEFAULT_MAX_RETRIES;
+        Model baseFallback = b.modelConfig != null ? b.modelConfig.fallbackModel() : null;
+        int retries = b.flatMaxRetries != null ? b.flatMaxRetries : baseRetries;
+        Model fallback = b.flatFallbackModel != null ? b.flatFallbackModel : baseFallback;
+        return new ModelConfig(retries, fallback);
+    }
+
+    private static ReactConfig assembleReactConfig(Builder b) {
+        boolean baseStop =
+                b.reactConfig != null
+                        ? b.reactConfig.stopOnReject()
+                        : ReactConfig.DEFAULT_STOP_ON_REJECT;
+        int iters = b.maxIters;
+        boolean stop = b.flatStopOnReject != null ? b.flatStopOnReject : baseStop;
+        return new ReactConfig(iters, stop);
+    }
+
     // ==================== RuntimeContext ====================
 
     @Override
@@ -465,14 +460,22 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         unbindRuntimeContextFromHooks();
     }
 
-    private ToolExecutionContext buildMergedToolContext() {
+    private RuntimeContext buildMergedRuntimeContext() {
         RuntimeContext run = getRuntimeContext();
         if (run == null) {
-            return toolExecutionContext != null
-                    ? toolExecutionContext
-                    : ToolExecutionContext.empty();
+            if (toolExecutionContext != null) {
+                return RuntimeContext.builder().toolExecutionContext(toolExecutionContext).build();
+            }
+            return RuntimeContext.empty();
         }
-        return ToolExecutionContext.merge(run.asToolExecutionContext(), toolExecutionContext);
+        if (toolExecutionContext != null) {
+            return RuntimeContext.builder()
+                    .toolExecutionContext(
+                            ToolExecutionContext.merge(
+                                    run.asToolExecutionContext(), toolExecutionContext))
+                    .build();
+        }
+        return run;
     }
 
     /**
@@ -863,7 +866,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         ReasoningContext context = new ReasoningContext(getName());
 
         return checkInterruptedAsync()
-                .then(compressor != null ? compressor.maybeCompress(state) : Mono.empty())
                 .then(
                         hookDispatcher.firePreReasoning(
                                 state.contextMutable(),
@@ -1358,7 +1360,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     /**
      * Run every tool call through the permission gate.
      *
-     * <p>When the agent's {@link io.agentscope.core.permission.PermissionContext} is trivial
+     * <p>When the agent's {@link io.agentscope.core.permission.PermissionContextState} is trivial
      * (default mode, no rules, no working directories — i.e. the user has not opted into the
      * permission system) we fall back to the lightweight pre-2.0 path: the tool's own
      * {@link ToolBase#checkPermissions} ASK gates a confirmation, anything else is approved.
@@ -1523,7 +1525,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      */
     private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
             List<ToolUseBlock> toolCalls) {
-        return toolkit.callTools(toolCalls, toolExecutionConfig, this, buildMergedToolContext())
+        return toolkit.callTools(toolCalls, toolExecutionConfig, this, buildMergedRuntimeContext())
                 .map(
                         results ->
                                 IntStream.range(0, toolCalls.size())
@@ -1906,19 +1908,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     // ==================== Getters ====================
 
-    /**
-     * Read-only adapter exposing the agent's conversation context as a legacy {@link Memory}.
-     * Retained so legacy hooks (e.g. {@code PendingToolRecoveryHook}, {@code StructuredOutputHook})
-     * keep compiling against the 1.0.x API; the live state lives on {@link AgentState}.
-     *
-     * @deprecated since 2.0.0. Use {@link #getAgentState()} instead.
-     */
-    @Deprecated(since = "2.0.0")
-    @SuppressWarnings("deprecation")
-    public Memory getMemory() {
-        return memory;
-    }
-
     public String getSysPrompt() {
         return sysPrompt;
     }
@@ -1971,11 +1960,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     /** Returns the model-call configuration (retries, timeouts). */
     public ModelConfig getModelConfig() {
         return modelConfig;
-    }
-
-    /** Returns the context-management configuration (compression thresholds, prompts). */
-    public ContextConfig getContextConfig() {
-        return contextConfig;
     }
 
     /** Returns the reasoning-loop configuration (maxIters, stopOnReject). */
@@ -2215,9 +2199,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         // 2.0 core fields
         private ModelConfig modelConfig;
-        private ContextConfig contextConfig;
         private ReactConfig reactConfig;
-        private PermissionContext permissionContext;
+        private PermissionContextState permissionContext;
+
+        // Flat overrides for ModelConfig / ReactConfig (take precedence when explicitly set)
+        private Integer flatMaxRetries;
+        private Model flatFallbackModel;
+        private Boolean flatStopOnReject;
         private Session session;
         private SessionKey sessionKey;
 
@@ -2263,6 +2251,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         boolean disableWorkspaceContext = false;
         boolean disableSubagents = false;
         boolean disableDynamicSkills = false;
+        io.agentscope.core.skill.SkillFilter skillFilter;
         boolean disableDynamicSubagents = false;
         boolean disableToolsConfig = false;
 
@@ -2271,6 +2260,42 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         SandboxFilesystemSpec sandboxFilesystemSpec;
         RemoteFilesystemSpec remoteFilesystemSpec;
         LocalFilesystemSpec localFilesystemSpec;
+
+        // ==================== 1.x legacy compatibility fields ====================
+        // Below fields back the deprecated `planNotebook(...)`, `longTermMemory(...)`,
+        // `knowledge(...)`, `skillBox(...)` setters. They are consumed by configureXxx() during
+        // build() so legacy 1.x user code keeps producing equivalent runtime behavior.
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private io.agentscope.core.legacy.memory.LongTermMemory longTermMemory;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private io.agentscope.core.legacy.memory.LongTermMemoryMode longTermMemoryMode =
+                io.agentscope.core.legacy.memory.LongTermMemoryMode.BOTH;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private boolean longTermMemoryAsyncRecord = false;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private final Set<io.agentscope.core.legacy.rag.Knowledge> knowledgeBases =
+                new LinkedHashSet<>();
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private io.agentscope.core.legacy.rag.RAGMode ragMode =
+                io.agentscope.core.legacy.rag.RAGMode.GENERIC;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private io.agentscope.core.legacy.rag.model.RetrieveConfig retrieveConfig =
+                io.agentscope.core.legacy.rag.model.RetrieveConfig.builder()
+                        .limit(5)
+                        .scoreThreshold(0.5)
+                        .build();
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private io.agentscope.core.legacy.plan.PlanNotebook planNotebook;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private io.agentscope.core.legacy.skill.SkillBox skillBox;
 
         private Builder() {}
 
@@ -2525,14 +2550,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         /**
          * Sets the tool execution context for this agent.
          *
-         * <p>This context will be passed to all tools invoked by this agent and can include
-         * user identity, session information, permissions, and other metadata. The context
-         * from this agent level will override toolkit-level context but can be overridden by
-         * call-level context.
-         *
          * @param toolExecutionContext The tool execution context
          * @return This builder instance for method chaining
+         * @deprecated Use {@link RuntimeContext} with {@code agent.call(msg, runtimeContext)}
+         *     or register POJOs directly via {@code RuntimeContext.builder().put(Type, value)}.
          */
+        @Deprecated
         public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
             this.toolExecutionContext = toolExecutionContext;
             return this;
@@ -2558,37 +2581,76 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * Sets the {@link ModelConfig} controlling reasoning retry / backoff. When unset,
-         * {@link ModelConfig#defaults()} is used.
+         * Sets the model-call retry budget (max attempts including the first try). Defaults to
+         * {@link ModelConfig#DEFAULT_MAX_RETRIES} when unset. Takes precedence over
+         * {@link #modelConfig(ModelConfig)} when both are configured.
          */
+        public Builder maxRetries(int maxRetries) {
+            if (maxRetries <= 0) {
+                throw new IllegalArgumentException("maxRetries must be > 0: " + maxRetries);
+            }
+            this.flatMaxRetries = maxRetries;
+            return this;
+        }
+
+        /**
+         * Sets the fallback model invoked after the primary model exhausts its retry budget.
+         * Pass {@code null} to explicitly clear (no fallback). Takes precedence over
+         * {@link #modelConfig(ModelConfig)}'s {@code fallbackModel} field.
+         */
+        public Builder fallbackModel(Model fallbackModel) {
+            this.flatFallbackModel = fallbackModel;
+            return this;
+        }
+
+        /**
+         * Convenience overload that resolves {@code modelId} via
+         * {@link io.agentscope.core.model.ModelRegistry#resolve(String)} (named registration or
+         * {@code provider:model} pattern like {@code openai:gpt-5.5}, {@code dashscope:qwen-max}).
+         *
+         * @throws IllegalArgumentException if the id cannot be resolved
+         */
+        public Builder fallbackModel(String modelId) {
+            this.flatFallbackModel = io.agentscope.core.model.ModelRegistry.resolve(modelId);
+            return this;
+        }
+
+        /**
+         * Controls whether a permission rejection of any tool call terminates the reasoning loop
+         * (instead of feeding the rejection back into the next reasoning round). Defaults to
+         * {@link ReactConfig#DEFAULT_STOP_ON_REJECT}. Takes precedence over
+         * {@link #reactConfig(ReactConfig)} when both are configured.
+         */
+        public Builder stopOnReject(boolean stopOnReject) {
+            this.flatStopOnReject = stopOnReject;
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. Prefer the flat setters {@link #maxRetries(int)} and
+         *     {@link #fallbackModel(Model)} / {@link #fallbackModel(String)}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder modelConfig(ModelConfig modelConfig) {
             this.modelConfig = modelConfig;
             return this;
         }
 
         /**
-         * Sets the {@link ContextConfig} controlling context compression thresholds. When unset,
-         * {@link ContextConfig#defaults()} is used.
+         * @deprecated since 2.0.0. Prefer the flat setters {@link #maxIters(int)} and
+         *     {@link #stopOnReject(boolean)}.
          */
-        public Builder contextConfig(ContextConfig contextConfig) {
-            this.contextConfig = contextConfig;
-            return this;
-        }
-
-        /**
-         * Sets the {@link ReactConfig} controlling the reasoning-acting loop. When unset, a config
-         * is derived from {@link #maxIters(int)}.
-         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder reactConfig(ReactConfig reactConfig) {
             this.reactConfig = reactConfig;
             return this;
         }
 
         /**
-         * Sets the {@link PermissionContext} consulted by the {@link PermissionEngine} during tool
+         * Sets the {@link PermissionContextState} consulted by the {@link PermissionEngine} during tool
          * execution. When unset, an empty permission context is used (PASSTHROUGH for all tools).
          */
-        public Builder permissionContext(PermissionContext permissionContext) {
+        public Builder permissionContext(PermissionContextState permissionContext) {
             this.permissionContext = permissionContext;
             return this;
         }
@@ -2835,6 +2897,55 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return this;
         }
 
+        /**
+         * Sets a custom {@link io.agentscope.core.skill.SkillFilter} controlling which skills are
+         * included in the prompt. Defaults to {@link io.agentscope.core.skill.SkillFilter#all()}.
+         *
+         * @param filter the skill filter
+         * @return this builder
+         */
+        public Builder skillFilter(io.agentscope.core.skill.SkillFilter filter) {
+            this.skillFilter = filter;
+            return this;
+        }
+
+        /**
+         * Convenience: disables all skill prompts.
+         * Equivalent to {@code skillFilter(SkillFilter.none())}.
+         *
+         * @param enabled false to disable all skill prompts
+         * @return this builder
+         */
+        public Builder skillsEnabled(boolean enabled) {
+            this.skillFilter =
+                    enabled
+                            ? io.agentscope.core.skill.SkillFilter.all()
+                            : io.agentscope.core.skill.SkillFilter.none();
+            return this;
+        }
+
+        /**
+         * Convenience: whitelist — only the named skills appear in the prompt.
+         *
+         * @param skillNames skill names to enable
+         * @return this builder
+         */
+        public Builder enableSkills(String... skillNames) {
+            this.skillFilter = io.agentscope.core.skill.SkillFilter.only(skillNames);
+            return this;
+        }
+
+        /**
+         * Convenience: blacklist — all skills except the named ones appear in the prompt.
+         *
+         * @param skillNames skill names to disable
+         * @return this builder
+         */
+        public Builder disableSkills(String... skillNames) {
+            this.skillFilter = io.agentscope.core.skill.SkillFilter.except(skillNames);
+            return this;
+        }
+
         /** Disables dynamic per-call subagent reload from the workspace filesystem. */
         public Builder disableDynamicSubagents() {
             this.disableDynamicSubagents = true;
@@ -2874,6 +2985,117 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         /** Skips reading {@code workspace/tools.json}. */
         public Builder disableToolsConfig() {
             this.disableToolsConfig = true;
+            return this;
+        }
+
+        // ==================== 1.x legacy compatibility setters ====================
+        // The setters below are deprecated since 2.0 and will be removed in the next minor.
+        // Each one captures a value used later by configureXxx() during build(), wiring the
+        // corresponding legacy hook(s) and/or tool(s) into the agent so 1.x user code keeps
+        // producing equivalent runtime behavior. Internal references use legacy.* packages.
+
+        /**
+         * @deprecated since 2.0.0. Long-term memory is being redesigned around the upcoming reme
+         *     base class. Hooks added through this path still work.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder longTermMemory(
+                io.agentscope.core.legacy.memory.LongTermMemory longTermMemory) {
+            this.longTermMemory = longTermMemory;
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. See {@link #longTermMemory}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder longTermMemoryMode(
+                io.agentscope.core.legacy.memory.LongTermMemoryMode mode) {
+            this.longTermMemoryMode = mode;
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. See {@link #longTermMemory}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder longTermMemoryAsyncRecord(boolean asyncRecord) {
+            this.longTermMemoryAsyncRecord = asyncRecord;
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. RAG is being redesigned; legacy adapters remain functional.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder knowledge(io.agentscope.core.legacy.rag.Knowledge knowledge) {
+            if (knowledge != null) {
+                this.knowledgeBases.add(knowledge);
+            }
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. See {@link #knowledge}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder knowledges(List<io.agentscope.core.legacy.rag.Knowledge> knowledges) {
+            if (knowledges != null) {
+                this.knowledgeBases.addAll(knowledges);
+            }
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. See {@link #knowledge}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder ragMode(io.agentscope.core.legacy.rag.RAGMode mode) {
+            if (mode != null) {
+                this.ragMode = mode;
+            }
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. See {@link #knowledge}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder retrieveConfig(io.agentscope.core.legacy.rag.model.RetrieveConfig config) {
+            if (config != null) {
+                this.retrieveConfig = config;
+            }
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. The plan module has been removed from 2.0 core; the legacy
+         *     {@link io.agentscope.core.legacy.plan.PlanNotebook} adapter still wires up plan
+         *     tools and a plan-hint hook for source compatibility.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder planNotebook(io.agentscope.core.legacy.plan.PlanNotebook planNotebook) {
+            this.planNotebook = planNotebook;
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. Convenience shortcut for {@code planNotebook(PlanNotebook.builder().build())}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder enablePlan() {
+            this.planNotebook = io.agentscope.core.legacy.plan.PlanNotebook.builder().build();
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. Skills now flow through {@link #skillRepository} /
+         *     {@link #skillRepositories}; legacy {@link io.agentscope.core.legacy.skill.SkillBox}
+         *     instances are still accepted for source compatibility.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder skillBox(io.agentscope.core.legacy.skill.SkillBox skillBox) {
+            this.skillBox = skillBox;
             return this;
         }
 
@@ -2933,6 +3155,168 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return b;
         }
 
+        // ==================== 1.x legacy configureXxx helpers ====================
+        // Ported verbatim from 1.x ReActAgent.Builder (origin/1.x ReActAgent.java:1762-1925),
+        // with two adjustments for 2.0:
+        //   1) all legacy classes are referenced through the io.agentscope.core.legacy.* packages;
+        //   2) configureLongTermMemory's static hook receives an AgentStateMemoryView that lazily
+        //      reads AgentState.context via a `selfRef` shared with build().
+
+        /**
+         * Configures long-term memory based on the selected mode.
+         *
+         * <p>AGENT_CONTROL registers memory tools for the agent to call. STATIC_CONTROL adds
+         * a {@link io.agentscope.core.legacy.memory.StaticLongTermMemoryHook} that retrieves /
+         * records memory automatically. BOTH combines them. The hook reads context lazily from
+         * {@code selfRef.get().getAgentState()} so it tolerates being constructed before the
+         * agent itself exists.
+         */
+        @SuppressWarnings("deprecation")
+        private void configureLongTermMemory(
+                Toolkit agentToolkit,
+                java.util.concurrent.atomic.AtomicReference<ReActAgent> selfRef) {
+            if (longTermMemoryMode
+                            == io.agentscope.core.legacy.memory.LongTermMemoryMode.AGENT_CONTROL
+                    || longTermMemoryMode
+                            == io.agentscope.core.legacy.memory.LongTermMemoryMode.BOTH) {
+                agentToolkit.registerTool(
+                        new io.agentscope.core.legacy.memory.LongTermMemoryTools(longTermMemory));
+            }
+            if (longTermMemoryMode
+                            == io.agentscope.core.legacy.memory.LongTermMemoryMode.STATIC_CONTROL
+                    || longTermMemoryMode
+                            == io.agentscope.core.legacy.memory.LongTermMemoryMode.BOTH) {
+                io.agentscope.core.legacy.memory.Memory contextView =
+                        new io.agentscope.core.legacy.memory.AgentStateMemoryView(
+                                () -> {
+                                    ReActAgent a = selfRef.get();
+                                    return a == null ? null : a.getAgentState();
+                                });
+                hooks.add(
+                        new io.agentscope.core.legacy.memory.StaticLongTermMemoryHook(
+                                longTermMemory, contextView, longTermMemoryAsyncRecord));
+            }
+        }
+
+        /**
+         * Configures RAG (Retrieval-Augmented Generation) based on the selected mode.
+         */
+        @SuppressWarnings("deprecation")
+        private void configureRAG(Toolkit agentToolkit) {
+            io.agentscope.core.legacy.rag.Knowledge aggregatedKnowledge =
+                    knowledgeBases.size() == 1
+                            ? knowledgeBases.iterator().next()
+                            : buildAggregatedKnowledge();
+
+            switch (ragMode) {
+                case GENERIC ->
+                        hooks.add(
+                                new io.agentscope.core.legacy.rag.GenericRAGHook(
+                                        aggregatedKnowledge, retrieveConfig));
+                case AGENTIC ->
+                        agentToolkit.registerTool(
+                                new io.agentscope.core.legacy.rag.KnowledgeRetrievalTools(
+                                        aggregatedKnowledge, retrieveConfig));
+                case NONE -> {
+                    // intentionally no-op
+                }
+            }
+        }
+
+        @SuppressWarnings("deprecation")
+        private io.agentscope.core.legacy.rag.Knowledge buildAggregatedKnowledge() {
+            return new io.agentscope.core.legacy.rag.Knowledge() {
+                @Override
+                public Mono<Void> addDocuments(
+                        List<io.agentscope.core.legacy.rag.model.Document> documents) {
+                    return reactor.core.publisher.Flux.fromIterable(knowledgeBases)
+                            .flatMap(kb -> kb.addDocuments(documents))
+                            .then();
+                }
+
+                @Override
+                public Mono<List<io.agentscope.core.legacy.rag.model.Document>> retrieve(
+                        String query, io.agentscope.core.legacy.rag.model.RetrieveConfig config) {
+                    return reactor.core.publisher.Flux.fromIterable(knowledgeBases)
+                            .flatMap(kb -> kb.retrieve(query, config))
+                            .collectList()
+                            .map(this::mergeAndSortResults);
+                }
+
+                private List<io.agentscope.core.legacy.rag.model.Document> mergeAndSortResults(
+                        List<List<io.agentscope.core.legacy.rag.model.Document>> allResults) {
+                    return allResults.stream()
+                            .flatMap(List::stream)
+                            .collect(
+                                    java.util.stream.Collectors.toMap(
+                                            io.agentscope.core.legacy.rag.model.Document::getId,
+                                            d -> d,
+                                            (d1, d2) ->
+                                                    d1.getScore() != null
+                                                                    && d2.getScore() != null
+                                                                    && d1.getScore() > d2.getScore()
+                                                            ? d1
+                                                            : d2))
+                            .values()
+                            .stream()
+                            .sorted(
+                                    java.util.Comparator.comparing(
+                                            io.agentscope.core.legacy.rag.model.Document::getScore,
+                                            java.util.Comparator.nullsLast(
+                                                    java.util.Comparator.reverseOrder())))
+                            .limit(retrieveConfig.getLimit())
+                            .toList();
+                }
+            };
+        }
+
+        /**
+         * Registers plan management tools on the toolkit and a hook that injects the current
+         * plan hint into every reasoning step's input message list.
+         */
+        @SuppressWarnings({"deprecation", "unchecked"})
+        private void configurePlan(Toolkit agentToolkit) {
+            agentToolkit.registerTool(planNotebook);
+
+            io.agentscope.core.legacy.hook.Hook planHintHook =
+                    new io.agentscope.core.legacy.hook.Hook() {
+                        @Override
+                        public <T extends io.agentscope.core.legacy.hook.HookEvent> Mono<T> onEvent(
+                                T event) {
+                            if (event
+                                    instanceof io.agentscope.core.legacy.hook.PreReasoningEvent e) {
+                                return planNotebook
+                                        .getCurrentHint()
+                                        .map(
+                                                hintMsg -> {
+                                                    List<Msg> modifiedMsgs =
+                                                            new ArrayList<>(e.getInputMessages());
+                                                    modifiedMsgs.add(hintMsg);
+                                                    e.setInputMessages(modifiedMsgs);
+                                                    return (T) e;
+                                                })
+                                        .defaultIfEmpty(event);
+                            }
+                            return Mono.just(event);
+                        }
+                    };
+            hooks.add(planHintHook);
+        }
+
+        /**
+         * Configures SkillBox by binding the toolkit, registering the skill-load tool, uploading
+         * skill files when auto-upload is enabled, and adding the SkillHook to the chain.
+         */
+        @SuppressWarnings("deprecation")
+        private void configureSkillBox(Toolkit agentToolkit) {
+            skillBox.bindToolkit(agentToolkit);
+            skillBox.registerSkillLoadTool();
+            if (skillBox.isAutoUploadSkill()) {
+                skillBox.uploadSkillFiles();
+            }
+            hooks.add(new io.agentscope.core.legacy.skill.SkillHook(skillBox));
+        }
+
         /**
          * Builds and returns a new ReActAgent instance with the configured settings.
          *
@@ -2957,7 +3341,30 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 hooks.add(new PendingToolRecoveryHook());
             }
 
+            // 1.x legacy compat: shared selfRef gives the long-term-memory hook (constructed
+            // pre-agent) a way to resolve AgentState.context lazily once the agent exists.
+            // Harness already manages a selfRef in its HarnessOrchestrationResult; we reuse it so
+            // both paths point at the same ReActAgent post-construction.
+            java.util.concurrent.atomic.AtomicReference<ReActAgent> selfRef =
+                    harnessResult != null && harnessResult.selfRef != null
+                            ? harnessResult.selfRef
+                            : new java.util.concurrent.atomic.AtomicReference<>();
+
+            if (longTermMemory != null) {
+                configureLongTermMemory(agentToolkit, selfRef);
+            }
+            if (!knowledgeBases.isEmpty()) {
+                configureRAG(agentToolkit);
+            }
+            if (planNotebook != null) {
+                configurePlan(agentToolkit);
+            }
+            if (skillBox != null) {
+                configureSkillBox(agentToolkit);
+            }
+
             ReActAgent agent = new ReActAgent(this, agentToolkit);
+            selfRef.set(agent);
 
             if (harnessResult != null) {
                 agent.injectHarnessRuntime(
@@ -2968,9 +3375,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         harnessResult.defaultSandboxContext,
                         harnessResult.compactionHook,
                         harnessResult.skillRepositories);
-                if (harnessResult.selfRef != null) {
-                    harnessResult.selfRef.set(agent);
-                }
             }
             return agent;
         }
@@ -3216,7 +3620,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                     ReActAgentBuilderSupport.composeSkillRepositories(
                             this, wsManager, filesystem, currentRcSupplier);
             if (!orderedSkillRepos.isEmpty() && !disableDynamicSkills) {
-                hooks.add(new DynamicSkillHook(orderedSkillRepos, agentToolkit));
+                hooks.add(new DynamicSkillHook(orderedSkillRepos, agentToolkit, skillFilter));
             }
 
             // ---- Apply tools.json allow/deny filter ----

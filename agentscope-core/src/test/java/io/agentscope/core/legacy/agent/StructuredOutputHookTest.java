@@ -25,8 +25,6 @@ import static org.mockito.Mockito.mock;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.legacy.hook.PostReasoningEvent;
 import io.agentscope.core.legacy.hook.PreReasoningEvent;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
-import io.agentscope.core.legacy.memory.Memory;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -34,6 +32,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolChoice;
+import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -48,12 +47,12 @@ import org.junit.jupiter.api.Test;
  */
 class StructuredOutputHookTest {
 
-    private Memory memory;
+    private AgentState agentState;
     private Agent mockAgent;
 
     @BeforeEach
     void setUp() {
-        memory = new InMemoryMemory();
+        agentState = AgentState.builder().build();
         mockAgent = mock(Agent.class);
     }
 
@@ -61,7 +60,7 @@ class StructuredOutputHookTest {
     void testToolChoiceMode_HandlesEmptyInputMessages() {
         // Given: TOOL_CHOICE mode with an empty message list
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, agentState);
 
         List<Msg> inputMessages = new ArrayList<>();
 
@@ -81,7 +80,7 @@ class StructuredOutputHookTest {
     void testToolChoiceMode_NotForcedOnInitialRequest() {
         // Given: TOOL_CHOICE mode with a regular user message (not a reminder)
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, agentState);
 
         Msg userMsg =
                 Msg.builder()
@@ -108,7 +107,7 @@ class StructuredOutputHookTest {
     void testToolChoiceMode_ForcedOnReminderMessage() {
         // Given: TOOL_CHOICE mode with a TOOL_CHOICE reminder message as the last message
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, agentState);
 
         Msg userMsg =
                 Msg.builder()
@@ -145,7 +144,7 @@ class StructuredOutputHookTest {
     void testToolChoiceMode_NotForcedOnPromptReminderMessage() {
         // Given: TOOL_CHOICE mode with a PROMPT reminder message (wrong type)
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, agentState);
 
         Msg promptReminderMsg = createPromptReminderMessage();
 
@@ -168,7 +167,7 @@ class StructuredOutputHookTest {
     void testPromptMode_NeverForcesToolChoice() {
         // Given: PROMPT mode with any message
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.PROMPT, null, memory);
+                new StructuredOutputHook(StructuredOutputReminder.PROMPT, null, agentState);
 
         Msg reminderMsg = createPromptReminderMessage();
 
@@ -191,7 +190,7 @@ class StructuredOutputHookTest {
     void testPostReasoning_CreatesCorrectReminderMetadata_ToolChoiceMode() {
         // Given: TOOL_CHOICE mode, model returns text without tool call
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, agentState);
 
         Msg reasoningMsg =
                 Msg.builder()
@@ -230,7 +229,7 @@ class StructuredOutputHookTest {
     void testPostReasoning_CreatesCorrectReminderMetadata_PromptMode() {
         // Given: PROMPT mode, model returns text without tool call
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.PROMPT, null, memory);
+                new StructuredOutputHook(StructuredOutputReminder.PROMPT, null, agentState);
 
         Msg reasoningMsg =
                 Msg.builder()
@@ -262,7 +261,8 @@ class StructuredOutputHookTest {
                 GenerateOptions.builder().temperature(0.7).maxTokens(1000).build();
 
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, baseOptions, memory);
+                new StructuredOutputHook(
+                        StructuredOutputReminder.TOOL_CHOICE, baseOptions, agentState);
 
         Msg reminderMsg = createToolChoiceReminderMessage();
 
@@ -289,7 +289,7 @@ class StructuredOutputHookTest {
     void testReminderMessage_HasCorrectContent() {
         // Given: Any mode, model returns text without tool call
         StructuredOutputHook hook =
-                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, agentState);
 
         Msg reasoningMsg =
                 Msg.builder()

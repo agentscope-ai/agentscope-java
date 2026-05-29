@@ -19,7 +19,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.permission.PermissionContext;
+import io.agentscope.core.permission.PermissionContextState;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -35,7 +35,7 @@ import java.util.UUID;
  *
  * <p>The {@link #context} list is exposed as a defensive copy via {@link #getContext()} and as a
  * live, mutable handle via {@link #contextMutable()}, mirroring the pattern used by
- * {@link TaskContext}. Storage layers may swap whole {@link AgentState} instances or mutate the
+ * {@link TaskContextState}. Storage layers may swap whole {@link AgentState} instances or mutate the
  * inner collections in place.
  *
  * <p>{@code summary} is modelled as a free-form {@link String}; richer structured forms are left
@@ -60,9 +60,9 @@ public final class AgentState implements State {
     private String replyId;
     private int curIter;
     private boolean shutdownInterrupted;
-    private final PermissionContext permissionContext;
-    private final ToolContext toolContext;
-    private final TaskContext tasksContext;
+    private final PermissionContextState permissionContext;
+    private final ToolContextState toolContext;
+    private final TaskContextState tasksContext;
 
     private AgentState(Builder builder) {
         this.sessionId = builder.sessionId == null ? newHex() : builder.sessionId;
@@ -73,11 +73,14 @@ public final class AgentState implements State {
         this.shutdownInterrupted = builder.shutdownInterrupted;
         this.permissionContext =
                 builder.permissionContext == null
-                        ? PermissionContext.builder().build()
+                        ? PermissionContextState.builder().build()
                         : builder.permissionContext;
         this.toolContext =
-                builder.toolContext == null ? ToolContext.builder().build() : builder.toolContext;
-        this.tasksContext = builder.tasksContext == null ? new TaskContext() : builder.tasksContext;
+                builder.toolContext == null
+                        ? ToolContextState.builder().build()
+                        : builder.toolContext;
+        this.tasksContext =
+                builder.tasksContext == null ? new TaskContextState() : builder.tasksContext;
     }
 
     @JsonCreator
@@ -88,9 +91,9 @@ public final class AgentState implements State {
             @JsonProperty("reply_id") String replyId,
             @JsonProperty("cur_iter") Integer curIter,
             @JsonProperty("shutdown_interrupted") Boolean shutdownInterrupted,
-            @JsonProperty("permission_context") PermissionContext permissionContext,
-            @JsonProperty("tool_context") ToolContext toolContext,
-            @JsonProperty("tasks_context") TaskContext tasksContext) {
+            @JsonProperty("permission_context") PermissionContextState permissionContext,
+            @JsonProperty("tool_context") ToolContextState toolContext,
+            @JsonProperty("tasks_context") TaskContextState tasksContext) {
         Builder b = builder();
         if (sessionId != null) {
             b.sessionId(sessionId);
@@ -179,17 +182,17 @@ public final class AgentState implements State {
     }
 
     @JsonProperty("permission_context")
-    public PermissionContext getPermissionContext() {
+    public PermissionContextState getPermissionContext() {
         return permissionContext;
     }
 
     @JsonProperty("tool_context")
-    public ToolContext getToolContext() {
+    public ToolContextState getToolContext() {
         return toolContext;
     }
 
     @JsonProperty("tasks_context")
-    public TaskContext getTasksContext() {
+    public TaskContextState getTasksContext() {
         return tasksContext;
     }
 
@@ -269,9 +272,9 @@ public final class AgentState implements State {
         private String replyId;
         private int curIter;
         private boolean shutdownInterrupted;
-        private PermissionContext permissionContext;
-        private ToolContext toolContext;
-        private TaskContext tasksContext;
+        private PermissionContextState permissionContext;
+        private ToolContextState toolContext;
+        private TaskContextState tasksContext;
 
         private Builder() {}
 
@@ -311,17 +314,17 @@ public final class AgentState implements State {
             return this;
         }
 
-        public Builder permissionContext(PermissionContext permissionContext) {
+        public Builder permissionContext(PermissionContextState permissionContext) {
             this.permissionContext = permissionContext;
             return this;
         }
 
-        public Builder toolContext(ToolContext toolContext) {
+        public Builder toolContext(ToolContextState toolContext) {
             this.toolContext = toolContext;
             return this;
         }
 
-        public Builder tasksContext(TaskContext tasksContext) {
+        public Builder tasksContext(TaskContextState tasksContext) {
             this.tasksContext = tasksContext;
             return this;
         }

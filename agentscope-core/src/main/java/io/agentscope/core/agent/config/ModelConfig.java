@@ -16,7 +16,7 @@
 package io.agentscope.core.agent.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import io.agentscope.core.model.ChatModelBase;
+import io.agentscope.core.model.Model;
 
 /**
  * Model invocation configuration. {@link #maxRetries()} bounds the retry count on a single
@@ -24,10 +24,10 @@ import io.agentscope.core.model.ChatModelBase;
  * after exhausting retries — the fallback shares the same {@code maxRetries} budget.
  *
  * <p>The {@code fallbackModel} field is intentionally excluded from JSON serialisation
- * ({@code @JsonIgnore}): chat-model instances hold credentials/connections that don't round-trip
+ * ({@code @JsonIgnore}): model instances hold credentials/connections that don't round-trip
  * cleanly through a state snapshot.
  */
-public record ModelConfig(int maxRetries, @JsonIgnore ChatModelBase fallbackModel) {
+public record ModelConfig(int maxRetries, @JsonIgnore Model fallbackModel) {
 
     public static final int DEFAULT_MAX_RETRIES = 3;
 

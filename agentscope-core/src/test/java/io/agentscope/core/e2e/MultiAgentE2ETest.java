@@ -94,8 +94,9 @@ class MultiAgentE2ETest {
     // ==================== Test Methods ====================
 
     private void sanitizeMemory(ReActAgent agent) {
-        List<Msg> msgs = new ArrayList<>(agent.getMemory().getMessages());
-        agent.getMemory().clear();
+        List<Msg> msgs = new ArrayList<>(agent.getAgentState().getContext());
+        List<Msg> contextMutable = agent.getAgentState().contextMutable();
+        contextMutable.clear();
         for (Msg msg : msgs) {
             if (msg.getRole() == MsgRole.ASSISTANT && !agent.getName().equals(msg.getName())) {
                 msg =
@@ -106,7 +107,7 @@ class MultiAgentE2ETest {
                                 .content(msg.getContent())
                                 .build();
             }
-            agent.getMemory().addMessage(msg);
+            contextMutable.add(msg);
         }
     }
 
@@ -161,15 +162,15 @@ class MultiAgentE2ETest {
             // Verify all agents received the announcement
             assertEquals(
                     1,
-                    alice.getMemory().getMessages().size(),
+                    alice.getAgentState().getContext().size(),
                     "Alice should have announcement in memory");
             assertEquals(
                     1,
-                    bob.getMemory().getMessages().size(),
+                    bob.getAgentState().getContext().size(),
                     "Bob should have announcement in memory");
             assertEquals(
                     1,
-                    charlie.getMemory().getMessages().size(),
+                    charlie.getAgentState().getContext().size(),
                     "Charlie should have announcement in memory");
 
             System.out.println("\n--- Round 1: Alice introduces herself ---");
@@ -180,11 +181,11 @@ class MultiAgentE2ETest {
             // Bob and Charlie should receive Alice's message
             assertEquals(
                     2,
-                    bob.getMemory().getMessages().size(),
+                    bob.getAgentState().getContext().size(),
                     "Bob should have announcement + Alice's response");
             assertEquals(
                     2,
-                    charlie.getMemory().getMessages().size(),
+                    charlie.getAgentState().getContext().size(),
                     "Charlie should have announcement + Alice's response");
 
             System.out.println("\n--- Round 2: Bob introduces himself ---");
@@ -194,8 +195,8 @@ class MultiAgentE2ETest {
             System.out.println("Bob: " + TestUtils.extractTextContent(bobResponse));
 
             // Alice and Charlie should receive Bob's message
-            List<Msg> aliceMemory = alice.getMemory().getMessages();
-            List<Msg> charlieMemory = charlie.getMemory().getMessages();
+            List<Msg> aliceMemory = alice.getAgentState().getContext();
+            List<Msg> charlieMemory = charlie.getAgentState().getContext();
 
             assertEquals(
                     3,
@@ -213,9 +214,9 @@ class MultiAgentE2ETest {
             System.out.println("Charlie: " + TestUtils.extractTextContent(charlieResponse));
 
             // Verify final memory states
-            aliceMemory = alice.getMemory().getMessages();
-            List<Msg> bobMemory = bob.getMemory().getMessages();
-            charlieMemory = charlie.getMemory().getMessages();
+            aliceMemory = alice.getAgentState().getContext();
+            List<Msg> bobMemory = bob.getAgentState().getContext();
+            charlieMemory = charlie.getAgentState().getContext();
 
             assertTrue(
                     aliceMemory.size() >= 4,
@@ -293,7 +294,7 @@ class MultiAgentE2ETest {
             System.out.println("Researcher: " + TestUtils.extractTextContent(researcherResponse));
 
             // Verify researcher used tools
-            List<Msg> researcherMemory = researcher.getMemory().getMessages();
+            List<Msg> researcherMemory = researcher.getAgentState().getContext();
             boolean hasToolMessage =
                     researcherMemory.stream()
                             .anyMatch(
@@ -305,7 +306,7 @@ class MultiAgentE2ETest {
                     "Researcher should have tool-related messages for " + provider.getModelName());
 
             // Reviewer should receive researcher's response
-            List<Msg> reviewerMemory = reviewer.getMemory().getMessages();
+            List<Msg> reviewerMemory = reviewer.getAgentState().getContext();
             assertTrue(
                     reviewerMemory.size() >= 2,
                     "Reviewer should have announcement + researcher's response");
@@ -316,7 +317,7 @@ class MultiAgentE2ETest {
             System.out.println("Reviewer: " + TestUtils.extractTextContent(reviewerResponse));
 
             // Researcher should receive reviewer's feedback
-            researcherMemory = researcher.getMemory().getMessages();
+            researcherMemory = researcher.getAgentState().getContext();
             boolean hasReviewerMessage =
                     researcherMemory.stream().anyMatch(m -> "Reviewer".equals(m.getName()));
             assertTrue(
@@ -391,13 +392,13 @@ class MultiAgentE2ETest {
 
             // Verify all agents have the full discussion
             assertTrue(
-                    innovator.getMemory().getMessages().size() >= 3,
+                    innovator.getAgentState().getContext().size() >= 3,
                     "Innovator should have full discussion for " + provider.getModelName());
             assertTrue(
-                    critic.getMemory().getMessages().size() >= 3,
+                    critic.getAgentState().getContext().size() >= 3,
                     "Critic should have full discussion for " + provider.getModelName());
             assertTrue(
-                    synthesizer.getMemory().getMessages().size() >= 2,
+                    synthesizer.getAgentState().getContext().size() >= 2,
                     "Synthesizer should have discussion for " + provider.getModelName());
 
             // Verify role differentiation through content
@@ -445,7 +446,7 @@ class MultiAgentE2ETest {
 
             // Bob should receive Alice's message
             assertEquals(
-                    1, bob.getMemory().getMessages().size(), "Bob should have Alice's message");
+                    1, bob.getAgentState().getContext().size(), "Bob should have Alice's message");
 
             System.out.println("\n--- Adding Charlie to the conversation ---");
             hub.add(charlie).block(TEST_TIMEOUT);
@@ -459,7 +460,7 @@ class MultiAgentE2ETest {
             // Charlie should receive Bob's message
             assertEquals(
                     1,
-                    charlie.getMemory().getMessages().size(),
+                    charlie.getAgentState().getContext().size(),
                     "Charlie should have Bob's message");
 
             System.out.println("\n--- Removing Bob from the conversation ---");
@@ -473,14 +474,14 @@ class MultiAgentE2ETest {
             hub.broadcast(charlieMsg).block(TEST_TIMEOUT);
 
             // Alice should receive Charlie's message
-            List<Msg> aliceMemory = alice.getMemory().getMessages();
+            List<Msg> aliceMemory = alice.getAgentState().getContext();
             assertTrue(
                     aliceMemory.size() >= 2,
                     "Alice should have messages from the conversation for "
                             + provider.getModelName());
 
             // Bob should NOT receive Charlie's message (he was removed)
-            List<Msg> bobMemory = bob.getMemory().getMessages();
+            List<Msg> bobMemory = bob.getAgentState().getContext();
             assertEquals(
                     2,
                     bobMemory.size(),
@@ -491,7 +492,7 @@ class MultiAgentE2ETest {
             System.out.println("  Alice: " + aliceMemory.size() + " messages");
             System.out.println("  Bob: " + bobMemory.size() + " messages (removed)");
             System.out.println(
-                    "  Charlie: " + charlie.getMemory().getMessages().size() + " messages");
+                    "  Charlie: " + charlie.getAgentState().getContext().size() + " messages");
         }
 
         System.out.println(
@@ -607,7 +608,7 @@ class MultiAgentE2ETest {
             // Bob should NOT receive Alice's message automatically
             assertEquals(
                     0,
-                    bob.getMemory().getMessages().size(),
+                    bob.getAgentState().getContext().size(),
                     "Bob should not receive message with auto-broadcast disabled");
 
             System.out.println("\n--- Manually broadcast Alice's message ---");
@@ -616,7 +617,7 @@ class MultiAgentE2ETest {
             // Now Bob should have the message
             assertEquals(
                     1,
-                    bob.getMemory().getMessages().size(),
+                    bob.getAgentState().getContext().size(),
                     "Bob should receive message after manual broadcast");
 
             Msg bobMsg = bob.call().block(TEST_TIMEOUT);
@@ -627,7 +628,7 @@ class MultiAgentE2ETest {
             hub.broadcast(bobMsg).block(TEST_TIMEOUT);
 
             // Alice should receive Bob's response
-            List<Msg> aliceMemory = alice.getMemory().getMessages();
+            List<Msg> aliceMemory = alice.getAgentState().getContext();
             boolean hasBobMessage = aliceMemory.stream().anyMatch(m -> "Bob".equals(m.getName()));
             assertTrue(
                     hasBobMessage,

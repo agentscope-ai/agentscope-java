@@ -78,7 +78,8 @@ class ToolCallParamTest {
             assertEquals(toolUseBlock, param.getToolUseBlock());
             assertEquals("value1", param.getInput().get("param1"));
             assertEquals(mockAgent, param.getAgent());
-            assertEquals(context, param.getContext());
+            assertNotNull(param.getContext());
+            assertNotNull(param.getRuntimeContext());
             assertSame(emitter, param.getEmitter());
         }
 

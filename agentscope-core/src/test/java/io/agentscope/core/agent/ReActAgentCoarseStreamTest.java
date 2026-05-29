@@ -30,12 +30,12 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.permission.PermissionContext;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.permission.ToolBase;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -110,7 +110,7 @@ class ReActAgentCoarseStreamTest {
 
         @Override
         public Mono<PermissionDecision> checkPermissions(
-                Map<String, Object> input, PermissionContext ctx) {
+                Map<String, Object> input, PermissionContextState ctx) {
             return Mono.just(PermissionDecision.allow("ok"));
         }
 

@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.permission.PermissionContext;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -51,10 +51,11 @@ class AgentStateTest {
     @Test
     void explicitFieldsWin() {
         Msg msg = Msg.builder().role(MsgRole.USER).textContent("hello").build();
-        PermissionContext pc = PermissionContext.builder().mode(PermissionMode.BYPASS).build();
-        ToolContext tc = ToolContext.builder().maxCacheFiles(5).build();
-        TaskContext tasks =
-                new TaskContext(
+        PermissionContextState pc =
+                PermissionContextState.builder().mode(PermissionMode.BYPASS).build();
+        ToolContextState tc = ToolContextState.builder().maxCacheFiles(5).build();
+        TaskContextState tasks =
+                new TaskContextState(
                         List.of(
                                 Task.builder()
                                         .subject("s")
@@ -137,7 +138,9 @@ class AgentStateTest {
                         .summary("rolling")
                         .curIter(5)
                         .permissionContext(
-                                PermissionContext.builder().mode(PermissionMode.EXPLORE).build())
+                                PermissionContextState.builder()
+                                        .mode(PermissionMode.EXPLORE)
+                                        .build())
                         .build();
         String json = mapper.writeValueAsString(original);
         assertTrue(json.contains("\"session_id\":\"sess-9\""), () -> json);

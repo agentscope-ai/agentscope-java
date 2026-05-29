@@ -24,6 +24,7 @@ import io.agentscope.core.legacy.skill.AgentSkill;
 import io.agentscope.core.legacy.skill.SkillBox;
 import io.agentscope.core.legacy.skill.SkillHook;
 import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.tool.Toolkit;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,6 +73,7 @@ public class DynamicSkillHook implements Hook, RuntimeContextAware {
 
     private final List<AgentSkillRepository> repositories;
     private final Toolkit toolkit;
+    private final SkillFilter builderFilter;
 
     private volatile SkillBox currentSkillBox;
     private volatile RuntimeContext runtimeContext;
@@ -82,8 +84,20 @@ public class DynamicSkillHook implements Hook, RuntimeContextAware {
      * @param toolkit toolkit on which loaded skill tool groups are registered
      */
     public DynamicSkillHook(List<AgentSkillRepository> repositories, Toolkit toolkit) {
+        this(repositories, toolkit, null);
+    }
+
+    /**
+     * @param repositories ordered repositories; later entries override earlier ones on name
+     *     collisions. May be empty (the hook becomes a no-op).
+     * @param toolkit toolkit on which loaded skill tool groups are registered
+     * @param builderFilter builder-level skill filter (null treated as {@link SkillFilter#all()})
+     */
+    public DynamicSkillHook(
+            List<AgentSkillRepository> repositories, Toolkit toolkit, SkillFilter builderFilter) {
         this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
         this.toolkit = toolkit;
+        this.builderFilter = builderFilter != null ? builderFilter : SkillFilter.all();
     }
 
     @Override
@@ -101,13 +115,20 @@ public class DynamicSkillHook implements Hook, RuntimeContextAware {
         if (event instanceof PreCallEvent preCallEvent) {
             reloadSkills();
             if (currentSkillBox != null) {
-                String prompt = currentSkillBox.getSkillPrompt();
+                SkillFilter effectiveFilter = resolveFilter();
+                String prompt = currentSkillBox.getSkillPrompt(effectiveFilter);
                 if (prompt != null && !prompt.isEmpty()) {
                     preCallEvent.appendSystemContent(prompt);
                 }
             }
         }
         return Mono.just(event);
+    }
+
+    private SkillFilter resolveFilter() {
+        SkillFilter runtimeOverlay =
+                runtimeContext != null ? runtimeContext.get(SkillFilter.class) : null;
+        return builderFilter.overlay(runtimeOverlay);
     }
 
     /** Returns the current SkillBox, or {@code null} if no skills are loaded. */

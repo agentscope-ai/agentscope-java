@@ -16,7 +16,7 @@
 package io.agentscope.core.tool.mcp;
 
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.permission.PermissionContext;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
@@ -42,7 +42,7 @@ import reactor.core.publisher.Mono;
  *   <li>Translates AgentScope tool calls into MCP protocol calls.
  *   <li>Merges caller arguments with preset arguments configured at registration time.
  *   <li>Converts MCP results into AgentScope {@link ToolResultBlock}s.
- *   <li>Surfaces permission policy via {@link #checkPermissions(Map, PermissionContext)}: read-only
+ *   <li>Surfaces permission policy via {@link #checkPermissions(Map, PermissionContextState)}: read-only
  *       MCP tools auto-allow; everything else requires explicit user authorization (matches the
  *       Python {@code MCPTool} default).
  * </ul>
@@ -152,7 +152,7 @@ public class McpTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, PermissionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         if (isReadOnly()) {
             return Mono.just(
                     PermissionDecision.allow(

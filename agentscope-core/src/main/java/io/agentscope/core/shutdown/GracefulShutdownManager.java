@@ -17,9 +17,7 @@ package io.agentscope.core.shutdown;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
-import io.agentscope.core.state.SessionKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -106,18 +104,6 @@ public final class GracefulShutdownManager {
             return;
         }
         stateSavers.put(agent.getAgentId(), saver);
-    }
-
-    /**
-     * @deprecated since 2.0.0. Use {@link #bindStateSaver(Agent, ShutdownStateSaver)} instead.
-     */
-    @Deprecated(since = "2.0.0", forRemoval = true)
-    @SuppressWarnings("deprecation")
-    public void bindSession(Agent agent, Session session, SessionKey sessionKey) {
-        if (agent == null || session == null || sessionKey == null) {
-            return;
-        }
-        bindStateSaver(agent, s -> session.save(sessionKey, "agent_state", s));
     }
 
     /**

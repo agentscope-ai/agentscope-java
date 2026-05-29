@@ -128,13 +128,17 @@ public abstract sealed class HookEvent
     }
 
     /**
-     * Convenient access to agent's memory.
+     * Convenient access to the agent's conversation context wrapped as a read-only
+     * {@link Memory} view. Mutations should be performed against
+     * {@link io.agentscope.core.state.AgentState#contextMutable()} on the running agent's state.
      *
-     * @return The memory, or null if agent doesn't have memory
+     * @return a read-only {@link Memory} view, or {@code null} if the event's agent is not a
+     *     {@link ReActAgent}
      */
     public final Memory getMemory() {
         if (agent instanceof ReActAgent reactAgent) {
-            return reactAgent.getMemory();
+            return new io.agentscope.core.legacy.memory.AgentStateMemoryView(
+                    reactAgent::getAgentState);
         }
         return null;
     }

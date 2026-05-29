@@ -219,10 +219,24 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
-        // Merge context
-        ToolExecutionContext toolkitContext = config.getDefaultContext();
-        ToolExecutionContext finalContext =
-                ToolExecutionContext.merge(param.getContext(), toolkitContext);
+        // Merge runtime context: param-level > toolkit default
+        io.agentscope.core.agent.RuntimeContext runtimeContext = param.getRuntimeContext();
+        @SuppressWarnings("deprecation")
+        ToolExecutionContext toolkitDefault = config.getDefaultContext();
+        if (runtimeContext == null && toolkitDefault != null) {
+            runtimeContext =
+                    io.agentscope.core.agent.RuntimeContext.builder()
+                            .toolExecutionContext(toolkitDefault)
+                            .build();
+        } else if (runtimeContext != null && toolkitDefault != null) {
+            ToolExecutionContext merged =
+                    ToolExecutionContext.merge(
+                            runtimeContext.asToolExecutionContext(), toolkitDefault);
+            runtimeContext =
+                    io.agentscope.core.agent.RuntimeContext.builder()
+                            .toolExecutionContext(merged)
+                            .build();
+        }
 
         // Create emitter for streaming
         ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, getEffectiveChunkCallback());
@@ -245,7 +259,7 @@ class ToolExecutor {
                         .toolUseBlock(toolCall)
                         .input(mergedInput)
                         .agent(param.getAgent())
-                        .context(finalContext)
+                        .runtimeContext(runtimeContext)
                         .emitter(toolEmitter)
                         .build();
 
@@ -280,7 +294,7 @@ class ToolExecutor {
      * @param parallel Whether to execute in parallel
      * @param executionConfig Execution configuration
      * @param agent The agent making the calls (may be null)
-     * @param agentContext The agent-level context (may be null)
+     * @param agentRuntimeContext The agent-level runtime context (may be null)
      * @return Mono containing list of results
      */
     Mono<List<ToolResultBlock>> executeAll(
@@ -288,7 +302,7 @@ class ToolExecutor {
             boolean parallel,
             ExecutionConfig executionConfig,
             Agent agent,
-            ToolExecutionContext agentContext) {
+            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
@@ -302,7 +316,10 @@ class ToolExecutor {
                             .map(
                                     toolCall ->
                                             executeWithInfrastructure(
-                                                    toolCall, executionConfig, agent, agentContext))
+                                                    toolCall,
+                                                    executionConfig,
+                                                    agent,
+                                                    agentRuntimeContext))
                             .toList();
             return Flux.concat(monos).collectList();
         }
@@ -315,7 +332,8 @@ class ToolExecutor {
         List<Mono<ToolResultBlock>> safeBatch = new ArrayList<>();
         for (ToolUseBlock toolCall : toolCalls) {
             Mono<ToolResultBlock> mono =
-                    executeWithInfrastructure(toolCall, executionConfig, agent, agentContext);
+                    executeWithInfrastructure(
+                            toolCall, executionConfig, agent, agentRuntimeContext);
             if (isConcurrencySafe(toolCall)) {
                 safeBatch.add(mono);
             } else {
@@ -352,13 +370,13 @@ class ToolExecutor {
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
-            ToolExecutionContext agentContext) {
+            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
         // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
                         .agent(agent)
-                        .context(agentContext)
+                        .runtimeContext(agentRuntimeContext)
                         .build();
 
         // Get core execution

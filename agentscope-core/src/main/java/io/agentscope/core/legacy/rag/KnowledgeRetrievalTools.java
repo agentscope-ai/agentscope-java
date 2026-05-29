@@ -143,7 +143,7 @@ public class KnowledgeRetrievalTools {
         // Extract conversation history from agent if available
         List<Msg> conversationHistory = null;
         if (agent instanceof ReActAgent reActAgent) {
-            conversationHistory = reActAgent.getMemory().getMessages();
+            conversationHistory = reActAgent.getAgentState().getContext();
         }
 
         // Build retrieval config with conversation history

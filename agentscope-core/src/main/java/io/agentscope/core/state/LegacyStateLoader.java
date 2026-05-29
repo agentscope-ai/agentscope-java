@@ -53,7 +53,7 @@ public final class LegacyStateLoader {
         session.get(sessionKey, "toolkit_activeGroups", ToolkitState.class)
                 .ifPresent(
                         toolkitState -> {
-                            ToolContext.Builder tc = ToolContext.builder();
+                            ToolContextState.Builder tc = ToolContextState.builder();
                             for (String group : toolkitState.activeGroups()) {
                                 tc.addActivatedGroup(group);
                             }

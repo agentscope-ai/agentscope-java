@@ -143,7 +143,7 @@ class AgentPerformanceTest {
         long totalTime = endTime - startTime;
 
         // Verify memory contains all messages
-        List<Msg> allMessages = agent.getMemory().getMessages();
+        List<Msg> allMessages = agent.getAgentState().getContext();
         assertTrue(
                 allMessages.size() >= messageCount,
                 "Memory should contain at least " + messageCount + " messages");

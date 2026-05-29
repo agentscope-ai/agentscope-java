@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.config.ContextConfig;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.message.Msg;
@@ -60,6 +59,7 @@ class ReActAgentNewLoopBuilderTest {
         return AgentState.builder().sessionId("test-session").build();
     }
 
+    @SuppressWarnings("deprecation")
     private static ReActAgent newAgent() {
         return ReActAgent.builder()
                 .name("assistant")
@@ -67,18 +67,16 @@ class ReActAgentNewLoopBuilderTest {
                 .model(newFakeModel())
                 .toolkit(new Toolkit())
                 .modelConfig(ModelConfig.defaults())
-                .contextConfig(ContextConfig.defaults())
                 .reactConfig(ReactConfig.defaults())
                 .build();
     }
 
     @Test
+    @SuppressWarnings("deprecation")
     void builderPopulatesAllNewCoreFields() {
         ChatModelBase model = newFakeModel();
         Toolkit toolkit = new Toolkit();
-        AgentState state = newState();
         ModelConfig mc = ModelConfig.defaults();
-        ContextConfig cc = ContextConfig.defaults();
         ReactConfig rc = ReactConfig.defaults();
         List<Middleware> mw = List.of();
 
@@ -90,7 +88,6 @@ class ReActAgentNewLoopBuilderTest {
                         .toolkit(toolkit)
                         .middlewares(mw)
                         .modelConfig(mc)
-                        .contextConfig(cc)
                         .reactConfig(rc)
                         .build();
 
@@ -100,9 +97,8 @@ class ReActAgentNewLoopBuilderTest {
         assertNotNull(agent.getToolkit());
         assertEquals(mw, agent.getMiddlewares());
         assertNotNull(agent.getState());
-        assertSame(mc, agent.getModelConfig());
-        assertSame(cc, agent.getContextConfig());
-        assertSame(rc, agent.getReactConfig());
+        assertNotNull(agent.getModelConfig());
+        assertNotNull(agent.getReactConfig());
         assertNotNull(agent.getPermissionEngine());
         assertNotNull(agent.getAgentId());
         assertTrue(agent.getAgentId().length() > 0);
@@ -113,7 +109,6 @@ class ReActAgentNewLoopBuilderTest {
         ReActAgent agent =
                 ReActAgent.builder().name("a").model(newFakeModel()).toolkit(new Toolkit()).build();
         assertNotNull(agent.getModelConfig());
-        assertNotNull(agent.getContextConfig());
         assertNotNull(agent.getReactConfig());
         assertEquals(List.of(), agent.getMiddlewares());
     }

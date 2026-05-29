@@ -91,10 +91,9 @@ public class PendingToolRecoveryHook implements Hook {
             return Mono.just(event);
         }
 
-        Memory memory = reactAgent.getMemory();
-        if (memory == null) {
-            return Mono.just(event);
-        }
+        Memory memory =
+                new io.agentscope.core.legacy.memory.AgentStateMemoryView(
+                        reactAgent::getAgentState);
 
         // Find pending tool call IDs (tool calls without corresponding results)
         Set<String> pendingIds = findPendingToolUseIds(memory);

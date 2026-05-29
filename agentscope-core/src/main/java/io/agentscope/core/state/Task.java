@@ -28,7 +28,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Persistent agent task record carried inside {@link TaskContext}.
+ * Persistent agent task record carried inside {@link TaskContextState}.
  *
  * <p>Tasks are user-visible work items. Their {@link #state} progresses {@code pending → in_progress
  * → completed}; dependencies are declared via {@link #blocks} (downstream task ids waiting on this

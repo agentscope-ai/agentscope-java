@@ -40,13 +40,13 @@ import reactor.core.publisher.Mono;
  *   <li>Default ASK (converted to DENY under {@link PermissionMode#DONT_ASK}).
  * </ol>
  *
- * <p>The engine snapshots rules from the supplied {@link PermissionContext} into its own mutable
+ * <p>The engine snapshots rules from the supplied {@link PermissionContextState} into its own mutable
  * tables on construction; the original context is never mutated. Use {@link #addRule} to extend
  * the engine's rule set at runtime.
  */
 public final class PermissionEngine {
 
-    private final PermissionContext context;
+    private final PermissionContextState context;
     private final Map<String, List<PermissionRule>> allowRules;
     private final Map<String, List<PermissionRule>> denyRules;
     private final Map<String, List<PermissionRule>> askRules;
@@ -56,7 +56,7 @@ public final class PermissionEngine {
      *
      * @param context permission context providing mode, working directories, and initial rules
      */
-    public PermissionEngine(PermissionContext context) {
+    public PermissionEngine(PermissionContextState context) {
         this.context = Objects.requireNonNull(context, "context must not be null");
         this.allowRules = copyMutable(context.getAllowRules());
         this.denyRules = copyMutable(context.getDenyRules());
@@ -79,7 +79,7 @@ public final class PermissionEngine {
      *
      * @return the immutable context this engine was constructed with
      */
-    public PermissionContext getContext() {
+    public PermissionContextState getContext() {
         return context;
     }
 

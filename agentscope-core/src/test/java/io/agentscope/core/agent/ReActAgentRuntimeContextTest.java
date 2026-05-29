@@ -138,12 +138,12 @@ class ReActAgentRuntimeContextTest {
         assertNull(r, "unbind should clear setRuntimeContext(null)");
 
         assertTrue(
-                agent.getMemory().getMessages().stream()
+                agent.getAgentState().getContext().stream()
                         .anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class)));
     }
 
     private static String lastToolText(ReActAgent agent) {
-        List<Msg> list = new ArrayList<>(agent.getMemory().getMessages());
+        List<Msg> list = new ArrayList<>(agent.getAgentState().getContext());
         Collections.reverse(list);
         for (Msg m : list) {
             if (m.getContent() == null) {

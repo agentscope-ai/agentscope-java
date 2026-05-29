@@ -18,7 +18,7 @@
  * Tool-permission evaluation engine for AgentScope Java.
  *
  * <p>The package hosts {@code PermissionEngine}, {@code PermissionMode},
- * {@code PermissionRule}, {@code PermissionContext}, {@code PermissionDecision}
+ * {@code PermissionRule}, {@code PermissionContextState}, {@code PermissionDecision}
  * and {@code PermissionBehavior}. The evaluation order is:
  *
  * <pre>

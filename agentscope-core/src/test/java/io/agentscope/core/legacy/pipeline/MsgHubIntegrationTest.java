@@ -108,15 +108,15 @@ class MsgHubIntegrationTest {
             // Verify all agents received the announcement
             assertEquals(
                     1,
-                    alice.getMemory().getMessages().size(),
+                    alice.getAgentState().getContext().size(),
                     "Alice should have announcement in memory");
             assertEquals(
                     1,
-                    bob.getMemory().getMessages().size(),
+                    bob.getAgentState().getContext().size(),
                     "Bob should have announcement in memory");
             assertEquals(
                     1,
-                    charlie.getMemory().getMessages().size(),
+                    charlie.getAgentState().getContext().size(),
                     "Charlie should have announcement in memory");
 
             // Alice speaks
@@ -125,8 +125,8 @@ class MsgHubIntegrationTest {
 
             // Bob and Charlie should automatically receive Alice's message
             // They each should have: announcement + Alice's response
-            List<Msg> bobMemory = bob.getMemory().getMessages();
-            List<Msg> charlieMemory = charlie.getMemory().getMessages();
+            List<Msg> bobMemory = bob.getAgentState().getContext();
+            List<Msg> charlieMemory = charlie.getAgentState().getContext();
 
             assertEquals(2, bobMemory.size(), "Bob should have announcement + Alice's response");
             assertEquals(
@@ -144,8 +144,8 @@ class MsgHubIntegrationTest {
             // Now Alice and Charlie should have Bob's response
             // Alice: announcement + her own response + Bob's response
             // Charlie: announcement + Alice's response + Bob's response
-            List<Msg> aliceMemory = alice.getMemory().getMessages();
-            charlieMemory = charlie.getMemory().getMessages();
+            List<Msg> aliceMemory = alice.getAgentState().getContext();
+            charlieMemory = charlie.getAgentState().getContext();
 
             assertEquals(
                     3,
@@ -210,7 +210,7 @@ class MsgHubIntegrationTest {
 
             // Bob should receive Alice's message (2 subscribers initially: Bob)
             assertEquals(
-                    1, bob.getMemory().getMessages().size(), "Bob should have Alice's message");
+                    1, bob.getAgentState().getContext().size(), "Bob should have Alice's message");
 
             // Add Charlie to the conversation
             hub.add(charlie).block(TIMEOUT);
@@ -222,7 +222,7 @@ class MsgHubIntegrationTest {
             // Now Charlie should receive Bob's message
             assertEquals(
                     1,
-                    charlie.getMemory().getMessages().size(),
+                    charlie.getAgentState().getContext().size(),
                     "Charlie should have Bob's message");
 
             // Remove Bob from the conversation
@@ -234,8 +234,8 @@ class MsgHubIntegrationTest {
             charlie.call().block(TIMEOUT);
 
             // Alice should receive Charlie's message, but Bob should not
-            List<Msg> aliceMemory = alice.getMemory().getMessages();
-            List<Msg> bobMemory = bob.getMemory().getMessages();
+            List<Msg> aliceMemory = alice.getAgentState().getContext();
+            List<Msg> bobMemory = bob.getAgentState().getContext();
 
             // Alice: her own message + Bob's message + Charlie's message
             assertEquals(
@@ -277,7 +277,7 @@ class MsgHubIntegrationTest {
             // Bob should NOT receive Alice's message automatically
             assertEquals(
                     0,
-                    bob.getMemory().getMessages().size(),
+                    bob.getAgentState().getContext().size(),
                     "Bob should not receive message with auto-broadcast disabled");
 
             // Manually broadcast Alice's message
@@ -286,7 +286,7 @@ class MsgHubIntegrationTest {
             // Now Bob should have the message
             assertEquals(
                     1,
-                    bob.getMemory().getMessages().size(),
+                    bob.getAgentState().getContext().size(),
                     "Bob should receive message after manual broadcast");
         }
     }
@@ -309,7 +309,7 @@ class MsgHubIntegrationTest {
             // Alice should have no messages (no announcement)
             assertEquals(
                     0,
-                    alice.getMemory().getMessages().size(),
+                    alice.getAgentState().getContext().size(),
                     "Alice should have no messages without announcement");
         }
     }
@@ -346,7 +346,7 @@ class MsgHubIntegrationTest {
             // Alice should receive both announcements
             assertEquals(
                     2,
-                    alice.getMemory().getMessages().size(),
+                    alice.getAgentState().getContext().size(),
                     "Alice should have 2 announcement messages");
         }
     }

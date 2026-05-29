@@ -97,14 +97,15 @@ class ReActAgentTest {
         assertNotNull(agent.getAgentId(), "Agent ID should not be null");
         assertEquals(
                 TestConstants.TEST_REACT_AGENT_NAME, agent.getName(), "Agent name should match");
-        assertNotNull(agent.getMemory(), "Memory accessor should not be null");
+        assertNotNull(agent.getAgentState(), "AgentState should not be null");
         assertEquals(
                 TestConstants.DEFAULT_MAX_ITERS,
                 agent.getMaxIters(),
                 "Default max iterations should be 10");
 
         // Verify memory is initially empty
-        assertTrue(agent.getMemory().getMessages().isEmpty(), "Memory should be empty initially");
+        assertTrue(
+                agent.getAgentState().getContext().isEmpty(), "Memory should be empty initially");
     }
 
     @Test
@@ -130,7 +131,7 @@ class ReActAgentTest {
         assertFalse(text.isEmpty(), "Response text should not be empty");
 
         // Verify memory was updated
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         assertTrue(messages.size() >= 1, "Memory should contain at least the user message");
 
         // Verify model was called
@@ -227,7 +228,7 @@ class ReActAgentTest {
         assertEquals(1, mockToolkit.getCallCount(), "Tool should be called once");
 
         // Verify memory contains tool result
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         boolean hasToolResult =
                 messages.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
         assertTrue(hasToolResult, "Memory should contain tool result");
@@ -359,7 +360,7 @@ class ReActAgentTest {
         assertTrue(mockToolkit.wasToolCalled("failing_tool"), "Failing tool should be called");
 
         // Verify memory contains tool result with error content
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         boolean hasErrorToolResult =
                 messages.stream()
                         .anyMatch(
@@ -416,12 +417,12 @@ class ReActAgentTest {
                         .toolkit(mockToolkit)
                         .build();
 
-        int initialMemorySize = agent.getMemory().getMessages().size();
+        int initialMemorySize = agent.getAgentState().getContext().size();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Calculate 4 * 7");
         agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
 
         // Memory should contain: user message, assistant tool call, tool result, final response
         assertTrue(
@@ -497,18 +498,18 @@ class ReActAgentTest {
         Msg msg1 = TestUtils.createUserMessage("User", "First message");
         agent.call(msg1).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        int sizeAfterFirst = agent.getMemory().getMessages().size();
+        int sizeAfterFirst = agent.getAgentState().getContext().size();
         assertTrue(sizeAfterFirst >= 1, "Memory should contain at least the first message");
 
         // Send second message
         Msg msg2 = TestUtils.createUserMessage("User", "Second message");
         agent.call(msg2).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        int sizeAfterSecond = agent.getMemory().getMessages().size();
+        int sizeAfterSecond = agent.getAgentState().getContext().size();
         assertTrue(sizeAfterSecond > sizeAfterFirst, "Memory should grow with more messages");
 
         // Verify both messages are in history
-        List<Msg> allMessages = agent.getMemory().getMessages();
+        List<Msg> allMessages = agent.getAgentState().getContext();
         assertTrue(
                 allMessages.stream()
                         .anyMatch(m -> TestUtils.extractTextContent(m).contains("First message")),
@@ -583,7 +584,7 @@ class ReActAgentTest {
         agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         int initialCallCount = mockModel.getCallCount();
-        int initialMemorySize = agent.getMemory().getMessages().size();
+        int initialMemorySize = agent.getAgentState().getContext().size();
 
         // Call without parameters to continue generation
         Msg continueResponse =
@@ -603,11 +604,11 @@ class ReActAgentTest {
 
         // Verify memory was updated with the new response (but no new user message was added)
         assertTrue(
-                agent.getMemory().getMessages().size() > initialMemorySize,
+                agent.getAgentState().getContext().size() > initialMemorySize,
                 "Memory should contain the continuation response");
 
         // Verify no new user message was added (only agent responses)
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         long userMessageCount = messages.stream().filter(m -> m.getRole() == MsgRole.USER).count();
         assertEquals(
                 1,

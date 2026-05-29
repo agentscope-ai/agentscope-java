@@ -84,7 +84,7 @@ class ReActAgentTimeoutTest {
                             // Agent should return a response (not error)
                             assertNotNull(response);
                             // Check memory contains tool result with timeout error
-                            List<Msg> messages = agent.getMemory().getMessages();
+                            List<Msg> messages = agent.getAgentState().getContext();
                             boolean foundTimeoutError = false;
                             for (Msg msg : messages) {
                                 if (msg.getRole() == MsgRole.TOOL) {

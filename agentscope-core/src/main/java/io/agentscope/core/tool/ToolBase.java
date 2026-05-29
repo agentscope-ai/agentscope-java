@@ -17,7 +17,7 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionBehavior;
-import io.agentscope.core.permission.PermissionContext;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.permission.PermissionRule;
 import java.io.IOException;
@@ -35,7 +35,7 @@ import reactor.core.publisher.Mono;
  * Abstract base class for tools that participate in permission evaluation and ReAct execution.
  *
  * <p>Concrete subclasses describe themselves via the builder (name, description, input schema,
- * safety flags) and may override {@link #checkPermissions(Map, PermissionContext)} to plug their
+ * safety flags) and may override {@link #checkPermissions(Map, PermissionContextState)} to plug their
  * own self-check into the permission engine. The default implementation returns
  * {@link PermissionDecision#passthrough(String)}, which lets the engine fall back to its rule
  * tables and mode-based defaults.
@@ -97,10 +97,9 @@ public abstract class ToolBase implements AgentTool {
     }
 
     /**
-     * Positional constructor retained for backward compatibility with the legacy
-     * {@code tool.permission.ToolBase} alias. New code should prefer {@link #builder()}.
+     * Positional constructor used by built-in tools and any subclass that prefers explicit
+     * arguments over {@link #builder()}. New code is encouraged to use the builder for clarity.
      */
-    @Deprecated
     protected ToolBase(
             String name,
             String description,
@@ -195,7 +194,7 @@ public abstract class ToolBase implements AgentTool {
      * @return a Mono emitting the decision; never {@code null}
      */
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, PermissionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.passthrough(name));
     }
 
