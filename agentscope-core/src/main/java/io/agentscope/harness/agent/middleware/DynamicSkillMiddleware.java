@@ -13,17 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.hook;
+package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PreCallEvent;
-import io.agentscope.core.legacy.hook.RuntimeContextAware;
 import io.agentscope.core.legacy.skill.AgentSkill;
 import io.agentscope.core.legacy.skill.SkillBox;
-import io.agentscope.core.legacy.skill.SkillHook;
 import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.tool.Toolkit;
 import java.util.LinkedHashMap;
@@ -35,105 +33,66 @@ import reactor.core.publisher.Mono;
 
 /**
  * Dynamically composes skills from an ordered list of {@link AgentSkillRepository repositories}
- * on every {@link PreCallEvent}, replacing the static {@link SkillHook} with a per-call view that
- * supports per-user skill isolation and one-click marketplace integration.
+ * on every {@code call()} via {@link #onSystemPrompt(Agent, String)}, replacing the static
+ * skill prompt with a per-call view that supports per-user skill isolation and one-click
+ * marketplace integration.
  *
  * <p>The repository list is iterated low-priority first; when two repositories provide a skill
- * with the same {@link AgentSkill#getName()}, the later (higher-priority) entry wins. The default
- * composition assembled by {@code HarnessAgent.Builder} is:
- *
- * <ol>
- *   <li>Project-global directory (if configured)</li>
- *   <li>Marketplace repositories (in registration order)</li>
- *   <li>Workspace agent-shared directory ({@code workspace/skills/})</li>
- *   <li>Per-user namespaced filesystem ({@code <userId>/skills/})</li>
- * </ol>
- *
- * <p>Behaviour each {@link PreCallEvent}:
- *
- * <ol>
- *   <li>Walk the repository list and collect skills into a {@link LinkedHashMap} keyed by name —
- *       later repositories override earlier ones.</li>
- *   <li>Build a fresh {@link SkillBox}, replay {@link SkillBox#bindToolkit},
- *       {@link SkillBox#registerSkillLoadTool}, and {@link SkillBox#uploadSkillFiles} (when
- *       {@link SkillBox#isAutoUploadSkill()} is set), then append {@code skillBox.getSkillPrompt()}
- *       to the system message.</li>
- * </ol>
+ * with the same {@link AgentSkill#getName()}, the later (higher-priority) entry wins.
  *
  * <p>Rebuilding on every call is intentional: per-user namespaced repositories return different
  * content under the same skill name as the {@link RuntimeContext} switches users, so caching by
  * skill id alone would mask those swaps. {@code bindToolkit} / {@code registerSkillLoadTool} are
  * idempotent on a fresh {@link SkillBox}, so the rebuild stays cheap.
- *
- * <p>Priority matches {@link SkillHook#SKILL_HOOK_PRIORITY} (85).
  */
-public class DynamicSkillHook implements Hook, RuntimeContextAware {
+public class DynamicSkillMiddleware implements MiddlewareBase {
 
-    private static final Logger log = LoggerFactory.getLogger(DynamicSkillHook.class);
+    private static final Logger log = LoggerFactory.getLogger(DynamicSkillMiddleware.class);
 
     private final List<AgentSkillRepository> repositories;
     private final Toolkit toolkit;
     private final SkillFilter builderFilter;
 
     private volatile SkillBox currentSkillBox;
-    private volatile RuntimeContext runtimeContext;
 
-    /**
-     * @param repositories ordered repositories; later entries override earlier ones on name
-     *     collisions. May be empty (the hook becomes a no-op).
-     * @param toolkit toolkit on which loaded skill tool groups are registered
-     */
-    public DynamicSkillHook(List<AgentSkillRepository> repositories, Toolkit toolkit) {
+    public DynamicSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
         this(repositories, toolkit, null);
     }
 
-    /**
-     * @param repositories ordered repositories; later entries override earlier ones on name
-     *     collisions. May be empty (the hook becomes a no-op).
-     * @param toolkit toolkit on which loaded skill tool groups are registered
-     * @param builderFilter builder-level skill filter (null treated as {@link SkillFilter#all()})
-     */
-    public DynamicSkillHook(
+    public DynamicSkillMiddleware(
             List<AgentSkillRepository> repositories, Toolkit toolkit, SkillFilter builderFilter) {
         this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
         this.toolkit = toolkit;
         this.builderFilter = builderFilter != null ? builderFilter : SkillFilter.all();
     }
 
-    @Override
-    public void setRuntimeContext(RuntimeContext runtimeContext) {
-        this.runtimeContext = runtimeContext;
-    }
-
-    @Override
-    public int priority() {
-        return SkillHook.SKILL_HOOK_PRIORITY;
-    }
-
-    @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PreCallEvent preCallEvent) {
-            reloadSkills();
-            if (currentSkillBox != null) {
-                SkillFilter effectiveFilter = resolveFilter();
-                String prompt = currentSkillBox.getSkillPrompt(effectiveFilter);
-                if (prompt != null && !prompt.isEmpty()) {
-                    preCallEvent.appendSystemContent(prompt);
-                }
-            }
-        }
-        return Mono.just(event);
-    }
-
-    private SkillFilter resolveFilter() {
-        SkillFilter runtimeOverlay =
-                runtimeContext != null ? runtimeContext.get(SkillFilter.class) : null;
-        return builderFilter.overlay(runtimeOverlay);
-    }
-
-    /** Returns the current SkillBox, or {@code null} if no skills are loaded. */
     public SkillBox getCurrentSkillBox() {
         return currentSkillBox;
+    }
+
+    @Override
+    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        reloadSkills();
+        if (currentSkillBox == null) {
+            return Mono.just(currentPrompt);
+        }
+        RuntimeContext rc =
+                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
+                        ? ab.getRuntimeContext()
+                        : RuntimeContext.empty();
+        SkillFilter effectiveFilter = resolveFilter(rc);
+        String prompt = currentSkillBox.getSkillPrompt(effectiveFilter);
+        if (prompt == null || prompt.isEmpty()) {
+            return Mono.just(currentPrompt);
+        }
+        String base = currentPrompt != null ? currentPrompt : "";
+        String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
+        return Mono.just(base + separator + prompt);
+    }
+
+    private SkillFilter resolveFilter(RuntimeContext rc) {
+        SkillFilter runtimeOverlay = rc != null ? rc.get(SkillFilter.class) : null;
+        return builderFilter.overlay(runtimeOverlay);
     }
 
     private void reloadSkills() {
@@ -141,7 +100,6 @@ public class DynamicSkillHook implements Hook, RuntimeContextAware {
             currentSkillBox = null;
             return;
         }
-
         Map<String, AgentSkill> skillsByName = new LinkedHashMap<>();
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
@@ -164,12 +122,10 @@ public class DynamicSkillHook implements Hook, RuntimeContextAware {
                 skillsByName.put(skill.getName(), skill);
             }
         }
-
         if (skillsByName.isEmpty()) {
             currentSkillBox = null;
             return;
         }
-
         SkillBox box = new SkillBox(toolkit);
         for (AgentSkill skill : skillsByName.values()) {
             box.registerSkill(skill);

@@ -28,7 +28,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import java.nio.file.Files;
 import java.nio.file.Path;

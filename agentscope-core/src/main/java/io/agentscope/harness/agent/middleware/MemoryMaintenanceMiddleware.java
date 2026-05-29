@@ -13,13 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.hook;
+package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PostCallEvent;
-import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -30,17 +31,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 
 /**
- * Hook that performs periodic memory maintenance after each agent call.
+ * Middleware that performs periodic memory maintenance after each agent call.
  *
- * <p>Replaces the background {@code MemoryMaintenanceScheduler} with a hook-driven,
- * event-loop-friendly approach. Fires on {@link PostCallEvent} (priority 6, after
- * {@link MemoryFlushHook} at priority 5) and is throttled by a configurable minimum gap
- * so it does not run on every single call.
+ * <p>Fires on the agent invocation completion (via {@code onAgent doOnComplete}, after
+ * {@link MemoryFlushMiddleware}) and is throttled by a configurable minimum gap so it
+ * does not run on every single call.
  *
  * <p>Maintenance steps executed in order:
  * <ol>
@@ -50,14 +51,10 @@ import reactor.core.publisher.Mono;
  *       consolidator is configured.</li>
  *   <li>Prune session log files older than {@code sessionRetentionDays}.</li>
  * </ol>
- *
- * <p>All file I/O goes through {@link AbstractFilesystem} (obtained from
- * {@link WorkspaceManager}), making this backend-agnostic across Local, Sandbox, and
- * Remote filesystems.
  */
-public class MemoryMaintenanceHook implements Hook, RuntimeContextAware {
+public class MemoryMaintenanceMiddleware implements MiddlewareBase {
 
-    private static final Logger log = LoggerFactory.getLogger(MemoryMaintenanceHook.class);
+    private static final Logger log = LoggerFactory.getLogger(MemoryMaintenanceMiddleware.class);
 
     /** Default minimum gap between two maintenance runs. */
     public static final Duration DEFAULT_MIN_GAP = Duration.ofMinutes(30);
@@ -70,14 +67,7 @@ public class MemoryMaintenanceHook implements Hook, RuntimeContextAware {
 
     private final AtomicReference<Instant> lastRunAt = new AtomicReference<>(Instant.EPOCH);
 
-    private volatile RuntimeContext runtimeContext;
-
-    @Override
-    public void setRuntimeContext(RuntimeContext runtimeContext) {
-        this.runtimeContext = runtimeContext;
-    }
-
-    public MemoryMaintenanceHook(
+    public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager,
             MemoryConsolidator consolidator,
             int dailyFileRetentionDays,
@@ -90,37 +80,35 @@ public class MemoryMaintenanceHook implements Hook, RuntimeContextAware {
         this.minGap = minGap != null ? minGap : DEFAULT_MIN_GAP;
     }
 
-    public MemoryMaintenanceHook(
+    public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager, MemoryConsolidator consolidator) {
         this(workspaceManager, consolidator, 90, 180, DEFAULT_MIN_GAP);
     }
 
     @Override
-    public int priority() {
-        return 6;
+    public Flux<AgentEvent> onAgent(
+            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+        final RuntimeContext rc =
+                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
+                        ? ab.getRuntimeContext()
+                        : RuntimeContext.empty();
+        return next.apply(input).doOnComplete(() -> maybeRunMaintenance(rc));
     }
 
-    @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (!(event instanceof PostCallEvent)) {
-            return Mono.just(event);
-        }
+    private void maybeRunMaintenance(RuntimeContext rc) {
         Instant now = Instant.now();
         Instant last = lastRunAt.get();
         if (Duration.between(last, now).compareTo(minGap) < 0) {
-            return Mono.just(event);
+            return;
         }
         if (!lastRunAt.compareAndSet(last, now)) {
-            return Mono.just(event);
+            return;
         }
-        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        return Mono.fromRunnable(() -> runMaintenance(rc))
-                .onErrorResume(
-                        e -> {
-                            log.warn("Memory maintenance failed: {}", e.getMessage());
-                            return Mono.empty();
-                        })
-                .thenReturn(event);
+        try {
+            runMaintenance(rc);
+        } catch (Exception e) {
+            log.warn("Memory maintenance failed: {}", e.getMessage());
+        }
     }
 
     private void runMaintenance(RuntimeContext rc) {

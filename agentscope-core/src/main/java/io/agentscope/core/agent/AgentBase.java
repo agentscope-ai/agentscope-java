@@ -27,7 +27,6 @@ import io.agentscope.core.legacy.hook.RuntimeContextAware;
 import io.agentscope.core.legacy.tracing.TracerRegistry;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.shutdown.GracefulShutdownHook;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
@@ -99,9 +98,7 @@ public abstract class AgentBase implements Agent {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final boolean checkRunning;
     private final List<Hook> hooks;
-    private static final List<Hook> systemHooks =
-            new CopyOnWriteArrayList<>(
-                    List.of(new GracefulShutdownHook(GracefulShutdownManager.getInstance())));
+    private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)

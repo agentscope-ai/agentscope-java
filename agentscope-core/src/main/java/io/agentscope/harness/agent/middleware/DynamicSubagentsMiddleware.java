@@ -13,18 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.hook;
+package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PreReasoningEvent;
-import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -33,7 +34,6 @@ import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -44,40 +44,31 @@ import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 
 /**
- * Dynamic counterpart to {@link SubagentsHook} that re-resolves the registered subagent set on
- * every reasoning step, supporting per-user isolation through the workspace
- * {@link AbstractFilesystem} (e.g. {@code CompositeFilesystem} routing user-scoped writes into a
- * remote Store).
+ * Dynamic counterpart to {@link SubagentsMiddleware} that re-resolves the registered subagent
+ * set on every reasoning step, supporting per-user isolation through the workspace
+ * {@link AbstractFilesystem} (e.g. {@code CompositeFilesystem} routing user-scoped writes into
+ * a remote Store).
  *
- * <p><strong>Two-layer load</strong> (mirrors {@link WorkspaceManager} override semantics):
+ * <p><strong>Two-layer load</strong> (mirrors the previous {@code DynamicSubagentsHook}
+ * override semantics):
  *
  * <ol>
  *   <li><em>Layer 1 (override)</em> — {@code filesystem.glob("*.md", "subagents")} + per-file
  *       {@code filesystem.read}. The backend's {@code NamespaceFactory} is applied transparently
  *       so each user sees their own slice of the store.
  *   <li><em>Layer 2 (base)</em> — {@code AgentSpecLoader.loadFromDirectory} reads the local
- *       workspace {@code subagents/} directory directly. This preserves the original behaviour of
- *       {@code LocalFilesystemWithShell} / {@code Sandbox} modes where subagent declarations live
- *       on the host filesystem rather than in a per-user namespace.
+ *       workspace {@code subagents/} directory directly.
  *   <li><em>Merge</em> — same-name entries from Layer 1 override Layer 2; programmatic
  *       (builder-registered) entries are preserved as the static prefix and same-name dynamic
  *       declarations override them too.
  * </ol>
- *
- * <p>After merging, the new entry list is pushed atomically into the shared
- * {@link DefaultAgentManager} via {@link DefaultAgentManager#replaceAgents(List)} so that any
- * {@link AgentSpawnTool} invocation in the same turn observes the fresh registry. The hook then
- * renders the same {@code ## Subagents} prompt section as {@link SubagentsHook}.
- *
- * <p>This hook runs at {@link PreReasoningEvent}; priority matches
- * {@link SubagentsHook#SUBAGENT_HOOK_PRIORITY} (80).
  */
-public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
+public class DynamicSubagentsMiddleware implements MiddlewareBase {
 
-    private static final Logger log = LoggerFactory.getLogger(DynamicSubagentsHook.class);
+    private static final Logger log = LoggerFactory.getLogger(DynamicSubagentsMiddleware.class);
 
     private static final String SUBAGENTS_DIR = "subagents";
     private static final String SUBAGENT_GLOB = "*.md";
@@ -90,26 +81,8 @@ public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
     private final Object subagentTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
-    private volatile RuntimeContext runtimeContext;
 
-    /**
-     * Builds a dynamic subagents hook.
-     *
-     * @param staticEntries entries from the builder that are <em>not</em> derived from local-disk
-     *     scanning (programmatic registrations + {@code general-purpose}). Same-name dynamic
-     *     declarations override these.
-     * @param filesystem workspace filesystem used for namespaced reads of {@code subagents/}
-     * @param mainWorkspace local workspace root, used for Layer 2 fallback and as the
-     *     {@code mainWorkspace} argument when parsing declarations
-     * @param factoryBuilder turns a parsed {@link SubagentDeclaration} into a {@link SubagentFactory};
-     *     supplied by {@code HarnessAgent.Builder} so this hook can reuse the same captured context
-     *     (model resolver, parent toolkit, disable flags, ...)
-     * @param agentManager target manager that is atomically replaced each reasoning step
-     * @param subagentTool the agent-spawn tool to expose
-     * @param taskRepository repository backing {@link TaskTool}; may be {@code null} for a default
-     *     in-memory store
-     */
-    public DynamicSubagentsHook(
+    public DynamicSubagentsMiddleware(
             List<SubagentEntry> staticEntries,
             AbstractFilesystem filesystem,
             Path mainWorkspace,
@@ -129,45 +102,42 @@ public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
         this.taskTool = new TaskTool(repo);
     }
 
-    @Override
-    public void setRuntimeContext(RuntimeContext runtimeContext) {
-        this.runtimeContext = runtimeContext;
-    }
-
-    @Override
-    public int priority() {
-        return SubagentsHook.SUBAGENT_HOOK_PRIORITY;
-    }
-
-    @Override
-    public List<Object> tools() {
+    /**
+     * Returns the tool instances this middleware contributes to the agent toolkit. The caller
+     * is responsible for registering them on the toolkit at orchestration time.
+     */
+    public List<Object> getTools() {
         return List.of(subagentTool, taskTool);
     }
 
     @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PreReasoningEvent preReasoning) {
-            List<SubagentEntry> merged = reloadEntries();
-            if (agentManager != null) {
-                agentManager.replaceAgents(merged);
-            }
-            if (!merged.isEmpty()) {
-                String section = SubagentsHook.renderSubagentSection(merged, false);
-                preReasoning.appendSystemContent(section);
-            }
-            String taskSummary = SubagentsHook.buildTaskSummary(taskRepository, runtimeContext);
-            if (taskSummary != null) {
-                preReasoning.appendSystemContent(taskSummary);
-            }
+    public Flux<AgentEvent> onReasoning(
+            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+        RuntimeContext rc =
+                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
+                        ? ab.getRuntimeContext()
+                        : RuntimeContext.empty();
+        List<SubagentEntry> merged = reloadEntries(rc);
+        if (agentManager != null) {
+            agentManager.replaceAgents(merged);
         }
-        return Mono.just(event);
+        StringBuilder addition = new StringBuilder();
+        if (!merged.isEmpty()) {
+            addition.append(SubagentsMiddleware.renderSubagentSection(merged, false));
+        }
+        String taskSummary = SubagentsMiddleware.buildTaskSummary(taskRepository, rc);
+        if (taskSummary != null) {
+            addition.append(taskSummary);
+        }
+        if (addition.length() == 0) {
+            return next.apply(input);
+        }
+        List<Msg> rebuilt =
+                SubagentsMiddleware.prependToSystemMessage(input.messages(), addition.toString());
+        return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
     }
 
-    /**
-     * Two-layer merge: programmatic static entries first, then dynamic declarations from Layer 1
-     * (filesystem, namespaced) overriding Layer 2 (local workspace {@code subagents/} directory).
-     */
-    private List<SubagentEntry> reloadEntries() {
+    private List<SubagentEntry> reloadEntries(RuntimeContext rc) {
         // ---- Layer 2 (base): local workspace scan ----
         Map<String, SubagentDeclaration> declsByName = new LinkedHashMap<>();
         Path subagentsDir = mainWorkspace != null ? mainWorkspace.resolve(SUBAGENTS_DIR) : null;
@@ -180,7 +150,7 @@ public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
 
         // ---- Layer 1 (override): filesystem with namespace ----
         if (filesystem != null) {
-            for (SubagentDeclaration d : loadDeclarationsViaFilesystem()) {
+            for (SubagentDeclaration d : loadDeclarationsViaFilesystem(rc)) {
                 declsByName.put(d.getName(), d);
             }
         }
@@ -217,11 +187,10 @@ public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
         return List.copyOf(combined.values());
     }
 
-    private List<SubagentDeclaration> loadDeclarationsViaFilesystem() {
-        RuntimeContext ctx = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+    private List<SubagentDeclaration> loadDeclarationsViaFilesystem(RuntimeContext rc) {
         GlobResult glob;
         try {
-            glob = filesystem.glob(ctx, SUBAGENT_GLOB, SUBAGENTS_DIR);
+            glob = filesystem.glob(rc, SUBAGENT_GLOB, SUBAGENTS_DIR);
         } catch (Exception e) {
             log.debug("Filesystem glob for subagents failed: {}", e.getMessage());
             return Collections.emptyList();
@@ -245,7 +214,7 @@ public class DynamicSubagentsHook implements Hook, RuntimeContextAware {
                 continue;
             }
             try {
-                ReadResult rr = filesystem.read(ctx, path, 0, 0);
+                ReadResult rr = filesystem.read(rc, path, 0, 0);
                 if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
                     continue;
                 }

@@ -13,14 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.hook;
+package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PreCallEvent;
-import io.agentscope.core.legacy.hook.PreReasoningEvent;
-import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -42,12 +46,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 
 /**
- * Hook that provides the managed subagent mechanism.
+ * Middleware that provides the managed subagent mechanism.
  *
- * <p>In <strong>default mode</strong> (standalone {@code HarnessAgent}), this hook creates an
+ * <p>In <strong>default mode</strong> (standalone harness setup), this middleware creates an
  * {@link AgentSpawnTool} backed by a {@link DefaultAgentManager}. In <strong>session mode</strong>
  * (orchestrated via {@code AgentBootstrap}), an external tool (typically {@code SessionsTool}) is
  * injected, replacing the default {@link AgentSpawnTool}.
@@ -55,24 +59,19 @@ import reactor.core.publisher.Mono;
  * <p>Responsibilities:
  *
  * <ol>
- *   <li>Registers the subagent tool and {@link TaskTool} as agent tools
- *   <li>On {@link PreCallEvent}, reloads subagent declarations from the workspace filesystem
- *       (namespace-scoped) to support per-user subagent isolation
- *   <li>Injects rich subagent usage guidance into the unified system message at
- *       {@link PreReasoningEvent} time via {@link PreReasoningEvent#appendSystemContent}.
- *       Because each {@link PreReasoningEvent} starts from a fresh copy of the frozen base
- *       system message, calling {@code appendSystemContent} on every iteration is safe —
- *       content never accumulates across iterations.
- *   <li>Appends a concise summary of current async tasks to the system content each turn
- *       (at most 10 tasks), so the model always has current task state even after compaction.
+ *   <li>Exposes the subagent tool and {@link TaskTool} as agent tools (callers query via
+ *       {@link #getTools()} and register them on the toolkit at orchestration time).
+ *   <li>On every {@link #onAgent}, reloads subagent declarations from the workspace filesystem
+ *       (namespace-scoped) to support per-user subagent isolation.
+ *   <li>Prepends rich subagent usage guidance and current async task summary to the leading
+ *       SYSTEM message of every {@link ReasoningInput}. Because the framework rebuilds the
+ *       SYSTEM message from a frozen base each iteration, this is safe — content never
+ *       accumulates across iterations.
  * </ol>
  */
-public class SubagentsHook implements Hook, RuntimeContextAware {
+public class SubagentsMiddleware implements MiddlewareBase {
 
-    private static final Logger log = LoggerFactory.getLogger(SubagentsHook.class);
-
-    /** Hook priority used by both this hook and {@link DynamicSubagentsHook}. */
-    public static final int SUBAGENT_HOOK_PRIORITY = 80;
+    private static final Logger log = LoggerFactory.getLogger(SubagentsMiddleware.class);
 
     private static final DateTimeFormatter ISO_SHORT =
             DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC);
@@ -162,7 +161,6 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
     private final boolean isSessionMode;
-    private volatile RuntimeContext runtimeContext;
 
     private final AbstractFilesystem filesystem;
     private final Path mainWorkspace;
@@ -171,19 +169,8 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
 
     /**
      * Default mode: creates {@link AgentSpawnTool} + {@link DefaultAgentManager} internally.
-     *
-     * <p>The user-id is derived from each tool invocation's {@link RuntimeContext} rather than a
-     * shared supplier — this avoids identity races when a single agent serves concurrent callers.
-     *
-     * @param entries subagent descriptors (agent_id, description, factory)
-     * @param taskRepository background task store for async operations
-     * @param workspaceManager workspace accessor for session file path resolution
-     * @param filesystem the filesystem layer for dynamic subagent discovery (may be {@code null})
-     * @param mainWorkspace the parent workspace path for resolving subagent workspace paths
-     * @param factoryBuilder creates a {@link SubagentFactory} from a {@link SubagentDeclaration};
-     *     may be {@code null} if dynamic discovery is not needed
      */
-    public SubagentsHook(
+    public SubagentsMiddleware(
             List<SubagentEntry> entries,
             TaskRepository taskRepository,
             WorkspaceManager workspaceManager,
@@ -205,10 +192,9 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
     }
 
     /**
-     * Default mode without dynamic reload support. Equivalent to passing {@code null} for
-     * filesystem, mainWorkspace, and factoryBuilder.
+     * Default mode without dynamic reload support.
      */
-    public SubagentsHook(
+    public SubagentsMiddleware(
             List<SubagentEntry> entries,
             TaskRepository taskRepository,
             WorkspaceManager workspaceManager) {
@@ -217,12 +203,8 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
 
     /**
      * Session mode: uses the externally provided tool (typically {@code SessionsTool}).
-     *
-     * @param entries subagent descriptors (for prompt injection — agent id listing)
-     * @param externalSubagentTool the external tool instance (e.g. SessionsTool)
-     * @param taskRepository background task store for async operations
      */
-    public SubagentsHook(
+    public SubagentsMiddleware(
             List<SubagentEntry> entries,
             Object externalSubagentTool,
             TaskRepository taskRepository) {
@@ -239,17 +221,15 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
         this.factoryBuilder = null;
     }
 
-    public SubagentsHook(List<SubagentEntry> entries) {
+    public SubagentsMiddleware(List<SubagentEntry> entries) {
         this(entries, (TaskRepository) null, (WorkspaceManager) null);
     }
 
-    @Override
-    public void setRuntimeContext(RuntimeContext runtimeContext) {
-        this.runtimeContext = runtimeContext;
-    }
-
-    @Override
-    public List<Object> tools() {
+    /**
+     * Returns the tool instances this middleware contributes to the agent toolkit. The caller
+     * is responsible for registering them on the toolkit at orchestration time.
+     */
+    public List<Object> getTools() {
         if (entries.isEmpty()) {
             return List.of();
         }
@@ -257,19 +237,69 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
     }
 
     @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PreCallEvent) {
-            reloadSubagentEntries();
-        }
-        if (event instanceof PreReasoningEvent preReasoning) {
-            injectSubagentPrompt(preReasoning);
-        }
-        return Mono.just(event);
+    public Flux<AgentEvent> onAgent(
+            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+        reloadSubagentEntries();
+        return next.apply(input);
     }
 
     @Override
-    public int priority() {
-        return SUBAGENT_HOOK_PRIORITY;
+    public Flux<AgentEvent> onReasoning(
+            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+        List<SubagentEntry> currentEntries = this.entries;
+        if (currentEntries.isEmpty()) {
+            return next.apply(input);
+        }
+        StringBuilder addition = new StringBuilder();
+        addition.append(renderSubagentSection(currentEntries, isSessionMode));
+        RuntimeContext rc =
+                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
+                        ? ab.getRuntimeContext()
+                        : RuntimeContext.empty();
+        String taskSummary = buildTaskSummary(this.taskRepository, rc);
+        if (taskSummary != null) {
+            addition.append(taskSummary);
+        }
+        List<Msg> rebuilt = prependToSystemMessage(input.messages(), addition.toString());
+        return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
+    }
+
+    /**
+     * Appends the given extra content to the leading SYSTEM message of {@code messages}.
+     * If no SYSTEM message is present, a new one is inserted at index 0.
+     */
+    static List<Msg> prependToSystemMessage(List<Msg> messages, String extra) {
+        if (extra == null || extra.isEmpty()) {
+            return messages != null ? messages : List.of();
+        }
+        List<Msg> out = new ArrayList<>(messages != null ? messages.size() : 1);
+        if (messages == null || messages.isEmpty() || messages.get(0).getRole() != MsgRole.SYSTEM) {
+            out.add(
+                    Msg.builder()
+                            .name("system")
+                            .role(MsgRole.SYSTEM)
+                            .content(TextBlock.builder().text(extra).build())
+                            .build());
+            if (messages != null) {
+                out.addAll(messages);
+            }
+            return out;
+        }
+        Msg sys = messages.get(0);
+        String existing = sys.getTextContent() != null ? sys.getTextContent() : "";
+        String merged = existing.isEmpty() ? extra : existing + "\n" + extra;
+        Msg newSys =
+                Msg.builder()
+                        .id(sys.getId())
+                        .name(sys.getName())
+                        .role(MsgRole.SYSTEM)
+                        .content(TextBlock.builder().text(merged).build())
+                        .metadata(sys.getMetadata())
+                        .timestamp(sys.getTimestamp())
+                        .build();
+        out.add(newSys);
+        out.addAll(messages.subList(1, messages.size()));
+        return out;
     }
 
     private void reloadSubagentEntries() {
@@ -303,22 +333,9 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
         }
     }
 
-    private void injectSubagentPrompt(PreReasoningEvent event) {
-        List<SubagentEntry> currentEntries = this.entries;
-        if (currentEntries.isEmpty()) {
-            return;
-        }
-        event.appendSystemContent(renderSubagentSection(currentEntries, isSessionMode));
-
-        String taskSummary = buildTaskSummary();
-        if (taskSummary != null) {
-            event.appendSystemContent(taskSummary);
-        }
-    }
-
     /**
-     * Renders the {@code ## Subagents} system-prompt section for the supplied entries. Shared by
-     * {@link SubagentsHook} and {@link DynamicSubagentsHook}.
+     * Renders the {@code ## Subagents} system-prompt section for the supplied entries. Shared
+     * with {@link DynamicSubagentsMiddleware}.
      */
     public static String renderSubagentSection(List<SubagentEntry> entries, boolean isSessionMode) {
         String agentList =
@@ -332,17 +349,8 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
     }
 
     /**
-     * Builds a concise task summary string for the current session, or {@code null} if there are
-     * no tasks to report. The summary is injected into the system content every turn so the model
-     * always has current task IDs and statuses — even after conversation compaction.
-     */
-    private String buildTaskSummary() {
-        return buildTaskSummary(this.taskRepository, this.runtimeContext);
-    }
-
-    /**
-     * Static variant of {@link #buildTaskSummary()} for use by {@link DynamicSubagentsHook}.
-     * Returns {@code null} when no tasks should be rendered.
+     * Builds a concise task summary string for the current session, or {@code null} if there
+     * are no tasks to report. Shared with {@link DynamicSubagentsMiddleware}.
      */
     public static String buildTaskSummary(TaskRepository repo, RuntimeContext ctx) {
         if (repo == null) {
@@ -376,20 +384,5 @@ public class SubagentsHook implements Hook, RuntimeContextAware {
                 "(Status above reflects current state; use task_output or task_list for"
                         + " latest.)\n");
         return sb.toString();
-    }
-
-    /**
-     * Descriptor for a subagent identified by agent id, with its description, {@link
-     * SubagentFactory}, and optional {@link io.agentscope.harness.agent.subagent.SubagentDeclaration}
-     * (for remote URL and headers).
-     */
-    public record SubagentEntry(
-            String name,
-            String description,
-            SubagentFactory factory,
-            SubagentDeclaration declaration) {
-        public SubagentEntry(String name, String description, SubagentFactory factory) {
-            this(name, description, factory, null);
-        }
     }
 }

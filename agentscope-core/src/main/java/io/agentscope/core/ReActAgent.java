@@ -16,6 +16,7 @@
 package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -49,7 +50,6 @@ import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.legacy.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.legacy.hook.Hook;
 import io.agentscope.core.legacy.hook.LegacyHookDispatcher;
-import io.agentscope.core.legacy.hook.PendingToolRecoveryHook;
 import io.agentscope.core.legacy.hook.PostActingEvent;
 import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
 import io.agentscope.core.message.ContentBlock;
@@ -63,7 +63,6 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.Middleware;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -80,6 +79,7 @@ import io.agentscope.core.permission.PermissionEngine;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.LegacyStateLoader;
@@ -99,21 +99,21 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
-import io.agentscope.harness.agent.hook.AgentTraceHook;
-import io.agentscope.harness.agent.hook.CompactionHook;
-import io.agentscope.harness.agent.hook.DynamicSkillHook;
-import io.agentscope.harness.agent.hook.DynamicSubagentsHook;
-import io.agentscope.harness.agent.hook.MemoryFlushHook;
-import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
-import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
-import io.agentscope.harness.agent.hook.SubagentsHook;
-import io.agentscope.harness.agent.hook.ToolResultEvictionHook;
-import io.agentscope.harness.agent.hook.WorkspaceContextHook;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
+import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import io.agentscope.harness.agent.middleware.DynamicSkillMiddleware;
+import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
+import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware;
+import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
+import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
+import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
@@ -234,7 +234,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     private final ToolExecutionContext toolExecutionContext;
 
-    private final List<Middleware> middlewares;
+    private final List<MiddlewareBase> middlewares;
+    private final boolean enablePendingToolRecovery;
     private RuntimeContext pendingRuntimeContext;
 
     // ==================== Persistence ====================
@@ -275,8 +276,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      */
     private WorkspaceManager workspaceManager;
 
-    private CompactionHook compactionHook;
+    private CompactionMiddleware compactionHook;
     private SandboxContext defaultSandboxContext;
+    private SandboxLifecycleMiddleware sandboxLifecycleMw;
     private List<AgentSkillRepository> skillRepositories = List.of();
 
     /**
@@ -310,7 +312,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
         this.toolExecutionContext = builder.toolExecutionContext;
-        this.middlewares = List.copyOf(builder.middlewares);
+        this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
+        List<MiddlewareBase> mws = new ArrayList<>();
+        mws.add(new GracefulShutdownMiddleware(shutdownManager));
+        mws.addAll(builder.middlewares);
+        this.middlewares = List.copyOf(mws);
 
         this.session = builder.session;
         this.sessionKey =
@@ -424,14 +430,18 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         bindRuntimeContextToHooks(ctx);
         // Reset per-call system message; will be initialised by consumeSystemMsgAfterPreCall
         currentSystemMsg.set(null);
+        if (sandboxLifecycleMw != null) {
+            sandboxLifecycleMw.acquireForCall(ctx);
+        }
     }
 
     @Override
     protected Msg seedSystemMsg() {
-        if (sysPrompt == null || sysPrompt.trim().isEmpty()) {
+        String base = sysPrompt != null ? sysPrompt.trim() : "";
+        String prompt = applySystemPromptMiddlewares(base);
+        if (prompt == null || prompt.isEmpty()) {
             return null;
         }
-        String prompt = applySystemPromptMiddlewares(sysPrompt);
         return Msg.builder()
                 .name("system")
                 .role(MsgRole.SYSTEM)
@@ -443,8 +453,29 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         if (middlewares.isEmpty()) {
             return prompt;
         }
+        // Only build a reactive chain if at least one middleware overrides onSystemPrompt
+        // (the default implementation is identity). This avoids an unnecessary block() call
+        // which would fail on non-blocking schedulers (e.g. Reactor parallel scheduler).
+        boolean hasOverride = false;
+        for (MiddlewareBase mw : middlewares) {
+            try {
+                if (mw.getClass()
+                                .getMethod("onSystemPrompt", Agent.class, String.class)
+                                .getDeclaringClass()
+                        != MiddlewareBase.class) {
+                    hasOverride = true;
+                    break;
+                }
+            } catch (NoSuchMethodException ignored) {
+                hasOverride = true;
+                break;
+            }
+        }
+        if (!hasOverride) {
+            return prompt;
+        }
         Mono<String> result = Mono.just(prompt);
-        for (Middleware mw : middlewares) {
+        for (MiddlewareBase mw : middlewares) {
             result = result.flatMap(p -> mw.onSystemPrompt(this, p));
         }
         return result.block();
@@ -457,6 +488,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     @Override
     protected void afterAgentExecution() {
+        if (sandboxLifecycleMw != null) {
+            sandboxLifecycleMw.releaseForCall(getRuntimeContext());
+        }
         unbindRuntimeContextFromHooks();
     }
 
@@ -486,7 +520,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * compaction config was supplied), this overload also (a) fills missing {@link Session}/
      * {@link SessionKey} defaults, (b) loads any persisted state, and (c) wraps the call with a
      * context-overflow recovery flow that triggers an emergency compaction via the registered
-     * {@link CompactionHook}. Plain {@code ReActAgent.builder()} usage skips all of that and just
+     * {@link CompactionMiddleware}. Plain {@code ReActAgent.builder()} usage skips all of that and just
      * binds the runtime context.
      */
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
@@ -601,6 +635,24 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     private Mono<Msg> doCallInner(List<Msg> msgs) {
+        // Graceful-shutdown deduplication: if the agent's session was previously interrupted
+        // by shutdown, the client is likely retrying with the same user prompt that already
+        // exists in memory. Discard the duplicate input so the agent resumes purely from its
+        // saved memory context.
+        if (shutdownManager.checkAndClearShutdownInterrupted(this)) {
+            log.info(
+                    "Detected shutdown-interrupted session for agent {}, discarding duplicate"
+                            + " input",
+                    getName());
+            msgs = List.of();
+        }
+
+        // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
+        // error results so the agent can continue instead of crashing.
+        if (enablePendingToolRecovery) {
+            maybePatchPendingToolCalls(msgs);
+        }
+
         Set<String> pendingIds = getPendingToolUseIds();
 
         // No pending tools -> normal processing
@@ -626,14 +678,53 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return hasPendingToolUse() ? resumeAgent() : coreAgent();
         }
 
-        // If PendingToolRecoveryHook is enabled, pending state should have been
-        // patched during PreCallEvent. If we still reach here, the hook was disabled
-        // and the user did not provide tool results — this is an unrecoverable state.
+        // Recovery was disabled and user did not provide tool results — unrecoverable.
         throw new IllegalStateException(
                 "Pending tool calls exist without results. "
-                        + "Enable PendingToolRecoveryHook or provide tool results. "
+                        + "Enable enablePendingToolRecovery or provide tool results. "
                         + "Pending IDs: "
                         + pendingIds);
+    }
+
+    private void maybePatchPendingToolCalls(List<Msg> msgs) {
+        Set<String> pendingIds = getPendingToolUseIds();
+        if (pendingIds.isEmpty()) {
+            return;
+        }
+        if (msgs == null || msgs.isEmpty()) {
+            return;
+        }
+        boolean userProvidedResults =
+                msgs.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
+        if (userProvidedResults) {
+            return;
+        }
+        log.warn(
+                "Pending tool calls detected without results, auto-generating error results."
+                        + " Pending IDs: {}",
+                pendingIds);
+        Msg lastAssistant = findLastAssistantMsg();
+        if (lastAssistant == null) {
+            return;
+        }
+        List<ToolUseBlock> pendingToolCalls =
+                lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                        .toList();
+        for (ToolUseBlock toolCall : pendingToolCalls) {
+            ToolResultBlock errorResult =
+                    buildErrorToolResult(
+                            toolCall.getId(),
+                            "[ERROR] Previous tool execution failed or was interrupted. Tool: "
+                                    + toolCall.getName());
+            Msg toolResultMsg =
+                    ToolResultMessageBuilder.buildToolResultMsg(errorResult, toolCall, getName());
+            state.contextMutable().add(toolResultMsg);
+            log.info(
+                    "Auto-generated error result for pending tool call: {} ({})",
+                    toolCall.getName(),
+                    toolCall.getId());
+        }
     }
 
     /**
@@ -1973,7 +2064,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /** Returns the immutable list of registered middlewares. */
-    public List<Middleware> getMiddlewares() {
+    public List<MiddlewareBase> getMiddlewares() {
         return middlewares;
     }
 
@@ -2013,7 +2104,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             Function<String, Session> sessionFactory,
             WorkspaceIndex ownedWorkspaceIndex,
             SandboxContext defaultSandboxContext,
-            CompactionHook compactionHook,
+            CompactionMiddleware compactionHook,
+            SandboxLifecycleMiddleware sandboxLifecycleMw,
             List<AgentSkillRepository> skillRepositories) {
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
@@ -2021,6 +2113,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
         this.defaultSandboxContext = defaultSandboxContext;
         this.compactionHook = compactionHook;
+        this.sandboxLifecycleMw = sandboxLifecycleMw;
         this.skillRepositories =
                 skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
     }
@@ -2049,8 +2142,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return workspaceFactory.apply(userId, sessionId);
     }
 
-    /** Returns the {@link CompactionHook} instance if compaction was configured, or {@code null}. */
-    public CompactionHook getCompactionHook() {
+    /** Returns the {@link CompactionMiddleware} instance if compaction was configured, or {@code null}. */
+    public CompactionMiddleware getCompactionHook() {
         return compactionHook;
     }
 
@@ -2110,7 +2203,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         if (compactionHook != null) {
             log.warn(
                     "Context overflow detected, triggering emergency compaction via"
-                            + " CompactionHook");
+                            + " CompactionMiddleware");
             return forceCompactAndRetry(msgs, effective);
         }
         return Mono.error(
@@ -2189,7 +2282,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         ExecutionConfig toolExecutionConfig;
         GenerateOptions generateOptions;
         final Set<Hook> hooks = new LinkedHashSet<>();
-        private final List<Middleware> middlewares = new ArrayList<>();
+        private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private boolean enableMetaTool = false;
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
@@ -2420,7 +2513,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * @param middleware the middleware to add
          * @return this builder instance for method chaining
          */
-        public Builder middleware(Middleware middleware) {
+        public Builder middleware(MiddlewareBase middleware) {
             this.middlewares.add(middleware);
             return this;
         }
@@ -2431,7 +2524,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * @param middlewares the list of middlewares to add
          * @return this builder instance for method chaining
          */
-        public Builder middlewares(List<Middleware> middlewares) {
+        public Builder middlewares(List<? extends MiddlewareBase> middlewares) {
             this.middlewares.addAll(middlewares);
             return this;
         }
@@ -2454,17 +2547,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         /**
          * Enables or disables automatic recovery from orphaned pending tool calls.
          *
-         * <p>When enabled , a {@link PendingToolRecoveryHook} is automatically
-         * registered to detect and patch orphaned pending tool calls with synthetic error
-         * results before agent processing begins. This prevents {@link IllegalStateException}
-         * when tool execution fails, times out, or is interrupted.
+         * <p>When enabled, the agent automatically detects orphaned pending tool calls and
+         * patches them with synthetic error results before processing new input. This prevents
+         * {@link IllegalStateException} when tool execution fails, times out, or is interrupted.
          *
          * <p>Disable this if you prefer to handle pending tool calls manually, for example
          * through HITL (Human-in-the-loop) mechanisms or custom error handling strategies.
          *
          * @param enable true to enable auto-recovery, false to disable
          * @return This builder instance for method chaining
-         * @see PendingToolRecoveryHook
          */
         public Builder enablePendingToolRecovery(boolean enable) {
             this.enablePendingToolRecovery = enable;
@@ -2777,14 +2868,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return this;
         }
 
-        /** Enables the {@link CompactionHook} with the given configuration. */
+        /** Enables the {@link CompactionMiddleware} with the given configuration. */
         public Builder compaction(CompactionConfig config) {
             this.compactionConfig = config;
             this.harnessOrchestrationEnabled = true;
             return this;
         }
 
-        /** Enables {@link ToolResultEvictionHook} with the given configuration. */
+        /** Enables {@link ToolResultEvictionMiddleware} with the given configuration. */
         public Builder toolResultEviction(ToolResultEvictionConfig config) {
             this.toolResultEvictionConfig = config;
             this.harnessOrchestrationEnabled = true;
@@ -2870,7 +2961,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * Enables or disables agent execution trace logging via {@link AgentTraceHook}.
+         * Enables or disables agent execution trace logging via {@link AgentTraceMiddleware}.
          * Default is {@code true}.
          */
         public Builder enableAgentTracingLog(boolean enabled) {
@@ -2958,7 +3049,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return this;
         }
 
-        /** Skips registration of {@link MemoryFlushHook} and {@link MemoryMaintenanceHook}. */
+        /**
+         * Skips registration of {@link MemoryFlushMiddleware} and
+         * {@link io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware}.
+         */
         public Builder disableMemoryHooks() {
             this.disableMemoryHooks = true;
             return this;
@@ -2970,13 +3064,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return this;
         }
 
-        /** Skips registration of {@link WorkspaceContextHook}. */
+        /** Skips registration of {@link WorkspaceContextMiddleware}. */
         public Builder disableWorkspaceContext() {
             this.disableWorkspaceContext = true;
             return this;
         }
 
-        /** Skips registration of {@link SubagentsHook}. */
+        /** Skips registration of {@link SubagentsMiddleware}. */
         public Builder disableSubagents() {
             this.disableSubagents = true;
             return this;
@@ -3117,8 +3211,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          *
          * @param resolvedWorkspace workspace path to scan for {@code subagents/*.md} declarations
          */
-        public List<io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry>
-                buildSubagentEntries(Path resolvedWorkspace) {
+        public List<io.agentscope.harness.agent.middleware.SubagentEntry> buildSubagentEntries(
+                Path resolvedWorkspace) {
             return ReActAgentBuilderSupport.buildSubagentEntries(this, resolvedWorkspace, null);
         }
 
@@ -3127,11 +3221,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * {@link io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem} into the
          * subagent factories so spawned agents share the parent's sandbox session when desired.
          */
-        public List<io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry>
-                buildSubagentEntries(
-                        Path resolvedWorkspace,
-                        io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem
-                                sandboxFs) {
+        public List<io.agentscope.harness.agent.middleware.SubagentEntry> buildSubagentEntries(
+                Path resolvedWorkspace,
+                io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem sandboxFs) {
             return ReActAgentBuilderSupport.buildSubagentEntries(
                     this, resolvedWorkspace, sandboxFs);
         }
@@ -3271,36 +3363,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * Registers plan management tools on the toolkit and a hook that injects the current
-         * plan hint into every reasoning step's input message list.
+         * Registers plan management tools on the toolkit and a middleware that injects the
+         * current plan hint into every reasoning step's input message list.
          */
-        @SuppressWarnings({"deprecation", "unchecked"})
+        @SuppressWarnings("deprecation")
         private void configurePlan(Toolkit agentToolkit) {
             agentToolkit.registerTool(planNotebook);
-
-            io.agentscope.core.legacy.hook.Hook planHintHook =
-                    new io.agentscope.core.legacy.hook.Hook() {
-                        @Override
-                        public <T extends io.agentscope.core.legacy.hook.HookEvent> Mono<T> onEvent(
-                                T event) {
-                            if (event
-                                    instanceof io.agentscope.core.legacy.hook.PreReasoningEvent e) {
-                                return planNotebook
-                                        .getCurrentHint()
-                                        .map(
-                                                hintMsg -> {
-                                                    List<Msg> modifiedMsgs =
-                                                            new ArrayList<>(e.getInputMessages());
-                                                    modifiedMsgs.add(hintMsg);
-                                                    e.setInputMessages(modifiedMsgs);
-                                                    return (T) e;
-                                                })
-                                        .defaultIfEmpty(event);
-                            }
-                            return Mono.just(event);
-                        }
-                    };
-            hooks.add(planHintHook);
+            middlewares.add(new io.agentscope.core.legacy.plan.PlanHintMiddleware(planNotebook));
         }
 
         /**
@@ -3336,10 +3405,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 agentToolkit.registerMetaTool();
             }
 
-            // Register PendingToolRecoveryHook if enabled
-            if (enablePendingToolRecovery) {
-                hooks.add(new PendingToolRecoveryHook());
-            }
+            // enablePendingToolRecovery is stored on the agent and used in doCallInner()
 
             // 1.x legacy compat: shared selfRef gives the long-term-memory hook (constructed
             // pre-agent) a way to resolve AgentState.context lazily once the agent exists.
@@ -3374,6 +3440,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         harnessResult.ownedWorkspaceIndex,
                         harnessResult.defaultSandboxContext,
                         harnessResult.compactionHook,
+                        harnessResult.sandboxLifecycleMw,
                         harnessResult.skillRepositories);
             }
             return agent;
@@ -3389,7 +3456,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             Function<String, Session> sessionFactory;
             WorkspaceIndex ownedWorkspaceIndex;
             SandboxContext defaultSandboxContext;
-            CompactionHook compactionHook;
+            CompactionMiddleware compactionHook;
+            SandboxLifecycleMiddleware sandboxLifecycleMw;
             List<AgentSkillRepository> skillRepositories;
             AtomicReference<ReActAgent> selfRef;
         }
@@ -3462,7 +3530,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             this, resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
 
             // ---- Sandbox integration ----
-            SandboxLifecycleHook sandboxLifecycleHook = null;
+            SandboxLifecycleMiddleware sandboxLifecycleMw = null;
             SandboxContext defaultSandboxContext = null;
             SandboxBackedFilesystem capturedSandboxFs = null;
             if (sandboxFilesystemSpec != null) {
@@ -3501,7 +3569,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                 stateStore,
                                 resolvedAgentId,
                                 executionGuard);
-                sandboxLifecycleHook = new SandboxLifecycleHook(sandboxManager, capturedSandboxFs);
+                sandboxLifecycleMw =
+                        new SandboxLifecycleMiddleware(sandboxManager, capturedSandboxFs);
             }
             WorkspaceManager wsManager =
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
@@ -3533,51 +3602,58 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             : null;
 
             // ---- Hooks ----
-            if (sandboxLifecycleHook != null) {
-                hooks.add(sandboxLifecycleHook);
+            if (sandboxLifecycleMw != null) {
+                middlewares.add(sandboxLifecycleMw);
             }
             if (agentTracingLogEnabled) {
-                hooks.add(new AgentTraceHook());
+                middlewares.add(new AgentTraceMiddleware());
             }
             if (!disableWorkspaceContext) {
-                WorkspaceContextHook markdownHook =
-                        new WorkspaceContextHook(
+                WorkspaceContextMiddleware markdownMw =
+                        new WorkspaceContextMiddleware(
                                 wsManager,
                                 name != null ? name : "ReActAgent",
                                 environmentMemory,
                                 maxContextTokens);
-                markdownHook.setAdditionalContextFiles(additionalContextFiles);
-                hooks.add(markdownHook);
+                markdownMw.setAdditionalContextFiles(additionalContextFiles);
+                middlewares.add(markdownMw);
             }
             if (model != null && !disableMemoryHooks) {
-                hooks.add(new MemoryFlushHook(wsManager, model));
+                middlewares.add(new MemoryFlushMiddleware(wsManager, model));
             }
             if (model != null && !disableMemoryHooks) {
                 MemoryConsolidator consolidator = new MemoryConsolidator(wsManager, model);
-                hooks.add(new MemoryMaintenanceHook(wsManager, consolidator));
+                middlewares.add(new MemoryMaintenanceMiddleware(wsManager, consolidator));
             }
-            CompactionHook compactionHook = null;
+            CompactionMiddleware compactionHook = null;
             if (compactionConfig != null && model != null) {
-                compactionHook = new CompactionHook(wsManager, model, compactionConfig);
-                hooks.add(compactionHook);
+                compactionHook = new CompactionMiddleware(wsManager, model, compactionConfig);
+                middlewares.add(compactionHook);
             }
             if (toolResultEvictionConfig != null) {
-                hooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
+                middlewares.add(
+                        new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
             }
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {
-                    DynamicSubagentsHook dynamicSubagentsHook =
-                            ReActAgentBuilderSupport.buildDynamicSubagentsHook(
+                    DynamicSubagentsMiddleware dynMw =
+                            ReActAgentBuilderSupport.buildDynamicSubagentsMiddleware(
                                     this, wsManager, resolvedWorkspace, capturedSandboxFs);
-                    if (dynamicSubagentsHook != null) {
-                        hooks.add(dynamicSubagentsHook);
+                    if (dynMw != null) {
+                        middlewares.add(dynMw);
+                        for (Object t : dynMw.getTools()) {
+                            agentToolkit.registerTool(t);
+                        }
                     }
                 } else {
-                    SubagentsHook subagentsHook =
-                            ReActAgentBuilderSupport.buildSubagentsHook(
+                    SubagentsMiddleware subagentsMw =
+                            ReActAgentBuilderSupport.buildSubagentsMiddleware(
                                     this, wsManager, resolvedWorkspace, capturedSandboxFs);
-                    if (subagentsHook != null) {
-                        hooks.add(subagentsHook);
+                    if (subagentsMw != null) {
+                        middlewares.add(subagentsMw);
+                        for (Object t : subagentsMw.getTools()) {
+                            agentToolkit.registerTool(t);
+                        }
                     }
                 }
             }
@@ -3620,7 +3696,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                     ReActAgentBuilderSupport.composeSkillRepositories(
                             this, wsManager, filesystem, currentRcSupplier);
             if (!orderedSkillRepos.isEmpty() && !disableDynamicSkills) {
-                hooks.add(new DynamicSkillHook(orderedSkillRepos, agentToolkit, skillFilter));
+                middlewares.add(
+                        new DynamicSkillMiddleware(orderedSkillRepos, agentToolkit, skillFilter));
             }
 
             // ---- Apply tools.json allow/deny filter ----
@@ -3643,6 +3720,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             result.ownedWorkspaceIndex = workspaceIndex;
             result.defaultSandboxContext = defaultSandboxContext;
             result.compactionHook = compactionHook;
+            result.sandboxLifecycleMw = sandboxLifecycleMw;
             result.skillRepositories = orderedSkillRepos;
             result.selfRef = selfRef;
             return result;

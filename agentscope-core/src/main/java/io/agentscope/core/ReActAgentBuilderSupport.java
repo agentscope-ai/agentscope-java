@@ -31,11 +31,11 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
-import io.agentscope.harness.agent.hook.DynamicSubagentsHook;
-import io.agentscope.harness.agent.hook.SubagentsHook;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
@@ -258,7 +258,7 @@ final class ReActAgentBuilderSupport {
 
     /**
      * Like {@link #buildSubagentEntries(ReActAgent.Builder, Path, SandboxBackedFilesystem)} but
-     * omits the local-disk {@code subagents/} scan. The {@code DynamicSubagentsHook} performs that
+     * omits the local-disk {@code subagents/} scan. The {@code DynamicSubagentsMiddleware} performs that
      * scan itself on every reasoning step (Layer 2), so feeding the same entries in here would
      * register them twice.
      */
@@ -532,10 +532,10 @@ final class ReActAgentBuilderSupport {
     }
 
     // -----------------------------------------------------------------
-    //  Subagents hooks
+    //  Subagents middlewares
     // -----------------------------------------------------------------
 
-    static SubagentsHook buildSubagentsHook(
+    static SubagentsMiddleware buildSubagentsMiddleware(
             ReActAgent.Builder b,
             WorkspaceManager wsManager,
             Path workspace,
@@ -544,16 +544,16 @@ final class ReActAgentBuilderSupport {
         TaskRepository repo = resolveTaskRepository(b, wsManager);
 
         if (b.externalSubagentTool != null) {
-            return new SubagentsHook(entries, b.externalSubagentTool, repo);
+            return new SubagentsMiddleware(entries, b.externalSubagentTool, repo);
         }
 
         AbstractFilesystem fs = wsManager.getFilesystem();
         Function<SubagentDeclaration, SubagentFactory> factoryFn =
                 decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs);
-        return new SubagentsHook(entries, repo, wsManager, fs, workspace, factoryFn);
+        return new SubagentsMiddleware(entries, repo, wsManager, fs, workspace, factoryFn);
     }
 
-    static DynamicSubagentsHook buildDynamicSubagentsHook(
+    static DynamicSubagentsMiddleware buildDynamicSubagentsMiddleware(
             ReActAgent.Builder b,
             WorkspaceManager wsManager,
             Path workspace,
@@ -565,7 +565,7 @@ final class ReActAgentBuilderSupport {
         Function<SubagentDeclaration, SubagentFactory> factoryFn =
                 decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs);
         DefaultAgentManager manager = new DefaultAgentManager(staticEntries, wsManager);
-        return new DynamicSubagentsHook(
+        return new DynamicSubagentsMiddleware(
                 staticEntries, fs, workspace, factoryFn, manager, b.externalSubagentTool, repo);
     }
 

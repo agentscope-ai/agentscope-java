@@ -13,110 +13,137 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.hook;
+package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PostActingEvent;
-import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 
 /**
- * Hook that evicts oversized tool results to the {@link AbstractFilesystem} immediately after
- * each tool call, before the result is stored in the agent's memory.
+ * Middleware that evicts oversized tool results to the {@link AbstractFilesystem}
+ * immediately after each acting phase, before downstream reasoning sees the bloated
+ * message list.
  *
- * <p>When the text content of a {@link ToolResultBlock} exceeds
- * {@link ToolResultEvictionConfig#getMaxResultChars()}, this hook:
+ * <p>When the text content of a {@link ToolResultBlock} in the freshly-added tool-result
+ * messages exceeds {@link ToolResultEvictionConfig#getMaxResultChars()}, this middleware:
  * <ol>
  *   <li>Writes the full result to
  *       {@code {evictionPath}/{agentName}/{sanitized-toolCallId}} in the filesystem.</li>
  *   <li>Replaces the in-context {@code ToolResultBlock} with a compact placeholder containing
  *       a head+tail preview and an instruction to use {@code readFile} for the full content.</li>
- *   <li>Calls {@link PostActingEvent#setToolResult} so downstream hooks and memory see only
- *       the placeholder.</li>
+ *   <li>Mutates {@link AgentState#contextMutable()} in place so subsequent reasoning rounds
+ *       see only the placeholder.</li>
  * </ol>
- *
- * <p><b>Independence from other context-management mechanisms:</b>
- * <ul>
- *   <li><b>This hook</b> fires on {@link PostActingEvent} — once per tool call, triggered by
- *       individual result <em>size</em> (context width).</li>
- *   <li><b>Argument truncation</b> runs inside {@link CompactionHook}
- *       at {@code PreReasoningEvent} — triggered by accumulated message count/tokens.</li>
- *   <li><b>Conversation compaction</b> runs inside {@code CompactionHook} at
- *       {@code PreReasoningEvent} — triggered by overall conversation length (context depth).</li>
- * </ul>
- * Each mechanism evaluates its own independent condition; none depends on the others having run.
- *
- * <p>Runs at priority 50, <em>after</em> {@link AgentTraceHook} (priority 0) so the original
- * result size is logged before the placeholder replaces it.
  *
  * <p>Tools listed in {@link ToolResultEvictionConfig#getExcludedToolNames()} are never evicted
  * (e.g. {@code readFile} — evicting would cause re-read loops).
  */
-public class ToolResultEvictionHook implements Hook, RuntimeContextAware {
+public class ToolResultEvictionMiddleware implements MiddlewareBase {
 
-    private static final Logger log = LoggerFactory.getLogger(ToolResultEvictionHook.class);
+    private static final Logger log = LoggerFactory.getLogger(ToolResultEvictionMiddleware.class);
 
     private final AbstractFilesystem filesystem;
     private final ToolResultEvictionConfig config;
-    private volatile RuntimeContext runtimeContext;
 
-    public ToolResultEvictionHook(AbstractFilesystem filesystem, ToolResultEvictionConfig config) {
+    public ToolResultEvictionMiddleware(
+            AbstractFilesystem filesystem, ToolResultEvictionConfig config) {
         this.filesystem = filesystem;
         this.config = config;
     }
 
     @Override
-    public void setRuntimeContext(RuntimeContext runtimeContext) {
-        this.runtimeContext = runtimeContext;
+    public Flux<AgentEvent> onActing(
+            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+        final RuntimeContext rc =
+                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
+                        ? ab.getRuntimeContext()
+                        : RuntimeContext.empty();
+        AgentState state = agent.getAgentState();
+        final int sizeBefore = state != null ? state.contextMutable().size() : -1;
+        return next.apply(input).doOnComplete(() -> evictAddedToolResults(agent, rc, sizeBefore));
     }
 
-    @Override
-    public int priority() {
-        // After AgentTraceHook (0) — original result size is logged first, then replaced
-        return 50;
+    private void evictAddedToolResults(Agent agent, RuntimeContext rc, int sizeBefore) {
+        AgentState state = agent.getAgentState();
+        if (state == null || sizeBefore < 0) {
+            return;
+        }
+        List<Msg> ctx = state.contextMutable();
+        String agentName = agent.getName();
+        for (int i = sizeBefore; i < ctx.size(); i++) {
+            Msg msg = ctx.get(i);
+            if (msg == null || msg.getRole() != MsgRole.TOOL) {
+                continue;
+            }
+            Msg rebuilt = evictMessage(msg, agentName, rc);
+            if (rebuilt != msg) {
+                ctx.set(i, rebuilt);
+            }
+        }
     }
 
-    @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (!(event instanceof PostActingEvent postActing)) {
-            return Mono.just(event);
+    private Msg evictMessage(Msg msg, String agentName, RuntimeContext rc) {
+        List<ContentBlock> contentBlocks = msg.getContent();
+        if (contentBlocks == null || contentBlocks.isEmpty()) {
+            return msg;
         }
-
-        ToolUseBlock toolUse = postActing.getToolUse();
-        ToolResultBlock toolResult = postActing.getToolResult();
-
-        if (toolUse == null || toolResult == null) {
-            return Mono.just(event);
+        boolean changed = false;
+        List<ContentBlock> rebuilt = new ArrayList<>(contentBlocks.size());
+        for (ContentBlock block : contentBlocks) {
+            if (block instanceof ToolResultBlock tr) {
+                ToolResultBlock maybeEvicted = maybeEvict(tr, agentName, rc);
+                if (maybeEvicted != tr) {
+                    changed = true;
+                    rebuilt.add(maybeEvicted);
+                    continue;
+                }
+            }
+            rebuilt.add(block);
         }
-
-        String toolName = toolUse.getName();
-        if (config.getExcludedToolNames().contains(toolName)) {
-            return Mono.just(event);
+        if (!changed) {
+            return msg;
         }
+        return Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .content(rebuilt)
+                .metadata(msg.getMetadata())
+                .timestamp(msg.getTimestamp())
+                .build();
+    }
 
+    private ToolResultBlock maybeEvict(
+            ToolResultBlock toolResult, String agentName, RuntimeContext rc) {
+        String toolName = toolResult.getName();
+        if (toolName != null && config.getExcludedToolNames().contains(toolName)) {
+            return toolResult;
+        }
         String fullText = extractText(toolResult);
         if (fullText.length() <= config.getMaxResultChars()) {
-            return Mono.just(event);
+            return toolResult;
         }
-
-        String agentName = event.getAgent().getName();
-        String toolCallId = toolUse.getId();
+        String toolCallId = toolResult.getId();
         String evictionPath = buildEvictionPath(agentName, toolCallId);
-
         try {
-            RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
             WriteResult writeResult = filesystem.write(rc, evictionPath, fullText);
             if (!writeResult.isSuccess()) {
                 log.warn(
@@ -125,19 +152,9 @@ public class ToolResultEvictionHook implements Hook, RuntimeContextAware {
                         toolName,
                         toolCallId,
                         writeResult.error());
-                return Mono.just(event);
+                return toolResult;
             }
-
             String placeholder = buildPlaceholder(fullText, evictionPath);
-            ToolResultBlock evicted =
-                    new ToolResultBlock(
-                            toolResult.getId(),
-                            toolResult.getName(),
-                            List.of(TextBlock.builder().text(placeholder).build()),
-                            null);
-
-            postActing.setToolResult(evicted);
-
             log.info(
                     "[{}] Evicted large tool result [tool={}, id={}, chars={} -> {}]",
                     agentName,
@@ -145,6 +162,11 @@ public class ToolResultEvictionHook implements Hook, RuntimeContextAware {
                     toolCallId,
                     fullText.length(),
                     evictionPath);
+            return new ToolResultBlock(
+                    toolResult.getId(),
+                    toolResult.getName(),
+                    List.of(TextBlock.builder().text(placeholder).build()),
+                    null);
         } catch (Exception e) {
             log.warn(
                     "[{}] Exception evicting tool result [tool={}, id={}]: {}",
@@ -152,14 +174,9 @@ public class ToolResultEvictionHook implements Hook, RuntimeContextAware {
                     toolName,
                     toolCallId,
                     e.getMessage());
+            return toolResult;
         }
-
-        return Mono.just(event);
     }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
 
     private String extractText(ToolResultBlock toolResult) {
         if (toolResult.getOutput() == null) {
@@ -179,7 +196,6 @@ public class ToolResultEvictionHook implements Hook, RuntimeContextAware {
         if (!base.startsWith("/")) {
             base = "/" + base;
         }
-        // Sanitize to filesystem-safe characters
         String safeAgent = agentName.replaceAll("[^a-zA-Z0-9_-]", "_");
         String safeId = toolCallId.replaceAll("[^a-zA-Z0-9_-]", "_");
         return base + "/" + safeAgent + "/" + safeId;

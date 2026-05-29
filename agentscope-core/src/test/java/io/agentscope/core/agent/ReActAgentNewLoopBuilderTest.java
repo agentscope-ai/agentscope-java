@@ -25,11 +25,12 @@ import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.middleware.Middleware;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
@@ -78,7 +79,7 @@ class ReActAgentNewLoopBuilderTest {
         Toolkit toolkit = new Toolkit();
         ModelConfig mc = ModelConfig.defaults();
         ReactConfig rc = ReactConfig.defaults();
-        List<Middleware> mw = List.of();
+        List<MiddlewareBase> mw = List.of();
 
         ReActAgent agent =
                 ReActAgent.builder()
@@ -95,7 +96,11 @@ class ReActAgentNewLoopBuilderTest {
         assertEquals("sys", agent.getSystemPrompt());
         assertSame(model, agent.getModel());
         assertNotNull(agent.getToolkit());
-        assertEquals(mw, agent.getMiddlewares());
+        // ReActAgent prepends a system-level GracefulShutdownMiddleware to the chain; user-
+        // supplied middlewares follow.
+        List<MiddlewareBase> registered = agent.getMiddlewares();
+        assertTrue(registered.stream().anyMatch(m -> m instanceof GracefulShutdownMiddleware));
+        assertTrue(registered.containsAll(mw));
         assertNotNull(agent.getState());
         assertNotNull(agent.getModelConfig());
         assertNotNull(agent.getReactConfig());
@@ -110,7 +115,9 @@ class ReActAgentNewLoopBuilderTest {
                 ReActAgent.builder().name("a").model(newFakeModel()).toolkit(new Toolkit()).build();
         assertNotNull(agent.getModelConfig());
         assertNotNull(agent.getReactConfig());
-        assertEquals(List.of(), agent.getMiddlewares());
+        // Only the system GracefulShutdownMiddleware is present when the user adds none.
+        assertEquals(1, agent.getMiddlewares().size());
+        assertTrue(agent.getMiddlewares().get(0) instanceof GracefulShutdownMiddleware);
     }
 
     @Test

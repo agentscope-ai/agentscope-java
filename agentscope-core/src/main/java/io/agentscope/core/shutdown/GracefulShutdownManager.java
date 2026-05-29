@@ -109,7 +109,7 @@ public final class GracefulShutdownManager {
     /**
      * Check whether the agent was previously interrupted by shutdown, and clear the flag.
      *
-     * <p>Called from {@link GracefulShutdownHook} at {@code PreCallEvent} to detect
+     * <p>Called from {@link GracefulShutdownMiddleware} on each {@code onAgent} to detect
      * a client retry after shutdown interruption, so the duplicate user prompt can be
      * replaced with a "continue" message.
      *

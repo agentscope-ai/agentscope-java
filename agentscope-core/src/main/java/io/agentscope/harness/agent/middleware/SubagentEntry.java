@@ -13,20 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.sandbox;
+package io.agentscope.harness.agent.middleware;
 
-import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.SubagentFactory;
 
 /**
- * Marks a filesystem that can have its backing {@link Sandbox} injected at runtime.
- *
- * <p>Implemented by {@link SandboxBackedFilesystem} so {@link
- * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} can set the active sandbox for each
- * call and clear it afterward.
+ * Descriptor for a subagent identified by agent id, with its description,
+ * {@link SubagentFactory}, and optional {@link SubagentDeclaration} (for
+ * remote URL and headers).
  */
-public interface SandboxAware {
-
-    void setSandbox(Sandbox sandbox);
-
-    Sandbox getSandbox();
+public record SubagentEntry(
+        String name, String description, SubagentFactory factory, SubagentDeclaration declaration) {
+    public SubagentEntry(String name, String description, SubagentFactory factory) {
+        this(name, description, factory, null);
+    }
 }

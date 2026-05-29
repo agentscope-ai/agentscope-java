@@ -28,23 +28,15 @@ import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.interruption.InterruptContext;
-import io.agentscope.core.legacy.hook.PostActingEvent;
-import io.agentscope.core.legacy.hook.PostReasoningEvent;
-import io.agentscope.core.legacy.hook.PostSummaryEvent;
-import io.agentscope.core.legacy.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.SimpleSessionKey;
-import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -405,175 +397,10 @@ class GracefulShutdownTest {
         }
     }
 
-    // ==================== GracefulShutdownHook ====================
-
-    @Nested
-    @DisplayName("GracefulShutdownHook")
-    class HookTests {
-
-        private GracefulShutdownHook hook;
-
-        @BeforeEach
-        void setUp() {
-            hook = new GracefulShutdownHook(manager);
-        }
-
-        @Test
-        @DisplayName("Priority is 0 (highest)")
-        void priorityIsZero() {
-            assertEquals(0, hook.priority());
-        }
-
-        @Test
-        @DisplayName("PostReasoningEvent triggers interruptIfShuttingDown")
-        void postReasoningCheckpoint() {
-            TestableAgent agent = createTestAgent("agent-1");
-            manager.registerRequest(agent);
-            manager.performGracefulShutdown();
-
-            Msg reasoningMsg = buildMsg("test reasoning");
-            PostReasoningEvent event =
-                    new PostReasoningEvent(agent, "test-model", null, reasoningMsg);
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertTrue(agent.isInterruptFlagSet());
-        }
-
-        @Test
-        @DisplayName("PostReasoningEvent with null message does not interrupt")
-        void postReasoningNullMessage() {
-            TestableAgent agent = createTestAgent("agent-1");
-            manager.registerRequest(agent);
-            manager.performGracefulShutdown();
-
-            PostReasoningEvent event = new PostReasoningEvent(agent, "test-model", null, null);
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertFalse(agent.isInterruptFlagSet());
-        }
-
-        @Test
-        @DisplayName("PostActingEvent triggers interruptIfShuttingDown")
-        void postActingCheckpoint() {
-            TestableAgent agent = createTestAgent("agent-1");
-            manager.registerRequest(agent);
-            manager.performGracefulShutdown();
-
-            Toolkit toolkit = new Toolkit();
-            ToolUseBlock toolUse =
-                    ToolUseBlock.builder().id("call-1").name("test_tool").input(Map.of()).build();
-            ToolResultBlock toolResult = ToolResultBlock.text("result");
-            PostActingEvent event = new PostActingEvent(agent, toolkit, toolUse, toolResult);
-            event.setToolResultMsg(buildMsg("tool result msg"));
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertTrue(agent.isInterruptFlagSet());
-        }
-
-        @Test
-        @DisplayName("PostActingEvent with null toolResultMsg does not interrupt")
-        void postActingNullToolResultMsg() {
-            TestableAgent agent = createTestAgent("agent-1");
-            manager.registerRequest(agent);
-            manager.performGracefulShutdown();
-
-            Toolkit toolkit = new Toolkit();
-            ToolUseBlock toolUse =
-                    ToolUseBlock.builder().id("call-1").name("test_tool").input(Map.of()).build();
-            ToolResultBlock toolResult = ToolResultBlock.text("result");
-            PostActingEvent event = new PostActingEvent(agent, toolkit, toolUse, toolResult);
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertFalse(agent.isInterruptFlagSet());
-        }
-
-        @Test
-        @DisplayName("PostSummaryEvent triggers interruptIfShuttingDown")
-        void postSummaryCheckpoint() {
-            TestableAgent agent = createTestAgent("agent-1");
-            manager.registerRequest(agent);
-            manager.performGracefulShutdown();
-
-            Msg summaryMsg = buildMsg("summary");
-            PostSummaryEvent event = new PostSummaryEvent(agent, "test-model", null, summaryMsg);
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertTrue(agent.isInterruptFlagSet());
-        }
-
-        @Test
-        @DisplayName("PostSummaryEvent with null message does not interrupt")
-        void postSummaryNullMessage() {
-            TestableAgent agent = createTestAgent("agent-1");
-            manager.registerRequest(agent);
-            manager.performGracefulShutdown();
-
-            PostSummaryEvent event = new PostSummaryEvent(agent, "test-model", null, null);
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertFalse(agent.isInterruptFlagSet());
-        }
-
-        @Test
-        @DisplayName("Checkpoints do not interrupt when RUNNING")
-        void checkpointDoesNotInterruptWhenRunning() {
-            TestableAgent agent = createTestAgent("agent-1");
-            manager.registerRequest(agent);
-
-            Msg reasoningMsg = buildMsg("test");
-            PostReasoningEvent event =
-                    new PostReasoningEvent(agent, "test-model", null, reasoningMsg);
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertFalse(agent.isInterruptFlagSet());
-        }
-
-        @Test
-        @DisplayName("PreCallEvent deduplicates input when shutdown-interrupted")
-        void preCallDeduplication() {
-            TestableAgent agent = createTestAgent("agent-1");
-            agent.getAgentState().setShutdownInterrupted(true);
-
-            List<Msg> inputMsgs = List.of(buildMsg("user input"));
-            PreCallEvent event = new PreCallEvent(agent, inputMsgs);
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertTrue(event.getInputMessages().isEmpty());
-            assertFalse(agent.getAgentState().isShutdownInterrupted());
-        }
-
-        @Test
-        @DisplayName("PreCallEvent does not deduplicate when no interrupted flag")
-        void preCallNoDeduplication() {
-            TestableAgent agent = createTestAgent("agent-1");
-
-            List<Msg> inputMsgs = List.of(buildMsg("user input"));
-            PreCallEvent event = new PreCallEvent(agent, inputMsgs);
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-
-            assertEquals(1, event.getInputMessages().size());
-        }
-
-        @Test
-        @DisplayName("Unrelated events pass through unchanged")
-        void unrelatedEventsPassThrough() {
-            TestableAgent agent = createTestAgent("agent-1");
-            io.agentscope.core.legacy.hook.ErrorEvent event =
-                    new io.agentscope.core.legacy.hook.ErrorEvent(
-                            agent, new RuntimeException("test"));
-
-            StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
-        }
-    }
+    // The legacy `GracefulShutdownHook` has been replaced by `GracefulShutdownMiddleware`. Its
+    // checkpoint and deduplication semantics are now exercised through end-to-end agent calls
+    // (see e.g. tests under HarnessAgent E2E suites) rather than unit-tested at the
+    // Hook.onEvent dispatch level.
 
     // ==================== AgentShuttingDownException ====================
 

@@ -36,10 +36,10 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
-import io.agentscope.harness.agent.hook.CompactionHook;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -181,7 +181,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return inner.workspaceFor(userId, sessionId);
     }
 
-    public CompactionHook getCompactionHook() {
+    public CompactionMiddleware getCompactionHook() {
         return inner.getCompactionHook();
     }
 

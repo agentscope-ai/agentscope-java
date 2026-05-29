@@ -24,7 +24,7 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.HashMap;
@@ -69,7 +69,7 @@ public final class DefaultAgentManager {
 
     /**
      * Replaces the current set of entries with a new snapshot. Called per-call from
-     * {@link io.agentscope.harness.agent.hook.SubagentsHook} to reflect per-user subagent
+     * {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to reflect per-user subagent
      * configurations.
      */
     public void refreshEntries(List<SubagentEntry> entries) {
@@ -87,7 +87,7 @@ public final class DefaultAgentManager {
 
     /**
      * Atomic alias of {@link #refreshEntries(List)} used by
-     * {@link io.agentscope.harness.agent.hook.DynamicSubagentsHook} to swap the registered
+     * {@link io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware} to swap the registered
      * subagent set on every reasoning step. The two volatile reference assignments below ensure
      * any concurrent reader observes either the previous snapshot or the new one fully — never a
      * partial state.

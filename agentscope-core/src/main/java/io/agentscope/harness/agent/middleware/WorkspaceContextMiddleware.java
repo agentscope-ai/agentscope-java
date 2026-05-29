@@ -13,13 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.hook;
+package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PreCallEvent;
-import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -30,17 +29,13 @@ import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
- * Injects workspace context (session info, AGENTS.md, MEMORY.md, knowledge) into the unified
- * system message on {@link PreCallEvent}.
+ * Appends workspace context (session info, AGENTS.md, MEMORY.md, knowledge) to the
+ * system prompt via {@link #onSystemPrompt(Agent, String)}.
  *
- * <p>Workspace content is added via {@link PreCallEvent#appendSystemContent}.
- * Because this hook fires only on {@link PreCallEvent} (once per {@code call()}), there
- * is no risk of accumulation across reasoning iterations.
- *
- * <p>Runs at priority 900 — after all other pre-call hooks so that workspace context is
- * appended after skill and subagent guidance.
+ * <p>Runs once per {@code call()} (just like the previous {@code WorkspaceContextHook}
+ * fired on {@code PreCallEvent}).
  */
-public class WorkspaceContextHook implements Hook, RuntimeContextAware {
+public class WorkspaceContextMiddleware implements MiddlewareBase {
 
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
@@ -93,17 +88,16 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
     private final String environmentMemory;
     private final int maxContextTokens;
     private List<String> additionalContextFiles = List.of();
-    private RuntimeContext runtimeContext;
 
-    public WorkspaceContextHook(WorkspaceManager workspaceManager) {
+    public WorkspaceContextMiddleware(WorkspaceManager workspaceManager) {
         this(workspaceManager, "HarnessAgent", null, DEFAULT_MAX_CONTEXT_TOKENS);
     }
 
-    public WorkspaceContextHook(WorkspaceManager workspaceManager, int maxContextTokens) {
+    public WorkspaceContextMiddleware(WorkspaceManager workspaceManager, int maxContextTokens) {
         this(workspaceManager, "HarnessAgent", null, maxContextTokens);
     }
 
-    public WorkspaceContextHook(
+    public WorkspaceContextMiddleware(
             WorkspaceManager workspaceManager,
             String agentName,
             String environmentMemory,
@@ -119,30 +113,26 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
     }
 
     @Override
-    public void setRuntimeContext(RuntimeContext runtimeContext) {
-        this.runtimeContext = runtimeContext;
-    }
-
-    @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PreCallEvent preCallEvent) {
-            injectWorkspaceContext(preCallEvent);
+    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        RuntimeContext rc =
+                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
+                        ? ab.getRuntimeContext()
+                        : RuntimeContext.empty();
+        String section = buildWorkspaceSection(rc);
+        if (section.isEmpty()) {
+            return Mono.just(currentPrompt);
         }
-        return Mono.just(event);
+        String base = currentPrompt != null ? currentPrompt : "";
+        String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
+        return Mono.just(base + separator + section);
     }
 
-    @Override
-    public int priority() {
-        return 900;
-    }
-
-    private void injectWorkspaceContext(PreCallEvent event) {
-        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+    private String buildWorkspaceSection(RuntimeContext rc) {
         String agentsContent = workspaceManager.readAgentsMd(rc).strip();
         String memoryContent = workspaceManager.readMemoryMd(rc).strip();
         String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
         Path workspace = workspaceManager.getWorkspace();
-        String sessionContext = buildSessionContextSection(workspace);
+        String sessionContext = buildSessionContextSection(workspace, rc);
 
         String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
@@ -161,13 +151,11 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
         String guidance = String.format(WORKSPACE_GUIDANCE_TEMPLATE, workspace.toAbsolutePath());
         String loadedContext =
                 buildLoadedContextSection(
-                        agentsContent, memoryContent, knowledgeBlock, additionalBlock);
-        String section = buildWorkspaceSection(sessionContext, guidance, loadedContext);
-
-        event.appendSystemContent(section);
+                        agentsContent, memoryContent, knowledgeBlock, additionalBlock, rc);
+        return assembleSection(sessionContext, guidance, loadedContext);
     }
 
-    private String buildWorkspaceSection(
+    private static String assembleSection(
             String sessionContext, String guidance, String loadedContextSection) {
         StringBuilder sb = new StringBuilder();
         if (!sessionContext.isBlank()) {
@@ -177,11 +165,11 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
         return sb.toString();
     }
 
-    private String buildSessionContextSection(Path workspace) {
+    private String buildSessionContextSection(Path workspace, RuntimeContext rc) {
         String today = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE MMM d, yyyy"));
         String platform = System.getProperty("os.name") + " " + System.getProperty("os.version");
         String tempDir = System.getProperty("java.io.tmpdir");
-        String dynamicPart = buildSessionDynamicPart();
+        String dynamicPart = buildSessionDynamicPart(rc);
 
         return String.format(
                         SESSION_CONTEXT_SECTION_TEMPLATE,
@@ -194,10 +182,10 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
                 .strip();
     }
 
-    private String buildSessionDynamicPart() {
+    private String buildSessionDynamicPart(RuntimeContext rc) {
         List<String> parts = new ArrayList<>();
-        if (runtimeContext != null && runtimeContext.getSessionId() != null) {
-            parts.add("Session ID: " + runtimeContext.getSessionId());
+        if (rc != null && rc.getSessionId() != null) {
+            parts.add("Session ID: " + rc.getSessionId());
         }
         if (environmentMemory != null && !environmentMemory.isBlank()) {
             parts.add(environmentMemory);
@@ -205,14 +193,12 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
         return parts.isEmpty() ? "" : String.join("\n", parts);
     }
 
-    /**
-     * Builds XML-style loaded context blocks for AGENTS/MEMORY/KNOWLEDGE and extra files.
-     */
     private String buildLoadedContextSection(
             String agentsContent,
             String memoryContent,
             String knowledgeBlock,
-            String additionalBlock) {
+            String additionalBlock,
+            RuntimeContext rc) {
         StringBuilder sb = new StringBuilder();
         sb.append("<loaded_context>\n");
         sb.append(buildXmlContext("agents_context", agentsContent));
@@ -236,9 +222,6 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
         return text.lines().map(line -> "  " + line).collect(Collectors.joining("\n"));
     }
 
-    /**
-     * Renders additional user-configured files as XML blocks under {@code <loaded_context>}.
-     */
     private String buildAdditionalContextBlock(RuntimeContext rc) {
         if (additionalContextFiles.isEmpty()) {
             return "";
@@ -256,9 +239,6 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAware {
         return sb.toString();
     }
 
-    /**
-     * Estimates token count using the chars/4 heuristic (consistent with pi-mono).
-     */
     private static int estimateTokens(String text) {
         return text == null || text.isEmpty() ? 0 : text.length() / 4;
     }

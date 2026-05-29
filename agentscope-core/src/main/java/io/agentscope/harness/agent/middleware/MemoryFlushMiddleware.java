@@ -13,102 +13,88 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.hook;
+package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PostCallEvent;
-import io.agentscope.core.legacy.hook.RuntimeContextAware;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.List;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 
 /**
- * Hook that triggers memory flush and message offload at the end of each agent call.
+ * Middleware that triggers memory flush and message offload at the end of each agent call.
  *
- * <p>Fires on {@link PostCallEvent} to ensure long-term memories are extracted and
- * persisted after every call, even when conversation compaction was not triggered during
- * that call. When CompactionHook is active, it handles flush/offload for the messages it summarizes;
- * this hook covers the remaining tail of messages that were kept verbatim.
- *
- * <p>Priority is 5 — runs early so state is persisted before the session-persistence hook
- * (priority 900) saves the overall agent state.
+ * <p>Runs in {@link #onAgent}'s {@code doOnSuccess}-equivalent (via the {@code Flux}
+ * completion signal) so long-term memories are extracted and persisted after every call,
+ * even when conversation compaction was not triggered during that call. When
+ * {@link CompactionMiddleware} is active, it handles flush/offload for the messages it
+ * summarizes; this middleware covers the remaining tail of messages that were kept
+ * verbatim.
  */
-public class MemoryFlushHook implements Hook, RuntimeContextAware {
+public class MemoryFlushMiddleware implements MiddlewareBase {
 
-    private static final Logger log = LoggerFactory.getLogger(MemoryFlushHook.class);
+    private static final Logger log = LoggerFactory.getLogger(MemoryFlushMiddleware.class);
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
-    private RuntimeContext runtimeContext;
 
-    public MemoryFlushHook(WorkspaceManager workspaceManager, Model model) {
+    public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this.workspaceManager = workspaceManager;
         this.model = model;
     }
 
     @Override
-    public void setRuntimeContext(RuntimeContext runtimeContext) {
-        this.runtimeContext = runtimeContext;
+    public Flux<AgentEvent> onAgent(
+            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+        final RuntimeContext rc =
+                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
+                        ? ab.getRuntimeContext()
+                        : RuntimeContext.empty();
+        return next.apply(input).doOnComplete(() -> doFlush(agent, rc).subscribe());
     }
 
-    @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PostCallEvent) {
-            return doFlush(event.getAgent()).thenReturn(event);
-        }
-        return Mono.just(event);
-    }
-
-    @Override
-    public int priority() {
-        return 5;
-    }
-
-    private Mono<Void> doFlush(Agent agent) {
+    private reactor.core.publisher.Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
         if (!(agent instanceof ReActAgent reActAgent)) {
-            return Mono.empty();
+            return reactor.core.publisher.Mono.empty();
         }
-
         AgentState state = reActAgent.getAgentState();
         if (state == null) {
-            return Mono.empty();
+            return reactor.core.publisher.Mono.empty();
         }
         List<Msg> messages = state.getContext();
         if (messages.isEmpty()) {
-            return Mono.empty();
+            return reactor.core.publisher.Mono.empty();
         }
 
         MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, model);
-        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
 
-        Mono<Void> flushMono =
+        reactor.core.publisher.Mono<Void> flushMono =
                 flushManager
                         .flushMemories(rc, messages)
                         .doOnSuccess(v -> log.debug("Memory flush completed"))
                         .onErrorResume(
                                 e -> {
                                     log.warn("Memory flush failed: {}", e.getMessage());
-                                    return Mono.empty();
+                                    return reactor.core.publisher.Mono.empty();
                                 });
 
         String agentId = agent.getName();
-        String sessionId =
-                runtimeContext != null && runtimeContext.getSessionId() != null
-                        ? runtimeContext.getSessionId()
-                        : "default";
+        String sessionId = rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
-        Mono<Void> offloadMono =
-                Mono.fromRunnable(
+        reactor.core.publisher.Mono<Void> offloadMono =
+                reactor.core.publisher.Mono.fromRunnable(
                                 () ->
                                         flushManager.offloadMessages(
                                                 rc, messages, agentId, sessionId))
@@ -117,7 +103,7 @@ public class MemoryFlushHook implements Hook, RuntimeContextAware {
                         .onErrorResume(
                                 e -> {
                                     log.warn("Message offload failed: {}", e.getMessage());
-                                    return Mono.empty();
+                                    return reactor.core.publisher.Mono.empty();
                                 });
 
         return flushMono.then(offloadMono);
