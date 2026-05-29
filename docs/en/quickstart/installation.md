@@ -59,6 +59,7 @@ When using other models or features, add the corresponding dependencies:
 | **HayStack RAG**          | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **Elasticsearch RAG** | [Elasticsearch Java Client](https://www.elastic.co/docs/reference/elasticsearch/clients/java)   |`co.elastic.clients:elasticsearch-java` |
 | **MySQL Session**         | [MySQL Connector](https://central.sonatype.com/artifact/com.mysql/mysql-connector-j)     | `com.mysql:mysql-connector-j`    |
+| **PostgreSQL Session**    | [PostgreSQL Driver](https://central.sonatype.com/artifact/org.postgresql/postgresql)     | `org.postgresql:postgresql`     |
 | **Redis Session**         | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis)                       | `redis.clients:jedis`            |
 | **PDF Processing**        | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox)          | `org.apache.pdfbox:pdfbox`       |
 | **Word Processing**       | [Apache POI](https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml)             | `org.apache.poi:poi-ooxml`       |
@@ -170,6 +171,7 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 | Module | Feature | Maven Coordinates |
 |--------|---------|-------------------|
 | [agentscope-extensions-session-mysql](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-session-mysql) | MySQL Session | `io.agentscope:agentscope-extensions-session-mysql` |
+| [agentscope-extensions-session-postgresql](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-session-postgresql) | PostgreSQL Session | `io.agentscope:agentscope-extensions-session-postgresql` |
 | [agentscope-extensions-session-redis](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-session-redis) | Redis Session | `io.agentscope:agentscope-extensions-session-redis` |
 
 #### Multi-Agent Collaboration
