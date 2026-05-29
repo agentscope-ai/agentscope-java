@@ -713,6 +713,68 @@ class HookStopAgentTest {
             Msg result = agent.call(createUserMsg("new")).block(TEST_TIMEOUT);
             assertNotNull(result, "Agent should auto-recover and return a result");
         }
+
+        @Test
+        @DisplayName("Recovery hook auto-patches stale tool result IDs before continuing")
+        void testRecoveryHookAutoPatchesStaleToolResultIds() {
+            Msg toolUseMsg = createToolUseMsg("tool1", "test_tool", Map.of());
+            Msg textResponse = createAssistantTextMsg("Recovered after stale tool result");
+            when(mockModel.stream(anyList(), anyList(), any()))
+                    .thenReturn(createFluxFromMsg(toolUseMsg))
+                    .thenReturn(createFluxFromMsg(textResponse));
+            Hook stopHook = createPostReasoningStopHook();
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent")
+                            .model(mockModel)
+                            .toolkit(toolkit)
+                            .memory(memory)
+                            .checkRunning(false)
+                            .hook(stopHook)
+                            .enablePendingToolRecovery(true)
+                            .build();
+
+            Msg first = agent.call(createUserMsg("test")).block(TEST_TIMEOUT);
+            assertNotNull(first);
+            assertTrue(first.hasContentBlocks(ToolUseBlock.class));
+
+            Msg staleToolResult =
+                    Msg.builder()
+                            .name("test-agent")
+                            .role(MsgRole.TOOL)
+                            .content(
+                                    ToolResultBlock.of(
+                                            "stale-tool-id",
+                                            "test_tool",
+                                            TextBlock.builder().text("manual result").build()))
+                            .build();
+
+            Msg result = agent.call(staleToolResult).block(TEST_TIMEOUT);
+            assertNotNull(result);
+            assertTrue(result.hasContentBlocks(TextBlock.class));
+            assertEquals(
+                    "Recovered after stale tool result",
+                    result.getContentBlocks(TextBlock.class).get(0).getText());
+
+            List<Msg> memoryMsgs = memory.getMessages();
+
+            boolean hasAutoPatchedToolResult =
+                    memoryMsgs.stream()
+                            .filter(msg -> msg.getRole() == MsgRole.TOOL)
+                            .flatMap(msg -> msg.getContentBlocks(ToolResultBlock.class).stream())
+                            .anyMatch(
+                                    tr ->
+                                            "tool1".equals(tr.getId())
+                                                    && "test_tool".equals(tr.getName())
+                                                    && tr.getOutput().stream()
+                                                    .filter(TextBlock.class::isInstance)
+                                                    .map(TextBlock.class::cast)
+                                                    .map(TextBlock::getText)
+                                                    .anyMatch(text -> text.contains("[ERROR]")));
+            assertTrue(
+                    hasAutoPatchedToolResult,
+                    "Recovery hook should auto-patch the real pending tool call result");
+        }
     }
 
     // ==================== Helper Methods ====================
