@@ -51,6 +51,7 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -669,6 +670,7 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
 
         // Harness-specific params
         private Path workspace;
+        private Path projectWorkspace;
         private String environmentMemory;
         private AbstractFilesystem abstractFilesystem;
         private Session session;
@@ -1086,6 +1088,24 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
          */
         public Builder workspace(Path workspace) {
             this.workspace = workspace;
+            return this;
+        }
+
+        /**
+         * Sets the project workspace directory exposed to the built-in file tools.
+         *
+         * <p>{@link #workspace(Path)} remains the harness workspace used for {@code AGENTS.md},
+         * memory, sessions, skills, and other agent state. When this option is set, built-in file
+         * tools such as {@code read_file}, {@code write_file}, {@code edit_file},
+         * {@code list_files}, {@code grep_files}, and {@code glob_files} operate against this
+         * project directory instead, without applying the per-user namespace used by the harness
+         * workspace backend.
+         *
+         * <p>This is useful for applications that keep agent state in one stable directory but need
+         * the agent to work on arbitrary project folders.
+         */
+        public Builder projectWorkspace(Path projectWorkspace) {
+            this.projectWorkspace = projectWorkspace;
             return this;
         }
 
@@ -1530,6 +1550,8 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
             AbstractFilesystem filesystem =
                     resolveFilesystem(
                             resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
+            AbstractFilesystem toolFilesystem =
+                    resolveProjectFilesystem(projectWorkspace, filesystem);
 
             // ---- Sandbox integration ----
             SandboxLifecycleHook sandboxLifecycleHook = null;
@@ -1542,6 +1564,7 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 }
                 capturedSandboxFs = new SandboxBackedFilesystem();
                 filesystem = capturedSandboxFs;
+                toolFilesystem = resolveProjectFilesystem(projectWorkspace, filesystem);
 
                 defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
                 // Mode 2 (SandboxFilesystemSpec) always validates distributed prerequisites unless
@@ -1662,7 +1685,7 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
             }
 
             if (toolResultEvictionConfig != null) {
-                allHooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
+                allHooks.add(new ToolResultEvictionHook(toolFilesystem, toolResultEvictionConfig));
             }
 
             if (!disableSessionPersistence) {
@@ -1696,7 +1719,7 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
             }
 
             if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem));
+                agentToolkit.registerTool(new FilesystemTool(toolFilesystem));
             }
 
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
@@ -1909,6 +1932,14 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
             return new LocalFilesystemWithShell(workspace, nsFactory);
         }
 
+        private AbstractFilesystem resolveProjectFilesystem(
+                Path projectWorkspace, AbstractFilesystem workspaceFilesystem) {
+            if (projectWorkspace == null) {
+                return workspaceFilesystem;
+            }
+            return new LocalFilesystem(projectWorkspace, true, 10);
+        }
+
         private void validateDistributedSandboxConfig(
                 Session effectiveSession, SandboxContext sandboxContext) {
             if (sandboxFilesystemSpec.getSandboxStateStore() == null
@@ -2092,6 +2123,7 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                     List.copyOf(this.skillRepositories);
             final Path capturedProjectGlobalSkillsDir = this.projectGlobalSkillsDir;
             final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
+            final Path capturedProjectWorkspace = this.projectWorkspace;
             final boolean capturedDisableFilesystemTools = this.disableFilesystemTools;
             final boolean capturedDisableShellTool = this.disableShellTool;
             final boolean capturedDisableMemoryTools = this.disableMemoryTools;
@@ -2135,6 +2167,9 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 if (capturedProjectGlobalSkillsDir != null) {
                     sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
                 }
+                if (capturedProjectWorkspace != null) {
+                    sub.projectWorkspace(capturedProjectWorkspace);
+                }
                 if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
                 if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
                 if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
@@ -2167,6 +2202,7 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
             final Function<String, Model> capturedResolver = this.modelResolver;
             final AbstractFilesystem capturedSharedBackend =
                     sandboxFs != null ? sandboxFs : this.abstractFilesystem;
+            final Path capturedProjectWorkspace = this.projectWorkspace;
             final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
             final boolean capturedDisableFilesystemTools = this.disableFilesystemTools;
             final boolean capturedDisableShellTool = this.disableShellTool;
@@ -2210,6 +2246,10 @@ public class HarnessAgent implements Agent, StateModule, AutoCloseable {
                 if (decl.getWorkspaceMode() == WorkspaceMode.SHARED
                         && capturedSharedBackend != null) {
                     sub.abstractFilesystem(capturedSharedBackend);
+                }
+                if (decl.getWorkspaceMode() == WorkspaceMode.SHARED
+                        && capturedProjectWorkspace != null) {
+                    sub.projectWorkspace(capturedProjectWorkspace);
                 }
 
                 // Propagate disable flags so the declared subagent respects the same capability
