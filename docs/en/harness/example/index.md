@@ -4,7 +4,7 @@ This section tracks runnable Harness examples and scenario walkthroughs.
 
 Repository examples:
 
-- `agentscope-examples/harness-example`
+- `agentscope-examples/agents/harness-examples/harness-quickstart`
 
 Recommended reading order:
 

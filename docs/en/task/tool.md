@@ -401,6 +401,6 @@ The call flow is the same as Tool Suspend: LLM calls → returns `TOOL_SUSPENDED
 
 ## Complete Examples
 
-- **Tool Call Example**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
-- **Tool Group Example**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
-- **MultiModal Tool Example**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)
+- **Tool Call Example**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
+- **Tool Group Example**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
+- **MultiModal Tool Example**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)

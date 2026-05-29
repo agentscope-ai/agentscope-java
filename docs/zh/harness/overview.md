@@ -87,7 +87,7 @@ public class QuickstartExample {
 }
 ```
 
-完整可运行版本：[`agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](../../../agentscope-examples/harness-example/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
+完整可运行版本：[`agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](../../../agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
 
 运行：
 
@@ -95,11 +95,11 @@ public class QuickstartExample {
 export DASHSCOPE_API_KEY=your_key_here
 
 # 首次运行需要把依赖模块 install 到本地仓库（跳过 javadoc 与 spotless）
-mvn -pl agentscope-examples/harness-example -am install \
+mvn -pl agentscope-examples/agents/harness-examples/harness-quickstart -am install \
     -DskipTests -Dspotless.check.skip=true -Dmaven.javadoc.skip=true -q
 
 # 执行 main
-mvn -pl agentscope-examples/harness-example exec:java \
+mvn -pl agentscope-examples/agents/harness-examples/harness-quickstart exec:java \
     -Dexec.mainClass=io.agentscope.harness.example.QuickstartExample \
     -Dspotless.check.skip=true -q
 ```
@@ -161,4 +161,5 @@ mvn -pl agentscope-examples/harness-example exec:java \
 - [子 Agent（Subagent）](./subagent.md) — 子 agent 规格与编排
 - [子 Agent 流式输出](./streaming.md) — `stream()` 模式下子 agent 事件转发、`EventSource` 字段与多级嵌套（通用流式基础见 [task/streaming](../task/streaming.md)）
 - [工具（Tool）](./tool.md) — 内置工具参考
+- [技能（Skill）](./skill.md) — 一键接入 skill 市场、工作区共享与按用户隔离的四层合成
 - [会话（Session）](./session.md) — 会话持久化与状态恢复

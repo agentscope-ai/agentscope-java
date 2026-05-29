@@ -45,6 +45,38 @@ public interface BaseStore {
     void put(List<String> namespace, String key, Map<String, Object> value);
 
     /**
+     * Conditional update: stores the item only when the current stored version matches
+     * {@code expectedVersion}.
+     *
+     * <p>This is a compare-and-swap (CAS) operation that prevents lost updates when multiple
+     * writers concurrently modify the same key. Callers should:
+     * <ol>
+     *   <li>Read the item with {@link #get} and remember {@link StoreItem#version()}.
+     *   <li>Compute the new value locally.
+     *   <li>Call {@code putIfVersion} passing the remembered version as {@code expectedVersion}.
+     *   <li>If the call returns {@code false}, the item was modified by another writer; retry
+     *       from step 1.
+     * </ol>
+     *
+     * <p>A special value of {@code 0} for {@code expectedVersion} means "write only if the key
+     * does not yet exist" (i.e. create-if-absent).
+     *
+     * <p>The default implementation always returns {@code false} so that existing backend
+     * implementations compile without changes. Backends that support distributed deployments
+     * should override this method with a proper server-side atomic check.
+     *
+     * @param namespace hierarchical namespace path
+     * @param key the item key within the namespace
+     * @param value the new data to store
+     * @param expectedVersion the version the caller observed; must match the current stored version
+     * @return {@code true} if the item was written, {@code false} if the version did not match
+     */
+    default boolean putIfVersion(
+            List<String> namespace, String key, Map<String, Object> value, long expectedVersion) {
+        return false;
+    }
+
+    /**
      * Search for items within a namespace with pagination.
      *
      * @param namespace hierarchical namespace path

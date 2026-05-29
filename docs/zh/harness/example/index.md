@@ -1,3 +1,13 @@
 # 示例
 
-本小节收录可运行的示例与场景化 walkthrough。仓库中的示例工程见根目录 `agentscope-examples/`；此处文档将随需要扩展。
+本小节收录可运行的 Harness 示例与场景化 walkthrough。
+
+仓库示例：
+
+- `agentscope-examples/agents/harness-examples/harness-quickstart`
+
+推荐阅读顺序：
+
+1. [Harness 概览](../overview.md)
+2. [快速开始](../quickstart/index.md)
+3. [沙箱](../sandbox/index.md)

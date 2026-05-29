@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Spring profile: jdbc
+#
+# Activate with `--spring.profiles.active=jdbc` (or `SPRING_PROFILES_ACTIVE=jdbc`)
+# to flip the default DataSource from embedded H2 over to an external RDBMS
+# (MySQL by default, PostgreSQL via env vars).
+#
+# Operators can also set the BUILDER_DB_* env vars directly on the base
+# (no-profile) configuration without activating this profile — the
+# distinction is that this profile changes the *defaults* to MySQL-shaped
+# values so a bare `--spring.profiles.active=jdbc` is enough to point at a
+# local MySQL.
+#
+# The MySQL ( com.mysql:mysql-connector-j ) and PostgreSQL ( org.postgresql:postgresql )
+# JDBC drivers are bundled at runtime scope; Hibernate auto-detects the
+# dialect from the JDBC URL.
+# ---------------------------------------------------------------------------
+spring:
+  datasource:
+    url: ${BUILDER_DB_URL:jdbc:mysql://localhost:3306/agentscope_builder?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC}
+    username: ${BUILDER_DB_USER:agentscope}
+    password: ${BUILDER_DB_PASSWORD:agentscope}
+    driver-class-name: ${BUILDER_DB_DRIVER:com.mysql.cj.jdbc.Driver}
+
+  jpa:
+    hibernate:
+      # 'update' is convenient for dev; production deployments should pin the
+      # schema via Flyway / Liquibase and switch this to 'validate'.
+      ddl-auto: ${BUILDER_JPA_DDL_AUTO:update}
+
+  # Disable the H2-only `data-h2.sql` seed when running against MySQL /
+  # PostgreSQL. The demo accounts (bob, alice) are a local-dev convenience and
+  # have no place in a production database.
+  sql:
+    init:
+      mode: never
+
+# ---------------------------------------------------------------------------
+# Example PostgreSQL overrides (env vars work too):
+#
+#   BUILDER_DB_URL=jdbc:postgresql://localhost:5432/agentscope_builder
+#   BUILDER_DB_DRIVER=org.postgresql.Driver
+#   BUILDER_DB_USER=agentscope
+#   BUILDER_DB_PASSWORD=agentscope
+# ---------------------------------------------------------------------------

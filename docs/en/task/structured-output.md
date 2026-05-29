@@ -120,5 +120,5 @@ try {
 
 ## More Resources
 
-- **Complete Example**: [StructuredOutputExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
+- **Complete Example**: [StructuredOutputExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
 - **Agent Configuration**: [agent-config.md](./agent-config.md)
