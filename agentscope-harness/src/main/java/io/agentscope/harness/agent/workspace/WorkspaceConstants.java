@@ -24,6 +24,7 @@ public final class WorkspaceConstants {
 
     public static final String AGENTS_MD = "AGENTS.md";
     public static final String MEMORY_MD = "MEMORY.md";
+    public static final String TOOLS_JSON = "tools.json";
 
     public static final String MEMORY_DIR = "memory";
     public static final String SKILLS_DIR = "skills";
