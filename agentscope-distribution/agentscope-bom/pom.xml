@@ -355,6 +355,13 @@
                 <artifactId>agentscope-extensions-skill-mysql-repository</artifactId>
                 <version>${project.version}</version>
             </dependency>
+
+            <!-- AgentScope Skill PostgreSQL Storage -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-skill-postgresql-repository</artifactId>
+                <version>${project.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
