@@ -127,6 +127,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions Responses Web -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-responses-web</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Agent Protocol Tasks -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -346,6 +353,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-chat-completions-web-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Responses Web Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-responses-web-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

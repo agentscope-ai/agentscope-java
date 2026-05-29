@@ -39,6 +39,7 @@
         <module>documentation/werewolf-hitl</module>
         <module>documentation/model-request-compression</module>
         <module>documentation/chat-completions-web</module>
+        <module>documentation/responses-web</module>
         <module>documentation/hitl-chat</module>
         <module>documentation/a2a</module>
         <module>documentation/chat-tts</module>

@@ -230,6 +230,7 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 | agentscope-a2a-spring-boot-starter | A2A 集成 | `io.agentscope:agentscope-a2a-spring-boot-starter` |
 | agentscope-agui-spring-boot-starter | AG-UI 集成 | `io.agentscope:agentscope-agui-spring-boot-starter` |
 | agentscope-chat-completions-web-starter | Chat Completions Web 集成 | `io.agentscope:agentscope-chat-completions-web-starter` |
+| agentscope-responses-web-starter | Responses Web 集成 | `io.agentscope:agentscope-responses-web-starter` |
 | agentscope-nacos-spring-boot-starter | Nacos 集成 | `io.agentscope:agentscope-nacos-spring-boot-starter` |
 
 ### Quarkus
