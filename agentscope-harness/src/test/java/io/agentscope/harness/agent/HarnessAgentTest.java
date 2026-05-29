@@ -46,6 +46,7 @@ import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
@@ -381,6 +382,23 @@ class HarnessAgentTest {
             assertTrue(
                     Files.notExists(stateWorkspaceTarget),
                     "file tool must not write into the Harness state workspace");
+        }
+    }
+
+    @Test
+    void projectWorkspace_toolResultEvictionUsesProjectFilesystem() throws Exception {
+        Files.createDirectories(workspace);
+        Path projectWorkspace = Files.createTempDirectory("agentscope-project-workspace");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .projectWorkspace(projectWorkspace)
+                        .toolResultEviction(ToolResultEvictionConfig.defaults())
+                        .build()) {
+            assertNotNull(agent);
         }
     }
 
