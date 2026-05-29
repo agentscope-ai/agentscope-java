@@ -194,30 +194,43 @@ class ToolCallParamTest {
         }
 
         @Test
-        @DisplayName("Should deep copy input map")
-        void testDeepCopyInputMap() {
+        @DisplayName("Should shallow copy input map (entries independent, nested values shared)")
+        @SuppressWarnings("unchecked")
+        void testShallowCopyInputMap() {
             ToolUseBlock toolUseBlock =
                     ToolUseBlock.builder().id("id").name("tool").input(Map.of()).build();
 
+            // Use a nested mutable value to verify shallow copy semantics
+            List<String> nestedList = new ArrayList<>(List.of("a", "b"));
             Map<String, Object> input = new HashMap<>();
-            input.put("key", "value");
+            input.put("list", nestedList);
 
             ToolCallParam original =
                     ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
-            // Create copy
+            // Create copy (no input override)
             ToolCallParam copy = ToolCallParam.builder(original).build();
 
-            // Modify the copy's input (by building a new param with different input)
+            // Input maps should be equal
+            assertEquals(original.getInput(), copy.getInput());
+
+            // Nested mutable value should be the SAME reference (shallow copy)
+            assertSame(
+                    original.getInput().get("list"),
+                    copy.getInput().get("list"),
+                    "Nested values should be shared (shallow copy)");
+
+            // But top-level entries should be independent:
+            // adding a new top-level key to copy's input should NOT affect original
+            // (because ToolCallParam constructor does new HashMap<>(builder.input))
             Map<String, Object> modifiedInput = new HashMap<>(copy.getInput());
-            modifiedInput.put("key", "modified");
+            modifiedInput.put("newKey", "newValue");
             ToolCallParam modified = ToolCallParam.builder(original).input(modifiedInput).build();
 
-            // Original should be unchanged
-            assertEquals("value", original.getInput().get("key"));
-
-            // Modified should have new value
-            assertEquals("modified", modified.getInput().get("key"));
+            assertNull(
+                    original.getInput().get("newKey"),
+                    "Original should not have the new key added to the modified copy");
+            assertEquals("newValue", modified.getInput().get("newKey"));
         }
 
         @Test
