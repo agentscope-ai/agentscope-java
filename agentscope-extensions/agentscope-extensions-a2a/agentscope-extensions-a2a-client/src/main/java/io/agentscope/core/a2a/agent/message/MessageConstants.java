@@ -48,5 +48,7 @@ public class MessageConstants {
 
     public static final String TOOL_CALL_ID_METADATA_KEY = "_agentscope_tool_call_id";
 
+    public static final String TOOL_USE_CONTENT_DATA_KEY = "_agentscope_tool_content";
+
     public static final String TOOL_RESULT_OUTPUT_METADATA_KEY = "_agentscope_tool_output";
 }

@@ -86,6 +86,30 @@ class DataPartParserTest {
     }
 
     @Test
+    @DisplayName("Should parse streaming tool use content")
+    void testParseDataPartWithStreamingToolUseContent() {
+        Map<String, Object> metadata =
+                Map.of(
+                        "_agentscope_block_type", "tool_use",
+                        "_agentscope_tool_name", "__fragment__",
+                        "_agentscope_tool_call_id", "call-123");
+        DataPart part =
+                new DataPart(
+                        Map.of(MessageConstants.TOOL_USE_CONTENT_DATA_KEY, "{\"productName\": \""),
+                        metadata);
+
+        ContentBlock result = parser.parse(part);
+
+        assertNotNull(result);
+        assertEquals(ToolUseBlock.class, result.getClass());
+        ToolUseBlock toolUseBlock = (ToolUseBlock) result;
+        assertEquals("__fragment__", toolUseBlock.getName());
+        assertEquals("call-123", toolUseBlock.getId());
+        assertEquals("{\"productName\": \"", toolUseBlock.getContent());
+        assertTrue(toolUseBlock.getInput().isEmpty());
+    }
+
+    @Test
     @DisplayName("Should parse DataPart with tool_result metadata to ToolResultBlock")
     void testParseDataPartWithToolResultMetadata() {
         Map<String, Object> metadata =
