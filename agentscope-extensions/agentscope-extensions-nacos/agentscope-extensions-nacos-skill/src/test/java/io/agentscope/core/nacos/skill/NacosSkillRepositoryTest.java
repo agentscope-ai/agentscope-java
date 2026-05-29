@@ -18,6 +18,7 @@ package io.agentscope.core.nacos.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -416,6 +417,123 @@ class NacosSkillRepositoryTest {
     @DisplayName("Should return false for delete")
     void testDelete() {
         assertFalse(repository.delete("any-skill"));
+    }
+
+    // -------- Bug #1438: multi-line block-sequence array in frontmatter --------
+
+    @Test
+    @DisplayName("Should load skill when trigger_intents uses multi-line block-sequence syntax")
+    void testGetSkillWithMultiLineArrayFrontmatter() throws NacosException, IOException {
+        String skillMd =
+                "---\n"
+                        + "name: order-skill\n"
+                        + "description: Order management skill\n"
+                        + "trigger_intents:\n"
+                        + "  - \"创建个单子\"\n"
+                        + "  - \"创建单子\"\n"
+                        + "---\n"
+                        + "# Order Skill\n";
+        when(aiService.downloadSkillZip("order-skill"))
+                .thenReturn(createSkillZipWithRawMd(skillMd));
+
+        AgentSkill skill = repository.getSkill("order-skill");
+
+        assertNotNull(skill);
+        assertEquals("order-skill", skill.getName());
+        assertEquals("Order management skill", skill.getDescription());
+        // Core assertion: array field must be parsed as a List, not silently dropped or mangled.
+        List<?> intents = assertInstanceOf(List.class, skill.getMetadataValue("trigger_intents"));
+        assertEquals(List.of("创建个单子", "创建单子"), intents);
+    }
+
+    @Test
+    @DisplayName("Should load skill when array field has only one item in block-sequence syntax")
+    void testGetSkillWithSingleItemBlockSequence() throws NacosException, IOException {
+        String skillMd =
+                "---\n"
+                        + "name: single-item-skill\n"
+                        + "description: Single item skill\n"
+                        + "tags:\n"
+                        + "  - java\n"
+                        + "---\n"
+                        + "# Content\n";
+        when(aiService.downloadSkillZip("single-item-skill"))
+                .thenReturn(createSkillZipWithRawMd(skillMd));
+
+        AgentSkill skill = repository.getSkill("single-item-skill");
+
+        assertNotNull(skill);
+        assertEquals("single-item-skill", skill.getName());
+        List<?> tags = assertInstanceOf(List.class, skill.getMetadataValue("tags"));
+        assertEquals(List.of("java"), tags);
+    }
+
+    @Test
+    @DisplayName("Should load skill when array items contain special characters requiring quoting")
+    void testGetSkillWithSpecialCharsInArrayItems() throws NacosException, IOException {
+        String skillMd =
+                "---\n"
+                        + "name: special-skill\n"
+                        + "description: Special chars skill\n"
+                        + "intents:\n"
+                        + "  - \"query: sales report\"\n"
+                        + "  - \"show #top items\"\n"
+                        + "---\n"
+                        + "# Content\n";
+        when(aiService.downloadSkillZip("special-skill"))
+                .thenReturn(createSkillZipWithRawMd(skillMd));
+
+        AgentSkill skill = repository.getSkill("special-skill");
+
+        assertNotNull(skill);
+        assertEquals("special-skill", skill.getName());
+        // Items containing ':' and '#' must survive round-trip quoting intact.
+        List<?> intents = assertInstanceOf(List.class, skill.getMetadataValue("intents"));
+        assertEquals(List.of("query: sales report", "show #top items"), intents);
+    }
+
+    @Test
+    @DisplayName("Should still load skill when frontmatter has both scalar and array fields")
+    void testGetSkillWithMixedFrontmatterFields() throws NacosException, IOException {
+        String skillMd =
+                "---\n"
+                        + "name: mixed-skill\n"
+                        + "description: Mixed fields skill\n"
+                        + "version: 1.0.0\n"
+                        + "trigger_intents:\n"
+                        + "  - \"触发意图一\"\n"
+                        + "  - \"触发意图二\"\n"
+                        + "  - \"触发意图三\"\n"
+                        + "author: tester\n"
+                        + "---\n"
+                        + "# Mixed Skill\n";
+        when(aiService.downloadSkillZip("mixed-skill"))
+                .thenReturn(createSkillZipWithRawMd(skillMd));
+
+        AgentSkill skill = repository.getSkill("mixed-skill");
+
+        assertNotNull(skill);
+        assertEquals("mixed-skill", skill.getName());
+        assertEquals("Mixed fields skill", skill.getDescription());
+        // Scalar fields adjacent to array field must be unaffected.
+        assertEquals("1.0.0", skill.getMetadataValue("version"));
+        assertEquals("tester", skill.getMetadataValue("author"));
+        // Array field in the middle must be parsed correctly.
+        List<?> intents = assertInstanceOf(List.class, skill.getMetadataValue("trigger_intents"));
+        assertEquals(List.of("触发意图一", "触发意图二", "触发意图三"), intents);
+    }
+
+    private static byte[] createSkillZipWithRawMd(String rawSkillMd)
+            throws IOException {
+        String root = "skill-package";
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                ZipOutputStream zos = new ZipOutputStream(baos)) {
+            zos.putNextEntry(new ZipEntry(root + "/SKILL.md"));
+            zos.write(rawSkillMd.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+            zos.finish();
+            return baos.toByteArray();
+        }
     }
 
     private static byte[] createSkillZip(
