@@ -1,0 +1,192 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.llm.interfacesweb.responses;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.llm.interfacesweb.common.ProtocolException;
+import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+@DisplayName("ResponsesMessageConverter Tests")
+class ResponsesMessageConverterTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ResponsesMessageConverter converter = new ResponsesMessageConverter();
+
+    @Test
+    @DisplayName("Should parse instructions and string input")
+    void shouldParseInstructionsAndStringInput() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "model": "test-model",
+                          "instructions": "Be concise",
+                          "input": "Hello",
+                          "parallel_tool_calls": true
+                        }
+                        """,
+                        ResponsesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(2, messages.size());
+        assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+        assertEquals("Be concise", messages.get(0).getTextContent());
+        assertEquals(MsgRole.USER, messages.get(1).getRole());
+        assertEquals("Hello", messages.get(1).getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should parse message-array input, tools, images, and function outputs")
+    void shouldParseMessageArrayInput() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "model": "test-model",
+                          "stream": true,
+                          "input": [
+                            {
+                              "role": "user",
+                              "content": [
+                                {"type": "input_text", "text": "What is the weather?"},
+                                {"type": "input_image", "image_url": "https://example.com/a.png"}
+                              ]
+                            },
+                            {
+                              "type": "function_call",
+                              "call_id": "call_1",
+                              "name": "get_weather",
+                              "arguments": "{\\"city\\":\\"Paris\\"}"
+                            },
+                            {
+                              "type": "function_call_output",
+                              "call_id": "call_1",
+                              "name": "get_weather",
+                              "output": "Sunny"
+                            }
+                          ]
+                        }
+                        """,
+                        ResponsesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(3, messages.size());
+        assertEquals(MsgRole.USER, messages.get(0).getRole());
+        assertEquals("What is the weather?", messages.get(0).getTextContent());
+        assertInstanceOf(ImageBlock.class, messages.get(0).getContent().get(1));
+
+        assertEquals(MsgRole.ASSISTANT, messages.get(1).getRole());
+        ToolUseBlock toolUse =
+                assertInstanceOf(ToolUseBlock.class, messages.get(1).getContent().get(0));
+        assertEquals("call_1", toolUse.getId());
+        assertEquals("get_weather", toolUse.getName());
+        assertEquals(Map.of("city", "Paris"), toolUse.getInput());
+
+        assertEquals(MsgRole.TOOL, messages.get(2).getRole());
+        ToolResultBlock toolResult =
+                assertInstanceOf(ToolResultBlock.class, messages.get(2).getContent().get(0));
+        assertEquals("call_1", toolResult.getId());
+        assertEquals("get_weather", toolResult.getName());
+        assertEquals("Sunny", ((TextBlock) toolResult.getOutput().get(0)).getText());
+    }
+
+    @Test
+    @DisplayName("Should reject unsupported stateful Responses fields")
+    void shouldRejectUnsupportedStatefulFields() throws Exception {
+        ResponsesRequest previous =
+                objectMapper.readValue(
+                        """
+                        {"model": "test", "input": "hello", "previous_response_id": "resp_1"}
+                        """,
+                        ResponsesRequest.class);
+        ResponsesRequest conversation =
+                objectMapper.readValue(
+                        """
+                        {"model": "test", "input": "hello", "conversation": {"id": "conv_1"}}
+                        """,
+                        ResponsesRequest.class);
+        ResponsesRequest background =
+                objectMapper.readValue(
+                        """
+                        {"model": "test", "input": "hello", "background": true}
+                        """,
+                        ResponsesRequest.class);
+
+        assertEquals(
+                "unsupported_feature",
+                assertThrows(ProtocolException.class, () -> converter.convert(previous)).getCode());
+        assertEquals(
+                "unsupported_feature",
+                assertThrows(ProtocolException.class, () -> converter.convert(conversation))
+                        .getCode());
+        assertEquals(
+                "unsupported_feature",
+                assertThrows(ProtocolException.class, () -> converter.convert(background))
+                        .getCode());
+    }
+
+    @Test
+    @DisplayName("Should reject malformed function-call arguments")
+    void shouldRejectMalformedFunctionArguments() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "model": "test",
+                          "input": [
+                            {
+                              "type": "function_call",
+                              "call_id": "call_1",
+                              "name": "bad_tool",
+                              "arguments": "{bad-json"
+                            }
+                          ]
+                        }
+                        """,
+                        ResponsesRequest.class);
+
+        ProtocolException error =
+                assertThrows(ProtocolException.class, () -> converter.convert(request));
+
+        assertEquals("invalid_request_error", error.getCode());
+    }
+
+    @Test
+    @DisplayName("Should require input")
+    void shouldRequireInput() {
+        ResponsesRequest request = new ResponsesRequest();
+
+        ProtocolException error =
+                assertThrows(ProtocolException.class, () -> converter.convert(request));
+
+        assertEquals("invalid_request_error", error.getCode());
+    }
+}

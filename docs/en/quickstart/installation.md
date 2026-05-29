@@ -194,6 +194,13 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 | [agentscope-extensions-studio](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio) | Studio Integration | `io.agentscope:agentscope-extensions-studio` |
 | [agentscope-extensions-agui](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-agui) | AG-UI Protocol | `io.agentscope:agentscope-extensions-agui` |
 
+#### Web API Compatibility
+
+| Module | Feature | Maven Coordinates |
+|--------|---------|-------------------|
+| [agentscope-extensions-chat-completions-web](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-chat-completions-web) | OpenAI Chat Completions adapter | `io.agentscope:agentscope-extensions-chat-completions-web` |
+| [agentscope-extensions-llm-interfaces-web](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-llm-interfaces-web) | OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages adapters | `io.agentscope:agentscope-extensions-llm-interfaces-web` |
+
 Extension modules automatically include their required third-party dependencies.
 
 #### Example: Core + Mem0 Extension
@@ -215,6 +222,16 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
+    <version>1.0.12</version>
+</dependency>
+```
+
+To expose one `ReActAgent` through OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages style HTTP APIs, add the aggregated web starter:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-llm-interfaces-web-starter</artifactId>
     <version>1.0.12</version>
 </dependency>
 ```

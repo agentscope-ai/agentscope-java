@@ -19,6 +19,7 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -195,12 +196,10 @@ public class GenericRAGHook implements Hook {
      * @return the enhanced message list with knowledge context
      */
     private Msg createEnhancedMessages(List<Document> retrievedDocs) {
-        String knowledgeContent = buildKnowledgeContent(retrievedDocs);
-
         return Msg.builder()
                 .name("user")
                 .role(MsgRole.USER)
-                .content(TextBlock.builder().text(knowledgeContent).build())
+                .content(buildKnowledgeContentBlocks(retrievedDocs))
                 .build();
     }
 
@@ -226,6 +225,38 @@ public class GenericRAGHook implements Hook {
         sb.append("</retrieved_knowledge>");
 
         return sb.toString();
+    }
+
+    private List<ContentBlock> buildKnowledgeContentBlocks(List<Document> documents) {
+        List<ContentBlock> blocks = new ArrayList<>();
+        StringBuilder text = new StringBuilder();
+        text.append(
+                "<retrieved_knowledge>Use the following content from the knowledge base(s) if it is"
+                        + " helpful:\n\n");
+
+        for (Document doc : documents) {
+            text.append("- Score: ")
+                    .append(String.format("%.3f", doc.getScore() != null ? doc.getScore() : 0.0))
+                    .append(", Content: ");
+
+            ContentBlock content = doc.getMetadata().getContent();
+            if (content instanceof TextBlock textBlock) {
+                text.append(textBlock.getText()).append("\n");
+            } else if (content != null) {
+                text.append("[").append(content.getClass().getSimpleName()).append(" follows]\n");
+                blocks.add(TextBlock.builder().text(text.toString()).build());
+                blocks.add(content);
+                text.setLength(0);
+            } else {
+                text.append("\n");
+            }
+        }
+
+        text.append("</retrieved_knowledge>");
+        if (!text.isEmpty()) {
+            blocks.add(TextBlock.builder().text(text.toString()).build());
+        }
+        return blocks;
     }
 
     /**

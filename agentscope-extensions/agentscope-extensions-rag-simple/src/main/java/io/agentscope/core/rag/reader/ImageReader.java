@@ -15,11 +15,18 @@
  */
 package io.agentscope.core.rag.reader;
 
+import io.agentscope.core.formatter.MediaUtils;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.rag.exception.ReaderException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
@@ -86,20 +93,12 @@ public class ImageReader implements Reader {
      * @param imagePath the path to the image file (can be local file path or URL)
      * @return a list containing a single Document with image content
      */
-    private List<Document> loadImageDocument(String imagePath) {
+    private List<Document> loadImageDocument(String imagePath) throws IOException {
         // Generate deterministic doc_id using MD5 of image path (matching Python implementation)
         String docId = ReaderUtils.generateDocIdMD5(imagePath);
 
-        // Create ImageBlock with URLSource
-        String url;
-        if (isUrl(imagePath)) {
-            url = imagePath;
-        } else {
-            // For local files, use file:// protocol
-            url = imagePath.startsWith("file://") ? imagePath : "file://" + imagePath;
-        }
-
-        URLSource source = URLSource.builder().url(url).build();
+        // Create ImageBlock with a source suitable for local or remote use
+        Source source = toImageSource(imagePath);
         ImageBlock content = ImageBlock.builder().source(source).build();
 
         // If OCR is enabled, extract text from image
@@ -122,9 +121,50 @@ public class ImageReader implements Reader {
             return false;
         }
         String lowerPath = path.toLowerCase();
-        return lowerPath.startsWith("http://")
-                || lowerPath.startsWith("https://")
-                || lowerPath.startsWith("file://");
+        return lowerPath.startsWith("http://") || lowerPath.startsWith("https://");
+    }
+
+    private Source toImageSource(String imagePath) throws IOException {
+        if (isUrl(imagePath)) {
+            return URLSource.builder().url(imagePath).build();
+        }
+
+        Path localPath = toLocalPath(imagePath);
+        if (localPath != null && Files.exists(localPath)) {
+            String mediaType = MediaUtils.determineMediaType(localPath.toString());
+            String data = MediaUtils.fileToBase64(localPath.toString());
+            return Base64Source.builder().mediaType(mediaType).data(data).build();
+        }
+
+        return URLSource.builder().url(toImageUrl(imagePath)).build();
+    }
+
+    private Path toLocalPath(String imagePath) {
+        if (imagePath == null || imagePath.isBlank()) {
+            return null;
+        }
+        if (imagePath.toLowerCase().startsWith("file:")) {
+            try {
+                return Path.of(URI.create(imagePath.replace('\\', '/')));
+            } catch (IllegalArgumentException ignored) {
+                imagePath = imagePath.replaceFirst("(?i)^file:/+", "");
+            }
+        }
+        return Path.of(imagePath).toAbsolutePath().normalize();
+    }
+
+    private String toImageUrl(String imagePath) {
+        if (isUrl(imagePath)) {
+            return imagePath;
+        }
+        if (imagePath != null && imagePath.toLowerCase().startsWith("file:")) {
+            try {
+                return URI.create(imagePath.replace('\\', '/')).toString();
+            } catch (IllegalArgumentException ignored) {
+                imagePath = imagePath.replaceFirst("(?i)^file:/+", "");
+            }
+        }
+        return Path.of(imagePath).toAbsolutePath().normalize().toUri().toString();
     }
 
     /**
