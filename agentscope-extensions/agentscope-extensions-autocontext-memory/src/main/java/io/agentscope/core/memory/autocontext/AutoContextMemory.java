@@ -305,7 +305,15 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         return false;
     }
 
-    Mono<Boolean> compressIfNeededAsync() {
+    /**
+     * Asynchronously compresses the working memory on a bounded elastic scheduler.
+     *
+     * <p>This is the preferred entry point for reactive callers such as WebFlux pipelines,
+     * because the synchronous compression logic contains blocking model-stream waits.
+     *
+     * @return a Mono that completes with whether compression was performed
+     */
+    public Mono<Boolean> compressIfNeededAsync() {
         return Mono.fromCallable(this::compressIfNeeded).subscribeOn(Schedulers.boundedElastic());
     }
 

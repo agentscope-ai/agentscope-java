@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -129,6 +130,23 @@ class AutoContextMemoryTest {
         assertTrue(
                 compressed || messages.size() < 24 || testModel.getCallCount() > 0,
                 "Messages should be compressed or model should be called");
+    }
+
+    @Test
+    @DisplayName("Should offload async compression from non-blocking callers")
+    void testCompressIfNeededAsyncOnNonBlockingScheduler() {
+        RecordingAutoContextMemory asyncMemory = new RecordingAutoContextMemory(config, testModel);
+
+        Boolean compressed =
+                Mono.defer(asyncMemory::compressIfNeededAsync)
+                        .subscribeOn(Schedulers.parallel())
+                        .block();
+
+        assertNotNull(compressed);
+        assertTrue(asyncMemory.wasCompressCalled(), "Async compression should invoke compression");
+        assertFalse(
+                asyncMemory.wasCompressCalledOnNonBlockingThread(),
+                "Async compression should move blocking work off Reactor non-blocking threads");
     }
 
     @Test
@@ -971,37 +989,6 @@ class AutoContextMemoryTest {
     }
 
     @Test
-    @DisplayName("Should compress asynchronously on non-blocking scheduler")
-    void testCompressIfNeededAsyncOnNonBlockingScheduler() {
-        AutoContextConfig asyncConfig =
-                AutoContextConfig.builder()
-                        .msgThreshold(5)
-                        .maxToken(10000)
-                        .tokenRatio(0.9)
-                        .lastKeep(2)
-                        .minConsecutiveToolMessages(10)
-                        .largePayloadThreshold(10000)
-                        .minCompressionTokenThreshold(0)
-                        .build();
-        TestModel asyncModel = new TestModel("Conversation summary");
-        AutoContextMemory asyncMemory = new AutoContextMemory(asyncConfig, asyncModel);
-
-        addCompressibleConversation(asyncMemory, 3);
-        asyncMemory.addMessage(createTextMessage("Latest request", MsgRole.USER));
-        int initialCount = asyncMemory.getMessages().size();
-
-        Boolean compressed =
-                Mono.defer(asyncMemory::compressIfNeededAsync)
-                        .subscribeOn(Schedulers.parallel())
-                        .block();
-
-        assertTrue(Boolean.TRUE.equals(compressed));
-        assertTrue(asyncModel.getCallCount() >= 1, "Compression should invoke the model");
-        assertTrue(asyncMemory.getMessages().size() < initialCount);
-        assertFalse(asyncMemory.getOffloadContext().isEmpty());
-    }
-
-    @Test
     @DisplayName("Should allow repeated async compression calls")
     void testCompressIfNeededAsyncMultipleCalls() {
         AutoContextConfig asyncConfig =
@@ -1057,6 +1044,31 @@ class AutoContextMemoryTest {
                 .name(role == MsgRole.USER ? "user" : "assistant")
                 .content(TextBlock.builder().text(text).build())
                 .build();
+    }
+
+    private static final class RecordingAutoContextMemory extends AutoContextMemory {
+
+        private final AtomicBoolean compressCalled = new AtomicBoolean(false);
+        private final AtomicBoolean compressCalledOnNonBlockingThread = new AtomicBoolean(false);
+
+        RecordingAutoContextMemory(AutoContextConfig config, Model model) {
+            super(config, model);
+        }
+
+        @Override
+        public boolean compressIfNeeded() {
+            compressCalled.set(true);
+            compressCalledOnNonBlockingThread.set(Schedulers.isInNonBlockingThread());
+            return false;
+        }
+
+        boolean wasCompressCalled() {
+            return compressCalled.get();
+        }
+
+        boolean wasCompressCalledOnNonBlockingThread() {
+            return compressCalledOnNonBlockingThread.get();
+        }
     }
 
     private Msg createToolUseMessage(String toolName, String callId) {

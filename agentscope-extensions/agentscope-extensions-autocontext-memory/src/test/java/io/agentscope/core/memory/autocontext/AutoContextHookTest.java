@@ -41,6 +41,7 @@ import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -589,6 +590,42 @@ class AutoContextHookTest {
     }
 
     @Test
+    @DisplayName("Should offload PreReasoningEvent compression from non-blocking scheduler")
+    void testPreReasoningEventOffloadsCompressionFromNonBlockingScheduler() {
+        RecordingAutoContextMemory recordingMemory =
+                new RecordingAutoContextMemory(createCompressionConfig(), mockModel);
+        recordingMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text("Latest request").build())
+                        .build());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(mockModel)
+                        .memory(recordingMemory)
+                        .toolkit(toolkit)
+                        .build();
+
+        PreReasoningEvent event =
+                new PreReasoningEvent(
+                        agent, "test-model", null, new ArrayList<>(recordingMemory.getMessages()));
+
+        PreReasoningEvent result =
+                Mono.defer(() -> hook.onEvent(event)).subscribeOn(Schedulers.parallel()).block();
+
+        assertNotNull(result);
+        assertTrue(
+                recordingMemory.wasCompressCalled(),
+                "Hook should trigger async compression before reasoning");
+        assertFalse(
+                recordingMemory.wasCompressCalledOnNonBlockingThread(),
+                "Hook should offload compression from Reactor non-blocking threads");
+    }
+
+    @Test
     @DisplayName("Should preserve existing system prompt on non-blocking scheduler")
     void testPreReasoningEventPreservesSystemPromptOnNonBlockingScheduler() {
         AutoContextMemory compressionMemory =
@@ -681,6 +718,31 @@ class AutoContextHookTest {
                             .name("assistant")
                             .content(TextBlock.builder().text("Assistant response " + i).build())
                             .build());
+        }
+    }
+
+    private static final class RecordingAutoContextMemory extends AutoContextMemory {
+
+        private final AtomicBoolean compressCalled = new AtomicBoolean(false);
+        private final AtomicBoolean compressCalledOnNonBlockingThread = new AtomicBoolean(false);
+
+        RecordingAutoContextMemory(AutoContextConfig config, Model model) {
+            super(config, model);
+        }
+
+        @Override
+        public boolean compressIfNeeded() {
+            compressCalled.set(true);
+            compressCalledOnNonBlockingThread.set(Schedulers.isInNonBlockingThread());
+            return false;
+        }
+
+        boolean wasCompressCalled() {
+            return compressCalled.get();
+        }
+
+        boolean wasCompressCalledOnNonBlockingThread() {
+            return compressCalledOnNonBlockingThread.get();
         }
     }
 
