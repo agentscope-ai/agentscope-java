@@ -256,6 +256,19 @@ public class MemoryConsolidator {
         return idx >= 0 ? stripped.substring(idx + 1) : stripped;
     }
 
+    /**
+     * Converts an absolute filesystem path (e.g. {@code /memory/2025-01-01.md}) to a
+     * workspace-relative path ({@code memory/2025-01-01.md}) for use with
+     * {@link WorkspaceManager#readManagedWorkspaceFileUtf8}.
+     */
+    private static String toRelative(String path) {
+        if (path == null) {
+            return "";
+        }
+        String normalized = path.replace('\\', '/');
+        return normalized.startsWith("/") ? normalized.substring(1) : normalized;
+    }
+
     private void writeConsolidatedMemory(String content) {
         workspaceManager.writeUtf8WorkspaceRelative("MEMORY.md", content);
     }

@@ -207,7 +207,7 @@ public class MemoryMaintenanceHook implements Hook {
         if (path == null) {
             return "";
         }
-        int slash = path.lastIndexOf('/');
+        int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
         return slash >= 0 ? path.substring(slash + 1) : path;
     }
 }
