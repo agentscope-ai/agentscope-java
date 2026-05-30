@@ -72,8 +72,11 @@ public class ImageReader implements Reader {
 
         return Mono.fromCallable(
                         () -> {
+                            String imagePath = input.asString();
+                            if (imagePath == null || imagePath.isBlank()) {
+                                throw new ReaderException("Image path cannot be blank");
+                            }
                             try {
-                                String imagePath = input.asString();
                                 return loadImageDocument(imagePath);
                             } catch (Exception e) {
                                 throw new ReaderException("Failed to read image from: " + input, e);
