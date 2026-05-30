@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.NullNode;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,9 @@ class ProtocolJsonUtilsTest {
         assertTrue(ProtocolJsonUtils.parseObject("{bad").isEmpty());
         assertEquals("Paris", ProtocolJsonUtils.parseObject("{\"city\":\"Paris\"}").get("city"));
 
+        assertTrue(ProtocolJsonUtils.parseRequiredObject(null, "arguments").isEmpty());
         assertTrue(ProtocolJsonUtils.parseRequiredObject("", "arguments").isEmpty());
+        assertTrue(ProtocolJsonUtils.parseRequiredObject(" ", "arguments").isEmpty());
         assertEquals(3, ProtocolJsonUtils.parseRequiredObject("{\"n\":3}", "arguments").get("n"));
 
         ProtocolException error =
@@ -56,16 +59,21 @@ class ProtocolJsonUtilsTest {
         assertTrue(ProtocolJsonUtils.toMap(null).isEmpty());
 
         JsonNode node = ProtocolJsonUtils.OBJECT_MAPPER.readTree("{\"enabled\":true}");
+        JsonNode falseNode = ProtocolJsonUtils.OBJECT_MAPPER.readTree("{\"enabled\":false}");
+        JsonNode nullNode = ProtocolJsonUtils.OBJECT_MAPPER.readTree("{\"name\":null}");
         assertSame(node, ProtocolJsonUtils.toJsonNode(node));
         assertNull(ProtocolJsonUtils.toJsonNode(null));
         assertTrue(ProtocolJsonUtils.truthy(node, "enabled"));
+        assertFalse(ProtocolJsonUtils.truthy(falseNode, "enabled"));
         assertFalse(ProtocolJsonUtils.truthy(null, "enabled"));
         assertFalse(ProtocolJsonUtils.truthy(node, "missing"));
 
         JsonNode objectNode = ProtocolJsonUtils.toJsonNode(Map.of("name", "lookup"));
         assertEquals("lookup", ProtocolJsonUtils.textValue(objectNode, "name"));
         assertNull(ProtocolJsonUtils.textValue(null, "name"));
+        assertNull(ProtocolJsonUtils.textValue(nullNode, "name"));
         assertNull(ProtocolJsonUtils.textValue(objectNode, "missing"));
+        assertSame(NullNode.getInstance(), ProtocolJsonUtils.toJsonNode(NullNode.getInstance()));
     }
 
     @Test

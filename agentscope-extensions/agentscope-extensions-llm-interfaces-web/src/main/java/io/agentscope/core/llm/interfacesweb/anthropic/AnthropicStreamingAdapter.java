@@ -106,7 +106,7 @@ public class AnthropicStreamingAdapter {
             boolean includeText) {
         List<AnthropicStreamEvent> events = new ArrayList<>();
         Msg msg = event.getMessage();
-        if (msg == null || msg.getContent() == null) {
+        if (msg.getContent() == null) {
             return Flux.empty();
         }
 

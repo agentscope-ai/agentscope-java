@@ -253,9 +253,7 @@ public class GenericRAGHook implements Hook {
         }
 
         text.append("</retrieved_knowledge>");
-        if (!text.isEmpty()) {
-            blocks.add(TextBlock.builder().text(text.toString()).build());
-        }
+        blocks.add(TextBlock.builder().text(text.toString()).build());
         return blocks;
     }
 

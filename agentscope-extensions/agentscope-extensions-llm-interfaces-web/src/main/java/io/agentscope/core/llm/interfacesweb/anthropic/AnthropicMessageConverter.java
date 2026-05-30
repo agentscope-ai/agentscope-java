@@ -76,15 +76,13 @@ public class AnthropicMessageConverter {
             }
         } else {
             ContentBlock block = convertPart(content);
-            if (block != null) {
-                blocks.add(block);
-            }
+            blocks.add(block);
         }
         return blocks.isEmpty() ? List.of(TextBlock.builder().text("").build()) : blocks;
     }
 
     private ContentBlock convertPart(JsonNode part) {
-        if (part == null || part.isNull()) {
+        if (part.isNull()) {
             return null;
         }
         if (part.isTextual()) {

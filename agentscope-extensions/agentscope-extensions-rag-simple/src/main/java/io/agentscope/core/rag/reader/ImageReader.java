@@ -133,7 +133,7 @@ public class ImageReader implements Reader {
         }
 
         Path localPath = toLocalPath(imagePath);
-        if (localPath != null && Files.exists(localPath)) {
+        if (Files.exists(localPath)) {
             String mediaType = MediaUtils.determineMediaType(localPath.toString());
             String data = MediaUtils.fileToBase64(localPath.toString());
             return Base64Source.builder().mediaType(mediaType).data(data).build();
@@ -160,7 +160,7 @@ public class ImageReader implements Reader {
         if (isUrl(imagePath)) {
             return imagePath;
         }
-        if (imagePath != null && imagePath.toLowerCase().startsWith("file:")) {
+        if (imagePath.toLowerCase().startsWith("file:")) {
             try {
                 return URI.create(imagePath.replace('\\', '/')).toString();
             } catch (IllegalArgumentException ignored) {

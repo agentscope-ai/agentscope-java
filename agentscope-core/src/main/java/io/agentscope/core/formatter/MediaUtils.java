@@ -370,7 +370,7 @@ public class MediaUtils {
             return "";
         }
 
-        if (fileName == null || fileName.isBlank()) {
+        if (fileName.isBlank()) {
             return "";
         }
 

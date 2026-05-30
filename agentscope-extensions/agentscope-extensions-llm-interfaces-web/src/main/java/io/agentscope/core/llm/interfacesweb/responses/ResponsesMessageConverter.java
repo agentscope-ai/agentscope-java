@@ -58,10 +58,7 @@ public class ResponsesMessageConverter {
                 }
             }
         } else if (input.isObject()) {
-            Msg msg = convertInputItem(input);
-            if (msg != null) {
-                messages.add(msg);
-            }
+            messages.add(convertInputItem(input));
         } else {
             throw new ProtocolException(
                     "invalid_request_error", "Responses input must be a string or an array");
@@ -91,7 +88,7 @@ public class ResponsesMessageConverter {
     }
 
     private Msg convertInputItem(JsonNode item) {
-        if (item == null || item.isNull()) {
+        if (item.isNull()) {
             return null;
         }
         if (item.isTextual()) {
@@ -171,14 +168,12 @@ public class ResponsesMessageConverter {
             return blocks;
         }
         ContentBlock block = convertContentPart(contentNode);
-        if (block != null) {
-            blocks.add(block);
-        }
+        blocks.add(block);
         return blocks;
     }
 
     private ContentBlock convertContentPart(JsonNode part) {
-        if (part == null || part.isNull()) {
+        if (part.isNull()) {
             return null;
         }
         if (part.isTextual()) {

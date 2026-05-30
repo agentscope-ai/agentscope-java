@@ -87,7 +87,7 @@ public final class ProtocolMessageUtils {
                 "name",
                 block.getName(),
                 "input",
-                block.getInput() != null ? block.getInput() : Map.of());
+                block.getInput());
     }
 
     public static Map<String, Object> toolResultPart(ToolResultBlock block) {

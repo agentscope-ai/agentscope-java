@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.llm.interfacesweb.common.ProtocolException;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -177,6 +179,7 @@ class AnthropicMessageConverterTest {
                 objectMapper.readValue(
                         """
                         {
+                          "system": null,
                           "messages": [
                             {"role": "user"},
                             {"role": "tool", "content": ["plain", null]},
@@ -198,6 +201,13 @@ class AnthropicMessageConverterTest {
                             {
                               "role": "tool",
                               "content": [{"type": "tool_result", "tool_use_id": "toolu_3"}]
+                            },
+                            {
+                              "content": {"type": "custom", "payload": true}
+                            },
+                            {
+                              "role": "assistant",
+                              "content": [{"type": "image", "source": null}]
                             }
                           ]
                         }
@@ -219,6 +229,63 @@ class AnthropicMessageConverterTest {
         ToolResultBlock toolResult =
                 assertInstanceOf(ToolResultBlock.class, messages.get(5).getContent().get(0));
         assertEquals("", ((TextBlock) toolResult.getOutput().get(0)).getText());
+        assertEquals(MsgRole.USER, messages.get(6).getRole());
+        assertEquals("{\"type\":\"custom\",\"payload\":true}", messages.get(6).getTextContent());
+        assertEquals("[Unsupported image]", messages.get(7).getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should ignore blank system prompt")
+    void shouldIgnoreBlankSystemPrompt() throws Exception {
+        AnthropicMessagesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "system": " ",
+                          "messages": [
+                            {"role": "user", "content": "Hello"}
+                          ]
+                        }
+                        """,
+                        AnthropicMessagesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(1, messages.size());
+        assertEquals("Hello", messages.get(0).getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should parse explicit JSON null nodes")
+    void shouldParseExplicitJsonNullNodes() {
+        AnthropicMessagesRequest request = new AnthropicMessagesRequest();
+        request.setSystem(NullNode.getInstance());
+
+        AnthropicMessage emptyContent = new AnthropicMessage();
+        emptyContent.setRole("user");
+        emptyContent.setContent(List.of(NullNode.getInstance()));
+        AnthropicMessage nullNodeContent = new AnthropicMessage();
+        nullNodeContent.setRole("user");
+        nullNodeContent.setContent(NullNode.getInstance());
+
+        ObjectNode resultPart = objectMapper.createObjectNode();
+        resultPart.put("type", "tool_result");
+        resultPart.put("tool_use_id", "toolu_null");
+        resultPart.set("content", NullNode.getInstance());
+        AnthropicMessage nullResult = new AnthropicMessage();
+        nullResult.setRole("tool");
+        nullResult.setContent(List.of(resultPart));
+
+        request.setMessages(List.of(emptyContent, nullNodeContent, nullResult));
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(3, messages.size());
+        assertEquals("", messages.get(0).getTextContent());
+        assertEquals("", messages.get(1).getTextContent());
+        ToolResultBlock result =
+                assertInstanceOf(ToolResultBlock.class, messages.get(2).getContent().get(0));
+        assertEquals("", ((TextBlock) result.getOutput().get(0)).getText());
     }
 
     @Test

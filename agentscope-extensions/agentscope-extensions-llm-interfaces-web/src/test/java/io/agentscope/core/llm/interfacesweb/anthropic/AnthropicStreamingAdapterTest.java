@@ -51,6 +51,18 @@ class AnthropicStreamingAdapterTest {
                         .role(MsgRole.ASSISTANT)
                         .content(TextBlock.builder().text("Hel").build())
                         .build();
+        Msg delta2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("lo").build())
+                        .build();
+        TextBlock nullText = mock(TextBlock.class);
+        when(nullText.getText()).thenReturn(null);
+        Msg skippedText =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(nullText, TextBlock.builder().text("").build())
+                        .build();
         Msg finalReply =
                 Msg.builder()
                         .role(MsgRole.ASSISTANT)
@@ -60,7 +72,9 @@ class AnthropicStreamingAdapterTest {
         when(agent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(
                         Flux.just(
+                                new Event(EventType.TOOL_RESULT, skippedText, false),
                                 new Event(EventType.REASONING, delta, false),
+                                new Event(EventType.REASONING, delta2, false),
                                 new Event(EventType.REASONING, finalReply, true)));
 
         AnthropicMessagesRequest request = new AnthropicMessagesRequest();
@@ -76,6 +90,10 @@ class AnthropicStreamingAdapterTest {
                         event ->
                                 "content_block_delta".equals(event.getType())
                                         && "Hel".equals(event.getDelta().get("text")))
+                .expectNextMatches(
+                        event ->
+                                "content_block_delta".equals(event.getType())
+                                        && "lo".equals(event.getDelta().get("text")))
                 .expectNextMatches(
                         event ->
                                 "content_block_stop".equals(event.getType())

@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -123,6 +125,23 @@ class ImageReaderTest {
     }
 
     @Test
+    @DisplayName("Should read image from HTTP URL")
+    void testReadFromHttpURL() throws ReaderException {
+        ImageReader reader = new ImageReader();
+        ReaderInput input = ReaderInput.fromString("http://example.com/image.png");
+
+        StepVerifier.create(reader.read(input))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            URLSource source = (URLSource) imageBlock.getSource();
+                            assertEquals("http://example.com/image.png", source.getUrl());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
     @DisplayName("Should read existing local images as base64 source")
     void testReadExistingLocalImageAsBase64() throws Exception {
         Path image = tempDir.resolve("pixel.png");
@@ -207,6 +226,8 @@ class ImageReaderTest {
         toImageUrl.setAccessible(true);
 
         assertEquals(null, toLocalPath.invoke(reader, new Object[] {null}));
+        assertEquals(null, toLocalPath.invoke(reader, " "));
+        assertTrue(((String) toImageUrl.invoke(reader, "missing.png")).endsWith("missing.png"));
         assertEquals(
                 "https://example.com/image.png",
                 toImageUrl.invoke(reader, "https://example.com/image.png"));
@@ -220,6 +241,10 @@ class ImageReaderTest {
         StepVerifier.create(reader.read(ReaderInput.fromString(" ")))
                 .expectError(ReaderException.class)
                 .verify();
+
+        ReaderInput nullPath = mock(ReaderInput.class);
+        when(nullPath.asString()).thenReturn(null);
+        StepVerifier.create(reader.read(nullPath)).expectError(ReaderException.class).verify();
     }
 
     @Test

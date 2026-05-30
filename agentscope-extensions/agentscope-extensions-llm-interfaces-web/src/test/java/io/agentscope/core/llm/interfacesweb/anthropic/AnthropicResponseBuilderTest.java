@@ -17,6 +17,8 @@ package io.agentscope.core.llm.interfacesweb.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -79,8 +81,15 @@ class AnthropicResponseBuilderTest {
                         .textContent("partial")
                         .generateReason(GenerateReason.MAX_ITERATIONS)
                         .build();
+        Msg suspended =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("suspended")
+                        .generateReason(GenerateReason.TOOL_SUSPENDED)
+                        .build();
 
         assertEquals("tool_use", builder.stopReason(toolReply));
+        assertEquals("tool_use", builder.stopReason(suspended));
         assertEquals("max_tokens", builder.stopReason(maxIters));
         assertEquals("end_turn", builder.stopReason(null));
     }
@@ -89,9 +98,38 @@ class AnthropicResponseBuilderTest {
     @DisplayName("Should build Anthropic error shape")
     void shouldBuildErrorShape() {
         Map<String, Object> error = builder.buildError(new IllegalStateException("boom"));
+        Map<String, Object> fallback = builder.buildError(null);
 
         assertEquals("error", error.get("type"));
         assertNotNull(error.get("error"));
+        assertEquals("error", fallback.get("type"));
+        assertNotNull(fallback.get("error"));
+    }
+
+    @Test
+    @DisplayName("Should build empty Anthropic base response with null request")
+    void shouldBuildBaseResponseWithNullRequest() {
+        AnthropicMessagesResponse response = builder.baseResponse(null, "msg_1");
+
+        assertEquals("msg_1", response.getId());
+        assertEquals(null, response.getModel());
+        assertEquals(0, response.getUsage().getInputTokens());
+    }
+
+    @Test
+    @DisplayName("Should build Anthropic responses for null and no-usage replies")
+    void shouldBuildResponsesForNullAndNoUsageReplies() {
+        AnthropicMessagesResponse nullReply =
+                builder.buildResponse(request("claude-test"), null, "msg_null");
+        Msg noUsage = Msg.builder().role(MsgRole.ASSISTANT).textContent("Hello").build();
+        AnthropicMessagesResponse noUsageReply =
+                builder.buildResponse(request("claude-test"), noUsage, "msg_no_usage");
+
+        assertEquals("end_turn", nullReply.getStopReason());
+        assertTrue(nullReply.getContent().isEmpty());
+        assertNull(nullReply.getUsage());
+        assertEquals("end_turn", noUsageReply.getStopReason());
+        assertNull(noUsageReply.getUsage());
     }
 
     private AnthropicMessagesRequest request(String model) {

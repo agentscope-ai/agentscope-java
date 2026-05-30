@@ -20,6 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.llm.interfacesweb.common.ProtocolException;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -27,6 +30,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -151,6 +155,63 @@ class ResponsesMessageConverterTest {
         assertEquals(
                 "{\"type\":\"unsupported\",\"payload\":{\"text\":\"fallback text\"}}",
                 ((TextBlock) messages.get(0).getContent().get(1)).getText());
+    }
+
+    @Test
+    @DisplayName("Should parse blank instructions and branchy fallback content")
+    void shouldParseBlankInstructionsAndBranchyFallbackContent() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "instructions": " ",
+                          "previous_response_id": " ",
+                          "input": [
+                            {
+                              "role": "system",
+                              "content": {"type": "text", "text": "system text"}
+                            },
+                            {
+                              "role": "user",
+                              "content": {"type": "output_text", "text": "out"}
+                            },
+                            {
+                              "role": "user",
+                              "content": {"type": "input_text"}
+                            },
+                            {
+                              "role": "user",
+                              "content": {"payload": true}
+                            },
+                            {
+                              "type": "function_call",
+                              "call_id": "call_blank",
+                              "name": "noop",
+                              "arguments": ""
+                            },
+                            {
+                              "type": "function_call_output",
+                              "call_id": "call_empty"
+                            }
+                          ]
+                        }
+                        """,
+                        ResponsesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(6, messages.size());
+        assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+        assertEquals("system text", messages.get(0).getTextContent());
+        assertEquals("out", messages.get(1).getTextContent());
+        assertEquals("", messages.get(2).getTextContent());
+        assertEquals("{\"payload\":true}", messages.get(3).getTextContent());
+        ToolUseBlock toolUse =
+                assertInstanceOf(ToolUseBlock.class, messages.get(4).getContent().get(0));
+        assertEquals(Map.of(), toolUse.getInput());
+        ToolResultBlock toolResult =
+                assertInstanceOf(ToolResultBlock.class, messages.get(5).getContent().get(0));
+        assertEquals("", ((TextBlock) toolResult.getOutput().get(0)).getText());
     }
 
     @Test
@@ -280,6 +341,47 @@ class ResponsesMessageConverterTest {
                 assertInstanceOf(ToolResultBlock.class, messages.get(4).getContent().get(0));
         assertEquals("", ((TextBlock) nullResult.getOutput().get(0)).getText());
         assertEquals("", messages.get(5).getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should parse explicit JSON null nodes and empty object fallbacks")
+    void shouldParseExplicitJsonNullNodesAndEmptyObjectFallbacks() throws Exception {
+        ResponsesRequest nullInput = new ResponsesRequest();
+        nullInput.setInput(NullNode.getInstance());
+        assertEquals(
+                "invalid_request_error",
+                assertThrows(ProtocolException.class, () -> converter.convert(nullInput))
+                        .getCode());
+
+        ArrayNode input = objectMapper.createArrayNode();
+        ObjectNode emptyAssistant = input.addObject();
+        emptyAssistant.put("role", "assistant");
+        ObjectNode nullContent = input.addObject();
+        nullContent.put("role", "user");
+        nullContent.set("content", NullNode.getInstance());
+        ObjectNode nullToolResult = input.addObject();
+        nullToolResult.put("type", "function_call_output");
+        nullToolResult.put("call_id", "call_null");
+        nullToolResult.set("content", NullNode.getInstance());
+
+        ResponsesRequest request = new ResponsesRequest();
+        request.setInput(input);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(3, messages.size());
+        assertEquals(MsgRole.ASSISTANT, messages.get(0).getRole());
+        assertEquals("", messages.get(0).getTextContent());
+        assertEquals("", messages.get(1).getTextContent());
+        ToolResultBlock result =
+                assertInstanceOf(ToolResultBlock.class, messages.get(2).getContent().get(0));
+        assertEquals("", ((TextBlock) result.getOutput().get(0)).getText());
+
+        Method extractText =
+                ResponsesMessageConverter.class.getDeclaredMethod(
+                        "extractText", com.fasterxml.jackson.databind.JsonNode.class);
+        extractText.setAccessible(true);
+        assertEquals("", extractText.invoke(converter, new Object[] {null}));
     }
 
     @Test

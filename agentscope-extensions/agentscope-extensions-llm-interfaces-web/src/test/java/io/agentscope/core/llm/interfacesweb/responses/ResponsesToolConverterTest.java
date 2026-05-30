@@ -69,9 +69,12 @@ class ResponsesToolConverterTest {
         ResponsesTool blankName = new ResponsesTool();
         blankName.setType("function");
         blankName.setName(" ");
+        ResponsesTool missingName = new ResponsesTool();
+        missingName.setType("function");
 
         List<ToolSchema> schemas =
-                new ResponsesToolConverter().convert(Arrays.asList(null, unsupported, blankName));
+                new ResponsesToolConverter()
+                        .convert(Arrays.asList(null, unsupported, blankName, missingName));
 
         assertTrue(schemas.isEmpty());
         assertTrue(new ResponsesToolConverter().convert(null).isEmpty());
@@ -84,17 +87,22 @@ class ResponsesToolConverterTest {
         ResponsesTool minimal = new ResponsesTool();
         minimal.setType("function");
         minimal.setName("lookup");
+        ResponsesTool noType = new ResponsesTool();
+        noType.setType(null);
+        noType.setName("no_type");
 
         ResponsesTool nested = new ResponsesTool();
         nested.setType("function");
         nested.setFunction(Map.of("name", "search", "parameters", "ignored", "strict", "yes"));
 
-        List<ToolSchema> schemas = new ResponsesToolConverter().convert(List.of(minimal, nested));
+        List<ToolSchema> schemas =
+                new ResponsesToolConverter().convert(List.of(minimal, noType, nested));
 
-        assertEquals(2, schemas.size());
+        assertEquals(3, schemas.size());
         assertEquals("", schemas.get(0).getDescription());
         assertEquals(Map.of("type", "object"), schemas.get(0).getParameters());
-        assertEquals("search", schemas.get(1).getName());
-        assertEquals(Map.of("type", "object"), schemas.get(1).getParameters());
+        assertEquals("no_type", schemas.get(1).getName());
+        assertEquals("search", schemas.get(2).getName());
+        assertEquals(Map.of("type", "object"), schemas.get(2).getParameters());
     }
 }

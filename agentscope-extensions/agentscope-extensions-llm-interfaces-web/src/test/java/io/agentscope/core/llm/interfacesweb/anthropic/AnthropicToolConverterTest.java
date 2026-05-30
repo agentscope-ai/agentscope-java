@@ -51,9 +51,10 @@ class AnthropicToolConverterTest {
         minimal.setName("lookup");
         AnthropicTool blank = new AnthropicTool();
         blank.setName(" ");
+        AnthropicTool missing = new AnthropicTool();
 
         List<ToolSchema> schemas =
-                new AnthropicToolConverter().convert(Arrays.asList(null, blank, minimal));
+                new AnthropicToolConverter().convert(Arrays.asList(null, blank, missing, minimal));
 
         assertTrue(new AnthropicToolConverter().convert(null).isEmpty());
         assertTrue(new AnthropicToolConverter().convert(List.of()).isEmpty());

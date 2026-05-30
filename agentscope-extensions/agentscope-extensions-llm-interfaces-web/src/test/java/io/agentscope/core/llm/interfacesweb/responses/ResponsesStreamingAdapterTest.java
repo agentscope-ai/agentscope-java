@@ -51,6 +51,13 @@ class ResponsesStreamingAdapterTest {
                         .role(MsgRole.ASSISTANT)
                         .content(TextBlock.builder().text("Hel").build())
                         .build();
+        TextBlock nullText = mock(TextBlock.class);
+        when(nullText.getText()).thenReturn(null);
+        Msg skippedText =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(nullText, TextBlock.builder().text("").build())
+                        .build();
         Msg finalReply =
                 Msg.builder()
                         .role(MsgRole.ASSISTANT)
@@ -60,6 +67,7 @@ class ResponsesStreamingAdapterTest {
         when(agent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(
                         Flux.just(
+                                new Event(EventType.TOOL_RESULT, skippedText, false),
                                 new Event(EventType.REASONING, delta, false),
                                 new Event(EventType.REASONING, finalReply, true)));
 

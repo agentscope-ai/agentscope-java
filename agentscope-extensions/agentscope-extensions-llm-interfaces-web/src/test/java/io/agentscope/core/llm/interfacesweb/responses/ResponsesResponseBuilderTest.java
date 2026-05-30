@@ -17,12 +17,17 @@ package io.agentscope.core.llm.interfacesweb.responses;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -118,6 +123,12 @@ class ResponsesResponseBuilderTest {
     @DisplayName("Should return no output items for null replies")
     void shouldReturnNoOutputItemsForNullReplies() {
         assertTrue(builder.outputItems(null, "resp_1").isEmpty());
+        ResponsesResponse response = builder.buildResponse(request("test-model"), null, "resp_1");
+        assertEquals("completed", response.getStatus());
+        assertNull(response.getUsage());
+        Msg nullContent = mock(Msg.class);
+        when(nullContent.getContent()).thenReturn(null);
+        assertTrue(builder.outputItems(nullContent, "resp_1").isEmpty());
     }
 
     @Test
@@ -134,6 +145,22 @@ class ResponsesResponseBuilderTest {
         assertEquals(1, items.size());
         assertEquals("message", items.get(0).getType());
         assertTrue(items.get(0).getContent().get(0).getText().contains("hidden reasoning"));
+
+        Msg ignored =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(AudioBlock.builder().source(new Source()).build())
+                        .build();
+        assertTrue(builder.outputItems(ignored, "resp_2").isEmpty());
+
+        Msg textAndThinking =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder().text("visible").build(),
+                                ThinkingBlock.builder().thinking("hidden").build())
+                        .build();
+        assertEquals(1, builder.outputItems(textAndThinking, "resp_3").size());
     }
 
     @Test
@@ -150,6 +177,15 @@ class ResponsesResponseBuilderTest {
         ResponsesOutputItem item = builder.toolUseItem(block);
 
         assertEquals("{\"city\":\"Paris\"}", item.getArguments());
+
+        ToolUseBlock blankContent =
+                ToolUseBlock.builder()
+                        .id("call_2")
+                        .name("lookup")
+                        .content(" ")
+                        .input(Map.of("city", "Rome"))
+                        .build();
+        assertEquals("{\"city\":\"Rome\"}", builder.toolUseItem(blankContent).getArguments());
     }
 
     private ResponsesRequest request(String model) {

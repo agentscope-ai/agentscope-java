@@ -17,6 +17,8 @@ package io.agentscope.core.llm.interfacesweb.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -44,7 +46,11 @@ class ProtocolMessageUtilsTest {
         assertEquals(MsgRole.USER, text.getRole());
         assertEquals("", ProtocolMessageUtils.textContent(text));
         assertEquals("", ProtocolMessageUtils.textContent(null));
+        Msg nullContent = mock(Msg.class);
+        when(nullContent.getContent()).thenReturn(null);
+        assertEquals("", ProtocolMessageUtils.textContent(nullContent));
         assertTrue(ProtocolMessageUtils.contentParts(null, false).isEmpty());
+        assertTrue(ProtocolMessageUtils.contentParts(nullContent, false).isEmpty());
         assertTrue(
                 ProtocolMessageUtils.contentParts(Msg.builder().role(MsgRole.USER).build(), false)
                         .isEmpty());
@@ -146,7 +152,11 @@ class ProtocolMessageUtilsTest {
     @Test
     @DisplayName("Should handle tool result text fallbacks")
     void shouldHandleToolResultTextFallbacks() {
+        ToolResultBlock nullOutput = mock(ToolResultBlock.class);
+        when(nullOutput.getOutput()).thenReturn(null);
+
         assertEquals("", ProtocolMessageUtils.toolResultText(null));
+        assertEquals("", ProtocolMessageUtils.toolResultText(nullOutput));
         assertEquals(
                 "",
                 ProtocolMessageUtils.toolResultText(

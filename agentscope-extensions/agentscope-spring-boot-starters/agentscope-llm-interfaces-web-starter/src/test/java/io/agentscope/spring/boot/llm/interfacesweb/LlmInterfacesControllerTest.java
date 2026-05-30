@@ -37,6 +37,7 @@ import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.chat.completions.model.OpenAITool;
 import io.agentscope.core.chat.completions.model.OpenAIToolFunction;
 import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAdapter;
+import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicMessage;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicMessageConverter;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicMessagesRequest;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicMessagesResponse;
@@ -184,6 +185,94 @@ class LlmInterfacesControllerTest {
 
         StepVerifier.create(responseMono).expectNextCount(1).verifyComplete();
         assertNotNull(toolkit.getTool("lookup"));
+    }
+
+    @Test
+    @DisplayName("Should preserve explicit models and tolerate empty tool lists")
+    void shouldPreserveExplicitModelsAndTolerateEmptyToolLists() {
+        Msg reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("Hi").build();
+        when(agent.call(anyList()))
+                .thenReturn(Mono.just(reply), Mono.just(reply), Mono.just(reply));
+
+        ChatCompletionsRequest chat = new ChatCompletionsRequest();
+        chat.setModel("explicit-chat");
+        chat.setMessages(List.of(new ChatMessage("user", "Hello")));
+        chat.setTools(List.of());
+
+        @SuppressWarnings("unchecked")
+        Mono<ChatCompletionsResponse> chatMono =
+                (Mono<ChatCompletionsResponse>) controller.chatCompletions(chat);
+        StepVerifier.create(chatMono)
+                .assertNext(response -> assertEquals("explicit-chat", response.getModel()))
+                .verifyComplete();
+
+        ResponsesRequest responses = new ResponsesRequest();
+        responses.setModel("explicit-responses");
+        responses.setInput("Hello");
+        responses.setTools(List.of());
+
+        @SuppressWarnings("unchecked")
+        Mono<ResponsesResponse> responsesMono =
+                (Mono<ResponsesResponse>) controller.responses(responses);
+        StepVerifier.create(responsesMono)
+                .assertNext(response -> assertEquals("explicit-responses", response.getModel()))
+                .verifyComplete();
+
+        AnthropicMessage anthropicMessage = new AnthropicMessage();
+        anthropicMessage.setRole("user");
+        anthropicMessage.setContent("Hello");
+        AnthropicMessagesRequest anthropic = new AnthropicMessagesRequest();
+        anthropic.setModel("explicit-anthropic");
+        anthropic.setMessages(List.of(anthropicMessage));
+        anthropic.setTools(List.of());
+
+        @SuppressWarnings("unchecked")
+        Mono<AnthropicMessagesResponse> anthropicMono =
+                (Mono<AnthropicMessagesResponse>) controller.anthropicMessages(anthropic);
+        StepVerifier.create(anthropicMono)
+                .assertNext(response -> assertEquals("explicit-anthropic", response.getModel()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should default blank protocol model names")
+    void shouldDefaultBlankProtocolModelNames() {
+        Msg reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("Hi").build();
+        when(agent.call(anyList()))
+                .thenReturn(Mono.just(reply), Mono.just(reply), Mono.just(reply));
+
+        ChatCompletionsRequest chat = new ChatCompletionsRequest();
+        chat.setModel(" ");
+        chat.setMessages(List.of(new ChatMessage("user", "Hello")));
+        @SuppressWarnings("unchecked")
+        Mono<ChatCompletionsResponse> chatMono =
+                (Mono<ChatCompletionsResponse>) controller.chatCompletions(chat);
+        StepVerifier.create(chatMono)
+                .assertNext(response -> assertEquals("active-model", response.getModel()))
+                .verifyComplete();
+
+        ResponsesRequest responses = new ResponsesRequest();
+        responses.setModel(" ");
+        responses.setInput("Hello");
+        @SuppressWarnings("unchecked")
+        Mono<ResponsesResponse> responsesMono =
+                (Mono<ResponsesResponse>) controller.responses(responses);
+        StepVerifier.create(responsesMono)
+                .assertNext(response -> assertEquals("active-model", response.getModel()))
+                .verifyComplete();
+
+        AnthropicMessage anthropicMessage = new AnthropicMessage();
+        anthropicMessage.setRole("user");
+        anthropicMessage.setContent("Hello");
+        AnthropicMessagesRequest anthropic = new AnthropicMessagesRequest();
+        anthropic.setModel(" ");
+        anthropic.setMessages(List.of(anthropicMessage));
+        @SuppressWarnings("unchecked")
+        Mono<AnthropicMessagesResponse> anthropicMono =
+                (Mono<AnthropicMessagesResponse>) controller.anthropicMessages(anthropic);
+        StepVerifier.create(anthropicMono)
+                .assertNext(response -> assertEquals("active-model", response.getModel()))
+                .verifyComplete();
     }
 
     @Test
