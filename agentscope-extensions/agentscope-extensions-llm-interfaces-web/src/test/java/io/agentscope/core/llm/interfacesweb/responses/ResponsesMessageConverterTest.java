@@ -119,6 +119,41 @@ class ResponsesMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should parse object input, data images, and fallback text content")
+    void shouldParseObjectInputAndFallbackContent() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "model": "test-model",
+                          "input": {
+                            "role": "developer",
+                            "content": [
+                              {
+                                "type": "input_image",
+                                "image_url": "data:image/png;base64,abc"
+                              },
+                              {
+                                "type": "unsupported",
+                                "payload": {"text": "fallback text"}
+                              }
+                            ]
+                          }
+                        }
+                        """,
+                        ResponsesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(1, messages.size());
+        assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+        assertInstanceOf(ImageBlock.class, messages.get(0).getContent().get(0));
+        assertEquals(
+                "{\"type\":\"unsupported\",\"payload\":{\"text\":\"fallback text\"}}",
+                ((TextBlock) messages.get(0).getContent().get(1)).getText());
+    }
+
+    @Test
     @DisplayName("Should reject unsupported stateful Responses fields")
     void shouldRejectUnsupportedStatefulFields() throws Exception {
         ResponsesRequest previous =

@@ -128,6 +128,49 @@ class AnthropicMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should parse structured system, base64 images, and unknown blocks")
+    void shouldParseStructuredSystemAndBase64Images() throws Exception {
+        AnthropicMessagesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "model": "claude-test",
+                          "system": [
+                            {"type": "text", "text": "Use tools carefully"}
+                          ],
+                          "messages": [
+                            {
+                              "role": "user",
+                              "content": [
+                                {
+                                  "type": "image",
+                                  "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": "abc"
+                                  }
+                                },
+                                {
+                                  "type": "custom",
+                                  "text": "fallback"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                        """,
+                        AnthropicMessagesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(2, messages.size());
+        assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+        assertEquals("Use tools carefully", messages.get(0).getTextContent());
+        assertInstanceOf(ImageBlock.class, messages.get(1).getContent().get(0));
+        assertEquals("fallback", ((TextBlock) messages.get(1).getContent().get(1)).getText());
+    }
+
+    @Test
     @DisplayName("Should reject empty Anthropic messages")
     void shouldRejectEmptyMessages() {
         AnthropicMessagesRequest request = new AnthropicMessagesRequest();

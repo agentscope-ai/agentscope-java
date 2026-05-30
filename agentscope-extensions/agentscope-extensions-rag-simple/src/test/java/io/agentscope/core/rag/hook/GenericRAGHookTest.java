@@ -27,9 +27,11 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.rag.GenericRAGHook;
 import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
@@ -317,6 +319,50 @@ class GenericRAGHookTest {
                             assertTrue(content.contains("knowledge base"));
                             assertTrue(
                                     content.contains("Content 1") || content.contains("Content 2"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should preserve non-text content blocks in retrieved knowledge")
+    void testPreserveNonTextKnowledgeBlocks() {
+        Knowledge imageKnowledge =
+                new Knowledge() {
+                    @Override
+                    public Mono<Void> addDocuments(List<Document> documents) {
+                        return Mono.empty();
+                    }
+
+                    @Override
+                    public Mono<List<Document>> retrieve(String query, RetrieveConfig config) {
+                        ImageBlock image =
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/chart.png")
+                                                        .build())
+                                        .build();
+                        Document doc = new Document(new DocumentMetadata(image, "image-doc", "0"));
+                        doc.setScore(0.75);
+                        return Mono.just(List.of(doc));
+                    }
+                };
+        GenericRAGHook imageHook = new GenericRAGHook(imageKnowledge);
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("show chart").build())
+                        .build();
+        PreCallEvent event = new PreCallEvent(mockAgent, new ArrayList<>(List.of(userMsg)));
+
+        StepVerifier.create(imageHook.onEvent(event))
+                .assertNext(
+                        result -> {
+                            List<Msg> messages = result.getInputMessages();
+                            Msg knowledgeMsg = messages.get(1);
+                            assertTrue(
+                                    knowledgeMsg.getTextContent().contains("[ImageBlock follows]"));
+                            assertInstanceOf(ImageBlock.class, knowledgeMsg.getContent().get(1));
                         })
                 .verifyComplete();
     }

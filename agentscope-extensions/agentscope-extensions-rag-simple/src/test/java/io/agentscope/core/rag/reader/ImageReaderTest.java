@@ -20,15 +20,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.rag.exception.ReaderException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.test.StepVerifier;
 
 /**
@@ -37,6 +41,8 @@ import reactor.test.StepVerifier;
 @Tag("unit")
 @DisplayName("ImageReader Unit Tests")
 class ImageReaderTest {
+
+    @TempDir Path tempDir;
 
     @Test
     @DisplayName("Should create ImageReader with default settings")
@@ -111,6 +117,27 @@ class ImageReaderTest {
                             assertTrue(imageBlock.getSource() instanceof URLSource);
                             URLSource urlSource = (URLSource) imageBlock.getSource();
                             assertEquals("https://example.com/image.png", urlSource.getUrl());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should read existing local images as base64 source")
+    void testReadExistingLocalImageAsBase64() throws Exception {
+        Path image = tempDir.resolve("pixel.png");
+        Files.write(image, new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A});
+
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString(image.toString())))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            Base64Source source = (Base64Source) imageBlock.getSource();
+                            assertEquals("image/png", source.getMediaType());
+                            assertNotNull(source.getData());
+                            assertFalse(source.getData().isBlank());
                         })
                 .verifyComplete();
     }
