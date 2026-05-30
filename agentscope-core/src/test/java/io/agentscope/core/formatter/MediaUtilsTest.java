@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
@@ -345,6 +346,18 @@ class MediaUtilsTest {
         assertEquals("", MediaUtils.getExtension("https://example.com/abc"));
         assertEquals("", MediaUtils.getExtension("https://example.com/abc/"));
         assertEquals("", MediaUtils.getExtension("https://example.com/img.png."));
+    }
+
+    @Test
+    @DisplayName("Should get file names from direct path fragments")
+    void testGetFileNameFallbacks() throws Exception {
+        Method getFileName = MediaUtils.class.getDeclaredMethod("getFileName", String.class);
+        getFileName.setAccessible(true);
+
+        assertEquals("", getFileName.invoke(null, new Object[] {null}));
+        assertEquals("", getFileName.invoke(null, " "));
+        assertEquals("image.png", getFileName.invoke(null, "image.png"));
+        assertEquals("image.png", getFileName.invoke(null, "/tmp/image.png"));
     }
 
     @Test

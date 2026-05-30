@@ -127,6 +127,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions LLM Interfaces Web -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-llm-interfaces-web</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Agent Protocol Tasks -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -346,6 +353,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-chat-completions-web-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope LLM Interfaces Web Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-llm-interfaces-web-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

@@ -19,16 +19,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.rag.exception.ReaderException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.test.StepVerifier;
 
 /**
@@ -37,6 +44,8 @@ import reactor.test.StepVerifier;
 @Tag("unit")
 @DisplayName("ImageReader Unit Tests")
 class ImageReaderTest {
+
+    @TempDir Path tempDir;
 
     @Test
     @DisplayName("Should create ImageReader with default settings")
@@ -113,6 +122,129 @@ class ImageReaderTest {
                             assertEquals("https://example.com/image.png", urlSource.getUrl());
                         })
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should read image from HTTP URL")
+    void testReadFromHttpURL() throws ReaderException {
+        ImageReader reader = new ImageReader();
+        ReaderInput input = ReaderInput.fromString("http://example.com/image.png");
+
+        StepVerifier.create(reader.read(input))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            URLSource source = (URLSource) imageBlock.getSource();
+                            assertEquals("http://example.com/image.png", source.getUrl());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should read existing local images as base64 source")
+    void testReadExistingLocalImageAsBase64() throws Exception {
+        Path image = tempDir.resolve("pixel.png");
+        Files.write(image, new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A});
+
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString(image.toString())))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            Base64Source source = (Base64Source) imageBlock.getSource();
+                            assertEquals("image/png", source.getMediaType());
+                            assertNotNull(source.getData());
+                            assertFalse(source.getData().isBlank());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should read existing file URI images as base64 source")
+    void testReadExistingFileUriImageAsBase64() throws Exception {
+        Path image = tempDir.resolve("pixel.png");
+        Files.write(image, new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A});
+
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString(image.toUri().toString())))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            assertTrue(imageBlock.getSource() instanceof Base64Source);
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should preserve missing file URIs as URL source")
+    void testReadMissingFileUriAsUrlSource() throws Exception {
+        Path missing = tempDir.resolve("missing.png");
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString(missing.toUri().toString())))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            URLSource source = (URLSource) imageBlock.getSource();
+                            assertEquals(missing.toUri().toString(), source.getUrl());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should tolerate invalid file URIs as local URL source")
+    void testReadInvalidFileUriAsLocalUrlSource() throws Exception {
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString("file://%")))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            assertTrue(imageBlock.getSource() instanceof URLSource);
+                            assertTrue(
+                                    ((URLSource) imageBlock.getSource())
+                                            .getUrl()
+                                            .startsWith("file:"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should expose defensive private image path fallbacks")
+    void testDefensiveImagePathFallbacks() throws Exception {
+        ImageReader reader = new ImageReader();
+        Method toLocalPath = ImageReader.class.getDeclaredMethod("toLocalPath", String.class);
+        Method toImageUrl = ImageReader.class.getDeclaredMethod("toImageUrl", String.class);
+        toLocalPath.setAccessible(true);
+        toImageUrl.setAccessible(true);
+
+        assertEquals(null, toLocalPath.invoke(reader, new Object[] {null}));
+        assertEquals(null, toLocalPath.invoke(reader, " "));
+        assertTrue(((String) toImageUrl.invoke(reader, "missing.png")).endsWith("missing.png"));
+        assertEquals(
+                "https://example.com/image.png",
+                toImageUrl.invoke(reader, "https://example.com/image.png"));
+    }
+
+    @Test
+    @DisplayName("Should wrap blank image path failures")
+    void testReadBlankImagePathFailure() throws Exception {
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString(" ")))
+                .expectError(ReaderException.class)
+                .verify();
+
+        ReaderInput nullPath = mock(ReaderInput.class);
+        when(nullPath.asString()).thenReturn(null);
+        StepVerifier.create(reader.read(nullPath)).expectError(ReaderException.class).verify();
     }
 
     @Test

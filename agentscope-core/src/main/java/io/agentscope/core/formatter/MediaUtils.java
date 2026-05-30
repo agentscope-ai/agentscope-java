@@ -354,32 +354,40 @@ public class MediaUtils {
             return "";
         }
 
-        Path fileNamePath;
+        String fileName;
         try {
             if (isLocalFile(path)) {
                 // treat as file
-                fileNamePath = Paths.get(path).normalize().getFileName();
+                Path fileNamePath = Paths.get(path).normalize().getFileName();
+                fileName = fileNamePath != null ? fileNamePath.toString() : "";
             } else {
                 // treat as url
                 URI uri = URI.create(path).normalize();
-                fileNamePath = Paths.get(uri.getPath()).getFileName();
+                fileName = getFileName(uri.getPath());
             }
         } catch (Exception e) {
             log.warn("Invalid path: {}", path, e);
             return "";
         }
 
-        if (fileNamePath == null) {
+        if (fileName.isBlank()) {
             return "";
         }
 
-        String fileName = fileNamePath.toString();
         int dotIndex = fileName.lastIndexOf('.');
         // Ensure the dot exists and is not the last character
         if (dotIndex != -1 && dotIndex < fileName.length() - 1) {
             return fileName.substring(dotIndex + 1);
         }
         return "";
+    }
+
+    private static String getFileName(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        int slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        return slashIndex >= 0 ? path.substring(slashIndex + 1) : path;
     }
 
     /**

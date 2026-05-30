@@ -198,6 +198,13 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 | [agentscope-extensions-studio](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio) | Studio 集成 | `io.agentscope:agentscope-extensions-studio` |
 | [agentscope-extensions-agui](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-agui) | AG-UI 协议 | `io.agentscope:agentscope-extensions-agui` |
 
+#### Web API 兼容
+
+| 模块 | 功能 | Maven 坐标 |
+|-----|------|-----------|
+| [agentscope-extensions-chat-completions-web](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-chat-completions-web) | OpenAI Chat Completions 适配 | `io.agentscope:agentscope-extensions-chat-completions-web` |
+| [agentscope-extensions-llm-interfaces-web](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-llm-interfaces-web) | OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 适配 | `io.agentscope:agentscope-extensions-llm-interfaces-web` |
+
 扩展模块会自动带上所需的第三方依赖，不用手动加。
 
 #### 示例：Core + Mem0 扩展
@@ -219,6 +226,16 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
+    <version>1.0.12</version>
+</dependency>
+```
+
+如果要把同一个 `ReActAgent` 暴露成 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 风格的 HTTP API，可以加入聚合 Web starter：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-llm-interfaces-web-starter</artifactId>
     <version>1.0.12</version>
 </dependency>
 ```
