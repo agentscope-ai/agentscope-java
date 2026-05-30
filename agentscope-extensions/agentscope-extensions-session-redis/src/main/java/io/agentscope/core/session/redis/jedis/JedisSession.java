@@ -15,8 +15,8 @@
  */
 package io.agentscope.core.session.redis.jedis;
 
-import io.agentscope.core.legacy.session.ListHashUtil;
-import io.agentscope.core.legacy.session.Session;
+import io.agentscope.core.session.ListHashUtil;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.session.redis.RedisSession;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;

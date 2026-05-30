@@ -29,8 +29,8 @@ import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
@@ -154,8 +154,9 @@ final class ReActAgentBuilderSupport {
         if (b.localFilesystemSpec != null) {
             return b.localFilesystemSpec.toFilesystem(workspace, nsFactory);
         }
-        // Default to local filesystem with shell.
-        return new LocalFilesystemWithShell(workspace, nsFactory);
+        // Default: route through LocalFilesystemSpec so the default project (= ${user.dir})
+        // is overlaid below the agent workspace, matching the Claude-Code-style two-layer model.
+        return new LocalFilesystemSpec().toFilesystem(workspace, nsFactory);
     }
 
     static void validateDistributedSandboxConfig(
@@ -388,6 +389,12 @@ final class ReActAgentBuilderSupport {
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
+        // Snapshot of main agent's Local filesystem configuration. ISOLATED subagents get a
+        // fresh spec carrying the same project / additionalRoots / mode so PathPolicy stays in
+        // sync; without this, every isolated subagent would default to project=${user.dir} and
+        // lose any --add-dir style allow-list configured at the main level.
+        final io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
+                capturedLocalFilesystemSpec = b.localFilesystemSpec;
 
         return () -> {
             if (decl.isRemote()) {
@@ -421,6 +428,9 @@ final class ReActAgentBuilderSupport {
 
             if (decl.getWorkspaceMode() == WorkspaceMode.SHARED && capturedSharedBackend != null) {
                 sub.abstractFilesystem(capturedSharedBackend);
+            } else if (decl.getWorkspaceMode() != WorkspaceMode.SHARED
+                    && capturedLocalFilesystemSpec != null) {
+                sub.filesystem(cloneLocalSpecForSubagent(capturedLocalFilesystemSpec));
             }
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
@@ -431,6 +441,28 @@ final class ReActAgentBuilderSupport {
 
             return sub.build();
         };
+    }
+
+    /**
+     * Builds a fresh {@link io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec} for
+     * an ISOLATED subagent, copying the main agent's project, mode, and additionalRoots so the
+     * subagent's {@code PathPolicy} stays consistent with the parent. The subagent gets its own
+     * workspace (passed separately via {@code sub.workspace(...)}) so its MEMORY/sessions stay
+     * isolated; only the allow-list inputs are shared.
+     */
+    private static io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
+            cloneLocalSpecForSubagent(
+                    io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec parent) {
+        io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec spec =
+                new io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec();
+        if (parent.getProject() != null) {
+            spec.project(parent.getProject());
+        }
+        if (parent.getMode() != null) {
+            spec.mode(parent.getMode());
+        }
+        spec.additionalRoots(parent.getAdditionalRoots());
+        return spec;
     }
 
     /** Returns a defensive copy of inherited parent tools filtered by the optional allowlist. */

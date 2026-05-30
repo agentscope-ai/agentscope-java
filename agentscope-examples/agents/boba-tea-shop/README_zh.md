@@ -50,7 +50,6 @@ Boba Tea Shop 是一个基于 **AgentScope Java** 框架构建的多智能体系
 | 特性 | 描述 |
 |------|------|
 | 🔄 **流式响应** | 支持 SSE 流式输出，实时展示 Agent 思考过程 |
-| 🧠 **上下文压缩** | AutoContextMemory 自动压缩对话上下文 |
 | 💾 **会话持久化** | 基于 MySQL 的会话状态存储与恢复 |
 | 🔍 **服务发现** | 基于 Nacos 的服务注册与发现 |
 | 📡 **协议支持** | 同时支持 A2A 和 MCP 两种智能体通信协议 |
@@ -102,7 +101,6 @@ Boba Tea Shop 是一个基于 **AgentScope Java** 框架构建的多智能体系
 | `agentscope-extensions-mcp-nacos` | MCP 协议 Nacos 服务发现 |
 | `agentscope-extensions-mem0` | Mem0 记忆服务集成 |
 | `agentscope-extensions-session-mysql` | MySQL 会话持久化 |
-| `agentscope-extensions-autocontext-memory` | 自动上下文压缩 |
 | `agentscope-extensions-scheduler-xxl-job` | XXL-JOB 定时任务（可选） |
 
 ---
@@ -122,12 +120,10 @@ ReActAgent agent = ReActAgent.builder()
     .sysPrompt(sysPrompt)
     .toolkit(toolkit)      // 包含 A2A 调用工具
     .model(model)          // LLM 模型
-    .memory(memory)        // AutoContextMemory
     .build();
 ```
 
 **关键特性**：
-- 使用 `AutoContextMemory` 自动压缩上下文，优化 Token 使用
 - 通过 `A2aAgentTools` 调用子智能体
 - 支持 MySQL 会话持久化
 

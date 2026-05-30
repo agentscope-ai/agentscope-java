@@ -60,7 +60,8 @@ import java.util.UUID;
     @JsonSubTypes.Type(value = UserConfirmResultEvent.class, name = "USER_CONFIRM_RESULT"),
     @JsonSubTypes.Type(
             value = ExternalExecutionResultEvent.class,
-            name = "EXTERNAL_EXECUTION_RESULT")
+            name = "EXTERNAL_EXECUTION_RESULT"),
+    @JsonSubTypes.Type(value = RequestStopEvent.class, name = "REQUEST_STOP")
 })
 public abstract class AgentEvent {
 

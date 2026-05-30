@@ -18,9 +18,8 @@ package io.agentscope.examples.bobatea.supervisor.agent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.legacy.memory.InMemoryMemory;
 import io.agentscope.core.legacy.memory.Memory;
-import io.agentscope.core.memory.autocontext.AutoContextConfig;
-import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.mysql.MysqlSession;
@@ -75,10 +74,7 @@ public class SupervisorAgent {
     public Flux<Event> stream(Msg msg, String sessionId, String userId) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(tools);
-        AutoContextConfig autoContextConfig =
-                AutoContextConfig.builder().tokenRatio(0.4).lastKeep(10).build();
-        // Use AutoContextMemory, support context auto compression
-        AutoContextMemory memory = new AutoContextMemory(autoContextConfig, model);
+        Memory memory = new InMemoryMemory();
         MysqlSession mysqlSession =
                 new MysqlSession(dataSource, System.getenv("DB_NAME"), null, true);
         ReActAgent agent = createAgent(toolkit, memory);

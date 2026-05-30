@@ -80,56 +80,6 @@ List<Msg> history = agent.getMemory().getMessages();
 System.out.println("消息总数: " + history.size());
 ```
 
-### AutoContextMemory
-
-智能上下文内存管理系统，自动压缩、卸载和摘要对话历史。
-
-**特点**：
-- 具备上下文管理能力，自动控制 token 使用量
-- 6 种渐进式压缩策略
-- 支持大型消息卸载和按需重载
-- 适用于长对话、token 成本优化、复杂 Agent 任务
-
-**核心特性**：
-- 自动压缩：当消息数量或 token 数量超过阈值时自动触发
-- 智能摘要：使用 LLM 模型智能摘要历史对话
-- 内容卸载：将大型内容卸载到外部存储，通过 UUID 按需重载
-- 双存储机制：工作存储（压缩后）和原始存储（完整历史）
-
-**使用示例**：
-
-```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.autocontext.AutoContextConfig;
-import io.agentscope.core.memory.autocontext.AutoContextMemory;
-import io.agentscope.core.memory.autocontext.ContextOffloadTool;
-import io.agentscope.core.tool.Toolkit;
-
-// 配置
-AutoContextConfig config = AutoContextConfig.builder()
-        .msgThreshold(30)
-        .lastKeep(10)
-        .tokenRatio(0.3)
-        .build();
-
-// 创建内存
-AutoContextMemory memory = new AutoContextMemory(config, model);
-
-// 注册上下文重载工具
-Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ContextOffloadTool(memory));
-
-// 创建 Agent
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(model)
-        .memory(memory)
-        .toolkit(toolkit)
-        .build();
-```
-
-**详细文档**：[AutoContextMemory 详细文档](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md)
-
 ### 短期记忆持久化
 
 短期记忆需要结合 `SessionManager` 实现持久化，以支持重启恢复会话。
@@ -365,6 +315,5 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.BailianMemoryExa
 
 ## 相关文档
 
-- [AutoContextMemory 详细文档](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md)
 - [Session 管理](./session.md)
 - [Agent 配置](./agent-config.md)

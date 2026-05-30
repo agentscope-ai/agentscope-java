@@ -132,7 +132,6 @@ public class AgentScopeProducer {
                 .name(config.agent().name())
                 .sysPrompt(config.agent().sysPrompt())
                 .model(model)
-                .memory(memory)
                 .toolkit(toolkit)
                 .maxIters(config.agent().maxIters())
                 .build();

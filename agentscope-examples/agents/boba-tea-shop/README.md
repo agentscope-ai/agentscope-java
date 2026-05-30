@@ -50,7 +50,6 @@ Through this example, you can learn:
 | Feature | Description |
 |---------|-------------|
 | 🔄 **Streaming Response** | SSE streaming output with real-time display of Agent thinking process |
-| 🧠 **Context Compression** | AutoContextMemory for automatic conversation context compression |
 | 💾 **Session Persistence** | MySQL-based session state storage and recovery |
 | 🔍 **Service Discovery** | Nacos-based service registration and discovery |
 | 📡 **Protocol Support** | Support for both A2A and MCP agent communication protocols |
@@ -102,7 +101,6 @@ Through this example, you can learn:
 | `agentscope-extensions-mcp-nacos` | MCP protocol Nacos service discovery |
 | `agentscope-extensions-mem0` | Mem0 memory service integration |
 | `agentscope-extensions-session-mysql` | MySQL session persistence |
-| `agentscope-extensions-autocontext-memory` | Automatic context compression |
 | `agentscope-extensions-scheduler-xxl-job` | XXL-JOB scheduled tasks (optional) |
 
 ---
@@ -122,12 +120,10 @@ ReActAgent agent = ReActAgent.builder()
     .sysPrompt(sysPrompt)
     .toolkit(toolkit)      // Contains A2A invocation tools
     .model(model)          // LLM model
-    .memory(memory)        // AutoContextMemory
     .build();
 ```
 
 **Key Features**:
-- Uses `AutoContextMemory` for automatic context compression, optimizing token usage
 - Invokes sub-agents through `A2aAgentTools`
 - Supports MySQL session persistence
 

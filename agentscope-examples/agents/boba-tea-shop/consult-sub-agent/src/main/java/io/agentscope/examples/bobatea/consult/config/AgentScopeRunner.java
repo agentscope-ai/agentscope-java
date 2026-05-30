@@ -22,8 +22,6 @@ import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.legacy.rag.Knowledge;
 import io.agentscope.core.legacy.rag.RAGMode;
-import io.agentscope.core.memory.autocontext.AutoContextConfig;
-import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -62,16 +60,10 @@ public class AgentScopeRunner {
         Toolkit toolkit = new NacosToolkit();
         toolkit.registerTool(consultTools);
 
-        AutoContextConfig autoContextConfig =
-                AutoContextConfig.builder().tokenRatio(0.4).lastKeep(10).build();
-        // Use AutoContextMemory, support context auto compression
-        AutoContextMemory memory = new AutoContextMemory(autoContextConfig, model);
-
         ReActAgent.Builder builder =
                 ReActAgent.builder()
                         .name("consult_agent")
                         .sysPrompt(promptConfig.getConsultAgentInstruction())
-                        .memory(memory)
                         .hooks(List.of(new MonitoringHook()))
                         .model(model)
                         .toolkit(toolkit)

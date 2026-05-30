@@ -55,6 +55,13 @@ public class Msg implements State {
     /** Metadata key for storing the generate reason. */
     public static final String METADATA_GENERATE_REASON = "agentscope_generate_reason";
 
+    /**
+     * Metadata key for carrying a {@code List<ConfirmResult>} when resuming a Permission HITL
+     * pause. The receiving {@code ReActAgent.call(msgs)} extracts and applies these results to
+     * the ASKING tool calls in context.
+     */
+    public static final String METADATA_CONFIRM_RESULTS = "agentscope_confirm_results";
+
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
@@ -567,6 +574,23 @@ public class Msg implements State {
                 this.role,
                 this.content,
                 newMetadata,
+                this.timestamp,
+                this.usage);
+    }
+
+    /**
+     * Returns a copy of this message with the given content blocks.
+     *
+     * @param newContent the replacement content blocks
+     * @return a new Msg with identical metadata but replaced content
+     */
+    public Msg withContent(List<ContentBlock> newContent) {
+        return new Msg(
+                this.id,
+                this.name,
+                this.role,
+                newContent,
+                this.metadata,
                 this.timestamp,
                 this.usage);
     }

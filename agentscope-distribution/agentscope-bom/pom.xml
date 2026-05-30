@@ -128,13 +128,6 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions AutoContext Memory -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- AgentScope Extensions Mem0 -->
             <dependency>
                 <groupId>io.agentscope</groupId>

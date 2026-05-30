@@ -193,7 +193,6 @@ public class AgentscopeFactory {
                 .name(config.getName())
                 .sysPrompt(config.getSysPrompt())
                 .model(model)
-                .memory(memory)
                 .toolkit(toolkit)
                 .maxIters(config.getMaxIters())
                 .build();

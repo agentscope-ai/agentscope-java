@@ -80,56 +80,6 @@ List<Msg> history = agent.getMemory().getMessages();
 System.out.println("Total messages: " + history.size());
 ```
 
-### AutoContextMemory
-
-Intelligent context memory management system that automatically compresses, offloads, and summarizes conversation history.
-
-**Characteristics**:
-- Has context management capability, automatically controls token usage
-- 6 progressive compression strategies
-- Supports large message offloading and on-demand reload
-- Suitable for long conversations, token cost optimization, complex Agent tasks
-
-**Core Features**:
-- Automatic compression: Triggers automatically when message count or token count exceeds thresholds
-- Intelligent summarization: Uses LLM models for intelligent conversation summarization
-- Content offloading: Offloads large content to external storage, reloads on-demand via UUID
-- Dual storage mechanism: Working storage (compressed) and original storage (complete history)
-
-**Usage Example**:
-
-```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.autocontext.AutoContextConfig;
-import io.agentscope.core.memory.autocontext.AutoContextMemory;
-import io.agentscope.core.memory.autocontext.ContextOffloadTool;
-import io.agentscope.core.tool.Toolkit;
-
-// Configuration
-AutoContextConfig config = AutoContextConfig.builder()
-        .msgThreshold(30)
-        .lastKeep(10)
-        .tokenRatio(0.3)
-        .build();
-
-// Create memory
-AutoContextMemory memory = new AutoContextMemory(config, model);
-
-// Register context reload tool
-Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ContextOffloadTool(memory));
-
-// Create Agent
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(model)
-        .memory(memory)
-        .toolkit(toolkit)
-        .build();
-```
-
-**Detailed Documentation**: [AutoContextMemory Documentation](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README.md)
-
 ### Short-term Memory Persistence
 
 Short-term memory requires `SessionManager` for persistence to support session recovery after restart.
@@ -364,6 +314,5 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.BailianMemoryExa
 
 ## Related Documentation
 
-- [AutoContextMemory Documentation](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README.md)
 - [Session Management](./session.md)
 - [ReActAgent Guide](./agent-config.md)

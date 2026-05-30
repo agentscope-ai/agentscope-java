@@ -16,19 +16,22 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
-import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -50,10 +53,13 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
-import reactor.util.context.Context;
 
-/** End-to-end tests for HITL gating via {@link Sinks.Many}. */
+/**
+ * End-to-end tests for Permission HITL via the persistent-state model. A first {@code call}
+ * returns a {@link Msg} with {@link GenerateReason#PERMISSION_ASKING}; callers resume by
+ * issuing a second {@code call} carrying {@link ConfirmResult}(s) under
+ * {@link Msg#METADATA_CONFIRM_RESULTS}.
+ */
 class ReActAgentHitlTest {
 
     private static AgentState newState() {
@@ -193,42 +199,21 @@ class ReActAgentHitlTest {
         return c;
     }
 
-    @Test
-    void askingToolWithoutSinkAutoDeniesAndEmitsDeniedToolResult() {
-        ChatModelBase model =
-                new ScriptedModel(
-                        List.of(
-                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
-                                () -> Flux.just(textResponse("done"))));
-        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
-
-        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
-        assertNotNull(events);
-
-        int iReq = indexOf(events, RequireUserConfirmEvent.class);
-        int iRes = indexOf(events, UserConfirmResultEvent.class);
-        int iEnd = indexOf(events, ToolResultEndEvent.class);
-
-        assertTrue(iReq >= 0, "RequireUserConfirmEvent must be emitted");
-        assertTrue(iRes > iReq, "UserConfirmResultEvent must follow RequireUserConfirmEvent");
-        assertTrue(iEnd > iRes, "tool-result events must follow confirm result");
-
-        RequireUserConfirmEvent req = (RequireUserConfirmEvent) events.get(iReq);
-        assertEquals(1, req.getToolCalls().size());
-        assertEquals("tc1", req.getToolCalls().get(0).getId());
-
-        UserConfirmResultEvent res = (UserConfirmResultEvent) events.get(iRes);
-        assertEquals(1, res.getConfirmResults().size());
-        assertFalse(
-                res.getConfirmResults().get(0).isConfirmed(),
-                "auto-deny path must surface confirmed=false");
-
-        ToolResultEndEvent end = (ToolResultEndEvent) events.get(iEnd);
-        assertEquals(ToolResultState.DENIED, end.getState());
+    private static Msg confirmMsg(boolean confirmed, ToolUseBlock toolCall) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put(
+                Msg.METADATA_CONFIRM_RESULTS,
+                List.of(new ConfirmResult(confirmed, toolCall, null)));
+        return Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .textContent("[confirm]")
+                .metadata(meta)
+                .build();
     }
 
     @Test
-    void askingToolWithConfirmedSinkExecutesNormally() {
+    void askingToolPausesFirstCallAndExecutesOnConfirmedSecondCall() {
         ChatModelBase model =
                 new ScriptedModel(
                         List.of(
@@ -236,35 +221,60 @@ class ReActAgentHitlTest {
                                 () -> Flux.just(textResponse("done"))));
         ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
 
-        Sinks.Many<ConfirmResult> sink = Sinks.many().multicast().onBackpressureBuffer();
+        // First call: expect to pause with PERMISSION_ASKING
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+        assertEquals(GenerateReason.PERMISSION_ASKING, firstResult.getGenerateReason());
 
-        Flux<AgentEvent> stream =
-                agent.streamEvents(List.of())
-                        .contextWrite(Context.of(ReActAgent.CONFIRM_SINK_KEY, sink));
+        // Verify state has been persisted: ToolUseBlock should be in ASKING state
+        Msg lastAssistant = null;
+        for (int i = agent.getState().getContext().size() - 1; i >= 0; i--) {
+            Msg m = agent.getState().getContext().get(i);
+            if (m.getRole() == MsgRole.ASSISTANT) {
+                lastAssistant = m;
+                break;
+            }
+        }
+        assertNotNull(lastAssistant);
+        List<ToolUseBlock> blocks = lastAssistant.getContentBlocks(ToolUseBlock.class);
+        assertEquals(1, blocks.size());
+        assertEquals(ToolCallState.ASKING, blocks.get(0).getState());
 
-        ToolUseBlock pending = ToolUseBlock.builder().id("tc1").name("ask").input(Map.of()).build();
-        sink.tryEmitNext(new ConfirmResult(true, pending));
-
-        List<AgentEvent> events = stream.collectList().block();
-        assertNotNull(events);
-
-        int iReq = indexOf(events, RequireUserConfirmEvent.class);
-        int iRes = indexOf(events, UserConfirmResultEvent.class);
-        int iEnd = indexOf(events, ToolResultEndEvent.class);
-        assertTrue(iReq >= 0);
-        assertTrue(iRes > iReq);
-        assertTrue(iEnd > iRes);
-
-        UserConfirmResultEvent res = (UserConfirmResultEvent) events.get(iRes);
-        assertTrue(res.getConfirmResults().get(0).isConfirmed());
-
-        ToolResultEndEvent end = (ToolResultEndEvent) events.get(iEnd);
-        assertEquals(
-                ToolResultState.SUCCESS, end.getState(), "confirmed call must produce SUCCESS");
+        // Second call: resume with a confirmed ConfirmResult
+        Msg secondResult = agent.call(List.of(confirmMsg(true, blocks.get(0)))).block();
+        assertNotNull(secondResult);
+        // Should have proceeded normally to the next reasoning round
+        assertTrue(
+                secondResult.getGenerateReason() == GenerateReason.MODEL_STOP
+                        || secondResult.getGenerateReason() == GenerateReason.TOOL_CALLS,
+                "expected normal completion, got " + secondResult.getGenerateReason());
     }
 
     @Test
-    void askingToolWithDeniedSinkEmitsDeniedToolResult() {
+    void askingToolEmitsRequireUserConfirmAndRequestStopEvents() {
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("tc1", "ask", "x"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int iReq = indexOf(events, RequireUserConfirmEvent.class);
+        int iStop = indexOf(events, RequestStopEvent.class);
+
+        assertTrue(iReq >= 0, "RequireUserConfirmEvent must be emitted");
+        assertTrue(iStop > iReq, "RequestStopEvent must follow RequireUserConfirmEvent");
+
+        RequireUserConfirmEvent req = (RequireUserConfirmEvent) events.get(iReq);
+        assertEquals(1, req.getToolCalls().size());
+        assertEquals("tc1", req.getToolCalls().get(0).getId());
+
+        RequestStopEvent stop = (RequestStopEvent) events.get(iStop);
+        assertEquals(GenerateReason.PERMISSION_ASKING, stop.getGenerateReason());
+    }
+
+    @Test
+    void askingToolResumeWithDeniedConfirmResultProducesDeniedToolResult() {
         ChatModelBase model =
                 new ScriptedModel(
                         List.of(
@@ -272,24 +282,57 @@ class ReActAgentHitlTest {
                                 () -> Flux.just(textResponse("done"))));
         ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
 
-        Sinks.Many<ConfirmResult> sink = Sinks.many().multicast().onBackpressureBuffer();
-        ToolUseBlock pending = ToolUseBlock.builder().id("tc1").name("ask").input(Map.of()).build();
-        sink.tryEmitNext(new ConfirmResult(false, pending));
+        // First call → ASKING
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
 
-        List<AgentEvent> events =
-                agent.streamEvents(List.of())
-                        .contextWrite(Context.of(ReActAgent.CONFIRM_SINK_KEY, sink))
-                        .collectList()
-                        .block();
-        assertNotNull(events);
+        Msg lastAssistant = null;
+        for (int i = agent.getState().getContext().size() - 1; i >= 0; i--) {
+            Msg m = agent.getState().getContext().get(i);
+            if (m.getRole() == MsgRole.ASSISTANT) {
+                lastAssistant = m;
+                break;
+            }
+        }
+        ToolUseBlock pending = lastAssistant.getContentBlocks(ToolUseBlock.class).get(0);
 
-        UserConfirmResultEvent res =
-                (UserConfirmResultEvent) events.get(indexOf(events, UserConfirmResultEvent.class));
-        assertFalse(res.getConfirmResults().get(0).isConfirmed());
+        // Second call → deny
+        Msg second = agent.call(List.of(confirmMsg(false, pending))).block();
+        assertNotNull(second);
 
-        ToolResultEndEvent end =
-                (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));
-        assertEquals(ToolResultState.DENIED, end.getState());
+        // Context should contain a DENIED ToolResultBlock for tc1
+        boolean foundDenied =
+                agent.getState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .anyMatch(
+                                tr ->
+                                        "tc1".equals(tr.getId())
+                                                && tr.getState() == ToolResultState.DENIED);
+        assertTrue(foundDenied, "expected a DENIED ToolResultBlock for the rejected tool");
+    }
+
+    @Test
+    void askingToolWithoutConfirmResultOnResumeThrows() {
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("tc1", "ask", "x"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        agent.call(List.of()).block(); // pause
+
+        // Calling again without ConfirmResult must fail explicitly
+        assertThrows(
+                Throwable.class,
+                () ->
+                        agent.call(
+                                        List.of(
+                                                Msg.builder()
+                                                        .name("user")
+                                                        .role(MsgRole.USER)
+                                                        .textContent("hi")
+                                                        .build()))
+                                .block(),
+                "expected explicit failure when no ConfirmResult is supplied");
     }
 
     @Test
@@ -308,7 +351,7 @@ class ReActAgentHitlTest {
                 0,
                 countOf(events, RequireUserConfirmEvent.class),
                 "no tool requires confirmation; HITL events must not appear");
-        assertEquals(0, countOf(events, UserConfirmResultEvent.class));
+        assertEquals(0, countOf(events, RequestStopEvent.class), "no stop should be requested");
 
         ToolResultEndEvent end =
                 (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));

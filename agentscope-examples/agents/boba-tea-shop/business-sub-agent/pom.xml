@@ -61,10 +61,6 @@
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-autocontext-memory</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-mem0</artifactId>
         </dependency>
 

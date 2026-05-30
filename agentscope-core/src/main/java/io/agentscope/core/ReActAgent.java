@@ -30,6 +30,7 @@ import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
@@ -44,7 +45,6 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
-import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.legacy.agent.StructuredOutputCapableAgent;
@@ -58,6 +58,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -76,6 +77,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionEngine;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
@@ -105,6 +107,7 @@ import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
+import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.DynamicSkillMiddleware;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
@@ -138,6 +141,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -157,7 +161,6 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 
 /**
  * ReAct (Reasoning and Acting) Agent implementation.
@@ -213,14 +216,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             GracefulShutdownManager.getInstance();
 
     /**
-     * Reactor {@link reactor.util.context.Context} key under which callers register a
-     * {@link Sinks.Many} that this agent will read to receive {@link ConfirmResult} responses to
-     * {@link RequireUserConfirmEvent}s. The sink must accept at least one {@code ConfirmResult}
-     * for every pending tool call before the agent will proceed.
-     *
-     * <p>When no sink is registered and at least one tool call requires confirmation, the agent
-     * auto-denies all pending tool calls.
+     * @deprecated Permission HITL no longer uses a Reactor Sink. Confirm results are now
+     *     delivered via a second {@code agent.call(msgs)} carrying a {@link ConfirmResult}
+     *     payload — see {@code applyConfirmResults}. This constant is retained as a
+     *     compile-time marker and will be removed in a future release.
      */
+    @Deprecated
     public static final String CONFIRM_SINK_KEY = "io.agentscope.core.ReActAgent.confirmSink";
 
     // ==================== Core Dependencies ====================
@@ -661,6 +662,21 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return coreAgent();
         }
 
+        // Permission HITL: if any pending tool is ASKING, the caller MUST supply
+        // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
+        if (hasAskingToolCalls()) {
+            List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
+            if (confirmResults.isEmpty()) {
+                throw new IllegalStateException(
+                        "Agent is waiting for ConfirmResult(s) on ASKING tool calls but the"
+                                + " incoming call did not supply any. Attach a"
+                                + " List<ConfirmResult> under Msg metadata key "
+                                + Msg.METADATA_CONFIRM_RESULTS);
+            }
+            applyConfirmResults(confirmResults);
+            return resumeAgent();
+        }
+
         // Has pending tools but no input -> resume (execute pending tools directly)
         if (msgs == null || msgs.isEmpty()) {
             return resumeAgent();
@@ -684,6 +700,117 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         + "Enable enablePendingToolRecovery or provide tool results. "
                         + "Pending IDs: "
                         + pendingIds);
+    }
+
+    /**
+     * Pull all {@link ConfirmResult}s out of the {@link Msg#METADATA_CONFIRM_RESULTS} metadata
+     * key across the incoming message list.
+     */
+    @SuppressWarnings("unchecked")
+    private List<ConfirmResult> extractConfirmResults(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return List.of();
+        }
+        List<ConfirmResult> collected = new ArrayList<>();
+        for (Msg m : msgs) {
+            Object raw =
+                    m.getMetadata() == null
+                            ? null
+                            : m.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+            if (raw instanceof List<?> list) {
+                for (Object o : list) {
+                    if (o instanceof ConfirmResult cr) {
+                        collected.add(cr);
+                    }
+                }
+            }
+        }
+        return collected;
+    }
+
+    /**
+     * Apply user confirmation results to the ASKING tool calls in context.
+     *
+     * <p>For each result:
+     * <ul>
+     *   <li>{@code confirmed == true}: replace the ASKING ToolUseBlock with the (possibly
+     *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
+     *       register any attached {@link PermissionRule}s with the engine.</li>
+     *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
+     *       the tool will no longer be pending on resume.</li>
+     * </ul>
+     */
+    private void applyConfirmResults(List<ConfirmResult> results) {
+        // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
+        // promote them to ALLOWED. Collect denied ones for separate handling.
+        List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+        Map<String, ToolUseBlock> replacements = new HashMap<>();
+        Map<String, ToolCallState> stateUpdates = new HashMap<>();
+        for (ConfirmResult r : results) {
+            ToolUseBlock target = r.getToolCall();
+            if (target == null) {
+                continue;
+            }
+            if (r.isConfirmed()) {
+                replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
+                stateUpdates.put(target.getId(), ToolCallState.ALLOWED);
+                if (r.getRules() != null) {
+                    for (PermissionRule rule : r.getRules()) {
+                        if (rule != null) {
+                            permissionEngine.addRule(rule);
+                        }
+                    }
+                }
+            } else {
+                deniedToolCalls.add(target);
+            }
+        }
+        applyToolUseBlockReplacements(replacements);
+        for (ToolUseBlock denied : deniedToolCalls) {
+            ToolResultBlock deniedResult =
+                    ToolResultBlock.text("Permission denied by user")
+                            .withIdAndName(denied.getId(), denied.getName())
+                            .withState(ToolResultState.DENIED);
+            Msg deniedMsg =
+                    ToolResultMessageBuilder.buildToolResultMsg(deniedResult, denied, getName());
+            state.contextMutable().add(deniedMsg);
+        }
+    }
+
+    /**
+     * Locate the last assistant Msg and substitute {@code ToolUseBlock}s in-place when their id
+     * appears in {@code replacements}.
+     */
+    private void applyToolUseBlockReplacements(Map<String, ToolUseBlock> replacements) {
+        if (replacements == null || replacements.isEmpty()) {
+            return;
+        }
+        List<Msg> ctx = state.contextMutable();
+        for (int i = ctx.size() - 1; i >= 0; i--) {
+            Msg m = ctx.get(i);
+            if (m.getRole() != MsgRole.ASSISTANT) {
+                continue;
+            }
+            boolean hasMatch =
+                    m.getContent().stream()
+                            .anyMatch(
+                                    b ->
+                                            b instanceof ToolUseBlock t
+                                                    && replacements.containsKey(t.getId()));
+            if (!hasMatch) {
+                continue;
+            }
+            List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
+            for (ContentBlock block : m.getContent()) {
+                if (block instanceof ToolUseBlock t && replacements.containsKey(t.getId())) {
+                    rebuilt.add(replacements.get(t.getId()));
+                } else {
+                    rebuilt.add(block);
+                }
+            }
+            ctx.set(i, m.withContent(rebuilt));
+            return;
+        }
     }
 
     private void maybePatchPendingToolCalls(List<Msg> msgs) {
@@ -986,9 +1113,33 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                     MiddlewareBase::onReasoning,
                                                     reasoningCore)
                                             .apply(new ReasoningInput(modelInput, tools, options));
-                            return stream.then(
-                                    Mono.defer(
-                                            () -> Mono.justOrEmpty(context.buildFinalMessage())));
+                            // Track any RequestStopEvent emitted by middlewares while still
+                            // exhausting the stream (publishEvent already fires on each event).
+                            AtomicReference<RequestStopEvent> stopRequested =
+                                    new AtomicReference<>();
+                            return stream.doOnNext(
+                                            ev -> {
+                                                if (ev instanceof RequestStopEvent rs) {
+                                                    stopRequested.compareAndSet(null, rs);
+                                                }
+                                            })
+                                    .then(
+                                            Mono.defer(
+                                                    () -> {
+                                                        Msg finalMsg = context.buildFinalMessage();
+                                                        RequestStopEvent rs = stopRequested.get();
+                                                        if (rs != null && finalMsg != null) {
+                                                            // Persist the reasoning message before
+                                                            // returning so the next call can resume
+                                                            // from pending tool calls.
+                                                            state.contextMutable().add(finalMsg);
+                                                            return Mono.just(
+                                                                    finalMsg.withGenerateReason(
+                                                                            rs
+                                                                                    .getGenerateReason()));
+                                                        }
+                                                        return Mono.justOrEmpty(finalMsg);
+                                                    }));
                         })
                 .onErrorResume(
                         InterruptedException.class,
@@ -1007,18 +1158,35 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             }
                             return Mono.error(error);
                         })
-                .flatMap(msg -> hookDispatcher.firePostReasoning(msg, model.getModelName()))
+                .flatMap(
+                        msg -> {
+                            // Short-circuit: middleware requested stop during reasoning. The msg
+                            // is already persisted to context and tagged with the correct
+                            // GenerateReason; skip legacy postReasoning hook.
+                            if (msg.getGenerateReason() == GenerateReason.MIDDLEWARE_STOP_REQUESTED
+                                    || msg.getGenerateReason()
+                                            == GenerateReason.PERMISSION_ASKING) {
+                                return Mono.just(msg);
+                            }
+                            return runPostReasoningPipeline(msg, iter);
+                        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private Mono<Msg> runPostReasoningPipeline(Msg msg, int iter) {
+        return hookDispatcher
+                .firePostReasoning(msg, model.getModelName())
                 .flatMap(
                         event -> {
-                            Msg msg = event.getReasoningMessage();
-                            if (msg != null) {
-                                state.contextMutable().add(msg);
+                            Msg eventMsg = event.getReasoningMessage();
+                            if (eventMsg != null) {
+                                state.contextMutable().add(eventMsg);
                             }
 
                             // HITL stop
                             if (event.isStopRequested()) {
                                 return Mono.just(
-                                        msg.withGenerateReason(
+                                        eventMsg.withGenerateReason(
                                                 GenerateReason.REASONING_STOP_REQUESTED));
                             }
 
@@ -1032,8 +1200,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             }
 
                             // Check finish conditions
-                            if (isFinished(msg)) {
-                                return Mono.just(msg);
+                            if (isFinished(eventMsg)) {
+                                return Mono.just(eventMsg);
                             }
 
                             // Continue to acting
@@ -1206,6 +1374,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
                 new AtomicReference<>();
 
+        AtomicReference<RequestStopEvent> actingStopRequested = new AtomicReference<>();
         return hookDispatcher
                 .firePreActing(pendingToolCalls, toolkit)
                 .flatMap(
@@ -1219,10 +1388,24 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                     MiddlewareBase::onActing,
                                                     actingCore)
                                             .apply(new ActingInput(toolCalls));
-                            return stream.then(Mono.defer(() -> Mono.just(resultHolder.get())));
+                            return stream.doOnNext(
+                                            ev -> {
+                                                if (ev instanceof RequestStopEvent rs) {
+                                                    actingStopRequested.compareAndSet(null, rs);
+                                                }
+                                            })
+                                    .then(Mono.defer(() -> Mono.just(resultHolder.get())));
                         })
                 .flatMap(
                         results -> {
+                            // Middleware requested stop during acting — return immediately with
+                            // the requested GenerateReason, preserving any results already
+                            // collected.
+                            RequestStopEvent rs = actingStopRequested.get();
+                            if (rs != null) {
+                                Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
+                                return Mono.just(stopMsg);
+                            }
                             List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
                                     results.stream()
                                             .filter(e -> !e.getValue().isSuspended())
@@ -1284,33 +1467,67 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         gate -> {
                             List<ToolUseBlock> pending = gate.pendingAsk();
                             Set<String> autoDenied = gate.autoDeniedIds();
+
+                            // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
+                            // calls run immediately; ASKING calls cause the agent to pause and
+                            // return; DENIED calls get DENIED ToolResultBlocks written below.
+                            Map<String, ToolCallState> stateUpdates = new HashMap<>();
+                            for (ToolUseBlock tc : toolCalls) {
+                                if (autoDenied.contains(tc.getId())) {
+                                    // DENIED tools don't need a state change — they'll get a
+                                    // DENIED ToolResultBlock and won't reappear in pending.
+                                    continue;
+                                }
+                                stateUpdates.put(
+                                        tc.getId(),
+                                        pending.stream().anyMatch(p -> p.getId().equals(tc.getId()))
+                                                ? ToolCallState.ASKING
+                                                : ToolCallState.ALLOWED);
+                            }
+                            updateToolCallStates(stateUpdates);
+
                             if (pending.isEmpty()) {
                                 return runToolBatch(toolCalls, autoDenied, replyId, resultHolder);
                             }
+
+                            // Permission HITL: surface the pending tool calls, persist any
+                            // auto-denied results so the second call can identify which ones
+                            // still need confirmation, then signal stop via RequestStopEvent.
+                            // The agent's acting() will see the RequestStopEvent, set the
+                            // GenerateReason to PERMISSION_ASKING, and return.
+                            if (!autoDenied.isEmpty()) {
+                                // Write DENIED results in-place so they aren't re-evaluated on
+                                // resume.
+                                writeAutoDeniedResults(toolCalls, autoDenied);
+                            }
+                            // resultHolder may be inspected by the caller after stream completion;
+                            // initialise it to empty since no successful execution happened.
+                            resultHolder.set(List.of());
                             return Flux.<AgentEvent>just(
-                                            new RequireUserConfirmEvent(replyId, pending))
-                                    .concatWith(
-                                            awaitConfirmation(pending)
-                                                    .flatMapMany(
-                                                            confirmResults -> {
-                                                                Set<String> deniedIds =
-                                                                        new HashSet<>(autoDenied);
-                                                                deniedIds.addAll(
-                                                                        collectDeniedIds(
-                                                                                confirmResults));
-                                                                return Flux.<AgentEvent>just(
-                                                                                new UserConfirmResultEvent(
-                                                                                        replyId,
-                                                                                        confirmResults))
-                                                                        .concatWith(
-                                                                                runToolBatch(
-                                                                                        toolCalls,
-                                                                                        deniedIds,
-                                                                                        replyId,
-                                                                                        resultHolder));
-                                                            }));
+                                    new RequireUserConfirmEvent(replyId, pending),
+                                    new RequestStopEvent(
+                                            "permission asking", GenerateReason.PERMISSION_ASKING));
                         })
                 .doOnNext(this::publishEvent);
+    }
+
+    /**
+     * Synthesise DENIED ToolResultBlocks for tools that were rejected by deny rules and append
+     * them to context so the conversation reflects the rejection (and resume doesn't see them
+     * as pending).
+     */
+    private void writeAutoDeniedResults(List<ToolUseBlock> toolCalls, Set<String> deniedIds) {
+        for (ToolUseBlock tc : toolCalls) {
+            if (!deniedIds.contains(tc.getId())) {
+                continue;
+            }
+            ToolResultBlock denied =
+                    ToolResultBlock.text("Permission denied by rules")
+                            .withIdAndName(tc.getId(), tc.getName())
+                            .withState(ToolResultState.DENIED);
+            Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
+            state.contextMutable().add(deniedMsg);
+        }
     }
 
     /**
@@ -1486,6 +1703,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     private Mono<PermissionVerdict> evaluateOne(ToolUseBlock use, boolean useEngine) {
+        // Tools already promoted to ALLOWED by user confirmation skip the engine entirely.
+        if (use.getState() == ToolCallState.ALLOWED) {
+            return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
+        }
         AgentTool tool = toolkit.getTool(use.getName());
         if (!(tool instanceof ToolBase tb)) {
             return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
@@ -1519,48 +1740,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
-
-    /**
-     * Read a {@link Sinks.Many} of {@link ConfirmResult} from the subscriber's Reactor context
-     * under {@link #CONFIRM_SINK_KEY}, take one response per pending tool call and return the
-     * list. When the sink is absent every pending call is auto-denied.
-     */
-    private Mono<List<ConfirmResult>> awaitConfirmation(List<ToolUseBlock> pending) {
-        return Mono.deferContextual(
-                ctx -> {
-                    if (!ctx.hasKey(CONFIRM_SINK_KEY)) {
-                        List<ConfirmResult> denied = new ArrayList<>(pending.size());
-                        for (ToolUseBlock t : pending) {
-                            denied.add(new ConfirmResult(false, t));
-                        }
-                        return Mono.just(denied);
-                    }
-                    Object raw = ctx.get(CONFIRM_SINK_KEY);
-                    if (!(raw instanceof Sinks.Many<?> rawSink)) {
-                        return Mono.error(
-                                new IllegalStateException(
-                                        "Reactor context value for "
-                                                + CONFIRM_SINK_KEY
-                                                + " is not a Sinks.Many<ConfirmResult>"));
-                    }
-                    @SuppressWarnings("unchecked")
-                    Sinks.Many<ConfirmResult> sink = (Sinks.Many<ConfirmResult>) rawSink;
-                    return sink.asFlux().take(pending.size()).collectList();
-                });
-    }
-
-    private static Set<String> collectDeniedIds(List<ConfirmResult> results) {
-        Set<String> denied = new HashSet<>();
-        if (results == null) {
-            return denied;
-        }
-        for (ConfirmResult r : results) {
-            if (r != null && !r.isConfirmed() && r.getToolCall() != null) {
-                denied.add(r.getToolCall().getId());
-            }
-        }
-        return denied;
-    }
 
     private ToolResultState determineToolResultState(ToolResultBlock result) {
         if (result.isSuspended()) {
@@ -1601,6 +1780,27 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 .role(MsgRole.ASSISTANT)
                 .content(content)
                 .generateReason(GenerateReason.TOOL_SUSPENDED)
+                .build();
+    }
+
+    /**
+     * Build a stop-acknowledgement Msg for middleware-requested stops during acting. Preserves
+     * any already-collected tool results so the caller sees partial progress.
+     */
+    private Msg buildStopMsg(
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> results, GenerateReason reason) {
+        List<ContentBlock> content = new ArrayList<>();
+        if (results != null) {
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : results) {
+                content.add(pair.getKey());
+                content.add(pair.getValue());
+            }
+        }
+        return Msg.builder()
+                .name(getName())
+                .role(MsgRole.ASSISTANT)
+                .content(content)
+                .generateReason(reason)
                 .build();
     }
 
@@ -1952,6 +2152,60 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return allToolCalls.stream()
                 .filter(toolUse -> pendingIds.contains(toolUse.getId()))
                 .toList();
+    }
+
+    // ==================== Tool call state helpers (Permission HITL) ====================
+
+    /**
+     * Locate the last assistant Msg in context and replace the {@code state} of every
+     * {@link ToolUseBlock} whose id matches the given map's key. Mirrors Python's
+     * {@code _update_tool_call_state} but operates in bulk to minimise list rebuilds.
+     */
+    private void updateToolCallStates(Map<String, ToolCallState> updates) {
+        if (updates == null || updates.isEmpty()) {
+            return;
+        }
+        List<Msg> ctx = state.contextMutable();
+        for (int i = ctx.size() - 1; i >= 0; i--) {
+            Msg m = ctx.get(i);
+            if (m.getRole() != MsgRole.ASSISTANT) {
+                continue;
+            }
+            boolean hasMatch =
+                    m.getContent().stream()
+                            .anyMatch(
+                                    b ->
+                                            b instanceof ToolUseBlock t
+                                                    && updates.containsKey(t.getId()));
+            if (!hasMatch) {
+                continue;
+            }
+            List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
+            for (ContentBlock block : m.getContent()) {
+                if (block instanceof ToolUseBlock t && updates.containsKey(t.getId())) {
+                    rebuilt.add(t.withState(updates.get(t.getId())));
+                } else {
+                    rebuilt.add(block);
+                }
+            }
+            ctx.set(i, m.withContent(rebuilt));
+            return; // only the last assistant msg holds the live tool_use blocks
+        }
+    }
+
+    /** Convenience overload for a single tool call. */
+    private void updateToolCallState(String toolCallId, ToolCallState newState) {
+        updateToolCallStates(Map.of(toolCallId, newState));
+    }
+
+    /** Whether any ToolUseBlock in the last assistant Msg is in ASKING state. */
+    private boolean hasAskingToolCalls() {
+        Msg last = findLastAssistantMsg();
+        if (last == null) {
+            return false;
+        }
+        return last.getContent().stream()
+                .anyMatch(b -> b instanceof ToolUseBlock t && t.getState() == ToolCallState.ASKING);
     }
 
     @Override
@@ -2342,6 +2596,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         boolean disableMemoryHooks = false;
         boolean disableSessionPersistence = false;
         boolean disableWorkspaceContext = false;
+        boolean disableAtPathExpansion = false;
         boolean disableSubagents = false;
         boolean disableDynamicSkills = false;
         io.agentscope.core.skill.SkillFilter skillFilter;
@@ -3070,6 +3325,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return this;
         }
 
+        /** Skips registration of {@link AtPathExpansionMiddleware}. */
+        public Builder disableAtPathExpansion() {
+            this.disableAtPathExpansion = true;
+            return this;
+        }
+
         /** Skips registration of {@link SubagentsMiddleware}. */
         public Builder disableSubagents() {
             this.disableSubagents = true;
@@ -3617,6 +3878,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                 maxContextTokens);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
                 middlewares.add(markdownMw);
+            }
+            if (!disableAtPathExpansion) {
+                middlewares.add(new AtPathExpansionMiddleware(wsManager));
             }
             if (model != null && !disableMemoryHooks) {
                 middlewares.add(new MemoryFlushMiddleware(wsManager, model));

@@ -153,7 +153,6 @@ implementation 'io.agentscope:agentscope-core:1.0.12'
 |--------|---------|-------------------|
 | [agentscope-extensions-mem0](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-mem0) | Mem0 Long-term Memory | `io.agentscope:agentscope-extensions-mem0` |
 | [agentscope-extensions-reme](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-reme) | ReME Long-term Memory | `io.agentscope:agentscope-extensions-reme` |
-| [agentscope-extensions-autocontext-memory](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-autocontext-memory) | AutoContext Memory | `io.agentscope:agentscope-extensions-autocontext-memory` |
 
 #### RAG
 

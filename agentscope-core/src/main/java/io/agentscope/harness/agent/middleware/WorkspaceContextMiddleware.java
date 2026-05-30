@@ -19,6 +19,13 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -48,7 +55,7 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
             %s
             """;
 
-    private static final String WORKSPACE_GUIDANCE_TEMPLATE =
+    private static final String GUIDANCE_TEMPLATE =
             """
             ## Domain Knowledge
             The workspace `knowledge/` tree holds many detailed reference documents (not only a single summary file). When the task needs specs, procedures, schemas, or domain facts, treat that directory as the source of truth.
@@ -67,12 +74,10 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
             Use edit_file/write_file to append concise bullet points. \
             Do NOT duplicate existing entries. \
             Memory is also automatically extracted at conversation end.
+            """;
 
-            ## Workspace
-            Your working directory is: %s
-            Treat this directory as the single global workspace for file operations unless explicitly instructed otherwise.
-            AGENTS.md define persona and local conventions — honor them when consistent with safety and policy.
-
+    private static final String WORKSPACE_FILES_NOTICE =
+            """
             ## Workspace Files (Injected)
             The following <loaded_context> was loaded in from files in your workspace.
             These files (for example, `AGENTS.md`, `MEMORY.md`, and `knowledge/KNOWLEDGE.md`) contain memory, facts, preferences, guidelines, and user-specific details learned from prior interactions with user.
@@ -148,21 +153,157 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
             memoryContent = truncateToTokenBudget(memoryContent, available);
         }
 
-        String guidance = String.format(WORKSPACE_GUIDANCE_TEMPLATE, workspace.toAbsolutePath());
+        String workspaceParagraph =
+                buildWorkspaceParagraph(workspace, workspaceManager.getFilesystem());
         String loadedContext =
                 buildLoadedContextSection(
                         agentsContent, memoryContent, knowledgeBlock, additionalBlock, rc);
-        return assembleSection(sessionContext, guidance, loadedContext);
+        return assembleSection(
+                sessionContext, GUIDANCE_TEMPLATE, workspaceParagraph, loadedContext);
     }
 
     private static String assembleSection(
-            String sessionContext, String guidance, String loadedContextSection) {
+            String sessionContext,
+            String guidance,
+            String workspaceParagraph,
+            String loadedContextSection) {
         StringBuilder sb = new StringBuilder();
         if (!sessionContext.isBlank()) {
             sb.append(sessionContext).append("\n\n");
         }
-        sb.append(guidance).append("\n").append(loadedContextSection);
+        sb.append(guidance);
+        if (!workspaceParagraph.isEmpty()) {
+            sb.append("\n").append(workspaceParagraph);
+        }
+        sb.append("\n").append(WORKSPACE_FILES_NOTICE).append("\n").append(loadedContextSection);
         return sb.toString();
+    }
+
+    /**
+     * Builds the {@code ## Workspace} paragraph, branching by the active filesystem type so the
+     * LLM sees a description that matches its real deployment surface.
+     *
+     * <ul>
+     *   <li><b>Local overlay</b> ({@link OverlayFilesystem} wrapping
+     *       {@link LocalFilesystemWithShell}) — renders Project + Workspace as two lines plus
+     *       overlay/shell semantics.
+     *   <li><b>Sandbox</b> ({@link AbstractSandboxFilesystem} not wrapped in an overlay) —
+     *       describes the isolated container view and how host files reach it.
+     *   <li><b>Remote</b> ({@link CompositeFilesystem}) — describes the distributed store-backed
+     *       workspace and the fact that there is no host filesystem to fall back to.
+     *   <li><b>Other</b> — single-line legacy "working directory is X" form for plain
+     *       {@link io.agentscope.harness.agent.filesystem.local.LocalFilesystem} or anything we
+     *       don't recognize.
+     * </ul>
+     */
+    private static String buildWorkspaceParagraph(Path workspace, AbstractFilesystem fs) {
+        StringBuilder sb = new StringBuilder("## Workspace\n");
+        LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
+        Path project = localUpper != null ? localUpper.getShellCwd() : null;
+        if (project != null) {
+            sb.append("Project (the user's source tree you're assisting with): ")
+                    .append(project.toAbsolutePath())
+                    .append("\n");
+            sb.append("Workspace (your home base — memory, sessions, skills, runtime data): ")
+                    .append(workspace.toAbsolutePath())
+                    .append("\n");
+            List<Path> extraRoots = extraRootsOf(localUpper, project, workspace);
+            if (!extraRoots.isEmpty()) {
+                sb.append("Additional roots: ");
+                for (int i = 0; i < extraRoots.size(); i++) {
+                    if (i > 0) {
+                        sb.append(", ");
+                    }
+                    sb.append(extraRoots.get(i).toAbsolutePath());
+                }
+                sb.append("\n");
+            }
+            LocalFsMode mode = localUpper.getMode();
+            sb.append("Path access policy: ")
+                    .append(describeMode(mode))
+                    .append(". File tools reject absolute paths outside the roots above")
+                    .append(mode == LocalFsMode.ROOTED ? " with a security error" : "")
+                    .append(
+                            "; relative paths resolve under the workspace and read-fall-back to"
+                                    + " the project (overlay copy-on-write).\n");
+            sb.append("Shell commands run with `pwd` set to the project directory.\n");
+        } else if (fs instanceof AbstractSandboxFilesystem sandbox
+                && !(fs instanceof OverlayFilesystem)) {
+            sb.append("Sandbox root: /workspace (container id: ")
+                    .append(sandbox.id())
+                    .append(")\n");
+            sb.append(
+                    "Files are isolated inside this container. The host filesystem is not"
+                            + " directly accessible — use upload/download tools when you need to"
+                            + " move bytes across the boundary.\n");
+        } else if (fs instanceof CompositeFilesystem) {
+            sb.append("Distributed workspace template root: ")
+                    .append(workspace.toAbsolutePath())
+                    .append("\n");
+            sb.append(
+                    "Runtime data (MEMORY.md, sessions, tasks, skills) lives in a shared remote"
+                            + " store, not on the local host. Reads of project-authored template"
+                            + " files fall back to the workspace template root above.\n");
+        } else {
+            sb.append("Your working directory is: ")
+                    .append(workspace.toAbsolutePath())
+                    .append("\n");
+            sb.append(
+                    "Treat this directory as the single global workspace for file operations"
+                            + " unless explicitly instructed otherwise.\n");
+        }
+        sb.append(
+                "AGENTS.md defines persona and local conventions — honor them when consistent"
+                        + " with safety and policy.\n");
+        return sb.toString();
+    }
+
+    /**
+     * Best-effort: returns the upper {@link LocalFilesystemWithShell} when {@code fs} is an
+     * overlay constructed by {@code LocalFilesystemSpec}, otherwise {@code null}. Used to pull
+     * project / mode / policy metadata for the prompt without leaking those into other
+     * filesystem types.
+     */
+    private static LocalFilesystemWithShell detectLocalUpper(AbstractFilesystem fs) {
+        if (fs instanceof OverlayFilesystem ov
+                && ov.getUpper() instanceof LocalFilesystemWithShell lfs) {
+            return lfs;
+        }
+        return null;
+    }
+
+    /**
+     * Extra allow-list roots beyond the project and workspace (which the LLM already sees).
+     * Filters out exact matches and ancestors to keep the prompt focused on truly additional
+     * locations.
+     */
+    private static List<Path> extraRootsOf(
+            LocalFilesystemWithShell upper, Path project, Path workspace) {
+        PathPolicy policy = upper.getPathPolicy();
+        if (policy == null || policy.isEmpty()) {
+            return List.of();
+        }
+        Path projectAbs = project.toAbsolutePath().normalize();
+        Path workspaceAbs = workspace.toAbsolutePath().normalize();
+        List<Path> extras = new java.util.ArrayList<>();
+        for (Path root : policy.roots()) {
+            if (root.equals(projectAbs) || root.equals(workspaceAbs)) {
+                continue;
+            }
+            extras.add(root);
+        }
+        return extras;
+    }
+
+    private static String describeMode(LocalFsMode mode) {
+        if (mode == null) {
+            return "ROOTED (default)";
+        }
+        return switch (mode) {
+            case SANDBOXED -> "SANDBOXED (all paths anchored to the workspace; `..` blocked)";
+            case ROOTED -> "ROOTED (absolute paths accepted only inside the roots above)";
+            case UNRESTRICTED -> "UNRESTRICTED (absolute paths pass through unchanged)";
+        };
     }
 
     private String buildSessionContextSection(Path workspace, RuntimeContext rc) {
