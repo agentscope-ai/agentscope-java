@@ -82,6 +82,7 @@ class AnthropicResponseBuilderTest {
 
         assertEquals("tool_use", builder.stopReason(toolReply));
         assertEquals("max_tokens", builder.stopReason(maxIters));
+        assertEquals("end_turn", builder.stopReason(null));
     }
 
     @Test

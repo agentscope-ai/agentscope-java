@@ -59,10 +59,12 @@ class ProtocolJsonUtilsTest {
         assertSame(node, ProtocolJsonUtils.toJsonNode(node));
         assertNull(ProtocolJsonUtils.toJsonNode(null));
         assertTrue(ProtocolJsonUtils.truthy(node, "enabled"));
+        assertFalse(ProtocolJsonUtils.truthy(null, "enabled"));
         assertFalse(ProtocolJsonUtils.truthy(node, "missing"));
 
         JsonNode objectNode = ProtocolJsonUtils.toJsonNode(Map.of("name", "lookup"));
         assertEquals("lookup", ProtocolJsonUtils.textValue(objectNode, "name"));
+        assertNull(ProtocolJsonUtils.textValue(null, "name"));
         assertNull(ProtocolJsonUtils.textValue(objectNode, "missing"));
     }
 
@@ -72,5 +74,6 @@ class ProtocolJsonUtilsTest {
         assertEquals("{}", ProtocolJsonUtils.toJson(null));
         assertEquals("{\"raw\":true}", ProtocolJsonUtils.toJson("{\"raw\":true}"));
         assertEquals("{\"a\":1}", ProtocolJsonUtils.toJson(Map.of("a", 1)));
+        assertEquals("{}", ProtocolJsonUtils.toJson(new Object()));
     }
 }

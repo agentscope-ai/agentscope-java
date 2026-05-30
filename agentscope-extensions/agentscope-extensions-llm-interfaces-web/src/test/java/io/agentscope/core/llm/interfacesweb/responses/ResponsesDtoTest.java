@@ -30,8 +30,10 @@ class ResponsesDtoTest {
     @Test
     @DisplayName("Should expose Responses output content accessors")
     void shouldExposeResponsesOutputContentAccessors() {
+        ResponsesOutputContent defaults = new ResponsesOutputContent();
         ResponsesOutputContent content = new ResponsesOutputContent("output_text", "hello");
 
+        assertNull(defaults.getType());
         assertEquals("output_text", content.getType());
         assertEquals("hello", content.getText());
 
@@ -98,11 +100,13 @@ class ResponsesDtoTest {
     @Test
     @DisplayName("Should calculate Responses usage totals")
     void shouldCalculateResponsesUsageTotals() {
+        ResponsesUsage defaults = new ResponsesUsage();
         ResponsesUsage both = new ResponsesUsage(3, 5);
         ResponsesUsage inputOnly = new ResponsesUsage(3, null);
         ResponsesUsage outputOnly = new ResponsesUsage(null, 5);
         ResponsesUsage empty = new ResponsesUsage(null, null);
 
+        assertNull(defaults.getInputTokens());
         assertEquals(8, both.getTotalTokens());
         assertEquals(3, inputOnly.getTotalTokens());
         assertEquals(5, outputOnly.getTotalTokens());
@@ -120,11 +124,13 @@ class ResponsesDtoTest {
     @Test
     @DisplayName("Should expose Responses stream event accessors")
     void shouldExposeResponsesStreamEventAccessors() {
+        ResponsesStreamEvent defaults = new ResponsesStreamEvent();
         ResponsesStreamEvent event = new ResponsesStreamEvent("response.output_text.delta");
         ResponsesResponse response = new ResponsesResponse();
         ResponsesOutputItem item = new ResponsesOutputItem();
         Map<String, Object> error = Map.of("message", "boom");
 
+        assertNull(defaults.getType());
         event.setResponse(response);
         event.setItem(item);
         event.setDelta("hel");

@@ -113,12 +113,14 @@ class AnthropicDtoTest {
     @Test
     @DisplayName("Should expose Anthropic stream event accessors")
     void shouldExposeAnthropicStreamEventAccessors() {
+        AnthropicStreamEvent defaults = new AnthropicStreamEvent();
         AnthropicStreamEvent event = new AnthropicStreamEvent("content_block_delta");
         AnthropicMessagesResponse message = new AnthropicMessagesResponse();
         AnthropicUsage usage = new AnthropicUsage(1, 2);
         Map<String, Object> contentBlock = Map.of("type", "text");
         Map<String, Object> delta = Map.of("text", "hel");
 
+        assertEquals(null, defaults.getType());
         event.setMessage(message);
         event.setIndex(0);
         event.setContentBlock(contentBlock);

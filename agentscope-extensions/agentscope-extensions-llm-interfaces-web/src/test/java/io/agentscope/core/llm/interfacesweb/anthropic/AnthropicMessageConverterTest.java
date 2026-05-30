@@ -188,8 +188,16 @@ class AnthropicMessageConverterTest {
                               }
                             },
                             {
+                              "role": "",
+                              "content": {"type": "image"}
+                            },
+                            {
                               "role": "assistant",
                               "content": [{"type": "tool_use", "id": "toolu_2", "name": "noop"}]
+                            },
+                            {
+                              "role": "tool",
+                              "content": [{"type": "tool_result", "tool_use_id": "toolu_3"}]
                             }
                           ]
                         }
@@ -202,10 +210,15 @@ class AnthropicMessageConverterTest {
         assertEquals(MsgRole.TOOL, messages.get(1).getRole());
         assertEquals("plain", ((TextBlock) messages.get(1).getContent().get(0)).getText());
         assertEquals("[Unsupported image]", messages.get(2).getTextContent());
+        assertEquals(MsgRole.USER, messages.get(3).getRole());
+        assertEquals("[Unsupported image]", messages.get(3).getTextContent());
         ToolUseBlock toolUse =
-                assertInstanceOf(ToolUseBlock.class, messages.get(3).getContent().get(0));
+                assertInstanceOf(ToolUseBlock.class, messages.get(4).getContent().get(0));
         assertEquals(Map.of(), toolUse.getInput());
         assertEquals("{}", toolUse.getContent());
+        ToolResultBlock toolResult =
+                assertInstanceOf(ToolResultBlock.class, messages.get(5).getContent().get(0));
+        assertEquals("", ((TextBlock) toolResult.getOutput().get(0)).getText());
     }
 
     @Test

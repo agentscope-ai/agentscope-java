@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.llm.interfacesweb.anthropic;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
@@ -128,5 +129,73 @@ class AnthropicStreamingAdapterTest {
                 .expectNextMatches(event -> "message_delta".equals(event.getType()))
                 .expectNextMatches(event -> "message_stop".equals(event.getType()))
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should emit explicit tool-use JSON content")
+    void shouldEmitExplicitToolUseJsonContent() {
+        ReActAgent agent = mock(ReActAgent.class);
+        Msg toolUse =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("toolu_1")
+                                        .name("lookup")
+                                        .input(Map.of("ignored", true))
+                                        .content("{\"city\":\"Paris\"}")
+                                        .build())
+                        .build();
+
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(new Event(EventType.REASONING, toolUse, true)));
+
+        AnthropicMessagesRequest request = new AnthropicMessagesRequest();
+        request.setModel("claude-test");
+
+        StepVerifier.create(adapter.stream(agent, List.of(toolUse), request, "msg_1"))
+                .expectNextMatches(event -> "message_start".equals(event.getType()))
+                .expectNextMatches(event -> "content_block_start".equals(event.getType()))
+                .expectNextMatches(
+                        event ->
+                                "content_block_delta".equals(event.getType())
+                                        && "{\"city\":\"Paris\"}"
+                                                .equals(event.getDelta().get("partial_json")))
+                .expectNextMatches(event -> "content_block_stop".equals(event.getType()))
+                .expectNextMatches(event -> "message_delta".equals(event.getType()))
+                .expectNextMatches(event -> "message_stop".equals(event.getType()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should ignore stream events without messages")
+    void shouldIgnoreStreamEventsWithoutMessages() {
+        ReActAgent agent = mock(ReActAgent.class);
+        Msg emptyMessage = mock(Msg.class);
+        when(emptyMessage.getContent()).thenReturn(null);
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(
+                        Flux.just(
+                                new Event(EventType.REASONING, null, false),
+                                new Event(EventType.REASONING, emptyMessage, false)));
+
+        AnthropicMessagesRequest request = new AnthropicMessagesRequest();
+
+        StepVerifier.create(adapter.stream(agent, List.of(), request, "msg_1"))
+                .expectNextMatches(event -> "message_start".equals(event.getType()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should build Anthropic stream error events")
+    void shouldBuildErrorEvents() {
+        AnthropicStreamEvent known = adapter.errorEvent(new RuntimeException("boom"));
+        AnthropicStreamEvent unknown = adapter.errorEvent(null);
+
+        assertEquals("error", known.getType());
+        assertEquals("boom", ((Map<?, ?>) known.getDelta().get("error")).get("message"));
+        assertEquals(
+                "Unknown error occurred",
+                ((Map<?, ?>) unknown.getDelta().get("error")).get("message"));
     }
 }

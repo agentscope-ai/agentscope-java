@@ -17,6 +17,7 @@ package io.agentscope.spring.boot.llm.interfacesweb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
@@ -33,23 +34,28 @@ import io.agentscope.core.chat.completions.converter.OpenAIToolConverter;
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.chat.completions.model.ChatMessage;
+import io.agentscope.core.chat.completions.model.OpenAITool;
+import io.agentscope.core.chat.completions.model.OpenAIToolFunction;
 import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAdapter;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicMessageConverter;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicMessagesRequest;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicMessagesResponse;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicResponseBuilder;
+import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicStreamEvent;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicStreamingAdapter;
 import io.agentscope.core.llm.interfacesweb.anthropic.AnthropicToolConverter;
 import io.agentscope.core.llm.interfacesweb.responses.ResponsesMessageConverter;
 import io.agentscope.core.llm.interfacesweb.responses.ResponsesRequest;
 import io.agentscope.core.llm.interfacesweb.responses.ResponsesResponse;
 import io.agentscope.core.llm.interfacesweb.responses.ResponsesResponseBuilder;
+import io.agentscope.core.llm.interfacesweb.responses.ResponsesStreamEvent;
 import io.agentscope.core.llm.interfacesweb.responses.ResponsesStreamingAdapter;
 import io.agentscope.core.llm.interfacesweb.responses.ResponsesToolConverter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -157,6 +163,65 @@ class LlmInterfacesControllerTest {
     }
 
     @Test
+    @DisplayName("Should register Chat Completions tools")
+    void shouldRegisterChatCompletionsTools() {
+        Toolkit toolkit = new Toolkit();
+        when(agent.getToolkit()).thenReturn(toolkit);
+        ChatCompletionsRequest request = new ChatCompletionsRequest();
+        request.setMessages(List.of(new ChatMessage("user", "Hello")));
+        request.setStream(false);
+        OpenAIToolFunction function = new OpenAIToolFunction();
+        function.setName("lookup");
+        function.setDescription("Lookup data");
+        function.setParameters(Map.of("type", "object"));
+        request.setTools(List.of(new OpenAITool(function)));
+        Msg reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("Hi").build();
+        when(agent.call(anyList())).thenReturn(Mono.just(reply));
+
+        @SuppressWarnings("unchecked")
+        Mono<ChatCompletionsResponse> responseMono =
+                (Mono<ChatCompletionsResponse>) controller.chatCompletions(request);
+
+        StepVerifier.create(responseMono).expectNextCount(1).verifyComplete();
+        assertNotNull(toolkit.getTool("lookup"));
+    }
+
+    @Test
+    @DisplayName("Should reject empty Chat Completions messages")
+    void shouldRejectEmptyChatMessages() {
+        ChatCompletionsRequest request = new ChatCompletionsRequest();
+        request.setMessages(List.of());
+
+        @SuppressWarnings("unchecked")
+        Mono<Object> responseMono = (Mono<Object>) controller.chatCompletions(request);
+
+        StepVerifier.create(responseMono)
+                .expectErrorMatches(
+                        error ->
+                                error instanceof IllegalArgumentException
+                                        && error.getMessage()
+                                                .contains("At least one message is required"))
+                .verify();
+    }
+
+    @Test
+    @DisplayName("Should surface Chat Completions conversion errors")
+    void shouldSurfaceChatConversionErrors() {
+        ChatCompletionsRequest request = new ChatCompletionsRequest();
+        request.setMessages(List.of(new ChatMessage("alien", "Hello")));
+
+        @SuppressWarnings("unchecked")
+        Mono<Object> responseMono = (Mono<Object>) controller.chatCompletions(request);
+
+        StepVerifier.create(responseMono)
+                .expectErrorMatches(
+                        error ->
+                                error instanceof IllegalArgumentException
+                                        && error.getMessage().contains("Unknown message role"))
+                .verify();
+    }
+
+    @Test
     @DisplayName("Should emit Chat Completions SSE done sentinel")
     void shouldEmitChatCompletionsDoneSentinel() {
         ChatCompletionsRequest request = new ChatCompletionsRequest();
@@ -200,6 +265,103 @@ class LlmInterfacesControllerTest {
                             assertEquals("completed", response.getStatus());
                             assertEquals("Hi", response.getOutputText());
                         })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should register Responses tools")
+    void shouldRegisterResponsesTools() throws Exception {
+        Toolkit toolkit = new Toolkit();
+        when(agent.getToolkit()).thenReturn(toolkit);
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "input": "Hello",
+                          "tools": [
+                            {
+                              "type": "function",
+                              "name": "lookup",
+                              "description": "Lookup data",
+                              "parameters": {"type": "object"}
+                            }
+                          ]
+                        }
+                        """,
+                        ResponsesRequest.class);
+        Msg reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("Hi").build();
+        when(agent.call(anyList())).thenReturn(Mono.just(reply));
+
+        @SuppressWarnings("unchecked")
+        Mono<ResponsesResponse> responseMono =
+                (Mono<ResponsesResponse>) controller.responses(request);
+
+        StepVerifier.create(responseMono).expectNextCount(1).verifyComplete();
+        assertNotNull(toolkit.getTool("lookup"));
+    }
+
+    @Test
+    @DisplayName("Should build Responses errors for agent failures")
+    void shouldBuildResponsesErrorsForAgentFailures() throws Exception {
+        ResponsesRequest request = new ResponsesRequest();
+        request.setInput(objectMapper.readTree("\"Hello\""));
+        when(agent.call(anyList())).thenReturn(Mono.error(new RuntimeException("boom")));
+
+        @SuppressWarnings("unchecked")
+        Mono<ResponsesResponse> responseMono =
+                (Mono<ResponsesResponse>) controller.responses(request);
+
+        StepVerifier.create(responseMono)
+                .assertNext(
+                        response -> {
+                            assertEquals("failed", response.getStatus());
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> error = (Map<String, Object>) response.getError();
+                            assertEquals("server_error", error.get("type"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should serialize Responses SSE failures defensively")
+    void shouldSerializeResponsesSseFailuresDefensively() throws Exception {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<ReActAgent> agentProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<Model> modelProvider = mock(ObjectProvider.class);
+        ReActAgent localAgent = mock(ReActAgent.class);
+        when(agentProvider.getObject()).thenReturn(localAgent);
+        when(modelProvider.getIfAvailable()).thenReturn(null);
+        ResponsesStreamingAdapter streamingAdapter = mock(ResponsesStreamingAdapter.class);
+        ResponsesStreamEvent event = new ResponsesStreamEvent("response.created");
+        event.setError(new Object());
+        when(streamingAdapter.stream(any(), anyList(), any(), any())).thenReturn(Flux.just(event));
+        LlmInterfacesController localController =
+                new LlmInterfacesController(
+                        agentProvider,
+                        modelProvider,
+                        new LlmInterfacesProperties(),
+                        new ChatMessageConverter(),
+                        new OpenAIToolConverter(),
+                        new ChatCompletionsResponseBuilder(),
+                        new ChatCompletionsStreamingAdapter(),
+                        new ResponsesMessageConverter(),
+                        new ResponsesToolConverter(),
+                        new ResponsesResponseBuilder(),
+                        streamingAdapter,
+                        new AnthropicMessageConverter(),
+                        new AnthropicToolConverter(),
+                        new AnthropicResponseBuilder(),
+                        new AnthropicStreamingAdapter(new AnthropicResponseBuilder()));
+        ResponsesRequest request = new ResponsesRequest();
+        request.setInput(objectMapper.readTree("\"Hello\""));
+        request.setStream(true);
+
+        ResponseEntity<Flux<ServerSentEvent<String>>> response =
+                assertInstanceOf(ResponseEntity.class, localController.responses(request));
+
+        StepVerifier.create(response.getBody())
+                .expectNextMatches(sse -> "{\"error\":\"Serialization error\"}".equals(sse.data()))
                 .verifyComplete();
     }
 
@@ -289,6 +451,107 @@ class LlmInterfacesControllerTest {
                             assertEquals("active-model", message.getModel());
                             assertEquals("Hi", message.getContent().get(0).get("text"));
                         })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should register Anthropic tools")
+    void shouldRegisterAnthropicTools() throws Exception {
+        Toolkit toolkit = new Toolkit();
+        when(agent.getToolkit()).thenReturn(toolkit);
+        AnthropicMessagesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "messages": [{"role": "user", "content": "Hello"}],
+                          "tools": [
+                            {
+                              "name": "lookup",
+                              "description": "Lookup data",
+                              "input_schema": {"type": "object"}
+                            }
+                          ]
+                        }
+                        """,
+                        AnthropicMessagesRequest.class);
+        Msg reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("Hi").build();
+        when(agent.call(anyList())).thenReturn(Mono.just(reply));
+
+        @SuppressWarnings("unchecked")
+        Mono<Object> responseMono = (Mono<Object>) controller.anthropicMessages(request);
+
+        StepVerifier.create(responseMono).expectNextCount(1).verifyComplete();
+        assertNotNull(toolkit.getTool("lookup"));
+    }
+
+    @Test
+    @DisplayName("Should build Anthropic errors for agent failures")
+    void shouldBuildAnthropicErrorsForAgentFailures() throws Exception {
+        AnthropicMessagesRequest request =
+                objectMapper.readValue(
+                        """
+                        {"messages": [{"role": "user", "content": "Hello"}]}
+                        """,
+                        AnthropicMessagesRequest.class);
+        when(agent.call(anyList())).thenReturn(Mono.error(new RuntimeException("boom")));
+
+        @SuppressWarnings("unchecked")
+        Mono<Object> responseMono = (Mono<Object>) controller.anthropicMessages(request);
+
+        StepVerifier.create(responseMono)
+                .assertNext(
+                        response -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> body = (Map<String, Object>) response;
+                            assertEquals("error", body.get("type"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should serialize Anthropic SSE failures defensively")
+    void shouldSerializeAnthropicSseFailuresDefensively() throws Exception {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<ReActAgent> agentProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<Model> modelProvider = mock(ObjectProvider.class);
+        ReActAgent localAgent = mock(ReActAgent.class);
+        when(agentProvider.getObject()).thenReturn(localAgent);
+        when(modelProvider.getIfAvailable()).thenReturn(null);
+        AnthropicStreamingAdapter streamingAdapter = mock(AnthropicStreamingAdapter.class);
+        AnthropicStreamEvent event = new AnthropicStreamEvent("message_start");
+        event.setDelta(Map.of("bad", new Object()));
+        when(streamingAdapter.stream(any(), anyList(), any(), any())).thenReturn(Flux.just(event));
+        AnthropicResponseBuilder responseBuilder = new AnthropicResponseBuilder();
+        LlmInterfacesController localController =
+                new LlmInterfacesController(
+                        agentProvider,
+                        modelProvider,
+                        new LlmInterfacesProperties(),
+                        new ChatMessageConverter(),
+                        new OpenAIToolConverter(),
+                        new ChatCompletionsResponseBuilder(),
+                        new ChatCompletionsStreamingAdapter(),
+                        new ResponsesMessageConverter(),
+                        new ResponsesToolConverter(),
+                        new ResponsesResponseBuilder(),
+                        new ResponsesStreamingAdapter(new ResponsesResponseBuilder()),
+                        new AnthropicMessageConverter(),
+                        new AnthropicToolConverter(),
+                        responseBuilder,
+                        streamingAdapter);
+        AnthropicMessagesRequest request =
+                objectMapper.readValue(
+                        """
+                        {"stream": true, "messages": [{"role": "user", "content": "Hello"}]}
+                        """,
+                        AnthropicMessagesRequest.class);
+
+        ResponseEntity<Flux<ServerSentEvent<String>>> response =
+                assertInstanceOf(ResponseEntity.class, localController.anthropicMessages(request));
+
+        StepVerifier.create(response.getBody())
+                .expectNextMatches(sse -> "{\"error\":\"Serialization error\"}".equals(sse.data()))
                 .verifyComplete();
     }
 
@@ -417,5 +680,40 @@ class LlmInterfacesControllerTest {
         assertEquals(HttpStatus.NOT_FOUND, chat.getStatusCode());
         assertEquals(HttpStatus.NOT_FOUND, responses.getStatusCode());
         assertEquals(HttpStatus.NOT_FOUND, anthropic.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Should convert missing agent into protocol errors")
+    void shouldConvertMissingAgentIntoProtocolErrors() throws Exception {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<ReActAgent> agentProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<Model> modelProvider = mock(ObjectProvider.class);
+        when(agentProvider.getObject()).thenReturn(null);
+        when(modelProvider.getIfAvailable()).thenReturn(null);
+        LlmInterfacesController noAgentController =
+                newController(agentProvider, modelProvider, new LlmInterfacesProperties());
+        ResponsesRequest responsesRequest = new ResponsesRequest();
+        responsesRequest.setInput(objectMapper.readTree("\"Hello\""));
+        AnthropicMessagesRequest anthropicRequest =
+                objectMapper.readValue(
+                        """
+                        {"messages": [{"role": "user", "content": "Hello"}]}
+                        """,
+                        AnthropicMessagesRequest.class);
+
+        @SuppressWarnings("unchecked")
+        Mono<ResponsesResponse> responsesMono =
+                (Mono<ResponsesResponse>) noAgentController.responses(responsesRequest);
+        @SuppressWarnings("unchecked")
+        Mono<Object> anthropicMono =
+                (Mono<Object>) noAgentController.anthropicMessages(anthropicRequest);
+
+        StepVerifier.create(responsesMono)
+                .expectNextMatches(response -> "failed".equals(response.getStatus()))
+                .verifyComplete();
+        StepVerifier.create(anthropicMono)
+                .expectNextMatches(response -> ((Map<?, ?>) response).get("type").equals("error"))
+                .verifyComplete();
     }
 }

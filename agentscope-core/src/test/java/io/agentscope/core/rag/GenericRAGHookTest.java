@@ -94,6 +94,33 @@ class GenericRAGHookTest {
     }
 
     @Test
+    @DisplayName("Should preserve retrieved documents with null content")
+    void shouldPreserveRetrievedDocumentsWithNullContent() {
+        Knowledge knowledge = mock(Knowledge.class);
+        GenericRAGHook hook = new GenericRAGHook(knowledge);
+        PreCallEvent event =
+                new PreCallEvent(
+                        mock(Agent.class),
+                        List.of(Msg.builder().role(MsgRole.USER).textContent("query").build()));
+        DocumentMetadata metadata = mock(DocumentMetadata.class);
+        when(metadata.getDocId()).thenReturn("doc-null");
+        when(metadata.getChunkId()).thenReturn("chunk-null");
+        when(metadata.getContent()).thenReturn(null);
+        Document nullContentDoc = new Document(metadata);
+        nullContentDoc.setScore(0.4);
+        when(knowledge.retrieve(eq("query"), eq(hook.getDefaultConfig())))
+                .thenReturn(Mono.just(List.of(nullContentDoc)));
+
+        StepVerifier.create(hook.onEvent(event))
+                .assertNext(
+                        enhanced -> {
+                            Msg knowledgeMessage = enhanced.getInputMessages().get(1);
+                            assertInstanceOf(TextBlock.class, knowledgeMessage.getContent().get(0));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
     @DisplayName("Should keep event unchanged when retrieval is skipped or fails")
     void shouldKeepEventUnchangedWhenRetrievalIsSkippedOrFails() {
         Knowledge knowledge = mock(Knowledge.class);

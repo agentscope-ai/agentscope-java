@@ -176,9 +176,14 @@ class ResponsesStreamingAdapterTest {
     @DisplayName("Should ignore events without messages")
     void shouldIgnoreEventsWithoutMessages() {
         ReActAgent agent = mock(ReActAgent.class);
+        Msg emptyMessage = mock(Msg.class);
+        when(emptyMessage.getContent()).thenReturn(null);
 
         when(agent.stream(anyList(), any(StreamOptions.class)))
-                .thenReturn(Flux.just(new Event(EventType.REASONING, null, true)));
+                .thenReturn(
+                        Flux.just(
+                                new Event(EventType.REASONING, null, false),
+                                new Event(EventType.REASONING, emptyMessage, true)));
 
         StepVerifier.create(adapter.stream(agent, List.of(), new ResponsesRequest(), "resp_1"))
                 .expectNextMatches(event -> "response.created".equals(event.getType()))

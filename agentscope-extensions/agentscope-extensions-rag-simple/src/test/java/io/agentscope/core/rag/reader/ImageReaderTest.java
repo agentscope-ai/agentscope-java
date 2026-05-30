@@ -26,6 +26,7 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.rag.exception.ReaderException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -194,6 +195,21 @@ class ImageReaderTest {
                                             .startsWith("file:"));
                         })
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should expose defensive private image path fallbacks")
+    void testDefensiveImagePathFallbacks() throws Exception {
+        ImageReader reader = new ImageReader();
+        Method toLocalPath = ImageReader.class.getDeclaredMethod("toLocalPath", String.class);
+        Method toImageUrl = ImageReader.class.getDeclaredMethod("toImageUrl", String.class);
+        toLocalPath.setAccessible(true);
+        toImageUrl.setAccessible(true);
+
+        assertEquals(null, toLocalPath.invoke(reader, new Object[] {null}));
+        assertEquals(
+                "https://example.com/image.png",
+                toImageUrl.invoke(reader, "https://example.com/image.png"));
     }
 
     @Test

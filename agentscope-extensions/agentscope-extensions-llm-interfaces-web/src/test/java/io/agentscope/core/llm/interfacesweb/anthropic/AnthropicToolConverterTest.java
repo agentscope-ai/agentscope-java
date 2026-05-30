@@ -16,8 +16,10 @@
 package io.agentscope.core.llm.interfacesweb.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.model.ToolSchema;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +41,24 @@ class AnthropicToolConverterTest {
         assertEquals(1, schemas.size());
         assertEquals("get_weather", schemas.get(0).getName());
         assertEquals("Get weather", schemas.get(0).getDescription());
+        assertEquals(Map.of("type", "object"), schemas.get(0).getParameters());
+    }
+
+    @Test
+    @DisplayName("Should skip invalid tools and apply defaults")
+    void shouldSkipInvalidToolsAndApplyDefaults() {
+        AnthropicTool minimal = new AnthropicTool();
+        minimal.setName("lookup");
+        AnthropicTool blank = new AnthropicTool();
+        blank.setName(" ");
+
+        List<ToolSchema> schemas =
+                new AnthropicToolConverter().convert(Arrays.asList(null, blank, minimal));
+
+        assertTrue(new AnthropicToolConverter().convert(null).isEmpty());
+        assertTrue(new AnthropicToolConverter().convert(List.of()).isEmpty());
+        assertEquals(1, schemas.size());
+        assertEquals("", schemas.get(0).getDescription());
         assertEquals(Map.of("type", "object"), schemas.get(0).getParameters());
     }
 }

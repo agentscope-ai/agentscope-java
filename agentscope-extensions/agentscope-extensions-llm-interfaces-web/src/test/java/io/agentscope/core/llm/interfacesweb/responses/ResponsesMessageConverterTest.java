@@ -221,6 +221,84 @@ class ResponsesMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should parse loose content parts and role fallbacks")
+    void shouldParseLooseContentPartsAndRoleFallbacks() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "input": [
+                            {"content": [null, "loose text"]},
+                            {
+                              "role": "",
+                              "content": {
+                                "type": "input_image",
+                                "image_url": "data:image/png;base64abc"
+                              }
+                            },
+                            {
+                              "role": "assistant",
+                              "content": {
+                                "type": "tool_use",
+                                "id": "call_4",
+                                "name": "lookup",
+                                "input": {"city": "Paris"}
+                              }
+                            },
+                            {
+                              "type": "function_call_output",
+                              "call_id": "call_4",
+                              "content": "finished"
+                            },
+                            {
+                              "type": "function_call_output",
+                              "call_id": "call_5",
+                              "content": null
+                            },
+                            {
+                              "role": "user",
+                              "content": {"type": "output_text", "text": ""}
+                            }
+                          ]
+                        }
+                        """,
+                        ResponsesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals(MsgRole.USER, messages.get(0).getRole());
+        assertEquals("loose text", messages.get(0).getTextContent());
+        assertEquals(MsgRole.USER, messages.get(1).getRole());
+        assertInstanceOf(ImageBlock.class, messages.get(1).getContent().get(0));
+        ToolUseBlock toolUse =
+                assertInstanceOf(ToolUseBlock.class, messages.get(2).getContent().get(0));
+        assertEquals(Map.of("city", "Paris"), toolUse.getInput());
+        ToolResultBlock textResult =
+                assertInstanceOf(ToolResultBlock.class, messages.get(3).getContent().get(0));
+        assertEquals("finished", ((TextBlock) textResult.getOutput().get(0)).getText());
+        ToolResultBlock nullResult =
+                assertInstanceOf(ToolResultBlock.class, messages.get(4).getContent().get(0));
+        assertEquals("", ((TextBlock) nullResult.getOutput().get(0)).getText());
+        assertEquals("", messages.get(5).getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should reject arrays without input messages")
+    void shouldRejectArraysWithoutInputMessages() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {"input": [null]}
+                        """,
+                        ResponsesRequest.class);
+
+        ProtocolException error =
+                assertThrows(ProtocolException.class, () -> converter.convert(request));
+
+        assertEquals("invalid_request_error", error.getCode());
+    }
+
+    @Test
     @DisplayName("Should reject unsupported scalar input")
     void shouldRejectUnsupportedScalarInput() throws Exception {
         ResponsesRequest request =

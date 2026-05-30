@@ -22,6 +22,7 @@ import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -44,6 +45,9 @@ class ProtocolMessageUtilsTest {
         assertEquals("", ProtocolMessageUtils.textContent(text));
         assertEquals("", ProtocolMessageUtils.textContent(null));
         assertTrue(ProtocolMessageUtils.contentParts(null, false).isEmpty());
+        assertTrue(
+                ProtocolMessageUtils.contentParts(Msg.builder().role(MsgRole.USER).build(), false)
+                        .isEmpty());
     }
 
     @Test
@@ -80,6 +84,30 @@ class ProtocolMessageUtilsTest {
         assertEquals("https://example.com/a.png", parts.get(2).get("image_url"));
         assertEquals(Map.of("q", "Paris"), parts.get(3).get("input"));
         assertEquals("Sunny", parts.get(4).get("content"));
+    }
+
+    @Test
+    @DisplayName("Should convert fallback content parts")
+    void shouldConvertFallbackContentParts() {
+        Msg message =
+                ProtocolMessageUtils.message(
+                        MsgRole.USER,
+                        List.of(
+                                ToolUseBlock.builder().id("call_1").name("lookup").build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                Base64Source.builder()
+                                                        .mediaType("image/png")
+                                                        .data("abc")
+                                                        .build())
+                                        .build(),
+                                ImageBlock.builder().source(new Source()).build()));
+
+        List<Map<String, Object>> parts = ProtocolMessageUtils.contentParts(message, false);
+
+        assertEquals(Map.of(), parts.get(0).get("input"));
+        assertEquals("data:image/png;base64,abc", parts.get(1).get("image_url"));
+        assertEquals("[Unsupported image source]", parts.get(2).get("text"));
     }
 
     @Test
