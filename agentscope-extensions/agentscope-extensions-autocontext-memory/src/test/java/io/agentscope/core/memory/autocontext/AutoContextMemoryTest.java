@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -132,22 +133,20 @@ class AutoContextMemoryTest {
     }
 
     @Test
-    @DisplayName("Should expose async compression API for non-blocking callers")
+    @DisplayName("Should offload async compression from non-blocking callers")
     void testCompressIfNeededAsyncOnNonBlockingScheduler() {
-        for (int i = 0; i < 12; i++) {
-            memory.addMessage(createTextMessage("User message " + i, MsgRole.USER));
-            memory.addMessage(createTextMessage("Assistant response " + i, MsgRole.ASSISTANT));
-        }
+        RecordingAutoContextMemory asyncMemory = new RecordingAutoContextMemory(config, testModel);
 
         Boolean compressed =
-                Mono.defer(memory::compressIfNeededAsync)
+                Mono.defer(asyncMemory::compressIfNeededAsync)
                         .subscribeOn(Schedulers.parallel())
                         .block();
 
         assertNotNull(compressed);
-        assertTrue(
-                compressed || testModel.getCallCount() > 0 || memory.getMessages().size() < 24,
-                "Async compression should run successfully from a non-blocking scheduler");
+        assertTrue(asyncMemory.wasCompressCalled(), "Async compression should invoke compression");
+        assertFalse(
+                asyncMemory.wasCompressCalledOnNonBlockingThread(),
+                "Async compression should move blocking work off Reactor non-blocking threads");
     }
 
     @Test
@@ -1045,6 +1044,31 @@ class AutoContextMemoryTest {
                 .name(role == MsgRole.USER ? "user" : "assistant")
                 .content(TextBlock.builder().text(text).build())
                 .build();
+    }
+
+    private static final class RecordingAutoContextMemory extends AutoContextMemory {
+
+        private final AtomicBoolean compressCalled = new AtomicBoolean(false);
+        private final AtomicBoolean compressCalledOnNonBlockingThread = new AtomicBoolean(false);
+
+        RecordingAutoContextMemory(AutoContextConfig config, Model model) {
+            super(config, model);
+        }
+
+        @Override
+        public boolean compressIfNeeded() {
+            compressCalled.set(true);
+            compressCalledOnNonBlockingThread.set(Schedulers.isInNonBlockingThread());
+            return false;
+        }
+
+        boolean wasCompressCalled() {
+            return compressCalled.get();
+        }
+
+        boolean wasCompressCalledOnNonBlockingThread() {
+            return compressCalledOnNonBlockingThread.get();
+        }
     }
 
     private Msg createToolUseMessage(String toolName, String callId) {
