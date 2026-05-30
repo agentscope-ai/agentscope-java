@@ -154,6 +154,89 @@ class ResponsesMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should parse scalar items, object content, roles, and fallback outputs")
+    void shouldParseScalarItemsObjectContentRolesAndFallbackOutputs() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "model": "test-model",
+                          "input": [
+                            "plain",
+                            {"role": "assistant", "text": "assistant text"},
+                            {"role": "tool", "output_text": "tool text"},
+                            {"role": "unknown", "content": "content text"},
+                            {
+                              "role": "user",
+                              "content": {
+                                "type": "image",
+                                "url": "https://example.com/b.png"
+                              }
+                            },
+                            {
+                              "role": "user",
+                              "content": {"type": "input_image"}
+                            },
+                            {
+                              "role": "assistant",
+                              "content": {"type": "tool_use", "id": "call_2", "name": "noop"}
+                            },
+                            {
+                              "type": "function_call",
+                              "id": "call_3",
+                              "name": "noop",
+                              "arguments": "{}"
+                            },
+                            {
+                              "type": "function_call_output",
+                              "call_id": "call_3",
+                              "content": [{"type": "output_text", "text": "done"}]
+                            }
+                          ]
+                        }
+                        """,
+                        ResponsesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals("plain", messages.get(0).getTextContent());
+        assertEquals(MsgRole.ASSISTANT, messages.get(1).getRole());
+        assertEquals("assistant text", messages.get(1).getTextContent());
+        assertEquals(MsgRole.TOOL, messages.get(2).getRole());
+        assertEquals("tool text", messages.get(2).getTextContent());
+        assertEquals(MsgRole.USER, messages.get(3).getRole());
+        assertEquals("content text", messages.get(3).getTextContent());
+        assertInstanceOf(ImageBlock.class, messages.get(4).getContent().get(0));
+        assertEquals("[Unsupported image]", messages.get(5).getTextContent());
+        ToolUseBlock inlineTool =
+                assertInstanceOf(ToolUseBlock.class, messages.get(6).getContent().get(0));
+        assertEquals(Map.of(), inlineTool.getInput());
+        assertEquals("{}", inlineTool.getContent());
+        ToolUseBlock functionCall =
+                assertInstanceOf(ToolUseBlock.class, messages.get(7).getContent().get(0));
+        assertEquals("call_3", functionCall.getId());
+        ToolResultBlock result =
+                assertInstanceOf(ToolResultBlock.class, messages.get(8).getContent().get(0));
+        assertEquals("done", ((TextBlock) result.getOutput().get(0)).getText());
+    }
+
+    @Test
+    @DisplayName("Should reject unsupported scalar input")
+    void shouldRejectUnsupportedScalarInput() throws Exception {
+        ResponsesRequest request =
+                objectMapper.readValue(
+                        """
+                        {"model": "test", "input": 42}
+                        """,
+                        ResponsesRequest.class);
+
+        ProtocolException error =
+                assertThrows(ProtocolException.class, () -> converter.convert(request));
+
+        assertEquals("invalid_request_error", error.getCode());
+    }
+
+    @Test
     @DisplayName("Should reject unsupported stateful Responses fields")
     void shouldRejectUnsupportedStatefulFields() throws Exception {
         ResponsesRequest previous =

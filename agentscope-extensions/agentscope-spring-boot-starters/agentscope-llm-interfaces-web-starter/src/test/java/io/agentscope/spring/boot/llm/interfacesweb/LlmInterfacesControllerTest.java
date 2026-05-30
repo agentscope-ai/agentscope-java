@@ -56,6 +56,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
@@ -69,6 +70,7 @@ class LlmInterfacesControllerTest {
 
     private LlmInterfacesController controller;
     private ReActAgent agent;
+    private LlmInterfacesProperties properties;
 
     @SuppressWarnings("unchecked")
     @BeforeEach
@@ -82,25 +84,32 @@ class LlmInterfacesControllerTest {
         when(modelProvider.getIfAvailable()).thenReturn(model);
         when(model.getModelName()).thenReturn("active-model");
 
+        properties = new LlmInterfacesProperties();
+        controller = newController(agentProvider, modelProvider, properties);
+    }
+
+    private LlmInterfacesController newController(
+            ObjectProvider<ReActAgent> agentProvider,
+            ObjectProvider<Model> modelProvider,
+            LlmInterfacesProperties properties) {
         ResponsesResponseBuilder responsesResponseBuilder = new ResponsesResponseBuilder();
         AnthropicResponseBuilder anthropicResponseBuilder = new AnthropicResponseBuilder();
-        controller =
-                new LlmInterfacesController(
-                        agentProvider,
-                        modelProvider,
-                        new LlmInterfacesProperties(),
-                        new ChatMessageConverter(),
-                        new OpenAIToolConverter(),
-                        new ChatCompletionsResponseBuilder(),
-                        new ChatCompletionsStreamingAdapter(),
-                        new ResponsesMessageConverter(),
-                        new ResponsesToolConverter(),
-                        responsesResponseBuilder,
-                        new ResponsesStreamingAdapter(responsesResponseBuilder),
-                        new AnthropicMessageConverter(),
-                        new AnthropicToolConverter(),
-                        anthropicResponseBuilder,
-                        new AnthropicStreamingAdapter(anthropicResponseBuilder));
+        return new LlmInterfacesController(
+                agentProvider,
+                modelProvider,
+                properties,
+                new ChatMessageConverter(),
+                new OpenAIToolConverter(),
+                new ChatCompletionsResponseBuilder(),
+                new ChatCompletionsStreamingAdapter(),
+                new ResponsesMessageConverter(),
+                new ResponsesToolConverter(),
+                responsesResponseBuilder,
+                new ResponsesStreamingAdapter(responsesResponseBuilder),
+                new AnthropicMessageConverter(),
+                new AnthropicToolConverter(),
+                anthropicResponseBuilder,
+                new AnthropicStreamingAdapter(anthropicResponseBuilder));
     }
 
     @Test
@@ -122,6 +131,27 @@ class LlmInterfacesControllerTest {
                             assertEquals("active-model", response.getModel());
                             assertEquals(
                                     "Hi", response.getChoices().get(0).getMessage().getContent());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should build Chat Completions error responses")
+    void shouldBuildChatCompletionsErrorResponses() {
+        ChatCompletionsRequest request = new ChatCompletionsRequest();
+        request.setMessages(List.of(new ChatMessage("user", "Hello")));
+        request.setStream(false);
+        when(agent.call(anyList())).thenReturn(Mono.error(new RuntimeException("boom")));
+
+        Object result = controller.chatCompletions(request);
+
+        @SuppressWarnings("unchecked")
+        Mono<ChatCompletionsResponse> responseMono = (Mono<ChatCompletionsResponse>) result;
+        StepVerifier.create(responseMono)
+                .assertNext(
+                        response -> {
+                            assertEquals("active-model", response.getModel());
+                            assertEquals("error", response.getChoices().get(0).getFinishReason());
                         })
                 .verifyComplete();
     }
@@ -195,6 +225,45 @@ class LlmInterfacesControllerTest {
     }
 
     @Test
+    @DisplayName("Should emit Responses SSE errors")
+    void shouldEmitResponsesSseErrors() throws Exception {
+        ResponsesRequest request = new ResponsesRequest();
+        request.setInput(objectMapper.readTree("\"Hello\""));
+        request.setStream(true);
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.error(new RuntimeException("boom")));
+
+        Object result = controller.responses(request);
+
+        ResponseEntity<Flux<ServerSentEvent<String>>> response =
+                assertInstanceOf(ResponseEntity.class, result);
+        StepVerifier.create(response.getBody())
+                .expectNextMatches(event -> "response.created".equals(event.event()))
+                .expectNextMatches(event -> "response.failed".equals(event.event()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should build Responses error shapes for invalid requests")
+    void shouldBuildResponsesErrorShapesForInvalidRequests() {
+        ResponsesRequest request = new ResponsesRequest();
+
+        Object result = controller.responses(request);
+
+        @SuppressWarnings("unchecked")
+        Mono<ResponsesResponse> responseMono = (Mono<ResponsesResponse>) result;
+        StepVerifier.create(responseMono)
+                .assertNext(
+                        response -> {
+                            assertEquals("failed", response.getStatus());
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> error = (Map<String, Object>) response.getError();
+                            assertEquals("server_error", error.get("type"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
     @DisplayName("Should handle Anthropic Messages requests")
     void shouldHandleAnthropicRequests() throws Exception {
         AnthropicMessagesRequest request =
@@ -254,6 +323,50 @@ class LlmInterfacesControllerTest {
     }
 
     @Test
+    @DisplayName("Should emit Anthropic SSE errors")
+    void shouldEmitAnthropicSseErrors() throws Exception {
+        AnthropicMessagesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "stream": true,
+                          "messages": [{"role": "user", "content": "Hello"}]
+                        }
+                        """,
+                        AnthropicMessagesRequest.class);
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.error(new RuntimeException("boom")));
+
+        Object result = controller.anthropicMessages(request);
+
+        ResponseEntity<Flux<ServerSentEvent<String>>> response =
+                assertInstanceOf(ResponseEntity.class, result);
+        StepVerifier.create(response.getBody())
+                .expectNextMatches(event -> "message_start".equals(event.event()))
+                .expectNextMatches(event -> "error".equals(event.event()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should build Anthropic error shapes for invalid requests")
+    void shouldBuildAnthropicErrorShapesForInvalidRequests() {
+        AnthropicMessagesRequest request = new AnthropicMessagesRequest();
+
+        Object result = controller.anthropicMessages(request);
+
+        @SuppressWarnings("unchecked")
+        Mono<Object> responseMono = (Mono<Object>) result;
+        StepVerifier.create(responseMono)
+                .assertNext(
+                        response -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> body = (Map<String, Object>) response;
+                            assertEquals("error", body.get("type"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
     @DisplayName("Should expose active model through models endpoint")
     void shouldExposeModelsEndpoint() {
         Map<String, Object> response = controller.models();
@@ -262,5 +375,47 @@ class LlmInterfacesControllerTest {
         List<Map<String, Object>> models = (List<Map<String, Object>>) response.get("data");
         assertEquals("list", response.get("object"));
         assertEquals("active-model", models.get(0).get("id"));
+    }
+
+    @Test
+    @DisplayName("Should fall back to default model name when model bean is absent")
+    void shouldFallBackToDefaultModelNameWhenModelBeanIsAbsent() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<ReActAgent> agentProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<Model> modelProvider = mock(ObjectProvider.class);
+        when(modelProvider.getIfAvailable()).thenReturn(null);
+        LlmInterfacesController noModelController =
+                newController(agentProvider, modelProvider, new LlmInterfacesProperties());
+
+        Map<String, Object> response = noModelController.models();
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> models = (List<Map<String, Object>>) response.get("data");
+        assertEquals("agentscope-agent", models.get(0).get("id"));
+    }
+
+    @Test
+    @DisplayName("Should return disabled endpoint errors")
+    void shouldReturnDisabledEndpointErrors() {
+        properties.getChat().setEnabled(false);
+        properties.getResponses().setEnabled(false);
+        properties.getAnthropic().setEnabled(false);
+
+        ResponseEntity<?> chat =
+                assertInstanceOf(
+                        ResponseEntity.class,
+                        controller.chatCompletions(new ChatCompletionsRequest()));
+        ResponseEntity<?> responses =
+                assertInstanceOf(
+                        ResponseEntity.class, controller.responses(new ResponsesRequest()));
+        ResponseEntity<?> anthropic =
+                assertInstanceOf(
+                        ResponseEntity.class,
+                        controller.anthropicMessages(new AnthropicMessagesRequest()));
+
+        assertEquals(HttpStatus.NOT_FOUND, chat.getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND, responses.getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND, anthropic.getStatusCode());
     }
 }

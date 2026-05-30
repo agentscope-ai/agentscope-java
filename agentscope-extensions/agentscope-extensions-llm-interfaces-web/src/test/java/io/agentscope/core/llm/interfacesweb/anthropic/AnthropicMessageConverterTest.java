@@ -171,6 +171,44 @@ class AnthropicMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should parse null, scalar, and unsupported content shapes")
+    void shouldParseNullScalarAndUnsupportedContentShapes() throws Exception {
+        AnthropicMessagesRequest request =
+                objectMapper.readValue(
+                        """
+                        {
+                          "messages": [
+                            {"role": "user"},
+                            {"role": "tool", "content": ["plain", null]},
+                            {
+                              "role": "assistant",
+                              "content": {
+                                "type": "image",
+                                "source": {"type": "file", "file_id": "img_1"}
+                              }
+                            },
+                            {
+                              "role": "assistant",
+                              "content": [{"type": "tool_use", "id": "toolu_2", "name": "noop"}]
+                            }
+                          ]
+                        }
+                        """,
+                        AnthropicMessagesRequest.class);
+
+        List<Msg> messages = converter.convert(request);
+
+        assertEquals("", messages.get(0).getTextContent());
+        assertEquals(MsgRole.TOOL, messages.get(1).getRole());
+        assertEquals("plain", ((TextBlock) messages.get(1).getContent().get(0)).getText());
+        assertEquals("[Unsupported image]", messages.get(2).getTextContent());
+        ToolUseBlock toolUse =
+                assertInstanceOf(ToolUseBlock.class, messages.get(3).getContent().get(0));
+        assertEquals(Map.of(), toolUse.getInput());
+        assertEquals("{}", toolUse.getContent());
+    }
+
+    @Test
     @DisplayName("Should reject empty Anthropic messages")
     void shouldRejectEmptyMessages() {
         AnthropicMessagesRequest request = new AnthropicMessagesRequest();

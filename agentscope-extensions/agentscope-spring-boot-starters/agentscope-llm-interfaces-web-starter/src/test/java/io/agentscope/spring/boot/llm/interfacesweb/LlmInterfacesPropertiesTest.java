@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.llm.interfacesweb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
@@ -36,5 +37,32 @@ class LlmInterfacesPropertiesTest {
         assertTrue(properties.getChat().isEnabled());
         assertTrue(properties.getResponses().isEnabled());
         assertTrue(properties.getAnthropic().isEnabled());
+    }
+
+    @Test
+    @DisplayName("Should expose mutable endpoint configuration")
+    void shouldExposeMutableEndpointConfiguration() {
+        LlmInterfacesProperties properties = new LlmInterfacesProperties();
+        LlmInterfacesProperties.Endpoint chat = new LlmInterfacesProperties.Endpoint();
+        LlmInterfacesProperties.Endpoint responses = new LlmInterfacesProperties.Endpoint(false);
+        LlmInterfacesProperties.Endpoint anthropic = new LlmInterfacesProperties.Endpoint(true);
+
+        properties.setEnabled(false);
+        properties.setBasePath("/api");
+        properties.setIgnoreUnknownFields(false);
+        properties.setIgnoreInvalidThinking(false);
+        chat.setEnabled(false);
+        anthropic.setEnabled(false);
+        properties.setChat(chat);
+        properties.setResponses(responses);
+        properties.setAnthropic(anthropic);
+
+        assertFalse(properties.isEnabled());
+        assertEquals("/api", properties.getBasePath());
+        assertFalse(properties.isIgnoreUnknownFields());
+        assertFalse(properties.isIgnoreInvalidThinking());
+        assertFalse(properties.getChat().isEnabled());
+        assertFalse(properties.getResponses().isEnabled());
+        assertFalse(properties.getAnthropic().isEnabled());
     }
 }
