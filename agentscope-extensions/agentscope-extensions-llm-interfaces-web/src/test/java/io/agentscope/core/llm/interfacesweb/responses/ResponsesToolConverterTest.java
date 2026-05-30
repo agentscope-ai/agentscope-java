@@ -16,8 +16,10 @@
 package io.agentscope.core.llm.interfacesweb.responses;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.model.ToolSchema;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -56,5 +58,43 @@ class ResponsesToolConverterTest {
         assertEquals(Boolean.TRUE, schemas.get(0).getStrict());
         assertEquals("search", schemas.get(1).getName());
         assertEquals(Boolean.FALSE, schemas.get(1).getStrict());
+    }
+
+    @Test
+    @DisplayName("Should skip unsupported and invalid Responses tools")
+    void shouldSkipUnsupportedAndInvalidResponsesTools() {
+        ResponsesTool unsupported = new ResponsesTool();
+        unsupported.setType("web_search_preview");
+
+        ResponsesTool blankName = new ResponsesTool();
+        blankName.setType("function");
+        blankName.setName(" ");
+
+        List<ToolSchema> schemas =
+                new ResponsesToolConverter().convert(Arrays.asList(null, unsupported, blankName));
+
+        assertTrue(schemas.isEmpty());
+        assertTrue(new ResponsesToolConverter().convert(null).isEmpty());
+        assertTrue(new ResponsesToolConverter().convert(List.of()).isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should apply defaults for minimal Responses tools")
+    void shouldApplyDefaultsForMinimalResponsesTools() {
+        ResponsesTool minimal = new ResponsesTool();
+        minimal.setType("function");
+        minimal.setName("lookup");
+
+        ResponsesTool nested = new ResponsesTool();
+        nested.setType("function");
+        nested.setFunction(Map.of("name", "search", "parameters", "ignored", "strict", "yes"));
+
+        List<ToolSchema> schemas = new ResponsesToolConverter().convert(List.of(minimal, nested));
+
+        assertEquals(2, schemas.size());
+        assertEquals("", schemas.get(0).getDescription());
+        assertEquals(Map.of("type", "object"), schemas.get(0).getParameters());
+        assertEquals("search", schemas.get(1).getName());
+        assertEquals(Map.of("type", "object"), schemas.get(1).getParameters());
     }
 }

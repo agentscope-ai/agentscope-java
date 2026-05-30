@@ -143,6 +143,70 @@ class ImageReaderTest {
     }
 
     @Test
+    @DisplayName("Should read existing file URI images as base64 source")
+    void testReadExistingFileUriImageAsBase64() throws Exception {
+        Path image = tempDir.resolve("pixel.png");
+        Files.write(image, new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A});
+
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString(image.toUri().toString())))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            assertTrue(imageBlock.getSource() instanceof Base64Source);
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should preserve missing file URIs as URL source")
+    void testReadMissingFileUriAsUrlSource() throws Exception {
+        Path missing = tempDir.resolve("missing.png");
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString(missing.toUri().toString())))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            URLSource source = (URLSource) imageBlock.getSource();
+                            assertEquals(missing.toUri().toString(), source.getUrl());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should tolerate invalid file URIs as local URL source")
+    void testReadInvalidFileUriAsLocalUrlSource() throws Exception {
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString("file://%")))
+                .assertNext(
+                        documents -> {
+                            ImageBlock imageBlock =
+                                    (ImageBlock) documents.get(0).getMetadata().getContent();
+                            assertTrue(imageBlock.getSource() instanceof URLSource);
+                            assertTrue(
+                                    ((URLSource) imageBlock.getSource())
+                                            .getUrl()
+                                            .startsWith("file:"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should wrap blank image path failures")
+    void testReadBlankImagePathFailure() throws Exception {
+        ImageReader reader = new ImageReader();
+
+        StepVerifier.create(reader.read(ReaderInput.fromString(" ")))
+                .expectError(ReaderException.class)
+                .verify();
+    }
+
+    @Test
     @DisplayName("Should handle null input")
     void testNullInput() throws ReaderException {
         ImageReader reader = new ImageReader();

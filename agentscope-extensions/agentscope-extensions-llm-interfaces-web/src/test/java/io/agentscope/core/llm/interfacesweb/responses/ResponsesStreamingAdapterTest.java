@@ -24,6 +24,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -110,6 +111,99 @@ class ResponsesStreamingAdapterTest {
                                 "response.function_call_arguments.delta".equals(event.getType())
                                         && "{\"city\":\"Paris\"}".equals(event.getDelta()))
                 .expectNextMatches(event -> "response.completed".equals(event.getType()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should emit function-call explicit argument deltas")
+    void shouldEmitFunctionCallExplicitArgumentDeltas() {
+        ReActAgent agent = mock(ReActAgent.class);
+        Msg toolUse =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("call_1")
+                                        .name("lookup")
+                                        .content("{\"city\":\"Paris\"}")
+                                        .input(Map.of("city", "London"))
+                                        .build())
+                        .build();
+
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(new Event(EventType.TOOL_RESULT, toolUse, false)));
+
+        ResponsesRequest request = new ResponsesRequest();
+        request.setModel("test-model");
+
+        StepVerifier.create(adapter.stream(agent, List.of(toolUse), request, "resp_1"))
+                .expectNextMatches(event -> "response.created".equals(event.getType()))
+                .expectNextMatches(event -> "response.output_item.added".equals(event.getType()))
+                .expectNextMatches(
+                        event ->
+                                "response.function_call_arguments.delta".equals(event.getType())
+                                        && "{\"city\":\"Paris\"}".equals(event.getDelta()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should emit incomplete final stream event")
+    void shouldEmitIncompleteFinalStreamEvent() {
+        ReActAgent agent = mock(ReActAgent.class);
+        Msg finalReply =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("partial")
+                        .generateReason(GenerateReason.MAX_ITERATIONS)
+                        .build();
+
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(new Event(EventType.REASONING, finalReply, true)));
+
+        StepVerifier.create(
+                        adapter.stream(
+                                agent, List.of(finalReply), new ResponsesRequest(), "resp_1"))
+                .expectNextMatches(event -> "response.created".equals(event.getType()))
+                .expectNextMatches(event -> "response.output_text.delta".equals(event.getType()))
+                .expectNextMatches(
+                        event ->
+                                "response.incomplete".equals(event.getType())
+                                        && "incomplete".equals(event.getResponse().getStatus()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should ignore events without messages")
+    void shouldIgnoreEventsWithoutMessages() {
+        ReActAgent agent = mock(ReActAgent.class);
+
+        when(agent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(new Event(EventType.REASONING, null, true)));
+
+        StepVerifier.create(adapter.stream(agent, List.of(), new ResponsesRequest(), "resp_1"))
+                .expectNextMatches(event -> "response.created".equals(event.getType()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should build Responses stream error events")
+    void shouldBuildResponsesStreamErrorEvents() {
+        ResponsesStreamEvent explicit = adapter.errorEvent(new RuntimeException("boom"), "resp_1");
+        ResponsesStreamEvent fallback = adapter.errorEvent(null, "resp_2");
+
+        StepVerifier.create(Flux.just(explicit, fallback))
+                .expectNextMatches(
+                        event ->
+                                "response.failed".equals(event.getType())
+                                        && "resp_1".equals(event.getResponseId())
+                                        && event.getError().toString().contains("boom"))
+                .expectNextMatches(
+                        event ->
+                                "response.failed".equals(event.getType())
+                                        && "resp_2".equals(event.getResponseId())
+                                        && event.getError()
+                                                .toString()
+                                                .contains("Unknown error occurred"))
                 .verifyComplete();
     }
 }

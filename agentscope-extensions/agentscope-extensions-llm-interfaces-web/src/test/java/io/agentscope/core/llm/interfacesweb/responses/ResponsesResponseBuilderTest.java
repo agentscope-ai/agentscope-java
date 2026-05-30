@@ -24,8 +24,10 @@ import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatUsage;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -99,6 +101,55 @@ class ResponsesResponseBuilderTest {
         assertEquals("", response.getOutputText());
         assertTrue(response.getOutput().isEmpty());
         assertNotNull(response.getError());
+    }
+
+    @Test
+    @DisplayName("Should build failed Responses payload with fallback message")
+    void shouldBuildFailedResponseWithFallbackMessage() {
+        ResponsesResponse response = builder.buildErrorResponse(null, null, "resp_1");
+
+        assertEquals("failed", response.getStatus());
+        assertEquals("", response.getOutputText());
+        assertTrue(response.getOutput().isEmpty());
+        assertEquals(null, response.getModel());
+    }
+
+    @Test
+    @DisplayName("Should return no output items for null replies")
+    void shouldReturnNoOutputItemsForNullReplies() {
+        assertTrue(builder.outputItems(null, "resp_1").isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should serialize non-text blocks as fallback message output")
+    void shouldSerializeNonTextBlocksAsFallbackMessageOutput() {
+        Msg reply =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("hidden reasoning").build())
+                        .build();
+
+        List<ResponsesOutputItem> items = builder.outputItems(reply, "resp_1");
+
+        assertEquals(1, items.size());
+        assertEquals("message", items.get(0).getType());
+        assertTrue(items.get(0).getContent().get(0).getText().contains("hidden reasoning"));
+    }
+
+    @Test
+    @DisplayName("Should prefer explicit tool-call argument content")
+    void shouldPreferExplicitToolCallArgumentContent() {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("lookup")
+                        .content("{\"city\":\"Paris\"}")
+                        .input(Map.of("city", "London"))
+                        .build();
+
+        ResponsesOutputItem item = builder.toolUseItem(block);
+
+        assertEquals("{\"city\":\"Paris\"}", item.getArguments());
     }
 
     private ResponsesRequest request(String model) {
