@@ -32,12 +32,14 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for AgentBase class.
@@ -109,6 +111,67 @@ class AgentBaseTest {
                             .content(TextBlock.builder().text("Interrupted").build())
                             .build();
             return Mono.just(interruptMsg);
+        }
+    }
+
+    static class CancellableStreamAgent extends AgentBase {
+        private final AtomicInteger callCount = new AtomicInteger();
+        private final CountDownLatch firstCallStarted = new CountDownLatch(1);
+        private final CountDownLatch firstCallCancelled = new CountDownLatch(1);
+        private final CountDownLatch executionReleased = new CountDownLatch(1);
+
+        CancellableStreamAgent(String name) {
+            super(name);
+        }
+
+        boolean awaitFirstCallStarted(Duration timeout) {
+            return awaitLatch(firstCallStarted, timeout);
+        }
+
+        boolean awaitFirstCallCancelled(Duration timeout) {
+            return awaitLatch(firstCallCancelled, timeout);
+        }
+
+        boolean awaitExecutionReleased(Duration timeout) {
+            return awaitLatch(executionReleased, timeout);
+        }
+
+        private boolean awaitLatch(CountDownLatch latch, Duration timeout) {
+            try {
+                return latch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+
+        @Override
+        protected Mono<Msg> doCall(List<Msg> msgs) {
+            if (callCount.incrementAndGet() == 1) {
+                return Mono.<Msg>create(sink -> firstCallStarted.countDown())
+                        .doOnCancel(firstCallCancelled::countDown);
+            }
+            return Mono.just(
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Recovered").build())
+                            .build());
+        }
+
+        @Override
+        protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+            return Mono.just(
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Interrupted").build())
+                            .build());
+        }
+
+        @Override
+        protected void afterAgentExecution() {
+            executionReleased.countDown();
         }
     }
 
@@ -351,5 +414,33 @@ class AgentBaseTest {
         assertNotNull(firstResponse.get(), "First call should complete successfully");
         assertNotNull(secondResponse.get(), "Second call should complete successfully");
         assertTrue(error.get() == null, "No error should occur during concurrent calls");
+    }
+
+    @Test
+    @DisplayName("Should release stream execution when downstream cancels")
+    void testStreamCancellationReleasesExecution() throws InterruptedException {
+        CancellableStreamAgent cancellableAgent = new CancellableStreamAgent("CancellableAgent");
+        Msg inputMsg = TestUtils.createUserMessage("User", "Cancel me");
+
+        StepVerifier.create(cancellableAgent.stream(inputMsg))
+                .then(
+                        () ->
+                                assertTrue(
+                                        cancellableAgent.awaitFirstCallStarted(
+                                                Duration.ofSeconds(1)),
+                                        "First stream call should start"))
+                .thenCancel()
+                .verify(Duration.ofSeconds(5));
+
+        assertTrue(
+                cancellableAgent.awaitFirstCallCancelled(Duration.ofSeconds(1)),
+                "Cancelling the stream should dispose the upstream call");
+        assertTrue(
+                cancellableAgent.awaitExecutionReleased(Duration.ofSeconds(1)),
+                "Cancelling the stream should release the execution lock");
+
+        Msg response = cancellableAgent.call(inputMsg).block(Duration.ofSeconds(1));
+        assertNotNull(response, "Agent should accept a new call after stream cancellation");
+        assertEquals("Recovered", TestUtils.extractTextContent(response));
     }
 }
