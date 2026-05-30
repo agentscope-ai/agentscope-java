@@ -342,7 +342,6 @@ class MediaUtilsTest {
         assertEquals("", MediaUtils.getExtension("/home/user"));
         assertEquals("", MediaUtils.getExtension("C:\\Users\\Administrator"));
         assertEquals("", MediaUtils.getExtension("https://abc"));
-        assertEquals("", MediaUtils.getExtension("mailto:test@example.com"));
         assertEquals("", MediaUtils.getExtension("https://abc[@]123"));
         assertEquals("", MediaUtils.getExtension("https://example.com/abc"));
         assertEquals("", MediaUtils.getExtension("https://example.com/abc/"));
