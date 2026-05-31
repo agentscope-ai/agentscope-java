@@ -439,6 +439,67 @@ class AutoContextHookTest {
     }
 
     @Test
+    @DisplayName("Should preserve multiple SYSTEM messages and append instruction to the first one")
+    void testPreReasoningEventMultipleSystemMessages() {
+        AutoContextConfig noCompressionConfig =
+                AutoContextConfig.builder().msgThreshold(100).maxToken(100000).build();
+        AutoContextMemory noCompressionMemory =
+                new AutoContextMemory(noCompressionConfig, mockModel);
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(mockModel)
+                        .memory(noCompressionMemory)
+                        .toolkit(toolkit)
+                        .build();
+
+        List<Msg> inputMessages = new ArrayList<>();
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("system1")
+                        .content(TextBlock.builder().text("System instruction 1").build())
+                        .build());
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("system2")
+                        .content(TextBlock.builder().text("System instruction 2").build())
+                        .build());
+
+        // Add a user message to memory
+        noCompressionMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text("User message").build())
+                        .build());
+
+        PreReasoningEvent event = new PreReasoningEvent(agent, "test-model", null, inputMessages);
+        PreReasoningEvent result = hook.onEvent(event).block();
+
+        assertNotNull(result);
+        List<Msg> resultMessages = result.getInputMessages();
+
+        // 2 system messages + 1 memory message = 3
+        assertEquals(3, resultMessages.size());
+        assertEquals(MsgRole.SYSTEM, resultMessages.get(0).getRole());
+        assertEquals(MsgRole.SYSTEM, resultMessages.get(1).getRole());
+        assertEquals(MsgRole.USER, resultMessages.get(2).getRole());
+
+        assertTrue(resultMessages.get(0).getTextContent().contains("System instruction 1"));
+        assertTrue(
+                resultMessages.get(0).getTextContent().contains("CONTEXT_OFFLOAD"),
+                "First SYSTEM message should contain the offload instruction");
+
+        assertEquals(
+                "System instruction 2",
+                resultMessages.get(1).getTextContent(),
+                "Second SYSTEM message should remain unchanged");
+    }
+
+    @Test
     @DisplayName("Should skip PreReasoningEvent for non-ReActAgent instances")
     void testPreReasoningEventSkipNonReActAgent() {
         Agent nonReActAgent = mock(Agent.class);

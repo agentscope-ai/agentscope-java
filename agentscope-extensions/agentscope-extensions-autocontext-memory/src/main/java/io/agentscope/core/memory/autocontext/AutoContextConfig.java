@@ -19,7 +19,8 @@ package io.agentscope.core.memory.autocontext;
  * Configuration class for AutoContextMemory.
  *
  * <p>This class contains all configurable parameters for the AutoContextMemory system,
- * including storage backends, compression thresholds, and offloading settings.
+ * including storage backends, compression thresholds, offloading settings, and per-strategy
+ * enable/disable switches.
  *
  * <p><b>Key Configuration Areas:</b>
  * <ul>
@@ -27,6 +28,7 @@ package io.agentscope.core.memory.autocontext;
  *   <li><b>Compression Triggers:</b> Message count and token count thresholds</li>
  *   <li><b>Offloading:</b> Large payload thresholds and preview lengths</li>
  *   <li><b>Protection:</b> Number of recent messages to keep uncompressed</li>
+ *   <li><b>Strategy Switches:</b> Per-strategy enable/disable flags (strategy1Enabled … strategy6Enabled)</li>
  * </ul>
  *
  * <p>All fields have default values and can be customized via builder pattern.
@@ -63,6 +65,42 @@ public class AutoContextConfig {
      * Default is 5000 tokens.
      */
     int minCompressionTokenThreshold = 5000;
+
+    /**
+     * Whether Strategy 1 (compress previous round tool invocations) is enabled.
+     * Default is {@code true}.
+     */
+    boolean strategy1Enabled = true;
+
+    /**
+     * Whether Strategy 2 (offload large payloads with lastKeep protection) is enabled.
+     * Default is {@code true}.
+     */
+    boolean strategy2Enabled = true;
+
+    /**
+     * Whether Strategy 3 (offload large payloads without lastKeep protection) is enabled.
+     * Default is {@code true}.
+     */
+    boolean strategy3Enabled = true;
+
+    /**
+     * Whether Strategy 4 (summarize previous round conversations) is enabled.
+     * Default is {@code true}.
+     */
+    boolean strategy4Enabled = true;
+
+    /**
+     * Whether Strategy 5 (summarize large messages in current round) is enabled.
+     * Default is {@code true}.
+     */
+    boolean strategy5Enabled = true;
+
+    /**
+     * Whether Strategy 6 (compress current round messages) is enabled.
+     * Default is {@code true}.
+     */
+    boolean strategy6Enabled = true;
 
     /**
      * Optional custom prompt configuration.
@@ -104,6 +142,60 @@ public class AutoContextConfig {
 
     public int getMinCompressionTokenThreshold() {
         return minCompressionTokenThreshold;
+    }
+
+    /**
+     * Returns whether Strategy 1 (compress previous round tool invocations) is enabled.
+     *
+     * @return {@code true} if Strategy 1 is enabled (default)
+     */
+    public boolean isStrategy1Enabled() {
+        return strategy1Enabled;
+    }
+
+    /**
+     * Returns whether Strategy 2 (offload large payloads with lastKeep protection) is enabled.
+     *
+     * @return {@code true} if Strategy 2 is enabled (default)
+     */
+    public boolean isStrategy2Enabled() {
+        return strategy2Enabled;
+    }
+
+    /**
+     * Returns whether Strategy 3 (offload large payloads without lastKeep protection) is enabled.
+     *
+     * @return {@code true} if Strategy 3 is enabled (default)
+     */
+    public boolean isStrategy3Enabled() {
+        return strategy3Enabled;
+    }
+
+    /**
+     * Returns whether Strategy 4 (summarize previous round conversations) is enabled.
+     *
+     * @return {@code true} if Strategy 4 is enabled (default)
+     */
+    public boolean isStrategy4Enabled() {
+        return strategy4Enabled;
+    }
+
+    /**
+     * Returns whether Strategy 5 (summarize large messages in current round) is enabled.
+     *
+     * @return {@code true} if Strategy 5 is enabled (default)
+     */
+    public boolean isStrategy5Enabled() {
+        return strategy5Enabled;
+    }
+
+    /**
+     * Returns whether Strategy 6 (compress current round messages) is enabled.
+     *
+     * @return {@code true} if Strategy 6 is enabled (default)
+     */
+    public boolean isStrategy6Enabled() {
+        return strategy6Enabled;
     }
 
     /**
@@ -149,6 +241,12 @@ public class AutoContextConfig {
         private int minConsecutiveToolMessages = 6;
         private double currentRoundCompressionRatio = 0.3;
         private int minCompressionTokenThreshold = 5000;
+        private boolean strategy1Enabled = true;
+        private boolean strategy2Enabled = true;
+        private boolean strategy3Enabled = true;
+        private boolean strategy4Enabled = true;
+        private boolean strategy5Enabled = true;
+        private boolean strategy6Enabled = true;
         private PromptConfig customPrompt;
 
         /**
@@ -255,6 +353,72 @@ public class AutoContextConfig {
         }
 
         /**
+         * Enables or disables Strategy 1 (compress previous round tool invocations).
+         *
+         * @param enabled {@code false} to skip this strategy entirely
+         * @return this builder instance for method chaining
+         */
+        public Builder strategy1Enabled(boolean enabled) {
+            this.strategy1Enabled = enabled;
+            return this;
+        }
+
+        /**
+         * Enables or disables Strategy 2 (offload large payloads with lastKeep protection).
+         *
+         * @param enabled {@code false} to skip this strategy entirely
+         * @return this builder instance for method chaining
+         */
+        public Builder strategy2Enabled(boolean enabled) {
+            this.strategy2Enabled = enabled;
+            return this;
+        }
+
+        /**
+         * Enables or disables Strategy 3 (offload large payloads without lastKeep protection).
+         *
+         * @param enabled {@code false} to skip this strategy entirely
+         * @return this builder instance for method chaining
+         */
+        public Builder strategy3Enabled(boolean enabled) {
+            this.strategy3Enabled = enabled;
+            return this;
+        }
+
+        /**
+         * Enables or disables Strategy 4 (summarize previous round conversations).
+         *
+         * @param enabled {@code false} to skip this strategy entirely
+         * @return this builder instance for method chaining
+         */
+        public Builder strategy4Enabled(boolean enabled) {
+            this.strategy4Enabled = enabled;
+            return this;
+        }
+
+        /**
+         * Enables or disables Strategy 5 (summarize large messages in current round).
+         *
+         * @param enabled {@code false} to skip this strategy entirely
+         * @return this builder instance for method chaining
+         */
+        public Builder strategy5Enabled(boolean enabled) {
+            this.strategy5Enabled = enabled;
+            return this;
+        }
+
+        /**
+         * Enables or disables Strategy 6 (compress current round messages).
+         *
+         * @param enabled {@code false} to skip this strategy entirely
+         * @return this builder instance for method chaining
+         */
+        public Builder strategy6Enabled(boolean enabled) {
+            this.strategy6Enabled = enabled;
+            return this;
+        }
+
+        /**
          * Sets custom prompt configuration.
          *
          * <p>If provided, custom prompts will be used instead of default prompts from {@link Prompts}.
@@ -284,6 +448,12 @@ public class AutoContextConfig {
             config.minConsecutiveToolMessages = this.minConsecutiveToolMessages;
             config.currentRoundCompressionRatio = this.currentRoundCompressionRatio;
             config.minCompressionTokenThreshold = this.minCompressionTokenThreshold;
+            config.strategy1Enabled = this.strategy1Enabled;
+            config.strategy2Enabled = this.strategy2Enabled;
+            config.strategy3Enabled = this.strategy3Enabled;
+            config.strategy4Enabled = this.strategy4Enabled;
+            config.strategy5Enabled = this.strategy5Enabled;
+            config.strategy6Enabled = this.strategy6Enabled;
             config.customPrompt = this.customPrompt;
             return config;
         }
