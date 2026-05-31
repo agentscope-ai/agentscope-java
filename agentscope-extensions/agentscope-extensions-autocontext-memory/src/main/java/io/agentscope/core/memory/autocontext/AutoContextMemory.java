@@ -39,11 +39,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuple3;
+import reactor.util.function.Tuples;
 
 /**
  * AutoContextMemory - Intelligent context memory management system.
@@ -95,7 +100,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      */
     private List<Msg> originalMemoryStorage;
 
-    private Map<String, List<Msg>> offloadContext = new HashMap<>();
+    private Map<String, List<Msg>> offloadContext = new ConcurrentHashMap<>();
 
     /**
      * List of compression events that occurred during context management.
@@ -144,7 +149,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         this.customPrompt = autoContextConfig.getCustomPrompt();
         workingMemoryStorage = new ArrayList<>();
         originalMemoryStorage = new ArrayList<>();
-        offloadContext = new HashMap<>();
+        offloadContext = new ConcurrentHashMap<>();
         compressionEvents = new ArrayList<>();
     }
 
@@ -198,6 +203,13 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      *         or no strategy could compress
      */
     public Mono<Boolean> compressIfNeededAsync() {
+        // Subscribe on boundedElastic to avoid blocking non-blocking schedulers
+        // (e.g., Netty event loop, Reactor parallel) with synchronous work
+        // such as TokenCounterUtil.calculateToken and ArrayList copies.
+        return compressIfNeededAsyncInternal().subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private Mono<Boolean> compressIfNeededAsyncInternal() {
         List<Msg> currentContextMessages = new ArrayList<>(workingMemoryStorage);
 
         boolean msgCountReached = currentContextMessages.size() >= autoContextConfig.msgThreshold;
@@ -416,12 +428,27 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             log.debug("Strategy 6: DISABLED by config");
         }
 
+        boolean anyStrategyEnabled =
+                autoContextConfig.isStrategy1Enabled()
+                        || autoContextConfig.isStrategy2Enabled()
+                        || autoContextConfig.isStrategy3Enabled()
+                        || autoContextConfig.isStrategy4Enabled()
+                        || autoContextConfig.isStrategy5Enabled()
+                        || autoContextConfig.isStrategy6Enabled();
+
         return chain.doOnNext(
                 applied -> {
-                    if (!applied)
-                        log.warn(
-                                "All compression strategies exhausted but context still"
-                                        + " exceeds threshold");
+                    if (!applied) {
+                        if (!anyStrategyEnabled) {
+                            log.info(
+                                    "All compression strategies are disabled by config;"
+                                            + " no compression attempted");
+                        } else {
+                            log.warn(
+                                    "All compression strategies exhausted but context"
+                                            + " still exceeds threshold");
+                        }
+                    }
                 });
     }
 
@@ -435,7 +462,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      */
     @Deprecated
     public boolean compressIfNeeded() {
-        Boolean result = compressIfNeededAsync().block(java.time.Duration.ofSeconds(60));
+        Boolean result = compressIfNeededAsync().block();
         return Boolean.TRUE.equals(result);
     }
 
@@ -702,12 +729,9 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                         MsgUtils.calculateMessageCharCount(msg),
                                                         uuid);
                                             })
-                                    .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                                    .subscribeOn(Schedulers.boundedElastic())
                                     .then(generateLargeMessageSummary(msg, uuid))
-                                    .map(
-                                            summaryMsg ->
-                                                    reactor.util.function.Tuples.of(
-                                                            idx, summaryMsg));
+                                    .map(summaryMsg -> Tuples.of(idx, summaryMsg));
                         },
                         concurrency)
                 .collectList()
@@ -718,7 +742,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             }
                             // Sort descending by index to avoid shifting
                             results.sort((a, b) -> Integer.compare(b.getT1(), a.getT1()));
-                            for (reactor.util.function.Tuple2<Integer, Msg> item : results) {
+                            for (Tuple2<Integer, Msg> item : results) {
                                 int idx = item.getT1();
                                 Msg summaryMsg = item.getT2();
                                 Map<String, Object> metadata = new HashMap<>();
@@ -1378,8 +1402,21 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                         .filter(
                                                 summaryMsg -> {
                                                     String content = summaryMsg.getTextContent();
-                                                    return content != null
-                                                            && !content.trim().isEmpty();
+                                                    if (content == null
+                                                            || content.trim().isEmpty()) {
+                                                        // Clean up orphaned offload entry
+                                                        clear(candidate.uuid());
+                                                        log.warn(
+                                                                "Strategy 4: LLM returned"
+                                                                        + " empty/blank summary for"
+                                                                        + " round {}; cleaned"
+                                                                        + " orphaned offload"
+                                                                        + " uuid={}",
+                                                                candidate.pairIdx() + 1,
+                                                                candidate.uuid());
+                                                        return false;
+                                                    }
+                                                    return true;
                                                 })
                                         .map(
                                                 summaryMsg -> {
@@ -1401,9 +1438,21 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                                         .getChatUsage()
                                                                         .getTime());
                                                     }
-                                                    return new Object[] {
-                                                        candidate, summaryMsg, metadata
-                                                    };
+                                                    return Tuples.of(
+                                                            candidate, summaryMsg, metadata);
+                                                })
+                                        .onErrorResume(
+                                                err -> {
+                                                    // Clean up orphaned offload entry on failure
+                                                    clear(candidate.uuid());
+                                                    log.error(
+                                                            "Strategy 4: LLM summary failed for"
+                                                                    + " round {}; cleaned orphaned"
+                                                                    + " offload uuid={}",
+                                                            candidate.pairIdx() + 1,
+                                                            candidate.uuid(),
+                                                            err);
+                                                    return Mono.empty();
                                                 }),
                         concurrency)
                 .collectList()
@@ -1415,41 +1464,36 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
                             // Sort results in descending startIndex order to avoid shifting
                             results.sort(
-                                    (a, b) -> {
-                                        SummaryCandidate ca = (SummaryCandidate) ((Object[]) a)[0];
-                                        SummaryCandidate cb = (SummaryCandidate) ((Object[]) b)[0];
-                                        return Integer.compare(cb.startIndex(), ca.startIndex());
-                                    });
+                                    (a, b) ->
+                                            Integer.compare(
+                                                    b.getT1().startIndex(),
+                                                    a.getT1().startIndex()));
 
-                            for (Object item : results) {
-                                Object[] arr = (Object[]) item;
-                                SummaryCandidate candidate = (SummaryCandidate) arr[0];
-                                Msg summaryMsg = (Msg) arr[1];
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> metadata = (Map<String, Object>) arr[2];
+                            for (Tuple3<SummaryCandidate, Msg, Map<String, Object>> item :
+                                    results) {
+                                SummaryCandidate cand = item.getT1();
+                                Msg summaryMsg = item.getT2();
+                                Map<String, Object> metadata = item.getT3();
 
                                 recordCompressionEvent(
                                         CompressionEvent.PREVIOUS_ROUND_CONVERSATION_SUMMARY,
-                                        candidate.startIndex(),
-                                        candidate.endIndex(),
+                                        cand.startIndex(),
+                                        cand.endIndex(),
                                         rawMessages,
                                         summaryMsg,
                                         metadata);
 
-                                int removedCount =
-                                        candidate.endIndex() - candidate.startIndex() + 1;
-                                rawMessages
-                                        .subList(candidate.startIndex(), candidate.endIndex() + 1)
-                                        .clear();
-                                int insertIndex = candidate.userIndex() + 1;
+                                int removedCount = cand.endIndex() - cand.startIndex() + 1;
+                                rawMessages.subList(cand.startIndex(), cand.endIndex() + 1).clear();
+                                int insertIndex = cand.userIndex() + 1;
                                 rawMessages.add(insertIndex, summaryMsg);
 
                                 log.info(
                                         "Replaced {} messages [indices {}-{}] with summary at"
                                                 + " index {}",
                                         removedCount,
-                                        candidate.startIndex(),
-                                        candidate.endIndex(),
+                                        cand.startIndex(),
+                                        cand.endIndex(),
                                         insertIndex);
                             }
                             return true;
@@ -2336,7 +2380,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             session.save(
                     sessionKey,
                     "autoContextMemory_offloadContext",
-                    new OffloadContextState(new HashMap<>(offloadContext)));
+                    new OffloadContextState(new ConcurrentHashMap<>(offloadContext)));
         }
 
         if (!compressionEvents.isEmpty()) {
@@ -2372,7 +2416,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 .ifPresent(
                         state -> {
                             offloadContext.clear();
-                            offloadContext.putAll(state.offloadContext());
+                            offloadContext.putAll(new ConcurrentHashMap<>(state.offloadContext()));
                         });
 
         // Load compression context events
