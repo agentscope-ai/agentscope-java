@@ -18,7 +18,9 @@ package io.agentscope.spring.boot.agui.common;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.Msg;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -136,6 +138,43 @@ public class ThreadSessionManager {
         }
 
         return false;
+    }
+
+    /**
+     * Get the current messages stored in the session memory.
+     *
+     * @param threadId The thread identifier
+     * @return The messages in memory, or an empty list if no session memory exists
+     */
+    public List<Msg> getMessages(String threadId) {
+        return getMessages(threadId, null);
+    }
+
+    /**
+     * Get the current messages stored in the session memory for the matching agent.
+     *
+     * @param threadId The thread identifier
+     * @param agentId The agent type identifier, or null to ignore agent matching
+     * @return The messages in memory, or an empty list if no matching session memory exists
+     */
+    public List<Msg> getMessages(String threadId, String agentId) {
+        ThreadSession session = sessions.get(threadId);
+        if (session == null) {
+            return List.of();
+        }
+        if (agentId != null && !session.getAgentId().equals(agentId)) {
+            return List.of();
+        }
+
+        Agent agent = session.getAgent();
+        if (agent instanceof ReActAgent reactAgent) {
+            Memory memory = reactAgent.getMemory();
+            if (memory != null) {
+                return memory.getMessages();
+            }
+        }
+
+        return List.of();
     }
 
     /**

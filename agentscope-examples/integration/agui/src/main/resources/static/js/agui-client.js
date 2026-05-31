@@ -28,6 +28,7 @@
  * }, {
  *     onTextContent: (delta) => console.log(delta),
  *     onReasoningContent: (delta) => console.log('Reasoning:', delta),
+ *     onMessagesSnapshot: (messages) => console.log('History:', messages),
  *     onRunFinished: () => console.log('Done')
  * });
  */
@@ -75,6 +76,7 @@ class AguiClient {
      * @param {Function} [callbacks.onReasoningMessageStart] - Called when reasoning message starts
      * @param {Function} [callbacks.onReasoningContent] - Called with reasoning content delta
      * @param {Function} [callbacks.onReasoningMessageEnd] - Called when reasoning message ends
+     * @param {Function} [callbacks.onMessagesSnapshot] - Called with the full message snapshot
      * @returns {Promise} Resolves when the run completes
      */
     async run(input, callbacks = {}) {
@@ -258,6 +260,10 @@ class AguiClient {
 
                 case 'STATE_DELTA':
                     callbacks.onStateDelta?.(event.delta);
+                    break;
+
+                case 'MESSAGES_SNAPSHOT':
+                    callbacks.onMessagesSnapshot?.(event.messages || [], event);
                     break;
 
                 case 'RAW':

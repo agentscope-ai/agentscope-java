@@ -75,6 +75,11 @@ public enum AguiEventType {
     STATE_DELTA,
 
     /**
+     * Contains a snapshot of the current message history.
+     */
+    MESSAGES_SNAPSHOT,
+
+    /**
      * A raw event with custom data.
      */
     RAW,

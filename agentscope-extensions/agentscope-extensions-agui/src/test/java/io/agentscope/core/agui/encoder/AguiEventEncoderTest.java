@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
+import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
@@ -175,6 +176,22 @@ class AguiEventEncoderTest {
         assertTrue(sse.contains("\"type\":\"STATE_DELTA\""));
         assertTrue(sse.contains("\"delta\""));
         assertTrue(sse.contains("\"op\":\"add\""));
+    }
+
+    @Test
+    void testEncodeMessagesSnapshotEvent() {
+        AguiEvent.MessagesSnapshot event =
+                new AguiEvent.MessagesSnapshot(
+                        "thread-1", "run-1", List.of(AguiMessage.userMessage("msg-1", "Hello")));
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"MESSAGES_SNAPSHOT\""));
+        assertTrue(sse.contains("\"messages\""));
+        assertTrue(sse.contains("\"id\":\"msg-1\""));
+        assertTrue(sse.contains("\"role\":\"user\""));
+        assertTrue(sse.contains("\"content\":\"Hello\""));
     }
 
     @Test

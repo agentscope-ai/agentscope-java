@@ -24,6 +24,7 @@ import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import io.agentscope.spring.boot.agui.common.ThreadSessionSnapshotProvider;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -79,6 +80,11 @@ public class AguiMvcController {
                                         .sessionManager(builder.sessionManager)
                                         .serverSideMemory(builder.serverSideMemory)
                                         .build())
+                        .snapshotProvider(
+                                new ThreadSessionSnapshotProvider(
+                                        builder.registry,
+                                        builder.sessionManager,
+                                        builder.serverSideMemory))
                         .config(
                                 builder.config != null
                                         ? builder.config
@@ -113,6 +119,30 @@ public class AguiMvcController {
     public SseEmitter handleWithAgentId(
             RunAgentInput input, String headerAgentId, String pathAgentId) {
         return handleInternal(input, headerAgentId, pathAgentId);
+    }
+
+    /**
+     * Handle an AG-UI messages snapshot request.
+     *
+     * @param input The run agent input
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @return An SseEmitter for streaming the messages snapshot
+     */
+    public SseEmitter handleMessagesSnapshot(RunAgentInput input, String headerAgentId) {
+        return handleMessagesSnapshotInternal(input, headerAgentId, null);
+    }
+
+    /**
+     * Handle an AG-UI messages snapshot request with agent ID in the URL path.
+     *
+     * @param input The run agent input
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @param pathAgentId The agent ID from URL path variable
+     * @return An SseEmitter for streaming the messages snapshot
+     */
+    public SseEmitter handleMessagesSnapshotWithAgentId(
+            RunAgentInput input, String headerAgentId, String pathAgentId) {
+        return handleMessagesSnapshotInternal(input, headerAgentId, pathAgentId);
     }
 
     private SseEmitter handleInternal(
@@ -181,6 +211,48 @@ public class AguiMvcController {
                         sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
                     } catch (Exception e) {
                         logger.error("Error processing AG-UI request: {}", e.getMessage());
+                        sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
+                    }
+                });
+
+        return emitter;
+    }
+
+    private SseEmitter handleMessagesSnapshotInternal(
+            RunAgentInput input, String headerAgentId, String pathAgentId) {
+        SseEmitter emitter = new SseEmitter(sseTimeout);
+        String threadId = input.getThreadId();
+        String runId = input.getRunId();
+
+        executorService.submit(
+                () -> {
+                    try {
+                        processor
+                                .messagesSnapshot(input, headerAgentId, pathAgentId)
+                                .subscribe(
+                                        event -> sendEvent(emitter, event),
+                                        error -> {
+                                            logger.error(
+                                                    "Error creating AG-UI messages snapshot: {}",
+                                                    error.getMessage());
+                                            sendErrorAndComplete(
+                                                    emitter, threadId, runId, error.getMessage());
+                                        },
+                                        () -> {
+                                            try {
+                                                emitter.complete();
+                                            } catch (Exception e) {
+                                                logger.debug(
+                                                        "Error completing emitter: {}",
+                                                        e.getMessage());
+                                            }
+                                        });
+                    } catch (AguiException.AgentNotFoundException e) {
+                        logger.error("Agent not found: {}", e.getMessage());
+                        sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
+                    } catch (Exception e) {
+                        logger.error(
+                                "Error processing AG-UI messages snapshot: {}", e.getMessage());
                         sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
                     }
                 });

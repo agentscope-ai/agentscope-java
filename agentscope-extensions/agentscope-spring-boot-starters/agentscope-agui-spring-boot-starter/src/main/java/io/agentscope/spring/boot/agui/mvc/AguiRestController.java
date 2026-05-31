@@ -80,6 +80,28 @@ public class AguiRestController {
     }
 
     /**
+     * Handle an AG-UI messages snapshot request.
+     *
+     * <p>Agent ID is resolved using the same priority as the run endpoint.
+     *
+     * @param input The run agent input
+     * @param agentIdHeader The agent ID from HTTP header (optional)
+     * @return An SseEmitter for streaming AG-UI events
+     */
+    @PostMapping(
+            value = "${agentscope.agui.path-prefix:/agui}/messages",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter messages(
+            @RequestBody RunAgentInput input,
+            @RequestHeader(
+                            value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
+                            required = false)
+                    String agentIdHeader) {
+        return aguiMvcController.handleMessagesSnapshot(input, agentIdHeader);
+    }
+
+    /**
      * Handle an AG-UI run request with agent ID in the URL path.
      *
      * <p>The path variable takes highest priority for agent resolution.
@@ -101,5 +123,29 @@ public class AguiRestController {
                             required = false)
                     String agentIdHeader) {
         return aguiMvcController.handleWithAgentId(input, agentIdHeader, agentId);
+    }
+
+    /**
+     * Handle an AG-UI messages snapshot request with agent ID in the URL path.
+     *
+     * <p>The path variable takes highest priority for agent resolution.
+     *
+     * @param agentId The agent ID from path variable
+     * @param input The run agent input
+     * @param agentIdHeader The agent ID from HTTP header (optional)
+     * @return An SseEmitter for streaming AG-UI events
+     */
+    @PostMapping(
+            value = "${agentscope.agui.path-prefix:/agui}/messages/{agentId}",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter messagesWithAgentId(
+            @PathVariable String agentId,
+            @RequestBody RunAgentInput input,
+            @RequestHeader(
+                            value = "${agentscope.agui.agent-id-header:X-Agent-Id}",
+                            required = false)
+                    String agentIdHeader) {
+        return aguiMvcController.handleMessagesSnapshotWithAgentId(input, agentIdHeader, agentId);
     }
 }

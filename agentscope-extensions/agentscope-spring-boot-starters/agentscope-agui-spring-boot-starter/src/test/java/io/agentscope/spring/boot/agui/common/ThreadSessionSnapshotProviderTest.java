@@ -1,0 +1,114 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.spring.boot.agui.common;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agui.AguiException;
+import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.processor.AguiSnapshotRequest;
+import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+/** Unit tests for {@link ThreadSessionSnapshotProvider}. */
+class ThreadSessionSnapshotProviderTest {
+
+    @Test
+    void testMessagesSnapshotFromThreadSessionMemory() {
+        AguiAgentRegistry registry = new AguiAgentRegistry();
+        ThreadSessionManager sessionManager = new ThreadSessionManager(10, 0);
+        registry.registerFactory("default", this::createAgent);
+        ReActAgent agent =
+                (ReActAgent)
+                        sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
+        agent.getMemory()
+                .addMessage(
+                        Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
+        ThreadSessionSnapshotProvider provider =
+                new ThreadSessionSnapshotProvider(registry, sessionManager, true);
+
+        List<AguiMessage> messages = provider.messagesSnapshot(request("default", "thread-1"));
+
+        assertEquals(1, messages.size());
+        assertEquals("msg-1", messages.get(0).getId());
+        assertEquals("user", messages.get(0).getRole());
+        assertEquals("Hello", messages.get(0).getContent());
+    }
+
+    @Test
+    void testMessagesSnapshotReturnsEmptyWhenAgentIdDoesNotMatchSession() {
+        AguiAgentRegistry registry = new AguiAgentRegistry();
+        ThreadSessionManager sessionManager = new ThreadSessionManager(10, 0);
+        registry.registerFactory("default", this::createAgent);
+        registry.registerFactory("chat", this::createAgent);
+        ReActAgent agent =
+                (ReActAgent)
+                        sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
+        agent.getMemory()
+                .addMessage(
+                        Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
+        ThreadSessionSnapshotProvider provider =
+                new ThreadSessionSnapshotProvider(registry, sessionManager, true);
+
+        List<AguiMessage> messages = provider.messagesSnapshot(request("chat", "thread-1"));
+
+        assertTrue(messages.isEmpty());
+    }
+
+    @Test
+    void testMessagesSnapshotReturnsEmptyWhenServerSideMemoryDisabled() {
+        AguiAgentRegistry registry = new AguiAgentRegistry();
+        ThreadSessionManager sessionManager = new ThreadSessionManager(10, 0);
+        registry.registerFactory("default", this::createAgent);
+        sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
+        ThreadSessionSnapshotProvider provider =
+                new ThreadSessionSnapshotProvider(registry, sessionManager, false);
+
+        List<AguiMessage> messages = provider.messagesSnapshot(request("default", "thread-1"));
+
+        assertTrue(messages.isEmpty());
+    }
+
+    @Test
+    void testMessagesSnapshotThrowsWhenAgentIsNotRegistered() {
+        AguiAgentRegistry registry = new AguiAgentRegistry();
+        ThreadSessionSnapshotProvider provider =
+                new ThreadSessionSnapshotProvider(registry, new ThreadSessionManager(10, 0), true);
+
+        assertThrows(
+                AguiException.AgentNotFoundException.class,
+                () -> provider.messagesSnapshot(request("missing", "thread-1")));
+    }
+
+    private ReActAgent createAgent() {
+        Memory memory = new InMemoryMemory();
+        return ReActAgent.builder().name("test-agent").memory(memory).build();
+    }
+
+    private AguiSnapshotRequest request(String agentId, String threadId) {
+        RunAgentInput input = RunAgentInput.builder().threadId(threadId).runId("run-1").build();
+        return new AguiSnapshotRequest(agentId, threadId, "run-1", input);
+    }
+}

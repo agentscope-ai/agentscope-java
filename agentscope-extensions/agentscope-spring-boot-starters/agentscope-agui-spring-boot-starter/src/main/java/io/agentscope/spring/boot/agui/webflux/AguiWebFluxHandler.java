@@ -24,6 +24,7 @@ import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import io.agentscope.spring.boot.agui.common.ThreadSessionSnapshotProvider;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,6 +84,11 @@ public class AguiWebFluxHandler {
                                         .sessionManager(builder.sessionManager)
                                         .serverSideMemory(builder.serverSideMemory)
                                         .build())
+                        .snapshotProvider(
+                                new ThreadSessionSnapshotProvider(
+                                        builder.registry,
+                                        builder.sessionManager,
+                                        builder.serverSideMemory))
                         .config(
                                 builder.config != null
                                         ? builder.config
@@ -121,6 +127,34 @@ public class AguiWebFluxHandler {
         String pathAgentId = request.pathVariable(AGENT_ID_PATH_VARIABLE);
         return request.bodyToMono(RunAgentInput.class)
                 .flatMap(input -> processInput(input, request, pathAgentId))
+                .onErrorResume(this::handleParseError);
+    }
+
+    /**
+     * Handle an AG-UI messages snapshot request.
+     *
+     * @param request The server request
+     * @return A Mono containing the server response with SSE stream
+     */
+    public Mono<ServerResponse> handleMessagesSnapshot(ServerRequest request) {
+        return request.bodyToMono(RunAgentInput.class)
+                .flatMap(input -> processMessagesSnapshotInput(input, request, null))
+                .onErrorResume(this::handleParseError);
+    }
+
+    /**
+     * Handle an AG-UI messages snapshot request with agent ID in the URL path.
+     *
+     * <p>This method handles requests to {@code /agui/messages/{agentId}}.
+     * The path variable takes highest priority for agent resolution.
+     *
+     * @param request The server request containing the agentId path variable
+     * @return A Mono containing the server response with SSE stream
+     */
+    public Mono<ServerResponse> handleMessagesSnapshotWithAgentId(ServerRequest request) {
+        String pathAgentId = request.pathVariable(AGENT_ID_PATH_VARIABLE);
+        return request.bodyToMono(RunAgentInput.class)
+                .flatMap(input -> processMessagesSnapshotInput(input, request, pathAgentId))
                 .onErrorResume(this::handleParseError);
     }
 
@@ -164,6 +198,35 @@ public class AguiWebFluxHandler {
             return createErrorResponse(threadId, runId, e.getMessage());
         } catch (Exception e) {
             logger.error("Error processing AG-UI request: {}", e.getMessage());
+            return createErrorResponse(threadId, runId, e.getMessage());
+        }
+    }
+
+    private Mono<ServerResponse> processMessagesSnapshotInput(
+            RunAgentInput input, ServerRequest request, String pathAgentId) {
+        String threadId = input.getThreadId();
+        String runId = input.getRunId();
+
+        try {
+            String headerAgentId = request.headers().firstHeader(agentIdHeader);
+            Flux<ServerSentEvent<String>> sseStream =
+                    processor
+                            .messagesSnapshot(input, headerAgentId, pathAgentId)
+                            .map(
+                                    event ->
+                                            ServerSentEvent.<String>builder()
+                                                    .data(encoder.encodeToJson(event).trim())
+                                                    .build());
+
+            return ServerResponse.ok()
+                    .contentType(MediaType.TEXT_EVENT_STREAM)
+                    .body(sseStream, ServerSentEvent.class);
+
+        } catch (AguiException.AgentNotFoundException e) {
+            logger.error("Agent not found: {}", e.getMessage());
+            return createErrorResponse(threadId, runId, e.getMessage());
+        } catch (Exception e) {
+            logger.error("Error processing AG-UI messages snapshot: {}", e.getMessage());
             return createErrorResponse(threadId, runId, e.getMessage());
         }
     }

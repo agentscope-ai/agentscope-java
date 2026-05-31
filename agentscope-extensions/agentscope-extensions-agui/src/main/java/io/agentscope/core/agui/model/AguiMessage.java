@@ -33,6 +33,7 @@ import java.util.Objects;
  *   <li>assistant - Messages from the AI assistant</li>
  *   <li>system - System instructions</li>
  *   <li>tool - Tool execution results</li>
+ *   <li>reasoning - Assistant reasoning/thinking content</li>
  * </ul>
  */
 public class AguiMessage {
@@ -115,6 +116,17 @@ public class AguiMessage {
     }
 
     /**
+     * Creates a reasoning message.
+     *
+     * @param id The message ID
+     * @param content The reasoning content
+     * @return A new reasoning message
+     */
+    public static AguiMessage reasoningMessage(String id, String content) {
+        return new AguiMessage(id, "reasoning", content, null, null);
+    }
+
+    /**
      * Get the message ID.
      *
      * @return The message ID
@@ -193,6 +205,15 @@ public class AguiMessage {
      */
     public boolean isToolMessage() {
         return "tool".equals(role);
+    }
+
+    /**
+     * Check if this is a reasoning message.
+     *
+     * @return true if role is "reasoning"
+     */
+    public boolean isReasoningMessage() {
+        return "reasoning".equals(role);
     }
 
     /**

@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
@@ -666,6 +667,83 @@ class AguiEventTest {
     }
 
     @Nested
+    class MessagesSnapshotTest {
+
+        @Test
+        void testCreation() {
+            List<AguiMessage> messages =
+                    List.of(
+                            AguiMessage.userMessage("msg-1", "Hello"),
+                            AguiMessage.assistantMessage("msg-2", "Hi"));
+            AguiEvent.MessagesSnapshot event =
+                    new AguiEvent.MessagesSnapshot("thread-1", "run-1", messages);
+
+            assertEquals(AguiEventType.MESSAGES_SNAPSHOT, event.getType());
+            assertEquals("thread-1", event.getThreadId());
+            assertEquals("run-1", event.getRunId());
+            assertEquals(2, event.messages().size());
+            assertEquals("Hello", event.messages().get(0).getContent());
+        }
+
+        @Test
+        void testNullMessagesCreatesEmptyList() {
+            AguiEvent.MessagesSnapshot event =
+                    new AguiEvent.MessagesSnapshot("thread-1", "run-1", null);
+
+            assertNotNull(event.messages());
+            assertTrue(event.messages().isEmpty());
+        }
+
+        @Test
+        void testMessagesAreImmutable() {
+            AguiEvent.MessagesSnapshot event =
+                    new AguiEvent.MessagesSnapshot(
+                            "thread-1",
+                            "run-1",
+                            List.of(AguiMessage.userMessage("msg-1", "Hello")));
+
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> event.messages().add(AguiMessage.assistantMessage("msg-2", "Hi")));
+        }
+
+        @Test
+        void testNullThreadIdThrows() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiEvent.MessagesSnapshot(null, "run-1", List.of()));
+        }
+
+        @Test
+        void testNullRunIdThrows() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiEvent.MessagesSnapshot("thread-1", null, List.of()));
+        }
+
+        @Test
+        void testJsonSerialization() throws JsonProcessingException {
+            AguiEvent.MessagesSnapshot event =
+                    new AguiEvent.MessagesSnapshot(
+                            "thread-1",
+                            "run-1",
+                            List.of(AguiMessage.userMessage("msg-1", "Hello")));
+
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            checkExistAndDuplicate(json, "\"type\":\"MESSAGES_SNAPSHOT\"");
+            assertTrue(json.contains("\"messages\""));
+            assertTrue(json.contains("\"role\":\"user\""));
+            assertTrue(json.contains("\"content\":\"Hello\""));
+
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
+            assertTrue(deserialized instanceof AguiEvent.MessagesSnapshot);
+            AguiEvent.MessagesSnapshot snapshot = (AguiEvent.MessagesSnapshot) deserialized;
+            assertEquals(1, snapshot.messages().size());
+            assertEquals("msg-1", snapshot.messages().get(0).getId());
+        }
+    }
+
+    @Nested
     class RawTest {
 
         @Test
@@ -845,13 +923,14 @@ class AguiEventTest {
             assertNotNull(AguiEventType.TOOL_CALL_RESULT);
             assertNotNull(AguiEventType.STATE_SNAPSHOT);
             assertNotNull(AguiEventType.STATE_DELTA);
+            assertNotNull(AguiEventType.MESSAGES_SNAPSHOT);
             assertNotNull(AguiEventType.RAW);
             assertNotNull(AguiEventType.CUSTOM);
         }
 
         @Test
         void testEventTypeCount() {
-            assertEquals(19, AguiEventType.values().length);
+            assertEquals(20, AguiEventType.values().length);
         }
 
         @Test

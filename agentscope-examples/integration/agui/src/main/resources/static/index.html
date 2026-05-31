@@ -310,6 +310,7 @@
     <script src="/js/agui-client.js"></script>
     <script>
         const client = new AguiClient('/agui/run');
+        const messagesClient = new AguiClient('/agui/messages');
         const input = document.getElementById('input');
         const sendBtn = document.getElementById('send-btn');
         const stopBtn = document.getElementById('stop-btn');
@@ -317,16 +318,18 @@
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
 
-        let threadId = 'thread-' + Date.now();
+        const storedThreadId = localStorage.getItem('agentscope-agui-thread-id');
+        let threadId = storedThreadId || 'thread-' + Date.now();
+        localStorage.setItem('agentscope-agui-thread-id', threadId);
         let messageHistory = [];
         let isRunning = false;
+        let currentAssistantDiv = null;
+        let currentReasoningDiv = null;
 
         function setStatus(status, text) {
             statusDot.className = 'status-dot' + (status === 'error' ? ' disconnected' : '');
             statusText.textContent = text;
         }
-
-        let currentAssistantDiv = null;
 
         function appendMessage(role, content, append = false) {
             if (append && role === 'assistant' && currentAssistantDiv) {
@@ -381,6 +384,71 @@
             return div.innerHTML;
         }
 
+        function resetMessages() {
+            messages.innerHTML = '';
+            messageHistory = [];
+            currentAssistantDiv = null;
+            currentReasoningDiv = null;
+        }
+
+        function normalizeSnapshotMessage(message) {
+            return {
+                id: message.id || 'snapshot-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+                role: message.role || 'assistant',
+                content: message.content || '',
+                toolCalls: message.toolCalls || [],
+                toolCallId: message.toolCallId || null
+            };
+        }
+
+        function appendSnapshotMessage(message) {
+            const normalized = normalizeSnapshotMessage(message);
+            messageHistory.push(normalized);
+
+            if (normalized.content) {
+                appendMessage(normalized.role, normalized.content);
+            } else if (normalized.toolCalls.length > 0) {
+                const toolNames = normalized.toolCalls
+                    .map((toolCall) => toolCall.function?.name || toolCall.id)
+                    .filter(Boolean)
+                    .join(', ');
+                appendMessage('tool', `Calling tool: ${toolNames || 'tool'}`);
+            }
+
+            currentAssistantDiv = null;
+            currentReasoningDiv = null;
+        }
+
+        async function loadMessagesSnapshot() {
+            setStatus('loading', 'Loading history...');
+            try {
+                await messagesClient.run({
+                    threadId: threadId,
+                    runId: 'snapshot-' + Date.now(),
+                    messages: []
+                }, {
+                    onMessagesSnapshot: (snapshotMessages) => {
+                        resetMessages();
+                        snapshotMessages.forEach(appendSnapshotMessage);
+                    },
+                    onError: (error) => {
+                        appendMessage('error', `Error loading history: ${error}`);
+                    },
+                    onRunFinished: () => {
+                        setStatus('ready', 'Ready');
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading messages snapshot:', error);
+                appendMessage('error', `Error loading history: ${error.message}`);
+                setStatus('error', 'Error');
+            } finally {
+                if (statusText.textContent === 'Loading history...') {
+                    setStatus('ready', 'Ready');
+                }
+            }
+        }
+
         async function sendMessage() {
             const text = input.value.trim();
             if (!text || isRunning) return;
@@ -402,7 +470,6 @@
             let currentMessageId = null;
             let reasoningContent = '';
             let currentReasoningMessageId = null;
-            let currentReasoningDiv = null;
 
             try {
                 await client.run({
@@ -534,8 +601,8 @@
         sendBtn.addEventListener('click', sendMessage);
         stopBtn.addEventListener('click', stopGeneration);
 
-        // Focus input on load
-        input.focus();
+        // Load server-side memory messages snapshot on page load, then focus input.
+        loadMessagesSnapshot().finally(() => input.focus());
     </script>
 </body>
 </html>
