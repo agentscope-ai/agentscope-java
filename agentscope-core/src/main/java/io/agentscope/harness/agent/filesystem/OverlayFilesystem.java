@@ -75,6 +75,16 @@ public class OverlayFilesystem implements AbstractFilesystem {
         this.lower = lower;
     }
 
+    /** Returns the upper (writable) layer. */
+    public AbstractFilesystem upper() {
+        return upper;
+    }
+
+    /** Returns the lower (shared) layer. */
+    public AbstractFilesystem lower() {
+        return lower;
+    }
+
     /**
      * Builds an overlay that automatically exposes shell execution when {@code upper} supports
      * it. Returns a {@link AbstractSandboxFilesystem}-implementing subclass when

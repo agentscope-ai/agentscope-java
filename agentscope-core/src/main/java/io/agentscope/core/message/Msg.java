@@ -62,6 +62,22 @@ public class Msg implements State {
      */
     public static final String METADATA_CONFIRM_RESULTS = "agentscope_confirm_results";
 
+    /**
+     * Metadata key (boolean) marking a message as <em>synthetic</em>: framework-injected rather
+     * than authored by the user, the model, or a tool. Synthetic messages (e.g. the per-turn todo
+     * reminder produced by {@code TaskReminderMiddleware}) are appended transiently to the
+     * reasoning input and are not persisted into {@code AgentState.context}; this flag lets any
+     * downstream consumer that does observe such a message recognise and skip it (memory
+     * extraction, compaction, RAG recall).
+     */
+    public static final String METADATA_SYNTHETIC = "agentscope_synthetic";
+
+    /**
+     * Metadata key (string) describing the kind of synthetic reminder carried by a message, e.g.
+     * {@code "todo_state"}. Only meaningful when {@link #METADATA_SYNTHETIC} is {@code true}.
+     */
+    public static final String METADATA_REMINDER_KIND = "agentscope_reminder_kind";
+
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 

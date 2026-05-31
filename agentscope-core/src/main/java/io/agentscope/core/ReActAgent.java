@@ -124,6 +124,8 @@ import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.session.WorkspaceSession;
+import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
+import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -132,6 +134,9 @@ import io.agentscope.harness.agent.tool.MemoryGetTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
 import io.agentscope.harness.agent.tool.SessionSearchTool;
 import io.agentscope.harness.agent.tool.ShellExecuteTool;
+import io.agentscope.harness.agent.tool.ProposeSkillTool;
+import io.agentscope.harness.agent.tool.SkillManageConfig;
+import io.agentscope.harness.agent.tool.SkillManageTool;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import io.agentscope.harness.agent.tools.ToolFilter;
 import io.agentscope.harness.agent.tools.ToolsConfig;
@@ -277,10 +282,21 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      */
     private WorkspaceManager workspaceManager;
 
+    /** Plan-mode coordinator; non-null only when {@code enablePlanMode()} was used. */
+    private io.agentscope.harness.agent.workspace.plan.PlanModeManager planModeManager;
+
     private CompactionMiddleware compactionHook;
     private SandboxContext defaultSandboxContext;
     private SandboxLifecycleMiddleware sandboxLifecycleMw;
     private List<AgentSkillRepository> skillRepositories = List.of();
+
+    // M4 — non-null only when enableSkillManageTool was called.
+    private io.agentscope.harness.agent.skill.curator.SkillPromoter skillPromoter;
+    private io.agentscope.harness.agent.skill.curator.SkillUsageStore skillUsageStore;
+    // M5 — non-null only when enableSkillCurator was called.
+    private io.agentscope.harness.agent.skill.curator.SkillCurator skillCurator;
+    // M7 — non-null only when enableSkillManageTool was called.
+    private io.agentscope.harness.agent.skill.curator.SkillAuditLog skillAuditLog;
 
     /**
      * SQLite-backed workspace index allocated during {@link Builder#build()} when the agent is
@@ -2372,12 +2388,119 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
     }
 
+    /** M4 + M5 + M7 second-phase setter for the skill self-learning components. */
+    void injectSkillSelfLearning(
+            io.agentscope.harness.agent.skill.curator.SkillPromoter promoter,
+            io.agentscope.harness.agent.skill.curator.SkillUsageStore usageStore,
+            io.agentscope.harness.agent.skill.curator.SkillCurator curator,
+            io.agentscope.harness.agent.skill.curator.SkillAuditLog auditLog) {
+        this.skillPromoter = promoter;
+        this.skillUsageStore = usageStore;
+        this.skillCurator = curator;
+        this.skillAuditLog = auditLog;
+    }
+
+    /**
+     * Query the audit log for a given UTC day. Pass {@code null} for "today". Returns an empty
+     * list when the audit log is not configured (no {@code enableSkillManageTool} call).
+     */
+    public List<io.agentscope.harness.agent.skill.curator.SkillAuditLog.Entry> queryAudit(
+            String dayUtc,
+            java.util.function.Predicate<
+                            io.agentscope.harness.agent.skill.curator.SkillAuditLog.Entry>
+                    filter) {
+        if (skillAuditLog == null) {
+            return List.of();
+        }
+        return skillAuditLog.query(dayUtc, filter);
+    }
+
+    /**
+     * Force-run the skill curator immediately, bypassing the idle-and-interval gate. Returns
+     * a {@code Mono} that emits {@code null} when the curator is not configured.
+     */
+    public Mono<io.agentscope.harness.agent.skill.curator.SkillCurator.CuratorRunReport>
+            runCuratorOnce() {
+        if (skillCurator == null) {
+            return Mono.empty();
+        }
+        return Mono.fromCallable(() -> skillCurator.runOnce(null));
+    }
+
+    /**
+     * Promote a draft skill from {@code skills/_drafts/} to the live skills root via the
+     * configured {@link io.agentscope.harness.agent.skill.curator.SkillPromotionGate}.
+     *
+     * <p>Returns a Mono that emits {@link
+     * io.agentscope.harness.agent.skill.curator.SkillPromoter.PromotionResult#INVALID INVALID}
+     * if {@code enableSkillManageTool} was not configured (no promoter).
+     *
+     * @param name the skill name (must exist under the drafts repo)
+     * @param reviewerId stamped onto the sidecar's {@code promoted_by}
+     */
+    public Mono<io.agentscope.harness.agent.skill.curator.SkillPromoter.PromotionResult>
+            promoteSkill(String name, String reviewerId) {
+        if (skillPromoter == null) {
+            return Mono.just(
+                    io.agentscope.harness.agent.skill.curator.SkillPromoter.PromotionResult
+                            .invalid(
+                                    "skill promoter not configured; call"
+                                            + " enableSkillManageTool(...) on the builder"));
+        }
+        return skillPromoter.promote(name, reviewerId, getRuntimeContext());
+    }
+
+    /** Access to the sidecar telemetry store (M2/M4). Null when {@code enableSkillManageTool}
+     * was not configured. */
+    public io.agentscope.harness.agent.skill.curator.SkillUsageStore getSkillUsageStore() {
+        return skillUsageStore;
+    }
+
     /**
      * Returns the workspace manager produced by the harness orchestration path, or {@code null}
      * for plain {@code ReActAgent.builder()} usage.
      */
     public WorkspaceManager getWorkspaceManager() {
         return workspaceManager;
+    }
+
+    /**
+     * Programmatically enters plan mode (read-only design phase). Equivalent to the model calling
+     * {@code plan_enter}. Persisted in {@link AgentState} so it survives restarts / hand-offs.
+     *
+     * <p>No-op if the agent has no runtime state yet. Works whether or not {@code enablePlanMode()}
+     * was used, but the enforcing {@code PlanModeMiddleware} / plan tools are only present when it
+     * was.
+     */
+    public void enterPlanMode() {
+        AgentState s = getAgentState();
+        if (s == null) {
+            return;
+        }
+        if (planModeManager != null) {
+            planModeManager.enter(s);
+        } else {
+            s.getPlanModeContext().setPlanActive(true);
+        }
+    }
+
+    /** Programmatically exits plan mode (back to BUILD). Persisted in {@link AgentState}. */
+    public void exitPlanMode() {
+        AgentState s = getAgentState();
+        if (s == null) {
+            return;
+        }
+        if (planModeManager != null) {
+            planModeManager.exit(s);
+        } else {
+            s.getPlanModeContext().setPlanActive(false);
+        }
+    }
+
+    /** @return whether plan mode is currently active for this agent. */
+    public boolean isPlanModeActive() {
+        AgentState s = getAgentState();
+        return s != null && s.getPlanModeContext().isPlanActive();
     }
 
     /**
@@ -2538,6 +2661,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         final Set<Hook> hooks = new LinkedHashSet<>();
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private boolean enableMetaTool = false;
+        private boolean taskListEnabled = false;
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
 
@@ -2599,9 +2723,24 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         boolean disableAtPathExpansion = false;
         boolean disableSubagents = false;
         boolean disableDynamicSkills = false;
+        // SkillManage / writable repo opt-in (M1 of skill self-learning loop)
+        boolean skillManageToolEnabled = false;
+        SkillManageConfig skillManageConfig;
+        // Promotion gate + visibility filter (M4)
+        io.agentscope.harness.agent.skill.curator.SkillPromotionGate promotionGate;
+        io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter visibilityFilter;
+        String environment = "prod";
+        // Skill curator (M5)
+        boolean skillCuratorEnabled = false;
+        io.agentscope.harness.agent.skill.curator.SkillCuratorConfig skillCuratorConfig;
         io.agentscope.core.skill.SkillFilter skillFilter;
         boolean disableDynamicSubagents = false;
         boolean disableToolsConfig = false;
+
+        // Plan mode (read-only "design first" phase) opt-in.
+        boolean planModeEnabled = false;
+        String planFileDir =
+                io.agentscope.harness.agent.workspace.plan.PlanModeManager.DEFAULT_PLAN_DIR;
 
         ToolsConfig toolsConfigOverride;
 
@@ -2796,6 +2935,33 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          */
         public Builder enableMetaTool(boolean enableMetaTool) {
             this.enableMetaTool = enableMetaTool;
+            return this;
+        }
+
+        /**
+         * Enables the built-in task-list capability ({@code todo_write} tool + per-turn reminder).
+         *
+         * <p>Equivalent to {@link #enableTaskList(boolean) enableTaskList(true)}.
+         *
+         * @return this builder for chaining
+         */
+        public Builder enableTaskList() {
+            return enableTaskList(true);
+        }
+
+        /**
+         * Enables or disables the built-in task-list capability.
+         *
+         * <p>When enabled, {@link #build()} registers a {@code todo_write} tool (operating on
+         * {@link io.agentscope.core.state.AgentState#getTasksContext()} with full-list-replace
+         * semantics) and a {@link io.agentscope.core.middleware.TaskReminderMiddleware} that
+         * re-surfaces the current list before every reasoning step. Default OFF.
+         *
+         * @param enabled true to enable the task list
+         * @return this builder for chaining
+         */
+        public Builder enableTaskList(boolean enabled) {
+            this.taskListEnabled = enabled;
             return this;
         }
 
@@ -3244,6 +3410,117 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
+         * Enables the agent-callable {@code skill_manage} tool so the agent can create / edit /
+         * patch / archive its own skills in the workspace, and upgrades the workspace skill
+         * repository to a writable variant.
+         *
+         * <p>Default config ({@link SkillManageConfig#defaults()}): {@code autoPromote=false}
+         * (drafts land in {@code skills/_drafts/}, NOT visible until promoted) and
+         * {@code securityScan=true}. Suitable for enterprise production.
+         *
+         * <p>For personal-assistant / experimental setups use
+         * {@code enableSkillManageTool(true)} to bypass staging.
+         */
+        public Builder enableSkillManageTool(SkillManageConfig config) {
+            this.skillManageToolEnabled = true;
+            this.skillManageConfig = config != null ? config : SkillManageConfig.defaults();
+            this.harnessOrchestrationEnabled = true;
+            return this;
+        }
+
+        /**
+         * Shorthand for {@link #enableSkillManageTool(SkillManageConfig)} with default config and
+         * the supplied {@code autoPromote} value.
+         *
+         * @param autoPromote {@code true} writes new skills straight to the live skills root;
+         *     {@code false} (the production default) writes them to {@code skills/_drafts/}.
+         */
+        public Builder enableSkillManageTool(boolean autoPromote) {
+            return enableSkillManageTool(
+                    SkillManageConfig.builder().autoPromote(autoPromote).build());
+        }
+
+        /**
+         * Configures the runtime promotion gate + visibility filter chain (M4 of skill
+         * self-learning loop). Without this call the gate defaults to a {@code RejectAllGate}
+         * (drafts never auto-promote) and no visibility filtering happens.
+         *
+         * @param gate decides whether a draft is allowed to promote when {@code promoteSkill}
+         *     is invoked. Pass {@code null} to keep the {@code RejectAllGate} default.
+         * @param visibilityFilter run on every reasoning turn to constrain which skills enter
+         *     the system prompt. Pass {@code null} for no filtering.
+         */
+        public Builder enableSkillPromotionGate(
+                io.agentscope.harness.agent.skill.curator.SkillPromotionGate gate,
+                io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter visibilityFilter) {
+            this.promotionGate = gate;
+            this.visibilityFilter = visibilityFilter;
+            this.harnessOrchestrationEnabled = true;
+            return this;
+        }
+
+        /** Sets the deployment environment label used by {@code EnvironmentFilter}. */
+        public Builder environment(String env) {
+            this.environment = env != null ? env : "prod";
+            this.harnessOrchestrationEnabled = true;
+            return this;
+        }
+
+        /**
+         * Enables the background skill curator (M5). Requires
+         * {@link #enableSkillManageTool(boolean)} to also be configured because the curator
+         * needs the writable repository + sidecar.
+         */
+        public Builder enableSkillCurator(
+                io.agentscope.harness.agent.skill.curator.SkillCuratorConfig config) {
+            this.skillCuratorEnabled = true;
+            this.skillCuratorConfig =
+                    config != null
+                            ? config
+                            : io.agentscope.harness.agent.skill.curator.SkillCuratorConfig
+                                    .defaults();
+            this.harnessOrchestrationEnabled = true;
+            return this;
+        }
+
+        /**
+         * Enables plan mode: registers the {@code plan_enter} / {@code plan_write} /
+         * {@code plan_exit} tools and a {@code PlanModeMiddleware} that enforces a read-only design
+         * phase while plan mode is active. The agent can switch in/out of plan mode at runtime
+         * (model-driven via the tools, or programmatically via {@link ReActAgent#enterPlanMode()} /
+         * {@link ReActAgent#exitPlanMode()}); the mode is persisted in {@code AgentState}.
+         *
+         * <p>Requires the harness orchestration path (a workspace / filesystem).
+         */
+        public Builder enablePlanMode() {
+            return enablePlanMode(true);
+        }
+
+        /**
+         * Enables or disables plan mode. See {@link #enablePlanMode()}.
+         *
+         * @param enabled true to enable plan mode
+         */
+        public Builder enablePlanMode(boolean enabled) {
+            this.planModeEnabled = enabled;
+            if (enabled) {
+                this.harnessOrchestrationEnabled = true;
+            }
+            return this;
+        }
+
+        /**
+         * Sets the workspace-relative directory used to store plan markdown files. Defaults to
+         * {@code "plans"}.
+         */
+        public Builder planFileDirectory(String dir) {
+            if (dir != null && !dir.isBlank()) {
+                this.planFileDir = dir;
+            }
+            return this;
+        }
+
+        /**
          * Sets a custom {@link io.agentscope.core.skill.SkillFilter} controlling which skills are
          * included in the prompt. Defaults to {@link io.agentscope.core.skill.SkillFilter#all()}.
          *
@@ -3634,6 +3911,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
+         * Registers the built-in task-list tool ({@code todo_write}) and a per-turn reminder
+         * middleware. Opt-in via {@link #enableTaskList()}.
+         */
+        private void configureTodoTools(Toolkit agentToolkit) {
+            agentToolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
+            middlewares.add(new io.agentscope.core.middleware.TaskReminderMiddleware());
+        }
+
+        /**
          * Configures SkillBox by binding the toolkit, registering the skill-load tool, uploading
          * skill files when auto-upload is enabled, and adding the SkillHook to the chain.
          */
@@ -3686,6 +3972,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             if (planNotebook != null) {
                 configurePlan(agentToolkit);
             }
+            if (taskListEnabled) {
+                configureTodoTools(agentToolkit);
+            }
             if (skillBox != null) {
                 configureSkillBox(agentToolkit);
             }
@@ -3703,6 +3992,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         harnessResult.compactionHook,
                         harnessResult.sandboxLifecycleMw,
                         harnessResult.skillRepositories);
+                agent.planModeManager = harnessResult.planModeManager;
+                agent.injectSkillSelfLearning(
+                        harnessResult.skillPromoter,
+                        harnessResult.skillUsageStore,
+                        harnessResult.skillCurator,
+                        harnessResult.skillAuditLog);
             }
             return agent;
         }
@@ -3720,7 +4015,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             CompactionMiddleware compactionHook;
             SandboxLifecycleMiddleware sandboxLifecycleMw;
             List<AgentSkillRepository> skillRepositories;
+            io.agentscope.harness.agent.workspace.plan.PlanModeManager planModeManager;
             AtomicReference<ReActAgent> selfRef;
+            // M4 — promoter is null unless enableSkillManageTool was called.
+            io.agentscope.harness.agent.skill.curator.SkillPromoter skillPromoter;
+            io.agentscope.harness.agent.skill.curator.SkillUsageStore skillUsageStore;
+            // M5 — curator is null unless enableSkillCurator was called.
+            io.agentscope.harness.agent.skill.curator.SkillCurator skillCurator;
+            // M7 — audit log is null unless enableSkillManageTool was called.
+            io.agentscope.harness.agent.skill.curator.SkillAuditLog skillAuditLog;
         }
 
         /**
@@ -3732,6 +4035,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * <p>Mirrors {@code HarnessAgent.Builder.build()}'s orchestration sequence.
          */
         private HarnessOrchestrationResult runHarnessOrchestration(Toolkit agentToolkit) {
+            // M4 — staged here to avoid reordering the existing build flow.
+            io.agentscope.harness.agent.skill.curator.SkillPromoter pendingSkillPromoter = null;
+            io.agentscope.harness.agent.skill.curator.SkillUsageStore pendingSkillUsageStore = null;
+            io.agentscope.harness.agent.skill.curator.SkillCurator pendingSkillCurator = null;
+            io.agentscope.harness.agent.skill.curator.SkillAuditLog pendingSkillAuditLog = null;
+
             // ---- Validation ----
             int specCount = 0;
             if (sandboxFilesystemSpec != null) specCount++;
@@ -3935,6 +4244,31 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
 
+            // ---- Plan mode (read-only design phase) ----
+            io.agentscope.harness.agent.workspace.plan.PlanModeManager planModeManager = null;
+            if (planModeEnabled) {
+                planModeManager =
+                        new io.agentscope.harness.agent.workspace.plan.PlanModeManager(
+                                wsManager, planFileDir);
+                agentToolkit.registerTool(
+                        new io.agentscope.harness.agent.tool.PlanModeTools.PlanEnterTool(
+                                planModeManager));
+                agentToolkit.registerTool(
+                        new io.agentscope.harness.agent.tool.PlanModeTools.PlanWriteTool(
+                                planModeManager));
+                agentToolkit.registerTool(
+                        new io.agentscope.harness.agent.tool.PlanModeTools.PlanExitTool(
+                                planModeManager));
+                final Toolkit roToolkit = agentToolkit;
+                middlewares.add(
+                        new io.agentscope.harness.agent.middleware.PlanModeMiddleware(
+                                planModeManager,
+                                toolName -> {
+                                    AgentTool t = roToolkit.getTool(toolName);
+                                    return t instanceof ToolBase tb && tb.isReadOnly();
+                                }));
+            }
+
             // ---- workspace/tools.json: MCP servers + allow/deny filter ----
             ToolsConfig resolvedToolsConfig = null;
             if (!disableToolsConfig) {
@@ -3959,9 +4293,106 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             List<AgentSkillRepository> orderedSkillRepos =
                     ReActAgentBuilderSupport.composeSkillRepositories(
                             this, wsManager, filesystem, currentRcSupplier);
+
+            // ---- Skill self-learning M1: upgrade workspace repo to writable + register
+            // skill_manage tool. Drafts use a sibling repo rooted at the configured drafts
+            // dir; it is NOT added to orderedSkillRepos so drafts never reach the SkillBox.
+            if (skillManageToolEnabled && filesystem != null) {
+                SkillManageConfig smConfig =
+                        skillManageConfig != null
+                                ? skillManageConfig
+                                : SkillManageConfig.defaults();
+                WritableFilesystemSkillRepository mainWritableRepo = null;
+                for (int i = orderedSkillRepos.size() - 1; i >= 0; i--) {
+                    AgentSkillRepository r = orderedSkillRepos.get(i);
+                    if (r.getClass() == FilesystemBackedSkillRepository.class) {
+                        mainWritableRepo =
+                                new WritableFilesystemSkillRepository(
+                                        filesystem,
+                                        smConfig.mainDir(),
+                                        currentRcSupplier,
+                                        "workspace-writable");
+                        orderedSkillRepos.set(i, mainWritableRepo);
+                        break;
+                    }
+                }
+                if (mainWritableRepo == null) {
+                    // No Layer 4 repo present (unusual, but possible when filesystem
+                    // composition is fully customized). Append a fresh writable repo so the
+                    // tool still has somewhere to write.
+                    mainWritableRepo =
+                            new WritableFilesystemSkillRepository(
+                                    filesystem,
+                                    smConfig.mainDir(),
+                                    currentRcSupplier,
+                                    "workspace-writable");
+                    orderedSkillRepos.add(mainWritableRepo);
+                }
+                WritableFilesystemSkillRepository draftsWritableRepo =
+                        new WritableFilesystemSkillRepository(
+                                filesystem,
+                                smConfig.draftsDir(),
+                                currentRcSupplier,
+                                "workspace-drafts");
+                io.agentscope.harness.agent.skill.curator.SkillUsageStore usageStore =
+                        new io.agentscope.harness.agent.skill.curator.SkillUsageStore(filesystem);
+                io.agentscope.harness.agent.skill.curator.SkillAuditLog auditLog =
+                        new io.agentscope.harness.agent.skill.curator.SkillAuditLog(
+                                filesystem, wsManager);
+                SkillManageTool skillManageTool =
+                        new SkillManageTool(
+                                mainWritableRepo,
+                                draftsWritableRepo,
+                                smConfig,
+                                usageStore,
+                                auditLog);
+                pendingSkillAuditLog = auditLog;
+                agentToolkit.registerAgentTool(skillManageTool);
+                // M6 — convenience tool that wraps create + write_file calls in one shot.
+                agentToolkit.registerAgentTool(new ProposeSkillTool(skillManageTool));
+                middlewares.add(
+                        new io.agentscope.harness.agent.middleware.SkillUsageMiddleware(
+                                usageStore));
+
+                // M4 + M7 — promoter wired with audit log.
+                pendingSkillPromoter =
+                        new io.agentscope.harness.agent.skill.curator.SkillPromoter(
+                                draftsWritableRepo,
+                                mainWritableRepo,
+                                wsManager,
+                                usageStore,
+                                promotionGate
+                                        != null
+                                        ? promotionGate
+                                        : new io.agentscope.harness.agent.skill.curator
+                                                .RejectAllGate(),
+                                smConfig.draftsDir(),
+                                smConfig.mainDir(),
+                                auditLog);
+                pendingSkillUsageStore = usageStore;
+
+                // M5 — skill curator middleware + reference exposed via runCuratorOnce.
+                if (skillCuratorEnabled) {
+                    io.agentscope.harness.agent.skill.curator.SkillCurator curator =
+                            new io.agentscope.harness.agent.skill.curator.SkillCurator(
+                                    filesystem,
+                                    usageStore,
+                                    mainWritableRepo,
+                                    skillCuratorConfig != null
+                                            ? skillCuratorConfig
+                                            : io.agentscope.harness.agent.skill.curator
+                                                    .SkillCuratorConfig.defaults());
+                    pendingSkillCurator = curator;
+                    middlewares.add(
+                            new io.agentscope.harness.agent.middleware.SkillCuratorMiddleware(
+                                    curator));
+                }
+            }
+
             if (!orderedSkillRepos.isEmpty() && !disableDynamicSkills) {
                 middlewares.add(
-                        new DynamicSkillMiddleware(orderedSkillRepos, agentToolkit, skillFilter));
+                        new DynamicSkillMiddleware(
+                                orderedSkillRepos, agentToolkit, skillFilter, visibilityFilter));
             }
 
             // ---- Apply tools.json allow/deny filter ----
@@ -3986,6 +4417,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             result.compactionHook = compactionHook;
             result.sandboxLifecycleMw = sandboxLifecycleMw;
             result.skillRepositories = orderedSkillRepos;
+            result.skillPromoter = pendingSkillPromoter;
+            result.skillUsageStore = pendingSkillUsageStore;
+            result.skillCurator = pendingSkillCurator;
+            result.skillAuditLog = pendingSkillAuditLog;
+            result.planModeManager = planModeManager;
             result.selfRef = selfRef;
             return result;
         }

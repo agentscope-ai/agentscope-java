@@ -50,7 +50,8 @@ import java.util.UUID;
     "shutdown_interrupted",
     "permission_context",
     "tool_context",
-    "tasks_context"
+    "tasks_context",
+    "plan_mode_context"
 })
 public final class AgentState implements State {
 
@@ -63,6 +64,7 @@ public final class AgentState implements State {
     private final PermissionContextState permissionContext;
     private final ToolContextState toolContext;
     private final TaskContextState tasksContext;
+    private final PlanModeContextState planModeContext;
 
     private AgentState(Builder builder) {
         this.sessionId = builder.sessionId == null ? newHex() : builder.sessionId;
@@ -81,6 +83,10 @@ public final class AgentState implements State {
                         : builder.toolContext;
         this.tasksContext =
                 builder.tasksContext == null ? new TaskContextState() : builder.tasksContext;
+        this.planModeContext =
+                builder.planModeContext == null
+                        ? new PlanModeContextState()
+                        : builder.planModeContext;
     }
 
     @JsonCreator
@@ -93,7 +99,8 @@ public final class AgentState implements State {
             @JsonProperty("shutdown_interrupted") Boolean shutdownInterrupted,
             @JsonProperty("permission_context") PermissionContextState permissionContext,
             @JsonProperty("tool_context") ToolContextState toolContext,
-            @JsonProperty("tasks_context") TaskContextState tasksContext) {
+            @JsonProperty("tasks_context") TaskContextState tasksContext,
+            @JsonProperty("plan_mode_context") PlanModeContextState planModeContext) {
         Builder b = builder();
         if (sessionId != null) {
             b.sessionId(sessionId);
@@ -121,6 +128,9 @@ public final class AgentState implements State {
         }
         if (tasksContext != null) {
             b.tasksContext(tasksContext);
+        }
+        if (planModeContext != null) {
+            b.planModeContext(planModeContext);
         }
         return b.build();
     }
@@ -196,6 +206,11 @@ public final class AgentState implements State {
         return tasksContext;
     }
 
+    @JsonProperty("plan_mode_context")
+    public PlanModeContextState getPlanModeContext() {
+        return planModeContext;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -233,7 +248,8 @@ public final class AgentState implements State {
                 && Objects.equals(replyId, other.replyId)
                 && Objects.equals(permissionContext, other.permissionContext)
                 && Objects.equals(toolContext, other.toolContext)
-                && Objects.equals(tasksContext, other.tasksContext);
+                && Objects.equals(tasksContext, other.tasksContext)
+                && Objects.equals(planModeContext, other.planModeContext);
     }
 
     @Override
@@ -247,7 +263,8 @@ public final class AgentState implements State {
                 shutdownInterrupted,
                 permissionContext,
                 toolContext,
-                tasksContext);
+                tasksContext,
+                planModeContext);
     }
 
     @Override
@@ -275,6 +292,7 @@ public final class AgentState implements State {
         private PermissionContextState permissionContext;
         private ToolContextState toolContext;
         private TaskContextState tasksContext;
+        private PlanModeContextState planModeContext;
 
         private Builder() {}
 
@@ -326,6 +344,11 @@ public final class AgentState implements State {
 
         public Builder tasksContext(TaskContextState tasksContext) {
             this.tasksContext = tasksContext;
+            return this;
+        }
+
+        public Builder planModeContext(PlanModeContextState planModeContext) {
+            this.planModeContext = planModeContext;
             return this;
         }
 

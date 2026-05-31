@@ -121,6 +121,22 @@ public class FilesystemBackedSkillRepository implements AgentSkillRepository {
             if (path == null || path.isBlank()) {
                 continue;
             }
+            // Skip metadata / staging directories that live inside the skills root but are not
+            // themselves skill packages: drafts staging (_drafts/), archive (.archive/),
+            // telemetry sidecars (.usage.json), audit logs (.audit/), backups (.backups/).
+            //
+            // Implementation note: the path coming back from glob may be absolute (LocalFilesystem
+            // default), virtual, or namespaced. We can't reliably strip a known prefix in every
+            // backend, so we look at the SKILL.md's parent directory name only. A real skill
+            // package's parent dir is the skill name (lowercase letters/digits/._-) and never
+            // starts with '_' or '.'. A package living inside a metadata subtree always has at
+            // least one ancestor whose name starts with one of those two characters — checking
+            // the immediate parent catches the typical layout (e.g. skills/_drafts/<name>/SKILL.md
+            // → parent of SKILL.md is <name>, but the grandparent is _drafts), so we walk up
+            // every ancestor segment beyond the SKILL.md filename.
+            if (hasMetadataAncestor(path, skillsRelativeDir)) {
+                continue;
+            }
             try {
                 ReadResult rr = filesystem.read(ctx, path, 0, 0);
                 if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
@@ -175,5 +191,70 @@ public class FilesystemBackedSkillRepository implements AgentSkillRepository {
     private RuntimeContext currentContext() {
         RuntimeContext ctx = contextSupplier.get();
         return ctx != null ? ctx : RuntimeContext.empty();
+    }
+
+    /**
+     * Returns {@code true} when the path represents a skill living inside a metadata subtree
+     * directly under {@code base}. Looks for the pattern {@code "/<base>/<x>/"} where {@code <x>}
+     * starts with {@code _} or {@code .} (e.g. {@code _drafts}, {@code .archive},
+     * {@code .audit}, {@code .backups}).
+     *
+     * <p>Backend-agnostic: works on absolute paths (LocalFilesystem default), virtual paths,
+     * and namespaced paths alike, because it matches a substring rather than relying on the
+     * path being relative to the search root.
+     */
+    static boolean hasMetadataAncestor(String path, String base) {
+        if (path == null || base == null || base.isEmpty()) {
+            return false;
+        }
+        String normalized = path.replace('\\', '/');
+        String b = base.replace('\\', '/');
+        if (b.startsWith("/")) {
+            b = b.substring(1);
+        }
+        if (b.endsWith("/")) {
+            b = b.substring(0, b.length() - 1);
+        }
+        // Match "/<base>/" so the segment immediately following base is examined. We also
+        // need to handle the case where path begins with "<base>/" (no leading slash).
+        String marker = "/" + b + "/";
+        int idx = normalized.indexOf(marker);
+        if (idx < 0) {
+            // Try without the leading slash (e.g. path "skills/_drafts/x/SKILL.md").
+            if (normalized.startsWith(b + "/")) {
+                idx = -1;
+                int afterBase = b.length() + 1;
+                if (afterBase >= normalized.length()) {
+                    return false;
+                }
+                char first = normalized.charAt(afterBase);
+                return first == '_' || first == '.';
+            }
+            return false;
+        }
+        int afterBase = idx + marker.length();
+        if (afterBase >= normalized.length()) {
+            return false;
+        }
+        char first = normalized.charAt(afterBase);
+        return first == '_' || first == '.';
+    }
+
+    // ---------------------------------------------------------------------
+    //  Package-private accessors for subclasses (e.g. WritableFilesystemSkillRepository)
+    //  to avoid duplicating field plumbing. Not exposed publicly because the read-only
+    //  contract above must remain visible to all callers; writes belong to the subclass.
+    // ---------------------------------------------------------------------
+
+    public AbstractFilesystem filesystem() {
+        return filesystem;
+    }
+
+    public String skillsRelativeDir() {
+        return skillsRelativeDir;
+    }
+
+    public RuntimeContext resolveContext() {
+        return currentContext();
     }
 }

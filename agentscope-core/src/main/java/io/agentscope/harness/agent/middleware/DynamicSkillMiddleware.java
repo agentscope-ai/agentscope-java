@@ -52,18 +52,28 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     private final List<AgentSkillRepository> repositories;
     private final Toolkit toolkit;
     private final SkillFilter builderFilter;
+    private final io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter visibilityFilter;
 
     private volatile SkillBox currentSkillBox;
 
     public DynamicSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
-        this(repositories, toolkit, null);
+        this(repositories, toolkit, null, null);
     }
 
     public DynamicSkillMiddleware(
             List<AgentSkillRepository> repositories, Toolkit toolkit, SkillFilter builderFilter) {
+        this(repositories, toolkit, builderFilter, null);
+    }
+
+    public DynamicSkillMiddleware(
+            List<AgentSkillRepository> repositories,
+            Toolkit toolkit,
+            SkillFilter builderFilter,
+            io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter visibilityFilter) {
         this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
         this.toolkit = toolkit;
         this.builderFilter = builderFilter != null ? builderFilter : SkillFilter.all();
+        this.visibilityFilter = visibilityFilter;
     }
 
     public SkillBox getCurrentSkillBox() {
@@ -72,14 +82,14 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
-        reloadSkills();
-        if (currentSkillBox == null) {
-            return Mono.just(currentPrompt);
-        }
         RuntimeContext rc =
                 agent instanceof AgentBase ab && ab.getRuntimeContext() != null
                         ? ab.getRuntimeContext()
                         : RuntimeContext.empty();
+        reloadSkills(rc);
+        if (currentSkillBox == null) {
+            return Mono.just(currentPrompt);
+        }
         SkillFilter effectiveFilter = resolveFilter(rc);
         String prompt = currentSkillBox.getSkillPrompt(effectiveFilter);
         if (prompt == null || prompt.isEmpty()) {
@@ -95,7 +105,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         return builderFilter.overlay(runtimeOverlay);
     }
 
-    private void reloadSkills() {
+    private void reloadSkills(RuntimeContext ctx) {
         if (repositories.isEmpty()) {
             currentSkillBox = null;
             return;
@@ -126,8 +136,30 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             currentSkillBox = null;
             return;
         }
+        // Apply runtime visibility filter (environment / canary / allow-list / composite)
+        // BEFORE registering into SkillBox so the prompt only sees what the current ctx is
+        // allowed to see.
+        java.util.Collection<AgentSkill> visible = skillsByName.values();
+        if (visibilityFilter != null) {
+            try {
+                List<AgentSkill> filtered =
+                        visibilityFilter.filter(new java.util.ArrayList<>(visible), ctx);
+                if (filtered != null) {
+                    visible = filtered;
+                }
+            } catch (Exception e) {
+                log.warn(
+                        "SkillVisibilityFilter {} failed; treating as pass-through: {}",
+                        visibilityFilter.getClass().getSimpleName(),
+                        e.getMessage());
+            }
+        }
+        if (visible.isEmpty()) {
+            currentSkillBox = null;
+            return;
+        }
         SkillBox box = new SkillBox(toolkit);
-        for (AgentSkill skill : skillsByName.values()) {
+        for (AgentSkill skill : visible) {
             box.registerSkill(skill);
         }
         if (toolkit != null) {

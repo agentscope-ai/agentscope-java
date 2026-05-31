@@ -322,6 +322,31 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        public Builder enableTaskList() {
+            b.enableTaskList();
+            return this;
+        }
+
+        public Builder enableTaskList(boolean enabled) {
+            b.enableTaskList(enabled);
+            return this;
+        }
+
+        public Builder enablePlanMode() {
+            b.enablePlanMode();
+            return this;
+        }
+
+        public Builder enablePlanMode(boolean enabled) {
+            b.enablePlanMode(enabled);
+            return this;
+        }
+
+        public Builder planFileDirectory(String dir) {
+            b.planFileDirectory(dir);
+            return this;
+        }
+
         public Builder checkRunning(boolean checkRunning) {
             b.checkRunning(checkRunning);
             return this;
