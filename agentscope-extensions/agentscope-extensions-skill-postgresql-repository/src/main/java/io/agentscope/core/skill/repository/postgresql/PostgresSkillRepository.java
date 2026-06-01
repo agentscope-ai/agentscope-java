@@ -29,7 +29,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -133,12 +135,18 @@ public class PostgresSkillRepository implements AgentSkillRepository {
 
     /**
      * Pattern for validating schema and table names. Identifiers are double-quoted in generated
-     * SQL, so hyphens are safe after validation.
+     * SQL, but this follows the conservative underscore-only convention used by other repositories.
      */
-    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_-]*$");
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
 
     /** PostgreSQL identifier length limit. */
     private static final int MAX_IDENTIFIER_LENGTH = 63;
+
+    /** Maximum number of resource rows to send in one JDBC batch. */
+    private static final int RESOURCE_BATCH_SIZE = 1000;
+
+    private static final Set<String> SUPPORTED_METADATA_JSON_COLUMN_TYPES =
+            Set.of("text", "character varying", "character");
 
     /** Maximum length for skill name. */
     private static final int MAX_SKILL_NAME_LENGTH = 255;
@@ -151,11 +159,11 @@ public class PostgresSkillRepository implements AgentSkillRepository {
     private final String skillsTableName;
     private final String resourcesTableName;
     private final boolean metadataJsonColumnSupported;
-    private boolean writeable;
+    private volatile boolean writeable;
 
     @FunctionalInterface
     private interface SqlOperation {
-        void execute() throws Exception;
+        void execute() throws SQLException;
     }
 
     /**
@@ -361,7 +369,8 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                     throw new IllegalStateException(
                             "Schema does not exist: "
                                     + schemaName
-                                    + ". Use PostgresSkillRepository(dataSource, true) to"
+                                    + ". Use PostgresSkillRepository(dataSource, true, writeable)"
+                                    + " or builder(dataSource).createIfNotExist(true).build() to"
                                     + " auto-create.");
                 }
             }
@@ -402,7 +411,8 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                                     + schemaName
                                     + "."
                                     + tableName
-                                    + ". Use PostgresSkillRepository(dataSource, true) to"
+                                    + ". Use PostgresSkillRepository(dataSource, true, writeable)"
+                                    + " or builder(dataSource).createIfNotExist(true).build() to"
                                     + " auto-create.");
                 }
             }
@@ -433,16 +443,41 @@ public class PostgresSkillRepository implements AgentSkillRepository {
      */
     private boolean detectMetadataJsonColumnSupport() {
         String checkSql =
-                "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
-                        + " AND COLUMN_NAME = ? LIMIT 1";
+                "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ?"
+                        + " AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1";
 
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(checkSql)) {
-            stmt.setString(1, schemaName);
-            stmt.setString(2, skillsTableName);
-            stmt.setString(3, "metadata_json");
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next();
+        try {
+            Connection conn = dataSource.getConnection();
+            try {
+                PreparedStatement stmt = conn.prepareStatement(checkSql);
+                try {
+                    stmt.setString(1, schemaName);
+                    stmt.setString(2, skillsTableName);
+                    stmt.setString(3, "metadata_json");
+                    ResultSet rs = stmt.executeQuery();
+                    try {
+                        if (!rs.next()) {
+                            return false;
+                        }
+                        String dataType = rs.getString("DATA_TYPE");
+                        if (isSupportedMetadataJsonColumnType(dataType)) {
+                            return true;
+                        }
+                        logger.warn(
+                                "metadata_json column on {}.{} has unsupported type '{}'; extended"
+                                        + " metadata will not be persisted",
+                                schemaName,
+                                skillsTableName,
+                                dataType);
+                        return false;
+                    } finally {
+                        rs.close();
+                    }
+                } finally {
+                    stmt.close();
+                }
+            } finally {
+                conn.close();
             }
         } catch (SQLException e) {
             logger.warn(
@@ -450,6 +485,13 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                     e);
             return false;
         }
+    }
+
+    private boolean isSupportedMetadataJsonColumnType(String dataType) {
+        if (dataType == null) {
+            return false;
+        }
+        return SUPPORTED_METADATA_JSON_COLUMN_TYPES.contains(dataType.toLowerCase(Locale.ROOT));
     }
 
     @Override
@@ -598,7 +640,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                                     record.source,
                                     record.metadataJson,
                                     record.resources));
-                } catch (Exception e) {
+                } catch (IllegalArgumentException e) {
                     logger.warn("Failed to build skill: {}", e.getMessage(), e);
                 }
             }
@@ -654,43 +696,31 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                 }
             }
 
-            // Use transaction for atomic operations
-            boolean originalAutoCommit = conn.getAutoCommit();
-            if (originalAutoCommit) {
-                conn.setAutoCommit(false);
-            }
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        for (AgentSkill skill : skills) {
+                            String skillName = skill.getName();
 
-            try {
-                for (AgentSkill skill : skills) {
-                    String skillName = skill.getName();
+                            // Check if skill exists (for force=true case)
+                            boolean exists = skillExistsInternal(conn, skillName);
 
-                    // Check if skill exists (for force=true case)
-                    boolean exists = skillExistsInternal(conn, skillName);
+                            if (exists) {
+                                // Delete existing skill and its resources
+                                deleteSkillInternal(conn, skillName);
+                                logger.debug("Deleted existing skill for overwrite: {}", skillName);
+                            }
 
-                    if (exists) {
-                        // Delete existing skill and its resources
-                        deleteSkillInternal(conn, skillName);
-                        logger.debug("Deleted existing skill for overwrite: {}", skillName);
-                    }
+                            // Insert skill and get generated id
+                            long skillId = insertSkill(conn, skill);
 
-                    // Insert skill and get generated id
-                    long skillId = insertSkill(conn, skill);
+                            // Insert resources using skillId
+                            insertResources(conn, skillId, skill.getResources());
 
-                    // Insert resources using skillId
-                    insertResources(conn, skillId, skill.getResources());
-
-                    logger.info("Successfully saved skill: {} (id={})", skillName, skillId);
-                }
-
-                conn.commit();
-                return true;
-
-            } catch (Exception e) {
-                conn.rollback();
-                throw e;
-            } finally {
-                restoreAutoCommit(conn, originalAutoCommit);
-            }
+                            logger.info("Successfully saved skill: {} (id={})", skillName, skillId);
+                        }
+                    });
+            return true;
 
         } catch (SQLException e) {
             logger.error("Failed to save skills", e);
@@ -772,8 +802,10 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                         + getFullTableName(resourcesTableName)
                         + " (id, resource_path, resource_content) VALUES (?, ?, ?)";
 
-        // Use batch processing for better performance
+        // Use chunked batch processing to stay below PostgreSQL bind-parameter limits.
         try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
+            int insertedCount = 0;
+            List<String> batchPaths = new ArrayList<>(RESOURCE_BATCH_SIZE);
             for (Map.Entry<String, String> entry : resources.entrySet()) {
                 String path = entry.getKey();
                 String content = entry.getValue();
@@ -783,19 +815,14 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                 stmt.setString(3, content);
 
                 stmt.addBatch();
-            }
-
-            // Execute all inserts in one batch
-            int[] results = stmt.executeBatch();
-
-            // Count successful insertions
-            int insertedCount = 0;
-            for (int i = 0; i < results.length; i++) {
-                if (results[i] > 0 || results[i] == Statement.SUCCESS_NO_INFO) {
-                    insertedCount++;
-                } else if (results[i] == Statement.EXECUTE_FAILED) {
-                    logger.error("Failed to insert resource at batch index {}", i);
+                batchPaths.add(path);
+                if (batchPaths.size() == RESOURCE_BATCH_SIZE) {
+                    insertedCount += executeResourceBatch(stmt, batchPaths, skillId);
+                    batchPaths.clear();
                 }
+            }
+            if (!batchPaths.isEmpty()) {
+                insertedCount += executeResourceBatch(stmt, batchPaths, skillId);
             }
 
             logger.debug(
@@ -803,16 +830,51 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                     insertedCount,
                     skillId,
                     resources.size());
+        }
+    }
 
-            if (insertedCount != resources.size()) {
+    private int executeResourceBatch(PreparedStatement stmt, List<String> batchPaths, long skillId)
+            throws SQLException {
+        int[] results = stmt.executeBatch();
+        try {
+            if (results.length != batchPaths.size()) {
                 throw new SQLException(
-                        "Failed to insert all resources for id '"
+                        "Resource batch for id '"
                                 + skillId
-                                + "'. Expected: "
-                                + resources.size()
-                                + ", Inserted: "
-                                + insertedCount);
+                                + "' returned "
+                                + results.length
+                                + " results for "
+                                + batchPaths.size()
+                                + " resources");
             }
+
+            int insertedCount = 0;
+            List<String> failedResources = new ArrayList<>();
+            for (int i = 0; i < results.length; i++) {
+                if (results[i] > 0 || results[i] == Statement.SUCCESS_NO_INFO) {
+                    insertedCount++;
+                } else {
+                    String path = batchPaths.get(i);
+                    failedResources.add("index " + i + " path '" + path + "' result " + results[i]);
+                    logger.error(
+                            "Failed to insert resource for id '{}' at batch index {} path '{}'"
+                                    + " with result {}",
+                            skillId,
+                            i,
+                            path,
+                            results[i]);
+                }
+            }
+            if (!failedResources.isEmpty()) {
+                throw new SQLException(
+                        "Failed to insert resources for id '"
+                                + skillId
+                                + "': "
+                                + String.join(", ", failedResources));
+            }
+            return insertedCount;
+        } finally {
+            stmt.clearBatch();
         }
     }
 
@@ -833,21 +895,9 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                     return false;
                 }
 
-                boolean originalAutoCommit = conn.getAutoCommit();
-                if (originalAutoCommit) {
-                    conn.setAutoCommit(false);
-                }
-                try {
-                    deleteSkillInternal(conn, skillName);
-                    conn.commit();
-                    logger.info("Successfully deleted skill: {}", skillName);
-                    return true;
-                } catch (Exception e) {
-                    conn.rollback();
-                    throw e;
-                } finally {
-                    restoreAutoCommit(conn, originalAutoCommit);
-                }
+                executeInWriteTransaction(conn, () -> deleteSkillInternal(conn, skillName));
+                logger.info("Successfully deleted skill: {}", skillName);
+                return true;
             } finally {
                 conn.close();
             }
@@ -1043,9 +1093,8 @@ public class PostgresSkillRepository implements AgentSkillRepository {
         if (metadata == null || metadata.isEmpty()) {
             return false;
         }
-        return metadata.size() > 2
-                || metadata.keySet().stream()
-                        .anyMatch(key -> !"name".equals(key) && !"description".equals(key));
+        return metadata.keySet().stream()
+                .anyMatch(key -> !"name".equals(key) && !"description".equals(key));
     }
 
     /** Temporary holder used while stitching skills and resources from separate result sets. */
@@ -1089,27 +1138,17 @@ public class PostgresSkillRepository implements AgentSkillRepository {
         String deleteSkillsSql = "DELETE FROM " + getFullTableName(skillsTableName);
 
         try (Connection conn = dataSource.getConnection()) {
-            boolean originalAutoCommit = conn.getAutoCommit();
-            if (originalAutoCommit) {
-                conn.setAutoCommit(false);
-            }
-            try {
-                // Delete all skills (resources are deleted via CASCADE)
-                int deleted;
-                try (PreparedStatement stmt = conn.prepareStatement(deleteSkillsSql)) {
-                    deleted = stmt.executeUpdate();
-                }
-
-                conn.commit();
-                logger.info("Cleared all skills, {} skills deleted", deleted);
-                return deleted;
-
-            } catch (Exception e) {
-                conn.rollback();
-                throw e;
-            } finally {
-                restoreAutoCommit(conn, originalAutoCommit);
-            }
+            int[] deleted = new int[1];
+            executeInWriteTransaction(
+                    conn,
+                    () -> {
+                        // Delete all skills (resources are deleted via CASCADE)
+                        try (PreparedStatement stmt = conn.prepareStatement(deleteSkillsSql)) {
+                            deleted[0] = stmt.executeUpdate();
+                        }
+                    });
+            logger.info("Cleared all skills, {} skills deleted", deleted[0]);
+            return deleted[0];
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to clear skills", e);
@@ -1137,7 +1176,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
     }
 
     private void executeInWriteTransaction(Connection conn, SqlOperation operation)
-            throws Exception {
+            throws SQLException {
         boolean originalAutoCommit = conn.getAutoCommit();
         if (originalAutoCommit) {
             conn.setAutoCommit(false);
@@ -1146,7 +1185,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
         try {
             operation.execute();
             conn.commit();
-        } catch (Exception e) {
+        } catch (SQLException | RuntimeException e) {
             try {
                 conn.rollback();
             } catch (SQLException rollbackException) {
@@ -1198,9 +1237,9 @@ public class PostgresSkillRepository implements AgentSkillRepository {
      * Validate a schema or table identifier to prevent SQL injection.
      *
      * <p>
-     * This method ensures that identifiers only contain safe characters (alphanumeric,
-     * underscores, and hyphens) and start with a letter or underscore. This is critical for
-     * security since schema and table names cannot be parameterized in prepared statements.
+     * This method ensures that identifiers only contain safe characters (alphanumeric and
+     * underscores) and start with a letter or underscore. This is critical for security since
+     * schema and table names cannot be parameterized in prepared statements.
      *
      * @param identifier     The identifier to validate (schema name or table
      *                       name)
@@ -1220,8 +1259,8 @@ public class PostgresSkillRepository implements AgentSkillRepository {
             throw new IllegalArgumentException(
                     identifierType
                             + " contains invalid characters. Only alphanumeric characters and"
-                            + " underscores or hyphens are allowed, and it must start with a"
-                            + " letter or underscore. Invalid value: "
+                            + " underscores are allowed, and it must start with a letter or"
+                            + " underscore. Invalid value: "
                             + identifier);
         }
     }

@@ -87,6 +87,7 @@ public class PostgresSkillRepositoryTest {
         when(mockConnection.prepareStatement(anyString(), anyInt())).thenReturn(mockStatement);
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(false);
+        when(mockResultSet.getString("DATA_TYPE")).thenReturn("text");
         // Mock getGeneratedKeys for insertSkill
         when(mockStatement.getGeneratedKeys()).thenReturn(mockGeneratedKeysResultSet);
         when(mockGeneratedKeysResultSet.next()).thenReturn(true);
@@ -224,6 +225,54 @@ public class PostgresSkillRepositoryTest {
         void testConstructorWithMetadataDetectionFailure() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
             when(mockStatement.executeQuery()).thenThrow(new SQLException("metadata check failed"));
+
+            PostgresSkillRepository repo = new PostgresSkillRepository(mockDataSource, true, true);
+
+            assertFalse(repo.isMetadataJsonColumnSupported());
+        }
+
+        @Test
+        @DisplayName("Should support text metadata_json column")
+        void testConstructorWithTextMetadataJsonColumn() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+            when(mockResultSet.next()).thenReturn(true);
+            when(mockResultSet.getString("DATA_TYPE")).thenReturn("text");
+
+            PostgresSkillRepository repo = new PostgresSkillRepository(mockDataSource, true, true);
+
+            assertTrue(repo.isMetadataJsonColumnSupported());
+        }
+
+        @Test
+        @DisplayName("Should support varchar metadata_json column")
+        void testConstructorWithVarcharMetadataJsonColumn() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+            when(mockResultSet.next()).thenReturn(true);
+            when(mockResultSet.getString("DATA_TYPE")).thenReturn("character varying");
+
+            PostgresSkillRepository repo = new PostgresSkillRepository(mockDataSource, true, true);
+
+            assertTrue(repo.isMetadataJsonColumnSupported());
+        }
+
+        @Test
+        @DisplayName("Should reject jsonb metadata_json column")
+        void testConstructorWithJsonbMetadataJsonColumn() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+            when(mockResultSet.next()).thenReturn(true);
+            when(mockResultSet.getString("DATA_TYPE")).thenReturn("jsonb");
+
+            PostgresSkillRepository repo = new PostgresSkillRepository(mockDataSource, true, true);
+
+            assertFalse(repo.isMetadataJsonColumnSupported());
+        }
+
+        @Test
+        @DisplayName("Should reject metadata_json column with unknown type")
+        void testConstructorWithUnknownMetadataJsonColumnType() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+            when(mockResultSet.next()).thenReturn(true);
+            when(mockResultSet.getString("DATA_TYPE")).thenReturn(null);
 
             PostgresSkillRepository repo = new PostgresSkillRepository(mockDataSource, true, true);
 
@@ -545,6 +594,20 @@ public class PostgresSkillRepositoryTest {
                     () ->
                             PostgresSkillRepository.builder(mockDataSource)
                                     .schemaName("db name")
+                                    .skillsTableName("skills")
+                                    .resourcesTableName("resources")
+                                    .build(),
+                    "Schema name contains invalid characters");
+        }
+
+        @Test
+        @DisplayName("Should reject schema name with hyphen")
+        void testRejectsSchemaNameWithHyphen() {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            PostgresSkillRepository.builder(mockDataSource)
+                                    .schemaName("db-name")
                                     .skillsTableName("skills")
                                     .resourcesTableName("resources")
                                     .build(),
@@ -1191,6 +1254,30 @@ public class PostgresSkillRepositoryTest {
                     assertThrows(RuntimeException.class, () -> repo.save(List.of(skill), false));
 
             assertTrue(exception.getMessage().contains("Failed to save skills"));
+            assertTrue(exception.getCause().getMessage().contains("readme.md"));
+            verify(mockConnection).rollback();
+        }
+
+        @Test
+        @DisplayName("Should fail when resource batch result count mismatches")
+        void testSaveSkillResourceBatchResultCountMismatch() throws SQLException {
+            when(mockResultSet.next()).thenReturn(false);
+            when(mockStatement.executeUpdate()).thenReturn(1);
+            when(mockStatement.executeBatch()).thenReturn(new int[0]);
+
+            AgentSkill skill =
+                    new AgentSkill(
+                            "resource-batch-mismatch",
+                            "Description",
+                            "Content",
+                            Map.of("readme.md", "content"),
+                            "test");
+
+            RuntimeException exception =
+                    assertThrows(RuntimeException.class, () -> repo.save(List.of(skill), false));
+
+            assertTrue(exception.getMessage().contains("Failed to save skills"));
+            assertTrue(exception.getCause().getMessage().contains("returned 0 results for 1"));
             verify(mockConnection).rollback();
         }
 
@@ -1210,6 +1297,54 @@ public class PostgresSkillRepositoryTest {
                             "test");
 
             assertTrue(repo.save(List.of(skill), false));
+        }
+
+        @Test
+        @DisplayName("Should split large resource inserts into chunks")
+        void testSaveSkillResourceBatchChunking() throws SQLException {
+            when(mockResultSet.next()).thenReturn(false);
+            when(mockStatement.executeUpdate()).thenReturn(1);
+            int[] firstBatchResults = new int[1000];
+            for (int i = 0; i < firstBatchResults.length; i++) {
+                firstBatchResults[i] = 1;
+            }
+            when(mockStatement.executeBatch()).thenReturn(firstBatchResults, new int[] {1});
+
+            Map<String, String> resources = new LinkedHashMap<>();
+            for (int i = 0; i < 1001; i++) {
+                resources.put("resource-" + i + ".md", "content-" + i);
+            }
+            AgentSkill skill =
+                    new AgentSkill(
+                            "resource-batch-chunking", "Description", "Content", resources, "test");
+
+            assertTrue(repo.save(List.of(skill), false));
+            verify(mockStatement, atLeast(2)).executeBatch();
+            verify(mockStatement, atLeast(2)).clearBatch();
+        }
+
+        @Test
+        @DisplayName("Should not run trailing resource batch for exact chunk")
+        void testSaveSkillResourceBatchExactChunk() throws SQLException {
+            when(mockResultSet.next()).thenReturn(false);
+            when(mockStatement.executeUpdate()).thenReturn(1);
+            int[] batchResults = new int[1000];
+            for (int i = 0; i < batchResults.length; i++) {
+                batchResults[i] = 1;
+            }
+            when(mockStatement.executeBatch()).thenReturn(batchResults);
+
+            Map<String, String> resources = new LinkedHashMap<>();
+            for (int i = 0; i < 1000; i++) {
+                resources.put("resource-" + i + ".md", "content-" + i);
+            }
+            AgentSkill skill =
+                    new AgentSkill(
+                            "resource-batch-exact", "Description", "Content", resources, "test");
+
+            assertTrue(repo.save(List.of(skill), false));
+            verify(mockStatement).executeBatch();
+            verify(mockStatement).clearBatch();
         }
 
         @Test
