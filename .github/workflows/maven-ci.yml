@@ -127,7 +127,8 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           # -T1: single-threaded build so reactor order is respected (see Linux step).
-          & "~\.mvnd\bin\mvnd.cmd" -B -T1 clean verify
+          # -Dmvnd.maxLostKeepAlive=120: avoid StaleAddressException on long javadoc phases (mvnd#161).
+          & "~\.mvnd\bin\mvnd.cmd" -B -T1 "-Dmvnd.maxLostKeepAlive=120" clean verify
 
       - name: Upload coverage reports to Codecov
         if: runner.os == 'Linux'

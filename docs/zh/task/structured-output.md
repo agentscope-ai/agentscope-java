@@ -120,5 +120,5 @@ try {
 
 ## 更多资源
 
-- **完整示例**: [StructuredOutputExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
+- **完整示例**: [StructuredOutputExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
 - **Agent 配置**: [agent-config.md](./agent-config.md)

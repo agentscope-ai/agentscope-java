@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agentscope.io/schema/agentscope.json",
+  "main": "default",
+  "agents": {
+    "default": {
+      "name": "Main",
+      "description": "Primary harness agent",
+      "workspace": ".agentscope/workspace",
+      "maxIters": 15
+    },
+    "worker": {
+      "name": "Worker",
+      "description": "Secondary agent with its own workspace",
+      "workspace": ".agentscope/worker-workspace",
+      "maxIters": 10
+    }
+  },
+  "channels": {
+    "chatui": {
+      "defaultAgentId": "default",
+      "dmScope": "MAIN"
+    }
+  }
+}
