@@ -168,15 +168,13 @@ class SkillToolFactory {
             return buildSkillMarkdownResponse(skillId, skill);
         }
 
-        // Get resource
-        Map<String, String> resources = skill.getResources();
-        if (resources == null || !resources.containsKey(path)) {
+        // Get resource using getResource method
+        String resourceContent = skill.getResource(path);
+        if (resourceContent == null) {
             // Resource not found, return available resource paths
             throw new IllegalArgumentException(
-                    buildResourceNotFoundMessage(skillId, path, resources));
+                    buildResourceNotFoundMessage(skillId, path, skill.getResources()));
         }
-
-        String resourceContent = resources.get(path);
         activateSkill(skillId);
         return buildResourceResponse(skillId, path, resourceContent);
     }
