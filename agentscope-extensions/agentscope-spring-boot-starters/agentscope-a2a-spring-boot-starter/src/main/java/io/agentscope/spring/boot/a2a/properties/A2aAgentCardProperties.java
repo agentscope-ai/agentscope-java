@@ -16,12 +16,13 @@
 
 package io.agentscope.spring.boot.a2a.properties;
 
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.SecurityScheme;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.SecurityScheme;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -33,8 +34,6 @@ public class A2aAgentCardProperties {
     private String name;
 
     private String description;
-
-    private String url;
 
     private AgentProvider provider;
 
@@ -50,14 +49,11 @@ public class A2aAgentCardProperties {
 
     private Map<String, SecurityScheme> securitySchemes;
 
-    private List<Map<String, List<String>>> security;
+    private List<SecurityRequirement> security;
 
     private String iconUrl;
 
-    private List<AgentInterface> additionalInterfaces;
-
-    private String preferredTransport;
-    ;
+    private List<AgentInterface> supportedInterfaces;
 
     public String getName() {
         return name;
@@ -73,14 +69,6 @@ public class A2aAgentCardProperties {
 
     public void setDescription(String description) {
         this.description = description;
-    }
-
-    public String getUrl() {
-        return url;
-    }
-
-    public void setUrl(String url) {
-        this.url = url;
     }
 
     public AgentProvider getProvider() {
@@ -139,11 +127,11 @@ public class A2aAgentCardProperties {
         this.securitySchemes = securitySchemes;
     }
 
-    public List<Map<String, List<String>>> getSecurity() {
+    public List<SecurityRequirement> getSecurity() {
         return security;
     }
 
-    public void setSecurity(List<Map<String, List<String>>> security) {
+    public void setSecurity(List<SecurityRequirement> security) {
         this.security = security;
     }
 
@@ -155,19 +143,11 @@ public class A2aAgentCardProperties {
         this.iconUrl = iconUrl;
     }
 
-    public List<AgentInterface> getAdditionalInterfaces() {
-        return additionalInterfaces;
+    public List<AgentInterface> getSupportedInterfaces() {
+        return supportedInterfaces;
     }
 
-    public void setAdditionalInterfaces(List<AgentInterface> additionalInterfaces) {
-        this.additionalInterfaces = additionalInterfaces;
-    }
-
-    public String getPreferredTransport() {
-        return preferredTransport;
-    }
-
-    public void setPreferredTransport(String preferredTransport) {
-        this.preferredTransport = preferredTransport;
+    public void setSupportedInterfaces(List<AgentInterface> supportedInterfaces) {
+        this.supportedInterfaces = supportedInterfaces;
     }
 }

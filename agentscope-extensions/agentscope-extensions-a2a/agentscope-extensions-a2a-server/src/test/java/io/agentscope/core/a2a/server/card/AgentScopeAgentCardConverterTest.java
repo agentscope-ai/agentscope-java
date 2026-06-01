@@ -19,24 +19,22 @@ package io.agentscope.core.a2a.server.card;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.MutualTLSSecurityScheme;
-import io.a2a.spec.SecurityScheme;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -73,7 +71,6 @@ class AgentScopeAgentCardConverterTest {
         // Given
         String name = "Test Agent";
         String description = "Test Description";
-        String url = "https://example.com/agent";
         AgentProvider provider = new AgentProvider("Test Provider", "https://provider.com");
         String version = "2.0.0";
         String documentationUrl = "https://docs.example.com";
@@ -81,34 +78,29 @@ class AgentScopeAgentCardConverterTest {
         List<String> defaultOutputModes = List.of("text", "audio");
         List<AgentSkill> skills =
                 List.of(
-                        new AgentSkill.Builder()
+                        AgentSkill.builder()
                                 .id("skill1")
                                 .name("Skill 1")
                                 .description("Skill 1")
                                 .tags(List.of())
                                 .build());
-        Map<String, SecurityScheme> securitySchemes =
-                Map.of("basic", new MutualTLSSecurityScheme("basic"));
-        List<Map<String, List<String>>> security = List.of(Map.of("basic", List.of("read")));
+        List<SecurityRequirement> securityRequirements =
+                List.of(new SecurityRequirement(Map.of("basic", List.of("read"))));
         String iconUrl = "https://example.com/icon.png";
-        List<AgentInterface> additionalInterfaces =
-                List.of(new AgentInterface("jsonrpc", "https://example.com/rpc"));
-        String preferredTransport = "jsonrpc";
+        List<AgentInterface> supportedInterfaces =
+                List.of(new AgentInterface("jsonrpc", "https://example.com/rpc", "/public", null));
 
         when(configurableAgentCard.getName()).thenReturn(name);
         when(configurableAgentCard.getDescription()).thenReturn(description);
-        when(configurableAgentCard.getUrl()).thenReturn(url);
         when(configurableAgentCard.getProvider()).thenReturn(provider);
         when(configurableAgentCard.getVersion()).thenReturn(version);
         when(configurableAgentCard.getDocumentationUrl()).thenReturn(documentationUrl);
         when(configurableAgentCard.getDefaultInputModes()).thenReturn(defaultInputModes);
         when(configurableAgentCard.getDefaultOutputModes()).thenReturn(defaultOutputModes);
         when(configurableAgentCard.getSkills()).thenReturn(skills);
-        when(configurableAgentCard.getSecuritySchemes()).thenReturn(securitySchemes);
-        when(configurableAgentCard.getSecurity()).thenReturn(security);
+        when(configurableAgentCard.getSecurityRequirements()).thenReturn(securityRequirements);
         when(configurableAgentCard.getIconUrl()).thenReturn(iconUrl);
-        when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(additionalInterfaces);
-        when(configurableAgentCard.getPreferredTransport()).thenReturn(preferredTransport);
+        when(configurableAgentCard.getSupportedInterfaces()).thenReturn(supportedInterfaces);
 
         when(agentRunner.getAgentName()).thenReturn("Runner Agent Name");
         when(agentRunner.getAgentDescription()).thenReturn("Runner Agent Description");
@@ -121,20 +113,15 @@ class AgentScopeAgentCardConverterTest {
         assertNotNull(agentCard);
         assertEquals(name, agentCard.name());
         assertEquals(description, agentCard.description());
-        assertEquals(url, agentCard.url());
         assertEquals(provider, agentCard.provider());
         assertEquals(version, agentCard.version());
         assertEquals(documentationUrl, agentCard.documentationUrl());
         assertEquals(defaultInputModes, agentCard.defaultInputModes());
         assertEquals(defaultOutputModes, agentCard.defaultOutputModes());
         assertEquals(skills, agentCard.skills());
-        assertEquals(securitySchemes, agentCard.securitySchemes());
-        assertEquals(security, agentCard.security());
+        assertEquals(securityRequirements, agentCard.securityRequirements());
         assertEquals(iconUrl, agentCard.iconUrl());
-        assertEquals(additionalInterfaces, agentCard.additionalInterfaces());
-        assertEquals(preferredTransport, agentCard.preferredTransport());
-        assertEquals("0.3.0", agentCard.protocolVersion());
-        assertFalse(agentCard.supportsAuthenticatedExtendedCard());
+        assertEquals(supportedInterfaces, agentCard.supportedInterfaces());
     }
 
     @Test
@@ -146,13 +133,11 @@ class AgentScopeAgentCardConverterTest {
 
         when(configurableAgentCard.getName()).thenReturn(null);
         when(configurableAgentCard.getDescription()).thenReturn(null);
-        when(configurableAgentCard.getUrl()).thenReturn(null);
         when(configurableAgentCard.getVersion()).thenReturn(null);
         when(configurableAgentCard.getDefaultInputModes()).thenReturn(null);
         when(configurableAgentCard.getDefaultOutputModes()).thenReturn(null);
         when(configurableAgentCard.getSkills()).thenReturn(null);
-        when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(null);
-        when(configurableAgentCard.getPreferredTransport()).thenReturn(null);
+        when(configurableAgentCard.getSupportedInterfaces()).thenReturn(null);
 
         when(agentRunner.getAgentName()).thenReturn(runnerName);
         when(agentRunner.getAgentDescription()).thenReturn(runnerDescription);
@@ -164,16 +149,40 @@ class AgentScopeAgentCardConverterTest {
         // Then
         assertNotNull(agentCard);
         assertEquals(runnerName, agentCard.name());
-        assertEquals(runnerDescription, agentCard.description());
-        assertNotNull(agentCard.url()); // Should be derived from transport properties
+        assertEquals(runnerName, agentCard.description());
         assertEquals("1.0.0", agentCard.version());
         assertEquals(List.of("text"), agentCard.defaultInputModes());
         assertEquals(List.of("text"), agentCard.defaultOutputModes());
-        assertEquals(List.of(), agentCard.skills()); // Empty list as default
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
-        assertEquals(TransportProtocol.JSONRPC.asString(), agentCard.preferredTransport());
-        assertEquals("0.3.0", agentCard.protocolVersion());
+        assertEquals(List.of(), agentCard.skills());
+        assertNotNull(agentCard.supportedInterfaces());
+        assertFalse(agentCard.supportedInterfaces().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should fallback description to card name when description is null")
+    void testDescriptionFallbackToCardName() {
+        // Given
+        String cardName = "My Agent";
+
+        when(configurableAgentCard.getName()).thenReturn(cardName);
+        when(configurableAgentCard.getDescription()).thenReturn(null);
+        when(configurableAgentCard.getVersion()).thenReturn(null);
+        when(configurableAgentCard.getDefaultInputModes()).thenReturn(null);
+        when(configurableAgentCard.getDefaultOutputModes()).thenReturn(null);
+        when(configurableAgentCard.getSkills()).thenReturn(null);
+        when(configurableAgentCard.getSupportedInterfaces()).thenReturn(null);
+
+        when(agentRunner.getAgentName()).thenReturn("Runner Agent Name");
+        when(agentRunner.getAgentDescription()).thenReturn("Runner Agent Description");
+
+        // When
+        AgentCard agentCard =
+                builder.createAgentCard(configurableAgentCard, agentRunner, availableTransports);
+
+        // Then
+        assertNotNull(agentCard);
+        assertEquals(cardName, agentCard.name());
+        assertEquals(cardName, agentCard.description());
     }
 
     @Test
@@ -192,9 +201,7 @@ class AgentScopeAgentCardConverterTest {
 
         when(configurableAgentCard.getName()).thenReturn("Test Agent");
         when(configurableAgentCard.getDescription()).thenReturn("Test Description");
-        when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(null);
-        when(configurableAgentCard.getPreferredTransport()).thenReturn(null);
-        when(configurableAgentCard.getUrl()).thenReturn(null);
+        when(configurableAgentCard.getSupportedInterfaces()).thenReturn(null);
 
         when(agentRunner.getAgentName()).thenReturn("Runner Agent Name");
         when(agentRunner.getAgentDescription()).thenReturn("Runner Agent Description");
@@ -205,10 +212,9 @@ class AgentScopeAgentCardConverterTest {
 
         // Then
         assertNotNull(agentCard);
-        assertTrue(agentCard.url().startsWith("https://"));
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
-        AgentInterface interfaceFound = agentCard.additionalInterfaces().get(0);
+        assertNotNull(agentCard.supportedInterfaces());
+        assertFalse(agentCard.supportedInterfaces().isEmpty());
+        var interfaceFound = agentCard.supportedInterfaces().get(0);
         assertTrue(interfaceFound.url().startsWith("https://"));
     }
 
@@ -228,9 +234,7 @@ class AgentScopeAgentCardConverterTest {
 
         when(configurableAgentCard.getName()).thenReturn("Test Agent");
         when(configurableAgentCard.getDescription()).thenReturn("Test Description");
-        when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(null);
-        when(configurableAgentCard.getPreferredTransport()).thenReturn(null);
-        when(configurableAgentCard.getUrl()).thenReturn(null);
+        when(configurableAgentCard.getSupportedInterfaces()).thenReturn(null);
 
         when(agentRunner.getAgentName()).thenReturn("Runner Agent Name");
         when(agentRunner.getAgentDescription()).thenReturn("Runner Agent Description");
@@ -241,25 +245,24 @@ class AgentScopeAgentCardConverterTest {
 
         // Then
         assertNotNull(agentCard);
-        assertTrue(agentCard.url().endsWith("/custom/path"));
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
-        AgentInterface interfaceFound = agentCard.additionalInterfaces().get(0);
+        assertNotNull(agentCard.supportedInterfaces());
+        assertFalse(agentCard.supportedInterfaces().isEmpty());
+        var interfaceFound = agentCard.supportedInterfaces().get(0);
         assertTrue(interfaceFound.url().endsWith("/custom/path"));
     }
 
     @Test
-    @DisplayName("Should create agent card with explicit URL and preferred transport")
-    void testCreateAgentCardWithExplicitUrlAndPreferredTransport() {
+    @DisplayName("Should create agent card with explicit supported interfaces")
+    void testCreateAgentCardWithExplicitSupportedInterfaces() {
         // Given
-        String explicitUrl = "https://explicit.example.com/api";
-        String preferredTransport = "jsonrpc";
+        List<AgentInterface> explicitInterfaces =
+                List.of(
+                        new AgentInterface(
+                                "jsonrpc", "https://explicit.example.com/api", "/public", null));
 
         when(configurableAgentCard.getName()).thenReturn("Test Agent");
         when(configurableAgentCard.getDescription()).thenReturn("Test Description");
-        when(configurableAgentCard.getUrl()).thenReturn(explicitUrl);
-        when(configurableAgentCard.getPreferredTransport()).thenReturn(preferredTransport);
-        when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(null);
+        when(configurableAgentCard.getSupportedInterfaces()).thenReturn(explicitInterfaces);
 
         when(agentRunner.getAgentName()).thenReturn("Runner Agent Name");
         when(agentRunner.getAgentDescription()).thenReturn("Runner Agent Description");
@@ -270,23 +273,23 @@ class AgentScopeAgentCardConverterTest {
 
         // Then
         assertNotNull(agentCard);
-        assertEquals(explicitUrl, agentCard.url());
-        assertEquals(preferredTransport, agentCard.preferredTransport());
+        assertEquals(explicitInterfaces, agentCard.supportedInterfaces());
     }
 
     @Test
     @DisplayName("Should handle null available transports")
     void testCreateAgentCardWithNullAvailableTransports() {
-        // Given
         when(configurableAgentCard.getName()).thenReturn("Test Agent");
         when(configurableAgentCard.getDescription()).thenReturn("Test Description");
-        when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(null);
+        when(configurableAgentCard.getSupportedInterfaces()).thenReturn(null);
 
         when(agentRunner.getAgentName()).thenReturn("Runner Agent Name");
         when(agentRunner.getAgentDescription()).thenReturn("Runner Agent Description");
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> builder.createAgentCard(configurableAgentCard, agentRunner, new HashSet<>()));
+        AgentCard result =
+                builder.createAgentCard(configurableAgentCard, agentRunner, new HashSet<>());
+        assertNotNull(result);
+        assertEquals("Test Agent", result.name());
+        assertTrue(result.supportedInterfaces().isEmpty());
     }
 }

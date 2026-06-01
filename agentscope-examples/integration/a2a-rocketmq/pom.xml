@@ -28,7 +28,8 @@
     <artifactId>a2a-rocketmq</artifactId>
     <packaging>pom</packaging>
     <modules>
-        <module>agentscope-client</module>
+        <!-- TODO: Re-enable when rocketmq-a2a supports org.a2aproject.sdk (currently uses io.a2a.*) -->
+        <!-- <module>agentscope-client</module> -->
         <module>agentscope-server</module>
     </modules>
     <properties>

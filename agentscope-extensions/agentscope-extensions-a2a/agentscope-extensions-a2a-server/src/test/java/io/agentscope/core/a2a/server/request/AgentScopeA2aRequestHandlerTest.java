@@ -25,17 +25,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.server.agentexecution.AgentExecutor;
-import io.a2a.server.events.InMemoryQueueManager;
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.requesthandlers.DefaultRequestHandler;
-import io.a2a.server.tasks.InMemoryTaskStore;
-import io.a2a.server.tasks.TaskStateProvider;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.Task;
-import io.a2a.spec.TaskState;
-import io.a2a.spec.TaskStatus;
 import java.lang.reflect.Field;
+import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
+import org.a2aproject.sdk.server.events.InMemoryQueueManager;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.requesthandlers.DefaultRequestHandler;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+import org.a2aproject.sdk.server.tasks.TaskStateProvider;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -138,7 +138,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStore mockTaskStore = mock(TaskStore.class);
             Task mockTask = mock(Task.class);
             when(mockTaskStore.get("task123")).thenReturn(mockTask);
-            when(mockTask.getStatus()).thenReturn(null);
+            when(mockTask.status()).thenReturn(null);
 
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
@@ -159,7 +159,7 @@ class AgentScopeA2aRequestHandlerTest {
             Task mockTask = mock(Task.class);
             TaskStatus mockStatus = mock(TaskStatus.class);
             when(mockTaskStore.get("task123")).thenReturn(mockTask);
-            when(mockTask.getStatus()).thenReturn(mockStatus);
+            when(mockTask.status()).thenReturn(mockStatus);
             when(mockStatus.state()).thenReturn(null);
 
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
@@ -181,8 +181,8 @@ class AgentScopeA2aRequestHandlerTest {
             Task mockTask = mock(Task.class);
             TaskStatus mockStatus = mock(TaskStatus.class);
             when(mockTaskStore.get("task123")).thenReturn(mockTask);
-            when(mockTask.getStatus()).thenReturn(mockStatus);
-            when(mockStatus.state()).thenReturn(TaskState.WORKING);
+            when(mockTask.status()).thenReturn(mockStatus);
+            when(mockStatus.state()).thenReturn(TaskState.TASK_STATE_WORKING);
 
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
@@ -203,8 +203,8 @@ class AgentScopeA2aRequestHandlerTest {
             Task mockTask = mock(Task.class);
             TaskStatus mockStatus = mock(TaskStatus.class);
             when(mockTaskStore.get("task123")).thenReturn(mockTask);
-            when(mockTask.getStatus()).thenReturn(mockStatus);
-            when(mockStatus.state()).thenReturn(TaskState.COMPLETED);
+            when(mockTask.status()).thenReturn(mockStatus);
+            when(mockStatus.state()).thenReturn(TaskState.TASK_STATE_COMPLETED);
 
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
@@ -242,7 +242,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStore mockTaskStore = mock(TaskStore.class);
             Task mockTask = mock(Task.class);
             when(mockTaskStore.get("task123")).thenReturn(mockTask);
-            when(mockTask.getStatus()).thenReturn(null);
+            when(mockTask.status()).thenReturn(null);
 
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
@@ -263,7 +263,7 @@ class AgentScopeA2aRequestHandlerTest {
             Task mockTask = mock(Task.class);
             TaskStatus mockStatus = mock(TaskStatus.class);
             when(mockTaskStore.get("task123")).thenReturn(mockTask);
-            when(mockTask.getStatus()).thenReturn(mockStatus);
+            when(mockTask.status()).thenReturn(mockStatus);
             when(mockStatus.state()).thenReturn(null);
 
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
@@ -285,8 +285,8 @@ class AgentScopeA2aRequestHandlerTest {
             Task mockTask = mock(Task.class);
             TaskStatus mockStatus = mock(TaskStatus.class);
             when(mockTaskStore.get("task123")).thenReturn(mockTask);
-            when(mockTask.getStatus()).thenReturn(mockStatus);
-            when(mockStatus.state()).thenReturn(TaskState.WORKING);
+            when(mockTask.status()).thenReturn(mockStatus);
+            when(mockStatus.state()).thenReturn(TaskState.TASK_STATE_WORKING);
 
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
@@ -307,8 +307,8 @@ class AgentScopeA2aRequestHandlerTest {
             Task mockTask = mock(Task.class);
             TaskStatus mockStatus = mock(TaskStatus.class);
             when(mockTaskStore.get("task123")).thenReturn(mockTask);
-            when(mockTask.getStatus()).thenReturn(mockStatus);
-            when(mockStatus.state()).thenReturn(TaskState.COMPLETED);
+            when(mockTask.status()).thenReturn(mockStatus);
+            when(mockStatus.state()).thenReturn(TaskState.TASK_STATE_COMPLETED);
 
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 

@@ -18,10 +18,10 @@ package io.agentscope.core.a2a.agent.message;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.ThinkingBlock;
 import java.util.Map;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,7 +55,7 @@ class ThinkingBlockParserTest {
         assertNotNull(result);
         assertEquals(TextPart.class, result.getClass());
         TextPart textPart = (TextPart) result;
-        assertEquals("Thinking process", textPart.getText());
+        assertEquals("Thinking process", textPart.text());
     }
 
     @Test
@@ -66,7 +66,7 @@ class ThinkingBlockParserTest {
         Part<?> result = parser.parse(block);
 
         TextPart textPart = (TextPart) result;
-        Map<String, Object> metadata = textPart.getMetadata();
+        Map<String, Object> metadata = textPart.metadata();
         assertNotNull(metadata);
         assertEquals("thinking", metadata.get("_agentscope_block_type"));
     }

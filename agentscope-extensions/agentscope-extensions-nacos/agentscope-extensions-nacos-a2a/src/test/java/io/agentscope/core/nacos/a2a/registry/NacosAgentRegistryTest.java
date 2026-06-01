@@ -30,8 +30,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.alibaba.nacos.api.ai.AiService;
-import io.a2a.spec.AgentCapabilities;
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -40,6 +38,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
+import org.a2aproject.sdk.spec.AgentCapabilities;
+import org.a2aproject.sdk.spec.AgentCard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -331,16 +331,18 @@ class NacosAgentRegistryTest {
     }
 
     private AgentCard mockAgentCard() {
-        return new AgentCard.Builder()
+        return AgentCard.builder()
                 .name("test")
                 .description("test")
-                .capabilities(new AgentCapabilities.Builder().build())
+                .capabilities(AgentCapabilities.builder().build())
                 .defaultInputModes(List.of())
                 .defaultOutputModes(List.of())
                 .url("http://in.card:8080")
                 .preferredTransport("JSONRPC")
                 .version("1.0.0")
                 .skills(List.of())
+                .supportedInterfaces(List.of())
+                .additionalInterfaces(List.of())
                 .build();
     }
 
@@ -349,7 +351,7 @@ class NacosAgentRegistryTest {
         assertEquals("test", target.description());
         assertEquals(url, target.url());
         assertEquals(transport, target.preferredTransport());
-        assertEquals(new AgentCapabilities.Builder().build(), target.capabilities());
+        assertEquals(AgentCapabilities.builder().build(), target.capabilities());
         assertEquals(List.of(), target.defaultInputModes());
         assertEquals(List.of(), target.defaultOutputModes());
         assertEquals(List.of(), target.skills());

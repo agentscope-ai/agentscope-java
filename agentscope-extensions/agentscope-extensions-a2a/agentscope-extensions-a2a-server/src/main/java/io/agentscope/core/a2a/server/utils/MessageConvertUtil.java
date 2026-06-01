@@ -18,9 +18,6 @@ package io.agentscope.core.a2a.server.utils;
 
 import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.convertFromMsg;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -35,6 +32,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
@@ -55,7 +58,7 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsgToMessage(List<Msg> msgs, String taskId, String contextId) {
-        Message.Builder builder = new Message.Builder(convertFromMsg(msgs));
+        Message.Builder builder = Message.builder(convertFromMsg(msgs));
         return builder.taskId(taskId).contextId(contextId).build();
     }
 
@@ -68,14 +71,14 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsgToMessage(Msg msg, String taskId, String contextId) {
-        Message.Builder builder = new Message.Builder();
+        Message.Builder builder = Message.builder();
         Map<String, Object> metadata = new HashMap<>();
         if (null != msg.getMetadata() && !msg.getMetadata().isEmpty()) {
             metadata.put(msg.getId(), msg.getMetadata());
         }
         return builder.parts(convertFromContentBlocks(msg))
                 .metadata(metadata)
-                .role(Message.Role.AGENT)
+                .role(Message.Role.ROLE_AGENT)
                 .taskId(taskId)
                 .contextId(contextId)
                 .build();
@@ -92,16 +95,36 @@ public class MessageConvertUtil {
                 msg.getContent().stream()
                         .map(CONTENT_BLOCK_PARSER::parse)
                         .filter(Objects::nonNull)
-                        .peek(
+                        .map(
                                 part -> {
-                                    part.getMetadata()
-                                            .put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
-                                    part.getMetadata()
-                                            .put(
-                                                    MessageConstants.SOURCE_NAME_METADATA_KEY,
-                                                    msg.getName());
+                                    Map<String, Object> partMeta = getPartMetadata(part);
+                                    Map<String, Object> newMeta =
+                                            partMeta != null
+                                                    ? new HashMap<>(partMeta)
+                                                    : new HashMap<>();
+                                    if (msg.getId() != null) {
+                                        newMeta.put(
+                                                MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
+                                    }
+                                    if (msg.getName() != null) {
+                                        newMeta.put(
+                                                MessageConstants.SOURCE_NAME_METADATA_KEY,
+                                                msg.getName());
+                                    }
+                                    return rebuildPartWithMetadata(part, newMeta);
                                 })
                         .toList());
+    }
+
+    private static Part<?> rebuildPartWithMetadata(Part<?> part, Map<String, Object> metadata) {
+        if (part instanceof TextPart textPart) {
+            return new TextPart(textPart.text(), metadata);
+        } else if (part instanceof FilePart filePart) {
+            return new FilePart(filePart.file(), metadata);
+        } else if (part instanceof DataPart dataPart) {
+            return new DataPart(dataPart.data(), metadata);
+        }
+        return part;
     }
 
     /**
@@ -128,7 +151,7 @@ public class MessageConvertUtil {
         Set<String> msgIds = new LinkedHashSet<>();
         Map<String, List<ContentBlock>> partsByMsgId = new HashMap<>();
         Map<String, String> msgIdToName = new HashMap<>();
-        message.getParts().stream()
+        message.parts().stream()
                 .filter(Objects::nonNull)
                 .forEach(
                         part -> {
@@ -160,29 +183,30 @@ public class MessageConvertUtil {
     }
 
     private static String getMsgId(Part<?> part) {
-        if (null == part.getMetadata()
-                || null == part.getMetadata().get(MessageConstants.MSG_ID_METADATA_KEY)) {
+        Map<String, Object> partMeta = getPartMetadata(part);
+        if (null == partMeta || null == partMeta.get(MessageConstants.MSG_ID_METADATA_KEY)) {
             return UUID.randomUUID().toString();
         }
-        return part.getMetadata().get(MessageConstants.MSG_ID_METADATA_KEY).toString();
+        return partMeta.get(MessageConstants.MSG_ID_METADATA_KEY).toString();
     }
 
     private static String getMsgName(Part<?> part) {
-        if (null == part.getMetadata()) {
+        Map<String, Object> partMeta = getPartMetadata(part);
+        if (null == partMeta) {
             return null;
         }
-        if (null == part.getMetadata().get(MessageConstants.SOURCE_NAME_METADATA_KEY)) {
+        if (null == partMeta.get(MessageConstants.SOURCE_NAME_METADATA_KEY)) {
             return null;
         }
-        return part.getMetadata().get(MessageConstants.SOURCE_NAME_METADATA_KEY).toString();
+        return partMeta.get(MessageConstants.SOURCE_NAME_METADATA_KEY).toString();
     }
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> getMsgMetadata(Message message, String msgId) {
-        if (null == message || null == message.getMetadata()) {
+        if (null == message || null == message.metadata()) {
             return Map.of();
         }
-        Object metadata = message.getMetadata().get(msgId);
+        Object metadata = message.metadata().get(msgId);
         if (null == metadata) {
             return Map.of();
         }
@@ -190,5 +214,16 @@ public class MessageConvertUtil {
             return (Map<String, Object>) metadata;
         }
         return Map.of();
+    }
+
+    private static Map<String, Object> getPartMetadata(Part<?> part) {
+        if (part instanceof TextPart textPart) {
+            return textPart.metadata();
+        } else if (part instanceof FilePart filePart) {
+            return filePart.metadata();
+        } else if (part instanceof DataPart dataPart) {
+            return dataPart.metadata();
+        }
+        return null;
     }
 }

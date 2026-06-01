@@ -33,21 +33,17 @@ import org.springframework.context.annotation.Bean;
  *   <li>Set the DASHSCOPE_API_KEY environment variable</li>
  *   <li>Run this application</li>
  *   <li>Use curl: {@code curl -X GET http://localhost:8888/.well-known/agent-card.json} to get AgentCard.</li>
- *   <li>Use curl: {@code curl --location --request POST 'http://localhost:8888' \
+ *   <li>Use curl: {@code curl -N --location --request POST 'http://localhost:8888' \
  *   --header 'Content-Type: application/json' \
+ *   --header 'A2A-Version: 1.0' \
  *   --data-raw '{
- *     "method": "message/stream",
+ *     "method": "SendStreamingMessage",
  *     "id": "2d2b4dc8-8ea2-437b-888d-3aaf3a8239dc",
  *     "jsonrpc": "2.0",
  *     "params": {
  *       "message": {
- *         "role": "user",
- *         "kind": "message",
+ *         "role": "ROLE_USER",
  *         "contextId": "aa9c67d2-c6fc-42d4-9c9e-b67d69f77cfa",
- *         "metadata": {
- *           "userId": "me",
- *           "sessionId": "test12"
- *         },
  *         "parts": [
  *           {
  *             "kind": "text",
@@ -55,7 +51,8 @@ import org.springframework.context.annotation.Bean;
  *           }
  *         ],
  *         "messageId": "c4911b64c8404b7a8bf7200dd225b152"
- *       }
+ *       },
+ *       "tenant": ""
  *     }
  *   }'}</li>
  *   <li>Or run {@link SimpleA2aAgentExample#main(String[])} and input question like: {@code Hello, please calculate the 346 * 47}</li>

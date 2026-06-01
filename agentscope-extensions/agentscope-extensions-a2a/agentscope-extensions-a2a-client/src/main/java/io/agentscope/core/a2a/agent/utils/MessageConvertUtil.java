@@ -16,9 +16,6 @@
 
 package io.agentscope.core.a2a.agent.utils;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -31,6 +28,12 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
@@ -87,11 +90,11 @@ public class MessageConvertUtil {
      */
     public static Msg convertFromMessage(Message message, String agentName) {
         Msg.Builder builder = Msg.builder();
-        builder.id(message.getMessageId());
+        builder.id(message.messageId());
         builder.name(agentName);
-        builder.metadata(null != message.getMetadata() ? message.getMetadata() : Map.of());
+        builder.metadata(null != message.metadata() ? message.metadata() : Map.of());
         builder.role(MsgRole.ASSISTANT);
-        builder.content(convertFromParts(message.getParts()));
+        builder.content(convertFromParts(message.parts()));
         return builder.build();
     }
 
@@ -102,7 +105,7 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsg(List<Msg> msgs) {
-        Message.Builder builder = new Message.Builder();
+        Message.Builder builder = Message.builder();
         Map<String, Object> metadata = new HashMap<>();
         List<Part<?>> parts = new LinkedList<>();
         msgs.stream()
@@ -117,22 +120,28 @@ public class MessageConvertUtil {
                                     msg.getContent().stream()
                                             .map(CONTENT_BLOCK_PARSER::parse)
                                             .filter(Objects::nonNull)
-                                            .peek(
+                                            .map(
                                                     part -> {
-                                                        part.getMetadata()
-                                                                .put(
-                                                                        MessageConstants
-                                                                                .MSG_ID_METADATA_KEY,
-                                                                        msg.getId());
-                                                        part.getMetadata()
-                                                                .put(
-                                                                        MessageConstants
-                                                                                .SOURCE_NAME_METADATA_KEY,
-                                                                        msg.getName());
+                                                        Map<String, Object> meta =
+                                                                new HashMap<>(
+                                                                        getPartMetadata(part));
+                                                        if (msg.getId() != null) {
+                                                            meta.put(
+                                                                    MessageConstants
+                                                                            .MSG_ID_METADATA_KEY,
+                                                                    msg.getId());
+                                                        }
+                                                        if (msg.getName() != null) {
+                                                            meta.put(
+                                                                    MessageConstants
+                                                                            .SOURCE_NAME_METADATA_KEY,
+                                                                    msg.getName());
+                                                        }
+                                                        return withMetadata(part, meta);
                                                     })
                                             .toList());
                         });
-        return builder.parts(parts).metadata(metadata).role(Message.Role.USER).build();
+        return builder.parts(parts).metadata(metadata).role(Message.Role.ROLE_USER).build();
     }
 
     private static boolean isNotEmptyCollection(Collection<?> collection) {
@@ -153,5 +162,34 @@ public class MessageConvertUtil {
         Map<String, Object> metadata = new HashMap<>();
         metadata.put(MessageConstants.BLOCK_TYPE_METADATA_KEY, type);
         return metadata;
+    }
+
+    private static Part<?> withMetadata(Part<?> part, Map<String, Object> metadata) {
+        Map<String, Object> safeMetadata = new HashMap<>();
+        metadata.forEach(
+                (k, v) -> {
+                    if (k != null && v != null) {
+                        safeMetadata.put(k, v);
+                    }
+                });
+        if (part instanceof TextPart textPart) {
+            return new TextPart(textPart.text(), safeMetadata);
+        } else if (part instanceof DataPart dataPart) {
+            return new DataPart(dataPart.data(), safeMetadata);
+        } else if (part instanceof FilePart filePart) {
+            return new FilePart(filePart.file(), safeMetadata);
+        }
+        return part;
+    }
+
+    public static Map<String, Object> getPartMetadata(Part<?> part) {
+        if (part instanceof TextPart textPart) {
+            return textPart.metadata();
+        } else if (part instanceof DataPart dataPart) {
+            return dataPart.metadata();
+        } else if (part instanceof FilePart filePart) {
+            return filePart.metadata();
+        }
+        return new HashMap<>();
     }
 }

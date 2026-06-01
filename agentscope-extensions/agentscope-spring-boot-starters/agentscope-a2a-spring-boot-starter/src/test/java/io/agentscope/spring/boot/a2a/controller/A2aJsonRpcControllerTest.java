@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.a2a.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -23,14 +24,20 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.A2A;
-import io.a2a.spec.Message;
-import io.a2a.spec.SendStreamingMessageResponse;
-import io.a2a.spec.TransportProtocol;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.GetTaskResponse;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.SendStreamingMessageResponse;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,8 +45,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for {@link A2aJsonRpcController}.
@@ -102,12 +109,44 @@ class A2aJsonRpcControllerTest {
         }
 
         @Test
+        @DisplayName("Should serialize A2A response without null error field")
+        void shouldSerializeA2aResponseWithoutNullErrorField() {
+            String requestBody = "{\"method\": \"GetTask\"}";
+            Task task =
+                    new Task(
+                            "task123",
+                            "context456",
+                            new TaskStatus(TaskState.TASK_STATE_COMPLETED),
+                            List.of(),
+                            List.of(),
+                            Map.of());
+            GetTaskResponse response = new GetTaskResponse("1", task);
+
+            when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
+                    .thenReturn(response);
+
+            Object result = controller.handleRequest(requestBody, headers);
+
+            assertTrue(result instanceof String);
+            JsonObject jsonObject = JsonParser.parseString((String) result).getAsJsonObject();
+            assertEquals("2.0", jsonObject.get("jsonrpc").getAsString());
+            assertEquals("1", jsonObject.get("id").getAsString());
+            assertTrue(jsonObject.has("result"));
+            assertFalse(jsonObject.has("error"));
+        }
+
+        @Test
         @DisplayName("Should handle JSON-RPC request and return Flux with JSONRPCResponse")
         void shouldHandleJsonRpcRequestAndReturnFluxWithJsonRpcResponse() {
             String requestBody = "{\"method\": \"test\"}";
 
-            Message message = A2A.toAgentMessage("test");
-            SendStreamingMessageResponse response = new SendStreamingMessageResponse(1, message);
+            TaskStatusUpdateEvent event =
+                    TaskStatusUpdateEvent.builder()
+                            .taskId("test-task-id")
+                            .contextId("test-context-id")
+                            .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                            .build();
+            SendStreamingMessageResponse response = new SendStreamingMessageResponse(1, event);
 
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(Flux.just(response));
@@ -117,12 +156,14 @@ class A2aJsonRpcControllerTest {
             assertTrue(result instanceof Flux);
 
             @SuppressWarnings("unchecked")
-            Flux<Object> fluxResult = (Flux<Object>) result;
+            Flux<ServerSentEvent<String>> fluxResult = (Flux<ServerSentEvent<String>>) result;
 
             // Collect and verify the flux result
-            Mono<Long> countMono = fluxResult.count();
-            Long count = countMono.block();
-            assertEquals(1L, count);
+            ServerSentEvent<String> sse = fluxResult.single().block();
+            assertEquals("jsonrpc", sse.event());
+            JsonObject jsonObject = JsonParser.parseString(sse.data()).getAsJsonObject();
+            assertEquals("1", jsonObject.get("id").getAsString());
+            assertFalse(jsonObject.has("error"));
 
             // Verify interactions
             verify(agentScopeA2aServer)

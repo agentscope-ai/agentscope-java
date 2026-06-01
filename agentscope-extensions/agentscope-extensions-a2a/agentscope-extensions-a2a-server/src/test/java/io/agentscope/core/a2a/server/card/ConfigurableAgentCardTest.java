@@ -20,13 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.MutualTLSSecurityScheme;
-import io.a2a.spec.SecurityScheme;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.SecurityRequirement;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -39,7 +38,6 @@ class ConfigurableAgentCardTest {
         // Given
         String name = "Test Agent";
         String description = "Test Description";
-        String url = "https://example.com/agent";
         AgentProvider provider = new AgentProvider("Test Provider", "https://provider.com");
         String version = "1.0.0";
         String documentationUrl = "https://docs.example.com";
@@ -47,55 +45,47 @@ class ConfigurableAgentCardTest {
         List<String> defaultOutputModes = List.of("text");
         List<AgentSkill> skills =
                 List.of(
-                        new AgentSkill.Builder()
+                        AgentSkill.builder()
                                 .id("skill1")
                                 .name("Skill 1")
                                 .description("Skill 1")
                                 .tags(List.of())
                                 .build());
-        Map<String, SecurityScheme> securitySchemes =
-                Map.of("basic", new MutualTLSSecurityScheme("basic"));
-        List<Map<String, List<String>>> security = List.of(Map.of("basic", List.of("read")));
+        List<SecurityRequirement> securityRequirements =
+                List.of(new SecurityRequirement(Map.of("basic", List.of("read"))));
         String iconUrl = "https://example.com/icon.png";
-        List<AgentInterface> additionalInterfaces =
-                List.of(new AgentInterface("jsonrpc", "https://example.com/rpc"));
-        String preferredTransport = "jsonrpc";
+        List<AgentInterface> supportedInterfaces =
+                List.of(new AgentInterface("jsonrpc", "https://example.com/rpc", "/public", null));
 
         // When
         ConfigurableAgentCard card =
                 new ConfigurableAgentCard.Builder()
                         .name(name)
                         .description(description)
-                        .url(url)
                         .provider(provider)
                         .version(version)
                         .documentationUrl(documentationUrl)
                         .defaultInputModes(defaultInputModes)
                         .defaultOutputModes(defaultOutputModes)
                         .skills(skills)
-                        .securitySchemes(securitySchemes)
-                        .security(security)
+                        .securityRequirements(securityRequirements)
                         .iconUrl(iconUrl)
-                        .additionalInterfaces(additionalInterfaces)
-                        .preferredTransport(preferredTransport)
+                        .supportedInterfaces(supportedInterfaces)
                         .build();
 
         // Then
         assertNotNull(card);
         assertEquals(name, card.getName());
         assertEquals(description, card.getDescription());
-        assertEquals(url, card.getUrl());
         assertEquals(provider, card.getProvider());
         assertEquals(version, card.getVersion());
         assertEquals(documentationUrl, card.getDocumentationUrl());
         assertEquals(defaultInputModes, card.getDefaultInputModes());
         assertEquals(defaultOutputModes, card.getDefaultOutputModes());
         assertEquals(skills, card.getSkills());
-        assertEquals(securitySchemes, card.getSecuritySchemes());
-        assertEquals(security, card.getSecurity());
+        assertEquals(securityRequirements, card.getSecurityRequirements());
         assertEquals(iconUrl, card.getIconUrl());
-        assertEquals(additionalInterfaces, card.getAdditionalInterfaces());
-        assertEquals(preferredTransport, card.getPreferredTransport());
+        assertEquals(supportedInterfaces, card.getSupportedInterfaces());
     }
 
     @Test
@@ -108,18 +98,15 @@ class ConfigurableAgentCardTest {
         assertNotNull(card);
         assertNull(card.getName());
         assertNull(card.getDescription());
-        assertNull(card.getUrl());
         assertNull(card.getProvider());
         assertNull(card.getVersion());
         assertNull(card.getDocumentationUrl());
         assertNull(card.getDefaultInputModes());
         assertNull(card.getDefaultOutputModes());
         assertNull(card.getSkills());
-        assertNull(card.getSecuritySchemes());
-        assertNull(card.getSecurity());
+        assertNull(card.getSecurityRequirements());
         assertNull(card.getIconUrl());
-        assertNull(card.getAdditionalInterfaces());
-        assertNull(card.getPreferredTransport());
+        assertNull(card.getSupportedInterfaces());
     }
 
     @Test
@@ -137,17 +124,14 @@ class ConfigurableAgentCardTest {
         assertNotNull(card);
         assertEquals(name, card.getName());
         assertEquals(description, card.getDescription());
-        assertNull(card.getUrl());
         assertNull(card.getProvider());
         assertNull(card.getVersion());
         assertNull(card.getDocumentationUrl());
         assertNull(card.getDefaultInputModes());
         assertNull(card.getDefaultOutputModes());
         assertNull(card.getSkills());
-        assertNull(card.getSecuritySchemes());
-        assertNull(card.getSecurity());
+        assertNull(card.getSecurityRequirements());
         assertNull(card.getIconUrl());
-        assertNull(card.getAdditionalInterfaces());
-        assertNull(card.getPreferredTransport());
+        assertNull(card.getSupportedInterfaces());
     }
 }

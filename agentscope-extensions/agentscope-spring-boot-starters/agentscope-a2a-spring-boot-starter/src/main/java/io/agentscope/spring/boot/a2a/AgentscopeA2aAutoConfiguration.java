@@ -169,7 +169,6 @@ public class AgentscopeA2aAutoConfiguration {
         return new ConfigurableAgentCard.Builder()
                 .name(agentCardProperties.getName())
                 .description(agentCardProperties.getDescription())
-                .url(agentCardProperties.getUrl())
                 .provider(agentCardProperties.getProvider())
                 .version(agentCardProperties.getVersion())
                 .documentationUrl(agentCardProperties.getDocumentationUrl())
@@ -177,10 +176,9 @@ public class AgentscopeA2aAutoConfiguration {
                 .defaultOutputModes(agentCardProperties.getDefaultOutputModes())
                 .skills(agentCardProperties.getSkills())
                 .securitySchemes(agentCardProperties.getSecuritySchemes())
-                .security(agentCardProperties.getSecurity())
+                .securityRequirements(agentCardProperties.getSecurity())
                 .iconUrl(agentCardProperties.getIconUrl())
-                .additionalInterfaces(agentCardProperties.getAdditionalInterfaces())
-                .preferredTransport(agentCardProperties.getPreferredTransport())
+                .supportedInterfaces(agentCardProperties.getSupportedInterfaces())
                 .build();
     }
 
