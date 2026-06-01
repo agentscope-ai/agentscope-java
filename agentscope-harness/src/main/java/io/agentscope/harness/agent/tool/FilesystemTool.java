@@ -86,10 +86,13 @@ public class FilesystemTool {
             @ToolParam(name = "new_string", description = "Replacement text") String newString,
             @ToolParam(
                             name = "replace_all",
-                            description = "Replace all occurrences (default: false)")
-                    boolean replaceAll) {
+                            description = "Replace all occurrences (default: false)",
+                            required = false)
+                    Boolean replaceAll) {
+        boolean shouldReplaceAll = Boolean.TRUE.equals(replaceAll);
         EditResult r =
-                abstractFilesystem.edit(runtimeContext, path, oldString, newString, replaceAll);
+                abstractFilesystem.edit(
+                        runtimeContext, path, oldString, newString, shouldReplaceAll);
         return r.isSuccess()
                 ? "Edited " + r.path() + " (" + r.occurrences() + " replacement(s))"
                 : "Error: " + r.error();

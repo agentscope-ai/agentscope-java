@@ -30,7 +30,6 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
-import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -55,31 +54,6 @@ import java.util.Map;
  */
 public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem {
 
-    private NamespaceFactory namespaceFactory;
-
-    protected NamespaceFactory getNamespaceFactory() {
-        return namespaceFactory;
-    }
-
-    protected void setNamespaceFactory(NamespaceFactory namespaceFactory) {
-        this.namespaceFactory = namespaceFactory;
-    }
-
-    protected String namespacedPath(String path) {
-        if (namespaceFactory == null || path == null || path.isBlank()) {
-            return path;
-        }
-        List<String> ns = namespaceFactory.getNamespace();
-        if (ns == null || ns.isEmpty()) {
-            return path;
-        }
-        String prefix = String.join("/", ns);
-        if (path.startsWith("/")) {
-            return "/" + prefix + path;
-        }
-        return prefix + "/" + path;
-    }
-
     @Override
     public abstract String id();
 
@@ -97,7 +71,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        String escapedPath = FilesystemUtils.shellQuote(namespacedPath(path));
+        String escapedPath = FilesystemUtils.shellQuote(path);
         String cmd =
                 "for f in "
                         + escapedPath
@@ -124,9 +98,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     @Override
     public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
-        String nsPath = namespacedPath(filePath);
-        String fileType = FilesystemUtils.getFileType(nsPath);
-        String escapedPath = FilesystemUtils.shellQuote(nsPath);
+        String fileType = FilesystemUtils.getFileType(filePath);
+        String escapedPath = FilesystemUtils.shellQuote(filePath);
 
         if (!"text".equals(fileType)) {
             String cmd = "base64 " + escapedPath + " 2>/dev/null";
@@ -174,8 +147,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
-        String nsPath = namespacedPath(filePath);
-        String escapedPath = FilesystemUtils.shellQuote(nsPath);
+        String escapedPath = FilesystemUtils.shellQuote(filePath);
         String checkCmd =
                 "if [ -e "
                         + escapedPath
@@ -201,7 +173,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         runtimeContext,
                         List.of(
                                 Map.entry(
-                                        nsPath,
+                                        filePath,
                                         content.getBytes(
                                                 java.nio.charset.StandardCharsets.UTF_8))));
         if (responses.isEmpty() || !responses.get(0).isSuccess()) {
@@ -220,10 +192,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             String oldString,
             String newString,
             boolean replaceAll) {
-        String nsPath = namespacedPath(filePath);
         String payload =
                 "{\"path\":\""
-                        + jsonEscape(nsPath)
+                        + jsonEscape(filePath)
                         + "\","
                         + "\"old\":\""
                         + jsonEscape(oldString)
@@ -304,8 +275,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        String nsPath = path != null ? namespacedPath(path) : ".";
-        String searchPath = FilesystemUtils.shellQuote(nsPath);
+        String searchPath = FilesystemUtils.shellQuote(path != null ? path : ".");
         String grepOpts = "-rHnF";
         String globPattern = "";
         if (glob != null && !glob.isBlank()) {
@@ -348,8 +318,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        String effectivePath = path != null ? namespacedPath(path) : "/";
-        String escapedPath = FilesystemUtils.shellQuote(effectivePath);
+        String escapedPath = FilesystemUtils.shellQuote(path != null ? path : "/");
         String escapedPattern = FilesystemUtils.shellQuote(pattern);
 
         String cmd =
@@ -375,8 +344,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
-        String effectivePath = namespacedPath(path);
-        String escapedPath = FilesystemUtils.shellQuote(effectivePath);
+        String escapedPath = FilesystemUtils.shellQuote(path);
         String cmd = "rm -rf " + escapedPath;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         if (result.exitCode() != 0) {
@@ -389,10 +357,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
         AbstractFilesystem.validatePath(fromPath);
         AbstractFilesystem.validatePath(toPath);
-        String from = namespacedPath(fromPath);
-        String to = namespacedPath(toPath);
-        String escapedFrom = FilesystemUtils.shellQuote(from);
-        String escapedTo = FilesystemUtils.shellQuote(to);
+        String escapedFrom = FilesystemUtils.shellQuote(fromPath);
+        String escapedTo = FilesystemUtils.shellQuote(toPath);
         String cmd = "mkdir -p $(dirname " + escapedTo + ") && mv " + escapedFrom + " " + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         if (result.exitCode() != 0) {
@@ -407,8 +373,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (path == null || path.isBlank()) {
             return false;
         }
-        String effectivePath = namespacedPath(path);
-        String escapedPath = FilesystemUtils.shellQuote(effectivePath);
+        String escapedPath = FilesystemUtils.shellQuote(path);
         ExecuteResponse result =
                 execute(runtimeContext, "test -e " + escapedPath + " && echo yes || echo no", null);
         return result.output() != null && result.output().strip().startsWith("yes");

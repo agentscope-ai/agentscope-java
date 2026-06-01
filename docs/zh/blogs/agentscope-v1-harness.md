@@ -175,7 +175,7 @@ Msg reply = agent.call(userMessage, ctx).block();
 
 运行后检查工作区目录：`AGENTS.md`、`memory/`、`agents/<agentId>/` 三个路径都应该存在，这说明 Agent 已经在正常写入记忆和持久化会话状态了。
 
-完整可运行示例见 `agentscope-examples/harness-example` 中的 `QuickstartExample`。
+完整可运行示例见 `agentscope-examples/agents/harness-examples/harness-quickstart` 中的 `QuickstartExample`。
 
 ---
 

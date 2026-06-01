@@ -399,6 +399,6 @@ boolean isExternal = toolkit.isExternalTool("query_database");  // true
 
 ## 完整示例
 
-- **工具调用示例**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
-- **工具组示例**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
-- **多模态工具示例**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)
+- **工具调用示例**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
+- **工具组示例**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
+- **多模态工具示例**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)

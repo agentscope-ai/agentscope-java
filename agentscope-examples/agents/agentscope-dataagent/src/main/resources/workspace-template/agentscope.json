@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agentscope.io/schema/agentscope.json",
+  "main": "data-agent",
+  "agents": {
+    "data-agent": {
+      "name": "Data Agent",
+      "description": "Tenant-isolated data-analysis assistant. Connects to internal SQL sources, drafts queries, validates results, and renders charts. Skills encode the team's SOPs; sub-agents handle multi-source exploration and report drafting.",
+      "workspace": ".agentscope/workspace",
+      "maxIters": 20
+    }
+  },
+  "channels": {
+    "chatui": {
+      "defaultAgentId": "data-agent",
+      "dmScope": "MAIN"
+    }
+  }
+}

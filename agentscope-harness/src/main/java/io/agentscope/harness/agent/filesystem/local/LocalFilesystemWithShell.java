@@ -224,7 +224,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         }
 
         try {
-            Path workDir = resolveExecuteCwd();
+            Path workDir = resolveExecuteCwd(runtimeContext);
             ProcessBuilder pb =
                     new ProcessBuilder("sh", "-c", command)
                             .directory(workDir.toFile())
@@ -311,12 +311,12 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         }
     }
 
-    private Path resolveExecuteCwd() {
+    private Path resolveExecuteCwd(RuntimeContext rc) {
         NamespaceFactory nsf = getNamespaceFactory();
         if (nsf == null) {
             return getCwd();
         }
-        List<String> ns = nsf.getNamespace();
+        List<String> ns = nsf.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             return getCwd();
         }

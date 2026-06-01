@@ -20,14 +20,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -36,6 +39,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -426,6 +430,87 @@ class SubAgentToolTest {
 
         // Verify stream was called with custom options
         verify(mockAgent).stream(any(List.class), any(StreamOptions.class));
+    }
+
+    @Test
+    @DisplayName("Should pass RuntimeContext to ReActAgent in non-streaming mode")
+    void testPassRuntimeContextToReActAgentCall() {
+        ReActAgent subAgent = mock(ReActAgent.class);
+        when(subAgent.getName()).thenReturn("CtxSubAgent");
+        when(subAgent.getDescription()).thenReturn("Sub agent with ctx");
+        when(subAgent.call(any(List.class), any(RuntimeContext.class)))
+                .thenReturn(
+                        Mono.just(
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(TextBlock.builder().text("ctx-ok").build())
+                                        .build()));
+
+        SubAgentTool tool =
+                new SubAgentTool(
+                        () -> subAgent, SubAgentConfig.builder().forwardEvents(false).build());
+
+        RuntimeContext runtimeContext = RuntimeContext.builder().userId("parent-user").build();
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Hello");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("ctx-1").name("call_ctxsubagent").input(input).build();
+
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUse)
+                        .input(input)
+                        .context(runtimeContext.asToolExecutionContext())
+                        .build();
+
+        ToolResultBlock result = tool.callAsync(param).block();
+
+        assertNotNull(result);
+        verify(subAgent).call(any(List.class), eq(runtimeContext));
+        verify(subAgent, never()).call(any(List.class));
+    }
+
+    @Test
+    @DisplayName("Should pass RuntimeContext to ReActAgent in streaming mode")
+    void testPassRuntimeContextToReActAgentStream() {
+        ReActAgent subAgent = mock(ReActAgent.class);
+        when(subAgent.getName()).thenReturn("CtxStreamSubAgent");
+        when(subAgent.getDescription()).thenReturn("Sub agent with ctx stream");
+
+        Msg responseMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("stream-ctx-ok").build())
+                        .build();
+        Event reasoningEvent = new Event(EventType.REASONING, responseMsg, true);
+        when(subAgent.stream(any(List.class), any(StreamOptions.class), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        SubAgentTool tool = new SubAgentTool(() -> subAgent, SubAgentConfig.defaults());
+        RuntimeContext runtimeContext = RuntimeContext.builder().userId("parent-user").build();
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Hello");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("ctx-stream-1")
+                        .name("call_ctxstreamsubagent")
+                        .input(input)
+                        .build();
+
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUse)
+                        .input(input)
+                        .context(ToolExecutionContext.builder().register(runtimeContext).build())
+                        .build();
+
+        ToolResultBlock result = tool.callAsync(param).block();
+
+        assertNotNull(result);
+        verify(subAgent).stream(any(List.class), any(StreamOptions.class), eq(runtimeContext));
+        verify(subAgent, never()).stream(any(List.class), any(StreamOptions.class));
     }
 
     @Test

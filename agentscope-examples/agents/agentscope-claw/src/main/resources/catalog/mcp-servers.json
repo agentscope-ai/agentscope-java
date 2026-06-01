@@ -1,0 +1,44 @@
+[
+  {
+    "id": "amap",
+    "name": "高德地图 (Amap)",
+    "description": "地图检索、POI 查询、路径规划、天气查询。需要在高德开放平台 (https://lbs.amap.com) 申请 Web 服务 Key。",
+    "transport": "sse",
+    "url": "https://mcp.amap.com/sse?key=${AMAP_MAPS_API_KEY}",
+    "requiredEnv": ["AMAP_MAPS_API_KEY"],
+    "docsUrl": "https://lbs.amap.com/api/mcp-server/summary"
+  },
+  {
+    "id": "modelscope",
+    "name": "魔搭 ModelScope",
+    "description": "搜索阿里 ModelScope 社区的模型、数据集、Studio 应用。需要在 modelscope.cn 申请 Token。",
+    "transport": "sse",
+    "url": "https://mcp.api-inference.modelscope.net/sse",
+    "headers": {
+      "Authorization": "Bearer ${MODELSCOPE_TOKEN}"
+    },
+    "requiredEnv": ["MODELSCOPE_TOKEN"],
+    "docsUrl": "https://www.modelscope.cn/mcp"
+  },
+  {
+    "id": "bailian",
+    "name": "百炼 (Bailian / DashScope)",
+    "description": "调用阿里云百炼平台已注册的工具/MCP 网关。需要 DashScope API Key。",
+    "transport": "http",
+    "url": "https://dashscope.aliyuncs.com/api/v1/mcps",
+    "headers": {
+      "Authorization": "Bearer ${DASHSCOPE_API_KEY}"
+    },
+    "requiredEnv": ["DASHSCOPE_API_KEY"],
+    "docsUrl": "https://help.aliyun.com/zh/model-studio/user-guide/mcp"
+  },
+  {
+    "id": "12306",
+    "name": "12306 火车票",
+    "description": "查询全国火车班次、票价、余票、车站信息。无需鉴权。",
+    "transport": "http",
+    "url": "https://mcp.api-inference.12306.cn/mcp",
+    "requiredEnv": [],
+    "docsUrl": "https://github.com/Joooook/12306-mcp"
+  }
+]

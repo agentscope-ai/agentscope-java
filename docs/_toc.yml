@@ -95,8 +95,28 @@ parts:
   chapters:
   - file: en/harness/overview
     title: Overview
+  - file: en/harness/architecture
+    title: Architecture
+  - file: en/harness/workspace
+    title: Workspace
+  - file: en/harness/filesystem
+    title: Filesystem
+  - file: en/harness/session
+    title: Session
+  - file: en/harness/memory
+    title: Memory
+  - file: en/harness/tool
+    title: Tooling
+  - file: en/harness/subagent
+    title: Subagent
   - file: en/harness/streaming
     title: Subagent Streaming
+  - file: en/harness/quickstart/index
+    title: Quick Start
+  - file: en/harness/sandbox/index
+    title: Sandbox
+  - file: en/harness/example/index
+    title: Examples
 
 - caption: Integration
   chapters:
@@ -229,6 +249,8 @@ parts:
     title: 记忆
   - file: zh/harness/tool
     title: 工具
+  - file: zh/harness/skill
+    title: 技能
   - file: zh/harness/subagent
     title: 子 Agent
   - file: zh/harness/streaming
@@ -237,5 +259,7 @@ parts:
     title: 快速开始
   - file: zh/harness/sandbox/index
     title: 沙箱
+  - file: zh/harness/sandbox/agentrun
+    title: AgentRun 后端
   - file: zh/harness/example/index
     title: 示例
