@@ -40,9 +40,7 @@ class SubagentTaskOperationsTest {
         StepVerifier.create(ops.list("sess", null))
                 .assertNext(list -> assertThat(list).isEmpty())
                 .verifyComplete();
-        StepVerifier.create(ops.cancel("sess", "task-1"))
-                .expectNext(false)
-                .verifyComplete();
+        StepVerifier.create(ops.cancel("sess", "task-1")).expectNext(false).verifyComplete();
     }
 
     @Test

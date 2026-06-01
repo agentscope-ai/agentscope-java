@@ -17,6 +17,7 @@ package io.agentscope.spring.boot.admin;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.hook.Hook;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.Toolkit;
@@ -92,7 +93,8 @@ import org.springframework.context.annotation.Configuration;
 @org.springframework.context.annotation.Import(AdminOpenApiConfiguration.class)
 public class AgentscopeAdminAutoConfiguration {
 
-    private static final Logger log = LoggerFactory.getLogger(AgentscopeAdminAutoConfiguration.class);
+    private static final Logger log =
+            LoggerFactory.getLogger(AgentscopeAdminAutoConfiguration.class);
 
     /**
      * Default {@link AgentRegistry}. Auto-seeded from any singleton {@link Agent} beans found in
@@ -192,7 +194,7 @@ public class AgentscopeAdminAutoConfiguration {
     }
 
     /**
-     * Registers a {@link MetricsHook} into {@link AgentBase#addSystemHook(io.agentscope.core.legacy.hook.Hook)}
+     * Registers a {@link MetricsHook} into {@link AgentBase#addSystemHook(Hook)}
      * at startup so every subsequently constructed agent contributes token-usage counters.
      *
      * <p>The hook is unregistered on context close, so reloading the starter does not double-count.
@@ -218,7 +220,8 @@ public class AgentscopeAdminAutoConfiguration {
         public void register() {
             AgentBase.addSystemHook(hook);
             logger.info(
-                    "Registered MetricsHook as AgentBase system hook (applies to agents constructed after this point)");
+                    "Registered MetricsHook as AgentBase system hook (applies to agents constructed"
+                            + " after this point)");
         }
 
         @PreDestroy
@@ -252,9 +255,7 @@ public class AgentscopeAdminAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean
         public SubagentTaskController agentscopeSubagentTaskController(
-                SubagentTaskOperations ops,
-                AdminAuditLogger audit,
-                AdminProperties properties) {
+                SubagentTaskOperations ops, AdminAuditLogger audit, AdminProperties properties) {
             return new SubagentTaskController(ops, audit, properties);
         }
     }
@@ -332,9 +333,7 @@ public class AgentscopeAdminAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean
         public AgentscopeShutdownEndpoint agentscopeShutdownEndpoint(
-                AdminProperties properties,
-                AdminAuditLogger audit,
-                ApplicationContext context) {
+                AdminProperties properties, AdminAuditLogger audit, ApplicationContext context) {
             return new AgentscopeShutdownEndpoint(properties, audit, context);
         }
 

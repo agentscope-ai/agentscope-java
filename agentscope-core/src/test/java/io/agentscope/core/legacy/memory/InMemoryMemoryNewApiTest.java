@@ -18,6 +18,7 @@ package io.agentscope.core.legacy.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;

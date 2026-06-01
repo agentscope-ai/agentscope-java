@@ -39,8 +39,7 @@ class SpringSubagentInventoryTest {
         SubagentFactory factory = mock(SubagentFactory.class);
         SubagentEntry entry = new SubagentEntry("code-reviewer", "Reviews code.", factory);
         SpringSubagentInventory inv =
-                new SpringSubagentInventory(
-                        provider(Map.of("entryA", entry)), emptyMapProvider());
+                new SpringSubagentInventory(provider(Map.of("entryA", entry)), emptyMapProvider());
 
         var list = inv.list();
         assertThat(list).hasSize(1);

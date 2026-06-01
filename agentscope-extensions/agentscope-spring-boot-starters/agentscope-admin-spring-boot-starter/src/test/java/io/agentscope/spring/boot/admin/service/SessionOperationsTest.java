@@ -91,8 +91,6 @@ class SessionOperationsTest {
                         noopSummarizer,
                         new AdminProperties(),
                         new io.agentscope.spring.boot.admin.snapshot.SnapshotStore());
-        StepVerifier.create(ops.abort("ghost"))
-                .expectError(NoSuchElementException.class)
-                .verify();
+        StepVerifier.create(ops.abort("ghost")).expectError(NoSuchElementException.class).verify();
     }
 }

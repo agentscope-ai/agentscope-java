@@ -52,27 +52,46 @@ public class AgentscopeDoctorEndpoint {
     @ReadOperation
     public Map<String, Object> diagnose() {
         List<Map<String, Object>> checks = new ArrayList<>();
-        checks.add(check("admin.enabled", properties.isEnabled(),
-                "agentscope.admin.enabled=true",
-                "admin starter is registered but disabled — endpoints would not load"));
-        checks.add(check("admin.write_token",
-                !properties.isWriteEnabled() || !properties.getWriteToken().isBlank(),
-                "write token configured or writes disabled",
-                "write operations are enabled without a token; consider setting "
-                        + "agentscope.admin.write-token in production"));
+        checks.add(
+                check(
+                        "admin.enabled",
+                        properties.isEnabled(),
+                        "agentscope.admin.enabled=true",
+                        "admin starter is registered but disabled — endpoints would not load"));
+        checks.add(
+                check(
+                        "admin.write_token",
+                        !properties.isWriteEnabled() || !properties.getWriteToken().isBlank(),
+                        "write token configured or writes disabled",
+                        "write operations are enabled without a token; consider setting "
+                                + "agentscope.admin.write-token in production"));
         Session session = sessions.getIfAvailable();
-        checks.add(check("session.bean", session != null,
-                "found Session bean: " + (session == null ? "<none>" : session.getClass().getSimpleName()),
-                "no Session bean found — /sessions listing will be empty"));
-        checks.add(check("agents.registered", inventory.agents().size() > 0,
-                inventory.agents().size() + " agent(s) registered",
-                "no agents registered with AgentRegistry — admin operations will return 404"));
-        checks.add(check("toolkits.bean", !inventory.toolsByBean().isEmpty(),
-                inventory.toolsByBean().size() + " Toolkit bean(s)",
-                "no Toolkit beans found — /tools endpoint will be empty"));
-        checks.add(check("models.bean", !inventory.modelsByBean().isEmpty(),
-                inventory.modelsByBean().size() + " Model bean(s)",
-                "no Model beans found — agents will not be able to call any LLM"));
+        checks.add(
+                check(
+                        "session.bean",
+                        session != null,
+                        "found Session bean: "
+                                + (session == null ? "<none>" : session.getClass().getSimpleName()),
+                        "no Session bean found — /sessions listing will be empty"));
+        checks.add(
+                check(
+                        "agents.registered",
+                        inventory.agents().size() > 0,
+                        inventory.agents().size() + " agent(s) registered",
+                        "no agents registered with AgentRegistry — admin operations will return"
+                                + " 404"));
+        checks.add(
+                check(
+                        "toolkits.bean",
+                        !inventory.toolsByBean().isEmpty(),
+                        inventory.toolsByBean().size() + " Toolkit bean(s)",
+                        "no Toolkit beans found — /tools endpoint will be empty"));
+        checks.add(
+                check(
+                        "models.bean",
+                        !inventory.modelsByBean().isEmpty(),
+                        inventory.modelsByBean().size() + " Model bean(s)",
+                        "no Model beans found — agents will not be able to call any LLM"));
 
         boolean anyError = checks.stream().anyMatch(c -> "error".equals(c.get("outcome")));
         boolean anyWarn = checks.stream().anyMatch(c -> "warn".equals(c.get("outcome")));

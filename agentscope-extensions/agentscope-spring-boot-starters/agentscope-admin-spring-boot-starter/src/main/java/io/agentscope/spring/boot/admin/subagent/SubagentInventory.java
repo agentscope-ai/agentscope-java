@@ -20,9 +20,9 @@ import java.util.List;
 /**
  * SPI for enumerating the subagents available to this process.
  *
- * <p>Why an SPI: {@code SubagentsMiddleware} keeps its registration list private and there is no
- * cross-version accessor on {@code HarnessAgent}, so the admin starter cannot reach into the
- * built agent reliably. Applications opt in by exposing {@link io.agentscope.harness.agent.middleware.SubagentEntry}
+ * <p>Why an SPI: a built {@code HarnessAgent} does not expose its registered subagent list — the
+ * orchestration captures the entries inside {@code SubagentsMiddleware} and the middleware itself
+ * keeps them private. Applications opt in by exposing {@link io.agentscope.harness.agent.middleware.SubagentEntry}
  * or {@link io.agentscope.harness.agent.subagent.SubagentDeclaration} as Spring beans (picked up
  * by the default {@link SpringSubagentInventory}), or by providing their own
  * {@code SubagentInventory} implementation.

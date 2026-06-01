@@ -15,8 +15,8 @@
  */
 package io.agentscope.core.rag.store;
 
-import io.agentscope.core.legacy.rag.model.Document;
 import io.agentscope.core.rag.exception.VectorStoreException;
+import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.ArrayList;
 import java.util.Arrays;

@@ -21,11 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.HookEvent;
+import io.agentscope.core.agent.hook.PostReasoningEvent;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.e2e.providers.ModelProvider;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PostReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.Tool;

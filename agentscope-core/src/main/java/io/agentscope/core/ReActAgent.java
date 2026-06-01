@@ -20,9 +20,13 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.LegacyHookDispatcher;
+import io.agentscope.core.agent.hook.PostActingEvent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
@@ -47,11 +51,12 @@ import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.legacy.agent.StructuredOutputCapableAgent;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.LegacyHookDispatcher;
-import io.agentscope.core.legacy.hook.PostActingEvent;
-import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
+import io.agentscope.core.memory.AgentStateMemoryView;
+import io.agentscope.core.memory.LongTermMemory;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.LongTermMemoryTools;
+import io.agentscope.core.memory.Memory;
+import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -78,11 +83,23 @@ import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionEngine;
 import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.plan.PlanHintMiddleware;
+import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.rag.GenericRAGHook;
+import io.agentscope.core.rag.Knowledge;
+import io.agentscope.core.rag.KnowledgeRetrievalTools;
+import io.agentscope.core.rag.RAGMode;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
+import io.agentscope.core.skill.DynamicSkillMiddleware;
+import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.LegacyStateLoader;
 import io.agentscope.core.state.SessionKey;
@@ -94,57 +111,6 @@ import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.MessageUtils;
-import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
-import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
-import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
-import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
-import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
-import io.agentscope.harness.agent.memory.MemoryConsolidator;
-import io.agentscope.harness.agent.memory.MemoryFlushManager;
-import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
-import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
-import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
-import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
-import io.agentscope.harness.agent.middleware.CompactionMiddleware;
-import io.agentscope.harness.agent.middleware.DynamicSkillMiddleware;
-import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
-import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
-import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware;
-import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
-import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
-import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
-import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
-import io.agentscope.harness.agent.sandbox.SandboxContext;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
-import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
-import io.agentscope.harness.agent.sandbox.SandboxManager;
-import io.agentscope.harness.agent.sandbox.SandboxStateStore;
-import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
-import io.agentscope.harness.agent.session.WorkspaceSession;
-import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
-import io.agentscope.harness.agent.store.NamespaceFactory;
-import io.agentscope.harness.agent.subagent.SubagentDeclaration;
-import io.agentscope.harness.agent.subagent.task.TaskRepository;
-import io.agentscope.harness.agent.tool.FilesystemTool;
-import io.agentscope.harness.agent.tool.MemoryGetTool;
-import io.agentscope.harness.agent.tool.MemorySearchTool;
-import io.agentscope.harness.agent.tool.SessionSearchTool;
-import io.agentscope.harness.agent.tool.ShellExecuteTool;
-import io.agentscope.harness.agent.tool.ProposeSkillTool;
-import io.agentscope.harness.agent.tool.SkillManageConfig;
-import io.agentscope.harness.agent.tool.SkillManageTool;
-import io.agentscope.harness.agent.tools.McpServerRegistrar;
-import io.agentscope.harness.agent.tools.ToolFilter;
-import io.agentscope.harness.agent.tools.ToolsConfig;
-import io.agentscope.harness.agent.tools.ToolsConfigLoader;
-import io.agentscope.harness.agent.workspace.WorkspaceIndex;
-import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -156,9 +122,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
@@ -270,46 +234,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     @SuppressWarnings("deprecation")
     private final LegacyHookDispatcher hookDispatcher;
-
-    // ==================== Harness fields (set by Builder.build() during orchestration)
-    // ====================
-
-    /**
-     * Workspace manager bound to this agent's filesystem when the harness orchestration path runs
-     * (i.e. when any of {@code workspace(...)}, {@code filesystem(...)}, {@code abstractFilesystem(...)},
-     * {@code compaction(...)} or related setters were used). {@code null} for plain
-     * {@code ReActAgent.builder()} usage.
-     */
-    private WorkspaceManager workspaceManager;
-
-    /** Plan-mode coordinator; non-null only when {@code enablePlanMode()} was used. */
-    private io.agentscope.harness.agent.workspace.plan.PlanModeManager planModeManager;
-
-    private CompactionMiddleware compactionHook;
-    private SandboxContext defaultSandboxContext;
-    private SandboxLifecycleMiddleware sandboxLifecycleMw;
-    private List<AgentSkillRepository> skillRepositories = List.of();
-
-    // M4 — non-null only when enableSkillManageTool was called.
-    private io.agentscope.harness.agent.skill.curator.SkillPromoter skillPromoter;
-    private io.agentscope.harness.agent.skill.curator.SkillUsageStore skillUsageStore;
-    // M5 — non-null only when enableSkillCurator was called.
-    private io.agentscope.harness.agent.skill.curator.SkillCurator skillCurator;
-    // M7 — non-null only when enableSkillManageTool was called.
-    private io.agentscope.harness.agent.skill.curator.SkillAuditLog skillAuditLog;
-
-    /**
-     * SQLite-backed workspace index allocated during {@link Builder#build()} when the agent is
-     * configured with a {@link RemoteFilesystemSpec}. Owned by this agent; released by
-     * {@link #close()}. {@code null} when no index was created.
-     */
-    private WorkspaceIndex ownedWorkspaceIndex;
-
-    /** Factory for ctx-bound {@link WorkspaceManager} views — see {@link #workspaceFor(String, String)}. */
-    private BiFunction<String, String, WorkspaceManager> workspaceFactory;
-
-    /** Factory for per-userId {@link Session} views; {@code null} if not applicable. */
-    private Function<String, Session> sessionFactory;
 
     // ==================== Constructor ====================
 
@@ -447,9 +371,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         bindRuntimeContextToHooks(ctx);
         // Reset per-call system message; will be initialised by consumeSystemMsgAfterPreCall
         currentSystemMsg.set(null);
-        if (sandboxLifecycleMw != null) {
-            sandboxLifecycleMw.acquireForCall(ctx);
-        }
     }
 
     @Override
@@ -505,9 +426,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     @Override
     protected void afterAgentExecution() {
-        if (sandboxLifecycleMw != null) {
-            sandboxLifecycleMw.releaseForCall(getRuntimeContext());
-        }
         unbindRuntimeContextFromHooks();
     }
 
@@ -532,36 +450,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     /**
      * Calls the agent with a per-call {@link RuntimeContext} (metadata for hooks and tools, not
      * persisted).
-     *
-     * <p>When the agent was built via the harness orchestration path (a workspace, filesystem, or
-     * compaction config was supplied), this overload also (a) fills missing {@link Session}/
-     * {@link SessionKey} defaults, (b) loads any persisted state, and (c) wraps the call with a
-     * context-overflow recovery flow that triggers an emergency compaction via the registered
-     * {@link CompactionMiddleware}. Plain {@code ReActAgent.builder()} usage skips all of that and just
-     * binds the runtime context.
      */
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
-        if (workspaceManager == null && compactionHook == null) {
-            // Not orchestrated: original lightweight behavior.
-            this.pendingRuntimeContext = context;
-            return call(msgs);
-        }
-        final RuntimeContext effective =
-                ensureSessionDefaults(context != null ? context : RuntimeContext.empty());
-        this.pendingRuntimeContext = effective;
-        Mono<Msg> result = call(msgs);
-        if (compactionHook != null) {
-            final List<Msg> capturedMsgs = msgs;
-            result =
-                    result.onErrorResume(
-                            e -> {
-                                if (isContextOverflowError(e)) {
-                                    return recoverFromOverflow(capturedMsgs, effective);
-                                }
-                                return Mono.error(e);
-                            });
-        }
-        return result;
+        this.pendingRuntimeContext = context;
+        return call(msgs);
     }
 
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass, RuntimeContext context) {
@@ -1971,7 +1863,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * Stream fine-grained {@link AgentEvent}s from a model call during summarization.
      *
      * <p>Structurally identical to {@link #reasoningStream} but notifies summary-specific
-     * hooks ({@link SummaryChunkEvent}) and does not pass tool schemas to the model.
+     * hooks (SummaryChunkEvent) and does not pass tool schemas to the model.
      *
      * @param context   reasoning context for chunk accumulation
      * @param messages  the messages to send to the model
@@ -2347,300 +2239,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return new Builder();
     }
 
-    // ==================== Harness orchestration methods ====================
-
-    /**
-     * Releases resources owned by this agent — currently the SQLite-backed
-     * {@link WorkspaceIndex} created when {@code RemoteFilesystemSpec} is configured.
-     *
-     * <p>After close, the agent and any {@link WorkspaceManager} views produced from it must not
-     * be used.
-     */
     @Override
     public void close() {
-        if (ownedWorkspaceIndex != null) {
-            ownedWorkspaceIndex.close();
-        }
-    }
-
-    /**
-     * Package-private second-phase setter used by {@link Builder#build()} to populate the harness
-     * orchestration fields after construction. Keeps the public constructor signature stable.
-     * Should be called at most once during build; subsequent calls are silently ignored.
-     */
-    void injectHarnessRuntime(
-            WorkspaceManager workspaceManager,
-            BiFunction<String, String, WorkspaceManager> workspaceFactory,
-            Function<String, Session> sessionFactory,
-            WorkspaceIndex ownedWorkspaceIndex,
-            SandboxContext defaultSandboxContext,
-            CompactionMiddleware compactionHook,
-            SandboxLifecycleMiddleware sandboxLifecycleMw,
-            List<AgentSkillRepository> skillRepositories) {
-        this.workspaceManager = workspaceManager;
-        this.workspaceFactory = workspaceFactory;
-        this.sessionFactory = sessionFactory;
-        this.ownedWorkspaceIndex = ownedWorkspaceIndex;
-        this.defaultSandboxContext = defaultSandboxContext;
-        this.compactionHook = compactionHook;
-        this.sandboxLifecycleMw = sandboxLifecycleMw;
-        this.skillRepositories =
-                skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
-    }
-
-    /** M4 + M5 + M7 second-phase setter for the skill self-learning components. */
-    void injectSkillSelfLearning(
-            io.agentscope.harness.agent.skill.curator.SkillPromoter promoter,
-            io.agentscope.harness.agent.skill.curator.SkillUsageStore usageStore,
-            io.agentscope.harness.agent.skill.curator.SkillCurator curator,
-            io.agentscope.harness.agent.skill.curator.SkillAuditLog auditLog) {
-        this.skillPromoter = promoter;
-        this.skillUsageStore = usageStore;
-        this.skillCurator = curator;
-        this.skillAuditLog = auditLog;
-    }
-
-    /**
-     * Query the audit log for a given UTC day. Pass {@code null} for "today". Returns an empty
-     * list when the audit log is not configured (no {@code enableSkillManageTool} call).
-     */
-    public List<io.agentscope.harness.agent.skill.curator.SkillAuditLog.Entry> queryAudit(
-            String dayUtc,
-            java.util.function.Predicate<
-                            io.agentscope.harness.agent.skill.curator.SkillAuditLog.Entry>
-                    filter) {
-        if (skillAuditLog == null) {
-            return List.of();
-        }
-        return skillAuditLog.query(dayUtc, filter);
-    }
-
-    /**
-     * Force-run the skill curator immediately, bypassing the idle-and-interval gate. Returns
-     * a {@code Mono} that emits {@code null} when the curator is not configured.
-     */
-    public Mono<io.agentscope.harness.agent.skill.curator.SkillCurator.CuratorRunReport>
-            runCuratorOnce() {
-        if (skillCurator == null) {
-            return Mono.empty();
-        }
-        return Mono.fromCallable(() -> skillCurator.runOnce(null));
-    }
-
-    /**
-     * Promote a draft skill from {@code skills/_drafts/} to the live skills root via the
-     * configured {@link io.agentscope.harness.agent.skill.curator.SkillPromotionGate}.
-     *
-     * <p>Returns a Mono that emits {@link
-     * io.agentscope.harness.agent.skill.curator.SkillPromoter.PromotionResult#INVALID INVALID}
-     * if {@code enableSkillManageTool} was not configured (no promoter).
-     *
-     * @param name the skill name (must exist under the drafts repo)
-     * @param reviewerId stamped onto the sidecar's {@code promoted_by}
-     */
-    public Mono<io.agentscope.harness.agent.skill.curator.SkillPromoter.PromotionResult>
-            promoteSkill(String name, String reviewerId) {
-        if (skillPromoter == null) {
-            return Mono.just(
-                    io.agentscope.harness.agent.skill.curator.SkillPromoter.PromotionResult
-                            .invalid(
-                                    "skill promoter not configured; call"
-                                            + " enableSkillManageTool(...) on the builder"));
-        }
-        return skillPromoter.promote(name, reviewerId, getRuntimeContext());
-    }
-
-    /** Access to the sidecar telemetry store (M2/M4). Null when {@code enableSkillManageTool}
-     * was not configured. */
-    public io.agentscope.harness.agent.skill.curator.SkillUsageStore getSkillUsageStore() {
-        return skillUsageStore;
-    }
-
-    /**
-     * Returns the workspace manager produced by the harness orchestration path, or {@code null}
-     * for plain {@code ReActAgent.builder()} usage.
-     */
-    public WorkspaceManager getWorkspaceManager() {
-        return workspaceManager;
-    }
-
-    /**
-     * Programmatically enters plan mode (read-only design phase). Equivalent to the model calling
-     * {@code plan_enter}. Persisted in {@link AgentState} so it survives restarts / hand-offs.
-     *
-     * <p>No-op if the agent has no runtime state yet. Works whether or not {@code enablePlanMode()}
-     * was used, but the enforcing {@code PlanModeMiddleware} / plan tools are only present when it
-     * was.
-     */
-    public void enterPlanMode() {
-        AgentState s = getAgentState();
-        if (s == null) {
-            return;
-        }
-        if (planModeManager != null) {
-            planModeManager.enter(s);
-        } else {
-            s.getPlanModeContext().setPlanActive(true);
-        }
-    }
-
-    /** Programmatically exits plan mode (back to BUILD). Persisted in {@link AgentState}. */
-    public void exitPlanMode() {
-        AgentState s = getAgentState();
-        if (s == null) {
-            return;
-        }
-        if (planModeManager != null) {
-            planModeManager.exit(s);
-        } else {
-            s.getPlanModeContext().setPlanActive(false);
-        }
-    }
-
-    /** @return whether plan mode is currently active for this agent. */
-    public boolean isPlanModeActive() {
-        AgentState s = getAgentState();
-        return s != null && s.getPlanModeContext().isPlanActive();
-    }
-
-    /**
-     * Returns a {@link WorkspaceManager} view whose filesystem and namespace are bound to the
-     * given {@code (userId, sessionId)} for the duration of the returned view's IO. Unlike
-     * {@link #getWorkspaceManager()}, this does not mutate any shared state on this agent — so it
-     * is safe to call concurrently from per-request controllers without racing with active chats.
-     *
-     * <p>When the agent was not built via the harness orchestration path, this returns the
-     * (possibly null) base workspace manager unchanged.
-     */
-    public WorkspaceManager workspaceFor(String userId, String sessionId) {
-        if (workspaceFactory == null) {
-            return workspaceManager;
-        }
-        return workspaceFactory.apply(userId, sessionId);
-    }
-
-    /** Returns the {@link CompactionMiddleware} instance if compaction was configured, or {@code null}. */
-    public CompactionMiddleware getCompactionHook() {
-        return compactionHook;
-    }
-
-    /**
-     * Returns the ordered list of {@link AgentSkillRepository} instances bound to this agent (low
-     * to high priority). Empty when no orchestration ran.
-     */
-    public List<AgentSkillRepository> getSkillRepositories() {
-        return skillRepositories;
-    }
-
-    /**
-     * Fills in default Session and SessionKey when the caller didn't provide them, and injects the
-     * default sandbox context.
-     */
-    private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
-        Session ctxSession = ctx.getSession();
-        if (ctxSession == null) {
-            String uid = ctx.getUserId();
-            if (sessionFactory != null && uid != null && !uid.isBlank()) {
-                Session perCall = sessionFactory.apply(uid);
-                ctxSession = perCall != null ? perCall : this.session;
-            } else {
-                ctxSession = this.session;
-            }
-        }
-        SessionKey ctxSessionKey = ctx.getSessionKey();
-        if (ctxSessionKey == null) {
-            String id = ctx.getSessionId();
-            if (id != null && !id.isBlank()) {
-                ctxSessionKey = SimpleSessionKey.of(id);
-            } else {
-                ctxSessionKey = SimpleSessionKey.of(getName());
-            }
-        }
-        SandboxContext sandboxCtx =
-                ctx.get(SandboxContext.class) != null
-                        ? ctx.get(SandboxContext.class)
-                        : defaultSandboxContext;
-
-        if (ctxSession == ctx.getSession()
-                && ctxSessionKey == ctx.getSessionKey()
-                && sandboxCtx == ctx.get(SandboxContext.class)) {
-            return ctx;
-        }
-        return RuntimeContext.builder()
-                .sessionId(ctx.getSessionId())
-                .userId(ctx.getUserId())
-                .session(ctxSession)
-                .sessionKey(ctxSessionKey)
-                .putAll(ctx.getExtra())
-                .put(SandboxContext.class, sandboxCtx)
-                .build();
-    }
-
-    private Mono<Msg> recoverFromOverflow(List<Msg> msgs, RuntimeContext effective) {
-        if (compactionHook != null) {
-            log.warn(
-                    "Context overflow detected, triggering emergency compaction via"
-                            + " CompactionMiddleware");
-            return forceCompactAndRetry(msgs, effective);
-        }
-        return Mono.error(
-                new RuntimeException(
-                        "Context overflow: no compaction configured, unable to recover"));
-    }
-
-    private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
-        List<Msg> allMsgs = state.contextMutable();
-        if (allMsgs.isEmpty()) {
-            return Mono.error(
-                    new RuntimeException("Context overflow: context is empty, cannot compact"));
-        }
-        String agentId = getName();
-        String sessionId =
-                effective != null && effective.getSessionId() != null
-                        ? effective.getSessionId()
-                        : "default";
-
-        CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
-        MemoryFlushManager fm = new MemoryFlushManager(workspaceManager, getModel());
-        ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
-
-        return compactor
-                .compactIfNeeded(
-                        effective != null ? effective : RuntimeContext.empty(),
-                        allMsgs,
-                        forceConfig,
-                        agentId,
-                        sessionId)
-                .flatMap(
-                        opt -> {
-                            if (opt.isPresent()) {
-                                state.contextMutable().clear();
-                                state.contextMutable().addAll(opt.get());
-                                // Bind context and call the bare path (no overflow re-wrap).
-                                this.pendingRuntimeContext =
-                                        effective != null ? effective : RuntimeContext.empty();
-                                return call(msgs);
-                            }
-                            return Mono.error(
-                                    new RuntimeException(
-                                            "Context overflow: emergency compaction yielded no"
-                                                    + " result"));
-                        });
-    }
-
-    private static boolean isContextOverflowError(Throwable e) {
-        String message = e.getMessage();
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase();
-        return lower.contains("context_length_exceeded")
-                || lower.contains("context length")
-                || lower.contains("maximum context")
-                || lower.contains("token limit")
-                || lower.contains("too many tokens")
-                || lower.contains("exceeds the model's maximum")
-                || lower.contains("reduce the length");
+        // No-op for the core ReActAgent. Subclasses / wrappers (HarnessAgent) may release
+        // additional resources here.
     }
 
     // ==================== Builder ====================
@@ -2680,109 +2282,45 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         private Session session;
         private SessionKey sessionKey;
 
-        // ==================== Harness orchestration fields ====================
-
-        /**
-         * Flips to {@code true} when any harness-specific setter is invoked. When {@code true},
-         * {@link #build()} runs the harness orchestration path (workspace, hooks, tools.json, etc.)
-         * before constructing the agent. Plain {@link ReActAgent.Builder} usage leaves this
-         * {@code false} so the original behavior is preserved.
-         */
-        boolean harnessOrchestrationEnabled = false;
-
-        String agentId;
-        final List<AgentSkillRepository> skillRepositories = new ArrayList<>();
-        Path projectGlobalSkillsDir;
-
-        Path workspace;
-        String environmentMemory;
-        AbstractFilesystem abstractFilesystem;
-        SandboxDistributedOptions sandboxDistributedOptions;
-
-        boolean leafSubagent = false;
-        boolean agentTracingLogEnabled = true;
-        CompactionConfig compactionConfig = null;
-        ToolResultEvictionConfig toolResultEvictionConfig = null;
-
-        final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
-        final List<ReActAgentBuilderSupport.SubagentFactoryEntry> customSubagentFactories =
-                new ArrayList<>();
-        TaskRepository taskRepository;
-        Object externalSubagentTool;
-        Function<String, Model> modelResolver;
-        final List<String> additionalContextFiles = new ArrayList<>();
-        int maxContextTokens = 8000;
-        boolean useLegacyXmlWorkspaceContext = false;
-
-        boolean disableFilesystemTools = false;
-        boolean disableShellTool = false;
-        boolean disableMemoryTools = false;
-        boolean disableMemoryHooks = false;
-        boolean disableSessionPersistence = false;
-        boolean disableWorkspaceContext = false;
-        boolean disableAtPathExpansion = false;
-        boolean disableSubagents = false;
-        boolean disableDynamicSkills = false;
-        // SkillManage / writable repo opt-in (M1 of skill self-learning loop)
-        boolean skillManageToolEnabled = false;
-        SkillManageConfig skillManageConfig;
-        // Promotion gate + visibility filter (M4)
-        io.agentscope.harness.agent.skill.curator.SkillPromotionGate promotionGate;
-        io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter visibilityFilter;
-        String environment = "prod";
-        // Skill curator (M5)
-        boolean skillCuratorEnabled = false;
-        io.agentscope.harness.agent.skill.curator.SkillCuratorConfig skillCuratorConfig;
-        io.agentscope.core.skill.SkillFilter skillFilter;
-        boolean disableDynamicSubagents = false;
-        boolean disableToolsConfig = false;
-
-        // Plan mode (read-only "design first" phase) opt-in.
-        boolean planModeEnabled = false;
-        String planFileDir =
-                io.agentscope.harness.agent.workspace.plan.PlanModeManager.DEFAULT_PLAN_DIR;
-
-        ToolsConfig toolsConfigOverride;
-
-        SandboxFilesystemSpec sandboxFilesystemSpec;
-        RemoteFilesystemSpec remoteFilesystemSpec;
-        LocalFilesystemSpec localFilesystemSpec;
-
         // ==================== 1.x legacy compatibility fields ====================
         // Below fields back the deprecated `planNotebook(...)`, `longTermMemory(...)`,
         // `knowledge(...)`, `skillBox(...)` setters. They are consumed by configureXxx() during
         // build() so legacy 1.x user code keeps producing equivalent runtime behavior.
 
         @Deprecated(forRemoval = true, since = "2.0.0")
-        private io.agentscope.core.legacy.memory.LongTermMemory longTermMemory;
+        private LongTermMemory longTermMemory;
 
         @Deprecated(forRemoval = true, since = "2.0.0")
-        private io.agentscope.core.legacy.memory.LongTermMemoryMode longTermMemoryMode =
-                io.agentscope.core.legacy.memory.LongTermMemoryMode.BOTH;
+        private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
 
         @Deprecated(forRemoval = true, since = "2.0.0")
         private boolean longTermMemoryAsyncRecord = false;
 
         @Deprecated(forRemoval = true, since = "2.0.0")
-        private final Set<io.agentscope.core.legacy.rag.Knowledge> knowledgeBases =
-                new LinkedHashSet<>();
+        private final Set<Knowledge> knowledgeBases = new LinkedHashSet<>();
 
         @Deprecated(forRemoval = true, since = "2.0.0")
-        private io.agentscope.core.legacy.rag.RAGMode ragMode =
-                io.agentscope.core.legacy.rag.RAGMode.GENERIC;
+        private RAGMode ragMode = RAGMode.GENERIC;
 
         @Deprecated(forRemoval = true, since = "2.0.0")
-        private io.agentscope.core.legacy.rag.model.RetrieveConfig retrieveConfig =
-                io.agentscope.core.legacy.rag.model.RetrieveConfig.builder()
-                        .limit(5)
-                        .scoreThreshold(0.5)
-                        .build();
+        private RetrieveConfig retrieveConfig =
+                RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
 
         @Deprecated(forRemoval = true, since = "2.0.0")
-        private io.agentscope.core.legacy.plan.PlanNotebook planNotebook;
+        private PlanNotebook planNotebook;
 
         @Deprecated(forRemoval = true, since = "2.0.0")
-        private io.agentscope.core.legacy.skill.SkillBox skillBox;
+        private SkillBox skillBox;
+
+        // ==================== 2.0 skill repository entry ====================
+        // The 2.0 way to mount skills: hand the agent one or more
+        // {@link AgentSkillRepository} instances. {@link #build()} installs a
+        // {@link DynamicSkillMiddleware} that rebuilds the skill prompt on every call,
+        // letting per-user namespaced repositories swap content under the same skill name.
+
+        private final List<AgentSkillRepository> skillRepositories = new ArrayList<>();
+        private SkillFilter skillFilter;
+        private boolean dynamicSkillsEnabled = true;
 
         private Builder() {}
 
@@ -3167,459 +2705,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return this;
         }
 
-        // ==================== Harness orchestration setters ====================
-
-        /**
-         * Sets the stable identifier used as the agent's namespace key in the composite filesystem
-         * (e.g. {@code [agents, <agentId>, users, <userId>, ...]}). When unset, {@link #build()}
-         * falls back to {@link #name(String)} for the namespace key.
-         */
-        public Builder agentId(String agentId) {
-            this.agentId = agentId;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Adds a marketplace / external skill repository (e.g. {@code GitSkillRepository},
-         * Nacos, HTTP). Repositories compose additively with workspace skills.
-         */
-        public Builder skillRepository(AgentSkillRepository skillRepository) {
-            if (skillRepository != null) {
-                this.skillRepositories.add(skillRepository);
-                this.harnessOrchestrationEnabled = true;
-            }
-            return this;
-        }
-
-        /**
-         * Replaces the current marketplace repository list with the given collection.
-         */
-        public Builder skillRepositories(List<AgentSkillRepository> repositories) {
-            this.skillRepositories.clear();
-            if (repositories != null) {
-                for (AgentSkillRepository repo : repositories) {
-                    if (repo != null) {
-                        this.skillRepositories.add(repo);
-                    }
-                }
-            }
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Configures a project-global skills directory layered below marketplace and workspace
-         * skills (lowest precedence).
-         */
-        public Builder projectGlobalSkillsDir(Path projectGlobalSkillsDir) {
-            this.projectGlobalSkillsDir = projectGlobalSkillsDir;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Sets the workspace directory. Pass {@code null} to use the default
-         * {@code ${cwd}/.agentscope/workspace}.
-         */
-        public Builder workspace(Path workspace) {
-            this.workspace = workspace;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Sets the workspace directory from a filesystem path string. Equivalent to
-         * {@link #workspace(Path)} with {@code Path.of(path.strip())}.
-         */
-        public Builder workspace(String path) {
-            if (path == null) {
-                this.workspace = null;
-            } else {
-                String trimmed = path.strip();
-                if (trimmed.isEmpty()) {
-                    throw new IllegalArgumentException("workspace path must not be blank");
-                }
-                this.workspace = Path.of(trimmed);
-            }
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        public Builder environmentMemory(String environmentMemory) {
-            this.environmentMemory = environmentMemory;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Escape hatch: sets a custom {@link AbstractFilesystem} implementation directly.
-         */
-        public Builder abstractFilesystem(AbstractFilesystem backend) {
-            this.abstractFilesystem = backend;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Configures Mode 2 — sandbox filesystem. */
-        public Builder filesystem(SandboxFilesystemSpec spec) {
-            this.sandboxFilesystemSpec = spec;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Configures Mode 1 — composite (non-sandbox) filesystem. */
-        public Builder filesystem(RemoteFilesystemSpec spec) {
-            this.remoteFilesystemSpec = spec;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Configures Mode 3 — local filesystem with shell. */
-        public Builder filesystem(LocalFilesystemSpec spec) {
-            this.localFilesystemSpec = spec;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Enables high-level distributed sandbox configuration. */
-        public Builder sandboxDistributed(SandboxDistributedOptions options) {
-            this.sandboxDistributedOptions = options;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Enables the {@link CompactionMiddleware} with the given configuration. */
-        public Builder compaction(CompactionConfig config) {
-            this.compactionConfig = config;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Enables {@link ToolResultEvictionMiddleware} with the given configuration. */
-        public Builder toolResultEviction(ToolResultEvictionConfig config) {
-            this.toolResultEvictionConfig = config;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Programmatic override for {@code workspace/tools.json}. */
-        public Builder toolsConfig(ToolsConfig toolsConfig) {
-            this.toolsConfigOverride = toolsConfig;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Adds a subagent declaration. */
-        public Builder subagent(SubagentDeclaration declaration) {
-            this.subagentDeclarations.add(declaration);
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        public Builder subagents(List<SubagentDeclaration> declarations) {
-            this.subagentDeclarations.addAll(declarations);
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Adds a fully custom subagent factory for a given agent id. */
-        public Builder subagentFactory(
-                String name, Function<String, io.agentscope.core.agent.Agent> factory) {
-            this.customSubagentFactories.add(
-                    new ReActAgentBuilderSupport.SubagentFactoryEntry(name, factory));
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Sets a custom {@link TaskRepository} for background subagent execution. */
-        public Builder taskRepository(TaskRepository taskRepository) {
-            this.taskRepository = taskRepository;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Injects an external subagent tool (typically {@code SessionsTool}). */
-        public Builder externalSubagentTool(Object tool) {
-            this.externalSubagentTool = tool;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Sets a resolver for model name strings to {@link Model} instances for subagents. */
-        public Builder modelResolver(Function<String, Model> resolver) {
-            this.modelResolver = resolver;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Adds a custom context file (relative to workspace) that will be loaded into the system
-         * prompt alongside AGENTS.md, MEMORY.md, and KNOWLEDGE.md.
-         */
-        public Builder additionalContextFile(String relativePath) {
-            if (relativePath != null && !relativePath.isBlank()) {
-                this.additionalContextFiles.add(relativePath);
-                this.harnessOrchestrationEnabled = true;
-            }
-            return this;
-        }
-
-        /** Sets the maximum token budget for workspace context. */
-        public Builder maxContextTokens(int maxTokens) {
-            this.maxContextTokens = maxTokens;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Switches workspace context rendering between markdown (default) and legacy XML style.
-         */
-        public Builder useLegacyXmlWorkspaceContext(boolean enabled) {
-            this.useLegacyXmlWorkspaceContext = enabled;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Enables or disables agent execution trace logging via {@link AgentTraceMiddleware}.
-         * Default is {@code true}.
-         */
-        public Builder enableAgentTracingLog(boolean enabled) {
-            this.agentTracingLogEnabled = enabled;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Skips registration of {@link FilesystemTool}. */
-        public Builder disableFilesystemTools() {
-            this.disableFilesystemTools = true;
-            return this;
-        }
-
-        /** Skips registration of {@link ShellExecuteTool}. */
-        public Builder disableShellTool() {
-            this.disableShellTool = true;
-            return this;
-        }
-
-        /** Disables dynamic per-call skill loading from the workspace filesystem. */
-        public Builder disableDynamicSkills() {
-            this.disableDynamicSkills = true;
-            return this;
-        }
-
-        /**
-         * Enables the agent-callable {@code skill_manage} tool so the agent can create / edit /
-         * patch / archive its own skills in the workspace, and upgrades the workspace skill
-         * repository to a writable variant.
-         *
-         * <p>Default config ({@link SkillManageConfig#defaults()}): {@code autoPromote=false}
-         * (drafts land in {@code skills/_drafts/}, NOT visible until promoted) and
-         * {@code securityScan=true}. Suitable for enterprise production.
-         *
-         * <p>For personal-assistant / experimental setups use
-         * {@code enableSkillManageTool(true)} to bypass staging.
-         */
-        public Builder enableSkillManageTool(SkillManageConfig config) {
-            this.skillManageToolEnabled = true;
-            this.skillManageConfig = config != null ? config : SkillManageConfig.defaults();
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Shorthand for {@link #enableSkillManageTool(SkillManageConfig)} with default config and
-         * the supplied {@code autoPromote} value.
-         *
-         * @param autoPromote {@code true} writes new skills straight to the live skills root;
-         *     {@code false} (the production default) writes them to {@code skills/_drafts/}.
-         */
-        public Builder enableSkillManageTool(boolean autoPromote) {
-            return enableSkillManageTool(
-                    SkillManageConfig.builder().autoPromote(autoPromote).build());
-        }
-
-        /**
-         * Configures the runtime promotion gate + visibility filter chain (M4 of skill
-         * self-learning loop). Without this call the gate defaults to a {@code RejectAllGate}
-         * (drafts never auto-promote) and no visibility filtering happens.
-         *
-         * @param gate decides whether a draft is allowed to promote when {@code promoteSkill}
-         *     is invoked. Pass {@code null} to keep the {@code RejectAllGate} default.
-         * @param visibilityFilter run on every reasoning turn to constrain which skills enter
-         *     the system prompt. Pass {@code null} for no filtering.
-         */
-        public Builder enableSkillPromotionGate(
-                io.agentscope.harness.agent.skill.curator.SkillPromotionGate gate,
-                io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter visibilityFilter) {
-            this.promotionGate = gate;
-            this.visibilityFilter = visibilityFilter;
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /** Sets the deployment environment label used by {@code EnvironmentFilter}. */
-        public Builder environment(String env) {
-            this.environment = env != null ? env : "prod";
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Enables the background skill curator (M5). Requires
-         * {@link #enableSkillManageTool(boolean)} to also be configured because the curator
-         * needs the writable repository + sidecar.
-         */
-        public Builder enableSkillCurator(
-                io.agentscope.harness.agent.skill.curator.SkillCuratorConfig config) {
-            this.skillCuratorEnabled = true;
-            this.skillCuratorConfig =
-                    config != null
-                            ? config
-                            : io.agentscope.harness.agent.skill.curator.SkillCuratorConfig
-                                    .defaults();
-            this.harnessOrchestrationEnabled = true;
-            return this;
-        }
-
-        /**
-         * Enables plan mode: registers the {@code plan_enter} / {@code plan_write} /
-         * {@code plan_exit} tools and a {@code PlanModeMiddleware} that enforces a read-only design
-         * phase while plan mode is active. The agent can switch in/out of plan mode at runtime
-         * (model-driven via the tools, or programmatically via {@link ReActAgent#enterPlanMode()} /
-         * {@link ReActAgent#exitPlanMode()}); the mode is persisted in {@code AgentState}.
-         *
-         * <p>Requires the harness orchestration path (a workspace / filesystem).
-         */
-        public Builder enablePlanMode() {
-            return enablePlanMode(true);
-        }
-
-        /**
-         * Enables or disables plan mode. See {@link #enablePlanMode()}.
-         *
-         * @param enabled true to enable plan mode
-         */
-        public Builder enablePlanMode(boolean enabled) {
-            this.planModeEnabled = enabled;
-            if (enabled) {
-                this.harnessOrchestrationEnabled = true;
-            }
-            return this;
-        }
-
-        /**
-         * Sets the workspace-relative directory used to store plan markdown files. Defaults to
-         * {@code "plans"}.
-         */
-        public Builder planFileDirectory(String dir) {
-            if (dir != null && !dir.isBlank()) {
-                this.planFileDir = dir;
-            }
-            return this;
-        }
-
-        /**
-         * Sets a custom {@link io.agentscope.core.skill.SkillFilter} controlling which skills are
-         * included in the prompt. Defaults to {@link io.agentscope.core.skill.SkillFilter#all()}.
-         *
-         * @param filter the skill filter
-         * @return this builder
-         */
-        public Builder skillFilter(io.agentscope.core.skill.SkillFilter filter) {
-            this.skillFilter = filter;
-            return this;
-        }
-
-        /**
-         * Convenience: disables all skill prompts.
-         * Equivalent to {@code skillFilter(SkillFilter.none())}.
-         *
-         * @param enabled false to disable all skill prompts
-         * @return this builder
-         */
-        public Builder skillsEnabled(boolean enabled) {
-            this.skillFilter =
-                    enabled
-                            ? io.agentscope.core.skill.SkillFilter.all()
-                            : io.agentscope.core.skill.SkillFilter.none();
-            return this;
-        }
-
-        /**
-         * Convenience: whitelist — only the named skills appear in the prompt.
-         *
-         * @param skillNames skill names to enable
-         * @return this builder
-         */
-        public Builder enableSkills(String... skillNames) {
-            this.skillFilter = io.agentscope.core.skill.SkillFilter.only(skillNames);
-            return this;
-        }
-
-        /**
-         * Convenience: blacklist — all skills except the named ones appear in the prompt.
-         *
-         * @param skillNames skill names to disable
-         * @return this builder
-         */
-        public Builder disableSkills(String... skillNames) {
-            this.skillFilter = io.agentscope.core.skill.SkillFilter.except(skillNames);
-            return this;
-        }
-
-        /** Disables dynamic per-call subagent reload from the workspace filesystem. */
-        public Builder disableDynamicSubagents() {
-            this.disableDynamicSubagents = true;
-            return this;
-        }
-
-        /** Skips registration of {@link MemorySearchTool}, {@link MemoryGetTool}, {@link SessionSearchTool}. */
-        public Builder disableMemoryTools() {
-            this.disableMemoryTools = true;
-            return this;
-        }
-
-        /**
-         * Skips registration of {@link MemoryFlushMiddleware} and
-         * {@link io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware}.
-         */
-        public Builder disableMemoryHooks() {
-            this.disableMemoryHooks = true;
-            return this;
-        }
-
-        /** No-op since 2.0; session persistence is owned by ReActAgent itself. */
-        public Builder disableSessionPersistence() {
-            this.disableSessionPersistence = true;
-            return this;
-        }
-
-        /** Skips registration of {@link WorkspaceContextMiddleware}. */
-        public Builder disableWorkspaceContext() {
-            this.disableWorkspaceContext = true;
-            return this;
-        }
-
-        /** Skips registration of {@link AtPathExpansionMiddleware}. */
-        public Builder disableAtPathExpansion() {
-            this.disableAtPathExpansion = true;
-            return this;
-        }
-
-        /** Skips registration of {@link SubagentsMiddleware}. */
-        public Builder disableSubagents() {
-            this.disableSubagents = true;
-            return this;
-        }
-
-        /** Skips reading {@code workspace/tools.json}. */
-        public Builder disableToolsConfig() {
-            this.disableToolsConfig = true;
-            return this;
-        }
-
         // ==================== 1.x legacy compatibility setters ====================
         // The setters below are deprecated since 2.0 and will be removed in the next minor.
         // Each one captures a value used later by configureXxx() during build(), wiring the
@@ -3631,8 +2716,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          *     base class. Hooks added through this path still work.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder longTermMemory(
-                io.agentscope.core.legacy.memory.LongTermMemory longTermMemory) {
+        public Builder longTermMemory(LongTermMemory longTermMemory) {
             this.longTermMemory = longTermMemory;
             return this;
         }
@@ -3641,8 +2725,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * @deprecated since 2.0.0. See {@link #longTermMemory}.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder longTermMemoryMode(
-                io.agentscope.core.legacy.memory.LongTermMemoryMode mode) {
+        public Builder longTermMemoryMode(LongTermMemoryMode mode) {
             this.longTermMemoryMode = mode;
             return this;
         }
@@ -3660,7 +2743,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * @deprecated since 2.0.0. RAG is being redesigned; legacy adapters remain functional.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder knowledge(io.agentscope.core.legacy.rag.Knowledge knowledge) {
+        public Builder knowledge(Knowledge knowledge) {
             if (knowledge != null) {
                 this.knowledgeBases.add(knowledge);
             }
@@ -3671,7 +2754,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * @deprecated since 2.0.0. See {@link #knowledge}.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder knowledges(List<io.agentscope.core.legacy.rag.Knowledge> knowledges) {
+        public Builder knowledges(List<Knowledge> knowledges) {
             if (knowledges != null) {
                 this.knowledgeBases.addAll(knowledges);
             }
@@ -3682,7 +2765,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * @deprecated since 2.0.0. See {@link #knowledge}.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder ragMode(io.agentscope.core.legacy.rag.RAGMode mode) {
+        public Builder ragMode(RAGMode mode) {
             if (mode != null) {
                 this.ragMode = mode;
             }
@@ -3693,7 +2776,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * @deprecated since 2.0.0. See {@link #knowledge}.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder retrieveConfig(io.agentscope.core.legacy.rag.model.RetrieveConfig config) {
+        public Builder retrieveConfig(RetrieveConfig config) {
             if (config != null) {
                 this.retrieveConfig = config;
             }
@@ -3702,11 +2785,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         /**
          * @deprecated since 2.0.0. The plan module has been removed from 2.0 core; the legacy
-         *     {@link io.agentscope.core.legacy.plan.PlanNotebook} adapter still wires up plan
+         *     {@link PlanNotebook} adapter still wires up plan
          *     tools and a plan-hint hook for source compatibility.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder planNotebook(io.agentscope.core.legacy.plan.PlanNotebook planNotebook) {
+        public Builder planNotebook(PlanNotebook planNotebook) {
             this.planNotebook = planNotebook;
             return this;
         }
@@ -3716,60 +2799,80 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder enablePlan() {
-            this.planNotebook = io.agentscope.core.legacy.plan.PlanNotebook.builder().build();
+            this.planNotebook = PlanNotebook.builder().build();
             return this;
         }
 
         /**
          * @deprecated since 2.0.0. Skills now flow through {@link #skillRepository} /
-         *     {@link #skillRepositories}; legacy {@link io.agentscope.core.legacy.skill.SkillBox}
-         *     instances are still accepted for source compatibility.
+         *     {@link #skillRepositories}; legacy {@link io.agentscope.core.skill.SkillBox}
+         *     instances are still accepted for source compatibility, but combining a
+         *     {@code skillBox(...)} with {@code skillRepository(...)} is untested — new code
+         *     should prefer {@link #skillRepository(AgentSkillRepository)}.
          */
         @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder skillBox(io.agentscope.core.legacy.skill.SkillBox skillBox) {
+        public Builder skillBox(SkillBox skillBox) {
             this.skillBox = skillBox;
             return this;
         }
 
         /**
-         * Marks this build as a leaf subagent (no nested subagent orchestration). Package-private
-         * because only {@link ReActAgentBuilderSupport} (and the deprecated harness shell) should
-         * mark leaf agents.
+         * Adds a single {@link AgentSkillRepository} to the layered skill stack. Multiple calls
+         * append in order from low to high priority — when two repositories expose a skill with
+         * the same {@link io.agentscope.core.skill.AgentSkill#getName()}, the later (higher
+         * priority) entry wins.
+         *
+         * <p>If at least one repository is registered and dynamic skills remain enabled
+         * (see {@link #dynamicSkillsEnabled(boolean)}), {@link #build()} attaches a
+         * {@link DynamicSkillMiddleware} that rebuilds the skill prompt on every {@code call()}.
          */
-        Builder asLeafSubagent() {
-            this.leafSubagent = true;
+        public Builder skillRepository(AgentSkillRepository repo) {
+            if (repo != null) {
+                this.skillRepositories.add(repo);
+            }
             return this;
         }
 
         /**
-         * Builds the subagent entries (general-purpose + declared + custom factories) without
-         * constructing the full agent. Useful for callers that need to extract subagent factories
-         * up front (for example to mount them on a session router) before assembling the parent
-         * agent.
-         *
-         * @param resolvedWorkspace workspace path to scan for {@code subagents/*.md} declarations
+         * Replaces the current repository list with the supplied collection. {@code null}
+         * entries are dropped silently; passing {@code null} clears the list.
          */
-        public List<io.agentscope.harness.agent.middleware.SubagentEntry> buildSubagentEntries(
-                Path resolvedWorkspace) {
-            return ReActAgentBuilderSupport.buildSubagentEntries(this, resolvedWorkspace, null);
+        public Builder skillRepositories(List<AgentSkillRepository> repos) {
+            this.skillRepositories.clear();
+            if (repos != null) {
+                for (AgentSkillRepository r : repos) {
+                    if (r != null) {
+                        this.skillRepositories.add(r);
+                    }
+                }
+            }
+            return this;
         }
 
         /**
-         * Same as {@link #buildSubagentEntries(Path)} but also threads a
-         * {@link io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem} into the
-         * subagent factories so spawned agents share the parent's sandbox session when desired.
+         * Builder-time {@link SkillFilter} applied by the auto-installed
+         * {@link DynamicSkillMiddleware}. Defaults to {@link SkillFilter#all()} when unset.
          */
-        public List<io.agentscope.harness.agent.middleware.SubagentEntry> buildSubagentEntries(
-                Path resolvedWorkspace,
-                io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem sandboxFs) {
-            return ReActAgentBuilderSupport.buildSubagentEntries(
-                    this, resolvedWorkspace, sandboxFs);
+        public Builder skillFilter(SkillFilter filter) {
+            this.skillFilter = filter;
+            return this;
+        }
+
+        /**
+         * Toggles automatic installation of {@link DynamicSkillMiddleware}. Set to {@code false}
+         * when an external orchestrator (e.g. {@code HarnessAgent}) wants to attach its own
+         * subclass of {@link DynamicSkillMiddleware} or fall back to a static
+         * {@link io.agentscope.core.skill.SkillBox}. Defaults to {@code true}.
+         */
+        public Builder dynamicSkillsEnabled(boolean enabled) {
+            this.dynamicSkillsEnabled = enabled;
+            return this;
         }
 
         /**
          * Returns a new {@link Builder} pre-populated with the given agent's observable
-         * configuration: name, description, system prompt, model, maxIters, generateOptions, plan
-         * notebook, and a defensive copy of the toolkit.
+         * configuration: name, description, system prompt, model, maxIters, generateOptions, and
+         * a defensive copy of the toolkit.
          *
          * <p>Use to derive a related agent without re-specifying every field.
          */
@@ -3796,7 +2899,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          * Configures long-term memory based on the selected mode.
          *
          * <p>AGENT_CONTROL registers memory tools for the agent to call. STATIC_CONTROL adds
-         * a {@link io.agentscope.core.legacy.memory.StaticLongTermMemoryHook} that retrieves /
+         * a {@link StaticLongTermMemoryHook} that retrieves /
          * records memory automatically. BOTH combines them. The hook reads context lazily from
          * {@code selfRef.get().getAgentState()} so it tolerates being constructed before the
          * agent itself exists.
@@ -3805,25 +2908,20 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         private void configureLongTermMemory(
                 Toolkit agentToolkit,
                 java.util.concurrent.atomic.AtomicReference<ReActAgent> selfRef) {
-            if (longTermMemoryMode
-                            == io.agentscope.core.legacy.memory.LongTermMemoryMode.AGENT_CONTROL
-                    || longTermMemoryMode
-                            == io.agentscope.core.legacy.memory.LongTermMemoryMode.BOTH) {
-                agentToolkit.registerTool(
-                        new io.agentscope.core.legacy.memory.LongTermMemoryTools(longTermMemory));
+            if (longTermMemoryMode == LongTermMemoryMode.AGENT_CONTROL
+                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
+                agentToolkit.registerTool(new LongTermMemoryTools(longTermMemory));
             }
-            if (longTermMemoryMode
-                            == io.agentscope.core.legacy.memory.LongTermMemoryMode.STATIC_CONTROL
-                    || longTermMemoryMode
-                            == io.agentscope.core.legacy.memory.LongTermMemoryMode.BOTH) {
-                io.agentscope.core.legacy.memory.Memory contextView =
-                        new io.agentscope.core.legacy.memory.AgentStateMemoryView(
+            if (longTermMemoryMode == LongTermMemoryMode.STATIC_CONTROL
+                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
+                Memory contextView =
+                        new AgentStateMemoryView(
                                 () -> {
                                     ReActAgent a = selfRef.get();
                                     return a == null ? null : a.getAgentState();
                                 });
                 hooks.add(
-                        new io.agentscope.core.legacy.memory.StaticLongTermMemoryHook(
+                        new StaticLongTermMemoryHook(
                                 longTermMemory, contextView, longTermMemoryAsyncRecord));
             }
         }
@@ -3833,20 +2931,16 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
          */
         @SuppressWarnings("deprecation")
         private void configureRAG(Toolkit agentToolkit) {
-            io.agentscope.core.legacy.rag.Knowledge aggregatedKnowledge =
+            Knowledge aggregatedKnowledge =
                     knowledgeBases.size() == 1
                             ? knowledgeBases.iterator().next()
                             : buildAggregatedKnowledge();
 
             switch (ragMode) {
-                case GENERIC ->
-                        hooks.add(
-                                new io.agentscope.core.legacy.rag.GenericRAGHook(
-                                        aggregatedKnowledge, retrieveConfig));
+                case GENERIC -> hooks.add(new GenericRAGHook(aggregatedKnowledge, retrieveConfig));
                 case AGENTIC ->
                         agentToolkit.registerTool(
-                                new io.agentscope.core.legacy.rag.KnowledgeRetrievalTools(
-                                        aggregatedKnowledge, retrieveConfig));
+                                new KnowledgeRetrievalTools(aggregatedKnowledge, retrieveConfig));
                 case NONE -> {
                     // intentionally no-op
                 }
@@ -3854,32 +2948,29 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         @SuppressWarnings("deprecation")
-        private io.agentscope.core.legacy.rag.Knowledge buildAggregatedKnowledge() {
-            return new io.agentscope.core.legacy.rag.Knowledge() {
+        private Knowledge buildAggregatedKnowledge() {
+            return new Knowledge() {
                 @Override
-                public Mono<Void> addDocuments(
-                        List<io.agentscope.core.legacy.rag.model.Document> documents) {
+                public Mono<Void> addDocuments(List<Document> documents) {
                     return reactor.core.publisher.Flux.fromIterable(knowledgeBases)
                             .flatMap(kb -> kb.addDocuments(documents))
                             .then();
                 }
 
                 @Override
-                public Mono<List<io.agentscope.core.legacy.rag.model.Document>> retrieve(
-                        String query, io.agentscope.core.legacy.rag.model.RetrieveConfig config) {
+                public Mono<List<Document>> retrieve(String query, RetrieveConfig config) {
                     return reactor.core.publisher.Flux.fromIterable(knowledgeBases)
                             .flatMap(kb -> kb.retrieve(query, config))
                             .collectList()
                             .map(this::mergeAndSortResults);
                 }
 
-                private List<io.agentscope.core.legacy.rag.model.Document> mergeAndSortResults(
-                        List<List<io.agentscope.core.legacy.rag.model.Document>> allResults) {
+                private List<Document> mergeAndSortResults(List<List<Document>> allResults) {
                     return allResults.stream()
                             .flatMap(List::stream)
                             .collect(
                                     java.util.stream.Collectors.toMap(
-                                            io.agentscope.core.legacy.rag.model.Document::getId,
+                                            Document::getId,
                                             d -> d,
                                             (d1, d2) ->
                                                     d1.getScore() != null
@@ -3891,7 +2982,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             .stream()
                             .sorted(
                                     java.util.Comparator.comparing(
-                                            io.agentscope.core.legacy.rag.model.Document::getScore,
+                                            Document::getScore,
                                             java.util.Comparator.nullsLast(
                                                     java.util.Comparator.reverseOrder())))
                             .limit(retrieveConfig.getLimit())
@@ -3907,7 +2998,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         @SuppressWarnings("deprecation")
         private void configurePlan(Toolkit agentToolkit) {
             agentToolkit.registerTool(planNotebook);
-            middlewares.add(new io.agentscope.core.legacy.plan.PlanHintMiddleware(planNotebook));
+            middlewares.add(new PlanHintMiddleware(planNotebook));
         }
 
         /**
@@ -3930,7 +3021,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             if (skillBox.isAutoUploadSkill()) {
                 skillBox.uploadSkillFiles();
             }
-            hooks.add(new io.agentscope.core.legacy.skill.SkillHook(skillBox));
+            hooks.add(new io.agentscope.core.skill.SkillHook(skillBox));
         }
 
         /**
@@ -3943,25 +3034,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
-            HarnessOrchestrationResult harnessResult =
-                    harnessOrchestrationEnabled ? runHarnessOrchestration(agentToolkit) : null;
-
             registerToolsFromHooks(agentToolkit);
 
             if (enableMetaTool) {
                 agentToolkit.registerMetaTool();
             }
 
-            // enablePendingToolRecovery is stored on the agent and used in doCallInner()
-
             // 1.x legacy compat: shared selfRef gives the long-term-memory hook (constructed
             // pre-agent) a way to resolve AgentState.context lazily once the agent exists.
-            // Harness already manages a selfRef in its HarnessOrchestrationResult; we reuse it so
-            // both paths point at the same ReActAgent post-construction.
-            java.util.concurrent.atomic.AtomicReference<ReActAgent> selfRef =
-                    harnessResult != null && harnessResult.selfRef != null
-                            ? harnessResult.selfRef
-                            : new java.util.concurrent.atomic.AtomicReference<>();
+            AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
 
             if (longTermMemory != null) {
                 configureLongTermMemory(agentToolkit, selfRef);
@@ -3978,452 +3059,18 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             if (skillBox != null) {
                 configureSkillBox(agentToolkit);
             }
+            if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
+                middlewares.add(
+                        new DynamicSkillMiddleware(
+                                List.copyOf(skillRepositories),
+                                agentToolkit,
+                                skillFilter != null ? skillFilter : SkillFilter.all()));
+            }
 
             ReActAgent agent = new ReActAgent(this, agentToolkit);
             selfRef.set(agent);
 
-            if (harnessResult != null) {
-                agent.injectHarnessRuntime(
-                        harnessResult.workspaceManager,
-                        harnessResult.workspaceFactory,
-                        harnessResult.sessionFactory,
-                        harnessResult.ownedWorkspaceIndex,
-                        harnessResult.defaultSandboxContext,
-                        harnessResult.compactionHook,
-                        harnessResult.sandboxLifecycleMw,
-                        harnessResult.skillRepositories);
-                agent.planModeManager = harnessResult.planModeManager;
-                agent.injectSkillSelfLearning(
-                        harnessResult.skillPromoter,
-                        harnessResult.skillUsageStore,
-                        harnessResult.skillCurator,
-                        harnessResult.skillAuditLog);
-            }
             return agent;
-        }
-
-        /**
-         * Result bundle produced by {@link #runHarnessOrchestration(Toolkit)}, passed through to
-         * {@link ReActAgent#injectHarnessRuntime} after construction.
-         */
-        private static final class HarnessOrchestrationResult {
-            WorkspaceManager workspaceManager;
-            BiFunction<String, String, WorkspaceManager> workspaceFactory;
-            Function<String, Session> sessionFactory;
-            WorkspaceIndex ownedWorkspaceIndex;
-            SandboxContext defaultSandboxContext;
-            CompactionMiddleware compactionHook;
-            SandboxLifecycleMiddleware sandboxLifecycleMw;
-            List<AgentSkillRepository> skillRepositories;
-            io.agentscope.harness.agent.workspace.plan.PlanModeManager planModeManager;
-            AtomicReference<ReActAgent> selfRef;
-            // M4 — promoter is null unless enableSkillManageTool was called.
-            io.agentscope.harness.agent.skill.curator.SkillPromoter skillPromoter;
-            io.agentscope.harness.agent.skill.curator.SkillUsageStore skillUsageStore;
-            // M5 — curator is null unless enableSkillCurator was called.
-            io.agentscope.harness.agent.skill.curator.SkillCurator skillCurator;
-            // M7 — audit log is null unless enableSkillManageTool was called.
-            io.agentscope.harness.agent.skill.curator.SkillAuditLog skillAuditLog;
-        }
-
-        /**
-         * Builds the workspace/filesystem/sandbox stack, assembles the harness hooks and tools, and
-         * applies them to {@code agentToolkit} + the builder's {@code hooks} set. Returns a bundle
-         * of runtime state that callers must hand to
-         * {@link ReActAgent#injectHarnessRuntime} after construction.
-         *
-         * <p>Mirrors {@code HarnessAgent.Builder.build()}'s orchestration sequence.
-         */
-        private HarnessOrchestrationResult runHarnessOrchestration(Toolkit agentToolkit) {
-            // M4 — staged here to avoid reordering the existing build flow.
-            io.agentscope.harness.agent.skill.curator.SkillPromoter pendingSkillPromoter = null;
-            io.agentscope.harness.agent.skill.curator.SkillUsageStore pendingSkillUsageStore = null;
-            io.agentscope.harness.agent.skill.curator.SkillCurator pendingSkillCurator = null;
-            io.agentscope.harness.agent.skill.curator.SkillAuditLog pendingSkillAuditLog = null;
-
-            // ---- Validation ----
-            int specCount = 0;
-            if (sandboxFilesystemSpec != null) specCount++;
-            if (remoteFilesystemSpec != null) specCount++;
-            if (localFilesystemSpec != null) specCount++;
-            if (specCount > 1) {
-                throw new IllegalStateException(
-                        "At most one of sandboxFilesystemSpec, remoteFilesystemSpec,"
-                                + " localFilesystemSpec may be configured");
-            }
-            if (abstractFilesystem != null && specCount > 0) {
-                throw new IllegalStateException(
-                        "abstractFilesystem() is an escape hatch and is mutually exclusive with"
-                                + " filesystem(...) specs");
-            }
-            if (sandboxDistributedOptions != null && sandboxFilesystemSpec == null) {
-                throw new IllegalStateException(
-                        "sandboxDistributed(...) requires sandbox mode."
-                                + " Configure filesystem(SandboxFilesystemSpec) first.");
-            }
-
-            Path resolvedWorkspace =
-                    workspace != null
-                            ? workspace
-                            : Paths.get(System.getProperty("user.dir"))
-                                    .resolve(".agentscope/workspace");
-            String resolvedAgentId =
-                    agentId != null && !agentId.isBlank()
-                            ? agentId
-                            : (name != null && !name.isBlank() ? name : "ReActAgent");
-            Session effectiveSession =
-                    sandboxDistributedOptions != null
-                                    && sandboxDistributedOptions.getSession() != null
-                            ? sandboxDistributedOptions.getSession()
-                            : session;
-            NamespaceFactory nsFactory =
-                    rc -> {
-                        String uid = rc != null ? rc.getUserId() : null;
-                        return (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
-                    };
-            if (effectiveSession == null) {
-                effectiveSession =
-                        new WorkspaceSession(resolvedWorkspace, resolvedAgentId, nsFactory);
-            }
-
-            if (remoteFilesystemSpec != null && effectiveSession instanceof WorkspaceSession) {
-                throw new IllegalStateException(
-                        "filesystem(RemoteFilesystemSpec) is designed for distributed /"
-                                + " multi-replica deployments, but the effective Session is a local"
-                                + " WorkspaceSession. Configure a distributed Session backend (for"
-                                + " example RedisSession) via .session(...).");
-            }
-            WorkspaceIndex workspaceIndex =
-                    remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
-            AbstractFilesystem filesystem =
-                    ReActAgentBuilderSupport.resolveFilesystem(
-                            this, resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
-
-            // ---- Sandbox integration ----
-            SandboxLifecycleMiddleware sandboxLifecycleMw = null;
-            SandboxContext defaultSandboxContext = null;
-            SandboxBackedFilesystem capturedSandboxFs = null;
-            if (sandboxFilesystemSpec != null) {
-                if (sandboxDistributedOptions != null
-                        && sandboxDistributedOptions.getSnapshotSpec() != null) {
-                    sandboxFilesystemSpec.snapshotSpec(sandboxDistributedOptions.getSnapshotSpec());
-                }
-                capturedSandboxFs = new SandboxBackedFilesystem();
-                filesystem = capturedSandboxFs;
-
-                defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
-                boolean skipDistributedValidation =
-                        sandboxDistributedOptions != null
-                                && !sandboxDistributedOptions.isRequireDistributed();
-                if (!skipDistributedValidation) {
-                    ReActAgentBuilderSupport.validateDistributedSandboxConfig(
-                            this, effectiveSession, defaultSandboxContext);
-                }
-
-                Session sandboxStateSession =
-                        effectiveSession instanceof WorkspaceSession
-                                ? new WorkspaceSession(resolvedWorkspace, resolvedAgentId, null)
-                                : effectiveSession;
-                SandboxStateStore stateStore =
-                        sandboxFilesystemSpec.getSandboxStateStore() != null
-                                ? sandboxFilesystemSpec.getSandboxStateStore()
-                                : new SessionSandboxStateStore(
-                                        sandboxStateSession, resolvedAgentId);
-                SandboxExecutionGuard executionGuard =
-                        sandboxFilesystemSpec.getExecutionGuard() != null
-                                ? sandboxFilesystemSpec.getExecutionGuard()
-                                : SandboxExecutionGuard.noop();
-                SandboxManager sandboxManager =
-                        new SandboxManager(
-                                defaultSandboxContext.getClient(),
-                                stateStore,
-                                resolvedAgentId,
-                                executionGuard);
-                sandboxLifecycleMw =
-                        new SandboxLifecycleMiddleware(sandboxManager, capturedSandboxFs);
-            }
-            WorkspaceManager wsManager =
-                    new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
-            wsManager.validate();
-
-            final AbstractFilesystem sharedFilesystemRef = filesystem;
-            final Path capturedWorkspace = resolvedWorkspace;
-            final WorkspaceIndex capturedIndex = workspaceIndex;
-            BiFunction<String, String, WorkspaceManager> workspaceFactoryFn =
-                    (uid, sid) -> {
-                        RuntimeContext bakedRc =
-                                ReActAgentBuilderSupport.buildBakedRuntimeContext(uid, sid);
-                        NamespaceFactory ctxNs =
-                                rc -> (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
-                        AbstractFilesystem ctxFs =
-                                new BakedContextFilesystem(sharedFilesystemRef, bakedRc);
-                        return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
-                    };
-
-            final Session capturedDefaultSession = effectiveSession;
-            final String capturedAgentId = resolvedAgentId;
-            Function<String, Session> sessionFactoryFn =
-                    capturedDefaultSession instanceof WorkspaceSession
-                            ? uid -> {
-                                NamespaceFactory baked = rc -> List.of(uid);
-                                return new WorkspaceSession(
-                                        capturedWorkspace, capturedAgentId, baked);
-                            }
-                            : null;
-
-            // ---- Hooks ----
-            if (sandboxLifecycleMw != null) {
-                middlewares.add(sandboxLifecycleMw);
-            }
-            if (agentTracingLogEnabled) {
-                middlewares.add(new AgentTraceMiddleware());
-            }
-            if (!disableWorkspaceContext) {
-                WorkspaceContextMiddleware markdownMw =
-                        new WorkspaceContextMiddleware(
-                                wsManager,
-                                name != null ? name : "ReActAgent",
-                                environmentMemory,
-                                maxContextTokens);
-                markdownMw.setAdditionalContextFiles(additionalContextFiles);
-                middlewares.add(markdownMw);
-            }
-            if (!disableAtPathExpansion) {
-                middlewares.add(new AtPathExpansionMiddleware(wsManager));
-            }
-            if (model != null && !disableMemoryHooks) {
-                middlewares.add(new MemoryFlushMiddleware(wsManager, model));
-            }
-            if (model != null && !disableMemoryHooks) {
-                MemoryConsolidator consolidator = new MemoryConsolidator(wsManager, model);
-                middlewares.add(new MemoryMaintenanceMiddleware(wsManager, consolidator));
-            }
-            CompactionMiddleware compactionHook = null;
-            if (compactionConfig != null && model != null) {
-                compactionHook = new CompactionMiddleware(wsManager, model, compactionConfig);
-                middlewares.add(compactionHook);
-            }
-            if (toolResultEvictionConfig != null) {
-                middlewares.add(
-                        new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
-            }
-            if (!leafSubagent && !disableSubagents && model != null) {
-                if (filesystem != null && !disableDynamicSubagents) {
-                    DynamicSubagentsMiddleware dynMw =
-                            ReActAgentBuilderSupport.buildDynamicSubagentsMiddleware(
-                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
-                    if (dynMw != null) {
-                        middlewares.add(dynMw);
-                        for (Object t : dynMw.getTools()) {
-                            agentToolkit.registerTool(t);
-                        }
-                    }
-                } else {
-                    SubagentsMiddleware subagentsMw =
-                            ReActAgentBuilderSupport.buildSubagentsMiddleware(
-                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
-                    if (subagentsMw != null) {
-                        middlewares.add(subagentsMw);
-                        for (Object t : subagentsMw.getTools()) {
-                            agentToolkit.registerTool(t);
-                        }
-                    }
-                }
-            }
-
-            // ---- Toolkit ----
-            if (!disableMemoryTools) {
-                agentToolkit.registerTool(new MemorySearchTool(wsManager));
-                agentToolkit.registerTool(new MemoryGetTool(wsManager));
-                agentToolkit.registerTool(new SessionSearchTool(wsManager));
-            }
-            if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem));
-            }
-            if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
-                agentToolkit.registerTool(new ShellExecuteTool(sandbox));
-            }
-
-            // ---- Plan mode (read-only design phase) ----
-            io.agentscope.harness.agent.workspace.plan.PlanModeManager planModeManager = null;
-            if (planModeEnabled) {
-                planModeManager =
-                        new io.agentscope.harness.agent.workspace.plan.PlanModeManager(
-                                wsManager, planFileDir);
-                agentToolkit.registerTool(
-                        new io.agentscope.harness.agent.tool.PlanModeTools.PlanEnterTool(
-                                planModeManager));
-                agentToolkit.registerTool(
-                        new io.agentscope.harness.agent.tool.PlanModeTools.PlanWriteTool(
-                                planModeManager));
-                agentToolkit.registerTool(
-                        new io.agentscope.harness.agent.tool.PlanModeTools.PlanExitTool(
-                                planModeManager));
-                final Toolkit roToolkit = agentToolkit;
-                middlewares.add(
-                        new io.agentscope.harness.agent.middleware.PlanModeMiddleware(
-                                planModeManager,
-                                toolName -> {
-                                    AgentTool t = roToolkit.getTool(toolName);
-                                    return t instanceof ToolBase tb && tb.isReadOnly();
-                                }));
-            }
-
-            // ---- workspace/tools.json: MCP servers + allow/deny filter ----
-            ToolsConfig resolvedToolsConfig = null;
-            if (!disableToolsConfig) {
-                if (toolsConfigOverride != null) {
-                    resolvedToolsConfig = toolsConfigOverride;
-                } else if (wsManager != null) {
-                    resolvedToolsConfig = ToolsConfigLoader.load(wsManager).orElse(null);
-                }
-            }
-            if (resolvedToolsConfig != null) {
-                McpServerRegistrar.register(agentToolkit, resolvedToolsConfig.getMcpServers());
-            }
-
-            // ---- Skills ----
-            final AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
-            Supplier<RuntimeContext> currentRcSupplier =
-                    () -> {
-                        ReActAgent self = selfRef.get();
-                        RuntimeContext rc = self != null ? self.getRuntimeContext() : null;
-                        return rc != null ? rc : RuntimeContext.empty();
-                    };
-            List<AgentSkillRepository> orderedSkillRepos =
-                    ReActAgentBuilderSupport.composeSkillRepositories(
-                            this, wsManager, filesystem, currentRcSupplier);
-
-            // ---- Skill self-learning M1: upgrade workspace repo to writable + register
-            // skill_manage tool. Drafts use a sibling repo rooted at the configured drafts
-            // dir; it is NOT added to orderedSkillRepos so drafts never reach the SkillBox.
-            if (skillManageToolEnabled && filesystem != null) {
-                SkillManageConfig smConfig =
-                        skillManageConfig != null
-                                ? skillManageConfig
-                                : SkillManageConfig.defaults();
-                WritableFilesystemSkillRepository mainWritableRepo = null;
-                for (int i = orderedSkillRepos.size() - 1; i >= 0; i--) {
-                    AgentSkillRepository r = orderedSkillRepos.get(i);
-                    if (r.getClass() == FilesystemBackedSkillRepository.class) {
-                        mainWritableRepo =
-                                new WritableFilesystemSkillRepository(
-                                        filesystem,
-                                        smConfig.mainDir(),
-                                        currentRcSupplier,
-                                        "workspace-writable");
-                        orderedSkillRepos.set(i, mainWritableRepo);
-                        break;
-                    }
-                }
-                if (mainWritableRepo == null) {
-                    // No Layer 4 repo present (unusual, but possible when filesystem
-                    // composition is fully customized). Append a fresh writable repo so the
-                    // tool still has somewhere to write.
-                    mainWritableRepo =
-                            new WritableFilesystemSkillRepository(
-                                    filesystem,
-                                    smConfig.mainDir(),
-                                    currentRcSupplier,
-                                    "workspace-writable");
-                    orderedSkillRepos.add(mainWritableRepo);
-                }
-                WritableFilesystemSkillRepository draftsWritableRepo =
-                        new WritableFilesystemSkillRepository(
-                                filesystem,
-                                smConfig.draftsDir(),
-                                currentRcSupplier,
-                                "workspace-drafts");
-                io.agentscope.harness.agent.skill.curator.SkillUsageStore usageStore =
-                        new io.agentscope.harness.agent.skill.curator.SkillUsageStore(filesystem);
-                io.agentscope.harness.agent.skill.curator.SkillAuditLog auditLog =
-                        new io.agentscope.harness.agent.skill.curator.SkillAuditLog(
-                                filesystem, wsManager);
-                SkillManageTool skillManageTool =
-                        new SkillManageTool(
-                                mainWritableRepo,
-                                draftsWritableRepo,
-                                smConfig,
-                                usageStore,
-                                auditLog);
-                pendingSkillAuditLog = auditLog;
-                agentToolkit.registerAgentTool(skillManageTool);
-                // M6 — convenience tool that wraps create + write_file calls in one shot.
-                agentToolkit.registerAgentTool(new ProposeSkillTool(skillManageTool));
-                middlewares.add(
-                        new io.agentscope.harness.agent.middleware.SkillUsageMiddleware(
-                                usageStore));
-
-                // M4 + M7 — promoter wired with audit log.
-                pendingSkillPromoter =
-                        new io.agentscope.harness.agent.skill.curator.SkillPromoter(
-                                draftsWritableRepo,
-                                mainWritableRepo,
-                                wsManager,
-                                usageStore,
-                                promotionGate
-                                        != null
-                                        ? promotionGate
-                                        : new io.agentscope.harness.agent.skill.curator
-                                                .RejectAllGate(),
-                                smConfig.draftsDir(),
-                                smConfig.mainDir(),
-                                auditLog);
-                pendingSkillUsageStore = usageStore;
-
-                // M5 — skill curator middleware + reference exposed via runCuratorOnce.
-                if (skillCuratorEnabled) {
-                    io.agentscope.harness.agent.skill.curator.SkillCurator curator =
-                            new io.agentscope.harness.agent.skill.curator.SkillCurator(
-                                    filesystem,
-                                    usageStore,
-                                    mainWritableRepo,
-                                    skillCuratorConfig != null
-                                            ? skillCuratorConfig
-                                            : io.agentscope.harness.agent.skill.curator
-                                                    .SkillCuratorConfig.defaults());
-                    pendingSkillCurator = curator;
-                    middlewares.add(
-                            new io.agentscope.harness.agent.middleware.SkillCuratorMiddleware(
-                                    curator));
-                }
-            }
-
-            if (!orderedSkillRepos.isEmpty() && !disableDynamicSkills) {
-                middlewares.add(
-                        new DynamicSkillMiddleware(
-                                orderedSkillRepos, agentToolkit, skillFilter, visibilityFilter));
-            }
-
-            // ---- Apply tools.json allow/deny filter ----
-            if (resolvedToolsConfig != null) {
-                ToolFilter.apply(agentToolkit, resolvedToolsConfig);
-            }
-
-            log.info(
-                    "ReActAgent '{}' built with harness orchestration [workspace={}, backend={},"
-                            + " subagents={}]",
-                    name,
-                    resolvedWorkspace,
-                    filesystem.getClass().getSimpleName(),
-                    !leafSubagent && !disableSubagents && model != null);
-
-            HarnessOrchestrationResult result = new HarnessOrchestrationResult();
-            result.workspaceManager = wsManager;
-            result.workspaceFactory = workspaceFactoryFn;
-            result.sessionFactory = sessionFactoryFn;
-            result.ownedWorkspaceIndex = workspaceIndex;
-            result.defaultSandboxContext = defaultSandboxContext;
-            result.compactionHook = compactionHook;
-            result.sandboxLifecycleMw = sandboxLifecycleMw;
-            result.skillRepositories = orderedSkillRepos;
-            result.skillPromoter = pendingSkillPromoter;
-            result.skillUsageStore = pendingSkillUsageStore;
-            result.skillCurator = pendingSkillCurator;
-            result.skillAuditLog = pendingSkillAuditLog;
-            result.planModeManager = planModeManager;
-            result.selfRef = selfRef;
-            return result;
         }
 
         /**

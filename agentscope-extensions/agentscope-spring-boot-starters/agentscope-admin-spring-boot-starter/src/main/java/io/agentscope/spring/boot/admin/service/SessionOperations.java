@@ -20,6 +20,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.spring.boot.admin.dto.AgentTaskView;
 import io.agentscope.spring.boot.admin.dto.CompactRequest;
 import io.agentscope.spring.boot.admin.dto.CompactResponse;
@@ -27,6 +28,7 @@ import io.agentscope.spring.boot.admin.dto.MessageView;
 import io.agentscope.spring.boot.admin.dto.PlanModeView;
 import io.agentscope.spring.boot.admin.properties.AdminProperties;
 import io.agentscope.spring.boot.admin.registry.AgentRegistry;
+import io.agentscope.spring.boot.admin.registry.AgentResolver;
 import io.agentscope.spring.boot.admin.snapshot.AgentStateRestorer;
 import io.agentscope.spring.boot.admin.snapshot.SnapshotStore;
 import java.util.ArrayList;
@@ -138,9 +140,7 @@ public final class SessionOperations {
 
     /** Cooperatively interrupt the agent. */
     public Mono<Void> abort(String agentIdOrSessionId) {
-        return resolveAgent(agentIdOrSessionId)
-                .doOnNext(Agent::interrupt)
-                .then();
+        return resolveAgent(agentIdOrSessionId).doOnNext(Agent::interrupt).then();
     }
 
     /**
@@ -270,8 +270,7 @@ public final class SessionOperations {
     }
 
     /** Outcome of an undo/redo invocation. */
-    public record UndoResult(
-            String sessionId, boolean restored, int undoDepth, int redoDepth) {}
+    public record UndoResult(String sessionId, boolean restored, int undoDepth, int redoDepth) {}
 
     // ------------------------------------------------------------------------
     // Plan mode
@@ -291,41 +290,58 @@ public final class SessionOperations {
                                         hasPlanModeMiddleware(react)));
     }
 
-    /** Switch the agent into plan mode. Persists via the same hook ReActAgent uses internally. */
+    /**
+     * Switch the agent into plan mode. Only supported on {@link HarnessAgent} — the {@code
+     * PlanModeManager} that enforces read-only behavior is configured by HarnessAgent.Builder, and
+     * flipping the AgentState flag on a bare ReActAgent would silently bypass the enforcement
+     * chain.
+     */
     public Mono<PlanModeView> enterPlanMode(String agentIdOrSessionId) {
-        return resolveReact(agentIdOrSessionId)
+        return resolveAgent(agentIdOrSessionId)
                 .flatMap(
-                        react -> {
+                        agent -> {
+                            if (!(agent instanceof HarnessAgent harness)) {
+                                return Mono.error(planModeUnsupported(agent));
+                            }
+                            AgentState state = harness.getAgentState();
                             // Snapshot for undo BEFORE flipping the flag.
-                            snapshots.push(
-                                    react.getAgentState().getSessionId(),
-                                    react.getAgentState().toJson());
-                            react.enterPlanMode();
-                            return persist(react, react.getAgentState())
+                            snapshots.push(state.getSessionId(), state.toJson());
+                            harness.enterPlanMode();
+                            ReActAgent delegate = harness.getDelegate();
+                            return persist(delegate, state)
                                     .thenReturn(
                                             PlanModeView.of(
-                                                    react.getAgentState().getSessionId(),
-                                                    react.getAgentState().getPlanModeContext(),
-                                                    hasPlanModeMiddleware(react)));
+                                                    state.getSessionId(),
+                                                    state.getPlanModeContext(),
+                                                    hasPlanModeMiddleware(delegate)));
                         });
     }
 
-    /** Exit plan mode. */
+    /** Exit plan mode. See {@link #enterPlanMode(String)} for the HarnessAgent-only restriction. */
     public Mono<PlanModeView> exitPlanMode(String agentIdOrSessionId) {
-        return resolveReact(agentIdOrSessionId)
+        return resolveAgent(agentIdOrSessionId)
                 .flatMap(
-                        react -> {
-                            snapshots.push(
-                                    react.getAgentState().getSessionId(),
-                                    react.getAgentState().toJson());
-                            react.exitPlanMode();
-                            return persist(react, react.getAgentState())
+                        agent -> {
+                            if (!(agent instanceof HarnessAgent harness)) {
+                                return Mono.error(planModeUnsupported(agent));
+                            }
+                            AgentState state = harness.getAgentState();
+                            snapshots.push(state.getSessionId(), state.toJson());
+                            harness.exitPlanMode();
+                            ReActAgent delegate = harness.getDelegate();
+                            return persist(delegate, state)
                                     .thenReturn(
                                             PlanModeView.of(
-                                                    react.getAgentState().getSessionId(),
-                                                    react.getAgentState().getPlanModeContext(),
-                                                    hasPlanModeMiddleware(react)));
+                                                    state.getSessionId(),
+                                                    state.getPlanModeContext(),
+                                                    hasPlanModeMiddleware(delegate)));
                         });
+    }
+
+    private static IllegalStateException planModeUnsupported(Agent agent) {
+        return new IllegalStateException(
+                "Plan-mode admin op requires HarnessAgent, got "
+                        + agent.getClass().getSimpleName());
     }
 
     // ------------------------------------------------------------------------
@@ -372,14 +388,17 @@ public final class SessionOperations {
                                         // Fall back: scan registered agents for matching sessionId
                                         // on their AgentState — this keeps callers from needing to
                                         // know whether they hold an agentId or a sessionId.
+                                        // Unwrap HarnessAgent so harness-wrapped agents are also
+                                        // discoverable by sessionId.
                                         for (Agent agent : registry.list()) {
-                                            if (agent instanceof ReActAgent react) {
-                                                AgentState state = react.getAgentState();
-                                                if (state != null
-                                                        && agentIdOrSessionId.equals(
-                                                                state.getSessionId())) {
-                                                    return Mono.just(agent);
-                                                }
+                                            ReActAgent react =
+                                                    AgentResolver.unwrapReActAgent(agent);
+                                            if (react == null) continue;
+                                            AgentState state = react.getAgentState();
+                                            if (state != null
+                                                    && agentIdOrSessionId.equals(
+                                                            state.getSessionId())) {
+                                                return Mono.just(agent);
                                             }
                                         }
                                         return Mono.error(
@@ -390,16 +409,23 @@ public final class SessionOperations {
                 });
     }
 
+    /**
+     * Resolves the {@link ReActAgent} that backs the given id, unwrapping a {@link HarnessAgent}
+     * to its delegate when needed. All read-only admin accessors (model, AgentState, middlewares,
+     * session, sessionKey) are defined on the delegate, so reading via the unwrapped instance is
+     * semantically identical to reading via the harness wrapper.
+     */
     private Mono<ReActAgent> resolveReact(String agentIdOrSessionId) {
         return resolveAgent(agentIdOrSessionId)
                 .flatMap(
                         a -> {
-                            if (a instanceof ReActAgent react) {
+                            ReActAgent react = AgentResolver.unwrapReActAgent(a);
+                            if (react != null) {
                                 return Mono.just(react);
                             }
                             return Mono.error(
                                     new IllegalStateException(
-                                            "Admin op only supported on ReActAgent, found: "
+                                            "Admin op requires ReActAgent or HarnessAgent, found: "
                                                     + a.getClass().getSimpleName()));
                         });
     }

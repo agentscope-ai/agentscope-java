@@ -20,6 +20,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.permission.PermissionEngine;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.spring.boot.admin.registry.AgentRegistry;
+import io.agentscope.spring.boot.admin.registry.AgentResolver;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,10 +49,10 @@ public class AgentscopePermissionsEndpoint {
     public List<Map<String, Object>> listAll() {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Agent agent : registry.list()) {
-            if (agent instanceof ReActAgent react) {
-                Map<String, Object> entry = describe(react);
-                if (entry != null) out.add(entry);
-            }
+            ReActAgent react = AgentResolver.unwrapReActAgent(agent);
+            if (react == null) continue;
+            Map<String, Object> entry = describe(react);
+            if (entry != null) out.add(entry);
         }
         return out;
     }
@@ -59,12 +60,14 @@ public class AgentscopePermissionsEndpoint {
     @ReadOperation
     public Map<String, Object> getOne(@Selector String agentId) {
         return registry.find(agentId)
-                .filter(a -> a instanceof ReActAgent)
-                .map(a -> (ReActAgent) a)
+                .map(AgentResolver::unwrapReActAgent)
                 .map(this::describe)
                 .orElseGet(
-                        () -> Map.of(
-                                "error", "no ReActAgent registered with id=" + agentId));
+                        () ->
+                                Map.of(
+                                        "error",
+                                        "no ReActAgent or HarnessAgent registered with id="
+                                                + agentId));
     }
 
     private Map<String, Object> describe(ReActAgent react) {

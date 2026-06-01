@@ -49,9 +49,7 @@ public class AgentscopeShutdownEndpoint {
     private final ApplicationContext appContext;
 
     public AgentscopeShutdownEndpoint(
-            AdminProperties properties,
-            AdminAuditLogger audit,
-            ApplicationContext appContext) {
+            AdminProperties properties, AdminAuditLogger audit, ApplicationContext appContext) {
         this.properties = properties;
         this.audit = audit;
         this.appContext = appContext;
@@ -79,7 +77,8 @@ public class AgentscopeShutdownEndpoint {
                 attrs);
 
         log.warn(
-                "agentscope-shutdown invoked; drained={} remaining={} — closing application context",
+                "agentscope-shutdown invoked; drained={} remaining={} — closing application"
+                        + " context",
                 drained,
                 m.getActiveRequestCount());
 

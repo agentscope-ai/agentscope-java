@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.plan.model.SubTaskState;
 import org.junit.jupiter.api.Test;
 
 class SubTaskTest {

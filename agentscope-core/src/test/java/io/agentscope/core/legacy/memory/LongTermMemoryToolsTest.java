@@ -27,6 +27,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.memory.LongTermMemory;
+import io.agentscope.core.memory.LongTermMemoryTools;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import java.util.Arrays;

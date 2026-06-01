@@ -60,22 +60,47 @@ class AdminCommandRegistryTest {
         AdminCommandRegistry r = new AdminCommandRegistry();
         AdminCommand sys =
                 new AdminCommand(
-                        "z.last", "Z", "System", CommandPlane.CONTROL, "GET", "/z", List.of(),
-                        false, true, "");
+                        "z.last",
+                        "Z",
+                        "System",
+                        CommandPlane.CONTROL,
+                        "GET",
+                        "/z",
+                        List.of(),
+                        false,
+                        true,
+                        "");
         AdminCommand sess1 =
                 new AdminCommand(
-                        "a.compact", "A", "Session", CommandPlane.DATA, "POST", "/a", List.of(),
-                        true, false, "");
+                        "a.compact",
+                        "A",
+                        "Session",
+                        CommandPlane.DATA,
+                        "POST",
+                        "/a",
+                        List.of(),
+                        true,
+                        false,
+                        "");
         AdminCommand sess0 =
                 new AdminCommand(
-                        "a.abort", "B", "Session", CommandPlane.DATA, "POST", "/b", List.of(),
-                        true, true, "");
+                        "a.abort",
+                        "B",
+                        "Session",
+                        CommandPlane.DATA,
+                        "POST",
+                        "/b",
+                        List.of(),
+                        true,
+                        true,
+                        "");
         r.register(sys);
         r.register(sess1);
         r.register(sess0);
 
         List<AdminCommand> list = r.list();
-        assertThat(list).extracting(AdminCommand::id)
+        assertThat(list)
+                .extracting(AdminCommand::id)
                 .containsExactly("a.abort", "a.compact", "z.last");
     }
 }

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.rag.model.RetrieveConfig;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;

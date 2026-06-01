@@ -27,10 +27,10 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import com.pgvector.PGvector;
-import io.agentscope.core.legacy.rag.model.Document;
-import io.agentscope.core.legacy.rag.model.DocumentMetadata;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;

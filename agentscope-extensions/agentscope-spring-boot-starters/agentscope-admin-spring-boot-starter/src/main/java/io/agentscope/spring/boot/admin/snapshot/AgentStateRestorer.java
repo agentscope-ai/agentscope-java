@@ -62,7 +62,8 @@ public final class AgentStateRestorer {
         try {
             snap = AgentState.fromJsonString(snapshotJson);
         } catch (RuntimeException e) {
-            throw new IllegalArgumentException("invalid AgentState snapshot JSON: " + e.getMessage(), e);
+            throw new IllegalArgumentException(
+                    "invalid AgentState snapshot JSON: " + e.getMessage(), e);
         }
         if (!live.getSessionId().equals(snap.getSessionId())) {
             throw new IllegalArgumentException(

@@ -35,7 +35,6 @@ import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.Gen
 import io.agentscope.core.Version;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
-import io.agentscope.core.legacy.tracing.Tracer;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -45,6 +44,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tracing.Tracer;
 import io.agentscope.core.tracing.telemetry.AttributesExtractors.FormatterConverter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;

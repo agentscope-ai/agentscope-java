@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.rag.model.DocumentMetadata;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;

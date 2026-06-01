@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.memory.bailian;
 
-import io.agentscope.core.legacy.memory.LongTermMemory;
+import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;

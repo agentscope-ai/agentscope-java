@@ -28,8 +28,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.legacy.skill.AgentSkill;
-import io.agentscope.core.legacy.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

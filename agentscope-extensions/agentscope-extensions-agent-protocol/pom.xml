@@ -49,7 +49,7 @@
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
+            <artifactId>agentscope-harness</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

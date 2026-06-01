@@ -20,7 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.legacy.plan.model.Plan;
+import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.plan.storage.InMemoryPlanStorage;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;

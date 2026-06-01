@@ -64,8 +64,7 @@ public class SubagentTaskController {
         this.writeGuard = new WriteGuard(properties);
     }
 
-    @GetMapping(
-            "${agentscope.admin.base-path:/v1/admin}/sessions/{sessionId}/subagent-tasks")
+    @GetMapping("${agentscope.admin.base-path:/v1/admin}/sessions/{sessionId}/subagent-tasks")
     public Mono<List<SubagentTaskView>> list(
             @PathVariable String sessionId,
             @RequestParam(value = "status", required = false) String status,
@@ -79,7 +78,11 @@ public class SubagentTaskController {
                                         sessionId,
                                         false,
                                         "ok",
-                                        Map.of("count", list.size(), "status", status == null ? "" : status)));
+                                        Map.of(
+                                                "count",
+                                                list.size(),
+                                                "status",
+                                                status == null ? "" : status)));
     }
 
     @GetMapping(

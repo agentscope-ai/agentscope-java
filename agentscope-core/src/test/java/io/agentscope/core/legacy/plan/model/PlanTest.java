@@ -20,6 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.plan.model.PlanState;
+import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.plan.model.SubTaskState;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;

@@ -25,7 +25,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.HookEvent;
+import io.agentscope.core.agent.hook.PreCallEvent;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;

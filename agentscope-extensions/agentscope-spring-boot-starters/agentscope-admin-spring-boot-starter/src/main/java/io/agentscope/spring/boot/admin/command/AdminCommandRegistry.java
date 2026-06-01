@@ -42,7 +42,10 @@ public final class AdminCommandRegistry {
         AdminCommand prev = commands.putIfAbsent(command.id(), command);
         if (prev != null && !prev.equals(command)) {
             throw new IllegalStateException(
-                    "AdminCommand id collision: " + command.id() + " already registered as " + prev);
+                    "AdminCommand id collision: "
+                            + command.id()
+                            + " already registered as "
+                            + prev);
         }
     }
 

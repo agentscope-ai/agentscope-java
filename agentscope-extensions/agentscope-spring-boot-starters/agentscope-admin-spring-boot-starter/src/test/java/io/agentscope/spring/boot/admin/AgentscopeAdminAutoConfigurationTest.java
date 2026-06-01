@@ -29,14 +29,14 @@ import io.agentscope.spring.boot.admin.endpoint.AgentscopeStatusEndpoint;
 import io.agentscope.spring.boot.admin.endpoint.AgentscopeSubagentsEndpoint;
 import io.agentscope.spring.boot.admin.endpoint.AgentscopeUsageEndpoint;
 import io.agentscope.spring.boot.admin.metrics.MetricsRecorder;
-import io.agentscope.spring.boot.admin.service.SubagentTaskOperations;
-import io.agentscope.spring.boot.admin.subagent.SubagentInventory;
 import io.agentscope.spring.boot.admin.properties.AdminProperties;
 import io.agentscope.spring.boot.admin.registry.AgentRegistry;
 import io.agentscope.spring.boot.admin.service.AgentInventory;
 import io.agentscope.spring.boot.admin.service.SessionOperations;
+import io.agentscope.spring.boot.admin.service.SubagentTaskOperations;
 import io.agentscope.spring.boot.admin.service.SummarizationStrategy;
 import io.agentscope.spring.boot.admin.snapshot.SnapshotStore;
+import io.agentscope.spring.boot.admin.subagent.SubagentInventory;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -143,8 +143,7 @@ class AgentscopeAdminAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeAdminAutoConfiguration.class))
                 .withPropertyValues(
-                        "agentscope.admin.enabled=true",
-                        "agentscope.admin.base-path=/ops/admin/")
+                        "agentscope.admin.enabled=true", "agentscope.admin.base-path=/ops/admin/")
                 .run(
                         ctx -> {
                             AdminProperties props = ctx.getBean(AdminProperties.class);

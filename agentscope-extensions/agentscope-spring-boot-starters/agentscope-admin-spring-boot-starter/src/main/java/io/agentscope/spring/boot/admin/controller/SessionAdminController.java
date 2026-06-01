@@ -138,9 +138,7 @@ public class SessionAdminController {
                             return ResponseEntity.ok()
                                     .header(
                                             "Content-Disposition",
-                                            "attachment; filename=session-"
-                                                    + sessionId
-                                                    + ".md")
+                                            "attachment; filename=session-" + sessionId + ".md")
                                     .body(md);
                         });
     }
@@ -242,8 +240,7 @@ public class SessionAdminController {
                                                 v.planMiddlewareEnabled())));
     }
 
-    @PostMapping(
-            "${agentscope.admin.base-path:/v1/admin}/sessions/{sessionId}:enter-plan-mode")
+    @PostMapping("${agentscope.admin.base-path:/v1/admin}/sessions/{sessionId}:enter-plan-mode")
     public Mono<PlanModeView> enterPlanMode(
             @PathVariable String sessionId,
             @RequestHeader(value = OPERATOR_HEADER, required = false) String operator,
@@ -261,8 +258,7 @@ public class SessionAdminController {
                                         Map.of("plan_active", v.planActive())));
     }
 
-    @PostMapping(
-            "${agentscope.admin.base-path:/v1/admin}/sessions/{sessionId}:exit-plan-mode")
+    @PostMapping("${agentscope.admin.base-path:/v1/admin}/sessions/{sessionId}:exit-plan-mode")
     public Mono<PlanModeView> exitPlanMode(
             @PathVariable String sessionId,
             @RequestHeader(value = OPERATOR_HEADER, required = false) String operator,

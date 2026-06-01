@@ -19,11 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.HookEvent;
+import io.agentscope.core.agent.hook.ReasoningChunkEvent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.ReasoningChunkEvent;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.model.ChatResponse;

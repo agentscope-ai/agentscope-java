@@ -26,10 +26,10 @@ import static org.mockito.Mockito.when;
 
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import io.agentscope.core.legacy.rag.model.Document;
-import io.agentscope.core.legacy.rag.model.DocumentMetadata;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

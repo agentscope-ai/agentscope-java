@@ -19,6 +19,8 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.State;
@@ -50,6 +52,18 @@ import java.util.stream.Collectors;
  * for tracking purposes.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonTypeInfo(
+        use = JsonTypeInfo.Id.NAME,
+        include = JsonTypeInfo.As.EXISTING_PROPERTY,
+        property = "role",
+        visible = true,
+        defaultImpl = Msg.class)
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = UserMessage.class, name = "USER"),
+    @JsonSubTypes.Type(value = AssistantMessage.class, name = "ASSISTANT"),
+    @JsonSubTypes.Type(value = SystemMessage.class, name = "SYSTEM"),
+    @JsonSubTypes.Type(value = ToolResultMessage.class, name = "TOOL"),
+})
 public class Msg implements State {
 
     /** Metadata key for storing the generate reason. */
@@ -106,7 +120,7 @@ public class Msg implements State {
      * @param timestamp Optional timestamp string (if null, will be generated automatically)
      */
     @JsonCreator
-    private Msg(
+    protected Msg(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("role") MsgRole role,
@@ -190,6 +204,24 @@ public class Msg implements State {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Generates a random UUID string for use as a message ID.
+     * Exposed to subclasses so their convenience constructors can mirror the
+     * behaviour of {@link Builder} without re-implementing UUID logic.
+     */
+    protected static String generateId() {
+        return UUID.randomUUID().toString();
+    }
+
+    /**
+     * Returns the current wall-clock timestamp in this class's canonical format.
+     * Exposed to subclasses so their convenience constructors can stamp messages
+     * identically to {@link Builder}.
+     */
+    protected static String currentTimestamp() {
+        return TIMESTAMP_FORMATTER.format(Instant.now());
     }
 
     /**
@@ -613,19 +645,19 @@ public class Msg implements State {
 
     public static class Builder {
 
-        private String id;
+        protected String id;
 
-        private String name;
+        protected String name;
 
-        private MsgRole role = MsgRole.USER;
+        protected MsgRole role = MsgRole.USER;
 
-        private List<ContentBlock> content = List.of();
+        protected List<ContentBlock> content = List.of();
 
-        private Map<String, Object> metadata = Map.of();
+        protected Map<String, Object> metadata = Map.of();
 
-        private String timestamp = TIMESTAMP_FORMATTER.format(Instant.now());
+        protected String timestamp = TIMESTAMP_FORMATTER.format(Instant.now());
 
-        private ChatUsage usage;
+        protected ChatUsage usage;
 
         /**
          * Creates a new builder with a randomly generated message ID.

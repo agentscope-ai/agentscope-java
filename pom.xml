@@ -55,6 +55,7 @@
 
     <modules>
         <module>agentscope-core</module>
+        <module>agentscope-harness</module>
         <module>agentscope-extensions</module>
         <module>agentscope-examples</module>
         <module>agentscope-dependencies-bom</module>

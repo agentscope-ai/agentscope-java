@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.legacy.rag.model.Document;
-import io.agentscope.core.legacy.rag.model.RetrieveConfig;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.RetrieveConfig;
 import java.io.IOException;
 import java.util.List;
 import okhttp3.mockwebserver.MockResponse;

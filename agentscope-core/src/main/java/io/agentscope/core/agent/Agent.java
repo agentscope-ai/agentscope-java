@@ -47,10 +47,10 @@ import io.agentscope.core.message.Msg;
  * <p>This interface corresponds to Python's {@code agentscope.agent.Agent} class.
  * Method mapping:
  * <ul>
- *   <li>{@code Agent.reply()} &rarr; {@link CallableAgent#call(List)}</li>
- *   <li>{@code Agent.reply_stream()} &rarr; {@link io.agentscope.core.ReActAgent#streamEvents(List)}</li>
+ *   <li>{@code Agent.reply()} &rarr; {@code CallableAgent#call(List)}</li>
+ *   <li>{@code Agent.reply_stream()} &rarr; {@code io.agentscope.core.ReActAgent#streamEvents(List)}</li>
  *   <li>{@code Agent.observe()} &rarr; {@link ObservableAgent#observe(Msg)}</li>
- *   <li>{@code Agent.compress_context()} &rarr; {@link io.agentscope.core.ReActAgent#compressContext()}</li>
+ *   <li>{@code Agent.compress_context()} &rarr; {@code io.agentscope.core.ReActAgent#compressContext()}</li>
  * </ul>
  * <p>Constructor mapping (Python &rarr; Java {@link io.agentscope.core.ReActAgent.Builder}):
  * <ul>

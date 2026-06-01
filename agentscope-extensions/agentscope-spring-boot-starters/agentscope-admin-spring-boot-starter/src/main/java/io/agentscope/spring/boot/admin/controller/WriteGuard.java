@@ -46,8 +46,7 @@ final class WriteGuard {
         String expected = properties.getWriteToken();
         if (!expected.isEmpty() && !expected.equals(suppliedToken)) {
             throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "missing or invalid X-Agentscope-Admin-Token header");
+                    HttpStatus.UNAUTHORIZED, "missing or invalid X-Agentscope-Admin-Token header");
         }
     }
 }

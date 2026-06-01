@@ -17,11 +17,12 @@ package io.agentscope.spring.boot.admin.metrics;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PostCallEvent;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.HookEvent;
+import io.agentscope.core.agent.hook.PostCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.spring.boot.admin.registry.AgentResolver;
 import reactor.core.publisher.Mono;
 
 /**
@@ -65,7 +66,8 @@ public final class MetricsHook implements Hook {
             Agent agent = post.getAgent();
             String agentName = agent == null ? null : agent.getName();
             String modelName = null;
-            if (agent instanceof ReActAgent react && react.getModel() != null) {
+            ReActAgent react = AgentResolver.unwrapReActAgent(agent);
+            if (react != null && react.getModel() != null) {
                 modelName = react.getModel().getModelName();
             }
             Msg msg = post.getFinalMessage();

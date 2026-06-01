@@ -18,6 +18,7 @@ package io.agentscope.core.legacy.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import io.agentscope.core.memory.LongTermMemoryMode;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link LongTermMemoryMode}. */

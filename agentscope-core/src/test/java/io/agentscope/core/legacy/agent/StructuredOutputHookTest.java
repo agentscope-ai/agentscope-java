@@ -23,8 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.legacy.hook.PostReasoningEvent;
-import io.agentscope.core.legacy.hook.PreReasoningEvent;
+import io.agentscope.core.agent.StructuredOutputHook;
+import io.agentscope.core.agent.hook.PostReasoningEvent;
+import io.agentscope.core.agent.hook.PreReasoningEvent;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;

@@ -93,15 +93,16 @@ public class AdminOpenApiConfiguration {
                                 .title("AgentScope Admin API")
                                 .version("v1")
                                 .description(
-                                        "Per-session admin / ops actions over agentscope-java agents. "
-                                                + "Discover the full command catalog at "
-                                                + "GET /actuator/agentscope-commands."))
+                                        "Per-session admin / ops actions over agentscope-java"
+                                            + " agents. Discover the full command catalog at GET"
+                                            + " /actuator/agentscope-commands."))
                 .externalDocs(
                         new ExternalDocumentation()
                                 .description("Plan & gap analysis")
                                 .url(
                                         "https://github.com/agentscope-ai/agentscope-java/blob/main/ADMIN_OPS_API_PLAN.md"))
-                .addServersItem(new Server().url(properties.getBasePath()).description("Admin base path"))
+                .addServersItem(
+                        new Server().url(properties.getBasePath()).description("Admin base path"))
                 .tags(tags);
     }
 }

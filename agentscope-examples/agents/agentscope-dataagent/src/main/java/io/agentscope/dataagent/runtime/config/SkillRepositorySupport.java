@@ -15,8 +15,8 @@
  */
 package io.agentscope.dataagent.runtime.config;
 
-import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
-import io.agentscope.core.legacy.skill.repository.FileSystemSkillRepository;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;

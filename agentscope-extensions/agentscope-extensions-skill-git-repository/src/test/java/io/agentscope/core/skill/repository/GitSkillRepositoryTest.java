@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.legacy.skill.AgentSkill;
+import io.agentscope.core.skill.AgentSkill;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

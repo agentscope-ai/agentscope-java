@@ -15,11 +15,11 @@
  */
 package io.agentscope.core.rag.reader;
 
-import io.agentscope.core.legacy.rag.model.Document;
-import io.agentscope.core.legacy.rag.model.DocumentMetadata;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.rag.exception.ReaderException;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.DocumentMetadata;
 import java.util.List;
 import reactor.core.publisher.Mono;
 

@@ -16,12 +16,12 @@
 package io.agentscope.core.rag.knowledge;
 
 import io.agentscope.core.embedding.EmbeddingModel;
-import io.agentscope.core.legacy.rag.Knowledge;
-import io.agentscope.core.legacy.rag.model.Document;
-import io.agentscope.core.legacy.rag.model.DocumentMetadata;
-import io.agentscope.core.legacy.rag.model.RetrieveConfig;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.rag.Knowledge;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.VDBStoreBase;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.ArrayList;

@@ -21,8 +21,7 @@ import io.agentscope.core.message.Msg;
  * Slim projection of a {@link io.agentscope.core.message.Msg} for admin listings. Avoids leaking
  * internal content-block hierarchies through the admin surface.
  */
-public record MessageView(
-        String id, String role, String name, String timestamp, String text) {
+public record MessageView(String id, String role, String name, String timestamp, String text) {
 
     public static MessageView of(Msg msg) {
         String text;

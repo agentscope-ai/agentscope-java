@@ -18,10 +18,10 @@ package io.agentscope.core.a2a.agent.event;
 
 import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.A2aAgent;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.PostReasoningEvent;
-import io.agentscope.core.legacy.hook.PreReasoningEvent;
-import io.agentscope.core.legacy.hook.ReasoningChunkEvent;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.PostReasoningEvent;
+import io.agentscope.core.agent.hook.PreReasoningEvent;
+import io.agentscope.core.agent.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;

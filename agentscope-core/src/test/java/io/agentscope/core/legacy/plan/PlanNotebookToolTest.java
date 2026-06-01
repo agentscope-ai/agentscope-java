@@ -22,11 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import io.agentscope.core.legacy.plan.model.Plan;
-import io.agentscope.core.legacy.plan.model.PlanState;
-import io.agentscope.core.legacy.plan.model.SubTask;
-import io.agentscope.core.legacy.plan.model.SubTaskState;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.plan.model.PlanState;
+import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.plan.model.SubTaskState;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

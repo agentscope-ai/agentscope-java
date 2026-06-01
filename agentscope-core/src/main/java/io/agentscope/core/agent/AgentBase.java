@@ -16,19 +16,18 @@
 package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.agent.hook.ErrorEvent;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.PostCallEvent;
+import io.agentscope.core.agent.hook.PreCallEvent;
+import io.agentscope.core.agent.hook.RuntimeContextAware;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.legacy.agent.StreamingHook;
-import io.agentscope.core.legacy.hook.ErrorEvent;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.PostCallEvent;
-import io.agentscope.core.legacy.hook.PreCallEvent;
-import io.agentscope.core.legacy.hook.RuntimeContextAware;
-import io.agentscope.core.legacy.tracing.TracerRegistry;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

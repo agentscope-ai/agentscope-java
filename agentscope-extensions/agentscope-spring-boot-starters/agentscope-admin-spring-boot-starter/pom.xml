@@ -44,7 +44,7 @@
         <!-- AgentScope Core (provided so consumers bring their own version) -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
+            <artifactId>agentscope-harness</artifactId>
             <optional>true</optional>
             <scope>provided</scope>
         </dependency>

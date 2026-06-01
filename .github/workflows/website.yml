@@ -29,7 +29,11 @@ jobs:
       - name: Build Docs
         run: |
           cd docs
-          jupyter-book clean .
+          # ``clean --all`` also drops .jupyter_cache so cache-buster query
+          # strings on static assets (e.g. ``tabs.js?v=…``) are recomputed
+          # from current content. Without it, browsers may serve stale JS
+          # whose URL hash hasn't changed even after the file was edited.
+          jupyter-book clean --all .
           jupyter-book build .
 
       - name: Deploy to GitHub Pages

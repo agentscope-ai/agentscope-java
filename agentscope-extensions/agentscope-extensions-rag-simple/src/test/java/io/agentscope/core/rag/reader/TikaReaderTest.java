@@ -27,8 +27,8 @@ import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.legacy.rag.model.Document;
 import io.agentscope.core.rag.exception.ReaderException;
+import io.agentscope.core.rag.model.Document;
 import java.io.InputStream;
 import java.util.List;
 import java.util.TreeSet;

@@ -21,10 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.legacy.rag.model.Document;
-import io.agentscope.core.legacy.rag.model.DocumentMetadata;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.ArrayList;
 import java.util.HashMap;

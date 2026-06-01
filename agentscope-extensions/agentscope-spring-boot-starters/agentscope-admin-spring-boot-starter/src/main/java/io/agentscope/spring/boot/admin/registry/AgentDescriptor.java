@@ -37,13 +37,15 @@ public record AgentDescriptor(
         String modelName = null;
         String sessionId = null;
         Integer maxIters = null;
-        if (agent instanceof ReActAgent react) {
+        ReActAgent react = AgentResolver.unwrapReActAgent(agent);
+        if (react != null) {
             try {
                 if (react.getModel() != null) {
                     modelName = react.getModel().getModelName();
                 }
             } catch (RuntimeException ignored) {
-                // Some Model impls may lazily fail — never let an inventory call kill the admin path.
+                // Some Model impls may lazily fail — never let an inventory call kill the admin
+                // path.
             }
             try {
                 if (react.getAgentState() != null) {

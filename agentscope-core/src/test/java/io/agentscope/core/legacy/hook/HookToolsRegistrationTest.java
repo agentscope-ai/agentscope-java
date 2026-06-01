@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.HookEvent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;

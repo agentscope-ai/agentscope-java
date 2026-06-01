@@ -20,10 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.legacy.plan.PlanNotebook;
-import io.agentscope.core.legacy.plan.model.Plan;
-import io.agentscope.core.legacy.plan.model.SubTask;
-import io.agentscope.core.legacy.plan.model.SubTaskState;
+import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.plan.hint.DefaultPlanToHint;
+import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.plan.model.SubTaskState;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

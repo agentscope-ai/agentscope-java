@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.DocumentMetadata;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;

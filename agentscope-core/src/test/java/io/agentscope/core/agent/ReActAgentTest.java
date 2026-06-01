@@ -23,14 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.HookEvent;
+import io.agentscope.core.agent.hook.ReasoningChunkEvent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.ReasoningChunkEvent;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -931,14 +931,11 @@ class ReActAgentTest {
                 new java.util.concurrent.CopyOnWriteArrayList<>();
 
         // Create a hook to capture ReasoningChunkEvent and check metadata
-        io.agentscope.core.legacy.hook.Hook captureHook =
-                new io.agentscope.core.legacy.hook.Hook() {
+        Hook captureHook =
+                new Hook() {
                     @Override
-                    public <T extends io.agentscope.core.legacy.hook.HookEvent>
-                            reactor.core.publisher.Mono<T> onEvent(T event) {
-                        if (event
-                                instanceof
-                                io.agentscope.core.legacy.hook.ReasoningChunkEvent chunkEvent) {
+                    public <T extends HookEvent> reactor.core.publisher.Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
                             // Capture accumulated message and check its metadata
                             Msg accumulated = chunkEvent.getAccumulated();
                             if (accumulated != null) {

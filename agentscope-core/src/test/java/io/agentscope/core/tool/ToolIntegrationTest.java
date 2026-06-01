@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
-import io.agentscope.core.legacy.memory.InMemoryMemory;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;

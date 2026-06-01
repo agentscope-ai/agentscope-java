@@ -18,10 +18,10 @@ package io.agentscope.core.training.runner;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.legacy.plan.PlanNotebook;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.Field;

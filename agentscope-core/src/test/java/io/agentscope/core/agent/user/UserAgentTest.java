@@ -22,12 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.agent.hook.HookEvent;
+import io.agentscope.core.agent.hook.PostCallEvent;
+import io.agentscope.core.agent.hook.PreCallEvent;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.legacy.hook.Hook;
-import io.agentscope.core.legacy.hook.HookEvent;
-import io.agentscope.core.legacy.hook.PostCallEvent;
-import io.agentscope.core.legacy.hook.PreCallEvent;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;

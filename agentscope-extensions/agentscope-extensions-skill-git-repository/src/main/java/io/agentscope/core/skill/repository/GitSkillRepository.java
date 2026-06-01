@@ -15,10 +15,8 @@
  */
 package io.agentscope.core.skill.repository;
 
-import io.agentscope.core.legacy.skill.AgentSkill;
-import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
-import io.agentscope.core.legacy.skill.repository.AgentSkillRepositoryInfo;
-import io.agentscope.core.legacy.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

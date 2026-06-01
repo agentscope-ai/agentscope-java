@@ -16,9 +16,9 @@
 package io.agentscope.core.skill.repository.mysql;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import io.agentscope.core.legacy.skill.AgentSkill;
-import io.agentscope.core.legacy.skill.repository.AgentSkillRepository;
-import io.agentscope.core.legacy.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.util.JsonUtils;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

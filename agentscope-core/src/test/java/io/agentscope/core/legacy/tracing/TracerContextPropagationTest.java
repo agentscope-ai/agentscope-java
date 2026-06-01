@@ -17,6 +17,8 @@ package io.agentscope.core.legacy.tracing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import io.agentscope.core.tracing.Tracer;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterAll;

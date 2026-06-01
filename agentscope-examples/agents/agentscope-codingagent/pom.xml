@@ -47,7 +47,7 @@
         <!-- Core agent runtime -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
+            <artifactId>agentscope-harness</artifactId>
         </dependency>
 
         <!-- YAML parsing for subagent config -->

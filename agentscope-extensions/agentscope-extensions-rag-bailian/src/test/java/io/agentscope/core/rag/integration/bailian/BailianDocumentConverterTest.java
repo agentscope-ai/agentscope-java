@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.aliyun.bailian20231229.models.RetrieveResponseBody;
-import io.agentscope.core.legacy.rag.model.Document;
+import io.agentscope.core.rag.model.Document;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

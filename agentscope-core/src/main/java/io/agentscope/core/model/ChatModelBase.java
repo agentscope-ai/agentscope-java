@@ -16,8 +16,8 @@
 
 package io.agentscope.core.model;
 
-import io.agentscope.core.legacy.tracing.TracerRegistry;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.util.List;
 import reactor.core.publisher.Flux;
 

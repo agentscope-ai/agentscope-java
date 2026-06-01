@@ -15,7 +15,7 @@
  */
 package io.agentscope.extensions.scheduler.config;
 
-import io.agentscope.core.legacy.hook.Hook;
+import io.agentscope.core.agent.hook.Hook;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;

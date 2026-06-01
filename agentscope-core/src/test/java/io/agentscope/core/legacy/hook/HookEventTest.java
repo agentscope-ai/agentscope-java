@@ -22,6 +22,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.hook.ActingChunkEvent;
+import io.agentscope.core.agent.hook.ErrorEvent;
+import io.agentscope.core.agent.hook.HookEventType;
+import io.agentscope.core.agent.hook.PostActingEvent;
+import io.agentscope.core.agent.hook.PostCallEvent;
+import io.agentscope.core.agent.hook.PostReasoningEvent;
+import io.agentscope.core.agent.hook.PreActingEvent;
+import io.agentscope.core.agent.hook.PreCallEvent;
+import io.agentscope.core.agent.hook.PreReasoningEvent;
+import io.agentscope.core.agent.hook.ReasoningChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;

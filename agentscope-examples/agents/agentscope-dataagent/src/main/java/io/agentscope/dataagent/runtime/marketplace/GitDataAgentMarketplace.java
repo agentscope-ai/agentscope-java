@@ -15,7 +15,7 @@
  */
 package io.agentscope.dataagent.runtime.marketplace;
 
-import io.agentscope.core.legacy.skill.AgentSkill;
+import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.GitSkillRepository;
 import java.nio.file.Path;
 import java.util.ArrayList;

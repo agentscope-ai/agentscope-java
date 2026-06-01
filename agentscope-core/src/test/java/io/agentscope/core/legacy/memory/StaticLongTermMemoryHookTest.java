@@ -29,10 +29,13 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.hook.PostCallEvent;
+import io.agentscope.core.agent.hook.PreCallEvent;
+import io.agentscope.core.agent.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
-import io.agentscope.core.legacy.hook.PostCallEvent;
-import io.agentscope.core.legacy.hook.PreCallEvent;
-import io.agentscope.core.legacy.hook.PreReasoningEvent;
+import io.agentscope.core.memory.LongTermMemory;
+import io.agentscope.core.memory.Memory;
+import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;

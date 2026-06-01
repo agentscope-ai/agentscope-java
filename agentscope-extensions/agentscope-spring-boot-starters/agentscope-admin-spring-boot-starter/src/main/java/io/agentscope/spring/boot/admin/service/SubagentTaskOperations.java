@@ -66,7 +66,9 @@ public final class SubagentTaskOperations {
         TaskRepository repo = repoProvider.getIfAvailable();
         if (repo == null) return Mono.empty();
         return Mono.fromCallable(
-                        () -> SubagentTaskView.of(repo.getTask(RuntimeContext.empty(), sessionId, taskId)))
+                        () ->
+                                SubagentTaskView.of(
+                                        repo.getTask(RuntimeContext.empty(), sessionId, taskId)))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 

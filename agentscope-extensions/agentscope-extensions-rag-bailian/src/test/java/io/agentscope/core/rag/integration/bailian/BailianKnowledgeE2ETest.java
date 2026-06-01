@@ -20,9 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import io.agentscope.core.legacy.rag.KnowledgeRetrievalTools;
-import io.agentscope.core.legacy.rag.model.Document;
-import io.agentscope.core.legacy.rag.model.RetrieveConfig;
+import io.agentscope.core.rag.KnowledgeRetrievalTools;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
