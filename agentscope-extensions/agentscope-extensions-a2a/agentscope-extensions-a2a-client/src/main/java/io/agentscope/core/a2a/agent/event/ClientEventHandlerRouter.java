@@ -16,10 +16,10 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.client.ClientEvent;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import java.util.HashMap;
 import java.util.Map;
+import org.a2aproject.sdk.client.ClientEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

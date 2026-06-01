@@ -16,7 +16,6 @@
 
 package io.agentscope.examples.a2a.rocketmq.client;
 
-import io.a2a.client.http.JdkA2AHttpClient;
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.a2a.agent.A2aAgentConfig;
 import io.agentscope.core.a2a.agent.A2aAgentConfig.A2aAgentConfigBuilder;
@@ -27,6 +26,7 @@ import io.agentscope.core.message.TextBlock;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import org.a2aproject.sdk.client.http.JdkA2AHttpClient;
 import org.apache.rocketmq.a2a.transport.config.RocketMQTransportConfig;
 import org.apache.rocketmq.a2a.transport.impl.RocketMQTransport;
 import reactor.core.publisher.Flux;

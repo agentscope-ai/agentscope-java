@@ -16,19 +16,6 @@
 
 package io.agentscope.core.a2a.server.executor;
 
-import io.a2a.A2A;
-import io.a2a.server.ServerCallContext;
-import io.a2a.server.agentexecution.AgentExecutor;
-import io.a2a.server.agentexecution.RequestContext;
-import io.a2a.server.events.EventQueue;
-import io.a2a.server.tasks.TaskUpdater;
-import io.a2a.spec.JSONRPCError;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
-import io.a2a.spec.Task;
-import io.a2a.spec.TaskState;
-import io.a2a.spec.TaskStatus;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
@@ -46,6 +33,18 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.a2aproject.sdk.A2A;
+import org.a2aproject.sdk.server.ServerCallContext;
+import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
+import org.a2aproject.sdk.server.agentexecution.RequestContext;
+import org.a2aproject.sdk.server.tasks.AgentEmitter;
+import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TextPart;
 import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,15 +74,14 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     @Override
-    public void cancel(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
+    public void cancel(RequestContext context, AgentEmitter agentEmitter) throws A2AError {
         try {
             log.info("[{}] Start to Cancel Task", context.getTaskId());
-            TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
-            taskUpdater.cancel();
-            agentRunner.stop(taskUpdater.getTaskId());
-            Subscription subscription = subscriptions.get(taskUpdater.getTaskId());
+            agentEmitter.cancel();
+            agentRunner.stop(agentEmitter.getTaskId());
+            Subscription subscription = subscriptions.get(agentEmitter.getTaskId());
             if (null == subscription) {
-                log.warn("[{}] Not found Subscription for Task.", taskUpdater.getTaskId());
+                log.warn("[{}] Not found Subscription for Task.", agentEmitter.getTaskId());
                 return;
             }
             subscription.cancel();
@@ -93,7 +91,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     @Override
-    public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
+    public void execute(RequestContext context, AgentEmitter agentEmitter) throws A2AError {
         try {
             List<Msg> inputMessages =
                     MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
@@ -103,28 +101,33 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             Task task = context.getTask();
             if (task == null) {
                 task = newTask(context.getMessage());
-                log.info("[{}] Created new task.", task.getId());
+                log.info("[{}] Created new task.", task.id());
             } else {
-                log.info("[{}] Using existing task.", task.getId());
+                log.info("[{}] Using existing task.", task.id());
             }
             if (isBlockRequest(context)) {
-                processTaskBlocking(context, eventQueue, task, resultFlux);
+                processTaskBlocking(context, agentEmitter, task, resultFlux);
             } else {
-                processTaskNonBlocking(context, eventQueue, task, resultFlux);
+                processTaskNonBlocking(context, agentEmitter, task, resultFlux);
             }
             log.info("[{}] Agent execution completed successfully", context.getTaskId());
         } catch (Exception e) {
             log.error("[{}] Agent execution failed", context.getTaskId(), e);
-            eventQueue.enqueueEvent(
-                    A2A.createAgentTextMessage(
-                            "Agent execution failed: " + e.getMessage(),
-                            context.getContextId(),
-                            context.getTaskId()));
+            try {
+                agentEmitter.fail(
+                        agentEmitter.newAgentMessage(
+                                List.of(new TextPart("Agent execution failed: " + e.getMessage())),
+                                Map.of()));
+            } catch (IllegalStateException ex) {
+                log.warn(
+                        "[{}] Task already in terminal state, skipping fail signal",
+                        context.getTaskId());
+            }
         }
     }
 
     private AgentRequestOptions buildAgentRequestOptions(RequestContext context) {
-        Message message = context.getParams().message();
+        Message message = context.getMessage();
         AgentRequestOptions requestOptions = new AgentRequestOptions();
         requestOptions.setTaskId(context.getTaskId());
         requestOptions.setUserId(getUserId(message));
@@ -133,33 +136,32 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private String getUserId(Message message) {
-        if (message.getMetadata() != null && message.getMetadata().containsKey("userId")) {
-            return String.valueOf(message.getMetadata().get("userId"));
+        if (message.metadata() != null && message.metadata().containsKey("userId")) {
+            return String.valueOf(message.metadata().get("userId"));
         }
         return "";
     }
 
     private String getSessionId(Message message) {
-        if (message.getMetadata() != null && message.getMetadata().containsKey("sessionId")) {
-            return String.valueOf(message.getMetadata().get("sessionId"));
+        if (message.metadata() != null && message.metadata().containsKey("sessionId")) {
+            return String.valueOf(message.metadata().get("sessionId"));
         }
         return "";
     }
 
     private Task newTask(Message request) {
-        String contextId = request.getContextId();
-        String taskId = request.getTaskId();
+        String contextId = request.contextId();
+        String taskId = request.taskId();
         return new Task(
                 taskId,
                 contextId,
-                new TaskStatus(TaskState.SUBMITTED),
+                new TaskStatus(TaskState.TASK_STATE_SUBMITTED),
                 null,
                 List.of(request),
                 null);
     }
 
     private boolean isBlockRequest(RequestContext context) {
-        // Streaming request must non-block.
         ServerCallContext callContext = context.getCallContext();
         Object isStreaming =
                 callContext
@@ -168,16 +170,16 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         if (Boolean.TRUE.equals(isStreaming)) {
             return false;
         }
-        if (null == context.getParams().configuration()) {
+        if (null == context.getConfiguration()) {
             return true;
         }
-        return Boolean.TRUE.equals(context.getParams().configuration().blocking());
+        return !Boolean.TRUE.equals(context.getConfiguration().returnImmediately());
     }
 
     private void processTaskBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
+            RequestContext context, AgentEmitter agentEmitter, Task task, Flux<Event> resultFlux) {
         BlockingFluxEventHandler eventHandler =
-                new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
+                new BlockingFluxEventHandler(context, agentExecuteProperties, agentEmitter);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
         resultFlux
                 .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
@@ -189,21 +191,26 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private void processTaskNonBlocking(
-            RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
-        TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
+            RequestContext context, AgentEmitter agentEmitter, Task task, Flux<Event> resultFlux) {
         try {
-            eventQueue.enqueueEvent(task);
+            agentEmitter.emitEvent(task);
             log.info("[{}] Starting streaming request processing", context.getTaskId());
-            processStreamingOutput(resultFlux, taskUpdater, context);
+            processStreamingOutput(resultFlux, agentEmitter, context);
         } catch (Exception e) {
             log.error("[{}] Error processing streaming output", context.getTaskId(), e);
-            taskUpdater.fail(
-                    taskUpdater.newAgentMessage(
-                            List.of(
-                                    new TextPart(
-                                            "Error processing streaming output: "
-                                                    + e.getMessage())),
-                            Map.of()));
+            try {
+                agentEmitter.fail(
+                        agentEmitter.newAgentMessage(
+                                List.of(
+                                        new TextPart(
+                                                "Error processing streaming output: "
+                                                        + e.getMessage())),
+                                Map.of()));
+            } catch (IllegalStateException ex) {
+                log.warn(
+                        "[{}] Task already in terminal state, skipping fail signal",
+                        context.getTaskId());
+            }
         }
     }
 
@@ -211,19 +218,19 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      * Process streaming output data
      */
     private void processStreamingOutput(
-            Flux<Event> resultFlux, TaskUpdater taskUpdater, RequestContext context) {
+            Flux<Event> resultFlux, AgentEmitter agentEmitter, RequestContext context) {
         StreamingFluxEventHandler eventHandler =
-                new StreamingFluxEventHandler(context, agentExecuteProperties, taskUpdater);
+                new StreamingFluxEventHandler(context, agentExecuteProperties, agentEmitter);
         resultFlux
                 .doOnSubscribe(
                         s -> {
-                            saveSubscription(taskUpdater.getTaskId(), s);
-                            taskUpdater.startWork();
+                            saveSubscription(agentEmitter.getTaskId(), s);
+                            agentEmitter.startWork();
                         })
                 .doOnNext(eventHandler::doOnNext)
                 .doOnComplete(eventHandler::doOnComplete)
                 .doOnError(eventHandler::doOnError)
-                .doFinally(signal -> removeSubscription(taskUpdater.getTaskId(), signal))
+                .doFinally(signal -> removeSubscription(agentEmitter.getTaskId(), signal))
                 .blockLast();
     }
 
@@ -294,10 +301,16 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          */
         void doOnError(Throwable t) {
             log.error("[{}] Handle Agent execute error: ", context.getTaskId(), t);
-            String errorMessage = "Handle Agent execute error: " + t.getMessage();
-            sendErrorMessage(
-                    A2A.createAgentTextMessage(
-                            errorMessage, context.getContextId(), context.getTaskId()));
+            try {
+                String errorMessage = "Handle Agent execute error: " + t.getMessage();
+                sendErrorMessage(
+                        A2A.createAgentTextMessage(
+                                errorMessage, context.getContextId(), context.getTaskId()));
+            } catch (IllegalStateException ex) {
+                log.warn(
+                        "[{}] Task already in terminal state, skipping error message",
+                        context.getTaskId());
+            }
         }
 
         private void appendToAccumulatedOutput(Event output) {
@@ -352,14 +365,14 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         private final AtomicReference<Message> resultMessageRef;
 
-        private final EventQueue eventQueue;
+        private final AgentEmitter agentEmitter;
 
         private BlockingFluxEventHandler(
                 RequestContext context,
                 AgentExecuteProperties executeProperties,
-                EventQueue eventQueue) {
+                AgentEmitter agentEmitter) {
             super(context, executeProperties);
-            this.eventQueue = eventQueue;
+            this.agentEmitter = agentEmitter;
             this.resultMessageRef = new AtomicReference<>();
         }
 
@@ -373,7 +386,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                             ? resultMessageRef.get()
                             : MessageConvertUtil.convertFromMsgToMessage(
                                     accumulatedOutput, context.getTaskId(), context.getContextId());
-            eventQueue.enqueueEvent(resultMessage);
+            agentEmitter.emitEvent(resultMessage);
         }
 
         @Override
@@ -392,13 +405,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         @Override
         protected void sendErrorMessage(Message errorMessage) {
-            eventQueue.enqueueEvent(errorMessage);
+            agentEmitter.emitEvent(errorMessage);
         }
     }
 
     private static class StreamingFluxEventHandler extends BaseFluxEventHandler {
 
-        private final TaskUpdater taskUpdater;
+        private final AgentEmitter agentEmitter;
 
         private final String artifactId;
 
@@ -407,9 +420,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         private StreamingFluxEventHandler(
                 RequestContext context,
                 AgentExecuteProperties executeProperties,
-                TaskUpdater taskUpdater) {
+                AgentEmitter agentEmitter) {
             super(context, executeProperties);
-            this.taskUpdater = taskUpdater;
+            this.agentEmitter = agentEmitter;
             this.artifactId = UUID.randomUUID().toString();
             this.isFirstArtifact = new AtomicBoolean(true);
         }
@@ -418,15 +431,15 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         void doOnComplete() {
             log.info(
                     "[{}] Process agent output for non-blocking request completed.",
-                    taskUpdater.getTaskId());
+                    agentEmitter.getTaskId());
             Message completeMessage =
                     executeProperties.isCompleteWithMessage()
                             ? MessageConvertUtil.convertFromMsgToMessage(
                                     accumulatedOutput,
-                                    taskUpdater.getTaskId(),
-                                    taskUpdater.getContextId())
+                                    agentEmitter.getTaskId(),
+                                    agentEmitter.getContextId())
                             : null;
-            taskUpdater.complete(completeMessage);
+            agentEmitter.complete(completeMessage);
         }
 
         @Override
@@ -437,7 +450,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             Msg outputMessage = output.getMessage();
             List<Part<?>> responseParts =
                     MessageConvertUtil.convertFromContentBlocks(outputMessage);
-            taskUpdater.addArtifact(
+            agentEmitter.addArtifact(
                     responseParts,
                     artifactId,
                     "agent-response",
@@ -448,7 +461,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         @Override
         protected void sendErrorMessage(Message errorMessage) {
-            taskUpdater.fail(errorMessage);
+            agentEmitter.fail(errorMessage);
         }
     }
 }

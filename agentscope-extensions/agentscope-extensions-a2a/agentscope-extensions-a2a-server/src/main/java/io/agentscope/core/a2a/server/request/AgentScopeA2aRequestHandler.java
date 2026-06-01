@@ -16,27 +16,32 @@
 
 package io.agentscope.core.a2a.server.request;
 
-import io.a2a.server.agentexecution.AgentExecutor;
-import io.a2a.server.events.InMemoryQueueManager;
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.requesthandlers.DefaultRequestHandler;
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.server.tasks.BasePushNotificationSender;
-import io.a2a.server.tasks.InMemoryPushNotificationConfigStore;
-import io.a2a.server.tasks.InMemoryTaskStore;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStateProvider;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.Task;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
+import org.a2aproject.sdk.server.events.InMemoryQueueManager;
+import org.a2aproject.sdk.server.events.MainEventBus;
+import org.a2aproject.sdk.server.events.MainEventBusProcessor;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.requesthandlers.DefaultRequestHandler;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.server.tasks.BasePushNotificationSender;
+import org.a2aproject.sdk.server.tasks.InMemoryPushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStateProvider;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.Task;
 
 /**
  * The Wrapper for Default {@link RequestHandler} implementation.
  */
 public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implements RequestHandler {
+
+    private final MainEventBusProcessor processor;
 
     private AgentScopeA2aRequestHandler(
             AgentExecutor agentExecutor,
@@ -44,8 +49,37 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             QueueManager queueManager,
             PushNotificationConfigStore pushConfigStore,
             PushNotificationSender pushSender,
-            Executor executor) {
-        super(agentExecutor, taskStore, queueManager, pushConfigStore, pushSender, executor);
+            MainEventBus mainEventBus,
+            Executor executor,
+            MainEventBusProcessor processor) {
+        super(
+                agentExecutor,
+                taskStore,
+                queueManager,
+                pushConfigStore,
+                processor,
+                executor,
+                executor);
+        this.processor = processor;
+    }
+
+    /**
+     * Stop the MainEventBusProcessor to release resources.
+     */
+    public void stop() {
+        if (processor != null) {
+            invokeProcessorMethod("stop");
+        }
+    }
+
+    private void invokeProcessorMethod(String methodName) {
+        try {
+            Method method = MainEventBusProcessor.class.getDeclaredMethod(methodName);
+            method.setAccessible(true);
+            method.invoke(processor);
+        } catch (Exception e) {
+            // ignore
+        }
     }
 
     public static Builder builder() {
@@ -96,12 +130,14 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             if (null == taskStore) {
                 taskStore = new InMemoryTaskStore();
             }
+            MainEventBus mainEventBus = new MainEventBus();
             if (null == queueManager) {
                 if (taskStore instanceof InMemoryTaskStore inMemoryTaskStore) {
-                    queueManager = new InMemoryQueueManager(inMemoryTaskStore);
+                    queueManager = new InMemoryQueueManager(inMemoryTaskStore, mainEventBus);
                 } else {
                     queueManager =
-                            new InMemoryQueueManager(new AgentScopeTaskStateProvider(taskStore));
+                            new InMemoryQueueManager(
+                                    new AgentScopeTaskStateProvider(taskStore), mainEventBus);
                 }
             }
             if (null == pushConfigStore) {
@@ -110,6 +146,9 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
             if (null == pushSender) {
                 pushSender = new BasePushNotificationSender(pushConfigStore);
             }
+            MainEventBusProcessor processor =
+                    new MainEventBusProcessor(mainEventBus, taskStore, pushSender, queueManager);
+            startProcessor(processor);
             AgentScopeA2aRequestHandler result =
                     new AgentScopeA2aRequestHandler(
                             agentExecutor,
@@ -117,10 +156,21 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                             queueManager,
                             pushConfigStore,
                             pushSender,
-                            // TODO support custom executor.
-                            Executors.newCachedThreadPool());
+                            mainEventBus,
+                            Executors.newCachedThreadPool(),
+                            processor);
             setTimeoutProperties(result);
             return result;
+        }
+
+        private static void startProcessor(MainEventBusProcessor processor) {
+            try {
+                Method startMethod = MainEventBusProcessor.class.getDeclaredMethod("start");
+                startMethod.setAccessible(true);
+                startMethod.invoke(processor);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to start MainEventBusProcessor", e);
+            }
         }
 
         /**
@@ -157,9 +207,9 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                 return false;
             }
             // Task is active if not in final state
-            return task.getStatus() == null
-                    || task.getStatus().state() == null
-                    || !task.getStatus().state().isFinal();
+            return task.status() == null
+                    || task.status().state() == null
+                    || !task.status().state().isFinal();
         }
 
         @Override
@@ -169,9 +219,9 @@ public class AgentScopeA2aRequestHandler extends DefaultRequestHandler implement
                 return false;
             }
             // Task is finalized if in final state (ignores grace period)
-            return task.getStatus() != null
-                    && task.getStatus().state() != null
-                    && task.getStatus().state().isFinal();
+            return task.status() != null
+                    && task.status().state() != null
+                    && task.status().state().isFinal();
         }
     }
 }

@@ -16,15 +16,6 @@
 
 package io.agentscope.core.a2a.agent;
 
-import io.a2a.client.Client;
-import io.a2a.client.ClientBuilder;
-import io.a2a.client.ClientEvent;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.a2a.spec.A2AClientException;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.Message;
-import io.a2a.spec.TaskIdParams;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.a2a.agent.card.FixedAgentCardResolver;
 import io.agentscope.core.a2a.agent.event.ClientEventContext;
@@ -46,7 +37,17 @@ import io.agentscope.core.message.TextBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.function.BiConsumer;
+import org.a2aproject.sdk.client.Client;
+import org.a2aproject.sdk.client.ClientBuilder;
+import org.a2aproject.sdk.client.ClientEvent;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
+import org.a2aproject.sdk.spec.A2AClientException;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.CancelTaskParams;
+import org.a2aproject.sdk.spec.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -152,9 +153,9 @@ public class A2aAgent extends AgentBase {
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
         LoggerUtil.debug(log, "[{}] A2aAgent handle interrupt.", currentRequestId);
         try {
-            String taskId = clientEventContext.getTask().getId();
-            TaskIdParams taskIdParams = new TaskIdParams(taskId);
-            a2aClient.cancelTask(taskIdParams, null);
+            String taskId = clientEventContext.getTask().id();
+            CancelTaskParams cancelTaskParams = new CancelTaskParams(taskId);
+            a2aClient.cancelTask(cancelTaskParams, null);
             return Mono.just(
                     Msg.builder()
                             .content(
@@ -209,7 +210,55 @@ public class A2aAgent extends AgentBase {
                                 LoggerUtil.logA2aClientEventDetail(log, event);
                                 clientEventHandlerRouter.handle(event, clientEventContext);
                             };
-                    a2aClient.sendMessage(message, List.of(a2aEventConsumer), sink::error);
+                    try {
+                        log.info(
+                                "[{}] A2aAgent doExecute: calling sendMessage, thread={}",
+                                currentRequestId,
+                                Thread.currentThread().getName());
+                        a2aClient.sendMessage(
+                                message,
+                                List.of(a2aEventConsumer),
+                                err -> {
+                                    if (err == null) {
+                                        log.info(
+                                                "[{}] A2aAgent doExecute: sendMessage error"
+                                                        + " callback received null (SSE stream"
+                                                        + " completed normally), thread={}",
+                                                currentRequestId,
+                                                Thread.currentThread().getName());
+                                        return;
+                                    }
+                                    if (err instanceof CancellationException) {
+                                        log.warn(
+                                                "[{}] A2aAgent doExecute: sendMessage error"
+                                                        + " callback, thread={}",
+                                                currentRequestId,
+                                                Thread.currentThread().getName(),
+                                                err);
+                                        sink.error(err);
+                                        return;
+                                    }
+                                    log.error(
+                                            "[{}] A2aAgent doExecute: sendMessage error callback,"
+                                                    + " thread={}",
+                                            currentRequestId,
+                                            Thread.currentThread().getName(),
+                                            err);
+                                    sink.error(err);
+                                });
+                        log.info(
+                                "[{}] A2aAgent doExecute: sendMessage returned (sync part done),"
+                                        + " thread={}",
+                                currentRequestId,
+                                Thread.currentThread().getName());
+                    } catch (A2AClientException e) {
+                        log.error(
+                                "[{}] A2aAgent doExecute: caught A2AClientException, thread={}",
+                                currentRequestId,
+                                Thread.currentThread().getName(),
+                                e);
+                        sink.error(e);
+                    }
                 });
     }
 

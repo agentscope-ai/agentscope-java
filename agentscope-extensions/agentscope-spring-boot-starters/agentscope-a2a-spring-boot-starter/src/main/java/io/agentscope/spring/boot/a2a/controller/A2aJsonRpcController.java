@@ -16,13 +16,16 @@
 
 package io.agentscope.spring.boot.a2a.controller;
 
-import io.a2a.spec.JSONRPCResponse;
-import io.a2a.spec.TransportProtocol;
-import io.a2a.util.Utils;
+import com.google.gson.JsonNull;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Map;
 import java.util.logging.Logger;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.A2AResponse;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
 @RestController
-@RequestMapping("/")
+@RequestMapping("")
 public class A2aJsonRpcController {
 
     Logger logger = Logger.getLogger(A2aJsonRpcController.class.getName());
@@ -57,9 +60,11 @@ public class A2aJsonRpcController {
         Object result = getJsonRpcHandler().handleRequest(body, header, Map.of());
         if (result instanceof Flux<?> fluxResult) {
             return fluxResult
-                    .filter(each -> each instanceof JSONRPCResponse)
-                    .map(each -> (JSONRPCResponse<?>) each)
+                    .filter(each -> each instanceof A2AResponse)
+                    .map(each -> (A2AResponse<?>) each)
                     .map(this::convertToSse);
+        } else if (result instanceof A2AResponse<?> response) {
+            return serializeResponse(response);
         } else {
             return result;
         }
@@ -74,9 +79,9 @@ public class A2aJsonRpcController {
         return jsonRpcHandler;
     }
 
-    private ServerSentEvent<String> convertToSse(JSONRPCResponse<?> response) {
+    private ServerSentEvent<String> convertToSse(A2AResponse<?> response) {
         try {
-            String data = Utils.OBJECT_MAPPER.writeValueAsString(response);
+            String data = serializeResponse(response);
             ServerSentEvent.Builder<String> builder =
                     ServerSentEvent.<String>builder().data(data).event("jsonrpc");
             if (response.getId() != null) {
@@ -89,6 +94,21 @@ public class A2aJsonRpcController {
                     .data("{\"error\":\"Internal conversion error\"}")
                     .event("error")
                     .build();
+        }
+    }
+
+    private String serializeResponse(A2AResponse<?> response) {
+        try {
+            String json = JsonUtil.toJson(response);
+            JsonObject jsonObject = JsonParser.parseString(json).getAsJsonObject();
+            if (jsonObject.get("error") instanceof JsonNull) {
+                jsonObject.remove("error");
+            }
+            return jsonObject.toString();
+        } catch (Exception e) {
+            logger.severe("Error serializing response: " + e.getMessage());
+            return "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal"
+                    + " error\"}}";
         }
     }
 }

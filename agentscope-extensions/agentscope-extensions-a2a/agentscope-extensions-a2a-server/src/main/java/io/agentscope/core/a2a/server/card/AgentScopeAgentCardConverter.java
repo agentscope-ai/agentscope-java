@@ -16,15 +16,13 @@
 
 package io.agentscope.core.a2a.server.card;
 
-import io.a2a.spec.AgentCapabilities;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
+import org.a2aproject.sdk.spec.AgentCapabilities;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,16 +69,9 @@ public class AgentScopeAgentCardConverter {
             AgentRunner agentRunner,
             Set<TransportProperties> availableTransports) {
         AgentCapabilities capabilities = createDefaultCapabilities();
-        List<AgentInterface> additionalInterfaces =
-                createAdditionalInterfaces(agentCard, availableTransports);
-        AgentInterface preferredTransportInterface =
-                getPreferredTransport(agentCard, additionalInterfaces);
-        AgentCard.Builder agentCardBuilder = new AgentCard.Builder();
-        if (null != preferredTransportInterface) {
-            agentCardBuilder.preferredTransport(preferredTransportInterface.transport());
-            agentCardBuilder.url(preferredTransportInterface.url());
-        }
-        return agentCardBuilder
+        List<AgentInterface> supportedInterfaces =
+                createSupportedInterfaces(agentCard, availableTransports);
+        return AgentCard.builder()
                 .name(getName(agentCard, agentRunner))
                 .description(getDescription(agentCard, agentRunner))
                 .provider(agentCard.getProvider())
@@ -90,63 +81,35 @@ public class AgentScopeAgentCardConverter {
                 .defaultInputModes(getModes(agentCard.getDefaultInputModes()))
                 .defaultOutputModes(getModes(agentCard.getDefaultOutputModes()))
                 .skills(null != agentCard.getSkills() ? agentCard.getSkills() : List.of())
-                .supportsAuthenticatedExtendedCard(false)
                 .securitySchemes(agentCard.getSecuritySchemes())
-                .security(agentCard.getSecurity())
+                .securityRequirements(agentCard.getSecurityRequirements())
                 .iconUrl(agentCard.getIconUrl())
-                .additionalInterfaces(additionalInterfaces)
-                .protocolVersion("0.3.0")
+                .supportedInterfaces(supportedInterfaces)
                 .build();
     }
 
     private AgentCapabilities createDefaultCapabilities() {
-        return new AgentCapabilities.Builder()
+        return AgentCapabilities.builder()
                 .streaming(true)
                 .pushNotifications(false)
-                .stateTransitionHistory(false)
+                .extendedAgentCard(false)
                 .build();
     }
 
-    private List<AgentInterface> createAdditionalInterfaces(
+    private List<AgentInterface> createSupportedInterfaces(
             ConfigurableAgentCard agentCard, Set<TransportProperties> availableTransports) {
-        if (null != agentCard.getAdditionalInterfaces()) {
-            return agentCard.getAdditionalInterfaces();
+        if (null != agentCard.getSupportedInterfaces()) {
+            return agentCard.getSupportedInterfaces();
         }
-        return availableTransports.stream().map(this::createAdditionalInterface).toList();
+        return availableTransports.stream().map(this::createAgentInterface).toList();
     }
 
-    private AgentInterface getPreferredTransport(
-            ConfigurableAgentCard agentCard, List<AgentInterface> availableTransports) {
-        String preferredTransport = agentCard.getPreferredTransport();
-        String url = agentCard.getUrl();
-        if (null != preferredTransport && url != null) {
-            return new AgentInterface(preferredTransport, url);
-        }
-        // Use default transport
-        log.info("No preferred transport specified, using default transport `JSONRPC`.");
-        Optional<AgentInterface> result =
-                availableTransports.stream()
-                        .filter(
-                                transport ->
-                                        TransportProtocol.JSONRPC
-                                                .asString()
-                                                .equals(transport.transport()))
-                        .findFirst();
-        return result.orElseGet(
-                () -> {
-                    log.warn(
-                            "No found default transport `JSONRPC` in available transports, try to"
-                                    + " random one from available transports");
-                    return availableTransports.stream().findAny().orElse(null);
-                });
-    }
-
-    private AgentInterface createAdditionalInterface(TransportProperties transport) {
+    private AgentInterface createAgentInterface(TransportProperties transport) {
         String schema = transport.supportTls() ? HTTPS : HTTP;
         String path = getPath(transport);
         int port = getPort(transport);
         String url = String.format(URL_PATTERN, schema, transport.host(), port, path);
-        return new AgentInterface(transport.transportType(), url);
+        return new AgentInterface(transport.transportType(), url, "", null);
     }
 
     private String getPath(TransportProperties transport) {
@@ -169,9 +132,13 @@ public class AgentScopeAgentCardConverter {
     }
 
     private String getDescription(ConfigurableAgentCard agentCard, AgentRunner runner) {
-        return null == agentCard.getDescription()
-                ? runner.getAgentDescription()
-                : agentCard.getDescription();
+        if (null != agentCard.getDescription()) {
+            return agentCard.getDescription();
+        }
+        if (null != agentCard.getName()) {
+            return agentCard.getName();
+        }
+        return runner.getAgentName();
     }
 
     private String getVersion(ConfigurableAgentCard agentCard) {

@@ -22,8 +22,6 @@ import static org.apache.rocketmq.a2a.common.uitl.RocketMQUtil.buildPushConsumer
 import static org.apache.rocketmq.a2a.common.uitl.RocketMQUtil.toJsonString;
 
 import com.alibaba.fastjson.JSON;
-import io.a2a.spec.JSONRPCErrorResponse;
-import io.a2a.spec.JSONRPCResponse;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import io.agentscope.extensions.rocketmq.a2a.config.RocketMQA2aConfig;
@@ -42,6 +40,8 @@ import java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.A2AErrorResponse;
+import org.a2aproject.sdk.jsonrpc.common.wrappers.A2AResponse;
 import org.apache.rocketmq.a2a.common.constant.RocketMQA2AConstant;
 import org.apache.rocketmq.a2a.common.model.RocketMQRequest;
 import org.apache.rocketmq.a2a.common.model.RocketMQResponse;
@@ -241,22 +241,22 @@ public class RocketMQA2aServer {
                 Object resultObject =
                         jsonRpcHandler.handleRequest(
                                 request.getRequestBody(), request.getRequestHeader(), Map.of());
-                JSONRPCResponse<?> nonStreamingResponse = null;
-                JSONRPCErrorResponse error = null;
-                Flux<? extends JSONRPCResponse<?>> streamingResponse = null;
+                A2AResponse<?> nonStreamingResponse = null;
+                A2AErrorResponse error = null;
+                Flux<? extends A2AResponse<?>> streamingResponse = null;
                 boolean streaming = false;
-                if (resultObject instanceof JSONRPCErrorResponse) {
-                    error = (JSONRPCErrorResponse) resultObject;
-                } else if (resultObject instanceof JSONRPCResponse<?>) {
-                    nonStreamingResponse = (JSONRPCResponse<?>) resultObject;
+                if (resultObject instanceof A2AErrorResponse) {
+                    error = (A2AErrorResponse) resultObject;
+                } else if (resultObject instanceof A2AResponse<?>) {
+                    nonStreamingResponse = (A2AResponse<?>) resultObject;
                 } else if (resultObject instanceof Flux) {
                     streaming = true;
                     completableFuture = new CompletableFuture<>();
-                    streamingResponse = (Flux<? extends JSONRPCResponse<?>>) resultObject;
+                    streamingResponse = (Flux<? extends A2AResponse<?>>) resultObject;
                 } else {
                     log.warn(
                             "RocketMQA2aServer resultObject is not instanceof"
-                                    + " JSONRPCErrorResponse or JSONRPCResponse or Flux");
+                                    + " A2AErrorResponse or A2AResponse or Flux");
                 }
                 processResponse(
                         request,
@@ -286,10 +286,10 @@ public class RocketMQA2aServer {
      */
     private void processResponse(
             RocketMQRequest request,
-            JSONRPCErrorResponse error,
+            A2AErrorResponse error,
             boolean streaming,
-            JSONRPCResponse<?> nonStreamingResponse,
-            Flux<? extends JSONRPCResponse<?>> streamingResponse,
+            A2AResponse<?> nonStreamingResponse,
+            Flux<? extends A2AResponse<?>> streamingResponse,
             CompletableFuture completableFuture)
             throws ClientException {
         RocketMQResponse response = null;
@@ -298,7 +298,7 @@ public class RocketMQA2aServer {
         } else if (!streaming) {
             response = buildSuccessResponse(nonStreamingResponse);
         } else {
-            final Flux<? extends JSONRPCResponse<?>> finalStreamingResponse = streamingResponse;
+            final Flux<? extends A2AResponse<?>> finalStreamingResponse = streamingResponse;
             executor.execute(
                     () -> {
                         fluxSseSupport.subscribeObjectRocketMQ(
@@ -330,7 +330,7 @@ public class RocketMQA2aServer {
      * @param error the JSON-RPC error details to include in the response body.
      * @return a fully built {@link RocketMQResponse} representing an error result.
      */
-    private RocketMQResponse buildErrorResponse(JSONRPCErrorResponse error) {
+    private RocketMQResponse buildErrorResponse(A2AErrorResponse error) {
         return buildBaseResponse().end(true).stream(false)
                 .responseBody(toJsonString(JSON.toJSONString(error)))
                 .build();
@@ -342,7 +342,7 @@ public class RocketMQA2aServer {
      * @param nonStreamingResponse the successful JSON-RPC response object to serialize.
      * @return a fully built {@link RocketMQResponse} representing a successful result.
      */
-    private RocketMQResponse buildSuccessResponse(JSONRPCResponse<?> nonStreamingResponse) {
+    private RocketMQResponse buildSuccessResponse(A2AResponse<?> nonStreamingResponse) {
         return buildBaseResponse().end(true).stream(false)
                 .responseBody(toJsonString(nonStreamingResponse))
                 .build();

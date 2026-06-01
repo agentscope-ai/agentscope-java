@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Part;
 
 /**
  * Parser for {@link ToolResultBlock} to {@link DataPart}.
@@ -32,9 +32,22 @@ public class ToolResultBlockParser implements ContentBlockParser<ToolResultBlock
         Map<String, Object> metadata =
                 MessageConvertUtil.buildTypeMetadata(
                         MessageConstants.BlockContent.TYPE_TOOL_RESULT);
-        metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
-        metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
-        metadata.putAll(contentBlock.getMetadata());
+        if (contentBlock.getName() != null) {
+            metadata.put(MessageConstants.TOOL_NAME_METADATA_KEY, contentBlock.getName());
+        }
+        if (contentBlock.getId() != null) {
+            metadata.put(MessageConstants.TOOL_CALL_ID_METADATA_KEY, contentBlock.getId());
+        }
+        if (contentBlock.getMetadata() != null) {
+            contentBlock
+                    .getMetadata()
+                    .forEach(
+                            (k, v) -> {
+                                if (v != null) {
+                                    metadata.put(k, v);
+                                }
+                            });
+        }
         Map<String, Object> output =
                 Map.of(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY, contentBlock.getOutput());
         return new DataPart(output, metadata);

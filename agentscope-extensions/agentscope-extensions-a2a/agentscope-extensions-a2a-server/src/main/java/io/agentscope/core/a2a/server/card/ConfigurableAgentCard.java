@@ -16,12 +16,13 @@
 
 package io.agentscope.core.a2a.server.card;
 
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.SecurityScheme;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.SecurityScheme;
 
 /**
  * Configurable attribute for export agent card of this agent.
@@ -35,8 +36,6 @@ public class ConfigurableAgentCard {
     private final String name;
 
     private final String description;
-
-    private final String url;
 
     private final AgentProvider provider;
 
@@ -52,18 +51,15 @@ public class ConfigurableAgentCard {
 
     private final Map<String, SecurityScheme> securitySchemes;
 
-    private final List<Map<String, List<String>>> security;
+    private final List<SecurityRequirement> securityRequirements;
 
     private final String iconUrl;
 
-    private final List<AgentInterface> additionalInterfaces;
-
-    private final String preferredTransport;
+    private final List<AgentInterface> supportedInterfaces;
 
     private ConfigurableAgentCard(
             String name,
             String description,
-            String url,
             AgentProvider provider,
             String version,
             String documentationUrl,
@@ -71,13 +67,11 @@ public class ConfigurableAgentCard {
             List<String> defaultOutputModes,
             List<AgentSkill> skills,
             Map<String, SecurityScheme> securitySchemes,
-            List<Map<String, List<String>>> security,
+            List<SecurityRequirement> securityRequirements,
             String iconUrl,
-            List<AgentInterface> additionalInterfaces,
-            String preferredTransport) {
+            List<AgentInterface> supportedInterfaces) {
         this.name = name;
         this.description = description;
-        this.url = url;
         this.provider = provider;
         this.version = version;
         this.documentationUrl = documentationUrl;
@@ -85,10 +79,9 @@ public class ConfigurableAgentCard {
         this.defaultOutputModes = defaultOutputModes;
         this.skills = skills;
         this.securitySchemes = securitySchemes;
-        this.security = security;
+        this.securityRequirements = securityRequirements;
         this.iconUrl = iconUrl;
-        this.additionalInterfaces = additionalInterfaces;
-        this.preferredTransport = preferredTransport;
+        this.supportedInterfaces = supportedInterfaces;
     }
 
     public String getName() {
@@ -97,10 +90,6 @@ public class ConfigurableAgentCard {
 
     public String getDescription() {
         return description;
-    }
-
-    public String getUrl() {
-        return url;
     }
 
     public AgentProvider getProvider() {
@@ -131,20 +120,16 @@ public class ConfigurableAgentCard {
         return securitySchemes;
     }
 
-    public List<Map<String, List<String>>> getSecurity() {
-        return security;
+    public List<SecurityRequirement> getSecurityRequirements() {
+        return securityRequirements;
     }
 
     public String getIconUrl() {
         return iconUrl;
     }
 
-    public List<AgentInterface> getAdditionalInterfaces() {
-        return additionalInterfaces;
-    }
-
-    public String getPreferredTransport() {
-        return preferredTransport;
+    public List<AgentInterface> getSupportedInterfaces() {
+        return supportedInterfaces;
     }
 
     public static class Builder {
@@ -152,8 +137,6 @@ public class ConfigurableAgentCard {
         protected String name;
 
         protected String description;
-
-        protected String url;
 
         protected AgentProvider provider;
 
@@ -169,13 +152,11 @@ public class ConfigurableAgentCard {
 
         protected Map<String, SecurityScheme> securitySchemes;
 
-        protected List<Map<String, List<String>>> security;
+        protected List<SecurityRequirement> securityRequirements;
 
         protected String iconUrl;
 
-        protected List<AgentInterface> additionalInterfaces;
-
-        protected String preferredTransport;
+        protected List<AgentInterface> supportedInterfaces;
 
         public Builder name(String name) {
             this.name = name;
@@ -184,11 +165,6 @@ public class ConfigurableAgentCard {
 
         public Builder description(String description) {
             this.description = description;
-            return this;
-        }
-
-        public Builder url(String url) {
-            this.url = url;
             return this;
         }
 
@@ -227,8 +203,8 @@ public class ConfigurableAgentCard {
             return this;
         }
 
-        public Builder security(List<Map<String, List<String>>> security) {
-            this.security = security;
+        public Builder securityRequirements(List<SecurityRequirement> securityRequirements) {
+            this.securityRequirements = securityRequirements;
             return this;
         }
 
@@ -237,13 +213,8 @@ public class ConfigurableAgentCard {
             return this;
         }
 
-        public Builder additionalInterfaces(List<AgentInterface> additionalInterfaces) {
-            this.additionalInterfaces = additionalInterfaces;
-            return this;
-        }
-
-        public Builder preferredTransport(String preferredTransport) {
-            this.preferredTransport = preferredTransport;
+        public Builder supportedInterfaces(List<AgentInterface> supportedInterfaces) {
+            this.supportedInterfaces = supportedInterfaces;
             return this;
         }
 
@@ -251,7 +222,6 @@ public class ConfigurableAgentCard {
             return new ConfigurableAgentCard(
                     name,
                     description,
-                    url,
                     provider,
                     version,
                     documentationUrl,
@@ -259,10 +229,9 @@ public class ConfigurableAgentCard {
                     defaultOutputModes,
                     skills,
                     securitySchemes,
-                    security,
+                    securityRequirements,
                     iconUrl,
-                    additionalInterfaces,
-                    preferredTransport);
+                    supportedInterfaces);
         }
     }
 }

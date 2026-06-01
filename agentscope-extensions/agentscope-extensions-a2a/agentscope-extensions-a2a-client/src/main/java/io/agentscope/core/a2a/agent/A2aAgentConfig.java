@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent;
 
-import io.a2a.client.config.ClientConfig;
-import io.a2a.client.transport.spi.ClientTransport;
-import io.a2a.client.transport.spi.ClientTransportConfig;
 import java.util.HashMap;
 import java.util.Map;
+import org.a2aproject.sdk.client.config.ClientConfig;
+import org.a2aproject.sdk.client.transport.spi.ClientTransport;
+import org.a2aproject.sdk.client.transport.spi.ClientTransportConfig;
 
 /**
  * Config of A2A Agent.
@@ -28,6 +28,10 @@ import java.util.Map;
 public record A2aAgentConfig(
         @SuppressWarnings("rawtypes") Map<Class, ClientTransportConfig> clientTransports,
         ClientConfig clientConfig) {
+
+    private static ClientConfig defaultClientConfig() {
+        return ClientConfig.builder().build();
+    }
 
     /**
      * Create a new builder instance for A2aAgentConfig.
@@ -51,7 +55,7 @@ public record A2aAgentConfig(
 
         /**
          * Add client transport configuration which will be used to
-         * {@link io.a2a.client.ClientBuilder#withTransport(Class, ClientTransportConfig)}.
+         * {@link org.a2aproject.sdk.client.ClientBuilder#withTransport(Class, ClientTransportConfig)}.
          *
          * @param clazz  the client transport implementation class
          * @param config the client transport configuration
@@ -76,7 +80,9 @@ public record A2aAgentConfig(
         }
 
         public A2aAgentConfig build() {
-            return new A2aAgentConfig(this.clientTransports, this.clientConfig);
+            ClientConfig targetClientConfig =
+                    this.clientConfig == null ? defaultClientConfig() : this.clientConfig;
+            return new A2aAgentConfig(this.clientTransports, targetClientConfig);
         }
     }
 }

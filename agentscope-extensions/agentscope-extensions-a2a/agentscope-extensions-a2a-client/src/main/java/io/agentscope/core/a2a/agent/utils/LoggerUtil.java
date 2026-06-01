@@ -16,12 +16,12 @@
 
 package io.agentscope.core.a2a.agent.utils;
 
-import io.a2a.client.ClientEvent;
-import io.a2a.util.Utils;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
+import org.a2aproject.sdk.client.ClientEvent;
 import org.slf4j.Logger;
 
 /**
@@ -51,7 +51,7 @@ public class LoggerUtil {
     public static void logA2aClientEventDetail(Logger logger, ClientEvent event) {
         if (logger.isTraceEnabled()) {
             try {
-                String eventDetail = Utils.toJsonString(event);
+                String eventDetail = JsonUtils.getJsonCodec().toJson(event);
                 trace(logger, "\t {}", eventDetail);
             } catch (Exception ignored) {
             }

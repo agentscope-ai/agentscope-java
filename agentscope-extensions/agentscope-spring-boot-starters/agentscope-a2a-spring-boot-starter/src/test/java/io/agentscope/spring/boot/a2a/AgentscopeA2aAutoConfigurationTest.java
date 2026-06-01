@@ -20,7 +20,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -30,6 +29,7 @@ import io.agentscope.spring.boot.a2a.listener.ServerReadyListener;
 import io.agentscope.spring.boot.a2a.properties.A2aAgentCardProperties;
 import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import java.time.Duration;
+import org.a2aproject.sdk.spec.AgentCard;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
@@ -166,7 +166,9 @@ class AgentscopeA2aAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
-                    Assertions.assertEquals("http://localhost:8080", agentCard.url());
+                    assertThat(agentCard.supportedInterfaces()).isNotEmpty();
+                    assertThat(agentCard.supportedInterfaces().get(0).url())
+                            .startsWith("http://localhost:8080");
                 });
     }
 
@@ -188,10 +190,8 @@ class AgentscopeA2aAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
-                    Assertions.assertEquals("http://192.168.1.100:8081/api", agentCard.url());
-                    // Verify additional interfaces also contain the context-path
-                    assertThat(agentCard.additionalInterfaces()).isNotEmpty();
-                    assertThat(agentCard.additionalInterfaces().get(0).url())
+                    assertThat(agentCard.supportedInterfaces()).isNotEmpty();
+                    assertThat(agentCard.supportedInterfaces().get(0).url())
                             .isEqualTo("http://192.168.1.100:8081/api");
                 });
     }
@@ -211,8 +211,8 @@ class AgentscopeA2aAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
-                    // URL should contain the context-path
-                    assertThat(agentCard.url()).contains("/myapp/v1");
+                    assertThat(agentCard.supportedInterfaces()).isNotEmpty();
+                    assertThat(agentCard.supportedInterfaces().get(0).url()).contains("/myapp/v1");
                 });
     }
 

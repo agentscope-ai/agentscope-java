@@ -33,27 +33,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.A2A;
-import io.a2a.client.Client;
-import io.a2a.client.ClientEvent;
-import io.a2a.client.MessageEvent;
-import io.a2a.client.TaskEvent;
-import io.a2a.client.TaskUpdateEvent;
-import io.a2a.client.transport.spi.ClientTransport;
-import io.a2a.client.transport.spi.ClientTransportConfig;
-import io.a2a.client.transport.spi.ClientTransportProvider;
-import io.a2a.spec.A2AClientException;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.Artifact;
-import io.a2a.spec.Message;
-import io.a2a.spec.Task;
-import io.a2a.spec.TaskArtifactUpdateEvent;
-import io.a2a.spec.TaskIdParams;
-import io.a2a.spec.TaskState;
-import io.a2a.spec.TaskStatus;
-import io.a2a.spec.TaskStatusUpdateEvent;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.hook.Hook;
@@ -74,6 +53,27 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import org.a2aproject.sdk.A2A;
+import org.a2aproject.sdk.client.Client;
+import org.a2aproject.sdk.client.ClientEvent;
+import org.a2aproject.sdk.client.MessageEvent;
+import org.a2aproject.sdk.client.TaskEvent;
+import org.a2aproject.sdk.client.TaskUpdateEvent;
+import org.a2aproject.sdk.client.transport.spi.ClientTransport;
+import org.a2aproject.sdk.client.transport.spi.ClientTransportConfig;
+import org.a2aproject.sdk.client.transport.spi.ClientTransportProvider;
+import org.a2aproject.sdk.spec.A2AClientException;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.CancelTaskParams;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -113,7 +113,7 @@ public class A2aAgentTest {
         AgentInterface defaultInterface = new AgentInterface("JSONRPC", "http://localhost:8080");
         AgentInterface customInterface = new AgentInterface("CUSTOM", "http://localhost:8080");
         lenient()
-                .when(agentCard.additionalInterfaces())
+                .when(agentCard.supportedInterfaces())
                 .thenReturn(List.of(defaultInterface, customInterface));
     }
 
@@ -141,16 +141,11 @@ public class A2aAgentTest {
     @DisplayName("Should do call with custom transport successfully")
     @SuppressWarnings({"rawtypes"})
     void testCallAgentWithCustomTransport() {
-        // Set custom transport to A2aAgentConfig.
-        ClientTransportConfig customTransportConfig = mock(ClientTransportConfig.class);
-        when(a2aAgentConfig.clientTransports())
-                .thenReturn(Map.of(ClientTransport.class, customTransportConfig));
         A2aAgent agent =
                 A2aAgent.builder()
                         .name("test-agent")
                         .agentCard(agentCard)
                         .hook(new ReplaceA2aClientHook())
-                        .a2aAgentConfig(a2aAgentConfig)
                         .build();
 
         doAnswer(mockSuccessMessage())
@@ -223,10 +218,10 @@ public class A2aAgentTest {
                             invocationOnMock.getArgument(1, List.class);
                     // Mock Task
                     Task task =
-                            new Task.Builder()
+                            Task.builder()
                                     .id("taskId")
                                     .contextId("contextId")
-                                    .status(new TaskStatus(TaskState.WORKING))
+                                    .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
                                     .build();
 
                     // Mock First Task Event
@@ -235,22 +230,22 @@ public class A2aAgentTest {
 
                     // Mock Task Artifact Update Event
                     TaskArtifactUpdateEvent artifactUpdateEvent =
-                            new TaskArtifactUpdateEvent.Builder()
+                            TaskArtifactUpdateEvent.builder()
                                     .taskId("taskId")
                                     .contextId("contextId")
                                     .artifact(
-                                            new Artifact.Builder()
+                                            Artifact.builder()
                                                     .artifactId("artifactId")
                                                     .name("mockArtifact")
                                                     .parts(new TextPart("mock artifact."))
                                                     .build())
                                     .build();
                     task =
-                            new Task.Builder()
+                            Task.builder()
                                     .id("taskId")
                                     .contextId("contextId")
-                                    .status(new TaskStatus(TaskState.WORKING))
-                                    .artifacts(List.of(artifactUpdateEvent.getArtifact()))
+                                    .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                                    .artifacts(List.of(artifactUpdateEvent.artifact()))
                                     .build();
                     TaskUpdateEvent artifactTaskUpdateEvent =
                             new TaskUpdateEvent(task, artifactUpdateEvent);
@@ -259,18 +254,17 @@ public class A2aAgentTest {
 
                     // Mock Task Complete Event
                     task =
-                            new Task.Builder()
+                            Task.builder()
                                     .id("taskId")
                                     .contextId("contextId")
-                                    .status(new TaskStatus(TaskState.COMPLETED))
-                                    .artifacts(List.of(artifactUpdateEvent.getArtifact()))
+                                    .status(new TaskStatus(TaskState.TASK_STATE_COMPLETED))
+                                    .artifacts(List.of(artifactUpdateEvent.artifact()))
                                     .build();
                     TaskStatusUpdateEvent statusUpdateEvent =
                             new TaskStatusUpdateEvent(
                                     "taskId",
-                                    new TaskStatus(TaskState.COMPLETED),
+                                    new TaskStatus(TaskState.TASK_STATE_COMPLETED),
                                     "contextId",
-                                    true,
                                     Map.of());
                     TaskUpdateEvent completedTaskUpdateEvent =
                             new TaskUpdateEvent(task, statusUpdateEvent);
@@ -306,7 +300,7 @@ public class A2aAgentTest {
         doAnswer(mockWaitingStopAnswer(stopFlag))
                 .when(a2aClient)
                 .sendMessage(any(Message.class), anyList(), any());
-        when(a2aClient.cancelTask(any(TaskIdParams.class), eq(null)))
+        when(a2aClient.cancelTask(any(CancelTaskParams.class), eq(null)))
                 .then(
                         (Answer<Task>)
                                 invocationOnMock -> {
@@ -345,7 +339,7 @@ public class A2aAgentTest {
         doAnswer(mockWaitingStopAnswer(stopFlag))
                 .when(a2aClient)
                 .sendMessage(any(Message.class), anyList(), any());
-        when(a2aClient.cancelTask(any(TaskIdParams.class), eq(null)))
+        when(a2aClient.cancelTask(any(CancelTaskParams.class), eq(null)))
                 .thenThrow(new A2AClientException("Server not support cancel task."));
 
         CompletableFuture<Void> future =
@@ -384,7 +378,7 @@ public class A2aAgentTest {
         doAnswer(mockWaitingStopAnswer(stopFlag))
                 .when(a2aClient)
                 .sendMessage(any(Message.class), anyList(), any());
-        when(a2aClient.cancelTask(any(TaskIdParams.class), eq(null)))
+        when(a2aClient.cancelTask(any(CancelTaskParams.class), eq(null)))
                 .then(
                         (Answer<Task>)
                                 invocationOnMock -> {
@@ -476,49 +470,48 @@ public class A2aAgentTest {
 
                     // Task creation
                     Task initialTask =
-                            new Task.Builder()
+                            Task.builder()
                                     .id("t1")
                                     .contextId("c1")
-                                    .status(new TaskStatus(TaskState.WORKING))
+                                    .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
                                     .build();
                     a2aEventConsumer.forEach(c -> c.accept(new TaskEvent(initialTask), agentCard));
 
                     // Stream output a piece of text (Artifact Update)
                     TaskArtifactUpdateEvent chunkEvent =
-                            new TaskArtifactUpdateEvent.Builder()
+                            TaskArtifactUpdateEvent.builder()
                                     .taskId("t1")
                                     .contextId("c1")
                                     .artifact(
-                                            new Artifact.Builder()
+                                            Artifact.builder()
                                                     .artifactId("a1")
                                                     .name("mockArtifact")
                                                     .parts(new TextPart("Hello A2A"))
                                                     .build())
                                     .build();
                     Task workingTask =
-                            new Task.Builder()
+                            Task.builder()
                                     .id("t1")
                                     .contextId("c1")
-                                    .status(new TaskStatus(TaskState.WORKING))
-                                    .artifacts(List.of(chunkEvent.getArtifact()))
+                                    .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                                    .artifacts(List.of(chunkEvent.artifact()))
                                     .build();
                     a2aEventConsumer.forEach(
                             c -> c.accept(new TaskUpdateEvent(workingTask, chunkEvent), agentCard));
 
                     // Task complete (Status Update - COMPLETED)
                     Task completedTask =
-                            new Task.Builder()
+                            Task.builder()
                                     .id("t1")
                                     .contextId("c1")
-                                    .status(new TaskStatus(TaskState.COMPLETED))
-                                    .artifacts(List.of(chunkEvent.getArtifact()))
+                                    .status(new TaskStatus(TaskState.TASK_STATE_COMPLETED))
+                                    .artifacts(List.of(chunkEvent.artifact()))
                                     .build();
                     TaskStatusUpdateEvent completeEvent =
                             new TaskStatusUpdateEvent(
                                     "t1",
-                                    new TaskStatus(TaskState.COMPLETED),
+                                    new TaskStatus(TaskState.TASK_STATE_COMPLETED),
                                     "c1",
-                                    true,
                                     Map.of());
                     a2aEventConsumer.forEach(
                             c ->
@@ -559,18 +552,17 @@ public class A2aAgentTest {
                     invocationOnMock.getArgument(1, List.class);
             // Mock Task
             Task task =
-                    new Task.Builder()
+                    Task.builder()
                             .id("taskId")
                             .contextId("contextId")
-                            .status(new TaskStatus(TaskState.WORKING))
+                            .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
                             .build();
             Message message = A2A.toAgentMessage("mock task working.");
             TaskStatusUpdateEvent statusUpdateEvent =
                     new TaskStatusUpdateEvent(
                             "taskId",
-                            new TaskStatus(TaskState.WORKING, message, null),
+                            new TaskStatus(TaskState.TASK_STATE_WORKING, message, null),
                             "contextId",
-                            false,
                             Map.of());
             TaskUpdateEvent workingStatusUpdateEvent = new TaskUpdateEvent(task, statusUpdateEvent);
             a2aEventConsumer.forEach(
@@ -586,18 +578,17 @@ public class A2aAgentTest {
 
             // Mock Task Cancel Event
             task =
-                    new Task.Builder()
+                    Task.builder()
                             .id("taskId")
                             .contextId("contextId")
-                            .status(new TaskStatus(TaskState.CANCELED))
+                            .status(new TaskStatus(TaskState.TASK_STATE_CANCELED))
                             .artifacts(List.of())
                             .build();
             statusUpdateEvent =
                     new TaskStatusUpdateEvent(
                             "taskId",
-                            new TaskStatus(TaskState.CANCELED),
+                            new TaskStatus(TaskState.TASK_STATE_CANCELED),
                             "contextId",
-                            true,
                             Map.of());
             TaskUpdateEvent cancelStatusUpdateEvent = new TaskUpdateEvent(task, statusUpdateEvent);
             a2aEventConsumer.forEach(
@@ -625,7 +616,9 @@ public class A2aAgentTest {
 
         @Override
         public ClientTransport create(
-                ClientTransportConfig clientTransportConfig, AgentCard agentCard, String agentUrl)
+                ClientTransportConfig clientTransportConfig,
+                AgentCard agentCard,
+                AgentInterface agentInterface)
                 throws A2AClientException {
             return mock(ClientTransport.class);
         }

@@ -15,12 +15,12 @@
  */
 package io.agentscope.extensions.rocketmq.a2a.wrapper;
 
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.spec.AgentCard;
-import io.a2a.transport.jsonrpc.handler.JSONRPCHandler;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.concurrent.Executor;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.transport.jsonrpc.handler.JSONRPCHandler;
 import org.apache.rocketmq.a2a.common.constant.RocketMQA2AConstant;
 
 /**

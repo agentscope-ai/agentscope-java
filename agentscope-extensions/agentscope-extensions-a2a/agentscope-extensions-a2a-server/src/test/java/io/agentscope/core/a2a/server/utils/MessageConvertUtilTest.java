@@ -24,9 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -35,6 +32,9 @@ import io.agentscope.core.message.TextBlock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -76,11 +76,11 @@ class MessageConvertUtilTest {
         Message result = MessageConvertUtil.convertFromMsgToMessage(msg, taskId, contextId);
 
         assertNotNull(result);
-        assertEquals(Message.Role.AGENT, result.getRole());
-        assertEquals(taskId, result.getTaskId());
-        assertEquals(contextId, result.getContextId());
-        assertNotNull(result.getMetadata());
-        assertTrue(result.getMetadata().isEmpty());
+        assertEquals(Message.Role.ROLE_AGENT, result.role());
+        assertEquals(taskId, result.taskId());
+        assertEquals(contextId, result.contextId());
+        assertNotNull(result.metadata());
+        assertTrue(result.metadata().isEmpty());
     }
 
     @Test
@@ -98,11 +98,11 @@ class MessageConvertUtilTest {
         Message result = MessageConvertUtil.convertFromMsgToMessage(msg, taskId, contextId);
 
         assertNotNull(result);
-        assertEquals(Message.Role.AGENT, result.getRole());
-        assertEquals(taskId, result.getTaskId());
-        assertEquals(contextId, result.getContextId());
-        assertNotNull(result.getMetadata());
-        assertEquals(metadata, result.getMetadata().get("msg-id"));
+        assertEquals(Message.Role.ROLE_AGENT, result.role());
+        assertEquals(taskId, result.taskId());
+        assertEquals(contextId, result.contextId());
+        assertNotNull(result.metadata());
+        assertEquals(metadata, result.metadata().get("msg-id"));
     }
 
     @Test
@@ -115,8 +115,6 @@ class MessageConvertUtilTest {
         List<Part<?>> parts = MessageConvertUtil.convertFromContentBlocks(msg);
 
         assertNotNull(parts);
-        // Note: Actual size depends on ContentBlockParserRouter implementation
-        // In a real test, we would mock the parser router to control the output
     }
 
     @Test
@@ -129,7 +127,6 @@ class MessageConvertUtilTest {
     @Test
     @DisplayName("Should convert Message to Msgs with multiple parts from same message")
     void testConvertFromMessageToMsgsWithMultiplePartsFromSameMsg() {
-        // Given
         Message message = mock(Message.class);
 
         Map<String, Object> part1Metadata = new HashMap<>();
@@ -151,31 +148,28 @@ class MessageConvertUtilTest {
         TextPart part1 = new TextPart("text1", part1Metadata);
         TextPart part2 = new TextPart("text2", part2Metadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part1, part2));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part1, part2));
 
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
         assertNotNull(result);
         assertEquals(1, result.size());
-        Msg msg = result.get(0);
-        assertEquals(msgId, msg.getId());
-        assertEquals(msgName, msg.getName());
-        assertEquals(MsgRole.USER, msg.getRole());
-        assertEquals(2, msg.getContent().size());
-        assertInstanceOf(TextBlock.class, msg.getContent().get(0));
-        assertInstanceOf(TextBlock.class, msg.getContent().get(1));
-        assertEquals("text1", ((TextBlock) msg.getContent().get(0)).getText());
-        assertEquals("text2", ((TextBlock) msg.getContent().get(1)).getText());
-        assertEquals(msgMetadata, msg.getMetadata());
+        Msg firstMsg = result.get(0);
+        assertEquals(msgId, firstMsg.getId());
+        assertEquals(msgName, firstMsg.getName());
+        assertEquals(MsgRole.USER, firstMsg.getRole());
+        assertEquals(2, firstMsg.getContent().size());
+        assertInstanceOf(TextBlock.class, firstMsg.getContent().get(0));
+        assertInstanceOf(TextBlock.class, firstMsg.getContent().get(1));
+        assertEquals("text1", ((TextBlock) firstMsg.getContent().get(0)).getText());
+        assertEquals("text2", ((TextBlock) firstMsg.getContent().get(1)).getText());
+        assertEquals(msgMetadata, firstMsg.getMetadata());
     }
 
     @Test
     @DisplayName("Should convert Message to Msgs with parts from different messages")
     void testConvertFromMessageToMsgsWithPartsFromDifferentMsgs() {
-        // Given
         Message message = mock(Message.class);
 
         Map<String, Object> part1Metadata = new HashMap<>();
@@ -194,13 +188,11 @@ class MessageConvertUtilTest {
         TextPart part1 = new TextPart("text1", part1Metadata);
         TextPart part2 = new TextPart("text2", part2Metadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part1, part2));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part1, part2));
 
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
         assertNotNull(result);
         assertEquals(2, result.size());
         assertEquals(msgId1, result.get(0).getId());
@@ -221,26 +213,22 @@ class MessageConvertUtilTest {
     @Test
     @DisplayName("Should handle parts without msgId metadata")
     void testConvertFromMessageToMsgsWithoutMsgId() {
-        // Given
         Message message = mock(Message.class);
 
         Map<String, Object> partMetadata = new HashMap<>();
 
-        // No MSG_ID_METADATA_KEY in metadata
         partMetadata.put(MessageConstants.SOURCE_NAME_METADATA_KEY, "test-agent");
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
         assertNotNull(result);
         assertEquals(1, result.size());
-        assertNotNull(result.get(0).getId()); // Should generate random UUID
+        assertNotNull(result.get(0).getId());
         assertEquals("test-agent", result.get(0).getName());
         assertEquals(MsgRole.USER, result.get(0).getRole());
         assertEquals(1, result.get(0).getContent().size());
@@ -251,22 +239,19 @@ class MessageConvertUtilTest {
     @Test
     @DisplayName("Should handle parts without metadata")
     void testConvertFromMessageToMsgsWithoutPartMetadata() {
-        // Given
         Message message = mock(Message.class);
 
         TextPart part = new TextPart("text content", null);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
         assertNotNull(result);
         assertEquals(1, result.size());
-        assertNotNull(result.get(0).getId()); // Should generate random UUID
-        assertNull(result.get(0).getName()); // Should be null as no metadata
+        assertNotNull(result.get(0).getId());
+        assertNull(result.get(0).getName());
         assertEquals(MsgRole.USER, result.get(0).getRole());
         assertEquals(1, result.get(0).getContent().size());
         assertInstanceOf(TextBlock.class, result.get(0).getContent().get(0));
@@ -276,7 +261,6 @@ class MessageConvertUtilTest {
     @Test
     @DisplayName("Should handle message without metadata")
     void testConvertFromMessageToMsgsWithoutMessageMetadata() {
-        // Given
         Message message = mock(Message.class);
 
         Map<String, Object> partMetadata = new HashMap<>();
@@ -289,13 +273,11 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null); // No message metadata
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
         assertNotNull(result);
         assertEquals(1, result.size());
         assertEquals(msgId, result.get(0).getId());
@@ -311,7 +293,6 @@ class MessageConvertUtilTest {
     @Test
     @DisplayName("Should handle message with non-map metadata")
     void testConvertFromMessageToMsgsWithNonMapMetadata() {
-        // Given
         Message message = mock(Message.class);
 
         Map<String, Object> partMetadata = new HashMap<>();
@@ -323,18 +304,15 @@ class MessageConvertUtilTest {
         partMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, msgId);
         partMetadata.put(MessageConstants.SOURCE_NAME_METADATA_KEY, msgName);
 
-        // Put non-map metadata
         messageMetadata.put(msgId, "not-a-map");
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part));
 
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
         assertNotNull(result);
         assertEquals(1, result.size());
         assertEquals(msgId, result.get(0).getId());
@@ -350,29 +328,25 @@ class MessageConvertUtilTest {
     @Test
     @DisplayName("Should handle parts with metadata but without source name key")
     void testConvertFromMessageToMsgsWithoutSourceNameInMetadata() {
-        // Given
         Message message = mock(Message.class);
 
         Map<String, Object> partMetadata = new HashMap<>();
 
         String msgId = "msg-1";
 
-        // Metadata exists but no SOURCE_NAME_METADATA_KEY
         partMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, msgId);
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
         assertNotNull(result);
         assertEquals(1, result.size());
         assertEquals(msgId, result.get(0).getId());
-        assertNull(result.get(0).getName()); // Should be null as no source name in metadata
+        assertNull(result.get(0).getName());
         assertEquals(MsgRole.USER, result.get(0).getRole());
         assertEquals(1, result.get(0).getContent().size());
         assertInstanceOf(TextBlock.class, result.get(0).getContent().get(0));
@@ -382,7 +356,6 @@ class MessageConvertUtilTest {
     @Test
     @DisplayName("Should handle message with metadata but without corresponding msgId key")
     void testConvertFromMessageToMsgsWithoutCorrespondingMsgIdKey() {
-        // Given
         Message message = mock(Message.class);
 
         Map<String, Object> partMetadata = new HashMap<>();
@@ -394,18 +367,15 @@ class MessageConvertUtilTest {
         partMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, msgId);
         partMetadata.put(MessageConstants.SOURCE_NAME_METADATA_KEY, msgName);
 
-        // Message metadata exists but no entry for msgId
         messageMetadata.put("different-msg-id", Map.of("key", "value"));
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part));
 
-        // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        // Then
         assertNotNull(result);
         assertEquals(1, result.size());
         assertEquals(msgId, result.get(0).getId());
@@ -415,10 +385,7 @@ class MessageConvertUtilTest {
         assertInstanceOf(TextBlock.class, result.get(0).getContent().get(0));
         assertEquals("text content", ((TextBlock) result.get(0).getContent().get(0)).getText());
         assertNotNull(result.get(0).getMetadata());
-        assertTrue(
-                result.get(0)
-                        .getMetadata()
-                        .isEmpty()); // Should be empty as no corresponding metadata
+        assertTrue(result.get(0).getMetadata().isEmpty());
     }
 
     private List<ContentBlock> mockContentBlocks() {
