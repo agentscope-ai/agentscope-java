@@ -22,7 +22,7 @@ import io.agentscope.claw2.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.claw2.runtime.config.ChannelConfigEntry;
 import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
-import io.agentscope.claw2.web.toolbus.ToolNotificationHook;
+import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import java.io.IOException;
@@ -137,7 +137,7 @@ public class BuilderConfig {
                             + " model id.");
         }
 
-        builder.configureAllAgents(b -> b.hook(new ToolNotificationHook(toolEventBus)));
+        builder.configureAllAgents(b -> b.middleware(new ToolNotificationMiddleware(toolEventBus)));
 
         ClawBootstrap bootstrap = builder.build();
 

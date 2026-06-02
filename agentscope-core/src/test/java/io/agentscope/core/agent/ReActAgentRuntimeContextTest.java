@@ -114,7 +114,6 @@ class ReActAgentRuntimeContextTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(model)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .hooks(List.of(hook))
                         .build();
 
@@ -139,12 +138,12 @@ class ReActAgentRuntimeContextTest {
         assertNull(r, "unbind should clear setRuntimeContext(null)");
 
         assertTrue(
-                memory.getMessages().stream()
+                agent.getAgentState().getContext().stream()
                         .anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class)));
     }
 
     private static String lastToolText(ReActAgent agent) {
-        List<Msg> list = new ArrayList<>(agent.getMemory().getMessages());
+        List<Msg> list = new ArrayList<>(agent.getAgentState().getContext());
         Collections.reverse(list);
         for (Msg m : list) {
             if (m.getContent() == null) {

@@ -36,7 +36,6 @@ import reactor.core.publisher.Mono;
  *
  * <p>Example usage:
  * <pre>{@code
- * // Register an external tool using ToolSchema
  * ToolSchema schema = ToolSchema.builder()
  *     .name("query_database")
  *     .description("Query external database")
@@ -55,11 +54,8 @@ import reactor.core.publisher.Mono;
  * @see Toolkit#registerSchema(ToolSchema)
  * @see Toolkit#isExternalTool(String)
  */
-public class SchemaOnlyTool implements AgentTool {
+public class SchemaOnlyTool extends ToolBase {
 
-    private final String name;
-    private final String description;
-    private final Map<String, Object> parameters;
     private final Boolean strict;
 
     /**
@@ -105,29 +101,19 @@ public class SchemaOnlyTool implements AgentTool {
      */
     public SchemaOnlyTool(
             String name, String description, Map<String, Object> parameters, Boolean strict) {
-        this.name = Objects.requireNonNull(name, "name cannot be null");
-        this.description = Objects.requireNonNull(description, "description cannot be null");
-        // Defensive copy: create a new HashMap from the provided parameters, then wrap it
-        this.parameters =
-                parameters != null
-                        ? Collections.unmodifiableMap(new HashMap<>(parameters))
-                        : Collections.emptyMap();
+        super(
+                ToolBase.builder()
+                        .name(Objects.requireNonNull(name, "name cannot be null"))
+                        .description(
+                                Objects.requireNonNull(description, "description cannot be null"))
+                        .inputSchema(
+                                parameters != null
+                                        ? Collections.unmodifiableMap(new HashMap<>(parameters))
+                                        : Collections.emptyMap())
+                        .externalTool(true)
+                        .readOnly(false)
+                        .concurrencySafe(true));
         this.strict = strict;
-    }
-
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    @Override
-    public String getDescription() {
-        return description;
-    }
-
-    @Override
-    public Map<String, Object> getParameters() {
-        return parameters;
     }
 
     @Override

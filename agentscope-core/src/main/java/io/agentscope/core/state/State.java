@@ -25,23 +25,6 @@ package io.agentscope.core.state;
  * <p>Existing domain objects (like {@link io.agentscope.core.message.Msg}) can implement this
  * interface directly to avoid conversion overhead.
  *
- * <p>Example usage:
- *
- * <pre>{@code
- * // Using a Record
- * public record AgentMetaState(
- *     String id,
- *     String name,
- *     String description
- * ) implements State {}
- *
- * // Existing class implementing State
- * public class Msg implements State {
- *     // existing fields and methods
- * }
- * }</pre>
- *
- * @see StateModule
  * @see io.agentscope.core.session.Session
  */
 public interface State {}

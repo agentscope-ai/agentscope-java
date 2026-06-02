@@ -65,7 +65,7 @@ class OllamaChatFormatterTest {
     }
 
     @Test
-    @DisplayName("Should format messages correctly - aligned with Python test_chat_formatter")
+    @DisplayName("Should format messages correctly")
     void testFormatMessages() {
         // Arrange: System messages
         List<Msg> msgsSystem =
@@ -166,7 +166,7 @@ class OllamaChatFormatterTest {
         List<OllamaMessage> formatted =
                 formatter.format(concatLists(msgsSystem, msgsConversation, msgsTools));
 
-        // Assert: Check the expected result matches Python's ground_truth_chat
+        // Assert: Check the expected result matches the ground truth
         assertEquals(7, formatted.size());
 
         assertEquals("system", formatted.get(0).getRole());
@@ -216,9 +216,7 @@ class OllamaChatFormatterTest {
     }
 
     @Test
-    @DisplayName(
-            "Should format messages without system message - aligned with Python"
-                    + " test_chat_formatter")
+    @DisplayName("Should format messages without system message")
     void testFormatMessagesWithoutSystem() {
         // Arrange: Conversation and tools without system message
         List<Msg> msgsConversation =
@@ -309,9 +307,7 @@ class OllamaChatFormatterTest {
     }
 
     @Test
-    @DisplayName(
-            "Should format messages with promote tool result images - aligned with Python"
-                    + " test_chat_formatter_with_extract_image_blocks")
+    @DisplayName("Should format messages with promote tool result images")
     void testFormatMessagesWithPromoteToolResultImages() {
         // Arrange: Create a formatter with promoteToolResultImages = true
         OllamaChatFormatter formatterWithPromote = new OllamaChatFormatter(true);

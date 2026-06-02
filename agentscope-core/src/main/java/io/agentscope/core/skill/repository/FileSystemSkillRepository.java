@@ -47,6 +47,7 @@ import org.slf4j.LoggerFactory;
  * FileSystemSkillRepository repo = new FileSystemSkillRepository(baseDir);
  * AgentSkill skill = repo.getSkill("my-skill");
  * }</pre>
+ *
  */
 public class FileSystemSkillRepository implements AgentSkillRepository {
 
