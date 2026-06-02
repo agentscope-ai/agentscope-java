@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentScope Java v2</title>
+  <meta name="robots" content="noindex" />
+  <meta http-equiv="refresh" content="0; url=en/intro.html" />
+  <script>
+    (function () {
+      try {
+        var languages = ["en", "zh"];
+        var preferred = null;
+        try { preferred = localStorage.getItem("preferred-language"); } catch (e) {}
+        if (!preferred || languages.indexOf(preferred) === -1) {
+          var nav = (navigator.language || navigator.userLanguage || "").toLowerCase();
+          if (nav.indexOf("zh") === 0 && languages.indexOf("zh") !== -1) {
+            preferred = "zh";
+          }
+        }
+        if (!preferred || languages.indexOf(preferred) === -1) {
+          preferred = languages[0];
+        }
+        location.replace(preferred + "/intro.html");
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <p><a href="en/intro.html">Continue to documentation</a></p>
+</body>
+</html>

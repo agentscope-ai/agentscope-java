@@ -1,0 +1,1358 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="社区" href="../community/overview.html"><link rel="prev" title="首个Harness Framework发布 – 把OpenClaw的「持续进化」体验，装进企业级的安全边界。" href="agentscope-v1-harness.html">
+        <link rel="canonical" href="https://java.agentscope.io/v1/zh/blogs/agentscope-v1-builder.html">
+        <link rel="prefetch" href="../../../_static/logo.svg" as="image">
+
+    <link rel="shortcut icon" href="../../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
+        <title>AgentScope Builder —— 把 OpenClaw 的「自我进化」，做成可被整个团队共用的平台 - AgentScope Java</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=832171e9" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/homepage.css?v=16a56cbd" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f0f0f0;
+  --color-code-foreground: black;
+  --color-brand-primary: #2196f3;
+  --color-brand-content: #2196f3;
+  --color-admonition-background: #f8f9fa;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+  
+
+  <!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+
+<div class="docs-site-header" role="banner">
+  <div class="docs-site-header__inner">
+    <div class="docs-site-header__start">
+      <a class="docs-site-header__brand" href="../../../v2/en/intro.html">
+        <img class="docs-site-header__logo" src="../../../_static/logo.svg" alt="" width="44" height="44" />
+        <span class="docs-site-header__title"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></span>
+      </a>
+      <div class="docs-site-header__nav-shell">
+        
+  
+  
+  
+  <nav
+    class="docs-top-tabs"
+    aria-label="Documentation sections"
+    data-current-page="v1/zh/blogs/agentscope-v1-builder"
+    data-current-lang="en"
+    data-current-version="v1"
+  >
+    <div class="docs-top-tabs__list">
+      
+        
+        
+          
+          
+          
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../en/intro.html"
+              data-tab-id="home"
+              data-mirror-paths="true"
+              data-href-en="v1/en/intro"
+              data-href-zh="v1/zh/intro"
+              data-href-v2-en="v2/en/intro"
+              data-href-v2-zh="v2/zh/intro"
+              data-url-en="../../en/intro.html"
+              data-url-zh="../intro.html"
+              data-url-v2-en="../../../v2/en/intro.html"
+              data-url-v2-zh="../../../v2/zh/intro.html"
+              data-prefixes-en="v1/en/intro"
+              data-prefixes-zh="v1/zh/intro"
+              data-prefixes-v2-en="v2/en/intro"
+              data-prefixes-v2-zh="v2/zh/intro"
+              data-sections-en=""
+              data-sections-zh=""
+              data-sections-v2-en=""
+              data-sections-v2-zh=""
+            >
+              Home
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../en/docs/quickstart/installation.html"
+              data-tab-id="docs"
+              data-mirror-paths="true"
+              data-href-en="v1/en/docs/quickstart/installation"
+              data-href-zh="v1/zh/docs/quickstart/installation"
+              data-href-v2-en="v2/en/docs/index"
+              data-href-v2-zh="v2/zh/docs/index"
+              data-url-en="../../en/docs/quickstart/installation.html"
+              data-url-zh="../docs/quickstart/installation.html"
+              data-url-v2-en="../../../v2/en/docs/index.html"
+              data-url-v2-zh="../../../v2/zh/docs/index.html"
+              data-prefixes-en="v1/en/docs/"
+              data-prefixes-zh="v1/zh/docs/"
+              data-prefixes-v2-en="v2/en/docs/"
+              data-prefixes-v2-zh="v2/zh/docs/"
+              data-sections-en="Quick Start|Features|Multi Agent|Harness (English)"
+              data-sections-zh="快速开始|功能指南|多智能体|Harness"
+              data-sections-v2-en="v2 · Quick Start|v2 · Building Blocks|v2 · Harness (English)|v2 · Reference"
+              data-sections-v2-zh="v2 · 快速开始|v2 · 核心组件|v2 · Harness|v2 · 参考"
+            >
+              Docs
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../en/integration/overview.html"
+              data-tab-id="integration"
+              data-mirror-paths="true"
+              data-href-en="v1/en/integration/overview"
+              data-href-zh="v1/zh/integration/overview"
+              data-href-v2-en="v2/en/integration/overview"
+              data-href-v2-zh="v2/zh/integration/overview"
+              data-url-en="../../en/integration/overview.html"
+              data-url-zh="../integration/overview.html"
+              data-url-v2-en="../../../v2/en/integration/overview.html"
+              data-url-v2-zh="../../../v2/zh/integration/overview.html"
+              data-prefixes-en="v1/en/integration/"
+              data-prefixes-zh="v1/zh/integration/"
+              data-prefixes-v2-en="v2/en/integration/"
+              data-prefixes-v2-zh="v2/zh/integration/"
+              data-sections-en="Integration"
+              data-sections-zh="集成"
+              data-sections-v2-en="v2 · Integration"
+              data-sections-v2-zh="v2 · 集成"
+            >
+              Integration
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../en/blogs/index.html"
+              data-tab-id="blogs"
+              data-mirror-paths="true"
+              data-href-en="v1/en/blogs/index"
+              data-href-zh="v1/zh/blogs/index"
+              data-href-v2-en="v2/en/blogs/agentscope-v2-release"
+              data-href-v2-zh="v2/zh/blogs/agentscope-v2-release"
+              data-url-en="../../en/blogs/index.html"
+              data-url-zh="index.html"
+              data-url-v2-en="../../../v2/en/blogs/agentscope-v2-release.html"
+              data-url-v2-zh="../../../v2/zh/blogs/agentscope-v2-release.html"
+              data-prefixes-en="v1/en/blogs/"
+              data-prefixes-zh="v1/zh/blogs/"
+              data-prefixes-v2-en="v2/en/blogs/"
+              data-prefixes-v2-zh="v2/zh/blogs/"
+              data-sections-en="Blogs"
+              data-sections-zh="博客"
+              data-sections-v2-en="v2 · Blogs"
+              data-sections-v2-zh="v2 · 博客"
+            >
+              Blogs
+            </a>
+          
+        
+      
+        
+        
+          
+          
+          
+            
+          
+          
+            <a
+              class="docs-top-tabs__link"
+              href="../../en/community/overview.html"
+              data-tab-id="community"
+              data-mirror-paths="true"
+              data-href-en="v1/en/community/overview"
+              data-href-zh="v1/zh/community/overview"
+              data-href-v2-en="v2/en/community/contributors"
+              data-href-v2-zh="v2/zh/community/contributors"
+              data-url-en="../../en/community/overview.html"
+              data-url-zh="../community/overview.html"
+              data-url-v2-en="../../../v2/en/community/contributors.html"
+              data-url-v2-zh="../../../v2/zh/community/contributors.html"
+              data-prefixes-en="v1/en/community/"
+              data-prefixes-zh="v1/zh/community/"
+              data-prefixes-v2-en="v2/en/community/"
+              data-prefixes-v2-zh="v2/zh/community/"
+              data-sections-en="Community"
+              data-sections-zh="社区"
+              data-sections-v2-en="v2 · Community"
+              data-sections-v2-zh="v2 · 社区"
+            >
+              Community
+            </a>
+          
+        
+      
+    </div>
+  </nav>
+
+      </div>
+    </div>
+    <div class="docs-site-header__actions" aria-label="Site actions">
+      <form class="docs-header-search" method="get" action="../../../search.html" role="search">
+        <input class="docs-header-search__input" type="search" name="q" placeholder="Search" aria-label="Search" autocomplete="off" />
+        <input type="hidden" name="check_keywords" value="yes" />
+        <input type="hidden" name="area" value="default" />
+        <button class="docs-header-search__submit" type="submit" aria-label="Search">
+          <svg class="docs-header-search__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      </form>
+      <div id="searchbox" class="docs-header-searchbox"></div>
+      <div class="docs-site-header__theme theme-toggle-container">
+        <button class="theme-toggle" type="button" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+
+<div class="version-switcher">
+  <div class="version-selector" id="version-selector">
+    <button
+      class="version-button"
+      type="button"
+      onclick="return toggleVersionMenu()"
+      aria-haspopup="listbox"
+      aria-expanded="false"
+      aria-label="Select documentation version"
+    >
+      <span id="current-version-label">v2</span>
+    </button>
+    <div class="version-menu" id="version-menu" role="listbox">
+      
+        <a
+          href="https://java.agentscope.io/v2/"
+          class="version-option active"
+          role="option"
+          aria-selected="true"
+        >v2</a>
+      
+        <a
+          href="https://java.agentscope.io/v1/"
+          class="version-option"
+          role="option"
+          aria-selected="false"
+        >v1</a>
+      
+    </div>
+  </div>
+</div>
+
+      <!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<div class="language-switch">
+    <div class="language-selector">
+        <button class="language-button" type="button" onclick="return toggleLanguageMenu()" aria-haspopup="true" aria-expanded="false">
+            <span id="current-lang">English</span>
+        </button>
+        <div class="language-menu" id="language-menu">
+            <a href="#" class="language-option" onclick="return switchLanguage('en')">English</a>
+            <a href="#" class="language-option" onclick="return switchLanguage('zh')">中文</a>
+        </div>
+    </div>
+</div>
+    </div>
+  </div>
+</div>
+  
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../../v2/en/intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/quickstart/agent.html">Agent</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/tool.html">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/agent-skill.html">Agent Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/streaming.html">Streaming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/state.html">State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/session.html">Session Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/multimodal.html">Multimodal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/structured-output.html">Structured Output</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/observability.html">Observability &amp; Studio</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/a2a.html">A2A Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/ai-coding.html">Coding with AI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/task/online-training.html">Online Training</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/workflow.html">Custom Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Harness (English)</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/workspace.html">Workspace</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/filesystem.html">Filesystem</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/session.html">Session</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/memory.html">Memory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/tool.html">Tooling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/subagent.html">Subagent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/streaming.html">Subagent Streaming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/quickstart/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/sandbox/index.html">Sandbox</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/docs/harness/example/index.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Integration</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/integration/overview.html">Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Blogs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/blogs/index.html">Article index</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Community</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/community/overview.html">Community</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/community/contributors.html">Contributors</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../docs/quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/quickstart/agent.html">智能体</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/mcp.html">MCP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/agent-skill.html">Agent Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/streaming.html">流式输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/memory.html">记忆管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/state.html">状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/session.html">会话管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/multimodal.html">多模态</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/structured-output.html">结构化输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/observability.html">可观测与调试</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/a2a.html">A2A 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/ai-coding.html">使用 AI 编程</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/task/online-training.html">在线训练</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/overview.html">概览</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/workflow.html">自定义工作流</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/multi-agent/multiagent-debate.html">多智能体辩论</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">集成</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../integration/overview.html">概览</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">博客</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="index.html">全部文章</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">AgentScope Builder 发布</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">社区</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../community/overview.html">社区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../community/contributors.html">核心贡献者</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Harness</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/overview.html">概览</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/architecture.html">架构</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/workspace.html">工作区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/filesystem.html">文件系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/session.html">会话</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/memory.html">记忆</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/skill.html">技能</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/subagent.html">子 Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/streaming.html">子 Agent 流式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/quickstart/index.html">快速开始</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/sandbox/index.html">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/sandbox/agentrun.html">AgentRun 后端</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/harness/example/index.html">示例</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/index.html">What's AgentScope 2.0?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/change-log.html">Change Log</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/quickstart.html">Quickstart</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/building-blocks/agent.html">Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/building-blocks/message-and-event.html">Message &amp; Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/building-blocks/middleware.html">Middleware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/building-blocks/model.html">Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/building-blocks/permission-system.html">Permission System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/building-blocks/tool.html">Tool</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/workspace.html">Workspace</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/memory.html">Memory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/filesystem.html">Filesystem</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/sandbox.html">Sandbox</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/subagent.html">Subagent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/skill.html">Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/harness/plan-mode.html">Plan Mode</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/others/going-to-production.html">Going to Production</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/docs/others/faq.html">FAQ</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Integration</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/integration/overview.html">Overview</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/en/integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/memory/mem0.html">Mem0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/memory/bailian.html">Bailian Memory</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/memory/reme.html">ReMe</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/en/integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/session/mysql.html">MySQL Session</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/session/redis.html">Redis Session</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/en/integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/rag/simple.html">Simple</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/rag/bailian.html">Bailian Knowledge</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/rag/dify.html">Dify</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/rag/haystack.html">HayStack</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/rag/ragflow.html">RAGFlow</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/en/integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/skill/git-repository.html">Git Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/en/integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/protocol/a2a.html">A2A</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/protocol/agui.html">AG-UI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/en/integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/infrastructure/higress.html">Higress</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/infrastructure/nacos.html">Nacos</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/infrastructure/scheduler.html">Scheduler</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/en/integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/ecosystem/kotlin.html">Kotlin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/ecosystem/studio.html">Studio</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/en/integration/ecosystem/training.html">Online Training</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Blogs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/blogs/agentscope-v2-release.html">AgentScope 2.0 Release</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Community</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/en/community/contributors.html">Contributors</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/change-log.html">更新日志</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/index.html">什么是 AgentScope 2.0？</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/quickstart.html">快速上手</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 核心组件</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/building-blocks/agent.html">智能体</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/building-blocks/message-and-event.html">消息与事件</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/building-blocks/middleware.html">Middleware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/building-blocks/model.html">模型</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/building-blocks/permission-system.html">权限系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/building-blocks/tool.html">工具</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/architecture.html">架构</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/workspace.html">工作区</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/memory.html">记忆</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/filesystem.html">文件系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/sandbox.html">沙箱</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/subagent.html">子 Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/skill.html">技能</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/harness/plan-mode.html">计划模式</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/others/going-to-production.html">上生产</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/docs/others/faq.html">常见问题</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 集成</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/integration/overview.html">概览</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/memory/mem0.html">Mem0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/memory/bailian.html">百炼记忆</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/memory/reme.html">ReMe</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/zh/integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/session/mysql.html">MySQL Session</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/session/redis.html">Redis Session</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/rag/simple.html">Simple</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/rag/bailian.html">百炼知识库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/rag/dify.html">Dify</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/rag/haystack.html">HayStack</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/rag/ragflow.html">RAGFlow</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/protocol/a2a.html">A2A</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/protocol/agui.html">AG-UI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/infrastructure/higress.html">Higress</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/infrastructure/nacos.html">Nacos</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../v2/zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/ecosystem/kotlin.html">Kotlin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/ecosystem/studio.html">Studio</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../v2/zh/integration/ecosystem/training.html">在线训练</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 博客</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/blogs/agentscope-v2-release.html">AgentScope 2.0 发布</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/blogs/agentscope-v1-harness.html">AgentScope Java 1.1 · Harness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/blogs/agentscope-v1-builder.html">AgentScope Builder 发布</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">v2 · 社区</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../v2/zh/community/contributors.html">核心贡献者</a></li>
+</ul>
+
+</div>
+</div>
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/v1/zh/blogs/agentscope-v1-builder.md?plain=true" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div><div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="agentscope-builder-openclaw">
+<h1>AgentScope Builder —— 把 OpenClaw 的「自我进化」，做成可被整个团队共用的平台<a class="headerlink" href="#agentscope-builder-openclaw" title="Link to this heading">¶</a></h1>
+<p>在 AgentScope 1.1.0 版本中，我们把 OpenClaw、Coding Agent 那套「工作区即真理 + 自我进化」的体验，沉淀成了 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> + <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> + 内置压缩与双层记忆的Harness Engineering 工程基础设施。当时我们留下了一个承诺：<strong>写一套 Agent 逻辑，按需切换形态，从个人本机一路扩到企业分布式部署</strong>。</p>
+<p>HarnessAgent 关注度非常高，很多开发者想要一个真实的应用场景。今天我们就同时发布了 Agentcope Claw 和 Agentcope Builder，它们既是实际发行的产品，也是 AgentScope Harness 的具体实践案例：</p>
+<ul class="simple">
+<li><p><strong>agentscope-claw</strong> —— Harness 在「单人本机」一端的完整落地。<strong>用 AgentScope Harness，我们已经做出了一个 Java 版本的 OpenClaw</strong>。</p></li>
+<li><p><strong>agentscope-builder</strong> —— Harness 在「多人企业」一端的完整落地，今天正式发布。<strong>Builder 可以理解为是 OpenClaw 的分布式版本</strong>：在一个平台上，整个团队都能开发、运营、共享自己的自进化 Agent。</p></li>
+</ul>
+<p>下面我们先把 AgentScope Claw 这个示例讲透 —— 因为 Builder 不是凭空出现的，它是被 Claw 没能解决的那一组问题企业级需求中催生出来的。</p>
+<hr class="docutils" />
+<section id="agentscope-claw-harness-openclaw">
+<h2>AgentScope Claw —— 用 Harness 已经能做出一个 OpenClaw<a class="headerlink" href="#agentscope-claw-harness-openclaw" title="Link to this heading">¶</a></h2>
+<section id="id1">
+<h3>它是什么<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<p>AgentScope Claw 是 [OpenClaw] 的轻量级 Java 版本：<strong>一款装在你自己电脑上的个人助手</strong>。它以你的身份、在你的文件系统和 shell 里干活，并且会随着使用慢慢”长大” —— 它学到的技能、孵化的子智能体、攒下的记忆，都是它自己在工作区里写的一堆文件。</p>
+<p>Claw 在仓库里的位置：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">agentscope</span><span class="o">-</span><span class="n">examples</span><span class="o">/</span><span class="n">agents</span><span class="o">/</span><span class="n">agentscope</span><span class="o">-</span><span class="n">claw</span><span class="o">/</span>
+</pre></div>
+</div>
+<p>它不是一段示意代码，而是一个<strong>完整的 Spring Boot 应用</strong>：JDK 17、一条 <code class="docutils literal notranslate"><span class="pre">mvn</span> <span class="pre">package</span></code>、一条 <code class="docutils literal notranslate"><span class="pre">java</span> <span class="pre">-jar</span></code>，浏览器打开 <a class="reference external" href="http://localhost:8080">http://localhost:8080</a> 就能用。所有的状态都落到 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/</span></code> 工作区下，可以用 <code class="docutils literal notranslate"><span class="pre">CLAW_HOME</span></code> 环境变量改写；首次启动会自动生成一个内置的 <code class="docutils literal notranslate"><span class="pre">default</span></code> agent，让你不写一行代码就能开始对话。</p>
+</section>
+<section id="id2">
+<h3>三个核心能力<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<p>Claw 真正有意思的不是”能聊天”，而是下面三件事 —— 它们也正是 Harness 的设计承诺第一次完整地体现在一个真实产品里：</p>
+<p><strong>1. 工作区驱动的自我进化</strong></p>
+<p>Claw 的所有状态都不在数据库里，而是在 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/claw/workspace/</span></code> 这个目录下：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> —— Agent 的人格与行为约定，每次推理前自动注入 system prompt</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">skills/</span></code> —— 可复用技能，agent 自己写、自己用</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">subagents/</span></code> —— 子 Agent 规格声明，自动被发现和加载</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code> —— 双层记忆，由后台 LLM 自动维护</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;subId&gt;/sessions/</span></code> —— 完整的对话日志（JSONL）和压缩后的上下文</p></li>
+</ul>
+<p>每一次对话结束，都会有新事实被提炼出来追加到当日的记忆流水账，后台调度器再周期性地把它们合并进 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>。<strong>调整 agent 的人格、知识、技能不需要动代码，只需要编辑工作区里的文件 —— 改一个文件就等于升级一次 Agent</strong>。这件事 OpenClaw 做了，Java 现在也能做了，且是使用 AgentScope Harness 运行时在背后支撑。</p>
+<p><strong>2. 直接以你的身份在本机文件系统和 Shell 里干活</strong></p>
+<p>Claw 用的文件系统后端是 <code class="docutils literal notranslate"><span class="pre">LocalFilesystemWithShell</span></code> —— 没有沙箱、没有远端，所有的读写和命令都直接落到本机操作系统。这在你自己机器上不是 bug，是 feature：你让它”帮我把 <code class="docutils literal notranslate"><span class="pre">~/Downloads</span></code> 下三个月前的文件挪到归档目录”，它真的能做到，因为它有 Shell。</p>
+<p>Harness 的工具集是按”后端能力”条件性注册的 —— 在 Claw 这种本机模式下，<code class="docutils literal notranslate"><span class="pre">execute</span></code> Shell 工具会自动出现在 Agent 的工具集里；换到不可信环境（如后面会讲的 Builder 远端模式），同一段 Agent 代码里的 Shell 工具会自动消失。<strong>这是「同一份 Agent 逻辑、不同形态」的第一个具体体现</strong>。</p>
+<p><strong>3. 直接出现在你常用的 APP 上</strong></p>
+<p>Claw 开箱内置 6 种通道：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">type</span></code></p></th>
+<th class="head"><p>传输</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">chatui</span></code></p></td>
+<td><p>进程内</p></td>
+<td><p>默认开启的本地 Web UI</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dingtalk</span></code></p></td>
+<td><p>Stream（WebSocket）</p></td>
+<td><p>钉钉企业内部应用，无需公网端口</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">wecom</span></code></p></td>
+<td><p>HTTP 回调 + REST API</p></td>
+<td><p>自建企业微信应用</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">feishu</span></code></p></td>
+<td><p>HTTP 事件回调 + REST API</p></td>
+<td><p>飞书自建应用 + 事件订阅</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">github</span></code></p></td>
+<td><p>Webhook + REST API</p></td>
+<td><p>监听 issue / PR review comment 事件</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">gitlab</span></code></p></td>
+<td><p>Webhook + REST API</p></td>
+<td><p>监听 Issue / MR Note Hook</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>也就是说：你可以从一条钉钉 DM、或者一个 GitHub Issue 评论里 &#64;claw，它会带着完整的工作区上下文回应你。每个 agent 在 bootstrap 时还会自动注册 <code class="docutils literal notranslate"><span class="pre">outbound_send</span></code> 工具，让它可以<strong>主动</strong>往任意通道发消息 —— 子任务跑完后，<code class="docutils literal notranslate"><span class="pre">HarnessGateway.tryDispatchAnnounce</span></code> 会自动复用入站时的地址，让”完成通知”自然地回到当初触发它的那个钉钉/企微会话。</p>
+<p>通道层还自带了一组默认的可靠性机制 —— 幂等去重、Bot-loop 防护、企微签名校验、AES-256-CBC 解密、access-token 续签，这些在企业 IM 集成里”不写就出事”的细节，框架都已经做好了。</p>
+</section>
+<section id="claw">
+<h3>Claw 的边界<a class="headerlink" href="#claw" title="Link to this heading">¶</a></h3>
+<p>Claw 的设计尽量保持简洁 —— <strong>没有登录、没有多租户隔离、没有 Docker sandbox、不做横向扩展</strong>。它故意不去做更多的事，因为这些事会破坏”装上就能用”的简单体验。</p>
+<p>但只要你试着把这套东西放到一个团队里，问题就会接连出现：多个人怎么共享同一个进程？每个人自进化出来的工作区怎么互不污染？多副本部署时同一个用户的记忆怎么跨节点共享？让 agent 跑用户输入的代码怎么不出事？做出来的好 Agent 怎么分享给同事但又不让别人改坏？</p>
+<p>这五个问题，<strong>每一个单独看都不大，但合起来意味着 claw 必须被重新装进一个不一样的容器里</strong>。这就是 Builder 的起点。</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="claw-builder-openclaw">
+<h2>从 Claw 到 Builder —— OpenClaw 的企业级部署形态<a class="headerlink" href="#claw-builder-openclaw" title="Link to this heading">¶</a></h2>
+<p>Claw 假设的是”一台机器、一个用户、一个工作区”。把这套假设直接套到团队场景，会同时崩掉五个地方 —— 每一个都不是”再开几个 Claw 进程”能补上的：</p>
+<ol class="arabic simple">
+<li><p><strong>多人共用一个进程，但每个人要看到自己的视图。</strong> claw 只认本机当前用户。多人登录、按 token 鉴权、按用户分会话 —— 这些都不在 claw 的范围内。</p></li>
+<li><p><strong>每个用户的工作区必须互不污染。</strong> Agent 自进化的副作用是它<strong>会写文件</strong> —— 学到的技能、生成的子 Agent、攒下的 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>。Alice 调教过的 agent 不能让 Bob 看到他不该看到的东西，更不能让 Bob 的对话覆盖掉 Alice 的记忆。但 claw 用的是一个全局工作区。</p></li>
+<li><p><strong>多副本部署时，同一个用户必须看到一致的工作区。</strong> 把 claw 起两个进程在两台机器上，各自的本机磁盘是隔离的；同一个用户的请求落到不同副本上，看到的是两份不同的记忆。</p></li>
+<li><p><strong>服务端跑用户输入的代码必须有 OS 级隔离。</strong> claw 默认开了本机 Shell —— 这在你自己电脑上是核心体验，在多租户服务上就是直接的攻击面。</p></li>
+<li><p><strong>做出来的好 Agent 要能被分享，但不能被改坏。</strong> 团队里需要的不是”整份导出再让别人导入”，而是细粒度的”我授权给某个组用、但他们不能改”。</p></li>
+</ol>
+<p>这五个问题归结到一件事：<strong>「一个用户、一台机器、一个工作区」要被换成「多个用户、多台机器、多组被命名空间隔离的工作区」</strong>。这不是给 claw 加几个补丁能解决的 —— 它需要在 Harness 这一层工作空间之上，重新搭一层多租分布式户隔离的体系。</p>
+<hr class="docutils" />
+<p>Builder 把 Claw 的核心体验装进了一个<strong>面向团队和企业</strong>的 Web 平台。一句话定位：</p>
+<blockquote>
+<div><p><strong>Builder 是 OpenClaw 的分布式版本</strong> —— 同样的自我进化、同样的工作区驱动、同样的 Harness 运行时；只是从”一个人”变成”一个组织”，从”一台笔记本”变成”一组横向扩容的服务”。</p>
+</div></blockquote>
+<p>作为一款平台产品，它的核心能力有如下两点：</p>
+<ol class="arabic simple">
+<li><p>OpenClaw 的多租户、可分布式版本，支持多人共用一个平台，每个人的 Agent 互不干扰，支持多副本部署，用户工作区跨节点一致；</p></li>
+<li><p>零代码智能体开发平台，用户不需要写一行代码，就能在 Web UI 上创建、调教、分享自己的 Agent，Agent 的所有状态都落在工作区里，自动驱动自我进化。</p></li>
+</ol>
+</section>
+<section id="builder-1-openclaw">
+<h2>Builder 产品定位 1 —— OpenClaw 的多租户、可分布式版本<a class="headerlink" href="#builder-1-openclaw" title="Link to this heading">¶</a></h2>
+<p>Builder 的产品设计有一条底层核心设计 —— <strong>workspace 是 Agent 的资产</strong>。所有的隔离、所有的共享、所有的多租户能力，全部围绕这一点展开。</p>
+<ul class="simple">
+<li><p><strong>隔离</strong>：每一对 <code class="docutils literal notranslate"><span class="pre">(用户,</span> <span class="pre">Agent)</span></code> 都有自己<strong>独立的 workspace 命名空间</strong>。Alice 的 <code class="docutils literal notranslate"><span class="pre">agent-A</span></code> 和 Bob 的 <code class="docutils literal notranslate"><span class="pre">agent-A</span></code> 即使起点配置完全相同，他们各自的微调、记忆、技能演化都互不渗透。</p></li>
+<li><p><strong>共享</strong>：当你想把自己调教好的 Agent 分享出去时，分享的就是这个 workspace 加上一份授权策略。Builder 把权限分成三档：</p>
+<ul>
+<li><p><strong>可运行（run）</strong> —— 别人能调它，但看不到工作区内部，也不能改技能或 prompt</p></li>
+<li><p><strong>可编辑（edit）</strong> —— 别人可以改它的配置和工作区文件，等于多人共用一个 Agent</p></li>
+<li><p><strong>可 fork</strong> —— 别人复制出一份属于自己的 workspace，之后两份独立演化</p></li>
+</ul>
+</li>
+<li><p><strong>授权对象</strong>：可以是某个具体的同事、某个用户组、也可以是整个组织。</p></li>
+</ul>
+<p>这个模型直接来自团队协作的真实需求 —— “做出好东西后能分享、但不必交出控制权”。它也意味着：<strong>只要 workspace 这个抽象设计得足够干净，所有上层产品能力（创建、编辑、分享、fork、计费、审计）都能以同一种方式表达</strong>。这正是 Builder 的产品骨架。</p>
+</section>
+<section id="builder-2">
+<h2>Builder 产品定位 2 —— 零代码智能体开发平台<a class="headerlink" href="#builder-2" title="Link to this heading">¶</a></h2>
+<p>过去一年，LangSmith Fleet、Coze、Dify 等平台掀起了一波”零代码构建 Agent”的热潮 —— 用户不用写一行代码，在网页上点几下就能搭出一个能干活的 Agent。这些产品的核心体验很一致：<strong>选模板 → 配参数 → 连工具 → 发布</strong>，降低了 Agent 开发的入口门槛。</p>
+<p>Builder 也做了同样的事：<strong>用户从浏览器登录，不写代码就能搭出自己的 Agent</strong>。在 UI 上挑模板（或从空白脚手架起步）、选模型、写 system prompt、勾选技能 / 子 Agent / 工具 / MCP 服务，保存即可直接对话 —— 门槛低、上手快、所见即所得，和其他零代码平台一样。</p>
+<section id="agent">
+<h3>真正的差异：创建只是起点，Agent 会持续进化<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h3>
+<p>大多数零代码平台产出的是一个<strong>静态的 Agent</strong> —— 你配好它能做什么，它就永远做那些事；想让它做新的事，你得回到管理后台手动改配置。Agent 的能力上限等于你在创建那一刻想到的所有东西。</p>
+<p>Builder 不一样。每个 Agent 背后都有一个持续生长的 workspace：</p>
+<ul class="simple">
+<li><p><strong>自动沉淀记忆</strong>：每次对话结束后，Agent 会自己提炼新事实写入记忆，下次对话时它比上次”更了解”你和你的业务。你不需要手动更新它的知识库 —— 它自己就在长大。</p></li>
+<li><p><strong>自动习得技能</strong>：Agent 在完成任务的过程中，如果发现某个操作流程可复用，可以把它结构化成一个新 skill 写入 <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 目录。下次遇到类似场景，它能直接调用已学的技能而不是重新推理。</p></li>
+<li><p><strong>自动孵化子 Agent</strong>：当某类子任务反复出现，Agent 可以把它拆出来定义为一个专属的子 Agent（写入 <code class="docutils literal notranslate"><span class="pre">subagents/</span></code>），之后直接委派，不再自己做。</p></li>
+</ul>
+<p>这三件事<strong>不需要用户回到管理后台操作</strong> —— Agent 自己在工作区里写文件，工作区在对话中持续演化。<strong>你配好的是它的起点，而不是它的上限</strong>。</p>
+<p>当然，”自动进化”不意味着完全放飞。工作区里的一切都是<strong>文件、可编辑、可版本化</strong> —— 用户随时可以在 UI 里编辑 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>（调人格）、管理 <code class="docutils literal notranslate"><span class="pre">skills/</span></code>（增删技能）、投喂 <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>（补充领域知识）、审视 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>（纠正记忆）。”零代码”不是”零控制”，而是”你不需要写代码来控制 Agent，但随时可以用文件来控制它”。</p>
+</section>
+<section id="langsmith-fleet">
+<h3>与 LangSmith Fleet 等平台的对比<a class="headerlink" href="#langsmith-fleet" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p></p></th>
+<th class="head"><p>典型零代码平台（Fleet / Coze / Dify）</p></th>
+<th class="head"><p>AgentScope Builder</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Agent 能力上限</strong></p></td>
+<td><p>创建时配好的那些</p></td>
+<td><p>创建是起点，能力随使用<strong>持续增长</strong></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>记忆与技能</strong></p></td>
+<td><p>短期记忆 + 手动维护工具连接器</p></td>
+<td><p>双层自动记忆 + Agent 可自主习得技能</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>状态载体</strong></p></td>
+<td><p>数据库 / 内部结构（用户不可直接编辑）</p></td>
+<td><p><strong>工作区文件</strong> —— 可读、可编辑、可 Git 版本化</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>离线迁移</strong></p></td>
+<td><p>平台绑定</p></td>
+<td><p>工作区子树 = 标准文件，直接拷走即可用</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>一句话总结</strong>：Builder 是一个”零代码 + 自进化”的 Agent 平台 —— 门槛和 Fleet / Coze / Dify 一样低，但<strong>你创建的不是一个静态工具，而是一个会长大的数字助手</strong>。</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="builder-compositefilesystem">
+<h2>Builder 的核心机制：CompositeFilesystem<a class="headerlink" href="#builder-compositefilesystem" title="Link to this heading">¶</a></h2>
+<p>如果只用一句话讲清楚 Builder 的实现，那就是：</p>
+<blockquote>
+<div><p><strong>Builder 把每一个 Agent 都跑在一套 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> + <code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code> 之上 —— 前者负责 Agent 的运行时编排，后者把工作区做成一个可命名空间隔离、可分布式落点、可投射到沙箱的资产。</strong></p>
+</div></blockquote>
+<p>下面我们沿着一次具体的请求，把这两块拆开看。</p>
+<section id="harnessgateway-agent">
+<h3>HarnessGateway —— 每对 (用户, Agent) 一个独立运行时<a class="headerlink" href="#harnessgateway-agent" title="Link to this heading">¶</a></h3>
+<p>Web 层之下挂着一个 <strong>HarnessGateway</strong>。它的工作很简单：把每一对 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">agentId)</span></code> 路由到一个独立的 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 实例。</p>
+<ul class="simple">
+<li><p>Alice 调用 <code class="docutils literal notranslate"><span class="pre">agent-A</span></code> → 落到 <code class="docutils literal notranslate"><span class="pre">Agent(alice,</span> <span class="pre">agent-A)</span></code></p></li>
+<li><p>Alice 调用 <code class="docutils literal notranslate"><span class="pre">agent-B</span></code> → 落到 <code class="docutils literal notranslate"><span class="pre">Agent(alice,</span> <span class="pre">agent-B)</span></code></p></li>
+<li><p>Bob 调用同名的 <code class="docutils literal notranslate"><span class="pre">agent-A</span></code> → 落到 <code class="docutils literal notranslate"><span class="pre">Agent(bob,</span> <span class="pre">agent-A)</span></code> —— 与 Alice 的完全独立</p></li>
+</ul>
+<p>每个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 实例都拿到的是一个被绑定到该用户、该 agent 命名空间的 <code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code>。换句话说 —— <strong>HarnessGateway 不关心隔离怎么实现，它只负责”把对的 agent 实例交给对的请求”</strong>；隔离的真正活儿，在下一层做。</p>
+</section>
+<section id="compositefilesystem">
+<h3>CompositeFilesystem —— 把工作区做成可隔离的资产<a class="headerlink" href="#compositefilesystem" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code> 是 Builder 这一切能跑起来的关键。它的命名很直白 —— <strong>它是一个组合（composite）出来的文件系统</strong>：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌──────────────────────────────────────────────────┐
+│  CompositeFilesystem                             │
+│                                                  │
+│  ┌───────────────────────────────────────────┐   │
+│  │  Layer 1: 命名空间分发                     │  │
+│  │    把所有路径透明重写到                    │  │
+│  │    users/{userId}/agents/{agentId}/...    │  │
+│  └───────────────────┬───────────────────────┘   │
+│                      ▼                           │
+│  ┌───────────────────────────────────────────┐   │
+│  │  Layer 2: 存储后端                         │  │
+│  │    本机磁盘 / Docker 容器 / 远端 KV 三选一  │  │
+│  └───────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────┘
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>上层是命名空间分发</strong>：Agent 调 <code class="docutils literal notranslate"><span class="pre">read(&quot;AGENTS.md&quot;)</span></code> 时，CompositeFilesystem 会从当前的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 拿到 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">agentId)</span></code>，把路径透明地重写成 <code class="docutils literal notranslate"><span class="pre">users/{userId}/agents/{agentId}/AGENTS.md</span></code>。Agent 代码以为自己在操作”一整个文件系统”，<strong>实际上看到的是被命名空间裁剪过的、只属于它自己的子树</strong>。</p></li>
+<li><p><strong>下层是物理存储后端</strong>：命名空间分发完之后，真正落到哪个介质上，取决于后端实现。默认是宿主机磁盘，对应 <code class="docutils literal notranslate"><span class="pre">LocalFilesystemWithShell</span></code>，路径直接落到 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/builder/workspace/users/{userId}/agents/{agentId}/...</span></code>。</p></li>
+</ul>
+<p>关键点：<strong>Agent 代码完全不知道这两层的存在</strong>。它使用的还是 Harness 那套统一的 <code class="docutils literal notranslate"><span class="pre">read</span> <span class="pre">/</span> <span class="pre">write</span> <span class="pre">/</span> <span class="pre">ls</span> <span class="pre">/</span> <span class="pre">grep</span></code> API，和在 claw 里一模一样。隔离是在 CompositeFilesystem 这一层实现的，不是靠业务代码”小心避开别人的目录”实现的。</p>
+</section>
+<section id="walkthrough">
+<h3>一次写入的端到端 walkthrough<a class="headerlink" href="#walkthrough" title="Link to this heading">¶</a></h3>
+<p>把这套抽象具体化 —— 当 Alice 在 UI 上让她的 <code class="docutils literal notranslate"><span class="pre">agent-A</span></code> 学一个新技能（写入 <code class="docutils literal notranslate"><span class="pre">skills/sql-helper/SKILL.md</span></code>），整个调用链如下：</p>
+<ol class="arabic simple">
+<li><p><strong>Web 层</strong>：JWT 解析出 <code class="docutils literal notranslate"><span class="pre">userId=alice</span></code>、URL 路径解析出 <code class="docutils literal notranslate"><span class="pre">agentId=agent-A</span></code>，挂到 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 上。</p></li>
+<li><p><strong>HarnessGateway</strong>：路由到 <code class="docutils literal notranslate"><span class="pre">Agent(alice,</span> <span class="pre">agent-A)</span></code> 这个 HarnessAgent 实例。</p></li>
+<li><p><strong>Agent 推理</strong>：模型决定调用 <code class="docutils literal notranslate"><span class="pre">write_file(&quot;skills/sql-helper/SKILL.md&quot;,</span> <span class="pre">...)</span></code> 工具。</p></li>
+<li><p><strong>CompositeFilesystem 上层</strong>：拦截调用，从 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 拿到 <code class="docutils literal notranslate"><span class="pre">(alice,</span> <span class="pre">agent-A)</span></code>，把路径重写为 <code class="docutils literal notranslate"><span class="pre">users/alice/agents/agent-A/skills/sql-helper/SKILL.md</span></code>。</p></li>
+<li><p><strong>CompositeFilesystem 下层</strong>：默认本地存储，把这个相对路径拼到 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/builder/workspace/</span></code>，最终写到磁盘上的 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/builder/workspace/users/alice/agents/agent-A/skills/sql-helper/SKILL.md</span></code>。</p></li>
+<li><p><strong>下次推理</strong>：当下一次对话开始时，<code class="docutils literal notranslate"><span class="pre">WorkspaceContextHook</span></code> 注入 system prompt 时同样会经过 CompositeFilesystem 读 <code class="docutils literal notranslate"><span class="pre">skills/</span></code>，自动定位到 alice/agent-A 自己的子树，新学的技能自动出现在工具集里。</p></li>
+</ol>
+<p>Bob 的 <code class="docutils literal notranslate"><span class="pre">agent-A</span></code> 做同样的事，路径会被重写到 <code class="docutils literal notranslate"><span class="pre">users/bob/agents/agent-A/...</span></code> —— 物理上和 Alice 的完全不同的目录树。<strong>没有任何”is alice or bob”的业务判断代码</strong>，隔离是从抽象层挤出来的。</p>
+</section>
+<section id="composite">
+<h3>当你需要更强的隔离：在同一套 Composite 上加一层沙箱<a class="headerlink" href="#composite" title="Link to this heading">¶</a></h3>
+<p>Claw 的本机模式下，Shell 命令直接打到宿主机。Builder 的默认本地模式继承了这一点 —— 适合可信团队、单节点部署。但只要你的场景里<strong>会有不可信代码进入 Agent</strong>（比如让 Agent 跑用户提交的 SQL、Python、Shell 脚本），宿主机就不能再直接挨这一刀。</p>
+<p>Builder 在这种场景下走的不是”再造一套沙箱方案”，而是<strong>在 CompositeFilesystem 上加一层 projection</strong>：</p>
+<ul class="simple">
+<li><p>Agent 进入沙箱模式后，运行时整体迁到 Docker 容器内</p></li>
+<li><p>宿主侧仍然是 workspace 的”主”，CompositeFilesystem 把宿主上的 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/</span></code>、<code class="docutils literal notranslate"><span class="pre">subagents/</span></code>、<code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> 等关键文件<strong>投射</strong>进容器内的 <code class="docutils literal notranslate"><span class="pre">/workspace</span></code></p></li>
+<li><p>容器内的 Agent 看到的是和宿主完全一致的工作台 —— 它读的是同一份 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>、用的是同一组 skills</p></li>
+<li><p>Shell 命令在容器内执行，宿主进程不会被任何用户输入直接影响</p></li>
+</ul>
+<p>注意 —— <strong>这不是”另一套文件系统”</strong>，是同一个 CompositeFilesystem 在下层多套了一层”宿主 ↔ 容器”的物理映射。Agent 代码、工作区目录结构、UI 体验全部不变，变的只是 Shell 命令的边界落到了容器壁上。</p>
+<p>沙箱的隔离粒度 —— 一个容器对应一个 session、一个用户、一个 agent，还是全局共享 —— 是个实际的部署决策，可以按业务场景配置；默认 <code class="docutils literal notranslate"><span class="pre">USER</span></code>（每个用户一个容器，多 session 共用）在大多数多租户 SaaS 里是合理的起点。</p>
+</section>
+<section id="id3">
+<h3>当一台机器不够：把存储层换成分布式后端<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>到这里 Builder 还是单节点的 —— 工作区落在一台机器的本机磁盘上（或者那台机器上的 Docker 容器里）。一旦你需要把 Builder 做成多副本、用户请求随机落到任意一台节点上都看到一致状态，问题就回到了文章开头说过的”多副本怎么共享工作区”。</p>
+<p>CompositeFilesystem 的解法很直接：<strong>把下层的存储后端从”本机磁盘”换成”分布式 KV”</strong>。Builder 抽象出了 <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> 这个接口，实现可以是 Redis、对象存储（OSS / S3）、或者你自己接的 KV 服务。换上去之后：</p>
+<ul class="simple">
+<li><p>Agent 运行时的所有读写都走 <code class="docutils literal notranslate"><span class="pre">RemoteFilesystem</span></code>，落到 <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code></p></li>
+<li><p>Web 层管理用户工作区也走同一份 <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> —— Web 看到的、Agent 看到的是同一份数据</p></li>
+<li><p>配合分布式 <code class="docutils literal notranslate"><span class="pre">Session</span></code>（典型实现是 <code class="docutils literal notranslate"><span class="pre">RedisSession</span></code>），Builder 进程本身可以多副本对等部署</p></li>
+</ul>
+<p>整张图里”装命名空间分发的上层”完全没动 —— 命名空间分发是在 CompositeFilesystem 这一层完成的，存储后端无论是本机磁盘、Docker 容器、还是 Redis，都看不到它。<strong>这正是当初 <a class="reference internal" href="agentscope-v1-harness.html"><span class="std std-doc">Harness 那一篇</span></a> 里讲的 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> 真正发挥威力的地方</strong> —— 业务代码一行不用改，部署侧换 Bean 就完成了从单机到分布式的迁移。</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="builder">
+<h2>一图看懂 Builder 架构<a class="headerlink" href="#builder" title="Link to this heading">¶</a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌─────────────────────────────────────────────────────────────────────┐
+│  AgentScope Builder（Spring Boot，端口 8080）                       │
+│                                                                     │
+│   React SPA ──▶  REST API (JWT)                                     │
+│                  │                                                  │
+│                  ▼                                                  │
+│   ┌──────────────────────────────────────────────────────────────┐  │
+│   │  HarnessGateway                                              │  │
+│   │   ├─ Agent (alice, agent-A) ──┐                              │  │
+│   │   ├─ Agent (alice, agent-B)   │ 每 (user,id) 一个 HarnessAgent│  │
+│   │   └─ Agent (bob,   agent-A) ──┘                              │  │
+│   └──────────────────────────────────┬───────────────────────────┘  │
+│                                      ▼                              │
+│   ┌──────────────────────────────────────────────────────────────┐  │
+│   │  CompositeFilesystem                                         │  │
+│   │   ├─ 上层：命名空间分发  (userId, agentId) → 子树            │  │
+│   │   └─ 下层：物理存储后端                                      │  │
+│   │         · 默认：本机磁盘                                     │  │
+│   │         · 沙箱模式：宿主 ⇄ 容器 projection                   │  │
+│   │         · 分布式：BaseStore（Redis / OSS / 自定义）          │  │
+│   └──────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│   用户与 agent 元数据（默认 H2；生产可切到 MySQL / PostgreSQL）     │
+└─────────────────────────────────────────────────────────────────────┘
+</pre></div>
+</div>
+<p>整张图里<strong>真正”新”的只有最上面那一条</strong> —— React SPA + JWT REST API + HarnessGateway 的路由。中间和底层全是把 Harness 的 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 与 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> 直接拿来组合。</p>
+<p>这正是 Builder 的设计哲学：<strong>不重新发明 Agent 运行时，只补齐让它跑在多租户企业环境里所需要的运维外壳</strong>。</p>
+</section>
+<hr class="docutils" />
+<section id="id4">
+<h2>快速开始<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<section id="id5">
+<h3>Claw<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># 1. 设置模型 API key（默认走 DashScope）</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">DASHSCOPE_API_KEY</span><span class="o">=</span>sk-xxx
+
+<span class="c1"># 2. 编译并运行</span>
+mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/agents/agentscope-claw<span class="w"> </span>-am<span class="w"> </span>clean<span class="w"> </span>package<span class="w"> </span>-DskipTests
+java<span class="w"> </span>-jar<span class="w"> </span>agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar
+</pre></div>
+</div>
+<p>打开 <a class="reference external" href="http://localhost:8080">http://localhost:8080</a>，默认主目录是 <code class="docutils literal notranslate"><span class="pre">~/.agentscope</span></code>。需要接钉钉 / 企微 / 飞书等通道的，编辑 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/agentscope.json</span></code> 添加对应的 channel 条目即可。详见 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-claw">Claw README</a>。</p>
+</section>
+<section id="id6">
+<h3>Builder<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">DASHSCOPE_API_KEY</span><span class="o">=</span>sk-xxx
+
+mvn<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/agents/agentscope-builder<span class="w"> </span>-am<span class="w"> </span>clean<span class="w"> </span>package<span class="w"> </span>-DskipTests
+java<span class="w"> </span>-jar<span class="w"> </span>agentscope-examples/agents/agentscope-builder/target/agentscope-builder-*.jar
+</pre></div>
+</div>
+<p>服务起在 8080 端口，用 <code class="docutils literal notranslate"><span class="pre">admin/admin</span></code>、<code class="docutils literal notranslate"><span class="pre">bob/bob</span></code> 或 <code class="docutils literal notranslate"><span class="pre">alice/alice</span></code> 登录就能进入完整的 UI。生产部署相关的内容（数据库切换、沙箱镜像、分布式后端）见 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-builder">Builder README</a>。</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="claw-vs-builder">
+<h2>Claw vs Builder —— 该选哪个<a class="headerlink" href="#claw-vs-builder" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p></p></th>
+<th class="head"><p>claw</p></th>
+<th class="head"><p>Builder</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>适用场景</strong></p></td>
+<td><p>自己笔记本 / 工作站上的个人助手</p></td>
+<td><p>一个团队或一家公司共建并运营自进化 Agent</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>用户数</strong></p></td>
+<td><p>1 人</p></td>
+<td><p>多人 —— 每个登录用户都有自己的 workspace</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>入口</strong></p></td>
+<td><p>Web UI + 钉钉 / 企微 / 飞书 / GitHub / GitLab</p></td>
+<td><p>React SPA + JWT REST API</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>隔离</strong></p></td>
+<td><p>无 —— 直接以你的身份运行</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">agentId)</span></code> 命名空间；可选 Docker sandbox</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>共享</strong></p></td>
+<td><p>没有 —— 一台机器一个人</p></td>
+<td><p>run / edit / fork 三档分级</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>分布式</strong></p></td>
+<td><p>单进程、单节点</p></td>
+<td><p>切到 BaseStore 后端即可横向扩容</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>文件系统</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystemWithShell</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>两条路并不互斥</strong> —— Harness 的工作区是文件，整个 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span> <span class="pre">/</span> <span class="pre">skills/</span> <span class="pre">/</span> <span class="pre">subagents/</span></code> 子树就是一份可以版本化、可以 Code Review、可以从 claw 直接拷到 Builder 的资产。一个常见的工作流：开发者在自己机器上用 claw 把一个 Agent 调到自己满意，把工作区目录作为模板提交到仓库，再由运维侧通过 Builder 推给整个团队。</p>
+</section>
+<hr class="docutils" />
+<section id="id7">
+<h2>总结<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<p><a class="reference internal" href="agentscope-v1-harness.html"><span class="std std-doc">Harness 那一篇</span></a> 我们交付了”自进化 Agent 运行时”的能力 —— <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> + 工作区约定 + 可插拔文件系统 + Hook 管线。</p>
+<p>今天的这一篇把这套运行时<strong>真正做成了两个可以直接跑起来的产品</strong>：</p>
+<ul class="simple">
+<li><p><strong>claw 证明</strong>：用 AgentScope Harness，我们已经能做出一个完整的 Java 版 OpenClaw —— 自我进化、本机 Shell、5 种 IM 通道接入，全部装进一个 <code class="docutils literal notranslate"><span class="pre">mvn</span> <span class="pre">package</span></code> 就能跑的 Spring Boot 应用里。</p></li>
+<li><p><strong>Builder 证明</strong>：同一套 Harness 运行时，加上一层”workspace 隔离与共享”的运维外壳，就能直接演化成一个面向团队的多租户平台。从 claw 到 Builder，<strong>Agent 业务逻辑一行没有改</strong>，改的只是底层 CompositeFilesystem 在哪一层提供隔离、把数据落到哪个介质上。</p></li>
+</ul>
+<p>这正是 Harness 设计之初就承诺要做到的：<strong>写一套 Agent 逻辑，按需切换形态</strong>。从今天起，这个承诺在仓库里就有两个跑得起来的实证。</p>
+<p>如果你的需求是个人助手，从 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-claw">Claw README</a> 跑通 quick start 开始；如果是团队 / 公司平台，直接从 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-builder">Builder README</a> 起步。两条路汇聚到的是同一套 Harness —— 这也是我们做这件事的初衷。</p>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./v1/zh/blogs"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="../community/overview.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">社区</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="agentscope-v1-harness.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">首个Harness Framework发布 – 把OpenClaw的「持续进化」体验，装进企业级的安全边界。</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Tongyi Lab, Alibaba Inc.
+            </div>
+            Made with 
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            <div class="last-updated">
+              Last updated on 2026-06-02</div>
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://github.com/agentscope-ai/agentscope-java" aria-label="GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://discord.gg/eYMpfnkG8h" aria-label="Discord"><svg stroke="currentColor" fill="currentColor" stroke-width="0" t="1753331148815" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5721" width="200" height="200">
+    <path d="M723.903423 359.138018c-69.65045-52.952793-136.256577-51.476757-136.256576-51.476757l-6.088649 7.564685c83.027027 25.738378 121.127207 62.085766 121.127207 62.085766a387.459459 387.459459 0 0 0-145.297297-46.956397 418.179459 418.179459 0 0 0-98.340901 1.752793 73.801802 73.801802 0 0 1-7.564684 1.476036 357.385225 357.385225 0 0 0-110.702703 30.258739 278.786306 278.786306 0 0 0-28.782703 13.653333S353.049369 339.488288 440.873514 313.657658l-4.612613-6.088649s-66.513874-1.476036-136.164324 51.476757A654.252973 654.252973 0 0 0 230.630631 642.167928s40.867748 71.126486 148.341621 73.801802c0 0 16.697658-22.694054 31.827027-40.867748-62.085766-18.45045-84.77982-57.565405-84.77982-57.565405a130.998198 130.998198 0 0 0 13.653334 7.564684s0 1.568288 1.476036 1.568289c1.476036 1.476036 3.044324 1.476036 4.52036 3.044324a238.748829 238.748829 0 0 0 34.779099 16.605405 513.199279 513.199279 0 0 0 71.218739 21.218018 350.558559 350.558559 0 0 0 125.555315 0 329.894054 329.894054 0 0 0 69.650451-21.218018A247.328288 247.328288 0 0 0 702.685405 618.09009s-24.262342 39.391712-87.824144 57.565405c13.653333 18.45045 31.827027 39.299459 31.827027 39.29946 107.473874-2.952072 148.341622-73.801802 146.773334-72.602523a654.990991 654.990991 0 0 0-69.558199-283.214414zM421.131532 596.77982a54.705586 54.705586 0 0 1 0-109.042162 54.705586 54.705586 0 0 1 0 109.042162z m177.124324 0a54.705586 54.705586 0 1 1 49.908468-54.521081 52.491532 52.491532 0 0 1-49.908468 54.521081z" p-id="5722"></path><path d="M512 1024A512 512 0 1 1 1024 512 512.645766 512.645766 0 0 1 512 1024z m0-972.892252a461.261261 461.261261 0 1 0 461.261261 461.261261 461.261261 461.261261 0 0 0-461.261261-461.261261z" p-id="5723"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11" aria-label="DingTalk"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+    <path d="M512 0C229.205333 0 0 229.205333 0 512s229.205333 512 512 512 512-229.205333 512-512S794.794667 0 512 0z m237.312 480.810667c-1.109333 4.48-3.712 11.093333-7.424 18.986666h0.128l-0.426667 0.682667c-21.504 46.037333-77.610667 136.106667-77.610666 136.106667l-0.298667-0.597334-16.384 28.501334h79.018667l-150.912 200.917333 34.304-136.533333h-62.208l21.589333-90.282667c-17.493333 4.224-38.101333 10.026667-62.592 17.92 0 0-33.109333 19.370667-95.317333-37.333333 0 0-41.984-36.992-17.578667-46.165334 10.410667-3.925333 50.304-8.917333 81.706667-13.226666 42.410667-5.674667 68.48-8.789333 68.48-8.789334s-130.773333 2.005333-161.792-2.901333c-30.976-4.906667-70.4-56.704-78.805334-102.186667 0 0-12.970667-25.002667 27.904-13.226666 40.917333 11.818667 210.005333 46.08 210.005334 46.08S321.109333 411.434667 306.517333 394.922667c-14.634667-16.469333-43.093333-89.770667-39.424-134.869334 0 0 1.621333-11.221333 13.098667-8.192 0 0 162.602667 74.282667 273.792 114.986667 111.104 40.704 207.786667 61.397333 195.328 114.005333z" opacity=".65" p-id="6077"></path>
+</svg>
+</a>
+              
+            </div>
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer no-toc">
+      
+      
+      
+    </aside>
+  </div>
+</div>
+<script src="../../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script src="../../../_static/tabs.js?v=fe9d53fa"></script>
+    <script src="../../../_static/language.js?v=26e4e812"></script>
+    <script src="../../../_static/notice-bar.js?v=6a544133"></script>
+    <script src="../../../_static/mermaid-zoom.js?v=b287901b"></script>
+    <script src="../../../_static/version.js?v=b09c2e6c"></script>
+    </body>
+</html>
