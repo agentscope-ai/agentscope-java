@@ -17,13 +17,12 @@ package io.agentscope.core.tool.mcp;
 
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * Wrapper for synchronous MCP clients that converts blocking calls to reactive Mono types.
