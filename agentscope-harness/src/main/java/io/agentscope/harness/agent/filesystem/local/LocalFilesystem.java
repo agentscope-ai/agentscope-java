@@ -612,11 +612,23 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (vpath.contains("..") || vpath.startsWith("~")) {
             throw new SecurityException("Path traversal not allowed");
         }
-        Path full = cwd.resolve(vpath.substring(1)).normalize();
+        // Strip Windows drive prefix ("C:\" / "C:/") so absolute Windows paths get re-rooted
+        // under the sandbox the same way Unix absolute paths do; no-op on Unix input.
+        Path full = cwd.resolve(stripWindowsDrive(vpath.substring(1))).normalize();
         if (!full.startsWith(cwd)) {
             throw new SecurityException("Path " + full + " outside root directory: " + cwd);
         }
         return full;
+    }
+
+    private static String stripWindowsDrive(String key) {
+        if (key.length() >= 3
+                && Character.isLetter(key.charAt(0))
+                && key.charAt(1) == ':'
+                && (key.charAt(2) == '\\' || key.charAt(2) == '/')) {
+            return key.substring(3);
+        }
+        return key;
     }
 
     private Path resolveRooted(String effectiveKey) {
