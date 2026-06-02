@@ -12,7 +12,31 @@ Harness lets you install skills from two places:
 
 Both sources are active simultaneously — no need to choose one. On top of that you can enable a **self-learning loop**: the agent drafts skills → review gate → background curator tidies up.
 
-> For skill anatomy itself — `SKILL.md` fields, resource loading, tool binding, code execution — see the core skill docs. This page is harness-only.
+A skill directory looks like:
+
+```
+code-reviewer/
+├── SKILL.md           # required — YAML frontmatter (name + description) + instructions for the agent
+├── references/        # optional — long-form docs the agent reads on demand
+│   └── style-guide.md
+└── scripts/           # optional — executable scripts the agent can shell out to
+    └── run-checks.sh
+```
+
+SKILL.md format:
+
+```markdown
+---
+name: code-reviewer
+description: Use when the user asks for code review, style feedback, or PR audits.
+---
+
+# Code Reviewer
+
+Steps:
+1. Read `references/style-guide.md` for project conventions.
+2. Run `scripts/run-checks.sh <target-path>` and summarize the output.
+```
 
 ## A quick example
 
@@ -237,6 +261,66 @@ agent.runCuratorOnce()                                       // run a curation n
 agent.promoteSkill("notes-taker", "alice")                   // manually promote a draft
      .subscribe(result -> System.out.println(result));
 ```
+
+## How the agent reads and runs skills
+
+When the agent reasons, it sees an `<available_skills>` block in the system prompt listing every skill currently in scope:
+
+```xml
+<available_skills>
+<skill>
+  <name>code-reviewer</name>
+  <description>Use when the user asks for code review, style feedback, or PR audits.</description>
+  <skill-id>code-reviewer_workspace-namespaced</skill-id>
+  <files-root>/workspace/skills/code-reviewer</files-root>
+</skill>
+...
+</available_skills>
+```
+
+Each entry carries just enough metadata for the agent to decide whether to load it. `<files-root>`, when present, is the absolute path the agent uses for shell execution (see below).
+
+### Reading SKILL.md and resources
+
+To activate a skill the agent calls a built-in tool — `load_skill_through_path`:
+
+- `load_skill_through_path(skillId, path="SKILL.md")` returns the markdown body
+- `load_skill_through_path(skillId, path="references/style-guide.md")` returns any other file under the skill directory
+
+How the file gets fetched depends on where the skill came from:
+
+| Skill source | How `path` is resolved |
+|--------------|------------------------|
+| Project-global dir (Layer 1) | preloaded into memory at registration |
+| Marketplace — Git / MySQL / Nacos / classpath (Layer 2) | preloaded into memory by the backend |
+| `workspace/skills/` shared (Layer 3) | preloaded into memory at registration |
+| `<userId>/skills/` per-user (Layer 4) | SKILL.md preloaded; other files read on demand through `AbstractFilesystem` (per-user namespace + sandbox routing honored automatically) |
+
+The agent doesn't see this difference — `load_skill_through_path` always works the same way. The fallback chain is "in-memory hit → filesystem read → error with an enumeration of every path actually available," so a wrong path returns a useful list rather than a dead end.
+
+### `<files-root>` and shell execution
+
+When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute_shell_command`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
+
+| FS mode (shell available?) | Workspace skill `<files-root>` | Marketplace skill `<files-root>` |
+|----------------------------|--------------------------------|-----------------------------------|
+| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<source>/<name>` |
+| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
+| Local without shell / Composite | (not rendered — no shell tool registered) | (not rendered) |
+
+So the agent's shell call is always `execute_shell_command("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
+
+### Where marketplace files actually live
+
+Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each reasoning step:
+
+- Per-file SHA-256 dedup — only changed files are rewritten
+- Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
+- In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change)
+
+Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
+
+If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.
 
 ## Tips
 

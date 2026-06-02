@@ -182,18 +182,50 @@ Background task state is written by default to `workspace/agents/<parentAgentId>
 
 ## Subagent streaming
 
-> For the streaming basics (`stream()`, `Event`, `StreamOptions`), see [Message & Event](/v2/building-blocks/message-and-event). This section is only about `HarnessAgent`'s child-agent event forwarding in `stream()` mode.
+> Streaming basics: new code should prefer `streamEvents()` (returns `Flux<io.agentscope.core.event.AgentEvent>` — the v2 fine-grained event hierarchy that aligns with Python 2.0's `agent.reply_stream()`). The legacy `stream()` family that returns `Flux<Event>` is `@Deprecated(forRemoval = true)` as of 2.0.0 — see [Message & Event](../building-blocks/message-and-event.md) and [Changelog B.4](../change-log.md). This section covers `HarnessAgent`'s child-agent event forwarding behavior on both APIs.
 
-### What it does
+### Picking your streaming API
 
-When you call the parent with `parent.stream()` and the parent invokes a child via `agent_spawn` / `agent_send` during reasoning, **every intermediate event the child produces is injected live into the parent's event stream**. Zero configuration — just use `stream()` (not `call()`). Each event carries an extra `EventSource` field telling you whether it's from the parent or which subagent.
+| Use case | Recommended |
+|----------|-------------|
+| Parent-agent events only — text deltas, tool calls, lifecycle | **`streamEvents()`** (`Flux<AgentEvent>`) |
+| **Live child-agent events** (subagent forwarding with `EventSource`) | `stream()` (`Flux<Event>`) — currently the only path |
 
-### A typical timeline
+The `AgentEvent` hierarchy does not yet expose an `EventSource`-equivalent channel for spawned subagents — that's on the v2 roadmap. Until it lands, callers that need live child-agent events must stay on the deprecated `stream()` API; parent-only consumers should switch to `streamEvents()` today.
+
+### Parent events via `streamEvents()` (recommended)
+
+```java
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+
+parent.streamEvents(new UserMessage(message), ctx)
+    .doOnNext(event -> {
+        // event is a typed io.agentscope.core.event.AgentEvent subclass
+        if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
+            System.out.print(((TextBlockDeltaEvent) event).getDelta());
+        } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
+            ToolCallStartEvent start = (ToolCallStartEvent) event;
+            System.out.println("\n[tool] " + start.getToolName());
+        }
+        // Other lifecycle events: AgentStartEvent / AgentEndEvent,
+        // ModelCallStart/End, ToolResultStart/End, RequireUserConfirmEvent, etc.
+    })
+    .blockLast();
+```
+
+Child-agent events are **not** forwarded on this path today — anything spawned via `agent_spawn` / `agent_send` finishes silently and its final result arrives back to the parent as a `TOOL_RESULT` block.
+
+### Child-agent forwarding via `stream()` (deprecated, only path today)
+
+When you call the parent with `parent.stream()` and the parent invokes a child via `agent_spawn` / `agent_send` during reasoning, **every intermediate event the child produces is injected live into the parent's event stream**. Each event carries an `EventSource` field telling you whether it's from the parent or which subagent.
 
 ```
 caller
-  └─ parent.stream()
-        │
+  └─ parent.stream()                          ← @Deprecated(forRemoval=true), but the only API
+        │                                       that forwards subagent events today
         ├─ parent REASONING chunks…           ← parent's first round (incl. tool call)
         │
         │  [agent_spawn "researcher" starts]
@@ -209,9 +241,12 @@ caller
 
 Parent self-events: `source == null`. Child events: `source != null`.
 
-### Distinguishing by source
+#### Distinguishing by source
 
 ```java
+// NOTE: stream(...) is @Deprecated(forRemoval=true). Kept here because it is currently
+// the only API that forwards live subagent events. Migrate to streamEvents(...) once the
+// AgentEvent subagent-source channel lands.
 Flux<Event> events = parent.stream(msgs, StreamOptions.defaults(), ctx);
 
 events.subscribe(event -> {
@@ -260,12 +295,40 @@ events.filter(e -> e.getSource() != null
 
 ### SSE forwarding
 
+Pick the API that matches what your client needs:
+
+**Parent-only events (recommended for most chat UIs):**
+
 ```java
 @GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
 public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
                                           @RequestParam String sessionId) {
     RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
-    return agent.stream(
+    return agent.streamEvents(new UserMessage(message), ctx)
+            .map(event -> {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("type", event.getType().name());
+                payload.put("id",   event.getId());
+                if (event instanceof TextBlockDeltaEvent delta) {
+                    payload.put("delta", delta.getDelta());
+                } else if (event instanceof ToolCallStartEvent start) {
+                    payload.put("toolName", start.getToolName());
+                }
+                return ServerSentEvent.<String>builder()
+                        .data(objectMapper.writeValueAsString(payload))
+                        .build();
+            });
+}
+```
+
+**Include child-agent events** (uses the deprecated `stream()` path — only option until the `AgentEvent` subagent-source channel lands):
+
+```java
+@GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
+                                          @RequestParam String sessionId) {
+    RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
+    return agent.stream( // @Deprecated(forRemoval=true) — see note above
                     List.of(new UserMessage(message)),
                     StreamOptions.defaults(), ctx)
             .map(event -> {
@@ -289,11 +352,12 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 
 | Scenario | Live forwarding? |
 |----------|------------------|
-| `stream()` + synchronous local child (`timeout_seconds > 0`) | ✔ |
+| `stream()` (deprecated) + synchronous local child (`timeout_seconds > 0`) | ✔ |
+| `streamEvents()` (recommended) — any subagent | ✗ (parent events only; subagent channel on `AgentEvent` is a roadmap item) |
 | `call()` mode (non-streaming) | ✗ (child result returns as a `tool_result` string) |
 | `timeout_seconds = 0` background task | ✗ (terminal state is pushed back to the parent's next round) |
 | Remote subagent (Agent Protocol) | ✗ |
-| Multi-level nesting (grandchildren) | ✔ (`path` / `depth` stack automatically) |
+| Multi-level nesting (grandchildren), `stream()` path | ✔ (`path` / `depth` stack automatically) |
 
 ### Error handling
 
@@ -304,4 +368,5 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 - [Workspace](./workspace) — `subagents/` and `agents/<id>/tasks/` layout
 - [Plan Mode](./plan-mode) — restrictions on subagents during the plan phase
 - [Architecture](./architecture) — how parent and child cooperate
-- [Message & Event](/v2/building-blocks/message-and-event) — full reference for `Event` / `EventType` / `StreamOptions`
+- [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
+- [Changelog B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline

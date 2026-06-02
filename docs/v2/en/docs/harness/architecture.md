@@ -7,41 +7,7 @@ description: "What HarnessAgent is, how its capabilities cooperate, and how stat
 
 A bare `ReActAgent` only handles "one request → reason → tool → reply". Harness answers a different set of questions: how does the next turn pick up where the last left off, how does context stay bounded, how do users stay isolated, how do dangerous actions get reviewed, how do reusable capabilities accumulate.
 
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-harness</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
-
-## A minimal example
-
-The example below covers three things at once: workspace-driven persona, session persistence (turn 2 with the same `sessionId` remembers turn 1), and conversation compaction.
-
-```java
-HarnessAgent agent = HarnessAgent.builder()
-        .name("note-taker")
-        .sysPrompt("You are a note-taking assistant.")
-        .model(model)
-        .workspace(Paths.get(".agentscope/workspace"))
-        .compaction(CompactionConfig.builder()
-                .triggerMessages(30)
-                .keepMessages(10)
-                .build())
-        .build();
-
-RuntimeContext ctx = RuntimeContext.builder()
-        .sessionId("demo-session")
-        .userId("alice")
-        .build();
-
-agent.call(new UserMessage("My name is Alice, and I'm preparing a tech talk on ReAct today."), ctx).block();
-
-agent.call(new UserMessage("What is my name? What am I doing today?"), ctx).block();
-```
-
-If `.agentscope/workspace/AGENTS.md` exists, it becomes the agent's persona. Turn 2 answers correctly because the same `sessionId` restores the previous state. After enough turns trip compaction, distilled facts land under `workspace/memory/YYYY-MM-DD.md` and eventually merge into `MEMORY.md`. Restart the process with the same `sessionId` and the agent picks up where it left off.
+> Installation, dependency, and an end-to-end "first `HarnessAgent`" walkthrough live in [Quickstart](../quickstart.md). This page is architecture only.
 
 ## Core working principle
 

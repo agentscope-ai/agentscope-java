@@ -371,12 +371,12 @@ agent.streamEvents(new UserMessage("user", "Help me fix this bug"))
 ::::{grid} 2
 
 :::{grid-item-card} Agent
-:link: /v2/building-blocks/agent
+:link: ./agent.html
 
 How agents emit events and messages in the ReAct loop
 :::
   :::{grid-item-card} Context
-:link: /v2/harness/context
+:link: ../harness/context.html
 
 How messages are stored and persisted
 :::

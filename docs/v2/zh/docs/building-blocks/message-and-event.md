@@ -371,12 +371,12 @@ agent.streamEvents(new UserMessage("user", "帮我修复这个 bug"))
 ::::{grid} 2
 
 :::{grid-item-card} 智能体
-:link: /zh/v2/building-blocks/agent
+:link: ./agent.html
 
 智能体如何在 ReAct 循环中产出事件和消息
 :::
   :::{grid-item-card} 上下文
-:link: /zh/v2/harness/context
+:link: ../harness/context.html
 
 消息如何存储与持久化
 :::

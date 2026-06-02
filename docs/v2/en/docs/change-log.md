@@ -3,6 +3,10 @@ title: "Changelog"
 description: "Core differences between AgentScope Java 2.0 and 1.0"
 ---
 
+:::{note}
+**Current latest version: `2.0.0-RC1`**. See the [GitHub release notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC1) for the full release-by-release change list.
+:::
+
 AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level changes. This page splits those changes into two sections:
 
 - **Migration Guide** — what changes against 1.x, in two tiers:
@@ -31,7 +35,6 @@ Detail → [Context](harness/context.md)
 |---|---|
 | `io.agentscope.core.session.SessionManager` | Configure `Session` + `SessionKey` on the agent builder; persistence happens automatically |
 | `io.agentscope.core.pipeline.*` — `Pipeline`, `Pipelines`, `SequentialPipeline`, `FanoutPipeline`, `MsgHub` | Compose middleware + sub-agents + the event stream for multi-agent orchestration. See the subagent guide → [Subagent](harness/subagent.md) |
-| `io.agentscope.core.tool.coding.*` (4 shell/validator classes) and `io.agentscope.core.tool.file.*` (3 file-tool classes) | Use the `agentscope-harness` module, which provides equivalent tools inside the workspace context. See → [Harness filesystem](harness/filesystem.md) |
 | `io.agentscope.core.model.tts.*` (14 files, DashScope TTS / Realtime TTS / `AudioPlayer`, etc.) | Core no longer ships TTS. Integrate the upstream provider SDK directly if you need TTS |
 | `io.agentscope.core.hook.PendingToolRecoveryHook` | Use `Builder.enablePendingToolRecovery(boolean)` |
 | `io.agentscope.core.hook.TTSHook` | Removed alongside the TTS module |
@@ -106,6 +109,33 @@ Alongside the new event stream, the `Msg` refactor adds:
 
 Detail → [Message & Event](building-blocks/message-and-event.md)
 
+##### `stream()` → `streamEvents()` (alignment with Python 2.0)
+
+Python 2.0's `agent.reply_stream()` exposes a single streaming signature (`AsyncGenerator[AgentEvent, None]`) that maps directly to Java's fine-grained `io.agentscope.core.event.AgentEvent` hierarchy. To match it, the coarse-grained `Flux<Event> stream(...)` API on the Java side is `@Deprecated` as of 2.0.0:
+
+- **Methods (`forRemoval = true`, going away next minor)**
+  - `StreamableAgent.stream(...)` — all 11 `stream(...)` overloads on the interface (defaults + abstract)
+  - `AgentBase.stream(...)` — 3 `Flux<Event>` implementations
+  - `ReActAgent.stream(..., RuntimeContext)` — 4 `RuntimeContext`-suffixed overloads
+  - `HarnessAgent.stream(...)` — 9 overloads (3 interface `@Override`s + 6 `RuntimeContext` variants). `HarnessAgent` gains 4 new `streamEvents(Msg/List<Msg>[, RuntimeContext])` methods that delegate to `ReActAgent.streamEvents(...)` while reusing the sandbox lifecycle `acquireForCall` / `releaseForCall`
+  - `ReActAgent.streamEvents(..., RuntimeContext)` added — mirrors `call(..., RuntimeContext)` for context propagation
+- **Types (soft deprecation, no `forRemoval` yet)**
+  - `io.agentscope.core.agent.Event`, `EventType`, `EventSource`
+  - Still consumed internally by the harness (subagent event forwarding: `SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`), AGUI, A2A, chat-completions-web, and Kotlin extension modules as the event-bus / adapter input. They will be flipped to `forRemoval = true` only after those modules migrate to `AgentEvent`, so the entire downstream is not warning-flooded in a single release.
+  - **Current gap:** `HarnessAgent.streamEvents(...)` does **not** forward subagent events yet — the `AgentEvent` hierarchy has no equivalent `EventSource` channel. Callers that need the child-agent stream must stay on the deprecated `stream(...)` path until that channel lands.
+
+New code should use:
+
+```java
+agent.streamEvents(new UserMessage("Hello"))
+        .doOnNext(event -> {
+            if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
+                System.out.print(((TextBlockDeltaEvent) event).getDelta());
+            }
+        })
+        .blockLast();
+```
+
 #### B.5 RAG module — in progress
 
 - `Knowledge`, `KnowledgeRetrievalTools`, `RAGMode`, `GenericRAGHook` are all `@Deprecated(forRemoval = true, since = "2.0.0")`.
@@ -117,6 +147,14 @@ Detail → [Message & Event](building-blocks/message-and-event.md)
 - `LongTermMemory`, `LongTermMemoryMode`, `LongTermMemoryTools` are all `@Deprecated(forRemoval = true, since = "2.0.0")`.
 - The builder methods `.longTermMemory(...)` / `.longTermMemoryMode(...)` / `.longTermMemoryAsyncRecord(...)` are deprecated in parallel.
 - Same status — being rewritten on the v2 architecture. New code should not depend on the current API.
+
+#### B.7 Core shell / file tools — move to Harness
+
+- `io.agentscope.core.tool.coding.*` (`ShellCommandTool`, `CommandValidator`, `UnixCommandValidator`, `WindowsCommandValidator`) and `io.agentscope.core.tool.file.*` (`ReadFileTool`, `WriteFileTool`, `FileToolUtils`) are all `@Deprecated(forRemoval = true, since = "2.0.0")`.
+- These tools run commands and read/write files directly against the host process — no workspace or permission isolation — so they are being moved out of the core built-in toolset.
+- Recommended path: use the `agentscope-harness` module to run equivalent tools inside a workspace context. You get unified local / Docker / cloud-sandbox backends, file-IO permissions, a read/write cache, and HITL approval for free.
+
+Detail → [Harness filesystem](harness/filesystem.md)
 
 ---
 
@@ -158,6 +196,8 @@ Detail → [Workspace](harness/workspace.md)
 
 - `.enableTaskList(...)` / `.enableTaskList(boolean)` — enable the built-in `TodoTools`
 - `.permissionContext(PermissionContextState)` — preload permission rules
-- `Builder.fromAgent(ReActAgent)` — derive a new builder from an existing agent's observable configuration (name, description, system prompt, model, maxIters, generateOptions, toolkit)
+- `ReActAgent.Builder.fromAgent(ReActAgent)` — derive a new builder from an existing agent's observable configuration (name, description, system prompt, model, maxIters, generateOptions, toolkit)
+- `HarnessAgent.Builder.fromAgent(ReActAgent)` — ReActAgent → HarnessAgent migration helper. Inherits the same 7 fields as `ReActAgent.Builder.fromAgent` plus **every other observable configuration on ReActAgent**: `session` / `sessionKey`, `ModelConfig` (`maxRetries` / `fallbackModel`), `ReactConfig.stopOnReject`, `modelExecutionConfig` / `toolExecutionConfig` / `toolExecutionContext`, `structuredOutputReminder`, `enablePendingToolRecovery`, `checkRunning`, `permissionContext`, `middlewares`, and `hooks`. The only flags not copied are `enableMetaTool` / `enableTaskList` — these are builder-time toolkit-mutation flags, and the toolkit copy already carries the tools they registered. Harness-only config (workspace / filesystem / subagents / skills / plan mode / `disable*` toggles) still has to be set explicitly. See javadoc for the full table.
+- **6 new getters on ReActAgent / parents to support the above migration**: `getModelExecutionConfig()` / `getToolExecutionConfig()` / `getToolExecutionContext()` / `isPendingToolRecoveryEnabled()` / `getPermissionContext()` (on `ReActAgent`); `getStructuredOutputReminder()` (on `StructuredOutputCapableAgent`); `isCheckRunning()` (on `AgentBase`).
 
 Detail → [Agent](building-blocks/agent.md)

@@ -179,6 +179,46 @@ To replace fields flowing into the next layer, construct a new input record, the
 
 Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`, `middleware/ModelCallMiddlewareExample.java`, `middleware/SystemPromptMiddlewareExample.java`.
 
+### Reading RuntimeContext
+
+Every `MiddlewareBase` hook receives the `Agent` as the first argument. Calling `agent.getRuntimeContext()` returns the [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) bound for this `call` / `stream` — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
+
+```java
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.function.Function;
+import reactor.core.publisher.Flux;
+
+/** Log user / request id and propagate a trace id for downstream tools. */
+public class RequestContextMiddleware implements MiddlewareBase {
+
+    @Override
+    public Flux<AgentEvent> onAgent(
+            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+        RuntimeContext rc = agent.getRuntimeContext();
+        if (rc != null) {
+            System.out.printf(
+                    "[req] user=%s session=%s reqId=%s%n",
+                    rc.getUserId(),
+                    rc.getSessionId(),
+                    rc.get("request_id"));
+            rc.put("trace_id", java.util.UUID.randomUUID().toString());  // visible to later hooks / tools
+        }
+        return next.apply(input);
+    }
+}
+```
+
+Things to keep in mind:
+
+- `agent.getRuntimeContext()` is only non-null during a `call`; outside a call it returns `null`.
+- The same `RuntimeContext` instance is shared by every hook and tool in the reply; its maps are thread-safe, so `put` from any hook is safe.
+- Don't cache per-request state on middleware instance fields — a middleware instance is typically reused across agents / calls. Use `RuntimeContext` or Reactor's `contextWrite` instead.
+- If the builder also has a global `toolExecutionContext`, the framework merges it after the per-call context when dispatching to tools (per-call wins on key collisions).
+
 ### Execution order
 
 Onion hooks (`onAgent`, `onReasoning`, `onActing`, `onModelCall`) — **the first middleware in the list is outermost**:

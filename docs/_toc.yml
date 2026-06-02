@@ -321,6 +321,8 @@ parts:
 
 - caption: v2 · Reference
   chapters:
+  - file: v2/en/docs/others/going-to-production
+    title: Going to Production
   - file: v2/en/docs/others/faq
     title: FAQ
 
@@ -457,6 +459,8 @@ parts:
 
 - caption: v2 · 参考
   chapters:
+  - file: v2/zh/docs/others/going-to-production
+    title: 上生产
   - file: v2/zh/docs/others/faq
     title: 常见问题
 

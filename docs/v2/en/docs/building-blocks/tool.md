@@ -175,7 +175,7 @@ public class WebSearchTool extends ToolBase {
 
 External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits `RequireExternalExecutionEvent` and pauses until the result is fed back via `ExternalExecutionResultEvent`.
 
-This pattern is the foundation of [human-in-the-loop](/v2/building-blocks/agent#human-in-the-loop) flows — some actions need human approval or human execution.
+This pattern is the foundation of [human-in-the-loop](./agent.md#human-in-the-loop) flows — some actions need human approval or human execution.
 
 To create an external tool, set `externalTool` to `true` and skip implementing `callAsync`:
 
@@ -214,6 +214,89 @@ public class HumanApprovalTool extends ToolBase {
 ```
 
 Runnable examples: `agentscope-examples/documentation/.../tool/ToolBaseExample.java`, `tool/ToolExecutionContextExample.java`.
+
+## Receiving context
+
+The [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) passed to `agent.call(msgs, runtimeContext)` is forwarded to every tool invocation in that reply. Tools can read it in two ways: annotation-based tools through automatic injection, and `ToolBase.callAsync` through `ToolCallParam`.
+
+### Automatic injection (`@Tool` methods)
+
+Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as framework-injected. The resolution order:
+
+| Parameter type | Source |
+|----------------|--------|
+| `ToolEmitter` | Streaming emitter (no-op when none configured) |
+| `Agent` | The current agent instance |
+| `AgentState` | `agent.getAgentState()` (also the target of `@Tool(stateInjected = true)`) |
+| `RuntimeContext` | The current per-call context |
+| `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
+| Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |
+
+"User POJO" means: no `@ToolParam`, not primitive, not `ContentBlock` / `Msg`, not under `java.*` / `javax.*`. Every other parameter (those with `@ToolParam`, or that fall outside the above types) is read from the LLM-supplied JSON by name.
+
+```java
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
+
+public record UserContext(String username, String locale) {}
+
+public class PersonalizedTools {
+
+    @Tool(name = "greet", description = "Greet the user with a custom greeting")
+    public String greet(
+            @ToolParam(name = "greeting", description = "Greeting word, e.g. 'Hello'")
+                    String greeting,                  // ← supplied by the model
+            UserContext userCtx) {                    // ← injected by the framework
+        return greeting + ", " + (userCtx == null ? "unknown" : userCtx.username()) + "!";
+    }
+}
+```
+
+The caller registers the POJO by type once; every `call` then routes the matching instance to any tool that asks for it:
+
+```java
+RuntimeContext ctx =
+        RuntimeContext.builder()
+                .put(UserContext.class, new UserContext("alice", "en"))
+                .userId("alice")
+                .build();
+
+agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
+```
+
+The model never sees `userCtx` — it is not part of the tool's JSON schema. Full example: `agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`.
+
+### Accessing context in `ToolBase.callAsync`
+
+Tools that extend `ToolBase` read context through `ToolCallParam`:
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
+import reactor.core.publisher.Mono;
+
+public class TenantAwareTool extends ToolBase {
+
+    public TenantAwareTool() {
+        super(/* builder ... */);
+    }
+
+    @Override
+    public Mono<io.agentscope.core.message.ToolResultBlock> callAsync(ToolCallParam param) {
+        RuntimeContext rc = param.getRuntimeContext();
+        String tenantId = rc != null ? rc.getUserId() : null;
+        TenantConfig cfg = rc != null ? rc.get(TenantConfig.class) : null;
+        // ... apply tenantId / cfg ...
+    }
+}
+```
+
+`ToolCallParam` also exposes `getAgent()`, `getInput()`, `getEmitter()`, `getToolUseBlock()`, and the deprecated `getContext()`. Prefer `getRuntimeContext()` in new code.
+
+### Coordinating between hooks and tools
+
+The `RuntimeContext` string layer (`put(String, Object)` / `get(String)`) is a short-lived channel between middleware and tools during a single `call` — a middleware can write at `onActing`/`onReasoning` and a tool that injects a `RuntimeContext` parameter reads it. The instance is unbound from the agent (along with all hooks) when the call finishes.
 
 ## MCP
 
@@ -401,22 +484,22 @@ The meta tool's input represents the **final state** of all groups, not a delta.
 ::::{grid} 2
 
 :::{grid-item-card} Agent
-:link: /v2/building-blocks/agent
+:link: ./agent.html
 
 How agents orchestrate tool calls in the ReAct loop
 :::
   :::{grid-item-card} Permission System
-:link: /v2/building-blocks/permission-system
+:link: ./permission-system.html
 
 Fine-grained control over which tools execute and when
 :::
   :::{grid-item-card} Middleware
-:link: /v2/building-blocks/middleware
+:link: ./middleware.html
 
 Use onion middlewares to intercept and rewrite tool calls
 :::
   :::{grid-item-card} Human-in-the-Loop
-:link: /v2/building-blocks/agent#human-in-the-loop
+:link: ./agent.html#human-in-the-loop
 
 External execution tools and approval workflows
 :::
