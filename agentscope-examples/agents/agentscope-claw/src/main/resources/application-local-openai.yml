@@ -1,0 +1,12 @@
+claw:
+  local-openai:
+    enabled: true
+    api-key: "${LOCAL_OPENAI_API_KEY:local}"
+    base-url: "${LOCAL_OPENAI_BASE_URL:http://127.0.0.1:1234}"
+    endpoint-path: "${LOCAL_OPENAI_ENDPOINT_PATH:/v1/chat/completions}"
+    model-name: "${LOCAL_OPENAI_MODEL:qwen/qwen3.5-9b}"
+    stream: ${LOCAL_OPENAI_STREAM:false}
+    max-tokens: ${LOCAL_OPENAI_MAX_TOKENS:4096}
+    temperature: ${LOCAL_OPENAI_TEMPERATURE:0.2}
+    read-timeout: "${LOCAL_OPENAI_READ_TIMEOUT:120s}"
+    connect-timeout: "${LOCAL_OPENAI_CONNECT_TIMEOUT:10s}"
