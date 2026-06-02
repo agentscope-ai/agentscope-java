@@ -21,6 +21,9 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agent.config.ModelConfig;
+import io.agentscope.core.agent.config.ReactConfig;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -396,36 +399,67 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return wrappedCall(msgs, effective, () -> delegate.call(msgs, schema, effective));
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the fine-grained
+     *     {@code AgentEvent} stream that aligns with Python 2.0's {@code agent.reply_stream()}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
         return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options));
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the fine-grained
+     *     {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
         return wrappedStream(
                 RuntimeContext.empty(), () -> delegate.stream(msgs, options, structuredModel));
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the fine-grained
+     *     {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
         return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options, schema));
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(Msg, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(Msg msg, RuntimeContext ctx) {
         return stream(List.of(msg), StreamOptions.defaults(), ctx);
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(List<Msg> msgs, RuntimeContext ctx) {
         return stream(msgs, StreamOptions.defaults(), ctx);
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStream(effective, () -> delegate.stream(msgs, options, effective));
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
             List<Msg> msgs, StreamOptions options, Class<?> structuredModel, RuntimeContext ctx) {
         RuntimeContext effective =
@@ -434,11 +468,73 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 effective, () -> delegate.stream(msgs, options, structuredModel, effective));
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
             List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
+    }
+
+    // ==================== streamEvents (AgentEvent — v2 aligned) ====================
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single message. Aligns with Python 2.0's
+     * {@code agent.reply_stream()} signature.
+     *
+     * @param msg input message
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg) {
+        return streamEvents(List.of(msg), RuntimeContext.empty());
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a list of messages.
+     *
+     * @param msgs input messages
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
+        return streamEvents(msgs, RuntimeContext.empty());
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single message with a caller-supplied
+     * {@link RuntimeContext}.
+     *
+     * @param msg input message
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext ctx) {
+        return streamEvents(List.of(msg), ctx);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a list of messages with a caller-supplied
+     * {@link RuntimeContext}. The harness wraps the delegate's
+     * {@link ReActAgent#streamEvents(List, RuntimeContext)} with the same sandbox-lifecycle
+     * acquire/release semantics that the {@code call(...)} family uses, so streaming and
+     * blocking callers behave consistently with respect to sandbox warm-up.
+     *
+     * <p><b>Note on subagent events:</b> child-agent events spawned via {@code agent_spawn} /
+     * {@code agent_send} are currently forwarded only on the deprecated {@link #stream(List,
+     * StreamOptions, RuntimeContext)} path (typed as {@code io.agentscope.core.agent.Event} with
+     * {@code EventSource}). The equivalent {@code AgentEvent} source channel is on the v2 roadmap;
+     * until it lands, this method emits parent events only.
+     *
+     * @param msgs input messages
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, effective));
     }
 
     @Override
@@ -485,7 +581,29 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return base;
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal alongside the {@link #stream(List, StreamOptions)}
+     *     family. Replaced by {@link #wrappedStreamEvents(RuntimeContext, Supplier)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     private Flux<Event> wrappedStream(RuntimeContext effective, Supplier<Flux<Event>> inner) {
+        return Flux.using(
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.acquireForCall(effective);
+                    }
+                    return effective;
+                },
+                eff -> inner.get(),
+                eff -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(eff);
+                    }
+                });
+    }
+
+    private Flux<AgentEvent> wrappedStreamEvents(
+            RuntimeContext effective, Supplier<Flux<AgentEvent>> inner) {
         return Flux.using(
                 () -> {
                     if (sandboxLifecycleMw != null) {
@@ -692,6 +810,175 @@ public class HarnessAgent implements Agent, AutoCloseable {
         Session sessionOverride;
 
         private Builder() {}
+
+        /**
+         * Returns a new {@link Builder} pre-populated with as much of the given {@link ReActAgent}'s
+         * observable configuration as can be read back from public getters.
+         *
+         * <p>This is a <b>partial</b> migration helper. The caller still needs to set every
+         * harness-specific concern explicitly (workspace, filesystem, sandbox, subagents, skills,
+         * plan mode, etc.) — those have no analog on a vanilla {@link ReActAgent}, so they cannot
+         * be derived from {@code agent}.
+         *
+         * <h4>What this method copies</h4>
+         *
+         * <table border="1">
+         *   <tr><th>Group</th><th>Field</th><th>Source</th></tr>
+         *   <tr><td rowspan="7">Observable configuration</td>
+         *       <td>{@code name}</td><td>{@code agent.getName()}</td></tr>
+         *   <tr><td>{@code description}</td><td>{@code agent.getDescription()}</td></tr>
+         *   <tr><td>{@code sysPrompt}</td><td>{@code agent.getSysPrompt()}</td></tr>
+         *   <tr><td>{@code model}</td><td>{@code agent.getModel()}</td></tr>
+         *   <tr><td>{@code maxIters}</td><td>{@code agent.getMaxIters()}</td></tr>
+         *   <tr><td>{@code generateOptions}</td><td>{@code agent.getGenerateOptions()}</td></tr>
+         *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
+         *   <tr><td rowspan="2">Persistence</td>
+         *       <td>{@code session}</td><td>{@code agent.getSession()} if non-null</td></tr>
+         *   <tr><td>{@code sessionKey}</td><td>{@code agent.getSessionKey()} if non-null</td></tr>
+         *   <tr><td rowspan="2">Model resilience (from {@code agent.getModelConfig()})</td>
+         *       <td>{@code maxRetries}</td><td>{@link ModelConfig#maxRetries()}</td></tr>
+         *   <tr><td>{@code fallbackModel}</td><td>{@link ModelConfig#fallbackModel()} if non-null</td></tr>
+         *   <tr><td>Reasoning loop (from {@code agent.getReactConfig()})</td>
+         *       <td>{@code stopOnReject}</td><td>{@link ReactConfig#stopOnReject()}</td></tr>
+         *   <tr><td rowspan="2">Execution</td>
+         *       <td>{@code modelExecutionConfig}</td><td>{@code agent.getModelExecutionConfig()} if non-null</td></tr>
+         *   <tr><td>{@code toolExecutionConfig}</td><td>{@code agent.getToolExecutionConfig()} if non-null</td></tr>
+         *   <tr><td rowspan="4">Behavior</td>
+         *       <td>{@code toolExecutionContext}</td><td>{@code agent.getToolExecutionContext()} if non-null</td></tr>
+         *   <tr><td>{@code structuredOutputReminder}</td><td>{@code agent.getStructuredOutputReminder()}</td></tr>
+         *   <tr><td>{@code enablePendingToolRecovery}</td><td>{@code agent.isPendingToolRecoveryEnabled()}</td></tr>
+         *   <tr><td>{@code checkRunning}</td><td>{@code agent.isCheckRunning()}</td></tr>
+         *   <tr><td>Permissions</td>
+         *       <td>{@code permissionContext}</td><td>{@code agent.getPermissionContext()} if non-null
+         *           (the same {@link PermissionContextState} is reused; it carries the rules registered
+         *           on the source engine)</td></tr>
+         *   <tr><td>Extension surface</td>
+         *       <td>{@code middlewares}</td><td>{@code agent.getMiddlewares()} appended as-is</td></tr>
+         *   <tr><td>Legacy extension</td>
+         *       <td>{@code hooks}</td><td>{@code agent.getHooks()} appended as-is ({@link Hook}
+         *           itself is {@code @Deprecated(forRemoval=true)}; prefer middlewares for new
+         *           code)</td></tr>
+         * </table>
+         *
+         * <p>Note: {@code enableMetaTool} and {@code enableTaskList} are builder-time flags that
+         * mutate the toolkit at build. They do not round-trip as flags, but the toolkit copy
+         * <i>already</i> carries the tools they registered, so the resulting agent has the same
+         * tool surface.
+         *
+         * <h4>What this method does <b>not</b> copy</h4>
+         *
+         * <p><b>Skipped — harness-only, has no source on a {@code ReActAgent}.</b> These
+         * <i>must</i> be configured on the returned builder if you want HarnessAgent semantics:
+         * <ul>
+         *   <li>Workspace &amp; filesystem: {@link #workspace(Path)}, {@link #filesystem(SandboxFilesystemSpec)},
+         *       {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(RemoteFilesystemSpec)},
+         *       {@link #abstractFilesystem(AbstractFilesystem)},
+         *       {@link #sandboxDistributed(SandboxDistributedOptions)},
+         *       {@link #environmentMemory(String)}</li>
+         *   <li>Subagents: {@link #subagent(SubagentDeclaration)}, {@link #subagents(List)},
+         *       {@link #subagentFactory(String, Function)}, {@link #externalSubagentTool(Object)},
+         *       {@link #taskRepository(TaskRepository)}, {@link #modelResolver(Function)}</li>
+         *   <li>Skill governance: {@link #skillRepository(AgentSkillRepository)},
+         *       {@link #projectGlobalSkillsDir(Path)},
+         *       {@link #enableSkillManageTool(SkillManageConfig)},
+         *       {@link #enableSkillCurator(SkillCuratorConfig)},
+         *       {@link #enableSkillPromotionGate(SkillPromotionGate, SkillVisibilityFilter)},
+         *       {@link #skillFilter(io.agentscope.core.skill.SkillFilter)},
+         *       {@link #environment(String)}</li>
+         *   <li>Plan mode: {@link #enablePlanMode()}, {@link #planFileDirectory(String)}</li>
+         *   <li>Context engineering: {@link #additionalContextFile(String)},
+         *       {@link #maxContextTokens(int)}, {@link #compaction(CompactionConfig)},
+         *       {@link #toolResultEviction(ToolResultEvictionConfig)},
+         *       {@link #toolsConfig(ToolsConfig)}</li>
+         *   <li>All {@code disableXxx()} toggles and {@link #enableAgentTracingLog(boolean)}</li>
+         * </ul>
+         *
+         * <h4>Behavior caveats</h4>
+         *
+         * <p>Even after this method, the built {@code HarnessAgent} is <b>not</b> behaviorally
+         * equivalent to the source {@code ReActAgent}: HarnessAgent installs additional
+         * orchestration (workspace projection, agent-tracing middleware, default skill /
+         * subagent middlewares) that the source did not have. If left unset, {@code session}
+         * also defaults to a {@code WorkspaceSession} rather than the in-memory default,
+         * changing the on-disk persistence layout.
+         *
+         * @param agent source {@link ReActAgent} to inherit observable configuration from
+         * @return a new {@link Builder} pre-populated with the inheritable subset
+         */
+        public static Builder fromAgent(ReActAgent agent) {
+            Builder b = new Builder();
+
+            // Observable configuration.
+            b.name(agent.getName());
+            b.description(agent.getDescription());
+            b.sysPrompt(agent.getSysPrompt());
+            b.model(agent.getModel());
+            b.maxIters(agent.getMaxIters());
+            b.generateOptions(agent.getGenerateOptions());
+            b.toolkit(agent.getToolkit().copy());
+
+            // Persistence.
+            Session srcSession = agent.getSession();
+            if (srcSession != null) {
+                b.session(srcSession);
+            }
+            SessionKey srcSessionKey = agent.getSessionKey();
+            if (srcSessionKey != null) {
+                b.sessionKey(srcSessionKey);
+            }
+
+            // Model resilience.
+            ModelConfig mc = agent.getModelConfig();
+            if (mc != null) {
+                b.maxRetries(mc.maxRetries());
+                if (mc.fallbackModel() != null) {
+                    b.fallbackModel(mc.fallbackModel());
+                }
+            }
+
+            // Reasoning loop. maxIters already covered above; only stopOnReject left.
+            ReactConfig rc = agent.getReactConfig();
+            if (rc != null) {
+                b.stopOnReject(rc.stopOnReject());
+            }
+
+            // Execution configs.
+            ExecutionConfig srcModelExec = agent.getModelExecutionConfig();
+            if (srcModelExec != null) {
+                b.modelExecutionConfig(srcModelExec);
+            }
+            ExecutionConfig srcToolExec = agent.getToolExecutionConfig();
+            if (srcToolExec != null) {
+                b.toolExecutionConfig(srcToolExec);
+            }
+
+            // Behavior flags + tool execution context.
+            ToolExecutionContext srcToolCtx = agent.getToolExecutionContext();
+            if (srcToolCtx != null) {
+                b.toolExecutionContext(srcToolCtx);
+            }
+            b.structuredOutputReminder(agent.getStructuredOutputReminder());
+            b.enablePendingToolRecovery(agent.isPendingToolRecoveryEnabled());
+            b.checkRunning(agent.isCheckRunning());
+
+            // Permission context (same instance — carries rules registered on the source).
+            PermissionContextState srcPerm = agent.getPermissionContext();
+            if (srcPerm != null) {
+                b.permissionContext(srcPerm);
+            }
+
+            // Extension chains. Middlewares are the v2 surface; hooks remain for v1 carry-over.
+            List<MiddlewareBase> srcMiddlewares = agent.getMiddlewares();
+            if (srcMiddlewares != null && !srcMiddlewares.isEmpty()) {
+                b.middlewares(srcMiddlewares);
+            }
+            List<Hook> srcHooks = agent.getHooks();
+            if (srcHooks != null && !srcHooks.isEmpty()) {
+                b.hooks(srcHooks);
+            }
+
+            return b;
+        }
 
         // ---- Forwarder setters (proxy to inner + mirror) ----
 

@@ -18,16 +18,15 @@ package io.agentscope.core.tool.file;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
 
 /**
  * Text file writing and insertion tools.
@@ -41,6 +40,7 @@ import java.util.List;
  * <p>Security: When baseDir is specified, all file operations are restricted to that directory
  * to prevent unauthorized file access.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class WriteFileTool {
 
     private static final Logger logger = LoggerFactory.getLogger(WriteFileTool.class);

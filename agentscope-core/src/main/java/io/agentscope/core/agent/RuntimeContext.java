@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.agent;
 
-import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
@@ -37,7 +36,6 @@ public class RuntimeContext {
 
     private final String sessionId;
     private final String userId;
-    private final Session session;
     private final SessionKey sessionKey;
 
     /** String-keyed extras (legacy and generic extension). */
@@ -54,7 +52,6 @@ public class RuntimeContext {
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
         this.userId = builder.userId;
-        this.session = builder.session;
         this.sessionKey = builder.sessionKey;
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
@@ -85,10 +82,6 @@ public class RuntimeContext {
 
     public String getUserId() {
         return userId;
-    }
-
-    public Session getSession() {
-        return session;
     }
 
     public SessionKey getSessionKey() {
@@ -239,7 +232,6 @@ public class RuntimeContext {
     public static class Builder {
         private String sessionId;
         private String userId;
-        private Session session;
         private SessionKey sessionKey;
         private Map<String, Object> stringExtras;
         private final Map<Class<?>, Object> typedSingletons = new HashMap<>();
@@ -252,11 +244,6 @@ public class RuntimeContext {
 
         public Builder userId(String userId) {
             this.userId = userId;
-            return this;
-        }
-
-        public Builder session(Session session) {
-            this.session = session;
             return this;
         }
 

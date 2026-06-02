@@ -168,6 +168,14 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
+     * Returns the {@code checkRunning} invariant configured at construction. When {@code true},
+     * {@link #call(List)} rejects re-entry while the agent is already running.
+     */
+    public final boolean isCheckRunning() {
+        return checkRunning;
+    }
+
+    /**
      * Process a list of input messages and generate a response with hook execution.
      *
      * <p>Tracing data will be captured once telemetry is enabled.
@@ -849,7 +857,10 @@ public abstract class AgentBase implements Agent {
      * @param msgs Input messages
      * @param options Stream configuration options
      * @return Flux of events emitted during execution
+     * @deprecated since 2.0.0, for removal. Use {@code ReActAgent#streamEvents(List)} for the
+     *     fine-grained {@code AgentEvent} stream.
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
         return createEventStream(options, () -> call(msgs));
@@ -862,7 +873,10 @@ public abstract class AgentBase implements Agent {
      * @param options Stream configuration options
      * @param structuredModel Optional class defining the structure
      * @return Flux of events emitted during execution
+     * @deprecated since 2.0.0, for removal. Use {@code ReActAgent#streamEvents(...)} for the
+     *     fine-grained {@code AgentEvent} stream.
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
         return createEventStream(options, () -> call(msgs, structuredModel));
@@ -875,7 +889,10 @@ public abstract class AgentBase implements Agent {
      * @param options Stream configuration options
      * @param schema JSON schema defining the structure of the response
      * @return Flux of events emitted during execution
+     * @deprecated since 2.0.0, for removal. Use {@code ReActAgent#streamEvents(...)} for the
+     *     fine-grained {@code AgentEvent} stream.
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
         return createEventStream(options, () -> call(msgs, schema));

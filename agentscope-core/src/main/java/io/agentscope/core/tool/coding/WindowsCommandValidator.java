@@ -15,10 +15,9 @@
  */
 package io.agentscope.core.tool.coding;
 
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Set;
 
 /**
  * Command validator for Windows systems.
@@ -46,6 +45,7 @@ import java.util.Set;
  *   <li>Converts result to lowercase for consistent matching</li>
  * </ul>
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class WindowsCommandValidator implements CommandValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(WindowsCommandValidator.class);

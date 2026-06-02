@@ -19,11 +19,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -50,6 +45,10 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Tool for executing shell commands with security validation.
@@ -71,6 +70,7 @@ import java.util.stream.Collectors;
  * @see UnixCommandValidator
  * @see WindowsCommandValidator
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class ShellCommandTool implements AgentTool {
 
     private static final Logger logger = LoggerFactory.getLogger(ShellCommandTool.class);

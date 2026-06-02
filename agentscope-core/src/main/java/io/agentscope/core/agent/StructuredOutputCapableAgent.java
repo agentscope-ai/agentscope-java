@@ -115,6 +115,14 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
     }
 
     /**
+     * Returns the {@link StructuredOutputReminder} mode configured for this agent. Defaults to
+     * {@link StructuredOutputReminder#TOOL_CHOICE} when none was supplied at construction.
+     */
+    public StructuredOutputReminder getStructuredOutputReminder() {
+        return structuredOutputReminder;
+    }
+
+    /**
      * Build generate options for model calls.
      * Subclasses must implement this.
      */

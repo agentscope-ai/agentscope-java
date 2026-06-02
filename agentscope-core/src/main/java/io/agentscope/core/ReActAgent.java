@@ -458,11 +458,22 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return call(msgs, outputSchema);
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} (and overloads that
+     *     accept {@link RuntimeContext} via {@code call()}-driven lifecycle) for the
+     *     fine-grained {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext context) {
         this.pendingRuntimeContext = context;
         return stream(msgs, options);
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the
+     *     fine-grained {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
             List<Msg> msgs,
             StreamOptions options,
@@ -472,6 +483,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return stream(msgs, options, structuredModel);
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the
+     *     fine-grained {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
             List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext context) {
         this.pendingRuntimeContext = context;
@@ -526,6 +542,34 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      */
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with a caller-supplied {@link RuntimeContext}.
+     *
+     * <p>Mirrors the {@code call(msgs, context)} overload: the supplied context is installed
+     * as the pending runtime context for the underlying {@code call()} invocation that drives
+     * the event stream.
+     *
+     * @param msgs input messages
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return streamEvents(msgs);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single input message with a caller-supplied
+     * {@link RuntimeContext}.
+     *
+     * @param msg input message
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext context) {
+        return streamEvents(List.of(msg), context);
     }
 
     // ==================== Protected API ====================
@@ -2217,9 +2261,40 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return permissionEngine;
     }
 
+    /**
+     * Returns the {@link PermissionContextState} backing this agent's permission engine.
+     * Convenience equivalent to {@code getAgentState().getPermissionContext()}.
+     */
+    public PermissionContextState getPermissionContext() {
+        return state.getPermissionContext();
+    }
+
     /** Returns the immutable list of registered middlewares. */
     public List<MiddlewareBase> getMiddlewares() {
         return middlewares;
+    }
+
+    /** Returns the per-model-call {@link ExecutionConfig}, or {@code null} if none was set. */
+    public ExecutionConfig getModelExecutionConfig() {
+        return modelExecutionConfig;
+    }
+
+    /** Returns the per-tool-call {@link ExecutionConfig}, or {@code null} if none was set. */
+    public ExecutionConfig getToolExecutionConfig() {
+        return toolExecutionConfig;
+    }
+
+    /** Returns the {@link ToolExecutionContext} bound at build time, or {@code null} if none. */
+    public ToolExecutionContext getToolExecutionContext() {
+        return toolExecutionContext;
+    }
+
+    /**
+     * Returns whether pending-tool-call recovery is enabled (HITL: resume tool calls left in
+     * a pending state across {@code call()} invocations).
+     */
+    public boolean isPendingToolRecoveryEnabled() {
+        return enablePendingToolRecovery;
     }
 
     /** Returns the system prompt (alias for {@link #getSysPrompt()}). */

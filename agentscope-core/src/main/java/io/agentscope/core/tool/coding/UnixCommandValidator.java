@@ -15,10 +15,9 @@
  */
 package io.agentscope.core.tool.coding;
 
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Set;
 
 /**
  * Command validator for Unix-like systems (Linux, macOS).
@@ -43,6 +42,7 @@ import java.util.Set;
  *   <li>Removes script extensions: {@code .sh}, {@code .py}, {@code .rb}, {@code .pl}, {@code .bash}, {@code .zsh}</li>
  * </ul>
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class UnixCommandValidator implements CommandValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(UnixCommandValidator.class);
