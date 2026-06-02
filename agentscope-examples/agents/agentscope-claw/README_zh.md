@@ -184,10 +184,18 @@ OpenAI-compatible chat completions API 的本地模型服务。
 
 启动前先设置模型服务地址和模型名：
 
-```bash
-export OPENAI_BASE_URL=http://127.0.0.1:1234/v1
-export OPENAI_API_KEY=dummy
-export OPENAI_MODEL=qwen/qwen3.5-9b
+export LOCAL_OPENAI_BASE_URL=http://127.0.0.1:1234
+export LOCAL_OPENAI_ENDPOINT_PATH=/v1/chat/completions
+export LOCAL_OPENAI_API_KEY=local
+export LOCAL_OPENAI_MODEL=qwen/qwen3.5-9b
+`LOCAL_OPENAI_MAX_ATTEMPTS` 默认是 `1`，因此本地模型请求默认不会重试；如果本地服务不稳定，可以按需调大。
+export LOCAL_OPENAI_MAX_ATTEMPTS=1
+
+export LOCAL_OPENAI_STREAM=false
+export LOCAL_OPENAI_MAX_TOKENS=4096
+export LOCAL_OPENAI_TEMPERATURE=0.2
+export LOCAL_OPENAI_READ_TIMEOUT=120s
+export LOCAL_OPENAI_CONNECT_TIMEOUT=10s
 
 mvn -pl agentscope-examples/agents/agentscope-claw -am clean package -DskipTests
 java -jar agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar \

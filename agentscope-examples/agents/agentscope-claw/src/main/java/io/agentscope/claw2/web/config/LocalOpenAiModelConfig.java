@@ -40,38 +40,49 @@ public class LocalOpenAiModelConfig {
 
     private static final Logger log = LoggerFactory.getLogger(LocalOpenAiModelConfig.class);
 
+    private static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(10);
+
+    private static final Duration DEFAULT_READ_TIMEOUT = Duration.ofSeconds(120);
+
+    private static final int DEFAULT_MAX_ATTEMPTS = 1;
+
     @Bean
     @ConditionalOnMissingBean(Model.class)
     @ConditionalOnProperty(prefix = "claw.local-openai", name = "enabled", havingValue = "true")
     public Model localOpenAiModel(LocalOpenAiProperties properties) {
-        requireText(properties.apiKey(), "claw.local-openai.api-key");
-        requireText(properties.baseUrl(), "claw.local-openai.base-url");
-        requireText(properties.endpointPath(), "claw.local-openai.endpoint-path");
-        requireText(properties.modelName(), "claw.local-openai.model-name");
+        // The API key is required by the OpenAI-compatible client plumbing.
+        // Do not log this value: real deployments may use a private gateway token.
+        String apiKey = requireText(properties.apiKey(), "claw.local-openai.api-key");
+        String baseUrl = requireText(properties.baseUrl(), "claw.local-openai.base-url");
+        String endpointPath = requireText(properties.endpointPath(), "claw.local-openai.endpoint-path");
+        String modelName = requireText(properties.modelName(), "claw.local-openai.model-name");
 
         Duration connectTimeout =
                 properties.connectTimeout() != null
                         ? properties.connectTimeout()
-                        : Duration.ofSeconds(10);
+                        : DEFAULT_CONNECT_TIMEOUT;
         Duration readTimeout =
-                properties.readTimeout() != null
-                        ? properties.readTimeout()
-                        : Duration.ofSeconds(120);
+                properties.readTimeout() != null ? properties.readTimeout() : DEFAULT_READ_TIMEOUT;
+        int maxAttempts =
+                properties.maxAttempts() != null && properties.maxAttempts() > 0
+                        ? properties.maxAttempts()
+                        : DEFAULT_MAX_ATTEMPTS;
 
         log.info(
                 "Building local OpenAI-compatible model: baseUrl={}, endpointPath={}, model={},"
-                        + " stream={}",
-                properties.baseUrl(),
-                properties.endpointPath(),
-                properties.modelName(),
-                properties.stream());
+                        + " stream={}, maxAttempts={}",
+                baseUrl,
+                endpointPath,
+                modelName,
+                properties.stream(),
+                maxAttempts);
 
         GenerateOptions.Builder options =
-                GenerateOptions.builder().stream(properties.stream())
+                GenerateOptions.builder()
                         .executionConfig(
                                 ExecutionConfig.builder()
                                         .timeout(readTimeout)
-                                        .maxAttempts(1)
+                                        .maxAttempts(maxAttempts)
                                         .build());
 
         if (properties.maxTokens() != null && properties.maxTokens() > 0) {
@@ -88,29 +99,27 @@ public class LocalOpenAiModelConfig {
                         .build();
 
         HttpClient httpClient =
-                HttpClient.newBuilder()
-                        .version(HttpClient.Version.HTTP_1_1)
-                        .connectTimeout(connectTimeout)
-                        .build();
+                HttpClient.newBuilder().connectTimeout(connectTimeout).build();
 
         HttpTransport transport =
                 JdkHttpTransport.builder().client(httpClient).config(transportConfig).build();
 
         return OpenAIChatModel.builder()
-                .apiKey(properties.apiKey())
-                .baseUrl(properties.baseUrl())
-                .endpointPath(properties.endpointPath())
-                .modelName(properties.modelName())
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .endpointPath(endpointPath)
+                .modelName(modelName)
                 .stream(properties.stream())
                 .generateOptions(options.build())
                 .httpTransport(transport)
                 .build();
     }
 
-    private static void requireText(String value, String propertyName) {
+    private static String requireText(String value, String propertyName) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(propertyName + " must not be blank");
         }
+        return value;
     }
 
     @ConfigurationProperties(prefix = "claw.local-openai")
@@ -123,6 +132,7 @@ public class LocalOpenAiModelConfig {
             boolean stream,
             Integer maxTokens,
             Double temperature,
+            Duration readTimeout,
             Duration connectTimeout,
-            Duration readTimeout) {}
+            Integer maxAttempts) {}
 }
