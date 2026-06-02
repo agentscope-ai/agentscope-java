@@ -48,7 +48,7 @@ public class AguiMessage {
      * Creates a new AguiMessage.
      *
      * @param id The unique message ID
-     * @param role The message role (user, assistant, system, tool)
+     * @param role The message role (user, assistant, system, tool, reasoning)
      * @param content The message content
      * @param toolCalls Tool calls for assistant messages (optional)
      * @param toolCallId Tool call ID for tool messages (optional)
@@ -138,7 +138,7 @@ public class AguiMessage {
     /**
      * Get the message role.
      *
-     * @return The role (user, assistant, system, tool)
+     * @return The role (user, assistant, system, tool, reasoning)
      */
     public String getRole() {
         return role;

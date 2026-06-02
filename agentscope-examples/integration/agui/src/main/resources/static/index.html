@@ -325,6 +325,9 @@
         let isRunning = false;
         let currentAssistantDiv = null;
         let currentReasoningDiv = null;
+        const renderedMessageIds = new Set();
+        const renderedToolCallIds = new Set();
+        const renderedToolResultIds = new Set();
 
         function setStatus(status, text) {
             statusDot.className = 'status-dot' + (status === 'error' ? ' disconnected' : '');
@@ -389,6 +392,9 @@
             messageHistory = [];
             currentAssistantDiv = null;
             currentReasoningDiv = null;
+            renderedMessageIds.clear();
+            renderedToolCallIds.clear();
+            renderedToolResultIds.clear();
         }
 
         function normalizeSnapshotMessage(message) {
@@ -403,16 +409,37 @@
 
         function appendSnapshotMessage(message) {
             const normalized = normalizeSnapshotMessage(message);
+            if (normalized.id && renderedMessageIds.has(normalized.id)) {
+                return;
+            }
+            if (normalized.role === 'tool' && normalized.toolCallId && renderedToolResultIds.has(normalized.toolCallId)) {
+                return;
+            }
+
             messageHistory.push(normalized);
 
             if (normalized.content) {
                 appendMessage(normalized.role, normalized.content);
+                if (normalized.id) {
+                    renderedMessageIds.add(normalized.id);
+                }
+                if (normalized.role === 'tool' && normalized.toolCallId) {
+                    renderedToolResultIds.add(normalized.toolCallId);
+                }
             } else if (normalized.toolCalls.length > 0) {
-                const toolNames = normalized.toolCalls
-                    .map((toolCall) => toolCall.function?.name || toolCall.id)
-                    .filter(Boolean)
-                    .join(', ');
-                appendMessage('tool', `Calling tool: ${toolNames || 'tool'}`);
+                normalized.toolCalls.forEach((toolCall, index) => {
+                    const toolCallKey = toolCall.id || `${normalized.id}:tool-call:${index}`;
+                    if (renderedToolCallIds.has(toolCallKey)) {
+                        return;
+                    }
+
+                    const toolName = toolCall.function?.name || toolCall.id || 'tool';
+                    appendMessage('tool', `🔧 Calling tool: ${toolName}`);
+                    renderedToolCallIds.add(toolCallKey);
+                });
+                if (normalized.id) {
+                    renderedMessageIds.add(normalized.id);
+                }
             }
 
             currentAssistantDiv = null;
@@ -534,10 +561,40 @@
                     onToolCallStart: (toolCallId, toolName) => {
                         hideTypingIndicator();
                         currentAssistantDiv = null;
+                        if (toolCallId && renderedToolCallIds.has(toolCallId)) {
+                            return;
+                        }
                         appendMessage('tool', `🔧 Calling tool: ${toolName}`);
+                        if (toolCallId) {
+                            renderedToolCallIds.add(toolCallId);
+                        }
                     },
                     onToolCallEnd: (toolCallId) => {
                         // Tool call completed
+                    },
+                    onToolCallResult: (toolCallId, content, role, messageId) => {
+                        console.log('Tool call result:', toolCallId, messageId, content);
+                        hideTypingIndicator();
+                        currentAssistantDiv = null;
+                        currentReasoningDiv = null;
+
+                        if (!content) {
+                            return;
+                        }
+                        if (messageId && renderedMessageIds.has(messageId)) {
+                            return;
+                        }
+                        if (toolCallId && renderedToolResultIds.has(toolCallId)) {
+                            return;
+                        }
+
+                        appendMessage(role || 'tool', content);
+                        if (messageId) {
+                            renderedMessageIds.add(messageId);
+                        }
+                        if (toolCallId) {
+                            renderedToolResultIds.add(toolCallId);
+                        }
                     },
                     onError: (error) => {
                         hideTypingIndicator();

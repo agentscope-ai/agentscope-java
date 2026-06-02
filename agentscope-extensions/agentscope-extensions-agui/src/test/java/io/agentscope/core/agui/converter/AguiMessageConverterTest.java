@@ -27,6 +27,7 @@ import io.agentscope.core.agui.model.AguiToolCall;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Collections;
@@ -67,6 +68,19 @@ class AguiMessageConverterTest {
         assertEquals("msg-2", msg.getId());
         assertEquals(MsgRole.ASSISTANT, msg.getRole());
         assertEquals("Hello! How can I help?", msg.getTextContent());
+    }
+
+    @Test
+    void testConvertReasoningMessageToMsg() {
+        AguiMessage aguiMsg = AguiMessage.reasoningMessage("msg-r1", "Think step by step");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals("msg-r1", msg.getId());
+        assertEquals(MsgRole.ASSISTANT, msg.getRole());
+        assertTrue(msg.hasContentBlocks(ThinkingBlock.class));
+        assertEquals(
+                "Think step by step", msg.getFirstContentBlock(ThinkingBlock.class).getThinking());
     }
 
     @Test
@@ -242,6 +256,154 @@ class AguiMessageConverterTest {
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
         assertEquals("First part\nSecond part", aguiMsg.getContent());
+    }
+
+    @Test
+    void testConvertThinkingBlockToReasoningAguiMessage() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ThinkingBlock.builder().thinking("Need to inspect weather").build())
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(1, messages.size());
+        assertEquals("msg-thinking", messages.get(0).getId());
+        assertEquals("reasoning", messages.get(0).getRole());
+        assertEquals("Need to inspect weather", messages.get(0).getContent());
+        assertTrue(messages.get(0).isReasoningMessage());
+    }
+
+    @Test
+    void testConvertThinkingBlockCanSkipReasoningAguiMessage() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Hidden thought").build(),
+                                        TextBlock.builder().text("Visible answer").build()))
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg, false);
+
+        assertEquals(1, messages.size());
+        assertEquals("msg-thinking", messages.get(0).getId());
+        assertEquals("assistant", messages.get(0).getRole());
+        assertEquals("Visible answer", messages.get(0).getContent());
+    }
+
+    @Test
+    void testConvertMixedMsgToMultipleAguiMessages() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-mixed")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Need a tool").build(),
+                                        ToolUseBlock.builder()
+                                                .id("tc-weather")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build(),
+                                        TextBlock.builder().text("The answer is ready").build()))
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(3, messages.size());
+        assertEquals("msg-mixed", messages.get(0).getId());
+        assertEquals("reasoning", messages.get(0).getRole());
+        assertEquals("Need a tool", messages.get(0).getContent());
+
+        assertEquals("msg-mixed", messages.get(1).getId());
+        assertEquals("assistant", messages.get(1).getRole());
+        assertNull(messages.get(1).getContent());
+        assertTrue(messages.get(1).hasToolCalls());
+        assertEquals("tc-weather", messages.get(1).getToolCalls().get(0).getId());
+
+        assertEquals("msg-mixed", messages.get(2).getId());
+        assertEquals("assistant", messages.get(2).getRole());
+        assertEquals("The answer is ready", messages.get(2).getContent());
+    }
+
+    @Test
+    void testSplitMessagesPreserveOriginalMsgId() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-preserve-id")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Thinking").build(),
+                                        TextBlock.builder().text("Answer").build()))
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(2, messages.size());
+        assertEquals("msg-preserve-id", messages.get(0).getId());
+        assertEquals("msg-preserve-id", messages.get(1).getId());
+    }
+
+    @Test
+    void testConvertInterleavedReasoningAndTextPreservesOrder() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-interleaved")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("First thought").build(),
+                                        TextBlock.builder().text("First answer").build(),
+                                        ThinkingBlock.builder().thinking("Second thought").build(),
+                                        TextBlock.builder().text("Second answer").build()))
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(4, messages.size());
+        assertEquals("reasoning", messages.get(0).getRole());
+        assertEquals("First thought", messages.get(0).getContent());
+        assertEquals("assistant", messages.get(1).getRole());
+        assertEquals("First answer", messages.get(1).getContent());
+        assertEquals("reasoning", messages.get(2).getRole());
+        assertEquals("Second thought", messages.get(2).getContent());
+        assertEquals("assistant", messages.get(3).getRole());
+        assertEquals("Second answer", messages.get(3).getContent());
+    }
+
+    @Test
+    void testToAguiMessageListFlattensSplitMessages() {
+        List<Msg> msgs =
+                List.of(
+                        Msg.builder()
+                                .id("msg-user")
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("Hello").build())
+                                .build(),
+                        Msg.builder()
+                                .id("msg-assistant")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        List.of(
+                                                ThinkingBlock.builder()
+                                                        .thinking("Thinking")
+                                                        .build(),
+                                                TextBlock.builder().text("Hi").build()))
+                                .build());
+
+        List<AguiMessage> messages = converter.toAguiMessageList(msgs);
+
+        assertEquals(3, messages.size());
+        assertEquals("user", messages.get(0).getRole());
+        assertEquals("reasoning", messages.get(1).getRole());
+        assertEquals("assistant", messages.get(2).getRole());
     }
 
     @Test

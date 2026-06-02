@@ -76,6 +76,7 @@ class AguiClient {
      * @param {Function} [callbacks.onReasoningMessageStart] - Called when reasoning message starts
      * @param {Function} [callbacks.onReasoningContent] - Called with reasoning content delta
      * @param {Function} [callbacks.onReasoningMessageEnd] - Called when reasoning message ends
+     * @param {Function} [callbacks.onToolCallResult] - Called when a tool result is available
      * @param {Function} [callbacks.onMessagesSnapshot] - Called with the full message snapshot
      * @returns {Promise} Resolves when the run completes
      */
@@ -252,6 +253,16 @@ class AguiClient {
 
                 case 'TOOL_CALL_END':
                     callbacks.onToolCallEnd?.(event.toolCallId);
+                    break;
+
+                case 'TOOL_CALL_RESULT':
+                    callbacks.onToolCallResult?.(
+                        event.toolCallId,
+                        event.content || '',
+                        event.role || 'tool',
+                        event.messageId,
+                        event
+                    );
                     break;
 
                 case 'STATE_SNAPSHOT':

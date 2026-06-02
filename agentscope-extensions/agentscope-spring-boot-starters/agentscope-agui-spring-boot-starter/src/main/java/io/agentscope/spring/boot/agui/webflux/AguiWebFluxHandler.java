@@ -76,6 +76,8 @@ public class AguiWebFluxHandler {
     private final String agentIdHeader;
 
     private AguiWebFluxHandler(Builder builder) {
+        AguiAdapterConfig adapterConfig =
+                builder.config != null ? builder.config : AguiAdapterConfig.defaultConfig();
         this.processor =
                 AguiRequestProcessor.builder()
                         .agentResolver(
@@ -88,11 +90,9 @@ public class AguiWebFluxHandler {
                                 new ThreadSessionSnapshotProvider(
                                         builder.registry,
                                         builder.sessionManager,
-                                        builder.serverSideMemory))
-                        .config(
-                                builder.config != null
-                                        ? builder.config
-                                        : AguiAdapterConfig.defaultConfig())
+                                        builder.serverSideMemory,
+                                        adapterConfig))
+                        .config(adapterConfig)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =

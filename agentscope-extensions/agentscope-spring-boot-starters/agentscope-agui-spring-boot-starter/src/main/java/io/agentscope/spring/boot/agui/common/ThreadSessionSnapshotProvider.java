@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.agui.common;
 
 import io.agentscope.core.agui.AguiException;
+import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.processor.AguiSnapshotProvider;
@@ -32,6 +33,7 @@ public class ThreadSessionSnapshotProvider implements AguiSnapshotProvider {
     private final AguiAgentRegistry registry;
     private final ThreadSessionManager sessionManager;
     private final boolean serverSideMemory;
+    private final AguiAdapterConfig config;
     private final AguiMessageConverter messageConverter;
 
     /**
@@ -45,9 +47,26 @@ public class ThreadSessionSnapshotProvider implements AguiSnapshotProvider {
             AguiAgentRegistry registry,
             ThreadSessionManager sessionManager,
             boolean serverSideMemory) {
+        this(registry, sessionManager, serverSideMemory, AguiAdapterConfig.defaultConfig());
+    }
+
+    /**
+     * Creates a new ThreadSessionSnapshotProvider.
+     *
+     * @param registry The AG-UI agent registry
+     * @param sessionManager The thread session manager
+     * @param serverSideMemory Whether server-side memory is enabled
+     * @param config The AG-UI adapter configuration
+     */
+    public ThreadSessionSnapshotProvider(
+            AguiAgentRegistry registry,
+            ThreadSessionManager sessionManager,
+            boolean serverSideMemory,
+            AguiAdapterConfig config) {
         this.registry = Objects.requireNonNull(registry, "registry cannot be null");
         this.sessionManager = sessionManager;
         this.serverSideMemory = serverSideMemory && sessionManager != null;
+        this.config = config != null ? config : AguiAdapterConfig.defaultConfig();
         this.messageConverter = new AguiMessageConverter();
     }
 
@@ -60,6 +79,7 @@ public class ThreadSessionSnapshotProvider implements AguiSnapshotProvider {
             return List.of();
         }
         return messageConverter.toAguiMessageList(
-                sessionManager.getMessages(request.threadId(), request.agentId()));
+                sessionManager.getMessages(request.threadId(), request.agentId()),
+                config.isEnableReasoning());
     }
 }

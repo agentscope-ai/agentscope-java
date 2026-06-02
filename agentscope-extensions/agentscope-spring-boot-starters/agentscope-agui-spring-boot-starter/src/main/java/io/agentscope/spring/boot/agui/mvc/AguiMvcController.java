@@ -72,6 +72,8 @@ public class AguiMvcController {
     private final ExecutorService executorService;
 
     private AguiMvcController(Builder builder) {
+        AguiAdapterConfig adapterConfig =
+                builder.config != null ? builder.config : AguiAdapterConfig.defaultConfig();
         this.processor =
                 AguiRequestProcessor.builder()
                         .agentResolver(
@@ -84,11 +86,9 @@ public class AguiMvcController {
                                 new ThreadSessionSnapshotProvider(
                                         builder.registry,
                                         builder.sessionManager,
-                                        builder.serverSideMemory))
-                        .config(
-                                builder.config != null
-                                        ? builder.config
-                                        : AguiAdapterConfig.defaultConfig())
+                                        builder.serverSideMemory,
+                                        adapterConfig))
+                        .config(adapterConfig)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =

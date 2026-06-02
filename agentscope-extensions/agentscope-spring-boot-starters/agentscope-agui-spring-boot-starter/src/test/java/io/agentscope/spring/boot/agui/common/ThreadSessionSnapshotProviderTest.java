@@ -16,11 +16,13 @@
 package io.agentscope.spring.boot.agui.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agui.AguiException;
+import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiSnapshotRequest;
@@ -29,6 +31,8 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -55,6 +59,82 @@ class ThreadSessionSnapshotProviderTest {
         assertEquals("msg-1", messages.get(0).getId());
         assertEquals("user", messages.get(0).getRole());
         assertEquals("Hello", messages.get(0).getContent());
+    }
+
+    @Test
+    void testMessagesSnapshotSplitsThinkingBlocksIntoReasoningMessages() {
+        AguiAgentRegistry registry = new AguiAgentRegistry();
+        ThreadSessionManager sessionManager = new ThreadSessionManager(10, 0);
+        registry.registerFactory("default", this::createAgent);
+        ReActAgent agent =
+                (ReActAgent)
+                        sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
+        agent.getMemory()
+                .addMessage(
+                        Msg.builder()
+                                .id("msg-1")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        List.of(
+                                                ThinkingBlock.builder()
+                                                        .thinking("Need to call a weather tool")
+                                                        .build(),
+                                                TextBlock.builder()
+                                                        .text("Beijing is rainy")
+                                                        .build()))
+                                .build());
+        ThreadSessionSnapshotProvider provider =
+                new ThreadSessionSnapshotProvider(
+                        registry,
+                        sessionManager,
+                        true,
+                        AguiAdapterConfig.builder().enableReasoning(true).build());
+
+        List<AguiMessage> messages = provider.messagesSnapshot(request("default", "thread-1"));
+
+        assertEquals(2, messages.size());
+        assertEquals("msg-1", messages.get(0).getId());
+        assertEquals("reasoning", messages.get(0).getRole());
+        assertEquals("Need to call a weather tool", messages.get(0).getContent());
+        assertEquals("msg-1", messages.get(1).getId());
+        assertEquals("assistant", messages.get(1).getRole());
+        assertEquals("Beijing is rainy", messages.get(1).getContent());
+    }
+
+    @Test
+    void testMessagesSnapshotSkipsThinkingBlocksWhenReasoningDisabled() {
+        AguiAgentRegistry registry = new AguiAgentRegistry();
+        ThreadSessionManager sessionManager = new ThreadSessionManager(10, 0);
+        registry.registerFactory("default", this::createAgent);
+        ReActAgent agent =
+                (ReActAgent)
+                        sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
+        agent.getMemory()
+                .addMessage(
+                        Msg.builder()
+                                .id("msg-1")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        List.of(
+                                                ThinkingBlock.builder()
+                                                        .thinking("Do not expose this")
+                                                        .build(),
+                                                TextBlock.builder().text("Visible answer").build()))
+                                .build());
+        ThreadSessionSnapshotProvider provider =
+                new ThreadSessionSnapshotProvider(
+                        registry,
+                        sessionManager,
+                        true,
+                        AguiAdapterConfig.builder().enableReasoning(false).build());
+
+        List<AguiMessage> messages = provider.messagesSnapshot(request("default", "thread-1"));
+
+        assertEquals(1, messages.size());
+        assertEquals("msg-1", messages.get(0).getId());
+        assertEquals("assistant", messages.get(0).getRole());
+        assertEquals("Visible answer", messages.get(0).getContent());
+        assertFalse(messages.stream().anyMatch(AguiMessage::isReasoningMessage));
     }
 
     @Test

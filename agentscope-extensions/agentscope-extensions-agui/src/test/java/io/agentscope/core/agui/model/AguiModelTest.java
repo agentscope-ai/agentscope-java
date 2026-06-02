@@ -79,6 +79,17 @@ class AguiModelTest {
         }
 
         @Test
+        void testReasoningMessageFactory() {
+            AguiMessage msg = AguiMessage.reasoningMessage("msg-r1", "I should use a tool");
+
+            assertEquals("msg-r1", msg.getId());
+            assertEquals("reasoning", msg.getRole());
+            assertEquals("I should use a tool", msg.getContent());
+            assertTrue(msg.isReasoningMessage());
+            assertFalse(msg.isAssistantMessage());
+        }
+
+        @Test
         void testMessageWithToolCalls() {
             AguiFunctionCall function = new AguiFunctionCall("get_weather", "{\"city\":\"NYC\"}");
             AguiToolCall toolCall = new AguiToolCall("tc-1", function);
