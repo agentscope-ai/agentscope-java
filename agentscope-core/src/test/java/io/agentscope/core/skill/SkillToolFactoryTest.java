@@ -53,11 +53,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class SkillToolFactoryTest {
 
-    @Mock
-    private SkillRegistry skillRegistry;
+    @Mock private SkillRegistry skillRegistry;
 
-    @Mock
-    private Toolkit toolkit;
+    @Mock private Toolkit toolkit;
 
     private SkillToolFactory skillToolFactory;
 
@@ -115,8 +113,12 @@ class SkillToolFactoryTest {
      * @return a new AgentSkill instance
      */
     private AgentSkill createTestSkill(String name, Map<String, String> resources) {
-        return new AgentSkill(name, "Test description for " + name,
-                "# Skill Content\nInstructions for " + name, resources, "test-source");
+        return new AgentSkill(
+                name,
+                "Test description for " + name,
+                "# Skill Content\nInstructions for " + name,
+                resources,
+                "test-source");
     }
 
     /**
@@ -155,8 +157,8 @@ class SkillToolFactoryTest {
             when(toolkit.getToolGroup("my-skill_skill_tools")).thenReturn(null);
             AgentTool tool = createSkillAccessTool();
 
-            ToolResultBlock result = tool.callAsync(
-                    createToolCallParam("my-skill", "SKILL.md")).block();
+            ToolResultBlock result =
+                    tool.callAsync(createToolCallParam("my-skill", "SKILL.md")).block();
 
             assertNotNull(result);
             String output = result.getOutput().get(0).toString();
@@ -192,17 +194,18 @@ class SkillToolFactoryTest {
         @Test
         @DisplayName("Should return resource content when resource exists")
         void shouldReturnResourceContent() {
-            Map<String, String> resources = Map.of(
-                    "scripts/run.py", "print('hello')",
-                    "config/settings.json", "{\"key\": \"value\"}");
+            Map<String, String> resources =
+                    Map.of(
+                            "scripts/run.py", "print('hello')",
+                            "config/settings.json", "{\"key\": \"value\"}");
             AgentSkill skill = createTestSkill("data-skill", resources);
             registerMockSkill("data-skill", skill);
             stubActivation("data-skill");
             when(toolkit.getToolGroup("data-skill_skill_tools")).thenReturn(null);
             AgentTool tool = createSkillAccessTool();
 
-            ToolResultBlock result = tool.callAsync(
-                    createToolCallParam("data-skill", "scripts/run.py")).block();
+            ToolResultBlock result =
+                    tool.callAsync(createToolCallParam("data-skill", "scripts/run.py")).block();
 
             assertNotNull(result);
             String output = result.getOutput().get(0).toString();
@@ -220,8 +223,8 @@ class SkillToolFactoryTest {
             registerMockSkill("doc-skill", skill);
             AgentTool tool = createSkillAccessTool();
 
-            ToolResultBlock result = tool.callAsync(
-                    createToolCallParam("doc-skill", "nonexistent.txt")).block();
+            ToolResultBlock result =
+                    tool.callAsync(createToolCallParam("doc-skill", "nonexistent.txt")).block();
 
             assertNotNull(result);
             String output = result.getOutput().get(0).toString();
@@ -239,8 +242,8 @@ class SkillToolFactoryTest {
             registerMockSkill("empty-skill", skill);
             AgentTool tool = createSkillAccessTool();
 
-            ToolResultBlock result = tool.callAsync(
-                    createToolCallParam("empty-skill", "some/path.txt")).block();
+            ToolResultBlock result =
+                    tool.callAsync(createToolCallParam("empty-skill", "some/path.txt")).block();
 
             assertNotNull(result);
             String output = result.getOutput().get(0).toString();
@@ -276,8 +279,8 @@ class SkillToolFactoryTest {
             when(skillRegistry.exists("unknown-skill")).thenReturn(false);
             AgentTool tool = createSkillAccessTool();
 
-            ToolResultBlock result = tool.callAsync(
-                    createToolCallParam("unknown-skill", "SKILL.md")).block();
+            ToolResultBlock result =
+                    tool.callAsync(createToolCallParam("unknown-skill", "SKILL.md")).block();
 
             assertNotNull(result);
             String output = result.getOutput().get(0).toString();
@@ -291,8 +294,8 @@ class SkillToolFactoryTest {
             when(skillRegistry.getSkill("broken-skill")).thenReturn(null);
             AgentTool tool = createSkillAccessTool();
 
-            ToolResultBlock result = tool.callAsync(
-                    createToolCallParam("broken-skill", "SKILL.md")).block();
+            ToolResultBlock result =
+                    tool.callAsync(createToolCallParam("broken-skill", "SKILL.md")).block();
 
             assertNotNull(result);
             String output = result.getOutput().get(0).toString();
@@ -322,8 +325,7 @@ class SkillToolFactoryTest {
         void shouldReturnErrorWhenSkillIdEmpty() {
             AgentTool tool = createSkillAccessTool();
 
-            ToolResultBlock result = tool.callAsync(
-                    createToolCallParam("  ", "SKILL.md")).block();
+            ToolResultBlock result = tool.callAsync(createToolCallParam("  ", "SKILL.md")).block();
 
             assertNotNull(result);
             String output = result.getOutput().get(0).toString();
@@ -348,8 +350,7 @@ class SkillToolFactoryTest {
         void shouldReturnErrorWhenPathEmpty() {
             AgentTool tool = createSkillAccessTool();
 
-            ToolResultBlock result = tool.callAsync(
-                    createToolCallParam("my-skill", "   ")).block();
+            ToolResultBlock result = tool.callAsync(createToolCallParam("my-skill", "   ")).block();
 
             assertNotNull(result);
             String output = result.getOutput().get(0).toString();
