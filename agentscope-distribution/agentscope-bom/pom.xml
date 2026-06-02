@@ -321,6 +321,12 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-admin-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope AGUI Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
