@@ -13,10 +13,12 @@
 # limitations under the License.
 
 format: jb-book
-root: v1/en/intro
+root: v2/en/intro
 parts:
 - caption: Quick Start
   chapters:
+  - file: v1/en/intro
+    title: Introduction
   - file: v1/en/docs/quickstart/installation
     title: Installation
   - file: v1/en/docs/quickstart/key-concepts
@@ -267,15 +269,15 @@ parts:
     title: 示例
 
 # ---------------------------------------------------------------------------
-# v2 (latest, in alignment with Python AgentScope 2.0)
+# v2 (latest)
 # ---------------------------------------------------------------------------
 
 - caption: v2 · Quick Start
   chapters:
-  - file: v2/en/intro
-    title: Home
   - file: v2/en/docs/index
     title: What's AgentScope 2.0?
+  - file: v2/en/docs/change-log
+    title: Change Log
   - file: v2/en/docs/quickstart
     title: Quickstart
 
@@ -283,8 +285,6 @@ parts:
   chapters:
   - file: v2/en/docs/building-blocks/agent
     title: Agent
-  - file: v2/en/docs/building-blocks/context
-    title: Context
   - file: v2/en/docs/building-blocks/message-and-event
     title: Message & Event
   - file: v2/en/docs/building-blocks/middleware
@@ -296,10 +296,31 @@ parts:
   - file: v2/en/docs/building-blocks/tool
     title: Tool
 
+# 与中文「v2 · Harness」区分标题，否则顶栏 tabs 的 sections_v2_* 会同时匹配两段 caption，侧栏出现两个 Harness。
+# tabs.js 在渲染时会剥离 " (English)" 后缀，所以前端实际显示的是 "v2 · Harness"。
+- caption: v2 · Harness (English)
+  chapters:
+  - file: v2/en/docs/harness/architecture
+    title: Architecture
+  - file: v2/en/docs/harness/context
+    title: Context
+  - file: v2/en/docs/harness/workspace
+    title: Workspace
+  - file: v2/en/docs/harness/memory
+    title: Memory
+  - file: v2/en/docs/harness/filesystem
+    title: Filesystem
+  - file: v2/en/docs/harness/sandbox
+    title: Sandbox
+  - file: v2/en/docs/harness/subagent
+    title: Subagent
+  - file: v2/en/docs/harness/skill
+    title: Skill
+  - file: v2/en/docs/harness/plan-mode
+    title: Plan Mode
+
 - caption: v2 · Reference
   chapters:
-  - file: v2/en/docs/change-log
-    title: Change Log
   - file: v2/en/docs/others/faq
     title: FAQ
 
@@ -307,18 +328,83 @@ parts:
   chapters:
   - file: v2/en/integration/overview
     title: Overview
+  - file: v2/en/integration/memory/index
+    title: Memory
+    sections:
+    - file: v2/en/integration/memory/mem0
+      title: Mem0
+    - file: v2/en/integration/memory/bailian
+      title: Bailian Memory
+    - file: v2/en/integration/memory/reme
+      title: ReMe
+  - file: v2/en/integration/session/index
+    title: Session
+    sections:
+    - file: v2/en/integration/session/mysql
+      title: MySQL Session
+    - file: v2/en/integration/session/redis
+      title: Redis Session
+  - file: v2/en/integration/rag/index
+    title: RAG Knowledge Base
+    sections:
+    - file: v2/en/integration/rag/simple
+      title: Simple
+    - file: v2/en/integration/rag/bailian
+      title: Bailian Knowledge
+    - file: v2/en/integration/rag/dify
+      title: Dify
+    - file: v2/en/integration/rag/haystack
+      title: HayStack
+    - file: v2/en/integration/rag/ragflow
+      title: RAGFlow
+  - file: v2/en/integration/skill/index
+    title: Skill Repository
+    sections:
+    - file: v2/en/integration/skill/git-repository
+      title: Git Skill Repository
+    - file: v2/en/integration/skill/mysql-repository
+      title: MySQL Skill Repository
+  - file: v2/en/integration/protocol/index
+    title: Agent Protocols
+    sections:
+    - file: v2/en/integration/protocol/a2a
+      title: A2A
+    - file: v2/en/integration/protocol/agui
+      title: AG-UI
+    - file: v2/en/integration/protocol/agent-protocol
+      title: Agent Protocol
+  - file: v2/en/integration/infrastructure/index
+    title: Infrastructure
+    sections:
+    - file: v2/en/integration/infrastructure/higress
+      title: Higress
+    - file: v2/en/integration/infrastructure/nacos
+      title: Nacos
+    - file: v2/en/integration/infrastructure/rocketmq
+      title: RocketMQ
+    - file: v2/en/integration/infrastructure/scheduler
+      title: Scheduler
+  - file: v2/en/integration/ecosystem/index
+    title: Ecosystem
+    sections:
+    - file: v2/en/integration/ecosystem/chat-completions-web
+      title: Chat Completions Web
+    - file: v2/en/integration/ecosystem/kotlin
+      title: Kotlin
+    - file: v2/en/integration/ecosystem/studio
+      title: Studio
+    - file: v2/en/integration/ecosystem/training
+      title: Online Training
 
 - caption: v2 · Blogs
   chapters:
-  - file: v2/en/blogs/index
-    title: Article index
+  - file: v2/en/blogs/agentscope-v2-release
+    title: AgentScope 2.0 Release
   - file: v2/en/blogs/agentscope-v1-harness
     title: AgentScope Java 1.1 · Harness
 
 - caption: v2 · Community
   chapters:
-  - file: v2/en/community/overview
-    title: Community
   - file: v2/en/community/contributors
     title: Contributors
 
@@ -326,6 +412,8 @@ parts:
   chapters:
   - file: v2/zh/intro
     title: 首页
+  - file: v2/zh/docs/change-log
+    title: 更新日志
   - file: v2/zh/docs/index
     title: 什么是 AgentScope 2.0？
   - file: v2/zh/docs/quickstart
@@ -335,8 +423,6 @@ parts:
   chapters:
   - file: v2/zh/docs/building-blocks/agent
     title: 智能体
-  - file: v2/zh/docs/building-blocks/context
-    title: 上下文
   - file: v2/zh/docs/building-blocks/message-and-event
     title: 消息与事件
   - file: v2/zh/docs/building-blocks/middleware
@@ -348,10 +434,29 @@ parts:
   - file: v2/zh/docs/building-blocks/tool
     title: 工具
 
+- caption: v2 · Harness
+  chapters:
+  - file: v2/zh/docs/harness/architecture
+    title: 架构
+  - file: v2/zh/docs/harness/context
+    title: 上下文
+  - file: v2/zh/docs/harness/workspace
+    title: 工作区
+  - file: v2/zh/docs/harness/memory
+    title: 记忆
+  - file: v2/zh/docs/harness/filesystem
+    title: 文件系统
+  - file: v2/zh/docs/harness/sandbox
+    title: 沙箱
+  - file: v2/zh/docs/harness/subagent
+    title: 子 Agent
+  - file: v2/zh/docs/harness/skill
+    title: 技能
+  - file: v2/zh/docs/harness/plan-mode
+    title: 计划模式
+
 - caption: v2 · 参考
   chapters:
-  - file: v2/zh/docs/change-log
-    title: 更新日志
   - file: v2/zh/docs/others/faq
     title: 常见问题
 
@@ -359,11 +464,78 @@ parts:
   chapters:
   - file: v2/zh/integration/overview
     title: 概览
+  - file: v2/zh/integration/memory/index
+    title: 记忆
+    sections:
+    - file: v2/zh/integration/memory/mem0
+      title: Mem0
+    - file: v2/zh/integration/memory/bailian
+      title: 百炼记忆
+    - file: v2/zh/integration/memory/reme
+      title: ReMe
+  - file: v2/zh/integration/session/index
+    title: 会话
+    sections:
+    - file: v2/zh/integration/session/mysql
+      title: MySQL Session
+    - file: v2/zh/integration/session/redis
+      title: Redis Session
+  - file: v2/zh/integration/rag/index
+    title: RAG 知识库
+    sections:
+    - file: v2/zh/integration/rag/simple
+      title: Simple
+    - file: v2/zh/integration/rag/bailian
+      title: 百炼知识库
+    - file: v2/zh/integration/rag/dify
+      title: Dify
+    - file: v2/zh/integration/rag/haystack
+      title: HayStack
+    - file: v2/zh/integration/rag/ragflow
+      title: RAGFlow
+  - file: v2/zh/integration/skill/index
+    title: 技能仓库
+    sections:
+    - file: v2/zh/integration/skill/git-repository
+      title: Git 技能仓库
+    - file: v2/zh/integration/skill/mysql-repository
+      title: MySQL 技能仓库
+  - file: v2/zh/integration/protocol/index
+    title: 智能体协议
+    sections:
+    - file: v2/zh/integration/protocol/a2a
+      title: A2A
+    - file: v2/zh/integration/protocol/agui
+      title: AG-UI
+    - file: v2/zh/integration/protocol/agent-protocol
+      title: Agent Protocol
+  - file: v2/zh/integration/infrastructure/index
+    title: 基础设施
+    sections:
+    - file: v2/zh/integration/infrastructure/higress
+      title: Higress
+    - file: v2/zh/integration/infrastructure/nacos
+      title: Nacos
+    - file: v2/zh/integration/infrastructure/rocketmq
+      title: RocketMQ
+    - file: v2/zh/integration/infrastructure/scheduler
+      title: Scheduler
+  - file: v2/zh/integration/ecosystem/index
+    title: 生态扩展
+    sections:
+    - file: v2/zh/integration/ecosystem/chat-completions-web
+      title: Chat Completions Web
+    - file: v2/zh/integration/ecosystem/kotlin
+      title: Kotlin
+    - file: v2/zh/integration/ecosystem/studio
+      title: Studio
+    - file: v2/zh/integration/ecosystem/training
+      title: 在线训练
 
 - caption: v2 · 博客
   chapters:
-  - file: v2/zh/blogs/index
-    title: 全部文章
+  - file: v2/zh/blogs/agentscope-v2-release
+    title: AgentScope 2.0 发布
   - file: v2/zh/blogs/agentscope-v1-harness
     title: AgentScope Java 1.1 · Harness
   - file: v2/zh/blogs/agentscope-v1-builder
@@ -371,7 +543,5 @@ parts:
 
 - caption: v2 · 社区
   chapters:
-  - file: v2/zh/community/overview
-    title: 社区
   - file: v2/zh/community/contributors
     title: 核心贡献者

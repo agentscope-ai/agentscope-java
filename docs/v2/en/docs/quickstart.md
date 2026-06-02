@@ -45,7 +45,7 @@ public class CheckInstall {
 
 ## Your first agent
 
-The example below builds a minimal agent: a DashScope chat model, an empty toolkit, and a `ReActAgent` instance. The agent exposes two entry points — `call` returns the final message, while `streamEvents` yields events incrementally for rendering reasoning and tool-call progress.
+The example below builds a minimal agent: a DashScope chat model resolved by `ModelRegistry` from the `dashscope:qwen-plus` id, an empty toolkit, and a `ReActAgent` instance. The agent exposes two entry points — `call` returns the final message, while `streamEvents` yields events incrementally for rendering reasoning and tool-call progress.
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -54,10 +54,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 
@@ -67,13 +65,10 @@ public class FirstAgent {
                 ReActAgent.builder()
                         .name("Friday")
                         .sysPrompt("You are a helpful assistant named Friday.")
-                        .model(
-                                DashScopeChatModel.builder()
-                                        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                                        .modelName("qwen-plus")
-                                        .stream(true)
-                                        .formatter(new DashScopeChatFormatter())
-                                        .build())
+                        // String form resolved via ModelRegistry — picks up DASHSCOPE_API_KEY
+                        // from the environment. Use "openai:gpt-5.5", "anthropic:claude-sonnet-4-5",
+                        // "gemini:gemini-2.0-flash", or "ollama:llama3" to switch providers.
+                        .model("dashscope:qwen-plus")
                         .toolkit(new Toolkit())
                         .build();
 
@@ -104,5 +99,5 @@ public class FirstAgent {
 ```
 
 :::{tip}
-Make sure `DASHSCOPE_API_KEY` is set in the environment before running. To switch providers, swap `DashScopeChatModel` / `DashScopeChatFormatter` for the matching pair, e.g. `OpenAIChatModel` with `OpenAIChatFormatter`.
+Make sure `DASHSCOPE_API_KEY` is set in the environment before running. To switch providers, change the model id string — `openai:gpt-5.5`, `anthropic:claude-sonnet-4-5`, `gemini:gemini-2.0-flash`, `ollama:llama3` — and export the matching API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). When you need explicit control over options like timeouts or custom endpoints, build the model with `XxxChatModel.builder()` and pass it to `.model(Model)` instead.
 :::

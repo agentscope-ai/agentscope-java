@@ -4,7 +4,7 @@ description: "AgentScope Java 2.0 常见问题"
 ---
 
 :::{dropdown} AgentScope Java 2.0 与 1.0 兼容吗？
-不兼容。AgentScope Java 2.0 是一次破坏性更新，重新设计了 agent 抽象，并新增了事件系统、权限系统、middleware 体系等大量新特性。API 与 1.0 源码不兼容，也不提供自动迁移路径。
+AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部分用户的平滑升级；但同时 2.0 也带来了 API 层面的不兼容变更（重新设计的 agent 抽象，以及新增的事件系统、权限系统、middleware 体系等），详情可参考 [Changelog](/zh/v2/change-log)。
 
     对所有新项目，我们建议直接采用 2.0，以获得新版能力；1.0 的文档仍会保留供存量用户参考。
 :::

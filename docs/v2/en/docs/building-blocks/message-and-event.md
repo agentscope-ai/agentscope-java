@@ -130,7 +130,7 @@ Events are the streaming counterpart of messages. While the agent runs, it emits
 
 Every event carries `getReplyId()`, tying it to the message being assembled. Within a reply, `getBlockId()` or `getToolCallId()` identifies the content block the event belongs to. Events follow a **start → delta → end** pattern:
 
-```mermaid
+```{mermaid}
 sequenceDiagram
     participant Client
     participant Agent
@@ -376,7 +376,7 @@ agent.streamEvents(new UserMessage("user", "Help me fix this bug"))
 How agents emit events and messages in the ReAct loop
 :::
   :::{grid-item-card} Context
-:link: /v2/building-blocks/context
+:link: /v2/harness/context
 
 How messages are stored and persisted
 :::

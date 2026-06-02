@@ -30,7 +30,7 @@ description: "了解如何在 AgentScope Java 2.0 中定义和配置智能体"
 
 智能体在每次 `call` 调用时运行推理-行动循环，下图展示了主要控制流程：
 
-```mermaid
+```{mermaid}
 flowchart TD
     A([输入: 消息 / 事件]) --> B{等待\n外部事件?}
     B -- 是 --> C[处理事件\n更新工具状态]
@@ -243,10 +243,10 @@ agent.observe(otherAgentMsg).block();
 
     ```java
     import io.agentscope.core.message.Msg;
+    import io.agentscope.core.message.UserMessage;
 
-    Msg resumeMsg =
-            Msg.builder()
-                    .role(io.agentscope.core.message.MsgRole.USER)
+    UserMessage resumeMsg =
+            UserMessage.builder()
                     .metadata(java.util.Map.of(
                             Msg.METADATA_CONFIRM_RESULTS, confirmResults))
                     .build();

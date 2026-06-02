@@ -1,110 +1,70 @@
-# Subagent
-
-## Purpose
-
-Subagents let the parent agent delegate tasks that are "independently handled, context-heavy, or parallelizable", preventing the main thread from bloating.  
-Each subagent is a temporary `HarnessAgent` (or remote stub) instance with its own sub-session; results are returned via tool output.
-
+---
+title: "Subagent"
+description: "Declare subagents, sync/background calls, auto push-back, remote subagents, streaming forwarding"
 ---
 
-## When Subagents Are Enabled
+## Role
 
-`HarnessAgent.build()` only loads subagent capability when all of the following are true:
+Let the parent delegate "independent, context-heavy, parallelizable" tasks so it doesn't bloat its own loop. Each subagent is a transient instance (a local `HarnessAgent` or a remote stub), with its own session, returning a result via tool result.
 
-- The current agent is **not** a leaf subagent
-- `disableSubagents()` has not been called
-- `model` is configured
+## A minimal example
 
-When satisfied, `SubagentsHook` (priority=80) is registered and exposes:
+Simplest path: drop the spec into the workspace. The filename is the `agent_id`:
 
-- `agent_spawn` / `agent_send` / `agent_list`
-- `task_output` / `task_cancel` / `task_list`
-
-On every `PreReasoningEvent` turn, `SubagentsHook` injects into SYSTEM:
-
-- Subagent usage rules
-- List of currently available `agent_id`s
-- Summary of async tasks in the current session (up to 10)
-
----
-
-## Declaration Sources
-
-`buildSubagentEntries(...)` merges four sources:
-
-1. Built-in `general-purpose`
-2. Programmatic declarations: `builder.subagent(SubagentDeclaration)`
-3. File declarations: `workspace/subagents/*.md` (loaded non-recursively by `AgentSpecLoader`)
-4. Custom factories: `builder.subagentFactory(name, factory)`
-
----
-
-## Declaration Model (`SubagentDeclaration`)
-
-`SubagentDeclaration` supports 3 mutually exclusive source modes:
-
-1. **Definition workspace mode**
-   - `workspace(path)` points to a definition directory (typically containing `AGENTS.md`)
-2. **Inline mode**
-   - `inlineAgentsBody(...)` is used directly as the system prompt base
-3. **Remote HTTP mode**
-   - `url(...)` + optional `headers(...)`, execution delegated remotely via the task protocol
-
-Mutual exclusion constraints (validated on `build()`):
-
-- `url` cannot coexist with `workspace` or non-empty `inlineAgentsBody`
-- `workspace` and non-empty `inlineAgentsBody` cannot coexist
-
----
-
-## Runtime Workspace Five-Row Decision Table
-
-`WorkspaceMode` determines the runtime workspace root:
-
-| Case | sysPrompt base source | Runtime workspace |
-|------|----------------------|-------------------|
-| Built-in `general-purpose` (always SHARED) | No additional base (only Subagent Context appended; `AGENTS.md` still injected by WorkspaceContextHook) | `mainWorkspace` |
-| `workspace.path` + `ISOLATED` | `<workspace.path>/AGENTS.md` (empty if absent) | `workspace.path` |
-| `workspace.path` + `SHARED` | `<workspace.path>/AGENTS.md` (empty if absent) | `mainWorkspace` |
-| No `workspace.path` + `ISOLATED` (default) | `inlineAgentsBody` / markdown body | `mainWorkspace/agents/<name>/workspace` (auto-created) |
-| No `workspace.path` + `SHARED` | `inlineAgentsBody` / markdown body | `mainWorkspace` |
-
-Notes:
-
-- `tools` is an **allowlist for inherited tools**: it only filters the parent toolkit, and does not affect tools the subagent auto-registers locally
-- Multiple declarations can reuse the same definition workspace
-- `workspace.path` relative paths are resolved via `mainWorkspace.resolve(...).normalize()`
-
----
-
-## Declaration Files (`workspace/subagents/<id>.md`)
-
-The filename (without `.md`) is the `agent_id`; `name` is not read from front matter.
+`workspace/subagents/reviewer.md`:
 
 ```markdown
 ---
-description: Code review expert
+description: Code-review specialist. Use when the user wants to review a PR, hunt for code issues, or check code style.
+---
+
+You are a subagent focused on code review. Follow this flow:
+1. First read_file / grep_files to gather context
+2. Give specific suggestions by file and line
+3. End with an overall 1–5 score
+```
+
+The parent can now call it during reasoning:
+
+```
+agent_spawn agent_id="reviewer" task="review every change in this PR"
+```
+
+No registration step.
+
+## Three ways to declare
+
+Three sources are merged at build time:
+
+| Way | Use for | How |
+|-----|---------|-----|
+| Built-in `general-purpose` | Generic fallback (mirrors parent capability) | Always present, no config |
+| Workspace spec files | Project-specific, version-controlled | `workspace/subagents/<id>.md` |
+| Programmatic declarations | Decided at runtime (remote, dynamic params) | `builder.subagent(SubagentDeclaration.builder()...)` |
+
+### Workspace spec files
+
+Non-recursive scan of `workspace/subagents/*.md`; the filename (minus `.md`) **is** the `agent_id` — **do not** also set `name` in the front matter.
+
+```markdown
+---
+description: Code review specialist     # required, the model uses this to decide whether to delegate
 workspace:
-  mode: isolated               # isolated | shared, defaults to isolated
-  path: ./defs/reviewer        # optional; relative to mainWorkspace or absolute
-model: openai:gpt-4o-mini      # optional
-maxIters: 8                    # optional, default 10
-tools: [read_file, grep_files] # optional
+  mode: isolated              # default isolated; shared = use parent's workspace
+  path: ./defs/reviewer       # optional; if absent, framework auto-creates a subdir
+model: openai:gpt-4o-mini     # optional; inherits parent's if absent
+steps: 8                      # optional; max iterations per spawn
+temperature: 0.2              # optional; overrides parent GenerateOptions
+top_p: 0.95                   # optional
+hidden: false                 # true = not listed to the model (still callable programmatically)
+mode: subagent                # primary / subagent / all (default all); primary can't be spawned
+tools: [read_file, grep_files]   # optional; allowlist over inherited tools
 ---
 
 You are a subagent focused on code review.
 ```
 
-Parsing rules (`AgentSpecLoader`):
-
-- Required: `description`
-- Only scans the **first level** of `subagents/` directory for `.md` files (non-recursive)
-- If `workspace.path` is set and body is non-empty: logs a warning; body is ignored
-- Markdown declarations currently do not parse `url/headers` (remote declarations should use the programmatic API)
-
----
-
-## Programmatic Configuration
+### Programmatic declarations
 
 ```java
 HarnessAgent.builder()
@@ -113,135 +73,235 @@ HarnessAgent.builder()
     .workspace(workspace)
     .subagent(SubagentDeclaration.builder()
         .name("reviewer")
-        .description("Code review expert")
+        .description("Code review specialist")
         .workspace(Path.of("./defs/reviewer"))
         .workspaceMode(WorkspaceMode.ISOLATED)
         .model("qwen3-max")
-        .maxIters(8)
+        .steps(8)
         .tools(List.of("read_file", "grep_files"))
         .build())
     .subagent(SubagentDeclaration.builder()
         .name("remote-researcher")
         .description("Remote research subagent")
-        .url("http://agent-task-server:8080")
+        .url("http://agent-task-server:8080")     // remote subagent
         .headers(Map.of("Authorization", "Bearer xxx"))
         .build())
     .build();
 ```
 
----
+Three sources are mutually exclusive: `workspace(...)`, `inlineAgentsBody(...)`, `url(...)` — pick one.
 
-## Built-in `general-purpose`
+### Built-in `general-purpose`
 
-The built-in `general-purpose` requires no declaration file and is always included in the entry list.  
-Its goal is to "mirror the parent agent's capabilities":
+No spec file needed; always available. Its role is "generic fallback" — it mirrors the parent's capability (same model, tools, skills) and shares the parent's workspace. Useful when the parent wants to isolate context for a sub-task without writing a dedicated spec.
 
-- Shares the main workspace (`SHARED` semantics)
-- Inherits and mirrors the parent agent's:
-  - toolkit (parent tools)
-  - hooks
-  - execution config
-  - compaction / toolResultEviction
-  - additional context files / maxContextTokens
-  - various disable flags
-- Always a leaf subagent (cannot further spawn subagents)
+## ISOLATED vs SHARED
 
----
+`workspaceMode` decides what counts as the subagent's workspace:
 
-## Recursion Prevention and Depth Safety
+- **ISOLATED** (default): the subagent has its own workspace (if `workspace.path` is omitted, the framework auto-creates a subdirectory). Subagent runtime state is bucketed per "parent sessionId × user" — so spawning the same subagent across different conversations of the same user doesn't cross-contaminate.
+- **SHARED**: the subagent uses the parent's workspace directly. Good for cases where the subagent's output is read by the parent immediately (e.g. `general-purpose`).
 
-Two safety mechanisms:
+## Sync or background?
 
-1. All subagents generated via declarations or built-in are given `asLeafSubagent()` — leaf agents do not register `SubagentsHook`
-2. `AgentSpawnTool` also has a dynamic depth cap: `MAX_SPAWN_DEPTH = 3`
+The parent creates a subagent with `agent_spawn`; the key knob is `timeout_seconds`:
 
----
+- `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result.
+- `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
 
-## RuntimeContext Propagation
+### Background tasks push back automatically
 
-When `agent_spawn` / `agent_send` invokes a subagent:
+When a background task finishes, the parent **does not need to poll** — before the parent's next reasoning step, the framework injects completed task results as a system reminder at the end of the conversation:
 
-- The sub-session `session_id` is a new value (`sub-<uuid>`)
-- `userId` is propagated from the parent `RuntimeContext` to the child `RuntimeContext`
+```
+<system-reminder>
+Background tasks delivered:
+- task_id=xxx, agent=research-analyst, status=COMPLETED
+  result summary: ...
+</system-reminder>
+```
 
-This maintains consistent USER-dimension isolation keys (e.g., scenarios where namespace/sandbox isolation depends on `userId`).
+The parent naturally responds or continues. This means **you do not** write "remember to poll task_output" in your prompt — that was the old way.
 
----
+> `task_output` / `task_cancel` / `task_list` still exist as escape hatches and debugging aids. Production prompts should not contain polling logic.
 
-## Tool Reference and Key Parameters
+## Send a follow-up to an existing subagent
 
-| Tool | Purpose | Key Parameters |
-|------|---------|---------------|
-| `agent_spawn` | Create a subagent; optionally execute the first task sync or async | `agent_id` required; `task` optional; `label` optional; `timeout_seconds` default 30, `0` = background, max 600 |
-| `agent_send` | Send a follow-up message to an existing subagent | `agent_key` or `label` (one required); `message` required; `timeout_seconds` same rules |
-| `agent_list` | List currently active subagents | none |
-| `task_output` | Query / wait for background task result | `task_id`; `block` (default true, use false to poll status); `timeout` default 30000ms, max 600000ms |
-| `task_cancel` | Cancel a task | `task_id` |
-| `task_list` | List tasks in the current session | `status_filter` (running/completed/failed/cancelled/all) |
+`agent_spawn` returns an `agent_key` (runtime instance handle). Use it (or your `label`) to send follow-up messages:
 
-Notes:
+```
+agent_send agent_key="agent:reviewer:abc-123" message="also check the schema changes"
+```
 
-- The `agent_key` for `agent_send` must be the complete `agent_key: ...` from the `agent_spawn` return value (not `agent_id` / `session_id` / `task_id`)
-- Do not immediately poll after creating an async task; prefer returning to the user first, then using `task_output(block=false)` or `task_list` to check latest status
+To list active subagents: `agent_list`.
 
----
+## Let the agent author new subagent specs
 
-## Async Task Lifecycle and Storage
+The `agent_generate` tool (**off by default**) lets the LLM draft a new subagent spec and write it to `workspace/subagents/<name>.md`:
 
-By default, the parent agent uses `WorkspaceTaskRepository` (unless overridden with `taskRepository(...)`).
+```java
+// Opt-in (at build time):
+// Grab the builder's internal SubagentsMiddleware reference and call enableAgentGenerateTool
+```
 
-Lifecycle (simplified):
+Useful when "halfway through, the agent realizes it needs a new kind of helper". Use with care in production — usually you'd have the agent draft the spec and have a human review before writing the file.
 
-1. `putTask(...)` writes `TaskRecord(PENDING)` to workspace
-2. Submits local execution future (local or remote)
-3. Updates to `RUNNING` during execution
-4. Writes `COMPLETED / FAILED / CANCELLED` on completion
+## Behavior notes
 
-Storage layering:
+- **Write `description` well**: it's the model's primary signal for delegating. "Code review" is far less useful than "Use when the user wants to review a PR or check code style".
+- **Recursion safety**: subagents cannot spawn further subagents (force-marked as leaves); plus a hard cap of 3 levels.
+- **userId is propagated**: parent's `RuntimeContext.userId` is forwarded to the child, so the multi-tenant isolation chain stays intact.
+- **Streaming forwarding**: during the parent's `stream()`, intermediate events from synchronous subagents are forwarded back into the parent's `Flux` live (with source tags); see [Subagent streaming](#subagent-streaming) below.
 
-- In-memory layer: `localTasks` (node-local acceleration handle, lost on restart)
-- Persistent layer: `agents/<parentAgentId>/tasks/<sessionId>.json` (source of truth)
+## Remote subagent
 
----
+Just set `url` + optional `headers` and the subagent runs through a remote HTTP service (Agent Protocol):
 
-## Distributed Semantics
+```java
+.subagent(SubagentDeclaration.builder()
+    .name("remote-researcher")
+    .description("Remote research subagent")
+    .url("http://agent-task-server:8080")
+    .headers(Map.of("Authorization", "Bearer xxx"))
+    .build())
+```
 
-- Task execution is sticky to the creating node, but any node can read state through the workspace
-- `task_output(block=true)` degrades gracefully in cross-node scenarios and does not block indefinitely
-- `task_cancel` persists `cancelRequested=true`; the executing node polls this flag and aborts
-- The orphan sweeper marks local tasks with no heartbeat for a long time as `FAILED` (remote transport tasks are not subject to this check)
+Same sync (`timeout_seconds>0`) / background (`timeout_seconds=0`) semantics apply.
 
-Relationship to filesystem mode:
+## Background task storage
 
-| Mode | `agents/<agentId>/tasks/` path visibility |
-|------|------------------------------------------|
-| `RemoteFilesystemSpec` | Routed to shared remote storage, visible to multiple nodes |
-| `SandboxFilesystemSpec` | Goes through sandbox filesystem and sandbox state persistence |
-| `LocalFilesystemSpec` / local default | Visible on local machine only |
+Background task state is written by default to `workspace/agents/<parentAgentId>/tasks/<sessionId>.json`. So:
 
----
+- In shared-store mode (multi-replica) any node can read task state;
+- Task execution **pins to the creating node**, but any node can read the result and push it back to the parent;
+- Cancel from any node via `task_cancel` — the executing node polls the cancel flag and aborts.
 
-## Remote Subagent Behavior
+## Delegating during Plan Mode
 
-When a declaration has `url(...)` configured:
+⚠ Current **known gap**: subagents spawned by a parent in Plan Mode **do not automatically inherit the read-only restriction**. To restrict the child: narrow `tools` in its declaration to a read-only set, or enable `enablePlanMode()` on the child's own builder.
 
-- The factory returns a `RemoteSubagentStub` (placeholder, performs no local reasoning)
-- Actual execution is delegated to a remote task HTTP service via `TaskRunSpec.RemoteTaskRunSpec` + `AgentProtocolTaskClient`
-- Supports both synchronous (`timeout_seconds > 0`) and asynchronous (`timeout_seconds = 0`) modes
+## Subagent streaming
 
----
+> For the streaming basics (`stream()`, `Event`, `StreamOptions`), see [Message & Event](/v2/building-blocks/message-and-event). This section is only about `HarnessAgent`'s child-agent event forwarding in `stream()` mode.
 
-## Practical Advice
+### What it does
 
-1. Write `description` clearly — "when to use / output format / prohibited actions" — this is the key signal the parent model uses to decide whether to delegate
-2. Subagent `maxIters` is typically set smaller than the parent agent to avoid sub-threads consuming excessive tokens
-3. After session compaction or recovery, first use `task_list()` to restore full task state before making single-task queries
+When you call the parent with `parent.stream()` and the parent invokes a child via `agent_spawn` / `agent_send` during reasoning, **every intermediate event the child produces is injected live into the parent's event stream**. Zero configuration — just use `stream()` (not `call()`). Each event carries an extra `EventSource` field telling you whether it's from the parent or which subagent.
 
----
+### A typical timeline
 
-## Related Pages
+```
+caller
+  └─ parent.stream()
+        │
+        ├─ parent REASONING chunks…           ← parent's first round (incl. tool call)
+        │
+        │  [agent_spawn "researcher" starts]
+        ├─ child REASONING chunks…            ← child reasoning (live forwarded with EventSource)
+        ├─ child TOOL_RESULT…
+        ├─ child AGENT_RESULT (last)          ← child's final reply (live forwarded)
+        │  [agent_spawn returns; result given to parent as TOOL_RESULT]
+        │
+        ├─ parent TOOL_RESULT…
+        ├─ parent REASONING chunks…           ← parent's second round
+        └─ parent AGENT_RESULT (last)         ← parent's final reply
+```
 
-- [Tool](./tool.md)
-- [Workspace](./workspace.md)
-- [Architecture](./architecture.md)
-- [Subagent Streaming](./streaming.md)
+Parent self-events: `source == null`. Child events: `source != null`.
+
+### Distinguishing by source
+
+```java
+Flux<Event> events = parent.stream(msgs, StreamOptions.defaults(), ctx);
+
+events.subscribe(event -> {
+    EventSource src = event.getSource();
+    if (src == null) {
+        // parent self
+        System.out.printf("[parent][%s] %s%n",
+                event.getType(), event.getMessage().getTextContent());
+    } else {
+        // child (or grandchild)
+        System.out.printf("[%s|depth=%d|path=%s][%s] %s%n",
+                src.getAgentId(), src.getDepth(), src.getPath(),
+                event.getType(), event.getMessage().getTextContent());
+    }
+});
+```
+
+Useful `EventSource` fields:
+
+| Field | Meaning |
+|-------|---------|
+| `agentId` | Subagent type id (filename of `subagents/<id>.md`) |
+| `agentKey` | Runtime instance handle; pass to `agent_send` |
+| `agentName` | Display name (nullable) |
+| `sessionId` | Subagent's call session id |
+| `parentSessionId` | Parent agent's session id |
+| `depth` | Nesting depth (parent's direct child = 1, grandchild = 2, etc.) |
+| `path` | `/`-joined call path; stacks automatically for nesting, e.g. `sess-001/planner/executor` |
+
+### Multi-level nesting (grandchildren)
+
+A child can spawn a grandchild (subject to the 3-level hard cap). Grandchild events bubble up to the root parent; filter by `depth` or `path`:
+
+```java
+// Only first-level child REASONING events
+events.filter(e -> e.getSource() != null
+               && e.getSource().getDepth() == 1
+               && e.getType() == EventType.REASONING)
+      .subscribe(...);
+
+// Events on a path containing "executor" at any depth
+events.filter(e -> e.getSource() != null
+               && e.getSource().getPath().contains("executor"))
+      .subscribe(...);
+```
+
+### SSE forwarding
+
+```java
+@GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
+                                          @RequestParam String sessionId) {
+    RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
+    return agent.stream(
+                    List.of(new UserMessage(message)),
+                    StreamOptions.defaults(), ctx)
+            .map(event -> {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("type", event.getType());
+                payload.put("text", event.getMessage().getTextContent());
+                payload.put("last", event.isLast());
+                if (event.getSource() != null) {
+                    payload.put("agentId", event.getSource().getAgentId());
+                    payload.put("depth",   event.getSource().getDepth());
+                    payload.put("path",    event.getSource().getPath());
+                }
+                return ServerSentEvent.<String>builder()
+                        .data(objectMapper.writeValueAsString(payload))
+                        .build();
+            });
+}
+```
+
+### Behavior boundaries
+
+| Scenario | Live forwarding? |
+|----------|------------------|
+| `stream()` + synchronous local child (`timeout_seconds > 0`) | ✔ |
+| `call()` mode (non-streaming) | ✗ (child result returns as a `tool_result` string) |
+| `timeout_seconds = 0` background task | ✗ (terminal state is pushed back to the parent's next round) |
+| Remote subagent (Agent Protocol) | ✗ |
+| Multi-level nesting (grandchildren) | ✔ (`path` / `depth` stack automatically) |
+
+### Error handling
+
+When a child throws internally, the framework captures it and writes a `TOOL_RESULT` back to the parent. It **does not** propagate `onError` into the parent stream — child failures don't break the parent. If the parent stream itself errors, use standard Reactor semantics (`onErrorResume`, etc.).
+
+## Related pages
+
+- [Workspace](./workspace) — `subagents/` and `agents/<id>/tasks/` layout
+- [Plan Mode](./plan-mode) — restrictions on subagents during the plan phase
+- [Architecture](./architecture) — how parent and child cooperate
+- [Message & Event](/v2/building-blocks/message-and-event) — full reference for `Event` / `EventType` / `StreamOptions`

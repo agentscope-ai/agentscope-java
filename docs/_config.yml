@@ -116,6 +116,11 @@ sphinx:
     templates_path: ["./_templates"]
     html_static_path:
       - "_static"
+    # Expose docs/imgs/ at /imgs/ in the built site so raw HTML <img> tags
+    # in landing pages can reference ../../imgs/v2/...  Symlink target is
+    # docs/_extra/imgs -> ../imgs (resolves at build time on Linux/macOS).
+    html_extra_path:
+      - "_extra"
     html_css_files:
       - custom.css
       - homepage.css
@@ -129,13 +134,13 @@ sphinx:
 
     html_context:
       # Version switcher
-      docs_version: "v1"
+      docs_version: "v2"
       docs_versions:
-        - label: "v1 (stable)"
-          url: "https://java.agentscope.io/v1/"
-          current: true
-        - label: "v2 (latest)"
+        - label: "v2"
           url: "https://java.agentscope.io/v2/"
+          current: true
+        - label: "v1"
+          url: "https://java.agentscope.io/v1/"
       docs_top_tabs:
         # Order: Home → Docs → Integration → Blogs → Community
         # Each tab carries v1 and v2 routing data; the template emits both as
@@ -193,10 +198,12 @@ sphinx:
           sections_v2_en:
             - v2 · Quick Start
             - v2 · Building Blocks
+            - v2 · Harness (English)
             - v2 · Reference
           sections_v2_zh:
             - v2 · 快速开始
             - v2 · 核心组件
+            - v2 · Harness
             - v2 · 参考
           languages:
             - en
@@ -233,8 +240,8 @@ sphinx:
           label_zh: 博客
           href_en: v1/en/blogs/index
           href_zh: v1/zh/blogs/index
-          href_v2_en: v2/en/blogs/index
-          href_v2_zh: v2/zh/blogs/index
+          href_v2_en: v2/en/blogs/agentscope-v2-release
+          href_v2_zh: v2/zh/blogs/agentscope-v2-release
           mirror_paths: true
           prefixes_en:
             - v1/en/blogs/
@@ -260,8 +267,8 @@ sphinx:
           label_zh: 社区
           href_en: v1/en/community/overview
           href_zh: v1/zh/community/overview
-          href_v2_en: v2/en/community/overview
-          href_v2_zh: v2/zh/community/overview
+          href_v2_en: v2/en/community/contributors
+          href_v2_zh: v2/zh/community/contributors
           mirror_paths: true
           prefixes_en:
             - v1/en/community/

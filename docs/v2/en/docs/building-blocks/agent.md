@@ -30,7 +30,7 @@ The `Agent` interface composes three capability interfaces: `CallableAgent`, `St
 
 Each `call` runs through the reasoning-acting loop. The diagram below shows the main control flow:
 
-```mermaid
+```{mermaid}
 flowchart TD
     A([Input: messages / event]) --> B{Waiting on\nexternal event?}
     B -- yes --> C[Apply event\nupdate tool state]
@@ -243,10 +243,10 @@ Pass `confirmResults` to the next `call` via metadata:
 
     ```java
     import io.agentscope.core.message.Msg;
+    import io.agentscope.core.message.UserMessage;
 
-    Msg resumeMsg =
-            Msg.builder()
-                    .role(io.agentscope.core.message.MsgRole.USER)
+    UserMessage resumeMsg =
+            UserMessage.builder()
                     .metadata(java.util.Map.of(
                             Msg.METADATA_CONFIRM_RESULTS, confirmResults))
                     .build();

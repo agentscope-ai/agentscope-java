@@ -1,120 +1,82 @@
-# 记忆（Memory）
+---
+title: "记忆（Memory）"
+description: "双层长期记忆、对话压缩、大工具结果卸载"
+---
 
 ## 作用
 
-让 agent 能“记住跨会话的事实”，同时避免对话上下文无限增长。harness 把记忆拆成两层：高频低质量的“流水账” + 低频高质量的“策划后长期记忆”，并补上一套 FTS5 检索 + 后台维护。
+让 agent "记住跨会话的事实"，同时避免对话上下文无限增长。Harness 把记忆拆成两层：
 
-## 触发
+- **第一层·日流水账** `memory/YYYY-MM-DD.md` —— 每天追加，原始且未去重；
+- **第二层·策划后长期记忆** `MEMORY.md` —— 周期性 LLM 合并去重的产物；每轮推理时作为长期记忆注入 system prompt。
 
-| 时机 | 动作 |
-|------|------|
-| 推理前（`PreReasoningEvent`）| `CompactionHook` 检查对话阈值；超阈则调 `ConversationCompactor` |
-| `call()` 结束（`PostCallEvent`）| `MemoryFlushHook` 调 `MemoryFlushManager` 提取记忆 + offload |
-| 上下文溢出（`ContextLengthExceeded`）| `HarnessAgent.forceCompactAndRetry` 以 `triggerMessages=1` 强制压缩并重试 |
-| 工具返回超大（`PostActingEvent`）| `ToolResultEvictionHook` 卸载到 filesystem |
-| 后台调度 | `MemoryMaintenanceScheduler` 默认每 6h 跑一轮；flush 后会“机会主义”传一个信号（30 分钟级节流） |
+围绕这两层，还有三个常用机制：
 
-## 关键逻辑
+- **对话压缩** —— 上下文太长时摘要历史、保留尾部；
+- **上下文溢出兜底** —— 模型真的报错时强制压缩并重试；
+- **大工具结果卸载** —— 单次工具返回过大时落盘 + 占位符。
 
-### 双层记忆模型
+## 两层记忆是怎么工作的
 
 ```{mermaid}
 graph LR
-    Conv[对话 messages] -->|超阈值| Compactor[ConversationCompactor]
-    Compactor -->|offload| Sess[sessions/&lt;id&gt;.log.jsonl]
-    Compactor -->|flushMemories| Flush[MemoryFlushManager]
-    Flush -->|append + index| Daily[memory/YYYY-MM-DD.md]
-    Daily -. 后台二次加工 .-> Cons[MemoryConsolidator]
-    MEM[MEMORY.md作为上下文] -->|读取去重| Cons
-    Cons -->|重写| MEM
-    MEM -->|每次推理注入| Hook[WorkspaceContextHook]
-    Daily -.不直接注入.- Hook
-    Daily --> Idx[(MemoryIndex<br/>SQLite FTS5)]
-    MEM --> Idx
+    Conv["对话 messages"] -->|超阈值| Compactor["对话压缩"]
+    Compactor -->|offload| Sess["sessions/&lt;id&gt;.log.jsonl"]
+    Compactor -->|提炼新事实| Daily["memory/YYYY-MM-DD.md"]
+    Daily -. 后台周期合并 .-> MEM["MEMORY.md"]
+    MEM -->|每轮推理注入| SYS["system prompt"]
 ```
 
-- **第一层·流水账 `memory/YYYY-MM-DD.md`**：`MemoryFlushManager` 专属，**只追加**，不去重；是“刚刚在说什么”的原始记录。
-- **第二层·策划后长期记忆 `MEMORY.md`**：`MemoryConsolidator` 专属，**整体重写**；MemoryFlushManager 不会去动它。每次推理都走 `WorkspaceContextHook` 注入到 system prompt。
-- **索引 `MemoryIndex`**：启动时 `indexAllFromWorkspace` 一次；每次 flush 写今日流水账后增量重建该文件索引；SQLite 文件位于 `<workspace_parent>/memory_index.db`。
+要点：
 
-### 对话压缩（`ConversationCompactor`）
+- 第一层只追加，不去重；第二层周期性整体重写；**两层互不覆盖**。
+- 第二层永远是 LLM 注入提示的来源；第一层等待被合并。
+- 对话被压缩前的原始消息会另存一份永不压缩的日志（`*.log.jsonl`），供事后审计或 `session_search`。
 
-```
-检查阈值 → 找 cutoff（不切开 ASSISTANT/TOOL 对）
-        → (可选) flushMemories(prefix)
-        → (可选) offloadMessages(messages → sessions/.../<id>.jsonl)
-        → LLM 提炼 summary
-        → [summaryUserMsg] + tail 返回给 hook重装 memory
-```
-
-默认值（全部可调）：
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `triggerMessages` | `50` | 按条数触发（`0` = 关闭） |
-| `triggerTokens` | `80_000` | 按 token 估算触发（`0` = 关闭） |
-| `keepMessages` | `20` | 保留尾部条数 |
-| `keepTokens` | `0` | 非 0 时按 token 预算从后往前扫描，覆盖 `keepMessages` |
-| `flushBeforeCompact` | **`true`** | 压缩前提取记忆到今日流水账 |
-| `offloadBeforeCompact` | **`true`** | 压缩前将原始消息追写到会话 `.log.jsonl` |
-| `summaryPrompt` | 内置模板 | 包含 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四段式 |
+## 开启压缩
 
 ```java
-CompactionConfig.builder()
-    .triggerMessages(30)
-    .keepMessages(10)
-    .build();   // flush/offload 默认都是 true
+HarnessAgent agent = HarnessAgent.builder()
+    .name("MyAgent")
+    .model(model)
+    .workspace(workspace)
+    .compaction(CompactionConfig.builder()
+        .triggerMessages(30)     // 消息条数到 30 触发
+        .keepMessages(10)        // 压缩后保留最近 10 条
+        .build())
+    .build();
 ```
 
-#### `TruncateArgsConfig`—轻量预处理（可选）
+常用配置项：
 
-在 LLM 摘要之前，可以先走一个**不走 LLM** 的干预：对老消息里不那么重要的 `ToolUseBlock` 参数做字符串截断（默认阈值 25 条 / 40k tokens，参数超 2000 字符被裁揉）。适合 `write_file` 这种入参体量大、后期不需要原貌的场景。
+| 参数 | 默认 | 含义 |
+|------|------|------|
+| `triggerMessages` | `50` | 按条数触发（`0` 表示关闭） |
+| `triggerTokens` | `80_000` | 按 token 估算触发（`0` 表示关闭） |
+| `keepMessages` | `20` | 保留尾部条数 |
+| `keepTokens` | `0` | 非 0 时按 token 预算从尾部往前算，覆盖 `keepMessages` |
+| `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账 |
+| `offloadBeforeCompact` | `true` | 压缩前先把原始消息存一份永不压缩的日志 |
+
+**上下文溢出自动恢复**：模型真的返回 `context_length_exceeded` 等错误时，框架会强制做一轮压缩然后重试一次——前提是你配了 `compaction(...)`，否则错误直接抛回上层。
+
+### 想再轻一些？预处理参数截断
+
+`write_file` 这种工具调用，参数体量很大但后期没人再看。在 LLM 摘要之前，可以先做一个**不走 LLM** 的字符串截断：
 
 ```java
 CompactionConfig.builder()
     .triggerMessages(80)
-    .truncateArgs(TruncateArgsConfig.builder().build())
+    .truncateArgs(CompactionConfig.TruncateArgsConfig.builder()
+        .maxArgLength(2000)
+        .truncationText("... [truncated] ...")
+        .build())
     .build();
 ```
 
-#### 上下文溢出自动恢复
+## 大工具结果卸载
 
-当模型返回 `context_length_exceeded` / `maximum context` 之类错误，`HarnessAgent.recoverFromOverflow` → `forceCompactAndRetry` 会拼一个临时 `triggerMessages=1` 的 `CompactionConfig` 走一轮压缩，清空 `Memory` 后重试；**前提是配置了 `compaction(...)`**，否则直接抛错。
-
-### 记忆提取（`MemoryFlushManager`）
-
-- `flushMemories(messages)`：拿当前 `MEMORY.md` 和今日流水账作为“去重参考”丢给 LLM，要求输出 **仅新增的** bullet；“NO_REPLY” 表示什么都不写。
-- 写入位置固定是 `memory/YYYY-MM-DD.md`，**不会动 `MEMORY.md`**（以防二层被一层覆写）。
-- 写完后立刻 `indexFromString` 重建该文件索引，并调 `MemoryMaintenanceScheduler.requestConsolidation()` 提示“能合并了合并下”。
-
-### 二次合并（`MemoryConsolidator`）
-
-- 读 mtime 超过 watermark 的日流水账 + 当前 `MEMORY.md`，调 LLM 合并、去重、裁剪。
-- 输出限制：默认 `maxMemoryTokens=4000`（约 16k 字符），prompt 会以字符预算的形式告诉 LLM。
-- 写后推进 watermark，存于 `memory/.consolidation_state`；下次只看 mtime 超 watermark 的日文件。
-- 合并仅在后台 executor 跳：定期 tick 或 `requestConsolidation()` 发起，永不阻塞推理循环。
-
-### 后台维护（`MemoryMaintenanceScheduler`）
-
-`HarnessAgent.build()` 中自动创建并 `start()`，每个 tick 顺序跑：
-
-1. `expireDailyFiles` — 超过 `dailyFileRetentionDays` 的日文件归档到 `memory/archive/`（**默认 90 天**）
-2. `consolidateMemory` — 调 `MemoryConsolidator.consolidate()`
-3. `pruneOldSessions` — 删除 mtime 超 `sessionRetentionDays` 的会话文件（**默认 180 天**）
-4. `reindex` — `MemoryIndex.indexAllFromWorkspace`
-
-默认间隔 `Duration.ofHours(6)`；opportunistic 调用实际节流间隔 30 分钟，避免频繁 flush 打爆 LLM。
-
-### 工具结果卸载（`ToolResultEvictionConfig`）
-
-与压缩独立。某次 `tool_call` 返回的文本超过阈值时，全文写到 `evictionPath` 下的文件，原位置只留一个“首尾预览 + 路径”的占位符，agent 需要完整内容时走 `read_file`。
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `maxResultChars` | `80_000` | 超过则卸载 |
-| `previewChars` | `2_000` | 首尾预览字符数 |
-| `evictionPath` | `/large_tool_results` | 卸载文件根路径 |
-| `excludedToolNames` | 内置集（含 `read_file` 等） | 不参与卸载的工具 |
+跟压缩独立。某次工具返回超过阈值时，全文写到一个目录、上下文里只留首尾预览 + 占位符——agent 想要全文就 `read_file`：
 
 ```java
 HarnessAgent.builder()
@@ -123,30 +85,47 @@ HarnessAgent.builder()
     .build();
 ```
 
-## 配置与代码示例
+默认行为：
+
+- 超过 80K 字符触发
+- 上下文里只保留首尾各约 2K 字符 + 一行"完整内容见 `{path}`"
+- 默认排除 `read_file`（避免回读完又被卸载）
+
+需要自己定阈值或卸载根目录用 `ToolResultEvictionConfig.builder()...build()`。
+
+## 给 agent 自己用的记忆工具
+
+启用记忆能力时，agent 自动获得两个工具：
+
+- `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`，最多返回 30 条命中
+- `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` —— 读指定行范围
+
+模型在看到 `MEMORY.md` 已被截断的提示时通常会自己调 `memory_search` 找老内容。
+
+## 后台维护
+
+启用记忆能力时还会跑一个后台节流任务（每个 `call()` 结束时按最小间隔触发，默认 30 分钟一次最多）：
+
+- 把超过 90 天的日流水账归档到 `memory/archive/`
+- 跑一次 `MEMORY.md` 合并
+- 清理超过 180 天的会话日志
+
+这些数字都可以调，但绝大多数项目不需要。
+
+## 完全关掉
+
+如果你想自己接管记忆 / 自己写工具：
 
 ```java
-HarnessAgent agent = HarnessAgent.builder()
-    .name("MyAgent")
-    .model(model)
-    .workspace(workspace)
-    .compaction(CompactionConfig.builder()
-        .triggerMessages(30)
-        .keepMessages(10)
-        .build())
-    .toolResultEviction(ToolResultEvictionConfig.defaults())
+HarnessAgent.builder()
+    ...
+    .disableMemoryHooks()      // 关掉 flush + 后台维护
+    .disableMemoryTools()      // 不注册 memory_search / memory_get / session_search
     .build();
-
-// agent 可随时调用 memory_search
-MemoryIndex index = new MemoryIndex(workspaceAgentScopeDir);
-index.open();
-List<MemoryIndex.SearchHit> hits = index.search("数据库迁移", 10);
-// hit: { path, lineNumber, content, rank }
 ```
 
 ## 相关文档
 
-- [工具](./tool.md) — `memory_search` / `memory_get` 的参数与调用例
-- [工作区](./workspace.md) — `MEMORY.md` / `memory/*.md` 在工作区的位置
-- [会话](./session.md) — `.log.jsonl` / `.jsonl` 怎么反过来被记忆提取使用
-- [架构](./architecture.md) — CompactionHook / MemoryFlushHook / ToolResultEvictionHook 在生命周期中的位置
+- [工作区](./workspace) — `MEMORY.md` / `memory/` 在工作区的位置
+- [Context](./context) — 永不压缩的对话日志 `*.log.jsonl`
+- [架构](./architecture) — 长会话事实如何沉淀进 `MEMORY.md`

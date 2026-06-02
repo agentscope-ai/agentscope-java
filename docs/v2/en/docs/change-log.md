@@ -3,91 +3,161 @@ title: "Changelog"
 description: "Core differences between AgentScope Java 2.0 and 1.0"
 ---
 
-AgentScope Java 2.0 is a breaking release. The notes below summarize the differences against 1.0 from a Java perspective, grouped by module.
+AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level changes. This page splits those changes into two sections:
 
-## Agent
+- **Migration Guide** — what changes against 1.x, in two tiers:
+  - **Part A · Required** — your code will fail to compile or throw at runtime if you don't migrate
+  - **Part B · Recommended** — still works but `@Deprecated(forRemoval = true)`; will be removed in the next minor
+- **What's New** — net-new capabilities that don't appear in the Migration Guide
 
-- A new `Agent` interface (`io.agentscope.core.agent.Agent`) is now layered on top of the 1.0 `ReActAgent`, composed from three capability interfaces: `CallableAgent`, `StreamableAgent`, `ObservableAgent`.
-- The recommended entry point is still `ReActAgent.builder()...build()`. `call(...)` returns `Mono<Msg>`, `streamEvents(...)` returns `Flux<AgentEvent>` — finer-grained observability and control.
-- The event stream supports **permission gating** and **human-in-the-loop** confirmation (`RequireUserConfirmEvent`, `RequireExternalExecutionEvent`, `UserConfirmResultEvent`, `ExternalExecutionResultEvent`).
-- The 1.0 `Hook` mechanism is deprecated in 2.0 in favour of the new agent middleware system (`MiddlewareBase`, `Middleware`, `MiddlewareChain`). `ReActAgent.Builder.hooks(...)` is kept for migration; prefer `middlewares(...)`.
-- State is now explicitly modelled by `AgentState`. Conversation history is no longer held by `Memory` implementations — it lives on `AgentState.getContext()` and is loaded / saved automatically by the `Session` configured on the builder.
+## Migration Guide
 
-## Event **New**
+### Part A — Required (compile errors or runtime exceptions if you don't migrate)
 
-- A new event system (`io.agentscope.core.event`), better suited to frontend integration and human-in-the-loop scenarios.
-- Event types are centralised in the `AgentEventType` enum: `AGENT_START` / `AGENT_END`, `MODEL_CALL_START` / `MODEL_CALL_END`, the `*_START` / `*_DELTA` / `*_END` triplets for text / thinking / data blocks, `TOOL_CALL_*`, `TOOL_RESULT_*`, `EXCEED_MAX_ITERS`, `REQUIRE_USER_CONFIRM`, `REQUIRE_EXTERNAL_EXECUTION`, `USER_CONFIRM_RESULT`, `EXTERNAL_EXECUTION_RESULT`, `REQUEST_STOP`.
+Items in this section are removed, renamed, or have their semantics tightened. Code that worked on 1.x will not work as-is on 2.0.
 
-## Message
+#### A.1 Removed `ReActAgent.Builder` methods
 
-Content block refactor:
+| Removed in 2.0 | Replacement |
+|---|---|
+| `.memory(Memory)` | `.session(Session).sessionKey(SessionKey)` — `AgentState.getContext()` holds the conversation; the configured `Session` saves/loads automatically on every `call()` |
+| `.statePersistence(StatePersistence)` | Same — `Session` subsumes persistence |
 
-- All content blocks are Jackson POJOs implementing the `ContentBlock` interface — uniform validation, serialization, and extensibility.
-- A unified `DataBlock` (with a `mediaType` discriminator) is added alongside the existing `ImageBlock` / `AudioBlock` / `VideoBlock`. The legacy concrete subclasses still work for smooth migration.
-- New `HintBlock` for agent guidance and intermediate reasoning.
-- `ToolUseBlock` and `ToolResultBlock` gain a `state` field (`ToolCallState` / `ToolResultState`) for richer lifecycle modeling.
-- All blocks gain an `id` field for traceability and reference.
+Detail → [Context](harness/context.md)
 
-`Msg` refactor:
+#### A.2 Removed packages and classes
 
-- `Msg implements State` with constructor-time content validation: `USER` allows text/data/image/audio/video, `SYSTEM` allows text only, `ASSISTANT` is unrestricted.
-- New fields on `Msg`: `timestamp`, `getUsage()` (`ChatUsage`), `getGenerateReason()` (`GenerateReason` enum: `MODEL_STOP`, `TOOL_SUSPENDED`, `REASONING_STOP_REQUESTED`, `ACTING_STOP_REQUESTED`, `INTERRUPTED`, `MAX_ITERATIONS`).
-- New role-pinned subclasses `UserMessage`, `AssistantMessage`, `SystemMessage`, `ToolResultMessage` make it convenient to build messages by role; `Msg.builder()` and per-subclass `Builder` are both available.
+| Removed in 2.0 | Replacement |
+|---|---|
+| `io.agentscope.core.session.SessionManager` | Configure `Session` + `SessionKey` on the agent builder; persistence happens automatically |
+| `io.agentscope.core.pipeline.*` — `Pipeline`, `Pipelines`, `SequentialPipeline`, `FanoutPipeline`, `MsgHub` | Compose middleware + sub-agents + the event stream for multi-agent orchestration. See the subagent guide → [Subagent](harness/subagent.md) |
+| `io.agentscope.core.tool.coding.*` (4 shell/validator classes) and `io.agentscope.core.tool.file.*` (3 file-tool classes) | Use the `agentscope-harness` module, which provides equivalent tools inside the workspace context. See → [Harness filesystem](harness/filesystem.md) |
+| `io.agentscope.core.model.tts.*` (14 files, DashScope TTS / Realtime TTS / `AudioPlayer`, etc.) | Core no longer ships TTS. Integrate the upstream provider SDK directly if you need TTS |
+| `io.agentscope.core.hook.PendingToolRecoveryHook` | Use `Builder.enablePendingToolRecovery(boolean)` |
+| `io.agentscope.core.hook.TTSHook` | Removed alongside the TTS module |
 
-## Permission **New**
+#### A.3 `state` package restructure (compile error)
 
-- A new permission system (`io.agentscope.core.permission`) for fine-grained tool-execution gating, human-in-the-loop confirmation, and overall agent autonomy control.
-- Core components: `PermissionEngine`, `PermissionContextState`, `PermissionRule`, `PermissionDecision`, `PermissionMode` (`DEFAULT` / `ACCEPT_EDITS` / `EXPLORE` / `BYPASS` / `DONT_ASK`), `PermissionBehavior`.
+| v1 | v2 |
+|---|---|
+| `AgentMetaState` | `AgentState` |
+| `StateModule` | **removed** — no longer a superclass for `Memory`, `Toolkit`, etc. |
+| `StatePersistence` | **removed** — replaced by the `Session` abstraction |
+| `ToolkitState` | Moved to `io.agentscope.core.session.legacy.ToolkitState` (kept for compatibility only — do not reference in new code) |
+| (new) | `Task`, `TaskContextState`, `ToolContextState`, `PlanModeContextState`, `ReadCacheEntry` |
 
-## Tool
+Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `ToolkitState` from `io.agentscope.core.state` will fail to compile. Detail → [Context](harness/context.md)
 
-- New `ToolBase` abstract class and `AgentTool` interface unify the base contract for all tools.
-- New built-in task tool: `TodoTools.todoWrite` (`tool/builtin/TodoTools.java`), letting the agent maintain a structured task list per session, with the `TaskReminderMiddleware` automatically re-injecting the list each turn.
+#### A.4 `Msg` content validation is stricter (runtime exception)
 
-`Toolkit` refactor:
+`Msg` now validates `content` against `role` at construction time:
 
-- `Toolkit` treats tools, skills, MCP, and tool groups as first-class citizens.
-- New `ToolGroup` / `ToolGroupManager` / `ToolGroupScope` for on-demand activation, with the reserved `basic` group always active.
-- New `MetaToolFactory` lets the agent switch tool groups at runtime.
-- New `McpTool` and reflective `@Tool` / `@ToolParam`-based `ReflectiveFunctionTool` adapters unify tool registration (`Toolkit#registerTool(Object)` reflectively registers any object's `@Tool` methods).
+- `USER` — only `TextBlock` / `DataBlock` / `ImageBlock` / `AudioBlock` / `VideoBlock`
+- `SYSTEM` — only `TextBlock`
+- `ASSISTANT` — unrestricted
 
-## MCP
+Combinations that v1 tolerated (for example, a `USER` message carrying a `ToolUseBlock`) now throw at construction. Use the role-pinned subclasses `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage` to make role/content compatibility obvious at the call site. Detail → [Message & Event](building-blocks/message-and-event.md)
 
-- MCP support is consolidated under `io.agentscope.core.tool.mcp`: `McpClientManager`, `McpClientWrapper` (`McpSyncClientWrapper` / `McpAsyncClientWrapper`), `McpClientBuilder`, `McpTool`, `McpContentConverter`.
-- Use `McpClientBuilder` to construct stdio / SSE / Streamable HTTP clients — see the examples under `agentscope-examples/documentation/.../mcp`.
+---
 
-## Skill **New**
+### Part B — Recommended (`@Deprecated(forRemoval = true)`, still callable today)
 
-- A new skill loader abstraction (`io.agentscope.core.skill`) supports loading skills from a directory and watching for changes.
-- Components: `AgentSkill`, `SkillRegistry`, `SkillBox`, `SkillToolFactory`, `SkillFilter`, `SkillFileFilter`, `SkillToolGroup`. Skills can be packaged into `ToolGroup`s and activated on demand.
+Items in this section compile and run on 2.0, but each has been marked for removal in the next minor. Migrate at your own pace; we recommend doing it sooner rather than later.
 
-## Model
+#### B.1 `SkillBox` → skill repositories
 
-- Credential management is decoupled from model classes into the new `io.agentscope.core.credential` module (`DashScopeCredential` / `OpenAICredential` / `AnthropicCredential` / `GeminiCredential` / `OllamaCredential` / `DeepSeekCredential` / `KimiCredential` / `XAICredential`).
-- Built-in chat models: `DashScopeChatModel`, `OpenAIChatModel`, `AnthropicChatModel`, `GeminiChatModel`, `OllamaChatModel`, all extending `ChatModelBase`.
-- Formatters are integrated into the chat model abstraction with a default formatter per provider (`DashScopeChatFormatter`, `OpenAIChatFormatter`, `AnthropicChatFormatter`, `GeminiChatFormatter`, `OllamaChatFormatter`).
-- New `ModelCard` schema (`credential/ModelCard.java`) describes a model's identity, capabilities, and parameter overrides.
-- New `ModelRegistry` resolves models from `provider:model` strings (e.g. `dashscope:qwen-max`, `openai:gpt-5`).
+- `SkillBox` (the class) and `Builder.skillBox(SkillBox)` are both `@Deprecated(forRemoval = true, since = "2.0.0")`.
+- Recommended path: register one or more `AgentSkillRepository` implementations (built-ins: `ClasspathSkillRepository`, `FileSystemSkillRepository`) via `Builder.skillRepository(...)` / `.skillRepositories(...)`. When at least one repository is registered, `DynamicSkillMiddleware` is auto-installed and rebuilds the skill prompt on every `call()`.
+- Fine-grained filtering: `Builder.skillFilter(SkillFilter)`. To disable the auto-installed middleware (so an external orchestrator like `HarnessAgent` can attach its own), use `Builder.dynamicSkillsEnabled(false)`.
 
-## Middleware **New**
+Detail → [Skill](harness/skill.md)
 
-- The hook mechanism has been refactored into a more general agent middleware system (`io.agentscope.core.middleware`).
-- `MiddlewareBase` exposes 5 hooks: the onion-shaped `onAgent` / `onReasoning` / `onActing` / `onModelCall`, plus the pipeline-shaped `onSystemPrompt`.
-- Built-in `TaskReminderMiddleware` (paired with `TodoTools`, injecting a reminder before each reasoning step).
-- `OtelTracingMiddleware` (in `tracing/`) is the new entry point for OpenTelemetry tracing.
+#### B.2 Hook → Middleware
 
-## Memory
+The entire `io.agentscope.core.hook` package — the `Hook` interface, `HookEvent`, `HookEventType`, and all `*Event` classes — is `@Deprecated(forRemoval = true, since = "2.0.0")`. Existing imports still compile, and `Builder.hook(...)` / `.hooks(...)` are kept callable via `LegacyHookDispatcher` so v1 code does not break overnight. The recommended extension surface is now `io.agentscope.core.middleware`:
 
-- The `Memory` interface is deprecated in 2.0 (`@Deprecated(forRemoval = true, since = "2.0.0")`) — it was too tightly coupled to agent internals.
-- New code should use `AgentState.getContext()` for conversation history and persist via `Session` + `SessionKey`.
+- `MiddlewareBase` exposes five stages: the onion-shaped `onAgent` / `onReasoning` / `onActing` / `onModelCall`, and the pipeline-shaped `onSystemPrompt`.
+- Builder methods: `.middleware(MiddlewareBase)` and `.middlewares(List<? extends MiddlewareBase>)`.
+- Built-in: `TaskReminderMiddleware` (pairs with `TodoTools`, re-injects the task list before each reasoning step).
 
-## RAG & Long-Term Memory
+Detail → [Middleware](building-blocks/middleware.md)
 
-- RAG and long-term memory are unified under one module (`io.agentscope.core.rag`, `io.agentscope.core.memory.LongTermMemory`).
-- Migration from 1.0 to 2.0 is in progress; knowledge bases, document readers, and stores will land in subsequent releases on the 2.0 architecture.
+#### B.3 `Memory` → `Session` + `AgentState`
 
-## Session & State **New**
+- The `io.agentscope.core.memory.Memory` interface and every implementation (`InMemoryMemory`, `LongTermMemory`, …) are `@Deprecated(forRemoval = true, since = "2.0.0")`.
+- `Memory` no longer extends `StateModule`. It gains `saveTo(Session, SessionKey)` / `loadFrom(Session, SessionKey)` as a v1 bridge so existing implementations can still round-trip through `Session`.
+- Recommended model:
+  - **Conversation history** lives on `AgentState.getContext()`.
+  - **Persistence** uses the `Session` abstraction (built-in: `InMemorySession`, `JsonSession`), partitioned by `SessionKey`.
+  - Builder chain: `.session(Session).sessionKey(SessionKey)` — `AgentState` is saved/loaded automatically on every `call()`.
 
-- New `Session` abstraction with two built-in implementations: `InMemorySession` (in-process) and `JsonSession` (JSON file persistence).
-- `SessionKey` (default: `SimpleSessionKey`) identifies each session; once a `ReActAgent` is configured with `.session(...).sessionKey(...)`, `AgentState` is automatically persisted after every `call`.
-- `RuntimeContext` provides per-call metadata: pass `userId`, `sessionId`, and arbitrary `put(key, value)` data into `call(msgs, runtimeContext)` — hooks and tools share the same context for the duration of one call.
+Detail → [Context](harness/context.md)
+
+#### B.4 Event subscription: hooks + chunk events → `streamEvents()`
+
+Code that watched text or tool-call deltas via `Hook` + `*ChunkEvent` in v1 can migrate to `agent.streamEvents()`, which returns a `Flux<AgentEvent>` covering 28 typed events across the full agent lifecycle and the HITL flow (`RequireUserConfirmEvent`, `RequireExternalExecutionEvent`, `UserConfirmResultEvent`, `ExternalExecutionResultEvent`, …).
+
+Alongside the new event stream, the `Msg` refactor adds:
+
+- `DataBlock` — unified multimodal block, accepts base64 or URL sources
+- `HintBlock` — agent guidance / intermediate reasoning
+- `ToolCallState` / `ToolResultState` on `ToolUseBlock` / `ToolResultBlock` — tool-call lifecycle
+- `id` field on every block — stable references across the stream
+
+Detail → [Message & Event](building-blocks/message-and-event.md)
+
+#### B.5 RAG module — in progress
+
+- `Knowledge`, `KnowledgeRetrievalTools`, `RAGMode`, `GenericRAGHook` are all `@Deprecated(forRemoval = true, since = "2.0.0")`.
+- The builder methods `.knowledge(...)` / `.knowledges(...)` / `.ragMode(...)` / `.retrieveConfig(...)` are deprecated in parallel.
+- The v2 rewrite is underway. New knowledge base, document reader, and store APIs will land in subsequent minor releases. The v1 implementations remain callable in 2.0 for compatibility, but **new code should not depend on them**.
+
+#### B.6 Long-term memory module — in progress
+
+- `LongTermMemory`, `LongTermMemoryMode`, `LongTermMemoryTools` are all `@Deprecated(forRemoval = true, since = "2.0.0")`.
+- The builder methods `.longTermMemory(...)` / `.longTermMemoryMode(...)` / `.longTermMemoryAsyncRecord(...)` are deprecated in parallel.
+- Same status — being rewritten on the v2 architecture. New code should not depend on the current API.
+
+---
+
+## What's New
+
+The capabilities below are additive in 2.0 — none of them break 1.x code. The Migration Guide above already covers the event system, message refactor, and middleware mechanism, so they are not repeated here.
+
+### Toolkit & Permission
+
+Tool execution is the main extension surface in 2.0, and the permission system sits directly on its execution path — so we present them together.
+
+- **Toolkit upgrades**:
+  - Unified base classes: `ToolBase` / `AgentTool`
+  - Tool groups: `ToolGroup` / `ToolGroupScope` / `MetaToolFactory` — activate on demand; the reserved `basic` group is always on
+  - Annotation-driven registration: `ReflectiveFunctionTool` + `@Tool` / `@ToolParam`; `Toolkit#registerTool(Object)` reflectively registers any annotated methods
+  - Built-in task tool: `io.agentscope.core.tool.builtin.TodoTools.todoWrite` (pairs with `TaskReminderMiddleware`)
+- **Permission system** (new package `io.agentscope.core.permission`):
+  - `PermissionEngine`, `PermissionRule`, `PermissionMode` (`DEFAULT` / `ACCEPT_EDITS` / `EXPLORE` / `BYPASS` / `DONT_ASK`), `PermissionBehavior`
+  - Every tool call goes through `PermissionEngine`: allow / require user confirmation / deny. HITL decisions flow back as `UserConfirmResultEvent`.
+
+Detail → [Tool](building-blocks/tool.md), [Permission System](building-blocks/permission-system.md)
+
+### Model fault tolerance and credentials
+
+- New package `io.agentscope.core.credential` — 8 provider credential classes + `ModelCard`
+- `ModelRegistry` resolves models from `"provider:model"` strings (e.g. `dashscope:qwen-max`, `openai:gpt-5`)
+- Builder additions: `.model(String)`, `.maxRetries(int)`, `.fallbackModel(Model)` / `.fallbackModel(String)`, `.stopOnReject(boolean)` — primary-model failure auto-retries and falls back
+
+Detail → [Model](building-blocks/model.md)
+
+### Workspace (Harness module)
+
+- Workspace abstraction unifies local filesystem, Docker, and E2B cloud sandbox execution behind a single interface
+- Warm-up pool — pre-initialize execution environments in batches; useful for parallel RL rollouts
+
+Detail → [Workspace](harness/workspace.md)
+
+### Other new Builder methods
+
+- `.enableTaskList(...)` / `.enableTaskList(boolean)` — enable the built-in `TodoTools`
+- `.permissionContext(PermissionContextState)` — preload permission rules
+- `Builder.fromAgent(ReActAgent)` — derive a new builder from an existing agent's observable configuration (name, description, system prompt, model, maxIters, generateOptions, toolkit)
+
+Detail → [Agent](building-blocks/agent.md)

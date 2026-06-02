@@ -1,110 +1,70 @@
-# 子 Agent（Subagent）
+---
+title: "子 Agent（Subagent）"
+description: "声明子 agent、同步/后台调用、自动反向通知、远程子 agent、流式转发"
+---
 
 ## 作用
 
-Subagent 让主 agent 把「可独立处理、上下文重、可并行」的任务委派出去，避免主线程膨胀。  
-每个 subagent 都是一个临时 `HarnessAgent`（或 remote stub）实例，拥有独立子会话，最终通过工具结果回传。
+让主 agent 把"可独立处理、上下文重、可并行"的任务委派出去，避免主线程膨胀。每个子 agent 都是一个临时实例（本地的 `HarnessAgent` 或远程 stub），跑自己的会话，结果通过工具返回给父 agent。
 
----
+## 一个最小例子
 
-## 何时启用
+最简单的用法：把子 agent 的 spec 写到工作区里就行。文件名就是 `agent_id`：
 
-当 `HarnessAgent.build()` 满足以下条件时，才会装载 subagent 能力：
-
-- 当前 agent **不是** leaf subagent
-- 没有 `disableSubagents()`
-- 已配置 `model`
-
-满足后会注册 `SubagentsHook`（priority=80），并通过 hook 暴露：
-
-- `agent_spawn` / `agent_send` / `agent_list`
-- `task_output` / `task_cancel` / `task_list`
-
-在每轮 `PreReasoningEvent`，`SubagentsHook` 会向 SYSTEM 注入：
-
-- 子 agent 使用规则
-- 当前可用 `agent_id` 列表
-- 当前 session 的异步任务摘要（最多 10 条）
-
----
-
-## 声明来源
-
-`buildSubagentEntries(...)` 会合并四类来源：
-
-1. 内置 `general-purpose`
-2. 编程声明：`builder.subagent(SubagentDeclaration)`
-3. 文件声明：`workspace/subagents/*.md`（`AgentSpecLoader` 非递归加载）
-4. 自定义工厂：`builder.subagentFactory(name, factory)`
-
----
-
-## 声明模型（SubagentDeclaration）
-
-`SubagentDeclaration` 支持 3 种互斥来源模式：
-
-1. **Definition workspace 模式**
-   - `workspace(path)` 指向定义目录（通常含 `AGENTS.md`）
-2. **Inline 模式**
-   - `inlineAgentsBody(...)` 直接作为系统提示词 base
-3. **Remote HTTP 模式**
-   - `url(...)` + 可选 `headers(...)`，通过 task protocol 走远端执行
-
-互斥约束（`build()` 校验）：
-
-- `url` 不能与 `workspace` 或非空 `inlineAgentsBody` 同时出现
-- `workspace` 与非空 `inlineAgentsBody` 不能同时出现
-
----
-
-## 运行时工作区五行判定表
-
-`WorkspaceMode` 决定 runtime workspace root：
-
-| 情形 | sysPrompt base 来源 | runtime workspace |
-|---|---|---|
-| 内置 `general-purpose`（固定共享） | 无额外 base（只拼 Subagent Context；`AGENTS.md` 仍会由 WorkspaceContextHook 注入） | `mainWorkspace` |
-| `workspace.path` + `ISOLATED` | `<workspace.path>/AGENTS.md`（无则空） | `workspace.path` |
-| `workspace.path` + `SHARED` | `<workspace.path>/AGENTS.md`（无则空） | `mainWorkspace` |
-| 无 `workspace.path` + `ISOLATED`（默认） | `inlineAgentsBody` / markdown body | `mainWorkspace/agents/<name>/workspace`（自动创建） |
-| 无 `workspace.path` + `SHARED` | `inlineAgentsBody` / markdown body | `mainWorkspace` |
-
-补充：
-
-- `tools` 是**继承工具的 allowlist**：仅过滤父 toolkit，不影响子 agent 后续自动注册的本地工具
-- 同一个 definition workspace 可被多个声明复用
-- `workspace.path` 相对路径会按 `mainWorkspace.resolve(...).normalize()` 解析
-
----
-
-## 声明文件（`workspace/subagents/<id>.md`）
-
-文件名（去掉 `.md`）就是 `agent_id`，不从 front matter 读取 `name`。
+`workspace/subagents/reviewer.md`：
 
 ```markdown
 ---
-description: 代码评审专家
+description: 代码审查专家。当用户需要 review PR、找代码问题、检查代码规范时使用。
+---
+
+你是一个专注代码评审的子 agent。请按以下流程工作：
+1. 先 read_file / grep_files 收集上下文
+2. 给出按文件 / 行号的具体建议
+3. 末尾给一个 1-5 的总体评分
+```
+
+然后主 agent 就能在推理时调用：
+
+```
+agent_spawn agent_id="reviewer" task="review 这次 PR 的所有改动"
+```
+
+不需要做任何注册。
+
+## 几种声明方式
+
+支持下面三类来源，构建时合并：
+
+| 方式 | 适用 | 怎么配 |
+|------|------|--------|
+| 内置 `general-purpose` | 通用兜底（镜像主 agent 能力） | 总是有，不需要配 |
+| 工作区 spec 文件 | 项目特有的、能版本控制的 | `workspace/subagents/<id>.md` |
+| 编程式声明 | 跑时才能确定（远程、动态参数） | `builder.subagent(SubagentDeclaration.builder()...)` |
+
+### 工作区 spec 文件
+
+非递归扫 `workspace/subagents/*.md`，文件名（去掉 `.md`）就是 `agent_id`，**不要**在 front matter 里再写 `name`。
+
+```markdown
+---
+description: 代码评审专家     # 必填，agent 选择是否委派的关键依据
 workspace:
-  mode: isolated               # isolated | shared，默认 isolated
-  path: ./defs/reviewer        # 可选；相对 mainWorkspace 或绝对路径
-model: openai:gpt-4o-mini      # 可选
-maxIters: 8                    # 可选，默认 10
-tools: [read_file, grep_files] # 可选
+  mode: isolated              # 默认 isolated；shared 表示和父共享工作区
+  path: ./defs/reviewer       # 可选；不写就用默认子目录
+model: openai:gpt-4o-mini     # 可选；不写就继承父 agent
+steps: 8                      # 可选；这个子 agent 单次最多迭代次数
+temperature: 0.2              # 可选；覆盖父的 GenerateOptions
+top_p: 0.95                   # 可选
+hidden: false                 # true 时不出现在 agent 可见列表（仍可程序化 spawn）
+mode: subagent                # primary / subagent / all，默认 all；primary 不允许被 spawn
+tools: [read_file, grep_files]   # 可选；继承工具的白名单
 ---
 
 你是一个专注代码评审的子 agent。
 ```
 
-解析规则（`AgentSpecLoader`）：
-
-- 必填：`description`
-- 仅扫描 `subagents/` 目录**第一层** `.md` 文件（非递归）
-- 如果配置了 `workspace.path` 且 body 非空：会记录 warning，body 被忽略
-- markdown 声明当前不解析 `url/headers`（remote 声明建议走编程 API）
-
----
-
-## 编程式配置
+### 编程式声明
 
 ```java
 HarnessAgent.builder()
@@ -117,131 +77,231 @@ HarnessAgent.builder()
         .workspace(Path.of("./defs/reviewer"))
         .workspaceMode(WorkspaceMode.ISOLATED)
         .model("qwen3-max")
-        .maxIters(8)
+        .steps(8)
         .tools(List.of("read_file", "grep_files"))
         .build())
     .subagent(SubagentDeclaration.builder()
         .name("remote-researcher")
         .description("远端调研子 agent")
-        .url("http://agent-task-server:8080")
+        .url("http://agent-task-server:8080")     // 远程子 agent
         .headers(Map.of("Authorization", "Bearer xxx"))
         .build())
     .build();
 ```
 
----
+三种来源互斥：`workspace(...)`、`inlineAgentsBody(...)`、`url(...)` **三选一**。
 
-## 内置 `general-purpose`
+### 内置 `general-purpose`
 
-内置 `general-purpose` 不需要写声明文件，会始终加入 entry 列表。  
-它的目标是「能力镜像主 agent」，核心行为：
+不需要写声明文件，总是可用。它的角色是"通用兜底"——能力和主 agent 一致（同样的模型、工具、技能），共享主工作区。适合"主 agent 想隔离上下文跑一个子任务但又懒得专门写 spec"。
 
-- 共享主 workspace（`SHARED` 语义）
-- 继承并镜像主 agent 的：
-  - toolkit（父工具）
-  - hooks
-  - execution config
-  - compaction / toolResultEviction
-  - additional context files / maxContextTokens
-  - 各类 disable 开关
-- 固定是 leaf subagent（不能继续 spawn）
+## ISOLATED vs SHARED
 
----
+`workspaceMode` 决定子 agent 的工作区怎么算：
 
-## 防递归与深度保护
+- **ISOLATED**（默认）：子 agent 有自己独立的工作区（如果声明里 `workspace.path` 没写，框架会自动开一个子目录）。子 agent 的运行时状态按"父 sessionId × 用户"分桶——同一用户在不同对话里 spawn 同名子 agent 也互不污染。
+- **SHARED**：子 agent 直接用主工作区。适合子 agent 的输出会被父立即读到的情况（例如 `general-purpose`）。
 
-双保险：
+## 同步还是后台？
 
-1. 所有通过声明/内置生成的子 agent 都会 `asLeafSubagent()`，leaf 不再注册 `SubagentsHook`
-2. `AgentSpawnTool` 还有动态深度上限 `MAX_SPAWN_DEPTH = 3`
+主 agent 通过 `agent_spawn` 创建子 agent，关键是 `timeout_seconds`：
 
----
+- `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。
+- `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
 
-## RuntimeContext 透传
+### 后台任务自动反向通知
 
-`agent_spawn` / `agent_send` 调用子 agent 时：
+后台任务跑完了，**主 agent 不需要轮询**——下一次推理开始前，框架会把已完成的任务结果作为系统提醒注入对话末尾：
 
-- 子会话 `session_id` 为新值（`sub-<uuid>`）
-- `userId` 从父 `RuntimeContext` 透传给子 `RuntimeContext`
+```
+<system-reminder>
+后台任务已交付：
+- task_id=xxx，agent=research-analyst，status=COMPLETED
+  结果摘要：...
+</system-reminder>
+```
 
-这样可保持 USER 维度隔离键一致（例如 namespace/sandbox 隔离依赖 userId 的场景）。
+主 agent 看到这条 reminder 自然地回应或继续行动。这意味着你**不需要**在 prompt 里写"记得调 task_output 轮询"——那是旧版本的做法。
 
----
+> `task_output` / `task_cancel` / `task_list` 这些工具还在，但仅作"逃生口"或人工调试时用。生产 prompt 里不应该出现轮询逻辑。
 
-## 调用工具与关键参数
+## 给已存在的子 agent 补一条消息
 
-| 工具 | 作用 | 关键参数 |
-|---|---|---|
-| `agent_spawn` | 生成子 agent，可同步/异步执行首条任务 | `agent_id` 必填；`task` 可选；`label` 可选；`timeout_seconds` 默认 30，`0`=后台，最大 600 |
-| `agent_send` | 给已有子 agent 发后续消息 | `agent_key` 或 `label` 二选一；`message` 必填；`timeout_seconds` 规则同上 |
-| `agent_list` | 列当前活跃子 agent | 无 |
-| `task_output` | 查询/等待后台任务结果 | `task_id`、`block`（默认 true，建议查状态用 false）、`timeout` 默认 30000ms，最大 600000ms |
-| `task_cancel` | 取消任务 | `task_id` |
-| `task_list` | 列当前 session 任务 | `status_filter`（running/completed/failed/cancelled/all） |
+`agent_spawn` 返回值里有一个 `agent_key`（运行时实例句柄），用它（或你给的 `label`）就能后续追加消息：
 
-注意：
+```
+agent_send agent_key="agent:reviewer:abc-123" message="顺便也看下 schema 变更"
+```
 
-- `agent_send` 的 `agent_key` 必须使用 `agent_spawn` 返回值中的完整 `agent_key: ...`（不是 `agent_id` / `session_id` / `task_id`）
-- 异步任务刚创建时不要立即轮询；优先先返回用户，再用 `task_output(block=false)` 或 `task_list` 查最新状态
+要列当前活跃的子 agent：`agent_list`。
 
----
+## 让 agent 自己写新的子 agent spec
 
-## 异步任务生命周期与存储
+`agent_generate` 工具（**默认关闭**）可以让 LLM 起草一份新的子 agent spec 并直接写到 `workspace/subagents/<name>.md`：
 
-默认情况下，主 agent 使用 `WorkspaceTaskRepository`（除非显式 `taskRepository(...)` 覆盖）。
+```java
+// 开启方法（构建期）：
+// 拿到 builder 内部的 SubagentsMiddleware 引用，调一下 enableAgentGenerateTool
+```
 
-生命周期（简化）：
+适合"agent 跑到一半发现自己需要一类新的助手"。生产环境慎用——通常先让 agent 把方案写出来人工 review 再写文件。
 
-1. `putTask(...)` 写入 `TaskRecord(PENDING)` 到 workspace
-2. 提交本地执行 future（local 或 remote）
-3. 执行中更新为 `RUNNING`
-4. 结束写入 `COMPLETED / FAILED / CANCELLED`
+## 一些行为细节
 
-存储分层：
+- **`description` 要写好**：这是模型决定要不要委派的关键依据。"代码评审"远不如"当用户要 review PR、找代码风格问题时使用"有效。
+- **递归保护**：子 agent 不能再 spawn 子 agent（被强制标为"叶子"）；同时还有一个硬上限 3 层。
+- **userId 透传**：父的 `RuntimeContext.userId` 会自动透到子，所以多租户隔离链不会断。
+- **流式转发**：父 agent `stream()` 时，同步子 agent 的中间事件会实时流回父的 `Flux`（带来源标记），见下文 [子 Agent 流式](#子-agent-流式)。
 
-- 内存层：`localTasks`（本节点加速句柄，重启丢失）
-- 持久层：`agents/<parentAgentId>/tasks/<sessionId>.json`（状态真源）
+## 远程子 agent
 
----
+声明里只填 `url` + 可选 `headers`，子 agent 就走远程 HTTP 服务（Agent Protocol）执行：
 
-## 分布式语义
+```java
+.subagent(SubagentDeclaration.builder()
+    .name("remote-researcher")
+    .description("远端调研子 agent")
+    .url("http://agent-task-server:8080")
+    .headers(Map.of("Authorization", "Bearer xxx"))
+    .build())
+```
 
-- 任务执行粘在创建节点，但任意节点都可通过 workspace 读取状态
-- `task_output(block=true)` 在跨节点场景下会优雅降级，不会无休止阻塞
-- `task_cancel` 会把 `cancelRequested=true` 持久化；执行节点轮询该标记后中止
-- orphan sweeper 会把长时间无心跳的本地任务标记为 `FAILED`（remote transport 任务不走该判定）
+同样支持同步（`timeout_seconds>0`）和后台（`timeout_seconds=0`）。
 
-与 filesystem 模式关系：
+## 异步任务的存储位置
 
-| 模式 | 任务路径 `agents/<agentId>/tasks/` 可见性 |
-|---|---|
-| `RemoteFilesystemSpec` | 路由到共享远端存储，多节点可见 |
-| `SandboxFilesystemSpec` | 走沙箱文件系统与沙箱状态持久化 |
-| `LocalFilesystemSpec` / 默认本地 | 本机本地可见 |
+后台任务的状态默认写到 `workspace/agents/<parentAgentId>/tasks/<sessionId>.json`。这意味着：
 
----
+- 在共享存储模式（多副本）下，任意节点都能读到任务状态；
+- 任务执行**粘在创建节点**，但完成结果会被任意节点读到、并能正常推送回父 agent；
+- 想取消可以从任意节点调 `task_cancel`——执行节点轮询取消标记后中止。
 
-## Remote subagent 行为
+## 在 Plan Mode 下委派子 agent
 
-当声明配置 `url(...)` 时：
+⚠ 当前**已知缺口**：父 agent 在 Plan Mode 时 spawn 的子 agent **不会自动继承只读限制**。如果想限制子 agent，请在它的声明里用 `tools` 把工具列表收窄到只读工具，或者在子 agent 自己的 builder 里也开 `enablePlanMode()`。
 
-- 工厂返回 `RemoteSubagentStub`（占位，不做本地真实推理）
-- 实际执行通过 `TaskRunSpec.RemoteTaskRunSpec` + `AgentProtocolTaskClient` 委派到远端 task HTTP 服务
-- 可同步（`timeout_seconds>0`）或异步（`timeout_seconds=0`）
+## 子 Agent 流式
 
----
+> 流式 API 基础（`stream()`、`Event`、`StreamOptions`）见 [消息与事件](/zh/v2/building-blocks/message-and-event)。本节只讲 `HarnessAgent` 在 `stream()` 模式下的子 agent 事件转发。
 
-## 实践建议
+### 它做了什么
 
-1. `description` 要写清「何时使用 / 输出格式 / 禁止事项」，这是主模型是否委派的关键依据
-2. 子 agent `maxIters` 通常设得比主 agent 小，避免子线程吞噬过多 token
-3. 会话压缩或恢复后，先用 `task_list()` 恢复任务全量状态，再做单任务查询
+当你用 `parent.stream()` 调用主 agent，主 agent 在推理过程中又通过 `agent_spawn` / `agent_send` 调用了子 agent，**子 agent 产生的所有中间事件会被实时注入到父的事件流里**。你不需要做任何配置——只要用 `stream()` 模式（不是 `call()`）就有。每个事件上多了一个 `EventSource` 字段，告诉你这个事件来自父还是哪个子 agent。
 
----
+### 一次典型的流时序
+
+```
+caller
+  └─ parent.stream()
+        │
+        ├─ parent 的 REASONING 块...          ← 父推理第一轮（含工具调用）
+        │
+        │  [agent_spawn "researcher" 开始]
+        ├─ child 的 REASONING 块...           ← 子推理（实时转发，带 EventSource）
+        ├─ child 的 TOOL_RESULT...
+        ├─ child 的 AGENT_RESULT (last)       ← 子最终回复（实时转发）
+        │  [agent_spawn 返回，子结果作为 TOOL_RESULT 传给父]
+        │
+        ├─ parent 的 TOOL_RESULT...
+        ├─ parent 的 REASONING 块...          ← 父第二轮
+        └─ parent 的 AGENT_RESULT (last)       ← 父最终回复
+```
+
+父 agent 自身事件 `source == null`；子 agent 事件 `source != null`。
+
+### 区分事件来源
+
+```java
+Flux<Event> events = parent.stream(msgs, StreamOptions.defaults(), ctx);
+
+events.subscribe(event -> {
+    EventSource src = event.getSource();
+    if (src == null) {
+        // 父 agent 自身
+        System.out.printf("[parent][%s] %s%n",
+                event.getType(), event.getMessage().getTextContent());
+    } else {
+        // 子（或孙）agent
+        System.out.printf("[%s|depth=%d|path=%s][%s] %s%n",
+                src.getAgentId(), src.getDepth(), src.getPath(),
+                event.getType(), event.getMessage().getTextContent());
+    }
+});
+```
+
+`EventSource` 里常用的字段：
+
+| 字段 | 含义 |
+|------|------|
+| `agentId` | 子 agent 的类型 id（`subagents/<id>.md` 的文件名） |
+| `agentKey` | 运行时实例句柄，可以传给 `agent_send` |
+| `agentName` | 显示名（可空） |
+| `sessionId` | 子 agent 当次调用的会话 id |
+| `parentSessionId` | 父 agent 的会话 id |
+| `depth` | 嵌套深度（父直接子 = 1，孙 = 2，依此类推） |
+| `path` | `/` 分隔的调用路径，多级嵌套自动叠加，如 `sess-001/planner/executor` |
+
+### 多级嵌套（孙 agent）
+
+子 agent 自己也可以 spawn 孙 agent（受 3 层硬上限保护）。孙 agent 的事件会逐级冒泡到父；按 `depth` 或 `path` 过滤即可定位任意层级：
+
+```java
+// 只取第一层子 agent 的 REASONING
+events.filter(e -> e.getSource() != null
+               && e.getSource().getDepth() == 1
+               && e.getType() == EventType.REASONING)
+      .subscribe(...);
+
+// 只取路径包含 "executor" 的事件（任意深度）
+events.filter(e -> e.getSource() != null
+               && e.getSource().getPath().contains("executor"))
+      .subscribe(...);
+```
+
+### SSE 转发
+
+```java
+@GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
+                                          @RequestParam String sessionId) {
+    RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
+    return agent.stream(
+                    List.of(new UserMessage(message)),
+                    StreamOptions.defaults(), ctx)
+            .map(event -> {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("type", event.getType());
+                payload.put("text", event.getMessage().getTextContent());
+                payload.put("last", event.isLast());
+                if (event.getSource() != null) {
+                    payload.put("agentId", event.getSource().getAgentId());
+                    payload.put("depth",   event.getSource().getDepth());
+                    payload.put("path",    event.getSource().getPath());
+                }
+                return ServerSentEvent.<String>builder()
+                        .data(objectMapper.writeValueAsString(payload))
+                        .build();
+            });
+}
+```
+
+### 行为边界
+
+| 场景 | 是否实时流转发？ |
+|------|-----------------|
+| `stream()` + 同步本地子 agent（`timeout_seconds > 0`） | ✔ |
+| `call()` 模式（非流式） | ✗（子结果以 `tool_result` 字符串返回） |
+| `timeout_seconds = 0` 后台任务 | ✗（终态会通过反向通知给父 agent 下一轮） |
+| 远程子 agent（Agent Protocol） | ✗ |
+| 多级嵌套（孙 agent） | ✔（自动叠 `path` / `depth`） |
+
+### 错误处理
+
+子 agent 内部出错时，框架会把错误捕获并写成一条 `TOOL_RESULT` 给父，**不会**把 `onError` 传播到父流——父流不会被子 agent 的失败打断。如果父流本身出错（比如模型调用失败），按标准 Reactor 语义处理（`onErrorResume` 等）。
 
 ## 相关文档
 
-- [工具](./tool.md)
-- [工作区](./workspace.md)
-- [架构](./architecture.md)
-- [流式输出](./streaming.md)
+- [工作区](./workspace) — `subagents/` 与 `agents/<id>/tasks/` 的目录布局
+- [计划模式](./plan-mode) — plan 阶段对子 agent 的限制
+- [架构](./architecture) — 主/子 agent 怎么协作
+- [消息与事件](/zh/v2/building-blocks/message-and-event) — `Event` / `EventType` / `StreamOptions` 完整参考

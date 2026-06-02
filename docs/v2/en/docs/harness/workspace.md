@@ -1,101 +1,53 @@
-# Workspace
+---
+title: "Workspace"
+description: "Directory layout, what's injected into the system prompt, tools.json, multi-user isolation"
+---
 
-## Purpose
+## Role
 
-The workspace is the foundation of a `HarnessAgent`: persona, long-term memory, domain knowledge, subagent declarations, session history, and skill definitions all land here as a **directory structure + Markdown** — no longer scattered in code.
+The workspace is `HarnessAgent`'s foundation. Persona, long-term memory, domain knowledge, subagent specs, skill definitions, session logs, subtask records, plan files, `tools.json` tool config — all expressed as **directories of Markdown/JSON** rather than scattered in code.
 
-Before every reasoning turn, a few key workspace files are automatically injected into the system prompt. Memory and session output from the running agent is also written back here along well-defined paths.
+On every reasoning step, a few key files are auto-injected into the system prompt; memory, sessions, and task records are written back to predefined paths.
 
-## Trigger Points
-
-| When | Action |
-|------|--------|
-| `HarnessAgent.build()` | `WorkspaceManager.validate()` checks that the directory and `AGENTS.md` exist; missing items only warn |
-| Before every `call()` reasoning turn | `WorkspaceContextHook` reads `AGENTS.md` / `MEMORY.md` / `knowledge/` / extra files and injects into system prompt |
-| Compaction / end of call | `MemoryFlushHook`, `SessionPersistenceHook`, etc. write back to `memory/`, `agents/.../sessions/` via `WorkspaceManager` |
-
-## Directory Layout
+## A minimal workspace
 
 ```
-workspace/                           ← default: .agentscope/workspace
-├── AGENTS.md                        ← persona / behavior guidelines (full text injected each turn)
-├── MEMORY.md                        ← curated long-term memory (injected each turn, token-budgeted)
-├── knowledge/
-│   ├── KNOWLEDGE.md                 ← domain knowledge entry point
-│   └── *                            ← other reference files, opened on demand via read_file
-├── memory/
-│   ├── YYYY-MM-DD.md                ← daily fact log (append-only, written by MemoryFlushManager)
-│   └── .consolidation_state         ← MemoryConsolidator internal state
-├── skills/<skill-name>/SKILL.md     ← custom skills
-├── subagents/<id>.md                ← subagent declarations (filename = agent_id, auto-discovered)
-└── agents/<agentId>/
-    ├── workspace/                   ← runtime root for isolated subagents (auto-created when no workspace.path)
-    └── sessions/
-        ├── sessions.json            ← session index (id / summary / updatedAt)
-        ├── <sessionId>.jsonl        ← LLM-visible compacted context
-        └── <sessionId>.log.jsonl   ← full conversation log (append-only)
+.agentscope/workspace/
+├── AGENTS.md          ← required: persona + behavior rules
+├── MEMORY.md          ← optional: curated long-term memory (the agent maintains it)
+├── knowledge/         ← optional: KNOWLEDGE.md + any reference files
+├── memory/            ← auto-generated: daily fact log
+├── skills/            ← optional: each subdir is one skill with a SKILL.md
+├── subagents/         ← optional: subagent specs; filename = agent_id
+├── plans/             ← auto-generated: plan files written in Plan Mode
+├── tools.json         ← optional: MCP servers + tool allow/deny
+└── agents/<agentId>/  ← auto-generated: session snapshots, logs, subtask records
+    ├── context/<sessionId>/      session snapshots
+    ├── sessions/                 conversation log (never compacted) + index
+    └── tasks/                    subtask records
 ```
 
-> The three-layer model for subagents (declaration / definition / runtime) is detailed in [Subagent](./subagent.md).
+Only `AGENTS.md` is something you actually need to write (skipping it is fine — you just lose the persona section). The rest appears when you enable the corresponding capability:
 
-## Key Logic
+- Enable memory compaction → `memory/` + `MEMORY.md`
+- Drop subagent specs in → `subagents/`
+- Install skills → `skills/`
+- Enable Plan Mode → `plans/`
 
-### Two-Layer Read / Write
+## What gets injected into the system prompt
 
-`WorkspaceManager` is a stateless accessor; all reads and writes follow the same contract:
+Before each reasoning step, the framework assembles this structure and merges it into the first system message:
 
-```{mermaid}
-graph LR
-    Caller[Hook / Tool] -->|read| WM[WorkspaceManager]
-    WM -->|read first| FS[AbstractFilesystem<br/>multi-tenant namespace transparent]
-    FS -- hit non-empty --> WM
-    FS -- empty --> LD[Local disk<br/>workspace/...]
-    LD --> WM
+| Section | Source | Size limit |
+|---------|--------|-----------|
+| `## Session Context` | Generated from template (date, OS, workspace path, current `sessionId`) | unlimited |
+| `## Workspace` usage guidance | Built-in template | unlimited |
+| AGENTS context | Full `AGENTS.md` | unlimited |
+| MEMORY context | `MEMORY.md` (bounded by token budget) | `maxContextTokens`, default ~8000 |
+| Domain knowledge | `knowledge/KNOWLEDGE.md` + a listing of other files under `knowledge/` | full + path listing |
+| Additional context files | Any files you add via `.additionalContextFile("X.md")` | full |
 
-    Caller -->|write| WM
-    WM -->|appendUtf8 / uploadFiles| FS2[AbstractFilesystem]
-    WM -. filesystem absent .-> LD2[local disk fallback]
-```
-
-Key points:
-
-- **Read path**: `AbstractFilesystem` first → local disk fallback, making multi-tenant scenarios transparent to callers
-- **Write path**: defaults to `AbstractFilesystem`; falls back to local disk when not configured
-- **List operations** (`listKnowledgeFiles` / `listMemoryFilePaths` / `listSessionLogFiles`) take the union of both layers and deduplicate, avoiding missing files
-
-### System Prompt Injection Content
-
-`WorkspaceContextHook` (priority 900) assembles a fixed-structure text segment on `PreReasoningEvent` and merges it into the first SYSTEM message:
-
-| Section | Source | Token Budget |
-|---------|--------|--------------|
-| `## Session Context` | Template-generated (date, OS, workspace path, `runtimeContext.sessionId`) | Unlimited |
-| `## Workspace` guidance | Built-in template | Unlimited |
-| `<loaded_context>` XML block | — | — |
-| ↳ `<agents_context>` | `AGENTS.md` | Full text |
-| ↳ `<memory_context>` | `MEMORY.md` | Capped by `maxContextTokens` |
-| ↳ `<domain_knowledge_context>` | `knowledge/KNOWLEDGE.md` + `listKnowledgeFiles()` listing | Full text + path listing |
-| ↳ `<{rel_path}>` | Each `additionalContextFile` | Full text |
-
-`maxContextTokens` defaults to `8000` (estimated as `chars/4`). When `MEMORY.md` estimated size exceeds the "remaining budget", it is character-truncated and appended with `... (memory truncated — use memory_search for older entries) ...`, prompting the agent to fall back to `memory_search`.
-
-### Key APIs
-
-```java
-WorkspaceManager wm = new WorkspaceManager(workspace, abstractFilesystem);
-
-wm.readAgentsMd();                 // two-layer read
-wm.readMemoryMd();
-wm.readKnowledgeMd();              // note: reads knowledge/KNOWLEDGE.md
-wm.readManagedWorkspaceFileUtf8(rel); // any workspace-relative path, with path traversal check
-
-wm.listKnowledgeFiles();           // union of both layers
-wm.listMemoryFilePaths();
-wm.listSessionLogFiles();
-
-wm.appendUtf8WorkspaceRelative(rel, content);  // goes through AbstractFilesystem
-wm.updateSessionIndex(agentId, sessionId, summary); // maintains sessions.json
-```
+When `MEMORY.md` would overflow the remaining budget, it's truncated by character count with a trailing note: "truncated — use `memory_search` for older entries", nudging the model toward search.
 
 ## Configuration
 
@@ -103,18 +55,79 @@ wm.updateSessionIndex(agentId, sessionId, summary); // maintains sessions.json
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
-    .workspace(Paths.get(".agentscope/workspace"))   // uses default if not provided
+    .workspace(Paths.get(".agentscope/workspace"))   // omit → default ${user.dir}/.agentscope/workspace
     .additionalContextFile("SOUL.md")                // any workspace-relative path
     .additionalContextFile("PREFERENCES.md")
-    .maxContextTokens(8000)                          // controls injection cap for MEMORY
+    .maxContextTokens(8000)                          // bounds MEMORY injection
     .build();
 ```
 
-If `AGENTS.md` is missing, the agent still works but loses the persona section. It is recommended to at least write a minimal skeleton (see the quickstart in [overview.md](./overview.md)).
+Minimum `AGENTS.md` skeleton:
+
+```markdown
+# MyAgent
+
+You are an XX assistant, following these behavior guidelines.
+
+## Behavior
+- ...
+- ...
+```
+
+## `tools.json` — tool allowlist + MCP
+
+Drop `tools.json` at the workspace root and the framework reads it at build time:
+
+```jsonc
+{
+  // allowlist: when non-empty, only listed tools are kept
+  "allow": ["read_file", "grep_files", "execute"],
+  // denylist: listed tools are always removed (wins over allow)
+  "deny":  ["write_file"],
+  // MCP servers, keyed by name
+  "mcpServers": {
+    "amap": {
+      "transport": "streamableHttp",
+      "url": "https://mcp.amap.com/mcp?key=${AMAP_API_KEY}"
+    },
+    "local-py": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["mcp_servers/my_server.py"],
+      "env": {"PYTHONUNBUFFERED": "1"}
+    }
+  }
+}
+```
+
+Behavior:
+
+- MCP servers are registered into the toolkit once at build time; the agent sees the tools they expose.
+- `allow` / `deny` are applied **after** all tools (including Harness built-ins) are registered — so they also filter built-ins. Use with care.
+
+Prefer programmatic config? You can inject directly on the builder, or disable file reading entirely with `disableToolsConfig()`.
+
+## Multiple users sharing one workspace
+
+Use `RuntimeContext.userId` to let one agent instance serve multiple users without crosstalk:
+
+- A skill placed under `<userId>/skills/<name>/SKILL.md` is visible only to that user, and overrides the shared version.
+- Where the per-user content actually lives depends on the filesystem mode:
+  - Default (local): path prefix → `workspace/alice/...`
+  - Remote KV: KV namespace prefix
+  - Sandbox: sandbox state slot key
+
+See [Filesystem](./filesystem) and [Context](./context) for details.
+
+## Workspace-relative path rules
+
+APIs like `additionalContextFile`, `writeUtf8WorkspaceRelative`, `memory_get` all accept **workspace-relative paths**. The framework does basic path-traversal checks so `../../etc/passwd` can't escape the workspace.
+
+When you need to write files, **go through Harness's workspace manager**, not `java.nio.Files` — the latter writes to the wrong place under sandbox or remote filesystem modes. If you're writing during builder-time bootstrap (like `initWorkspaceIfAbsent` in the example) before any runtime context exists, `java.nio.Files` is fine there.
 
 ## Related Pages
 
-- [Architecture](./architecture.md) — `WorkspaceContextHook` position in the `call()` lifecycle
-- [Filesystem](./filesystem.md) — implementation of the "upper layer" in the two-layer read path
-- [Memory](./memory.md) — how `MEMORY.md` / `memory/*.md` are generated and maintained
-- [Session](./session.md) — details of `agents/<agentId>/sessions/`
+- [Architecture](./architecture) — how the system prompt is assembled
+- [Filesystem](./filesystem) — where the workspace physically lives (local / sandbox / shared store)
+- [Memory](./memory) — how `MEMORY.md` and `memory/` are produced and maintained
+- [Context](./context) — what lives under `agents/<agentId>/`

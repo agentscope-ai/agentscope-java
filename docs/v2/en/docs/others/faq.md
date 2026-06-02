@@ -4,7 +4,7 @@ description: "Frequently asked questions about AgentScope Java 2.0"
 ---
 
 :::{dropdown} Is AgentScope Java 2.0 compatible with 1.0?
-No. AgentScope Java 2.0 is a breaking release that redesigns the agent abstraction and introduces a new event system, permission system, and middleware stack. The API is not source-compatible with 1.0, and there is no automatic migration path.
+AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level breaking changes — including a redesigned agent abstraction and the new event system, permission system, and middleware stack. See the [Changelog](/v2/change-log) for details.
 
     For new projects we recommend adopting 2.0 directly to benefit from the new capabilities; the 1.0 docs remain available for existing users.
 :::

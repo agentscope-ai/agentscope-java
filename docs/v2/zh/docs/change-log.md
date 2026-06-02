@@ -3,91 +3,161 @@ title: "Changelog"
 description: "AgentScope Java 2.0 与 1.0 的核心区别"
 ---
 
-AgentScope Java 2.0 是一次破坏性更新。下面按模块汇总相对 1.0 的差异（Java 视角）。
+AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部分用户的平滑升级，但同时 2.0 版本也带来了 API 层面的不兼容变更。本页分为两部分：
 
-## Agent
+- **迁移指南** —— 对 1.x 的变更，按紧迫度再分两层：
+  - **Part A · 必须迁移** —— 不改会编译失败或运行抛异常
+  - **Part B · 推荐迁移** —— 当前仍可调用，但已标 `@Deprecated(forRemoval = true)`，下一个 minor 版本会移除
+- **新增内容** —— 不在迁移指南中覆盖的增量功能
 
-- 在 1.0 的 `ReActAgent` 之上抽出新的 `Agent` 接口（`io.agentscope.core.agent.Agent`），由 `CallableAgent`、`StreamableAgent`、`ObservableAgent` 三个能力接口组合而成。
-- 推荐入口仍是 `ReActAgent.builder()...build()`。`call(...)` 返回 `Mono<Msg>`，`streamEvents(...)` 返回 `Flux<AgentEvent>` —— 提供更细粒度的可观测性与控制。
-- 通过事件流支持 **permission 校验** 与 **human-in-the-loop** 确认（`RequireUserConfirmEvent`、`RequireExternalExecutionEvent`、`UserConfirmResultEvent`、`ExternalExecutionResultEvent`）。
-- 1.0 的 `Hook` 机制在 2.0 中被弃用，由新的 agent middleware 系统取代（`MiddlewareBase`、`Middleware`、`MiddlewareChain`）。`ReActAgent.Builder.hooks(...)` 仍保留过渡期入口，但优先使用 `middlewares(...)`。
-- 状态以新的 `AgentState` 显式管理。会话历史不再由 `Memory` 实现持有，而是写入 `AgentState.getContext()`，并由配置在 builder 上的 `Session` 自动加载/保存。
+## 迁移指南
 
-## Event **New**
+### Part A —— 必须迁移（不迁移会编译失败或运行抛异常）
 
-- 新增 event 系统（`io.agentscope.core.event`），更好地服务前端集成与 human-in-the-loop 场景。
-- 事件类型集中在 `AgentEventType` 枚举中，包括 `AGENT_START` / `AGENT_END`、`MODEL_CALL_START` / `MODEL_CALL_END`、文本/思考/数据块的 `*_START` / `*_DELTA` / `*_END`、`TOOL_CALL_*`、`TOOL_RESULT_*`、`EXCEED_MAX_ITERS`、`REQUIRE_USER_CONFIRM`、`REQUIRE_EXTERNAL_EXECUTION`、`USER_CONFIRM_RESULT`、`EXTERNAL_EXECUTION_RESULT`、`REQUEST_STOP`。
+本节列出的 API 已被删除、重命名或语义收紧。1.x 中能编译运行的代码到 2.0 上会直接报错。
 
-## Message
+#### A.1 已删除的 `ReActAgent.Builder` 方法
 
-Content block 重构：
+| 2.0 中已删除 | 替代方案 |
+|---|---|
+| `.memory(Memory)` | `.session(Session).sessionKey(SessionKey)` —— 会话历史保存在 `AgentState.getContext()`；配置好的 `Session` 在每次 `call()` 后自动 save/load |
+| `.statePersistence(StatePersistence)` | 同上 —— `Session` 已接管持久化职责 |
 
-- 重构所有 content block 为 Jackson POJO，统一通过 `ContentBlock` 接口暴露，提升校验、序列化与扩展性。
-- 在原 `ImageBlock` / `AudioBlock` / `VideoBlock` 之外新增统一的 `DataBlock`，通过 `mediaType` 字段保留扩展性；旧的具体子类仍可使用，便于平滑迁移。
-- 新增 `HintBlock`，用于 agent 引导与中间推理。
-- `ToolUseBlock` 与 `ToolResultBlock` 增加 `state` 字段（`ToolCallState` / `ToolResultState`），更完整地建模 tool-call 生命周期。
-- 为所有 block 新增 `id` 字段，提升可追踪性与引用能力。
+详见 → [上下文](harness/context.md)
 
-`Msg` 类重构：
+#### A.2 已删除的包 / 类
 
-- `Msg implements State`，强制 content 校验：`USER` 仅允许 text/data/image/audio/video，`SYSTEM` 仅允许 text，`ASSISTANT` 不限制。
-- 为 `Msg` 新增 `timestamp` 字段、`getUsage()`（`ChatUsage`）、`getGenerateReason()`（`GenerateReason` 枚举：`MODEL_STOP`、`TOOL_SUSPENDED`、`REASONING_STOP_REQUESTED`、`ACTING_STOP_REQUESTED`、`INTERRUPTED`、`MAX_ITERATIONS`），提升可观测性与计量能力。
-- 新增按 role 固定的子类 `UserMessage`、`AssistantMessage`、`SystemMessage`、`ToolResultMessage`，便于按对应 role 创建消息；`Msg.builder()` 与各子类 `Builder` 同时存在。
+| 2.0 中已删除 | 替代方案 |
+|---|---|
+| `io.agentscope.core.session.SessionManager` | 在 builder 上配置 `Session` + `SessionKey`，框架自动持久化 |
+| `io.agentscope.core.pipeline.*`（`Pipeline`、`Pipelines`、`SequentialPipeline`、`FanoutPipeline`、`MsgHub`） | 多智能体编排改用 middleware + 子 agent + event stream，参见 → [子 Agent](harness/subagent.md) |
+| `io.agentscope.core.tool.coding.*`（4 个 Shell / Validator 类）和 `io.agentscope.core.tool.file.*`（3 个 File 工具类） | 改用 `agentscope-harness` 模块，在 workspace 上下文里运行等价工具，参见 → [Harness 文件系统](harness/filesystem.md) |
+| `io.agentscope.core.model.tts.*`（14 个文件：DashScope TTS / Realtime TTS / `AudioPlayer` 等） | core 不再内置 TTS；如需 TTS，请直接对接上游 SDK |
+| `io.agentscope.core.hook.PendingToolRecoveryHook` | 改用 `Builder.enablePendingToolRecovery(boolean)` |
+| `io.agentscope.core.hook.TTSHook` | 随 TTS 模块一起去掉 |
 
-## Permission **New**
+#### A.3 `state` 包重构（编译错误）
 
-- 新增权限系统（`io.agentscope.core.permission`），用于 tool 执行的细粒度门控、human-in-the-loop 确认以及 agent 整体自治度控制。
-- 核心组件：`PermissionEngine`、`PermissionContextState`、`PermissionRule`、`PermissionDecision`、`PermissionMode`（`DEFAULT` / `ACCEPT_EDITS` / `EXPLORE` / `BYPASS` / `DONT_ASK`）、`PermissionBehavior`。
+| v1 | v2 |
+|---|---|
+| `AgentMetaState` | `AgentState` |
+| `StateModule` | **删除** —— 不再作为 `Memory`、`Toolkit` 等的父接口 |
+| `StatePersistence` | **删除** —— 由 `Session` 抽象接管 |
+| `ToolkitState` | 移到 `io.agentscope.core.session.legacy.ToolkitState`（仅兼容，新代码不要引用） |
+| （新增） | `Task`、`TaskContextState`、`ToolContextState`、`PlanModeContextState`、`ReadCacheEntry` |
 
-## Tool
+凡是从 `io.agentscope.core.state` import `AgentMetaState`、`StateModule`、`StatePersistence`、`ToolkitState` 的代码都会编译失败。详见 → [上下文](harness/context.md)
 
-- 新增 `ToolBase` 抽象类与 `AgentTool` 接口，统一所有 tool 的基类与契约。
-- 新增任务管理内置 tool：`TodoTools.todoWrite`（`tool/builtin/TodoTools.java`），用于 agent 在会话内维护结构化任务列表，配合 `TaskReminderMiddleware` 自动注入提醒。
+#### A.4 `Msg` 构造按 role 严格校验（运行抛异常）
 
-`Toolkit` 重构：
+`Msg` 现在在构造时按 `role` 对 `content` 做校验：
 
-- `Toolkit` 将 tool、skill、MCP 与 tool group 作为一等公民统一支持。
-- 新增 `ToolGroup` / `ToolGroupManager` / `ToolGroupScope`，支持按需激活，保留名 `basic` 组始终在线。
-- 新增 `MetaToolFactory`，供 agent 在运行时切换 tool group。
-- 新增 `McpTool` 与基于 `@Tool` / `@ToolParam` 注解的 `ReflectiveFunctionTool` 适配器，统一 tool 注册方式（`Toolkit#registerTool(Object)` 反射注册任意带 `@Tool` 的方法）。
+- `USER` —— 仅允许 `TextBlock` / `DataBlock` / `ImageBlock` / `AudioBlock` / `VideoBlock`
+- `SYSTEM` —— 仅允许 `TextBlock`
+- `ASSISTANT` —— 不限制
 
-## MCP
+v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在构造时直接抛异常。推荐改用 role 子类 `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`，在调用处就显式表达 role 与 content 的对应关系。详见 → [消息与事件](building-blocks/message-and-event.md)
 
-- 将 MCP 实现统一到 `io.agentscope.core.tool.mcp` 包：`McpClientManager`、`McpClientWrapper`（`McpSyncClientWrapper` / `McpAsyncClientWrapper`）、`McpClientBuilder`、`McpTool`、`McpContentConverter`。
-- 通过 `McpClientBuilder` 构建 stdio / SSE / Streamable HTTP 客户端，参见 `agentscope-examples/documentation/.../mcp` 下示例。
+---
 
-## Skill **New**
+### Part B —— 推荐迁移（`@Deprecated(forRemoval = true)`，仍可调用）
 
-- 新增 skill loader 抽象（`io.agentscope.core.skill`），支持基于目录的 skill 加载与监听。
-- 提供 `AgentSkill`、`SkillRegistry`、`SkillBox`、`SkillToolFactory`、`SkillFilter`、`SkillFileFilter`、`SkillToolGroup` 等组件，支持把 skill 打包为 `ToolGroup`，按需激活与组织。
+本节列出在 2.0 中仍可调用、但已标记下一 minor 移除的 API。可以按节奏迁移，但建议尽早。
 
-## Model
+#### B.1 `SkillBox` → SkillRepository
 
-- 将 credential 管理从 model 类中解耦，集中到新的 `io.agentscope.core.credential` 模块（`DashScopeCredential` / `OpenAICredential` / `AnthropicCredential` / `GeminiCredential` / `OllamaCredential` / `DeepSeekCredential` / `KimiCredential` / `XAICredential`）。
-- 当前内置 chat model：`DashScopeChatModel`、`OpenAIChatModel`、`AnthropicChatModel`、`GeminiChatModel`、`OllamaChatModel`，均继承自 `ChatModelBase`。
-- 将 formatter 集成到 chat model 抽象中，并为不同 model provider 提供默认 formatter（`DashScopeChatFormatter`、`OpenAIChatFormatter`、`AnthropicChatFormatter`、`GeminiChatFormatter`、`OllamaChatFormatter`）。
-- 新增 `ModelCard` schema（`credential/ModelCard.java`），描述模型身份、能力与参数覆盖。
-- 新增 `ModelRegistry`，支持按 `provider:model` 字符串解析模型（如 `dashscope:qwen-max`、`openai:gpt-5`）。
+- `SkillBox` 类与 `Builder.skillBox(SkillBox)` 均标 `@Deprecated(forRemoval = true, since = "2.0.0")`
+- 新方式：通过 `AgentSkillRepository`（内置 `ClasspathSkillRepository`、`FileSystemSkillRepository`）注入技能，使用 `Builder.skillRepository(...)` / `.skillRepositories(...)`。只要注册了至少一个 repository，`DynamicSkillMiddleware` 会自动安装，在每次 `call()` 前重建 skill prompt
+- 细粒度过滤：`Builder.skillFilter(SkillFilter)`。若需要关闭自动中间件（例如让 `HarnessAgent` 接管），用 `Builder.dynamicSkillsEnabled(false)`
 
-## Middleware **New**
+详见 → [技能](harness/skill.md)
 
-- 将 hook 机制重构为更通用的 agent middleware 系统（`io.agentscope.core.middleware`）。
-- `MiddlewareBase` 暴露 5 个钩子：洋葱模式的 `onAgent` / `onReasoning` / `onActing` / `onModelCall` 和管道模式的 `onSystemPrompt`。
-- 内置 `TaskReminderMiddleware`（与 `TodoTools` 配合，在每个 reasoning step 前注入 todo 状态提醒）。
-- 通过 `OtelTracingMiddleware`（位于 `tracing/`）作为 OpenTelemetry tracing 的入口。
+#### B.2 Hook → Middleware
 
-## Memory
+整个 `io.agentscope.core.hook` 包 —— 包括 `Hook` 接口、`HookEvent`、`HookEventType` 与所有 `*Event` 类 —— 均标 `@Deprecated(forRemoval = true, since = "2.0.0")`。原有 import 仍能编译，`Builder.hook(...)` / `.hooks(...)` 仍可调用（由 `LegacyHookDispatcher` 桥接），v1 代码不会立刻 break。推荐改用 `io.agentscope.core.middleware`：
 
-- 在 2.0 中弃用 `Memory` 接口（`@Deprecated(forRemoval = true, since = "2.0.0")`），原因是该接口与 agent 逻辑耦合过深。
-- 新代码请使用 `AgentState.getContext()` 持有会话历史，并通过 `Session` + `SessionKey` 完成持久化。
+- `MiddlewareBase` 提供 5 个 stage：洋葱型 `onAgent` / `onReasoning` / `onActing` / `onModelCall`，管道型 `onSystemPrompt`
+- Builder：`.middleware(MiddlewareBase)` 与 `.middlewares(List<? extends MiddlewareBase>)`
+- 内置：`TaskReminderMiddleware`（与 `TodoTools` 配合，在每个 reasoning step 前注入任务提醒）
 
-## RAG & Long-Term Memory
+详见 → [Middleware](building-blocks/middleware.md)
 
-- 将 RAG 与 long-term memory 统一到单一模块下（`io.agentscope.core.rag`、`io.agentscope.core.memory.LongTermMemory`）。
-- 从 1.0 到 2.0 的迁移正在进行中，knowledge base、document reader 与 store 将基于 2.0 架构在后续版本中陆续上线。
+#### B.3 `Memory` → `Session` + `AgentState`
 
-## Session & State **New**
+- `io.agentscope.core.memory.Memory` 接口与所有实现（`InMemoryMemory`、`LongTermMemory` 等）均标 `@Deprecated(forRemoval = true, since = "2.0.0")`
+- `Memory` 不再 `extends StateModule`；新增 `saveTo(Session, SessionKey)` / `loadFrom(Session, SessionKey)` 作 v1 桥接，方便现有实现继续通过 `Session` 走持久化
+- 新模型：
+  - **会话历史**保存在 `AgentState.getContext()`
+  - **持久化**通过 `Session` 抽象（内置 `InMemorySession`、`JsonSession`），按 `SessionKey` 分桶
+  - Builder 链：`.session(Session).sessionKey(SessionKey)` —— `AgentState` 在每次 `call()` 后自动 save/load
 
-- 新增 `Session` 抽象与两种内置实现：`InMemorySession`（进程内）、`JsonSession`（文件系统 JSON 持久化）。
-- 通过 `SessionKey`（默认实现 `SimpleSessionKey`）定位每条会话；ReActAgent 配置 `.session(...).sessionKey(...)` 后会在每次 `call` 后自动持久化 `AgentState`。
-- `RuntimeContext` 提供 per-call metadata：在 `call(msgs, runtimeContext)` 中传入 `userId`、`sessionId` 与任意 `put(key, value)` 数据，hook 与 tool 在本次调用期间可读写同一上下文。
+详见 → [上下文](harness/context.md)
+
+#### B.4 事件订阅：hook + chunk → `streamEvents()`
+
+v1 中通过 `Hook` + 各种 `*ChunkEvent` 拼装文本 / 工具增量的代码，可直接迁到 `agent.streamEvents()`：返回 `Flux<AgentEvent>`，覆盖 agent 全生命周期及 HITL 流程的 28 个类型化事件（`RequireUserConfirmEvent`、`RequireExternalExecutionEvent`、`UserConfirmResultEvent`、`ExternalExecutionResultEvent` 等）。
+
+配合 `Msg` 重构新增的能力：
+
+- `DataBlock` —— 统一的多模态块，base64 / URL 二选一
+- `HintBlock` —— agent 引导提示 / 中间推理
+- `ToolUseBlock` / `ToolResultBlock` 增加 `state` 字段（`ToolCallState` / `ToolResultState`）—— 完整建模 tool-call 生命周期
+- 所有 block 加 `id` 字段 —— 跨事件流稳定引用
+
+详见 → [消息与事件](building-blocks/message-and-event.md)
+
+#### B.5 RAG 模块：推进中
+
+- `Knowledge`、`KnowledgeRetrievalTools`、`RAGMode`、`GenericRAGHook` 全部 `@Deprecated(forRemoval = true, since = "2.0.0")`
+- Builder：`.knowledge(...)` / `.knowledges(...)` / `.ragMode(...)` / `.retrieveConfig(...)` 同步弃用
+- v2 架构下的 knowledge base / document reader / store 将在后续 minor 版本上线。v1 实现在 2.0 仍可调用以保兼容，但**新代码不要依赖**
+
+#### B.6 长期记忆模块：推进中
+
+- `LongTermMemory`、`LongTermMemoryMode`、`LongTermMemoryTools` 全部 `@Deprecated(forRemoval = true, since = "2.0.0")`
+- Builder：`.longTermMemory(...)` / `.longTermMemoryMode(...)` / `.longTermMemoryAsyncRecord(...)` 同步弃用
+- 同样在 v2 架构下重写中；新代码先不要依赖
+
+---
+
+## 新增内容
+
+下面列出的能力都是 2.0 的增量新增，对 1.x 代码 0 影响。事件系统、消息重构、middleware 机制已在上方迁移指南完整覆盖，此处不再重复。
+
+### Toolkit & Permission
+
+工具执行是 2.0 主要的扩展面，而权限系统直接挂在工具执行路径上，因此合并讲。
+
+- **Toolkit 升级**：
+  - 统一基类：`ToolBase` / `AgentTool`
+  - 工具组：`ToolGroup` / `ToolGroupScope` / `MetaToolFactory` —— 按需激活；保留的 `basic` 组始终在线
+  - 注解驱动：`ReflectiveFunctionTool` + `@Tool` / `@ToolParam`；`Toolkit#registerTool(Object)` 反射注册任意带注解的方法
+  - 内置任务工具：`io.agentscope.core.tool.builtin.TodoTools.todoWrite`（与 `TaskReminderMiddleware` 配合）
+- **Permission 系统**（新包 `io.agentscope.core.permission`）：
+  - `PermissionEngine`、`PermissionRule`、`PermissionMode`（`DEFAULT` / `ACCEPT_EDITS` / `EXPLORE` / `BYPASS` / `DONT_ASK`）、`PermissionBehavior`
+  - 每次 tool 调用前自动经 `PermissionEngine`：允许 / 用户审批 / 拒绝；HITL 决策回流到 `UserConfirmResultEvent`
+
+详见 → [工具](building-blocks/tool.md)、[权限系统](building-blocks/permission-system.md)
+
+### 模型容错与凭据
+
+- 新包：`io.agentscope.core.credential` —— 8 个 provider credential 类 + `ModelCard`
+- `ModelRegistry`：按 `"provider:model"` 字符串解析（如 `dashscope:qwen-max`、`openai:gpt-5`）
+- Builder 新增：`.model(String)`、`.maxRetries(int)`、`.fallbackModel(Model)` / `.fallbackModel(String)`、`.stopOnReject(boolean)` —— 主模型失败自动重试 / 切换备用模型
+
+详见 → [模型](building-blocks/model.md)
+
+### Workspace（Harness 模块）
+
+- 工作区抽象：本地文件系统 / Docker / E2B 云沙箱统一接口
+- 预热池：支持提前批量初始化执行环境，适配 RL rollout 等并行场景
+
+详见 → [Workspace](harness/workspace.md)
+
+### Builder 其他新方法
+
+- `.enableTaskList(...)` / `.enableTaskList(boolean)` —— 启用内置 `TodoTools`
+- `.permissionContext(PermissionContextState)` —— 预置 permission 规则
+- `Builder.fromAgent(ReActAgent)` —— 从现有 agent 的可观察配置（name、description、system prompt、model、maxIters、generateOptions、toolkit）派生新的 builder
+
+详见 → [智能体](building-blocks/agent.md)

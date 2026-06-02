@@ -13,7 +13,7 @@ It combines static configuration with dynamic runtime analysis. Three components
 - **Mode** — a global static policy set at configuration time; decides the default behaviour for calls that match no rule (e.g. `EXPLORE` makes the agent read-only, `DONT_ASK` silently denies anything not matching a rule).
 - **Built-in Checks** — runtime analysis performed by the tool itself based on the actual input (implemented in `ToolBase#checkPermissions`). These are runtime checks rather than preconfigured patterns, so they are **non-bypassable** — they are not subject to mode or rules.
 
-```mermaid
+```{mermaid}
 sequenceDiagram
     participant LLM
     participant PS as Permission System
@@ -42,7 +42,7 @@ sequenceDiagram
 ```
 
 :::{dropdown} Detailed decision flow
-```mermaid
+```{mermaid}
 flowchart TD
     A([Tool Call]) --> B{Deny Rules?}
     B -->|Match| DENY([DENY])

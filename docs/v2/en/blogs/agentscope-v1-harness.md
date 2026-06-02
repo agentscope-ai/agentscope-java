@@ -117,8 +117,7 @@ Msg reply = agent.call(userMessage, ctx).block();
 
 ## Recommended Reading
 
-- [Harness Overview](../harness/overview.md)
 - [Harness Architecture](../harness/architecture.md)
 - [Filesystem](../harness/filesystem.md)
-- [Sandbox](../harness/sandbox/index.md)
+- [Sandbox](../harness/sandbox.md)
 - [Chinese full article](../../zh/blogs/agentscope-v1-harness.md)

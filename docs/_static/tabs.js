@@ -30,6 +30,36 @@
     );
   }
 
+  // Sidebar captions for the English ``Harness`` section carry a
+  // ``" (English)"`` suffix in _toc.yml so they don't collide with the Chinese
+  // ``Harness`` caption when the section matcher in this file does set lookups.
+  // The suffix is only there to disambiguate; users should not see it. Strip
+  // it from the visible text and stash the original in ``dataset.captionKey``
+  // so caption-text matching (filterSidebarByTab) keeps working.
+  const CAPTION_DISAMBIGUATION_SUFFIX = " (English)";
+
+  function captionText(caption) {
+    return caption.dataset.captionKey || caption.textContent.trim();
+  }
+
+  function rewriteCaptionDisplay(caption) {
+    if (caption.dataset.captionRewritten === "1") {
+      return;
+    }
+    const original = caption.textContent.trim();
+    if (original.endsWith(CAPTION_DISAMBIGUATION_SUFFIX)) {
+      caption.dataset.captionKey = original;
+      const stripped = original.slice(0, -CAPTION_DISAMBIGUATION_SUFFIX.length);
+      const span = caption.querySelector(".caption-text");
+      if (span) {
+        span.textContent = stripped;
+      } else {
+        caption.textContent = stripped;
+      }
+    }
+    caption.dataset.captionRewritten = "1";
+  }
+
   function getCurrentPage() {
     const container = getTabsContainer();
     if (container && container.dataset.currentPage) {
@@ -218,6 +248,8 @@
       return;
     }
 
+    captions.forEach(rewriteCaptionDisplay);
+
     clearSidebarGroupVisibility();
 
     const currentVersion = getCurrentVersion();
@@ -227,7 +259,7 @@
       : null;
 
     captions.forEach((caption) => {
-      const sectionName = caption.textContent.trim();
+      const sectionName = captionText(caption);
       const sectionVersion = captionVersion(sectionName);
 
       // Hide cross-version captions outright so users don't see the other

@@ -28,7 +28,7 @@ AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 
 ## 第一个智能体
 
-下面的示例构建了一个最简智能体：一个 DashScope chat model、一个空工具集，以及一个 `ReActAgent` 实例。智能体提供两个调用入口 —— `call` 返回最终消息，`streamEvents` 则以流式方式逐步产出事件，适合展示推理和工具调用的中间过程。
+下面的示例构建了一个最简智能体：通过 `ModelRegistry` 以字符串 `dashscope:qwen-plus` 解析得到的 DashScope chat model、一个空工具集，以及一个 `ReActAgent` 实例。智能体提供两个调用入口 —— `call` 返回最终消息，`streamEvents` 则以流式方式逐步产出事件，适合展示推理和工具调用的中间过程。
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -37,10 +37,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 
@@ -50,13 +48,11 @@ public class FirstAgent {
                 ReActAgent.builder()
                         .name("Friday")
                         .sysPrompt("You are a helpful assistant named Friday.")
-                        .model(
-                                DashScopeChatModel.builder()
-                                        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                                        .modelName("qwen-plus")
-                                        .stream(true)
-                                        .formatter(new DashScopeChatFormatter())
-                                        .build())
+                        // 通过 ModelRegistry 解析的字符串形式 —— 自动读取环境变量
+                        // DASHSCOPE_API_KEY。切换其他厂商时改用 "openai:gpt-5.5"、
+                        // "anthropic:claude-sonnet-4-5"、"gemini:gemini-2.0-flash"
+                        // 或 "ollama:llama3" 即可。
+                        .model("dashscope:qwen-plus")
                         .toolkit(new Toolkit())
                         .build();
 
@@ -87,5 +83,5 @@ public class FirstAgent {
 ```
 
 :::{tip}
-运行程序前，需要在环境变量中设置 `DASHSCOPE_API_KEY`。如果想切换到其他模型提供商，将 `DashScopeChatModel` / `DashScopeChatFormatter` 替换为对应的配对即可，例如 `OpenAIChatModel` 与 `OpenAIChatFormatter`。
+运行程序前，需要在环境变量中设置 `DASHSCOPE_API_KEY`。如需切换到其他模型提供商，只需改写模型 id 字符串 —— `openai:gpt-5.5`、`anthropic:claude-sonnet-4-5`、`gemini:gemini-2.0-flash`、`ollama:llama3` —— 并配置对应的环境变量（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`）。若需要更精细地控制超时、自定义 endpoint 等参数，仍可通过 `XxxChatModel.builder()` 构造实例并传给 `.model(Model)`。
 :::

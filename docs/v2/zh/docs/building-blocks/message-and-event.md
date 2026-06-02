@@ -130,7 +130,7 @@ if (msg.hasContentBlocks(ToolResultBlock.class)) {
 
 每个事件都携带 `getReplyId()`，将其关联到正在构建的消息。在一次回复中，`getBlockId()` 或 `getToolCallId()` 标识事件所属的内容块。事件遵循 **start → delta → end** 模式：
 
-```mermaid
+```{mermaid}
 sequenceDiagram
     participant Client
     participant Agent
@@ -376,7 +376,7 @@ agent.streamEvents(new UserMessage("user", "帮我修复这个 bug"))
 智能体如何在 ReAct 循环中产出事件和消息
 :::
   :::{grid-item-card} 上下文
-:link: /zh/v2/building-blocks/context
+:link: /zh/v2/harness/context
 
 消息如何存储与持久化
 :::
