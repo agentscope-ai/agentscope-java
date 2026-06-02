@@ -15,18 +15,19 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import io.modelcontextprotocol.spec.McpSchema;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import io.modelcontextprotocol.spec.McpSchema;
-import java.util.List;
-import java.util.Map;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Mono;
 
 class McpClientWrapperTest {
 
@@ -217,6 +218,12 @@ class McpClientWrapperTest {
         @Override
         public Mono<McpSchema.CallToolResult> callTool(
                 String toolName, Map<String, Object> arguments) {
+            return callTool(toolName, arguments, null);
+        }
+
+        @Override
+        public Mono<McpSchema.CallToolResult> callTool(
+                String toolName, Map<String, Object> arguments, Map<String, Object> meta) {
             if (!initialized) {
                 return Mono.error(new IllegalStateException("Client not initialized: " + name));
             }
@@ -226,7 +233,7 @@ class McpClientWrapperTest {
             }
 
             // Return a simple success result
-            McpSchema.TextContent content = new McpSchema.TextContent("Success");
+            McpSchema.TextContent content = new McpSchema.TextContent(null, "Success", meta);
             return Mono.just(
                     McpSchema.CallToolResult.builder()
                             .content(List.of(content))

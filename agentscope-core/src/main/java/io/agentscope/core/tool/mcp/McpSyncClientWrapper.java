@@ -17,12 +17,13 @@ package io.agentscope.core.tool.mcp;
 
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Wrapper for synchronous MCP clients that converts blocking calls to reactive Mono types.
@@ -131,6 +132,24 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
+        return callTool(toolName, arguments, null);
+    }
+
+    /**
+     * Invokes a tool on the MCP server, wrapping the blocking call in a reactive Mono.
+     *
+     * <p>This method wraps the blocking synchronous callTool operation in a Mono that runs on the
+     * boundedElastic scheduler. The client must be initialized before calling this method.
+     *
+     * @param toolName the name of the tool to call
+     * @param arguments the arguments to pass to the tool
+     * @param meta additional metadata to pass to the tool
+     * @return a Mono emitting the tool call result (may contain error information)
+     * @throws IllegalStateException if the client is not initialized
+     * */
+    @Override
+    public Mono<McpSchema.CallToolResult> callTool(
+            String toolName, Map<String, Object> arguments, Map<String, Object> meta) {
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
@@ -141,7 +160,7 @@ public class McpSyncClientWrapper extends McpClientWrapper {
         return Mono.fromCallable(
                         () -> {
                             McpSchema.CallToolRequest request =
-                                    new McpSchema.CallToolRequest(toolName, arguments);
+                                    new McpSchema.CallToolRequest(toolName, arguments, meta);
                             McpSchema.CallToolResult result = client.callTool(request);
 
                             if (Boolean.TRUE.equals(result.isError())) {

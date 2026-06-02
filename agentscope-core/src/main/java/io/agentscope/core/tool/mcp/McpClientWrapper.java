@@ -16,10 +16,11 @@
 package io.agentscope.core.tool.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import reactor.core.publisher.Mono;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import reactor.core.publisher.Mono;
 
 /**
  * Abstract wrapper for MCP (Model Context Protocol) clients.
@@ -100,6 +101,17 @@ public abstract class McpClientWrapper implements AutoCloseable {
      */
     public abstract Mono<McpSchema.CallToolResult> callTool(
             String toolName, Map<String, Object> arguments);
+
+    /**
+     * Invokes a tool on the MCP server.
+     *
+     * @param toolName the name of the tool to call
+     * @param arguments the arguments to pass to the tool
+     * @param meta the metadata to pass to the tool
+     * @return a Mono emitting the tool call result
+     */
+    public abstract Mono<McpSchema.CallToolResult> callTool(
+            String toolName, Map<String, Object> arguments, Map<String, Object> meta);
 
     /**
      * Gets a cached tool definition by name.

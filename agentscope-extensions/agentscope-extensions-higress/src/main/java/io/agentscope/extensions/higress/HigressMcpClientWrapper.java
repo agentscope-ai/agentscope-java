@@ -18,11 +18,12 @@ package io.agentscope.extensions.higress;
 
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * MCP client wrapper for Higress AI Gateway.
@@ -259,6 +260,12 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
+        return callTool(toolName, arguments, null);
+    }
+
+    @Override
+    public Mono<McpSchema.CallToolResult> callTool(
+            String toolName, Map<String, Object> arguments, Map<String, Object> meta) {
         logger.debug(
                 "Calling tool '{}' on Higress MCP client '{}' with arguments: {}",
                 toolName,
@@ -266,7 +273,7 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
                 arguments);
 
         return delegateClient
-                .callTool(toolName, arguments)
+                .callTool(toolName, arguments, meta)
                 .doOnSuccess(
                         result -> {
                             if (Boolean.TRUE.equals(result.isError())) {

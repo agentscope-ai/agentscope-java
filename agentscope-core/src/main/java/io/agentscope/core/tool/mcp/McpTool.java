@@ -21,15 +21,17 @@ import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
+
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
 
 /**
  * {@link ToolBase} subclass that wraps an MCP (Model Context Protocol) tool.
@@ -182,8 +184,11 @@ public class McpTool extends ToolBase {
         // Merge preset arguments with input arguments
         Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
+        // Extract MCP meta from ContextStore by McpMeta type namespace
+        Map<String, Object> metaMap = extractMcpMeta(param);
+
         return clientWrapper
-                .callTool(getName(), mergedArgs)
+                .callTool(getName(), mergedArgs, metaMap)
                 .map(McpContentConverter::convertCallToolResult)
                 .doOnSuccess(
                         result -> logger.debug("MCP tool '{}' completed successfully", getName()))
@@ -234,6 +239,23 @@ public class McpTool extends ToolBase {
             merged.putAll(input);
         }
         return merged;
+    }
+
+    /**
+     * Extracts MCP meta from the given tool call parameters.
+     *
+     * @param param the tool call parameters
+     * @return the extracted MCP meta
+     */
+    private Map<String, Object> extractMcpMeta(ToolCallParam param) {
+        if (param == null || param.getRuntimeContext() == null) {
+            return Collections.emptyMap();
+        }
+        McpMeta mcpMeta = param.getRuntimeContext().get(McpMeta.class);
+        if (mcpMeta == null || mcpMeta.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return mcpMeta.entries();
     }
 
     /**
