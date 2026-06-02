@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.skill;
 
-import io.agentscope.core.agent.hook.Hook;
-import io.agentscope.core.agent.hook.HookEvent;
-import io.agentscope.core.agent.hook.PreCallEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import reactor.core.publisher.Mono;
 
 /**

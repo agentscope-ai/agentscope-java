@@ -44,9 +44,9 @@ import io.agentscope.harness.coding.config.SkillRepositorySupport;
 import io.agentscope.harness.coding.gateway.ChannelManager;
 import io.agentscope.harness.coding.gateway.Gateway;
 import io.agentscope.harness.coding.gateway.HarnessGateway;
-import io.agentscope.harness.coding.hook.MessageQueueHook;
-import io.agentscope.harness.coding.hook.ModelCallLimitHook;
-import io.agentscope.harness.coding.hook.ThreadBudgetHook;
+import io.agentscope.harness.coding.middleware.MessageQueueMiddleware;
+import io.agentscope.harness.coding.middleware.ModelCallLimitMiddleware;
+import io.agentscope.harness.coding.middleware.ThreadBudgetMiddleware;
 import io.agentscope.harness.coding.session.AgentManagerConfig;
 import io.agentscope.harness.coding.session.SessionAgentManager;
 import io.agentscope.harness.coding.session.SessionStore;
@@ -437,10 +437,11 @@ public final class CodingBootstrap {
 
         /**
          * Same as {@link #withDualCodingAgents(io.agentscope.core.tool.Toolkit,
-         * io.agentscope.core.tool.Toolkit)} but additionally registers the open-swe-style hook
-         * stack ({@link MessageQueueHook}, {@link ThreadBudgetHook}, {@link ModelCallLimitHook})
-         * on both agents when {@code store} is non-null. Without a store the hooks degrade
-         * silently — useful for plain CLI/test usage where no thread-routing exists.
+         * io.agentscope.core.tool.Toolkit)} but additionally registers the open-swe-style
+         * middleware stack ({@link MessageQueueMiddleware}, {@link ThreadBudgetMiddleware},
+         * {@link ModelCallLimitMiddleware}) on both agents when {@code store} is non-null.
+         * Without a store the middlewares degrade silently — useful for plain CLI/test usage
+         * where no thread-routing exists.
          */
         public Builder withDualCodingAgents(
                 io.agentscope.core.tool.Toolkit codingToolkit,
@@ -533,10 +534,10 @@ public final class CodingBootstrap {
 
         private static void registerOpenSweHooks(HarnessAgent.Builder b, BaseStore store) {
             if (store != null) {
-                b.hook(new MessageQueueHook(store));
+                b.middleware(new MessageQueueMiddleware(store));
             }
-            b.hook(new ThreadBudgetHook(resolveThreadBudget()));
-            b.hook(new ModelCallLimitHook(resolveGlobalModelLimit()));
+            b.middleware(new ThreadBudgetMiddleware(resolveThreadBudget()));
+            b.middleware(new ModelCallLimitMiddleware(resolveGlobalModelLimit()));
         }
 
         private static int resolveThreadBudget() {

@@ -17,7 +17,7 @@ package io.agentscope.spring.boot.admin;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.Toolkit;

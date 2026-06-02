@@ -16,7 +16,7 @@
 package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;

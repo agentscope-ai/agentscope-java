@@ -20,13 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.hook.Hook;
-import io.agentscope.core.agent.hook.HookEvent;
-import io.agentscope.core.agent.hook.PreReasoningEvent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ExecutionConfig;

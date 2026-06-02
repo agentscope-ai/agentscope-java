@@ -15,7 +15,7 @@
  */
 package io.agentscope.claw2.web.config;
 
-import io.agentscope.core.legacy.session.Session;
+import io.agentscope.core.session.Session;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;

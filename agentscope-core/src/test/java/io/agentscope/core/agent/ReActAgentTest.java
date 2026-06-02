@@ -23,13 +23,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.hook.Hook;
-import io.agentscope.core.agent.hook.HookEvent;
-import io.agentscope.core.agent.hook.ReasoningChunkEvent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;

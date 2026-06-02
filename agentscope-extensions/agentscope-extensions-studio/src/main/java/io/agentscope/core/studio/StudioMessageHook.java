@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.studio;
 
-import io.agentscope.core.agent.hook.Hook;
-import io.agentscope.core.agent.hook.HookEvent;
-import io.agentscope.core.agent.hook.PostCallEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.message.Msg;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

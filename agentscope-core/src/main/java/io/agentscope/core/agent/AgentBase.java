@@ -16,11 +16,11 @@
 package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.agentscope.core.agent.hook.ErrorEvent;
-import io.agentscope.core.agent.hook.Hook;
-import io.agentscope.core.agent.hook.PostCallEvent;
-import io.agentscope.core.agent.hook.PreCallEvent;
-import io.agentscope.core.agent.hook.RuntimeContextAware;
+import io.agentscope.core.hook.ErrorEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;

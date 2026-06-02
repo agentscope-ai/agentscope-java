@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;

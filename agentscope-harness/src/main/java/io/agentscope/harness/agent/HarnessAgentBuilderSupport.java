@@ -17,7 +17,7 @@ package io.agentscope.harness.agent;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;

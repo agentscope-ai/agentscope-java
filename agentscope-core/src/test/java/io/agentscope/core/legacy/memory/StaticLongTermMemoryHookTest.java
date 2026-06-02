@@ -29,9 +29,9 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.agent.hook.PostCallEvent;
-import io.agentscope.core.agent.hook.PreCallEvent;
-import io.agentscope.core.agent.hook.PreReasoningEvent;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.memory.Memory;

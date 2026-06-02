@@ -24,9 +24,6 @@ import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
-import io.agentscope.core.agent.hook.Hook;
-import io.agentscope.core.agent.hook.LegacyHookDispatcher;
-import io.agentscope.core.agent.hook.PostActingEvent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
@@ -49,6 +46,9 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.LegacyHookDispatcher;
+import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.memory.AgentStateMemoryView;
@@ -339,24 +339,16 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     // ==================== Config assembly helpers ====================
 
     private static ModelConfig assembleModelConfig(Builder b) {
-        int baseRetries =
-                b.modelConfig != null
-                        ? b.modelConfig.maxRetries()
-                        : ModelConfig.DEFAULT_MAX_RETRIES;
-        Model baseFallback = b.modelConfig != null ? b.modelConfig.fallbackModel() : null;
-        int retries = b.flatMaxRetries != null ? b.flatMaxRetries : baseRetries;
-        Model fallback = b.flatFallbackModel != null ? b.flatFallbackModel : baseFallback;
-        return new ModelConfig(retries, fallback);
+        int retries = b.flatMaxRetries != null ? b.flatMaxRetries : ModelConfig.DEFAULT_MAX_RETRIES;
+        return new ModelConfig(retries, b.flatFallbackModel);
     }
 
     private static ReactConfig assembleReactConfig(Builder b) {
-        boolean baseStop =
-                b.reactConfig != null
-                        ? b.reactConfig.stopOnReject()
+        boolean stop =
+                b.flatStopOnReject != null
+                        ? b.flatStopOnReject
                         : ReactConfig.DEFAULT_STOP_ON_REJECT;
-        int iters = b.maxIters;
-        boolean stop = b.flatStopOnReject != null ? b.flatStopOnReject : baseStop;
-        return new ReactConfig(iters, stop);
+        return new ReactConfig(b.maxIters, stop);
     }
 
     // ==================== RuntimeContext ====================
@@ -2271,11 +2263,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         private boolean enablePendingToolRecovery = false;
 
         // 2.0 core fields
-        private ModelConfig modelConfig;
-        private ReactConfig reactConfig;
         private PermissionContextState permissionContext;
 
-        // Flat overrides for ModelConfig / ReactConfig (take precedence when explicitly set)
+        // Flat setters backing ModelConfig / ReactConfig values
         private Integer flatMaxRetries;
         private Model flatFallbackModel;
         private Boolean flatStopOnReject;
@@ -2632,8 +2622,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         /**
          * Sets the model-call retry budget (max attempts including the first try). Defaults to
-         * {@link ModelConfig#DEFAULT_MAX_RETRIES} when unset. Takes precedence over
-         * {@link #modelConfig(ModelConfig)} when both are configured.
+         * {@link ModelConfig#DEFAULT_MAX_RETRIES} when unset.
          */
         public Builder maxRetries(int maxRetries) {
             if (maxRetries <= 0) {
@@ -2645,8 +2634,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         /**
          * Sets the fallback model invoked after the primary model exhausts its retry budget.
-         * Pass {@code null} to explicitly clear (no fallback). Takes precedence over
-         * {@link #modelConfig(ModelConfig)}'s {@code fallbackModel} field.
+         * Pass {@code null} to explicitly clear (no fallback).
          */
         public Builder fallbackModel(Model fallbackModel) {
             this.flatFallbackModel = fallbackModel;
@@ -2668,31 +2656,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         /**
          * Controls whether a permission rejection of any tool call terminates the reasoning loop
          * (instead of feeding the rejection back into the next reasoning round). Defaults to
-         * {@link ReactConfig#DEFAULT_STOP_ON_REJECT}. Takes precedence over
-         * {@link #reactConfig(ReactConfig)} when both are configured.
+         * {@link ReactConfig#DEFAULT_STOP_ON_REJECT}.
          */
         public Builder stopOnReject(boolean stopOnReject) {
             this.flatStopOnReject = stopOnReject;
-            return this;
-        }
-
-        /**
-         * @deprecated since 2.0.0. Prefer the flat setters {@link #maxRetries(int)} and
-         *     {@link #fallbackModel(Model)} / {@link #fallbackModel(String)}.
-         */
-        @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder modelConfig(ModelConfig modelConfig) {
-            this.modelConfig = modelConfig;
-            return this;
-        }
-
-        /**
-         * @deprecated since 2.0.0. Prefer the flat setters {@link #maxIters(int)} and
-         *     {@link #stopOnReject(boolean)}.
-         */
-        @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder reactConfig(ReactConfig reactConfig) {
-            this.reactConfig = reactConfig;
             return this;
         }
 

@@ -24,7 +24,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.coding.hook.FallbackModel;
+import io.agentscope.harness.coding.model.FallbackModel;
 import io.agentscope.harness.coding.prompt.CodingSystemPrompt;
 import java.nio.file.Path;
 

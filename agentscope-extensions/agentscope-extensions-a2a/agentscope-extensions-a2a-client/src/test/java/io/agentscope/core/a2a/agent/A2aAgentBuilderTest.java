@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
 import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.a2a.agent.card.FixedAgentCardResolver;
-import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import java.lang.reflect.Field;

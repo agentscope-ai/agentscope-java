@@ -28,10 +28,10 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.hook.Hook;
-import io.agentscope.core.agent.hook.HookEvent;
-import io.agentscope.core.agent.hook.PostActingEvent;
-import io.agentscope.core.agent.hook.PostReasoningEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;

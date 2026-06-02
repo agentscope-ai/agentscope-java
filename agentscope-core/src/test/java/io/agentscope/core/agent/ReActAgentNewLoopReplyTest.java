@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
@@ -228,7 +227,6 @@ class ReActAgentNewLoopReplyTest {
                         .name("asst")
                         .model(model)
                         .toolkit(toolkitWith(new EchoTool()))
-                        .reactConfig(new ReactConfig(2, false))
                         .maxIters(2)
                         .build();
 

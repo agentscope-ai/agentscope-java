@@ -21,9 +21,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.agent.config.ModelConfig;
-import io.agentscope.core.agent.config.ReactConfig;
-import io.agentscope.core.agent.hook.Hook;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ExecutionConfig;
@@ -54,8 +52,8 @@ import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
-import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
 import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware;
 import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
@@ -865,18 +863,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         public Builder stopOnReject(boolean stopOnReject) {
             inner.stopOnReject(stopOnReject);
-            return this;
-        }
-
-        @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder modelConfig(ModelConfig modelConfig) {
-            inner.modelConfig(modelConfig);
-            return this;
-        }
-
-        @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder reactConfig(ReactConfig reactConfig) {
-            inner.reactConfig(reactConfig);
             return this;
         }
 

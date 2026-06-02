@@ -21,8 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.config.ModelConfig;
-import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -60,25 +58,19 @@ class ReActAgentNewLoopBuilderTest {
         return AgentState.builder().sessionId("test-session").build();
     }
 
-    @SuppressWarnings("deprecation")
     private static ReActAgent newAgent() {
         return ReActAgent.builder()
                 .name("assistant")
                 .sysPrompt("you are helpful")
                 .model(newFakeModel())
                 .toolkit(new Toolkit())
-                .modelConfig(ModelConfig.defaults())
-                .reactConfig(ReactConfig.defaults())
                 .build();
     }
 
     @Test
-    @SuppressWarnings("deprecation")
     void builderPopulatesAllNewCoreFields() {
         ChatModelBase model = newFakeModel();
         Toolkit toolkit = new Toolkit();
-        ModelConfig mc = ModelConfig.defaults();
-        ReactConfig rc = ReactConfig.defaults();
         List<MiddlewareBase> mw = List.of();
 
         ReActAgent agent =
@@ -88,8 +80,6 @@ class ReActAgentNewLoopBuilderTest {
                         .model(model)
                         .toolkit(toolkit)
                         .middlewares(mw)
-                        .modelConfig(mc)
-                        .reactConfig(rc)
                         .build();
 
         assertEquals("planner", agent.getName());

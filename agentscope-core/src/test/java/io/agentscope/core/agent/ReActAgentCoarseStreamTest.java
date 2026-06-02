@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -170,16 +169,9 @@ class ReActAgentCoarseStreamTest {
         tk.registerAgentTool(new EchoTool());
 
         AgentState state = AgentState.builder().sessionId("coarse-max").build();
-        ReactConfig react = new ReactConfig(1, false);
 
         ReActAgent agent =
-                ReActAgent.builder()
-                        .name("asst")
-                        .model(model)
-                        .toolkit(tk)
-                        .reactConfig(react)
-                        .maxIters(1)
-                        .build();
+                ReActAgent.builder().name("asst").model(model).toolkit(tk).maxIters(1).build();
 
         List<Event> events =
                 agent.stream(List.of(), StreamOptions.defaults()).collectList().block();

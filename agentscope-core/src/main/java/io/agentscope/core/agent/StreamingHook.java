@@ -15,14 +15,14 @@
  */
 package io.agentscope.core.agent;
 
-import io.agentscope.core.agent.hook.ActingChunkEvent;
-import io.agentscope.core.agent.hook.Hook;
-import io.agentscope.core.agent.hook.HookEvent;
-import io.agentscope.core.agent.hook.PostActingEvent;
-import io.agentscope.core.agent.hook.PostReasoningEvent;
-import io.agentscope.core.agent.hook.PostSummaryEvent;
-import io.agentscope.core.agent.hook.ReasoningChunkEvent;
-import io.agentscope.core.agent.hook.SummaryChunkEvent;
+import io.agentscope.core.hook.ActingChunkEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.PostSummaryEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;

@@ -15,10 +15,10 @@
  */
 package io.agentscope.dataagent.web.config;
 
-import io.agentscope.core.legacy.session.InMemorySession;
-import io.agentscope.core.legacy.session.Session;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.InMemorySession;
+import io.agentscope.core.session.Session;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
 import io.agentscope.dataagent.runtime.channel.ChannelConfig;
 import io.agentscope.dataagent.runtime.channel.DmScope;
@@ -29,7 +29,7 @@ import io.agentscope.dataagent.runtime.marketplace.LocalApprovalMarketplace;
 import io.agentscope.dataagent.runtime.marketplace.NacosDataAgentMarketplace;
 import io.agentscope.dataagent.runtime.marketplace.UserMarketplaceRegistry.DataAgentMarketplaceFactoryRegistration;
 import io.agentscope.dataagent.web.toolbus.ToolEventBus;
-import io.agentscope.dataagent.web.toolbus.ToolNotificationHook;
+import io.agentscope.dataagent.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.dataagent.web.workspace.UserSandboxRegistry;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
@@ -203,7 +203,7 @@ public class DataAgentConfig {
 
         builder.configureAllAgents(
                 b -> {
-                    b.hook(new ToolNotificationHook(toolEventBus));
+                    b.middleware(new ToolNotificationMiddleware(toolEventBus));
                     b.session(session);
                     b.filesystem(
                             new DockerFilesystemSpec()

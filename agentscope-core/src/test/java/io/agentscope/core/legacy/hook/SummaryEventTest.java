@@ -23,10 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.agent.hook.HookEventType;
-import io.agentscope.core.agent.hook.PostSummaryEvent;
-import io.agentscope.core.agent.hook.PreSummaryEvent;
-import io.agentscope.core.agent.hook.SummaryChunkEvent;
+import io.agentscope.core.hook.HookEventType;
+import io.agentscope.core.hook.PostSummaryEvent;
+import io.agentscope.core.hook.PreSummaryEvent;
+import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
