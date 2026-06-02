@@ -11,7 +11,7 @@ AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so th
 
 ## 1 · Harness Engineering — built for long-running, complex tasks
 
-A bare ReAct loop solves one reasoning turn. Real-world tasks run for hours, accumulate state, and demand persistent skills. **Harness** packages the engineering bedrock so agents stay reliable indefinitely, accrue capability, and finish complex jobs without manual context surgery — the reasoning core stays untouched, capabilities layer on.
+A bare ReAct loop solves one reasoning turn. Real-world tasks run for hours, accumulate state, and demand persistent skills. **Harness** builds the engineering scaffolding so agents stay reliable indefinitely, accrue capability, and finish complex jobs without manual context surgery — the reasoning core stays untouched, capabilities layer on.
 
 ::::{grid} 2
 
