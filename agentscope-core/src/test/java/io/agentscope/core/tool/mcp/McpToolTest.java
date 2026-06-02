@@ -15,6 +15,20 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.tool.ToolCallParam;
+import io.modelcontextprotocol.spec.McpSchema;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -25,19 +39,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.tool.ToolCallParam;
-import io.modelcontextprotocol.spec.McpSchema;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Mono;
 
 class McpToolTest {
 
@@ -155,7 +156,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result =
                 tool.callAsync(ToolCallParam.builder().input(input).build()).block();
@@ -164,7 +166,7 @@ class McpToolTest {
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
 
-        verify(mockClientWrapper).callTool(eq("test-tool"), any());
+        verify(mockClientWrapper).callTool(eq("test-tool"), any(), any());
     }
 
     @Test
@@ -178,7 +180,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result =
                 tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
@@ -199,7 +202,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result = tool.callAsync(ToolCallParam.builder().build()).block();
         assertNotNull(result);
@@ -228,7 +232,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result =
                 tool.callAsync(ToolCallParam.builder().input(input).build()).block();
@@ -238,7 +243,7 @@ class McpToolTest {
         assertFalse(outputText.startsWith("Error:"));
 
         // Verify the merged arguments were passed
-        verify(mockClientWrapper).callTool(eq("test-tool"), any(Map.class));
+        verify(mockClientWrapper).callTool(eq("test-tool"), any(Map.class), any(Map.class));
     }
 
     @Test
@@ -257,7 +262,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         // Call with null input - should use preset args only
         ToolResultBlock result = tool.callAsync(ToolCallParam.builder().build()).block();
@@ -271,7 +277,7 @@ class McpToolTest {
     void testCallAsync_ErrorHandling() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any()))
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
                 .thenReturn(Mono.error(new RuntimeException("Network error")));
 
         ToolResultBlock result =
@@ -288,7 +294,7 @@ class McpToolTest {
     void testCallAsync_ErrorWithNullMessage() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any()))
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
                 .thenReturn(Mono.error(new NullPointerException()));
 
         ToolResultBlock result =
@@ -426,7 +432,8 @@ class McpToolTest {
                         .isError(false)
                         .build();
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         ToolResultBlock result =
                 tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
@@ -451,7 +458,8 @@ class McpToolTest {
         McpSchema.CallToolResult mcpResult =
                 new McpSchema.CallToolResult(List.of(resultContent), false);
 
-        when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
+        when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
+                .thenReturn(Mono.just(mcpResult));
 
         // The merged args should have input_value (not preset_value)
         ToolResultBlock result =
