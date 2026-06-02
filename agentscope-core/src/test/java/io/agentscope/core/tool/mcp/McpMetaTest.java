@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -240,5 +242,86 @@ class McpMetaTest {
         McpMeta meta = new McpMeta(Map.of("count", 42, "ratio", 3.14));
         assertEquals(42, meta.entries().get("count"));
         assertEquals(3.14, meta.entries().get("ratio"));
+    }
+
+    @Test
+    void testGetEntries_CannotBeModified() {
+        McpMeta meta = new McpMeta(Map.of("key1", "value1"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> {
+                    meta.entries().put("key2", "value2");
+                });
+    }
+
+    @Test
+    void testMerge_MixedNullAndEmpty() {
+        McpMeta meta1 = new McpMeta(Map.of("key1", "value1"));
+        McpMeta empty = new McpMeta(Collections.emptyMap());
+        McpMeta merged = McpMeta.merge(null, meta1, empty, null);
+        assertEquals(1, merged.entries().size());
+        assertEquals("value1", merged.entries().get("key1"));
+    }
+
+    @Test
+    void testMerge_ThreeWayWithOverride() {
+        McpMeta meta1 = new McpMeta(Map.of("key1", "v1", "key2", "v2"));
+        McpMeta meta2 = new McpMeta(Map.of("key2", "v2-new", "key3", "v3"));
+        McpMeta meta3 = new McpMeta(Map.of("key3", "v3-new", "key4", "v4"));
+        McpMeta merged = McpMeta.merge(meta1, meta2, meta3);
+        assertEquals(4, merged.entries().size());
+        assertEquals("v1", merged.entries().get("key1"));
+        assertEquals("v2-new", merged.entries().get("key2"));
+        assertEquals("v3-new", merged.entries().get("key3"));
+        assertEquals("v4", merged.entries().get("key4"));
+    }
+
+    // ==================== hashCode ====================
+
+    @Test
+    void testHashCode_ConsistentWithEquals() {
+        McpMeta meta1 = new McpMeta(Map.of("key1", "value1"));
+        McpMeta meta2 = new McpMeta(Map.of("key1", "value1"));
+        assertEquals(meta1.hashCode(), meta2.hashCode());
+    }
+
+    @Test
+    void testHashCode_DifferentEntries() {
+        McpMeta meta1 = new McpMeta(Map.of("key1", "value1"));
+        McpMeta meta2 = new McpMeta(Map.of("key1", "value2"));
+        assertNotEquals(meta1.hashCode(), meta2.hashCode());
+    }
+
+    @Test
+    void testHashCode_Empty() {
+        McpMeta meta1 = new McpMeta(null);
+        McpMeta meta2 = new McpMeta(Collections.emptyMap());
+        assertEquals(meta1.hashCode(), meta2.hashCode());
+    }
+
+    @Test
+    void testHashCode_Stable() {
+        McpMeta meta = new McpMeta(Map.of("key1", "value1"));
+        int hash1 = meta.hashCode();
+        int hash2 = meta.hashCode();
+        assertEquals(hash1, hash2);
+    }
+
+    @Test
+    void testEntries_NullValue() {
+        Map<String, Object> map = new java.util.HashMap<>();
+        map.put("key1", null);
+        map.put("key2", "value2");
+        McpMeta meta = new McpMeta(map);
+        assertEquals(2, meta.entries().size());
+        assertNull(meta.entries().get("key1"));
+        assertEquals("value2", meta.entries().get("key2"));
+    }
+
+    @Test
+    void testEntries_BooleanValues() {
+        McpMeta meta = new McpMeta(Map.of("flag1", true, "flag2", false));
+        assertEquals(true, meta.entries().get("flag1"));
+        assertEquals(false, meta.entries().get("flag2"));
     }
 }
