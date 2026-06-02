@@ -85,6 +85,7 @@ public final class AgentProtocolTaskStore {
     public void submit(String taskId, String agentId, String input) {
         Optional<TaskRecord> existing =
                 workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(),
                         AgentProtocolConstants.PROTOCOL_AGENT_ID,
                         AgentProtocolConstants.PROTOCOL_SESSION_ID,
                         taskId);
@@ -137,6 +138,7 @@ public final class AgentProtocolTaskStore {
 
     private void persist(TaskRecord r) {
         workspaceManager.writeTaskRecord(
+                RuntimeContext.empty(),
                 AgentProtocolConstants.PROTOCOL_AGENT_ID,
                 AgentProtocolConstants.PROTOCOL_SESSION_ID,
                 r);
@@ -146,6 +148,7 @@ public final class AgentProtocolTaskStore {
             String taskId, TaskStatus status, String result, String error, String agentId) {
         Optional<TaskRecord> prev =
                 workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(),
                         AgentProtocolConstants.PROTOCOL_AGENT_ID,
                         AgentProtocolConstants.PROTOCOL_SESSION_ID,
                         taskId);
@@ -174,6 +177,7 @@ public final class AgentProtocolTaskStore {
         m.put("task_id", taskId);
         Optional<TaskRecord> rec =
                 workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(),
                         AgentProtocolConstants.PROTOCOL_AGENT_ID,
                         AgentProtocolConstants.PROTOCOL_SESSION_ID,
                         taskId);
@@ -232,6 +236,7 @@ public final class AgentProtocolTaskStore {
         while (System.currentTimeMillis() < deadline) {
             Optional<TaskRecord> rec =
                     workspaceManager.readTaskRecord(
+                            RuntimeContext.empty(),
                             AgentProtocolConstants.PROTOCOL_AGENT_ID,
                             AgentProtocolConstants.PROTOCOL_SESSION_ID,
                             taskId);
@@ -274,6 +279,7 @@ public final class AgentProtocolTaskStore {
         }
         Optional<TaskRecord> rec =
                 workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(),
                         AgentProtocolConstants.PROTOCOL_AGENT_ID,
                         AgentProtocolConstants.PROTOCOL_SESSION_ID,
                         taskId);

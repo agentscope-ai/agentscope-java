@@ -1,0 +1,157 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: agentscope-dataagent
+  webflux:
+    static-path-pattern: /**
+  resources:
+    static-locations:
+      - classpath:/static/
+
+  # --------------------------------------------------------------------------
+  # User + agent metadata are persisted via Spring Data JPA. The default
+  # backend is an embedded H2 database written to
+  # `${user.home}/.agentscope-dataagent/db.*` — intentionally NOT placed under
+  # `dataagent.workspace`, so workspace volumes never accidentally include the
+  # catalog tables.
+  #
+  # To switch to MySQL / PostgreSQL in production, activate the `jdbc` Spring
+  # profile (`--spring.profiles.active=jdbc` or `SPRING_PROFILES_ACTIVE=jdbc`)
+  # which sets MySQL-shaped DataSource defaults in `application-jdbc.yml`. You
+  # can also override individual settings directly via `DATAAGENT_DB_*` env
+  # vars without activating the profile.
+  # --------------------------------------------------------------------------
+  datasource:
+    url: ${DATAAGENT_DB_URL:jdbc:h2:file:${DATAAGENT_DB_PATH:${user.home}/.agentscope-dataagent/db};AUTO_SERVER=TRUE;MODE=MYSQL;DB_CLOSE_DELAY=-1}
+    driver-class-name: ${DATAAGENT_DB_DRIVER:org.h2.Driver}
+    username: ${DATAAGENT_DB_USER:sa}
+    password: ${DATAAGENT_DB_PASSWORD:}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # 'update' is fine for dev / single-node. Production deployments running
+      # against MySQL/PostgreSQL should pin the schema with Flyway/Liquibase
+      # and switch this to `validate`.
+      ddl-auto: ${DATAAGENT_JPA_DDL_AUTO:update}
+    # Run the SQL init scripts AFTER Hibernate creates the schema. Required so
+    # `data-h2.sql` finds the `dataagent_user` table to MERGE into.
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  # --------------------------------------------------------------------------
+  # `data-${platform}.sql` seeding. Setting platform=h2 makes Spring only run
+  # `data-h2.sql`; the bundled script seeds two demo accounts (bob / alice,
+  # passwords identical to the usernames) so a fresh local checkout is usable
+  # without first calling the admin API. The script is idempotent (MERGE INTO).
+  #
+  # `mode=always` is intentional: in Spring Boot 4, `mode=embedded` classifies
+  # only `jdbc:h2:mem:` URLs as embedded, which would skip the seed against
+  # the default `jdbc:h2:file:` DataSource. `application-jdbc.yml` explicitly
+  # overrides this to `never` so MySQL/PostgreSQL deployments never run the
+  # H2-only script.
+  # --------------------------------------------------------------------------
+  sql:
+    init:
+      mode: ${DATAAGENT_SQL_INIT_MODE:always}
+      platform: ${DATAAGENT_SQL_INIT_PLATFORM:h2}
+      continue-on-error: false
+
+# --------------------------------------------------------------------------
+# agentscope-dataagent configuration
+#
+# Property prefix is `dataagent.*`. Env vars use `DATAAGENT_*`.
+# --------------------------------------------------------------------------
+dataagent:
+  # JWT signing secret (>= 32 chars). MUST be overridden in production.
+  jwt:
+    secret: ${DATAAGENT_JWT_SECRET:dataagent-default-dev-secret-change-in-production-32chars}
+
+  # Working directory. If blank, defaults to the JVM's current working
+  # directory. .agentscope/agentscope.json is read from (or auto-created in)
+  # this directory.
+  workspace: ${DATAAGENT_WORKSPACE:}
+
+  # ---- Workspace storage topology (multi-tenant filesystem) ----
+  # DataAgent runs every HarnessAgent on a CompositeFilesystem: a read-only
+  # LocalFilesystem over `${dataagent.workspace}/.agentscope/workspace`
+  # (templates, AGENTS.md, default skills/subagents/knowledge shipped on disk)
+  # blended with per-(owner, agent) RemoteFilesystem routes for memory/,
+  # MEMORY.md, sessions/, tasks/, skills/, subagents/. Skill/subagent routes
+  # use OverlayFilesystem with the shared on-disk content as the lower layer
+  # — the basis of the future capability-marketplace contribution flow.
+  workspace-store:
+    local:
+      max-file-size-mb: 10
+
+  # ---- DashScope model (used when no Model Spring bean is present) ----
+  # Set DASHSCOPE_API_KEY env var or override api-key below.
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY:}
+    model-name: ${DATAAGENT_MODEL_NAME:qwen-max}
+    stream: true
+
+  # ---- Agent defaults (used when auto-generating agentscope.json) ----
+  agent:
+    name: ${DATAAGENT_AGENT_NAME:data-agent}
+    sys-prompt: >
+      You are a Data Agent built with AgentScope. You help users explore,
+      analyse, visualise and report on data. Prefer registered skills and
+      sub-agents over ad-hoc reasoning; always cite the data source you used.
+
+  # ---- Channels (side-tool adapters) ----
+  # ChatUI is always-on and serves the primary web UX. DingTalk and the
+  # generic webhook channel are opt-in via agentscope.json. Other IM
+  # channels (Feishu / WeCom / GitHub / GitLab) are intentionally not
+  # bundled in v1.
+  channels:
+    chatui:
+      enabled: true
+
+  # ---- Distributed session backend (optional, required for HA) ----
+  # When enabled, RedisSession is auto-wired into SandboxDistributedOptions
+  # so multiple DataAgent replicas share session + sandbox state. Falls back
+  # to local file store when disabled.
+  session:
+    redis:
+      enabled: false
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      key-prefix: "dataagent:session:"
+
+  # ---- Marketplace + admin approval ----
+  # The on-disk shared workspace under ${dataagent.workspace}/.agentscope/
+  # shared/ is the lower layer for every per-(owner, agent) OverlayFilesystem.
+  # Users can nominate files from their own workspace as contributions; admins
+  # approve or reject via the contribution API. Approved contributions land
+  # under `shared/` and become visible to all tenants.
+  marketplace:
+    enabled: true
+    # Maximum payload size accepted on POST /api/me/contributions (bytes).
+    max-contribution-bytes: 1048576
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      # show-details: never — the public /actuator/health endpoint returns
+      # status only (UP/DOWN). Component-level health is available to admins
+      # under /api/admin/runtime/* without leaking dependency hostnames.
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    io.agentscope: INFO
+    org.springframework.security: WARN
+    org.springframework.web: WARN

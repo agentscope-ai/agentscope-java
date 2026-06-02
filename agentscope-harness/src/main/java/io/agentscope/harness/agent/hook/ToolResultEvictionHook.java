@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -63,18 +64,22 @@ import reactor.core.publisher.Mono;
  * <p>Tools listed in {@link ToolResultEvictionConfig#getExcludedToolNames()} are never evicted
  * (e.g. {@code readFile} — evicting would cause re-read loops).
  */
-public class ToolResultEvictionHook implements Hook {
-
-    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
+public class ToolResultEvictionHook implements Hook, RuntimeContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(ToolResultEvictionHook.class);
 
     private final AbstractFilesystem filesystem;
     private final ToolResultEvictionConfig config;
+    private volatile RuntimeContext runtimeContext;
 
     public ToolResultEvictionHook(AbstractFilesystem filesystem, ToolResultEvictionConfig config) {
         this.filesystem = filesystem;
         this.config = config;
+    }
+
+    @Override
+    public void setRuntimeContext(RuntimeContext runtimeContext) {
+        this.runtimeContext = runtimeContext;
     }
 
     @Override
@@ -111,7 +116,8 @@ public class ToolResultEvictionHook implements Hook {
         String evictionPath = buildEvictionPath(agentName, toolCallId);
 
         try {
-            WriteResult writeResult = filesystem.write(DEFAULT_FS_RUNTIME, evictionPath, fullText);
+            RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+            WriteResult writeResult = filesystem.write(rc, evictionPath, fullText);
             if (!writeResult.isSuccess()) {
                 log.warn(
                         "[{}] Failed to evict tool result [tool={}, id={}]: {}",

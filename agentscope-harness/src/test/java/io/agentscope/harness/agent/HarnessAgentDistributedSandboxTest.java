@@ -171,19 +171,21 @@ class HarnessAgentDistributedSandboxTest {
     }
 
     @Test
-    void remoteFilesystemMode_withDistributedSession_succeeds() {
+    void remoteFilesystemMode_withDistributedSession_succeeds() throws Exception {
         // Mode 1 with a distributed Session should build successfully.
         BaseStore store = mock(BaseStore.class);
         Session distributedSession = mock(Session.class);
-        assertDoesNotThrow(
-                () ->
-                        HarnessAgent.builder()
-                                .name("agent")
-                                .model(stubModel("ok"))
-                                .workspace(workspace)
-                                .filesystem(new RemoteFilesystemSpec(store))
-                                .session(distributedSession)
-                                .build());
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new RemoteFilesystemSpec(store))
+                        .session(distributedSession)
+                        .build();
+        // Release the SQLite-backed WorkspaceIndex so @TempDir cleanup can delete the dir on
+        // Windows.
+        agent.close();
     }
 
     private static Model stubModel(String assistantText) {

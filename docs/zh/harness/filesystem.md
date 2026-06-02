@@ -97,6 +97,14 @@ public interface NamespaceFactory { List<String> getNamespace(); }
 
 每次文件操作会调用，返回当前请求的路径段（如 `["users", "alice"]`）。`HarnessAgent` 构建时可用 `AtomicReference` 与 `RuntimeContext.userId` 联动，使同一份 `AbstractFilesystem` 实例在不同用户下落在不同子树。
 
+## `WorkspaceIndex` 与 `grep` 语义（模式 1）
+
+`RemoteFilesystem` 可选挂载一份本地 SQLite `WorkspaceIndex`（使用 `RemoteFilesystemSpec` 时自动构建），用于加速 `ls / glob / exists / grep`，避免全量 Store 扫描。该索引是**尽力而为**的，可能不包含其他副本节点写入的文件。
+
+- `ls / glob / exists` 先查索引，无命中时回退到 Store 扫描，从而保留跨副本可见性。
+- `grep` 同样：先用索引枚举候选，索引返回 0 条匹配时回退到 Store 扫描。这样即使节点 B 的索引尚未感知节点 A 的写入，`grep` 仍能在节点 B 上发现 A 写入的内容。
+- 若需要权威枚举（而非快速读路径），可通过 `WorkspaceIndex.rebuildFromDisk(...)` 重建索引，或直接依赖 Store 回退路径。
+
 ## 配置示例
 
 **推荐：先选三种模式之一，再仅在需要时接触 `abstractFilesystem`：**
