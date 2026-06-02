@@ -19,10 +19,6 @@ package io.agentscope.spring.boot.a2a.runner;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.executor.runner.BaseReActAgentRunner;
-import io.agentscope.core.memory.Memory;
-import io.agentscope.core.model.Model;
-import io.agentscope.core.tool.Toolkit;
-import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
