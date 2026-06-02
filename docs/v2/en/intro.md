@@ -68,7 +68,7 @@ agent.streamEvents(messages).blockLast();</pre></div>
   </div>
   <div class="hs-stat">
     <span class="hs-stat__val">Harness</span>
-    <span class="hs-stat__label">engineering bedrock for long runs</span>
+    <span class="hs-stat__label">engineering scaffolding for long runs</span>
   </div>
   <div class="hs-stat">
     <span class="hs-stat__val">Sandbox</span>
@@ -85,7 +85,7 @@ agent.streamEvents(messages).blockLast();</pre></div>
   <div class="hs-split">
     <div class="hs-split__text">
       <div class="hs-chip">Harness Engineering</div>
-      <h2>The engineering bedrock for agents that stay up.</h2>
+      <h2>The engineering scaffolding for agents that stay up.</h2>
       <p>A bare ReActAgent only solves "one inference turn." <code>HarnessAgent</code> uses the two extension channels — Middleware and Toolkit — to package workspace, memory, sandbox, sub-agents, skills, and Plan Mode into a complete infrastructure for long-running agents. The reasoning loop is left intact; the harness layers on, never replaces.</p>
       <ul>
         <li><strong>Identity persists</strong> — the workspace is the agent's persona + long-term memory + domain knowledge, re-injected every turn</li>

@@ -36,6 +36,16 @@ jobs:
           jupyter-book clean --all .
           jupyter-book build .
 
+      - name: Generate v1 redirect stubs
+        # Backfills HTML meta-refresh stubs at the legacy 1.x URL paths
+        # (e.g. /en/harness/overview.html) pointing at the corresponding
+        # v1 page under the v2_dev layout (/v1/en/docs/harness/overview.html).
+        # GitHub Pages cannot return HTTP 302; meta-refresh is the static
+        # equivalent and is treated as 301 by search engines.
+        run: |
+          cd docs
+          python scripts/generate_v1_redirects.py _build/html
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
