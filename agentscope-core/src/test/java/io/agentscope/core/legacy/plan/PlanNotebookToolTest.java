@@ -807,4 +807,61 @@ class PlanNotebookToolTest {
         assertEquals(1, count2[0], "hook2 should be called");
         assertEquals(1, count3[0], "New hook1 should be called");
     }
+
+    @Test
+    void testChangeHookReceivesNonNullPlanOnFinishPlan() {
+        Plan[] capturedPlan = {null};
+        notebook.addChangeHook("finishHook", (nb, plan) -> capturedPlan[0] = plan);
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        notebook.finishPlan("done", "All done").block();
+
+        assertNotNull(capturedPlan[0], "Hook should receive the finished plan, not null");
+        assertEquals("Plan", capturedPlan[0].getName());
+        assertEquals(PlanState.DONE, capturedPlan[0].getState());
+    }
+
+    @Test
+    void testChangeHookReceivesNonNullPlanOnFinishPlanAbandoned() {
+        Plan[] capturedPlan = {null};
+        notebook.addChangeHook("abandonHook", (nb, plan) -> capturedPlan[0] = plan);
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        notebook.finishPlan("abandoned", "Not needed").block();
+
+        assertNotNull(capturedPlan[0], "Hook should receive the abandoned plan, not null");
+        assertEquals(PlanState.ABANDONED, capturedPlan[0].getState());
+    }
+
+    @Test
+    void testGetCurrentPlanVisibleDuringFinishPlanHook() {
+        Plan[] capturedViaGetter = {null};
+        notebook.addChangeHook(
+                "getterHook", (nb, plan) -> capturedViaGetter[0] = nb.getCurrentPlan());
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        notebook.finishPlan("done", "Done").block();
+
+        assertNotNull(
+                capturedViaGetter[0],
+                "getCurrentPlan() should return the plan during hook execution");
+        assertEquals("Plan", capturedViaGetter[0].getName());
+    }
+
+    @Test
+    void testCurrentPlanIsNullAfterFinishPlanCompletes() {
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        notebook.finishPlan("done", "Done").block();
+
+        assertNull(
+                notebook.getCurrentPlan(), "currentPlan should be null after finishPlan completes");
+    }
 }

@@ -282,7 +282,12 @@ class ToolExecutor {
                                             : e.getClass().getSimpleName();
                             return Mono.just(
                                     ToolResultBlock.error("Tool execution failed: " + errorMsg));
-                        });
+                        })
+                .switchIfEmpty(
+                        Mono.just(
+                                ToolResultBlock.error(
+                                        "Tool execution failed: Tool completed without returning a"
+                                                + " result")));
     }
 
     // ==================== Batch Tool Execution ====================
@@ -396,7 +401,8 @@ class ToolExecutor {
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
-                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
+                                    ToolResultBlock.error("Tool execution failed: " + errorMsg)
+                                            .withIdAndName(toolCall.getId(), toolCall.getName()));
                         });
     }
 
