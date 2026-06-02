@@ -16,6 +16,7 @@
 package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -202,12 +203,18 @@ class ToolGroupsE2ETest {
         assertTrue(activeGroups.contains("debug"), "Should contain debug");
         assertEquals(3, activeGroups.size(), "Should have 3 active groups");
 
-        // Reset to specific groups
+        // Reset to specific groups (replacement semantics: others deactivated)
         toolkit.setActiveGroups(List.of("basic"));
         activeGroups = toolkit.getActiveGroups();
 
         assertEquals(1, activeGroups.size(), "Should have 1 active group after reset");
         assertTrue(activeGroups.contains("basic"), "Should only contain basic");
+        assertFalse(
+                toolkit.getToolGroup("admin").isActive(),
+                "admin should be deactivated after setActiveGroups");
+        assertFalse(
+                toolkit.getToolGroup("debug").isActive(),
+                "debug should be deactivated after setActiveGroups");
 
         System.out.println("✓ Tool group state persistence verified");
     }

@@ -751,8 +751,9 @@ public class AgentCatalogService {
                         builderBootstrap.channelManager()));
         b.toolkit(ucaToolkit);
 
-        // Inject ToolNotificationHook so user-custom agents also publish tool-call events.
-        b.hook(new io.agentscope.dataagent.web.toolbus.ToolNotificationHook(toolEventBus));
+        // Inject ToolNotificationMiddleware so user-custom agents also publish tool-call events.
+        b.middleware(
+                new io.agentscope.dataagent.web.toolbus.ToolNotificationMiddleware(toolEventBus));
 
         HarnessAgent agent = b.build();
 

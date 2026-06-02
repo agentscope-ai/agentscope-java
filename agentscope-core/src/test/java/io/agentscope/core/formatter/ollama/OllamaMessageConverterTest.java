@@ -217,6 +217,10 @@ class OllamaMessageConverterTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled(
+            "Stage 1 Msg.validateRoleContent rejects USER + ToolResultBlock at construction;"
+                    + " this fallback extraction path is unreachable. See"
+                    + " io.agentscope.core.message.Msg#validateRoleContent.")
     @DisplayName("Should extract text content from tool result when no direct content")
     void testExtractTextContentFromToolResult() {
         // This test verifies the internal extractTextContent method behavior

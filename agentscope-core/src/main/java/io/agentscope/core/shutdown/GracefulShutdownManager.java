@@ -17,8 +17,7 @@ package io.agentscope.core.shutdown;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.AgentState;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -49,7 +48,7 @@ public final class GracefulShutdownManager {
             new AtomicReference<>(GracefulShutdownConfig.DEFAULT);
     private final ConcurrentHashMap<String, ActiveRequestContext> activeRequestsByAgentId =
             new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, ShutdownSessionBinding> sessionBindings =
+    private final ConcurrentHashMap<String, ShutdownStateSaver> stateSavers =
             new ConcurrentHashMap<>();
     private final AtomicReference<Instant> shutdownStartedAt = new AtomicReference<>(null);
     private final AtomicBoolean monitorStarted = new AtomicBoolean(false);
@@ -94,39 +93,35 @@ public final class GracefulShutdownManager {
         return shutdownTimeoutSignal.get().asMono();
     }
 
-    public void bindSession(Agent agent, Session session, SessionKey sessionKey) {
-        if (agent == null || session == null || sessionKey == null) {
+    /**
+     * Register a {@link ShutdownStateSaver} for the given agent.
+     *
+     * <p>The saver is invoked during shutdown to persist the agent's {@link AgentState}
+     * (with {@code shutdownInterrupted} set to {@code true}).
+     */
+    public void bindStateSaver(Agent agent, ShutdownStateSaver saver) {
+        if (agent == null || saver == null) {
             return;
         }
-        sessionBindings.put(agent.getAgentId(), new ShutdownSessionBinding(session, sessionKey));
+        stateSavers.put(agent.getAgentId(), saver);
     }
 
     /**
-     * Check whether the agent's session was previously interrupted by shutdown, and clear the flag.
+     * Check whether the agent was previously interrupted by shutdown, and clear the flag.
      *
-     * <p>Called from {@link GracefulShutdownHook} at {@code PreCallEvent} to detect
+     * <p>Called from {@link GracefulShutdownMiddleware} on each {@code onAgent} to detect
      * a client retry after shutdown interruption, so the duplicate user prompt can be
      * replaced with a "continue" message.
      *
      * @return true if the flag was present and cleared
      */
     public boolean checkAndClearShutdownInterrupted(Agent agent) {
-        if (agent == null) {
+        if (!(agent instanceof AgentBase ab)) {
             return false;
         }
-        ShutdownSessionBinding binding = sessionBindings.get(agent.getAgentId());
-        if (binding == null) {
-            return false;
-        }
-        Optional<ShutdownInterruptedState> flag =
-                binding.session()
-                        .get(
-                                binding.sessionKey(),
-                                ActiveRequestContext.SHUTDOWN_INTERRUPTED_KEY,
-                                ShutdownInterruptedState.class);
-        if (flag.isPresent() && flag.get().interrupted()) {
-            binding.session()
-                    .delete(binding.sessionKey(), ActiveRequestContext.SHUTDOWN_INTERRUPTED_KEY);
+        AgentState st = ab.getAgentState();
+        if (st != null && st.isShutdownInterrupted()) {
+            st.setShutdownInterrupted(false);
             return true;
         }
         return false;
@@ -150,13 +145,9 @@ public final class GracefulShutdownManager {
         if (!(agent instanceof AgentBase agentBase)) {
             return "";
         }
-        Optional<ShutdownSessionBinding> binding =
-                Optional.ofNullable(sessionBindings.get(agent.getAgentId()));
-        var session = binding.map(ShutdownSessionBinding::session).orElse(null);
-        var sessionKey = binding.map(ShutdownSessionBinding::sessionKey).orElse(null);
+        ShutdownStateSaver saver = stateSavers.get(agent.getAgentId());
         String requestId = UUID.randomUUID().toString();
-        ActiveRequestContext ctx =
-                new ActiveRequestContext(requestId, agentBase, session, sessionKey);
+        ActiveRequestContext ctx = new ActiveRequestContext(requestId, agentBase, saver);
         activeRequestsByAgentId.put(agent.getAgentId(), ctx);
         return requestId;
     }
@@ -166,7 +157,7 @@ public final class GracefulShutdownManager {
             return;
         }
         activeRequestsByAgentId.remove(agent.getAgentId());
-        sessionBindings.remove(agent.getAgentId());
+        stateSavers.remove(agent.getAgentId());
         updateTerminatedIfNoRequests();
     }
 
@@ -192,7 +183,7 @@ public final class GracefulShutdownManager {
      * Always saves because memory may have been updated after the previous safe-point/timeout save.
      */
     public void saveOnInterruptObserved(Agent agent) {
-        getActiveRequestByAgent(agent).ifPresent(ActiveRequestContext::saveToSession);
+        getActiveRequestByAgent(agent).ifPresent(ActiveRequestContext::saveState);
     }
 
     public boolean performGracefulShutdown() {
@@ -241,7 +232,6 @@ public final class GracefulShutdownManager {
         GracefulShutdownConfig cfg = config.get();
         Duration timeout = cfg.shutdownTimeout();
 
-        // Check timeout and force interrupt if needed
         if (timeout != null) {
             Duration elapsed = Duration.between(started, Instant.now());
             if (elapsed.compareTo(timeout) >= 0) {
@@ -254,7 +244,7 @@ public final class GracefulShutdownManager {
                 shutdownTimeoutSignal.get().tryEmitEmpty();
 
                 for (ActiveRequestContext ctx : activeRequestsByAgentId.values()) {
-                    ctx.saveToSession();
+                    ctx.saveState();
                     if (ctx.interruptForShutdown()) {
                         log.info(
                                 "Shutdown force interrupt issued for request {}",
@@ -312,7 +302,7 @@ public final class GracefulShutdownManager {
         }
         state.set(ShutdownState.RUNNING);
         activeRequestsByAgentId.clear();
-        sessionBindings.clear();
+        stateSavers.clear();
         shutdownStartedAt.set(null);
         monitorStarted.set(false);
         shutdownTimeoutSignal.set(Sinks.empty());

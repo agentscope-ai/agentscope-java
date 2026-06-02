@@ -161,8 +161,14 @@ public class AgentSpawnTool {
             return Mono.just("Error: Label already in use: " + canonLabel);
         }
 
-        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId);
+        Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
         if (agentOpt.isEmpty()) {
+            if (agentManager.isPrimaryOnly(agentId)) {
+                return Mono.just(
+                        "Error: agent_id '"
+                                + agentId
+                                + "' is PRIMARY-only and cannot be spawned as a subagent.");
+            }
             System.err.println(
                     "[agentSpawn] unknown agentId=" + agentId + " known=" + agentManager);
             return Mono.just("Error: Unknown agent_id: " + agentId);

@@ -435,18 +435,9 @@ class HarnessAgentSubagentStreamTest {
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
 
-        // Access toolkit via reflection: HarnessAgent.delegate (ReActAgent) -> toolkit
-        java.lang.reflect.Field delegateField = HarnessAgent.class.getDeclaredField("delegate");
-        delegateField.setAccessible(true);
-        io.agentscope.core.ReActAgent delegate =
-                (io.agentscope.core.ReActAgent) delegateField.get(agent);
-
-        java.lang.reflect.Field toolkitField =
-                io.agentscope.core.agent.StructuredOutputCapableAgent.class.getDeclaredField(
-                        "toolkit");
-        toolkitField.setAccessible(true);
-        io.agentscope.core.tool.Toolkit toolkit =
-                (io.agentscope.core.tool.Toolkit) toolkitField.get(delegate);
+        // After the HarnessAgent → ReActAgent unification the inner agent is exposed via
+        // getDelegate(); toolkit is reachable through the public getToolkit() accessor.
+        io.agentscope.core.tool.Toolkit toolkit = agent.getDelegate().getToolkit();
 
         List<String> toolNames =
                 toolkit.getToolSchemas().stream()

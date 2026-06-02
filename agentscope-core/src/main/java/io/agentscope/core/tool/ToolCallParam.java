@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Collections;
 import java.util.HashMap;
@@ -46,14 +47,14 @@ public class ToolCallParam {
     private final ToolUseBlock toolUseBlock;
     private final Map<String, Object> input;
     private final Agent agent;
-    private final ToolExecutionContext context;
+    private final RuntimeContext runtimeContext;
     private final ToolEmitter emitter;
 
     private ToolCallParam(Builder builder) {
         this.toolUseBlock = builder.toolUseBlock;
         this.input = builder.input != null ? new HashMap<>(builder.input) : Collections.emptyMap();
         this.agent = builder.agent;
-        this.context = builder.context;
+        this.runtimeContext = builder.runtimeContext;
         this.emitter = builder.emitter;
     }
 
@@ -85,12 +86,23 @@ public class ToolCallParam {
     }
 
     /**
+     * Gets the runtime context for this tool call.
+     *
+     * @return The runtime context, or null if not provided
+     */
+    public RuntimeContext getRuntimeContext() {
+        return runtimeContext;
+    }
+
+    /**
      * Gets the tool execution context.
      *
-     * @return The execution context, or null if not provided
+     * @return The execution context derived from RuntimeContext, or null
+     * @deprecated Use {@link #getRuntimeContext()} instead.
      */
+    @Deprecated
     public ToolExecutionContext getContext() {
-        return context;
+        return runtimeContext != null ? runtimeContext.asToolExecutionContext() : null;
     }
 
     /**
@@ -121,7 +133,7 @@ public class ToolCallParam {
         private ToolUseBlock toolUseBlock;
         private Map<String, Object> input;
         private Agent agent;
-        private ToolExecutionContext context;
+        private RuntimeContext runtimeContext;
         private ToolEmitter emitter;
 
         private Builder() {}
@@ -160,13 +172,30 @@ public class ToolCallParam {
         }
 
         /**
+         * Sets the runtime context for the tool call.
+         *
+         * @param runtimeContext The runtime context
+         * @return This builder
+         */
+        public Builder runtimeContext(RuntimeContext runtimeContext) {
+            this.runtimeContext = runtimeContext;
+            return this;
+        }
+
+        /**
          * Sets the tool execution context.
          *
          * @param context The execution context
          * @return This builder
+         * @deprecated Use {@link #runtimeContext(RuntimeContext)} instead.
          */
+        @Deprecated
         public Builder context(ToolExecutionContext context) {
-            this.context = context;
+            if (context != null) {
+                RuntimeContext.Builder rcb = RuntimeContext.builder();
+                rcb.toolExecutionContext(context);
+                this.runtimeContext = rcb.build();
+            }
             return this;
         }
 

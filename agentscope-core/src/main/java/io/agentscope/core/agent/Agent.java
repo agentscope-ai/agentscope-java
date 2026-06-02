@@ -37,6 +37,11 @@ import io.agentscope.core.message.Msg;
  * </ul>
  *
  * <p>All agents in the AgentScope framework should implement this interface.
+ *
+ * <p><b>Reply contract:</b> a single {@code call(...)} invocation produces exactly one
+ * terminal {@link Msg}. Streaming variants (see {@link StreamableAgent}) may emit
+ * many events but resolve to a single terminal Msg. This is enforced by the
+ * {@code Mono<Msg>} return type on the call methods.
  */
 public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
 
@@ -79,4 +84,16 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * @param msg User message associated with the interruption
      */
     void interrupt(Msg msg);
+
+    /**
+     * Returns the agent's runtime {@link io.agentscope.core.state.AgentState}, or {@code null} if
+     * this agent type does not maintain one.
+     *
+     * <p>This is the canonical access point used by tool methods declared with
+     * {@code @Tool(stateInjected=true)}: the framework binds the live state to the
+     * {@code AgentState} parameter at invocation time.
+     */
+    default io.agentscope.core.state.AgentState getAgentState() {
+        return null;
+    }
 }

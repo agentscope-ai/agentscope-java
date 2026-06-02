@@ -40,7 +40,7 @@ import java.util.Objects;
 public abstract class SandboxFilesystemSpec {
 
     private static final List<String> DEFAULT_WORKSPACE_PROJECTION_ROOTS =
-            List.of("AGENTS.md", "skills", "subagents", "knowledge");
+            List.of("AGENTS.md", "skills", "subagents", "knowledge", ".skills-cache");
 
     private IsolationScope isolationScope;
     private SandboxSnapshotSpec snapshotSpecOverride;

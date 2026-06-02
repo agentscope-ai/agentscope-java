@@ -41,10 +41,10 @@ import org.slf4j.LoggerFactory;
  * <p>Used by browser-side controllers (workspace tree, file read/write, upload) so the UI sees
  * exactly the same files the agent does. Unlike {@link
  * io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem} — which is a stable
- * proxy whose sandbox is flipped per-call by {@link
- * io.agentscope.harness.agent.hook.SandboxLifecycleHook} — this filesystem holds the sandbox
- * directly, because controllers are not inside an agent-call lifecycle and have no hook to do
- * the flip for them.
+ * proxy whose sandbox is flipped per-call by {@code
+ * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} — this filesystem holds
+ * the sandbox directly, because controllers are not inside an agent-call lifecycle and have
+ * no middleware to do the flip for them.
  *
  * <p>The exec/upload/download mapping mirrors {@code SandboxBackedFilesystem} exactly; we don't
  * subclass it because that class implements {@link io.agentscope.harness.agent.sandbox.SandboxAware}
