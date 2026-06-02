@@ -32,7 +32,6 @@ hide-toc: true
         </div>
         <div class="hs-window__tabs">
           <div class="hs-tab active" data-panel="en-harness">HarnessAgent</div>
-          <div class="hs-tab" data-panel="en-react">ReActAgent</div>
         </div>
       </div>
       <div class="hs-code-panel" id="en-harness"><pre><span class="kw">var</span> agent = <span class="ty">HarnessAgent</span>.builder()
@@ -44,17 +43,10 @@ hide-toc: true
     .build();
 agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
     .sessionId(<span class="str">"demo"</span>).userId(<span class="str">"alice"</span>).build()).block();</pre></div>
-      <div class="hs-code-panel" id="en-react" style="display:none"><pre><span class="kw">var</span> agent = <span class="ty">ReActAgent</span>.builder()
-    .name(<span class="str">"assistant"</span>)
-    .sysPrompt(<span class="str">"You are a helpful assistant."</span>)
-    .model(<span class="str">"qwen-plus"</span>)            <span class="cm">// resolved via ModelRegistry; also "openai:gpt-4o" / "anthropic:claude-..."</span>
-    .toolkit(toolkit)
-    .build();
-<span class="cm">// streamEvents emits typed AgentEvent step by step — drives UI and HITL directly</span>
-agent.streamEvents(messages).blockLast();</pre></div>
       <div class="hs-install">
-        <code>io.agentscope:agentscope-harness</code>
-        <button class="hs-copy-btn" data-copy="io.agentscope:agentscope-harness">Copy Maven coords</button>
+        <code>io.agentscope:agentscope-harness:${agentscope.version}</code>
+        <button class="hs-copy-btn"
+                data-copy="&lt;dependency&gt;&#10;    &lt;groupId&gt;io.agentscope&lt;/groupId&gt;&#10;    &lt;artifactId&gt;agentscope-harness&lt;/artifactId&gt;&#10;    &lt;version&gt;${agentscope.version}&lt;/version&gt;&#10;&lt;/dependency&gt;">Copy Maven XML</button>
       </div>
     </div>
   </div>
