@@ -54,7 +54,8 @@ public class LocalOpenAiModelConfig {
         // Do not log this value: real deployments may use a private gateway token.
         String apiKey = requireText(properties.apiKey(), "claw.local-openai.api-key");
         String baseUrl = requireText(properties.baseUrl(), "claw.local-openai.base-url");
-        String endpointPath = requireText(properties.endpointPath(), "claw.local-openai.endpoint-path");
+        String endpointPath =
+                requireText(properties.endpointPath(), "claw.local-openai.endpoint-path");
         String modelName = requireText(properties.modelName(), "claw.local-openai.model-name");
 
         Duration connectTimeout =
@@ -98,8 +99,7 @@ public class LocalOpenAiModelConfig {
                         .readTimeout(readTimeout)
                         .build();
 
-        HttpClient httpClient =
-                HttpClient.newBuilder().connectTimeout(connectTimeout).build();
+        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
 
         HttpTransport transport =
                 JdkHttpTransport.builder().client(httpClient).config(transportConfig).build();
