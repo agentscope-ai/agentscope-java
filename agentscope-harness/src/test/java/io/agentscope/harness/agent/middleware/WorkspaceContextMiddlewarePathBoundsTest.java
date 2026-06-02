@@ -24,6 +24,9 @@ import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -34,12 +37,28 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class WorkspaceContextMiddlewarePathBoundsTest {
 
+    private final List<WorkspaceManager> openManagers = new ArrayList<>();
+
+    @AfterEach
+    void closeOpenManagers() {
+        // Release SQLite handles so @TempDir can delete the workspace on Windows.
+        for (WorkspaceManager wm : openManagers) {
+            wm.close();
+        }
+        openManagers.clear();
+    }
+
+    private WorkspaceManager track(WorkspaceManager wm) {
+        openManagers.add(wm);
+        return wm;
+    }
+
     @Test
     void localOverlay_promptListsProjectWorkspaceAndModeBoundary(
             @TempDir Path project, @TempDir Path workspace) {
         AbstractFilesystem fs =
                 new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, "BASE\n").block();
@@ -67,7 +86,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
                         .project(project)
                         .addRoot(shared)
                         .toFilesystem(workspace, null);
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, "BASE\n").block();
@@ -83,7 +102,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
                         .project(project)
                         .mode(LocalFsMode.UNRESTRICTED)
                         .toFilesystem(workspace, null);
-        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
         String prompt = mw.onSystemPrompt(null, "BASE\n").block();

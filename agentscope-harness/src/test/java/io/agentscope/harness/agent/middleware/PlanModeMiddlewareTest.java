@@ -33,9 +33,11 @@ import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -49,10 +51,23 @@ class PlanModeMiddlewareTest {
         return ToolUseBlock.builder().id(id).name(name).input(java.util.Map.of()).build();
     }
 
-    private static PlanModeManager manager(Path project, Path workspace) {
+    private final List<WorkspaceManager> openManagers = new ArrayList<>();
+
+    @AfterEach
+    void closeOpenManagers() {
+        // Release SQLite handles so @TempDir can delete the workspace on Windows.
+        for (WorkspaceManager wm : openManagers) {
+            wm.close();
+        }
+        openManagers.clear();
+    }
+
+    private PlanModeManager manager(Path project, Path workspace) {
         AbstractFilesystem fs =
                 new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
-        return new PlanModeManager(new WorkspaceManager(workspace, fs), null);
+        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        openManagers.add(wm);
+        return new PlanModeManager(wm, null);
     }
 
     @Test

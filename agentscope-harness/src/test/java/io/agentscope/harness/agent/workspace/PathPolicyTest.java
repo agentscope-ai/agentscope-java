@@ -24,56 +24,64 @@ import org.junit.jupiter.api.Test;
 
 class PathPolicyTest {
 
+    /**
+     * Anchors a Unix-style literal to a real absolute path on the current platform: stays the
+     * same on Linux/macOS; on Windows it picks up the cwd's drive letter so {@code isAbsolute()}
+     * returns {@code true}, which is what the test author intended.
+     */
+    private static Path abs(String p) {
+        return Paths.get(p).toAbsolutePath().normalize();
+    }
+
     @Test
     void empty_rejectsEverything() {
         PathPolicy policy = PathPolicy.empty();
         assertTrue(policy.isEmpty());
-        assertFalse(policy.isAllowed(Paths.get("/etc/passwd")));
-        assertFalse(policy.isAllowed(Paths.get("/")));
+        assertFalse(policy.isAllowed(abs("/etc/passwd")));
+        assertFalse(policy.isAllowed(abs("/")));
     }
 
     @Test
     void of_acceptsChildOfAnyRoot() {
-        Path projectRoot = Paths.get("/users/alice/project");
-        Path workspace = Paths.get("/var/agent/workspace");
+        Path projectRoot = abs("/users/alice/project");
+        Path workspace = abs("/var/agent/workspace");
         PathPolicy policy = PathPolicy.of(projectRoot, workspace);
 
-        assertTrue(policy.isAllowed(Paths.get("/users/alice/project/src/Main.java")));
-        assertTrue(policy.isAllowed(Paths.get("/var/agent/workspace/MEMORY.md")));
+        assertTrue(policy.isAllowed(abs("/users/alice/project/src/Main.java")));
+        assertTrue(policy.isAllowed(abs("/var/agent/workspace/MEMORY.md")));
         assertTrue(policy.isAllowed(projectRoot)); // the root itself
     }
 
     @Test
     void of_rejectsPathsOutsideAllRoots() {
-        Path projectRoot = Paths.get("/users/alice/project");
+        Path projectRoot = abs("/users/alice/project");
         PathPolicy policy = PathPolicy.of(projectRoot);
 
-        assertFalse(policy.isAllowed(Paths.get("/etc/passwd")));
+        assertFalse(policy.isAllowed(abs("/etc/passwd")));
         // Sibling directory whose path happens to share a prefix string but not a path-component
         // boundary must still be rejected.
-        assertFalse(policy.isAllowed(Paths.get("/users/alice/project-other/file")));
+        assertFalse(policy.isAllowed(abs("/users/alice/project-other/file")));
     }
 
     @Test
     void isAllowed_rejectsRelativeAndNullPaths() {
-        PathPolicy policy = PathPolicy.of(Paths.get("/users/alice/project"));
+        PathPolicy policy = PathPolicy.of(abs("/users/alice/project"));
         assertFalse(policy.isAllowed(null));
         assertFalse(policy.isAllowed(Paths.get("relative/path.txt")));
     }
 
     @Test
     void of_normalizesRootsSoTrailingDotsAreIgnored() {
-        Path project = Paths.get("/users/alice/project/./sub/..");
+        Path project = abs("/users/alice/project/./sub/..");
         PathPolicy policy = PathPolicy.of(project);
 
-        assertTrue(policy.isAllowed(Paths.get("/users/alice/project/foo.txt")));
+        assertTrue(policy.isAllowed(abs("/users/alice/project/foo.txt")));
     }
 
     @Test
     void of_collection_skipsNullEntries() {
-        PathPolicy policy =
-                PathPolicy.of(java.util.Arrays.asList(Paths.get("/a"), null, Paths.get("/b")));
-        assertTrue(policy.isAllowed(Paths.get("/a/x")));
-        assertTrue(policy.isAllowed(Paths.get("/b/y")));
+        PathPolicy policy = PathPolicy.of(java.util.Arrays.asList(abs("/a"), null, abs("/b")));
+        assertTrue(policy.isAllowed(abs("/a/x")));
+        assertTrue(policy.isAllowed(abs("/b/y")));
     }
 }

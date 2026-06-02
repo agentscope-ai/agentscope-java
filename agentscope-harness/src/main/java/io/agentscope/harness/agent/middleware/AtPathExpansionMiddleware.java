@@ -79,7 +79,10 @@ public class AtPathExpansionMiddleware implements MiddlewareBase {
     private static final Pattern AT_PATH =
             Pattern.compile(
                     "(?<![A-Za-z0-9_])"
-                            + "@(?<path>[~./][\\w./\\-]*|/[\\w./\\-]+|[\\w\\-]+[/.][\\w./\\-]*)");
+                            + "@(?<path>[A-Za-z]:[\\\\/][\\w\\\\./\\-~]*"
+                            + "|[~./][\\w./\\-~]*"
+                            + "|/[\\w./\\-~]+"
+                            + "|[\\w\\-]+[/.][\\w./\\-~]*)");
 
     /** Cap the bytes pulled in per attached file so a stray {@code @log} doesn't blow context. */
     private static final int MAX_ATTACHED_LINES = 1000;

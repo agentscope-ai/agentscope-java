@@ -25,15 +25,31 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class PlanModeManagerTest {
 
-    private static WorkspaceManager wsm(Path project, Path workspace) {
+    private final List<WorkspaceManager> openManagers = new ArrayList<>();
+
+    @AfterEach
+    void closeOpenManagers() {
+        // Release SQLite handles so @TempDir can delete the workspace on Windows.
+        for (WorkspaceManager wm : openManagers) {
+            wm.close();
+        }
+        openManagers.clear();
+    }
+
+    private WorkspaceManager wsm(Path project, Path workspace) {
         AbstractFilesystem fs =
                 new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
-        return new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        openManagers.add(wm);
+        return wm;
     }
 
     @Test

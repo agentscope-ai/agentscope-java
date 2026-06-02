@@ -30,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -54,6 +55,14 @@ class SkillPromoterTest {
         mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
         workspaceManager = new WorkspaceManager(workspace, fs);
         store = new SkillUsageStore(fs);
+    }
+
+    @AfterEach
+    void closeWorkspaceManager() {
+        // Release the SQLite handle so @TempDir can delete the workspace on Windows.
+        if (workspaceManager != null) {
+            workspaceManager.close();
+        }
     }
 
     private static String validSkillMd(String name, String desc) {

@@ -251,9 +251,11 @@ public class SkillPromoter {
                     String path = fi.path();
                     if (path == null) continue;
                     // Reduce to "<sub>/<filename>"; strip everything before "<sub>/".
-                    int idx = path.indexOf("/" + sub + "/");
+                    // Normalize separator first — glob can return backslashes on Windows.
+                    String pathSlash = path.replace('\\', '/');
+                    int idx = pathSlash.indexOf("/" + sub + "/");
                     if (idx < 0) continue;
-                    String relPath = path.substring(idx + 1);
+                    String relPath = pathSlash.substring(idx + 1);
                     var rr =
                             draftsRepo
                                     .filesystem()

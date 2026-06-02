@@ -34,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -145,10 +146,23 @@ class AtPathExpansionMiddlewareTest {
     //  helpers
     // -----------------------------------------------------------------
 
-    private static WorkspaceManager workspaceManagerFor(Path project, Path workspace) {
+    private final List<WorkspaceManager> openManagers = new ArrayList<>();
+
+    @AfterEach
+    void closeOpenManagers() {
+        // Release SQLite handles so @TempDir can delete the workspace on Windows.
+        for (WorkspaceManager wm : openManagers) {
+            wm.close();
+        }
+        openManagers.clear();
+    }
+
+    private WorkspaceManager workspaceManagerFor(Path project, Path workspace) {
         AbstractFilesystem fs =
                 new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
-        return new WorkspaceManager(workspace, fs);
+        WorkspaceManager wm = new WorkspaceManager(workspace, fs);
+        openManagers.add(wm);
+        return wm;
     }
 
     private static Msg userMsg(String text) {
