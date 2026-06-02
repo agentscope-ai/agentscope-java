@@ -42,6 +42,7 @@ import io.agentscope.examples.documentation2.common.ExampleUtils;
  *
  * <p><b>PermissionMode overview:</b>
  * <table border="1">
+ *   <caption>PermissionMode behaviour summary</caption>
  *   <tr><th>Mode</th><th>Behaviour</th></tr>
  *   <tr><td>DEFAULT</td><td>Ask for everything unless an explicit rule matches</td></tr>
  *   <tr><td>ACCEPT_EDITS</td><td>Auto-allow write tools; ask for destructive ones</td></tr>

@@ -55,7 +55,7 @@ public class McpTool extends ToolBase {
     private final McpClientWrapper clientWrapper;
     private final Map<String, Object> presetArguments;
 
-    /** Preferred constructor used by {@link McpClientManager}. */
+    /** Preferred constructor used by {@link io.agentscope.core.tool.McpClientManager}. */
     public McpTool(
             String name,
             String description,

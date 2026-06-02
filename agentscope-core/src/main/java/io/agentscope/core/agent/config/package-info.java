@@ -16,9 +16,7 @@
 
 /**
  * Agent configuration value objects: {@link io.agentscope.core.agent.config.ModelConfig} for
- * retry / fallback wiring, {@link io.agentscope.core.agent.config.ContextConfig} for
- * compression thresholds and templates, {@link io.agentscope.core.agent.config.ReactConfig}
- * for reasoning-loop bounds, and {@link io.agentscope.core.agent.config.SummarySchema} for the
- * structured-output contract that drives memory compression.
+ * retry / fallback wiring and {@link io.agentscope.core.agent.config.ReactConfig} for
+ * reasoning-loop bounds.
  */
 package io.agentscope.core.agent.config;

@@ -517,7 +517,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     /**
      * Stream fine-grained {@link AgentEvent}s for a list of messages with a caller-supplied
      * {@link RuntimeContext}. The harness wraps the delegate's
-     * {@link ReActAgent#streamEvents(List, RuntimeContext)} with the same sandbox-lifecycle
+     * {@code ReActAgent#streamEvents(List, RuntimeContext)} with the same sandbox-lifecycle
      * acquire/release semantics that the {@code call(...)} family uses, so streaming and
      * blocking callers behave consistently with respect to sandbox warm-up.
      *
@@ -823,6 +823,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * <h4>What this method copies</h4>
          *
          * <table border="1">
+         *   <caption>Fields copied from the source ReActAgent</caption>
          *   <tr><th>Group</th><th>Field</th><th>Source</th></tr>
          *   <tr><td rowspan="7">Observable configuration</td>
          *       <td>{@code name}</td><td>{@code agent.getName()}</td></tr>

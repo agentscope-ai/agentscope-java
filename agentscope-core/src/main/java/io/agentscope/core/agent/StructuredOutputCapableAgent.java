@@ -57,7 +57,6 @@ import reactor.core.publisher.Mono;
  * <p><b>Subclass Requirements:</b>
  * <ul>
  *   <li>Provide Toolkit via constructor</li>
- *   <li>Implement {@link #getMemory()} for memory access</li>
  *   <li>Implement {@link #buildGenerateOptions()} for model options</li>
  * </ul>
  *

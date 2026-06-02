@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
  *       catalog has a non-null {@code filesRoot} (i.e. shell is available and at least one
  *       skill's files are reachable). The new instruction tells the LLM to use each skill's
  *       {@code <files-root>} rather than a single hardcoded root.
- *   <li>{@link SkillResources} fallback for non-SKILL.md paths is implemented by
+ *   <li>Resource fallback for non-SKILL.md paths is implemented by
  *       {@link SkillLoadTool}; the prompt does not need to mention it.
  * </ul>
  */

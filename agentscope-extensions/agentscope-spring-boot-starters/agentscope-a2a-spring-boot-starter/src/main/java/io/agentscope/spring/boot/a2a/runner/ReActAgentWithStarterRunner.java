@@ -33,7 +33,7 @@ import org.springframework.beans.factory.ObjectProvider;
  *
  * <p> {@link ReActAgent} should be created from {@link org.springframework.beans.factory.ObjectProvider}, which build
  * from
- * {@link io.agentscope.spring.boot.AgentscopeAutoConfiguration#agentscopeReActAgent(Model, Memory, Toolkit,
+ * {@code io.agentscope.spring.boot.AgentscopeAutoConfiguration#agentscopeReActAgent(Model, Memory, Toolkit,
  * AgentscopeProperties)}.
  */
 public class ReActAgentWithStarterRunner extends BaseReActAgentRunner implements AgentRunner {

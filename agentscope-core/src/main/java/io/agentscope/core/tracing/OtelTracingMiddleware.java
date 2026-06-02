@@ -50,9 +50,6 @@ import reactor.core.publisher.Flux;
  * active), every hook short-circuits to {@code next.apply(input)} with
  * near-zero overhead.
  *
- * <h3>Python 2.0 alignment</h3>
- * <p>Corresponds to {@code agentscope.middleware._tracing.TracingMiddleware}.
- *
  * <p>Usage:
  * <pre>{@code
  * ReActAgent agent = ReActAgent.builder()
