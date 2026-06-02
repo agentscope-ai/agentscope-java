@@ -1,0 +1,383 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.tool.mcp;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.tool.ContextStore;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolExecutionContext;
+import io.modelcontextprotocol.spec.McpSchema;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import reactor.core.publisher.Mono;
+
+/**
+ * Tests for MCP meta extraction logic in {@link McpTool#callAsync(ToolCallParam)}.
+ *
+ * <p>Validates that only objects registered under the {@link McpMeta} type namespace are included
+ * in the {@code meta} parameter of {@code CallToolRequest}, and that all ContextStore
+ * implementations are supported.
+ */
+class McpToolMetaExtractionTest {
+
+    private McpClientWrapper mockClientWrapper;
+    private Map<String, Object> parameters;
+    private McpSchema.CallToolResult successResult;
+
+    @BeforeEach
+    void setUp() {
+        mockClientWrapper = mock(McpClientWrapper.class);
+        when(mockClientWrapper.getName()).thenReturn("test-client");
+
+        parameters = new HashMap<>();
+        parameters.put("type", "object");
+        parameters.put("properties", new HashMap<>());
+
+        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        successResult =
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
+    }
+
+    /**
+     * Helper: capture the meta Map passed to clientWrapper.callTool(name, args, meta).
+     *
+     * <p>We mock the 3-arg overload (with meta) and capture the 3rd argument.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> captureMeta(McpTool tool, ToolCallParam param) {
+        // Mock the 3-arg callTool to return success
+        when(mockClientWrapper.callTool(eq("test-tool"), any(Map.class), any(Map.class)))
+                .thenReturn(Mono.just(successResult));
+
+        // Execute
+        ToolResultBlock result = tool.callAsync(param).block();
+        assertNotNull(result);
+
+        // Capture the meta argument
+        ArgumentCaptor<Map<String, Object>> metaCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockClientWrapper).callTool(eq("test-tool"), any(Map.class), metaCaptor.capture());
+
+        return metaCaptor.getValue();
+    }
+
+    // ==================== ToolExecutionContext path ====================
+
+    @Test
+    void testMetaExtracted_FromToolExecutionContext() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpMeta mcpMeta = new McpMeta(Map.of("traceId", "abc-123", "userId", "u456"));
+        ToolExecutionContext ctx = ToolExecutionContext.builder().register(mcpMeta).build();
+
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).context(ctx).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertEquals(2, capturedMeta.size());
+        assertEquals("abc-123", capturedMeta.get("traceId"));
+        assertEquals("u456", capturedMeta.get("userId"));
+    }
+
+    @Test
+    void testMetaExtracted_SingleEntry() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpMeta mcpMeta = new McpMeta(Map.of("callbackUrl", "https://hook.example.com"));
+        ToolExecutionContext ctx = ToolExecutionContext.builder().register(mcpMeta).build();
+
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).context(ctx).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertEquals(1, capturedMeta.size());
+        assertEquals("https://hook.example.com", capturedMeta.get("callbackUrl"));
+    }
+
+    // ==================== Multiple stores merge ====================
+
+    @Test
+    void testMetaExtracted_MultipleStoresMerged() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        // Two separate contexts with different meta
+        McpMeta meta1 = new McpMeta(Map.of("traceId", "abc-123"));
+        McpMeta meta2 = new McpMeta(Map.of("callbackUrl", "https://hook.example.com"));
+
+        ToolExecutionContext ctx1 = ToolExecutionContext.builder().register(meta1).build();
+        ToolExecutionContext ctx2 = ToolExecutionContext.builder().register(meta2).build();
+
+        // Merge contexts — stores from ctx1 appear first (higher priority)
+        ToolExecutionContext merged = ToolExecutionContext.merge(ctx1, ctx2);
+
+        ToolCallParam param =
+                ToolCallParam.builder().input(new HashMap<>()).context(merged).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertEquals(2, capturedMeta.size());
+        assertEquals("abc-123", capturedMeta.get("traceId"));
+        assertEquals("https://hook.example.com", capturedMeta.get("callbackUrl"));
+    }
+
+    @Test
+    void testMetaExtracted_MultipleStoresLastWinsOnDuplicateKey() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpMeta meta1 = new McpMeta(Map.of("traceId", "old-value"));
+        McpMeta meta2 = new McpMeta(Map.of("traceId", "new-value"));
+
+        ToolExecutionContext ctx1 = ToolExecutionContext.builder().register(meta1).build();
+        ToolExecutionContext ctx2 = ToolExecutionContext.builder().register(meta2).build();
+
+        // ctx2 stores come after ctx1, so "new-value" should win
+        ToolExecutionContext merged = ToolExecutionContext.merge(ctx1, ctx2);
+
+        ToolCallParam param =
+                ToolCallParam.builder().input(new HashMap<>()).context(merged).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertEquals(1, capturedMeta.size());
+        assertEquals("new-value", capturedMeta.get("traceId"));
+    }
+
+    // ==================== Null / empty safety ====================
+
+    @Test
+    void testMetaExtracted_ContextIsNull_EmptyMetaSent() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        // No context set — should not NPE, should send empty meta
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertNotNull(capturedMeta);
+        assertTrue(capturedMeta.isEmpty());
+    }
+
+    @Test
+    void testMetaExtracted_ContextWithNoMcpMeta_EmptyMetaSent() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        // Context exists but has no McpMeta registered — only a non-meta object
+        ToolExecutionContext ctx =
+                ToolExecutionContext.builder()
+                        .register("just-a-string-value") // not McpMeta
+                        .build();
+
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).context(ctx).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertNotNull(capturedMeta);
+        assertTrue(capturedMeta.isEmpty());
+    }
+
+    @Test
+    void testMetaExtracted_McpMetaIsEmpty_EmptyMetaSent() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        // McpMeta registered but with empty entries
+        McpMeta emptyMeta = new McpMeta(null);
+        ToolExecutionContext ctx = ToolExecutionContext.builder().register(emptyMeta).build();
+
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).context(ctx).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertNotNull(capturedMeta);
+        assertTrue(capturedMeta.isEmpty());
+    }
+
+    // ==================== Non-McpMeta objects NOT leaked ====================
+
+    @Test
+    void testMetaExtracted_NonMcpMetaObjectsNotLeaked() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        // Register both McpMeta and a non-meta POJO
+        McpMeta mcpMeta = new McpMeta(Map.of("traceId", "abc-123"));
+        Object someDiObject = new Object(); // would have been leaked in old implementation
+
+        ToolExecutionContext ctx =
+                ToolExecutionContext.builder().register(mcpMeta).register(someDiObject).build();
+
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).context(ctx).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        // Only McpMeta entries should appear — the DI object must NOT leak
+        assertEquals(1, capturedMeta.size());
+        assertEquals("abc-123", capturedMeta.get("traceId"));
+    }
+
+    @Test
+    void testMetaExtracted_OnlyMcpMetaNamespaceExtracted() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        // Register a Map directly (not under McpMeta namespace)
+        // In the old implementation, this would have been flattened into meta
+        Map<String, Object> configMap = new HashMap<>();
+        configMap.put("dbUrl", "jdbc:postgresql://localhost:5432/mydb");
+        configMap.put("maxPool", 10);
+
+        // Register configMap as a regular object (not McpMeta)
+        ToolExecutionContext ctx = ToolExecutionContext.builder().register(configMap).build();
+
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).context(ctx).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        // configMap should NOT appear in meta — only McpMeta namespace is extracted
+        assertTrue(capturedMeta.isEmpty());
+    }
+
+    // ==================== Custom ContextStore implementation ====================
+
+    @Test
+    void testMetaExtracted_CustomContextStoreSupported() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        // Create a custom ContextStore that returns McpMeta
+        McpMeta mcpMeta = new McpMeta(Map.of("customKey", "customValue"));
+        ContextStore customStore =
+                new ContextStore() {
+                    @Override
+                    public <T> T get(String key, Class<T> type) {
+                        if (type == McpMeta.class) {
+                            @SuppressWarnings("unchecked")
+                            T result = (T) mcpMeta;
+                            return result;
+                        }
+                        return null;
+                    }
+
+                    @Override
+                    public <T> T get(Class<T> type) {
+                        return get("", type);
+                    }
+
+                    @Override
+                    public boolean contains(String key, Class<?> type) {
+                        return get(key, type) != null;
+                    }
+
+                    @Override
+                    public boolean contains(Class<?> type) {
+                        return get(type) != null;
+                    }
+                };
+
+        ToolExecutionContext ctx = ToolExecutionContext.builder().addStore(customStore).build();
+
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).context(ctx).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertEquals(1, capturedMeta.size());
+        assertEquals("customValue", capturedMeta.get("customKey"));
+    }
+
+    // ==================== Value types in meta ====================
+
+    @Test
+    void testMetaExtracted_ComplexValueTypes() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+
+        McpMeta mcpMeta =
+                new McpMeta(
+                        Map.of(
+                                "stringVal",
+                                "hello",
+                                "intVal",
+                                42,
+                                "boolVal",
+                                true,
+                                "nested",
+                                Map.of("inner", "value")));
+
+        ToolExecutionContext ctx = ToolExecutionContext.builder().register(mcpMeta).build();
+
+        ToolCallParam param = ToolCallParam.builder().input(new HashMap<>()).context(ctx).build();
+
+        Map<String, Object> capturedMeta = captureMeta(tool, param);
+
+        assertEquals(4, capturedMeta.size());
+        assertEquals("hello", capturedMeta.get("stringVal"));
+        assertEquals(42, capturedMeta.get("intVal"));
+        assertEquals(true, capturedMeta.get("boolVal"));
+        assertEquals(Map.of("inner", "value"), capturedMeta.get("nested"));
+    }
+
+    // ==================== Preset arguments + meta coexist ====================
+
+    @Test
+    void testMetaExtracted_PresetArgsAndMetaCoexist() {
+        Map<String, Object> presetArgs = new HashMap<>();
+        presetArgs.put("units", "celsius");
+
+        McpTool tool =
+                new McpTool("test-tool", "Description", parameters, mockClientWrapper, presetArgs);
+
+        McpMeta mcpMeta = new McpMeta(Map.of("traceId", "abc-123"));
+        ToolExecutionContext ctx = ToolExecutionContext.builder().register(mcpMeta).build();
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("location", "Beijing");
+
+        ToolCallParam param = ToolCallParam.builder().input(input).context(ctx).build();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> argsCaptor = ArgumentCaptor.forClass(Map.class);
+        ArgumentCaptor<Map<String, Object>> metaCaptor = ArgumentCaptor.forClass(Map.class);
+
+        when(mockClientWrapper.callTool(eq("test-tool"), any(Map.class), any(Map.class)))
+                .thenReturn(Mono.just(successResult));
+
+        ToolResultBlock result = tool.callAsync(param).block();
+        assertNotNull(result);
+
+        verify(mockClientWrapper)
+                .callTool(eq("test-tool"), argsCaptor.capture(), metaCaptor.capture());
+
+        // Arguments should contain both preset and input
+        Map<String, Object> capturedArgs = argsCaptor.getValue();
+        assertEquals("Beijing", capturedArgs.get("location"));
+        assertEquals("celsius", capturedArgs.get("units"));
+
+        // Meta should contain McpMeta entries
+        Map<String, Object> capturedMeta = metaCaptor.getValue();
+        assertEquals(1, capturedMeta.size());
+        assertEquals("abc-123", capturedMeta.get("traceId"));
+    }
+}

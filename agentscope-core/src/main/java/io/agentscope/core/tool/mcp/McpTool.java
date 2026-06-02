@@ -20,10 +20,12 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -176,8 +178,11 @@ public class McpTool implements AgentTool {
         // Merge preset arguments with input arguments
         Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
+        // Extract MCP meta from ContextStore by McpMeta type namespace
+        Map<String, Object> metaMap = extractMcpMeta(param);
+
         return clientWrapper
-                .callTool(name, mergedArgs)
+                .callTool(name, mergedArgs, metaMap)
                 .map(McpContentConverter::convertCallToolResult)
                 .doOnSuccess(result -> logger.debug("MCP tool '{}' completed successfully", name))
                 .onErrorResume(
@@ -207,6 +212,28 @@ public class McpTool implements AgentTool {
      */
     public Map<String, Object> getPresetArguments() {
         return presetArguments != null ? new HashMap<>(presetArguments) : null;
+    }
+
+    /**
+     * Extracts MCP meta from the given tool call parameters.
+     *
+     * @param param the tool call parameters
+     * @return the extracted MCP meta
+     */
+    private Map<String, Object> extractMcpMeta(ToolCallParam param) {
+        if (param == null || param.getContext() == null) {
+            return Collections.emptyMap();
+        }
+
+        return param.getContext().getStores().stream()
+                .map(store -> store.get(McpMeta.class))
+                .filter(mcpMeta -> mcpMeta != null && !mcpMeta.isEmpty())
+                .flatMap(mcpMeta -> mcpMeta.getEntries().entrySet().stream())
+                .collect(
+                        Collectors.toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue,
+                                (oldValue, newValue) -> newValue));
     }
 
     /**
