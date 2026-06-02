@@ -11,7 +11,7 @@ package io.agentscope.harness.agent.skill.curator;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -32,8 +32,8 @@ public class SkillPromoter {
 
     private static final Logger log = LoggerFactory.getLogger(SkillPromoter.class);
 
-    private final WritableFilesystemSkillRepository draftsRepo;
-    private final WritableFilesystemSkillRepository mainRepo;
+    private final WorkspaceSkillRepository draftsRepo;
+    private final WorkspaceSkillRepository mainRepo;
     private final WorkspaceManager workspaceManager;
     private final SkillUsageStore usageStore;
     private final SkillPromotionGate gate;
@@ -42,8 +42,8 @@ public class SkillPromoter {
     private final SkillAuditLog auditLog;
 
     public SkillPromoter(
-            WritableFilesystemSkillRepository draftsRepo,
-            WritableFilesystemSkillRepository mainRepo,
+            WorkspaceSkillRepository draftsRepo,
+            WorkspaceSkillRepository mainRepo,
             WorkspaceManager workspaceManager,
             SkillUsageStore usageStore,
             SkillPromotionGate gate,
@@ -53,8 +53,8 @@ public class SkillPromoter {
     }
 
     public SkillPromoter(
-            WritableFilesystemSkillRepository draftsRepo,
-            WritableFilesystemSkillRepository mainRepo,
+            WorkspaceSkillRepository draftsRepo,
+            WorkspaceSkillRepository mainRepo,
             WorkspaceManager workspaceManager,
             SkillUsageStore usageStore,
             SkillPromotionGate gate,
@@ -268,7 +268,7 @@ public class SkillPromoter {
     }
 
     private static String mdOf(AgentSkill skill) {
-        // Use the same reverse-serialization as WritableFilesystemSkillRepository.toMarkdown,
+        // Use the same reverse-serialization as WorkspaceSkillRepository.toMarkdown,
         // but called via reflection through the public skill content. For simplicity here we
         // just stitch frontmatter + content (good enough for the candidate payload that
         // reviewers see).

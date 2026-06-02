@@ -78,8 +78,11 @@ class HarnessAgentDynamicHookBuilderTest {
 
         List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertTrue(
+                anyOfType(mws, io.agentscope.harness.agent.middleware.HarnessSkillMiddleware.class),
+                "Default build with workspace filesystem must register HarnessSkillMiddleware");
+        assertFalse(
                 anyOfType(mws, io.agentscope.core.skill.DynamicSkillMiddleware.class),
-                "Default build with workspace filesystem must register DynamicSkillMiddleware");
+                "Harness path must NOT install core's DynamicSkillMiddleware");
         assertTrue(
                 anyOfType(mws, DynamicSubagentsMiddleware.class),
                 "Default build with workspace filesystem must register DynamicSubagentsMiddleware");
@@ -104,8 +107,8 @@ class HarnessAgentDynamicHookBuilderTest {
 
         List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertTrue(
-                anyOfType(mws, io.agentscope.core.skill.DynamicSkillMiddleware.class),
-                "Custom skillRepository must compose with the dynamic skill middleware");
+                anyOfType(mws, io.agentscope.harness.agent.middleware.HarnessSkillMiddleware.class),
+                "Custom skillRepository must compose with the harness skill middleware");
     }
 
     @Test

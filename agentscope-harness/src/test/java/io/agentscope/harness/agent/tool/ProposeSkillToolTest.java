@@ -19,7 +19,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,11 +42,9 @@ class ProposeSkillToolTest {
     void setUp() {
         var fs = new LocalFilesystem(workspace);
         store = new SkillUsageStore(fs);
-        var mainRepo =
-                new WritableFilesystemSkillRepository(fs, "skills", RuntimeContext::empty, "main");
+        var mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
         var draftsRepo =
-                new WritableFilesystemSkillRepository(
-                        fs, "skills/_drafts", RuntimeContext::empty, "drafts");
+                new WorkspaceSkillRepository(fs, "skills/_drafts", RuntimeContext::empty, "drafts");
         manage = new SkillManageTool(mainRepo, draftsRepo, SkillManageConfig.defaults(), store);
         propose = new ProposeSkillTool(manage);
     }

@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.skill.curator.SkillPromoter.PromotionResult;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
@@ -35,8 +35,8 @@ class SkillPromoterTest {
     @TempDir Path workspace;
 
     private AbstractFilesystem fs;
-    private WritableFilesystemSkillRepository draftsRepo;
-    private WritableFilesystemSkillRepository mainRepo;
+    private WorkspaceSkillRepository draftsRepo;
+    private WorkspaceSkillRepository mainRepo;
     private WorkspaceManager workspaceManager;
     private SkillUsageStore store;
 
@@ -44,10 +44,8 @@ class SkillPromoterTest {
     void setUp() {
         fs = new LocalFilesystem(workspace);
         draftsRepo =
-                new WritableFilesystemSkillRepository(
-                        fs, "skills/_drafts", RuntimeContext::empty, "drafts");
-        mainRepo =
-                new WritableFilesystemSkillRepository(fs, "skills", RuntimeContext::empty, "main");
+                new WorkspaceSkillRepository(fs, "skills/_drafts", RuntimeContext::empty, "drafts");
+        mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
         workspaceManager = new WorkspaceManager(workspace, fs);
         store = new SkillUsageStore(fs);
     }

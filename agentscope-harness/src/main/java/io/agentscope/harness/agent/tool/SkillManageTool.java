@@ -21,7 +21,7 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.skill.curator.SkillAuditLog;
 import io.agentscope.harness.agent.skill.curator.SkillSecurityScanner;
 import io.agentscope.harness.agent.skill.curator.SkillUsageRecord;
@@ -73,10 +73,10 @@ public class SkillManageTool implements AgentTool {
             Set.of("references", "templates", "scripts", "assets");
 
     /** Repository pointing at the live skills root (e.g. {@code skills/}). */
-    private final WritableFilesystemSkillRepository mainRepo;
+    private final WorkspaceSkillRepository mainRepo;
 
     /** Repository pointing at the draft staging dir (e.g. {@code skills/_drafts/}). */
-    private final WritableFilesystemSkillRepository draftsRepo;
+    private final WorkspaceSkillRepository draftsRepo;
 
     /** Optional telemetry sidecar; null disables provenance + counter writes. */
     private final SkillUsageStore usageStore;
@@ -87,23 +87,23 @@ public class SkillManageTool implements AgentTool {
     private final SkillManageConfig config;
 
     public SkillManageTool(
-            WritableFilesystemSkillRepository mainRepo,
-            WritableFilesystemSkillRepository draftsRepo,
+            WorkspaceSkillRepository mainRepo,
+            WorkspaceSkillRepository draftsRepo,
             SkillManageConfig config) {
         this(mainRepo, draftsRepo, config, null, null);
     }
 
     public SkillManageTool(
-            WritableFilesystemSkillRepository mainRepo,
-            WritableFilesystemSkillRepository draftsRepo,
+            WorkspaceSkillRepository mainRepo,
+            WorkspaceSkillRepository draftsRepo,
             SkillManageConfig config,
             SkillUsageStore usageStore) {
         this(mainRepo, draftsRepo, config, usageStore, null);
     }
 
     public SkillManageTool(
-            WritableFilesystemSkillRepository mainRepo,
-            WritableFilesystemSkillRepository draftsRepo,
+            WorkspaceSkillRepository mainRepo,
+            WorkspaceSkillRepository draftsRepo,
             SkillManageConfig config,
             SkillUsageStore usageStore,
             SkillAuditLog auditLog) {
@@ -330,7 +330,7 @@ public class SkillManageTool implements AgentTool {
                     "Description exceeds " + MAX_DESCRIPTION_LENGTH + " chars.");
         }
 
-        WritableFilesystemSkillRepository target = config.autoPromote() ? mainRepo : draftsRepo;
+        WorkspaceSkillRepository target = config.autoPromote() ? mainRepo : draftsRepo;
         boolean ok = target.save(List.of(skill), false);
         if (!ok) {
             return ToolResultBlock.error(
@@ -393,7 +393,7 @@ public class SkillManageTool implements AgentTool {
         if (contentErr != null) {
             return ToolResultBlock.error(contentErr);
         }
-        WritableFilesystemSkillRepository target = locate(name);
+        WorkspaceSkillRepository target = locate(name);
         if (target == null) {
             return ToolResultBlock.error("Skill '" + name + "' not found.");
         }
@@ -441,7 +441,7 @@ public class SkillManageTool implements AgentTool {
             return ToolResultBlock.error(
                     "Missing 'new_string' for patch (use empty string to delete matched text).");
         }
-        WritableFilesystemSkillRepository target = locate(name);
+        WorkspaceSkillRepository target = locate(name);
         if (target == null) {
             return ToolResultBlock.error("Skill '" + name + "' not found.");
         }
@@ -542,7 +542,7 @@ public class SkillManageTool implements AgentTool {
             return ToolResultBlock.error(
                     "file_content exceeds " + MAX_SKILL_FILE_BYTES + " bytes.");
         }
-        WritableFilesystemSkillRepository target = locate(name);
+        WorkspaceSkillRepository target = locate(name);
         if (target == null) {
             return ToolResultBlock.error("Skill '" + name + "' not found.");
         }
@@ -580,7 +580,7 @@ public class SkillManageTool implements AgentTool {
         if (filePathErr != null) {
             return ToolResultBlock.error(filePathErr);
         }
-        WritableFilesystemSkillRepository target = locate(name);
+        WorkspaceSkillRepository target = locate(name);
         if (target == null) {
             return ToolResultBlock.error("Skill '" + name + "' not found.");
         }
@@ -593,7 +593,7 @@ public class SkillManageTool implements AgentTool {
     }
 
     private ToolResultBlock doDelete(String name, String absorbedInto) {
-        WritableFilesystemSkillRepository target = locate(name);
+        WorkspaceSkillRepository target = locate(name);
         if (target == null) {
             return ToolResultBlock.error("Skill '" + name + "' not found.");
         }
@@ -651,7 +651,7 @@ public class SkillManageTool implements AgentTool {
     }
 
     /** Locate the repository that owns a skill by name; drafts win on collision. */
-    private WritableFilesystemSkillRepository locate(String name) {
+    private WorkspaceSkillRepository locate(String name) {
         if (draftsRepo.skillExists(name)) {
             return draftsRepo;
         }

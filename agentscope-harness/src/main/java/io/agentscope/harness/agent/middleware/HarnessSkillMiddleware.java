@@ -15,40 +15,75 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.skill.LazyResourceCapable;
+import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
+import io.agentscope.harness.agent.skill.runtime.HarnessSkillEntry;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.RepoBound;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
+import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
+import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
+import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
 
 /**
- * Harness extension of {@link io.agentscope.core.skill.DynamicSkillMiddleware} that layers a
- * harness-specific {@link SkillVisibilityFilter} on top of the core skill prompt rebuild.
+ * Harness-native skill middleware. Replaces the legacy {@code DynamicSkillMiddleware} subclass
+ * with a standalone implementation that owns a {@link SkillRuntime}.
  *
- * <p>The visibility filter applies environment / canary / allow-list / composite rules per
- * {@link RuntimeContext}, dropping skills the current request is not allowed to see <em>before</em>
- * they reach the {@link io.agentscope.core.skill.SkillBox}. When no filter is supplied, this class
- * behaves identically to its core parent.
+ * <p>Per {@code onSystemPrompt} pass:
+ *
+ * <ol>
+ *   <li>Resolve the current {@link RuntimeContext} from the agent.
+ *   <li>Iterate repositories low-to-high priority and merge by {@code AgentSkill.name} (later
+ *       wins).
+ *   <li>Apply the optional {@link SkillVisibilityFilter}.
+ *   <li>Stage Layer-1/Layer-2 marketplace skills' resources into
+ *       {@code <wsRoot>/.skills-cache/<source-ns>/<skill>/} via {@link MarketplaceStager}.
+ *   <li>Build a {@link SkillCatalog} of {@link HarnessSkillEntry} (with lazy resources and
+ *       resolved {@code filesRoot}).
+ *   <li>Install the catalog into the {@link SkillRuntime}, which (idempotently) registers the
+ *       {@code load_skill_through_path} tool on the toolkit.
+ *   <li>Render the {@code <available_skills>} prompt block and append it to the current system
+ *       prompt.
+ * </ol>
  */
-public class HarnessSkillMiddleware extends DynamicSkillMiddleware {
+@SuppressWarnings("deprecation")
+public class HarnessSkillMiddleware implements MiddlewareBase {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessSkillMiddleware.class);
 
+    private final List<AgentSkillRepository> repositories;
+    private final Toolkit toolkit;
+    private final SkillFilter builderFilter;
     private final SkillVisibilityFilter visibilityFilter;
+    private final MarketplaceStager stager;
+    private final ShellPathPolicy shellPathPolicy;
+    private final SkillRuntime runtime;
+    private final Map<AgentSkillRepository, String> sourceNamespaces;
 
     public HarnessSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
-        this(repositories, toolkit, null, null);
+        this(repositories, toolkit, null, null, null, ShellPathPolicy.noShell());
     }
 
     public HarnessSkillMiddleware(
             List<AgentSkillRepository> repositories, Toolkit toolkit, SkillFilter builderFilter) {
-        this(repositories, toolkit, builderFilter, null);
+        this(repositories, toolkit, builderFilter, null, null, ShellPathPolicy.noShell());
     }
 
     public HarnessSkillMiddleware(
@@ -56,24 +91,176 @@ public class HarnessSkillMiddleware extends DynamicSkillMiddleware {
             Toolkit toolkit,
             SkillFilter builderFilter,
             SkillVisibilityFilter visibilityFilter) {
-        super(repositories, toolkit, builderFilter);
+        this(
+                repositories,
+                toolkit,
+                builderFilter,
+                visibilityFilter,
+                null,
+                ShellPathPolicy.noShell());
+    }
+
+    /**
+     * Full constructor.
+     *
+     * @param repositories     compose-ordered list (low-to-high priority)
+     * @param toolkit          toolkit to register {@code load_skill_through_path} on
+     * @param builderFilter    skill filter passed at agent build time (may be {@code null})
+     * @param visibilityFilter optional per-request filter (canary/allow-list)
+     * @param stager           marketplace stager; {@code null} disables staging entirely
+     * @param shellPathPolicy  policy for resolving {@code <files-root>} per shell mode; never
+     *                         {@code null} — pass {@link ShellPathPolicy#noShell()} when no
+     *                         shell tool is registered
+     */
+    public HarnessSkillMiddleware(
+            List<AgentSkillRepository> repositories,
+            Toolkit toolkit,
+            SkillFilter builderFilter,
+            SkillVisibilityFilter visibilityFilter,
+            MarketplaceStager stager,
+            ShellPathPolicy shellPathPolicy) {
+        this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
+        this.toolkit = toolkit;
+        this.builderFilter = builderFilter != null ? builderFilter : SkillFilter.all();
         this.visibilityFilter = visibilityFilter;
+        this.stager = stager;
+        this.shellPathPolicy =
+                shellPathPolicy != null ? shellPathPolicy : ShellPathPolicy.noShell();
+        this.runtime = new SkillRuntime();
+        // Pre-resolve source namespaces once at build time. The compose order is fixed for
+        // the lifetime of the middleware, so this is safe and avoids repeated work per call.
+        this.sourceNamespaces = MarketplaceStager.resolveSourceNamespaces(this.repositories);
+    }
+
+    /** Visible for tests / introspection. */
+    public SkillRuntime runtime() {
+        return runtime;
     }
 
     @Override
-    protected List<AgentSkill> filterVisible(List<AgentSkill> raw, RuntimeContext ctx) {
-        if (visibilityFilter == null || raw == null || raw.isEmpty()) {
-            return raw;
+    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        RuntimeContext ctx = resolveContext(agent);
+
+        Map<String, RepoBound> merged = mergeRepositories(ctx);
+        if (merged.isEmpty()) {
+            runtime.install(SkillCatalog.empty(), toolkit);
+            return Mono.just(currentPrompt);
         }
+
+        List<RepoBound> visible = applyVisibility(merged.values(), ctx);
+        if (visible.isEmpty()) {
+            runtime.install(SkillCatalog.empty(), toolkit);
+            return Mono.just(currentPrompt);
+        }
+
+        Map<String, StageResult> staged =
+                stager != null ? stager.stage(visible, sourceNamespaces) : Map.of();
+
+        List<HarnessSkillEntry> entries = new ArrayList<>(visible.size());
+        for (RepoBound bound : visible) {
+            SkillResources lazy = null;
+            if (bound.repo() instanceof LazyResourceCapable lrc) {
+                try {
+                    lazy = lrc.resourcesFor(bound.skill().getName(), ctx);
+                } catch (Exception e) {
+                    log.debug(
+                            "resourcesFor({}) failed; continuing without lazy: {}",
+                            bound.skill().getName(),
+                            e.getMessage());
+                }
+            }
+            StageResult stage = staged.getOrDefault(bound.skill().getName(), StageResult.NONE);
+            String filesRoot = shellPathPolicy.resolve(bound.skill().getName(), stage);
+            entries.add(new HarnessSkillEntry(bound.skill(), lazy, filesRoot));
+        }
+
+        SkillCatalog catalog = SkillCatalog.of(entries);
+        runtime.install(catalog, toolkit);
+
+        SkillFilter effective =
+                builderFilter.overlay(ctx != null ? ctx.get(SkillFilter.class) : null);
+        String append = runtime.renderPrompt(catalog, effective);
+        if (append == null || append.isEmpty()) {
+            return Mono.just(currentPrompt);
+        }
+        String base = currentPrompt != null ? currentPrompt : "";
+        String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
+        return Mono.just(base + separator + append);
+    }
+
+    // ---------------------------------------------------------------------
+    //  Internals
+    // ---------------------------------------------------------------------
+
+    private RuntimeContext resolveContext(Agent agent) {
+        if (agent instanceof AgentBase ab && ab.getRuntimeContext() != null) {
+            return ab.getRuntimeContext();
+        }
+        return RuntimeContext.empty();
+    }
+
+    /**
+     * Merge skills from every repository, in compose order. Later entries with the same
+     * {@code AgentSkill.name} win. Also remembers the source repository per winning skill so
+     * subsequent steps (lazy resources, marketplace stage) can act on it.
+     */
+    private LinkedHashMap<String, RepoBound> mergeRepositories(RuntimeContext ctx) {
+        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>();
+        for (AgentSkillRepository repo : repositories) {
+            List<AgentSkill> skills;
+            try {
+                skills = repo.getAllSkills();
+            } catch (Exception e) {
+                log.warn(
+                        "Skill repository {} failed to load: {}",
+                        repo.getClass().getSimpleName(),
+                        e.getMessage());
+                continue;
+            }
+            if (skills == null) {
+                continue;
+            }
+            for (AgentSkill skill : skills) {
+                if (skill == null || skill.getName() == null) {
+                    continue;
+                }
+                merged.put(skill.getName(), new RepoBound(skill, repo));
+            }
+        }
+        return merged;
+    }
+
+    private List<RepoBound> applyVisibility(
+            java.util.Collection<RepoBound> input, RuntimeContext ctx) {
+        if (visibilityFilter == null || input.isEmpty()) {
+            return new ArrayList<>(input);
+        }
+        Map<AgentSkill, RepoBound> bySkill = new IdentityHashMap<>();
+        List<AgentSkill> raw = new ArrayList<>(input.size());
+        for (RepoBound rb : input) {
+            bySkill.put(rb.skill(), rb);
+            raw.add(rb.skill());
+        }
+        List<AgentSkill> filtered;
         try {
-            List<AgentSkill> filtered = visibilityFilter.filter(new ArrayList<>(raw), ctx);
-            return filtered != null ? filtered : raw;
+            filtered = visibilityFilter.filter(raw, ctx);
         } catch (Exception e) {
             log.warn(
                     "SkillVisibilityFilter {} failed; treating as pass-through: {}",
                     visibilityFilter.getClass().getSimpleName(),
                     e.getMessage());
-            return raw;
+            return new ArrayList<>(input);
         }
+        if (filtered == null) {
+            return new ArrayList<>(input);
+        }
+        List<RepoBound> out = new ArrayList<>(filtered.size());
+        for (AgentSkill s : filtered) {
+            RepoBound rb = bySkill.get(s);
+            if (rb != null) {
+                out.add(rb);
+            }
+        }
+        return out;
     }
 }

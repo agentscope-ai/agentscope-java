@@ -15,7 +15,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -65,13 +65,13 @@ public class SkillCurator {
 
     private final AbstractFilesystem filesystem;
     private final SkillUsageStore usageStore;
-    private final WritableFilesystemSkillRepository mainRepo;
+    private final WorkspaceSkillRepository mainRepo;
     private final SkillCuratorConfig config;
 
     public SkillCurator(
             AbstractFilesystem filesystem,
             SkillUsageStore usageStore,
-            WritableFilesystemSkillRepository mainRepo,
+            WorkspaceSkillRepository mainRepo,
             SkillCuratorConfig config) {
         this.filesystem = java.util.Objects.requireNonNull(filesystem, "filesystem");
         this.usageStore = java.util.Objects.requireNonNull(usageStore, "usageStore");

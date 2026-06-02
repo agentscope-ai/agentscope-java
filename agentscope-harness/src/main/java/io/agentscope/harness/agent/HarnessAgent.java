@@ -39,6 +39,7 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
@@ -68,8 +69,7 @@ import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.session.WorkspaceSession;
-import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.skill.curator.RejectAllGate;
 import io.agentscope.harness.agent.skill.curator.SkillAuditLog;
 import io.agentscope.harness.agent.skill.curator.SkillCurator;
@@ -139,7 +139,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
     private final BiFunction<String, String, WorkspaceManager> workspaceFactory;
-    private final Function<String, Session> sessionFactory;
     private final WorkspaceIndex ownedWorkspaceIndex;
     private final SandboxContext defaultSandboxContext;
     private final CompactionMiddleware compactionHook;
@@ -156,7 +155,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
             ReActAgent delegate,
             WorkspaceManager workspaceManager,
             BiFunction<String, String, WorkspaceManager> workspaceFactory,
-            Function<String, Session> sessionFactory,
             WorkspaceIndex ownedWorkspaceIndex,
             SandboxContext defaultSandboxContext,
             CompactionMiddleware compactionHook,
@@ -170,7 +168,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
-        this.sessionFactory = sessionFactory;
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
         this.defaultSandboxContext = defaultSandboxContext;
         this.compactionHook = compactionHook;
@@ -505,21 +502,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
-     * Fills in default Session and SessionKey when the caller didn't provide them, and injects the
-     * default sandbox context.
+     * Fills in a default SessionKey when the caller didn't provide one, and injects the default
+     * sandbox context. The agent's persistence backend is bound at builder time via
+     * {@code .session(...)}; it is not selectable per-call.
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
-        Session ctxSession = ctx.getSession();
-        if (ctxSession == null) {
-            String uid = ctx.getUserId();
-            Session defaultSession = delegate.getSession();
-            if (sessionFactory != null && uid != null && !uid.isBlank()) {
-                Session perCall = sessionFactory.apply(uid);
-                ctxSession = perCall != null ? perCall : defaultSession;
-            } else {
-                ctxSession = defaultSession;
-            }
-        }
         SessionKey ctxSessionKey = ctx.getSessionKey();
         if (ctxSessionKey == null) {
             String id = ctx.getSessionId();
@@ -534,15 +521,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         ? ctx.get(SandboxContext.class)
                         : defaultSandboxContext;
 
-        if (ctxSession == ctx.getSession()
-                && ctxSessionKey == ctx.getSessionKey()
-                && sandboxCtx == ctx.get(SandboxContext.class)) {
+        if (ctxSessionKey == ctx.getSessionKey() && sandboxCtx == ctx.get(SandboxContext.class)) {
             return ctx;
         }
         return RuntimeContext.builder()
                 .sessionId(ctx.getSessionId())
                 .userId(ctx.getUserId())
-                .session(ctxSession)
                 .sessionKey(ctxSessionKey)
                 .putAll(ctx.getExtra())
                 .put(SandboxContext.class, sandboxCtx)
@@ -681,6 +665,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableAtPathExpansion = false;
         boolean disableSubagents = false;
         boolean disableDynamicSkills = false;
+        boolean disableDefaultWorkspaceSkills = false;
         boolean disableDynamicSubagents = false;
         boolean disableToolsConfig = false;
 
@@ -1083,6 +1068,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
+         * Skips registration of the default Layer-4 {@link
+         * io.agentscope.harness.agent.skill.WorkspaceSkillRepository}. User-supplied repositories
+         * and the workspace skills directory (Layer 3) are still composed; only the namespaced
+         * AbstractFilesystem-backed source is omitted.
+         */
+        public Builder disableDefaultWorkspaceSkills() {
+            this.disableDefaultWorkspaceSkills = true;
+            return this;
+        }
+
+        /**
          * Enables the agent-callable {@code skill_manage} tool so the agent can create / edit /
          * patch / archive its own skills in the workspace, and upgrades the workspace skill
          * repository to a writable variant.
@@ -1359,17 +1355,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
                     };
 
-            final Session capturedDefaultSession = effectiveSession;
-            final String capturedAgentId = resolvedAgentId;
-            Function<String, Session> sessionFactoryFn =
-                    capturedDefaultSession instanceof WorkspaceSession
-                            ? uid -> {
-                                NamespaceFactory baked = rc -> List.of(uid);
-                                return new WorkspaceSession(
-                                        capturedWorkspace, capturedAgentId, baked);
-                            }
-                            : null;
-
             // ---- Middlewares ----
             if (sandboxLifecycleMw != null) {
                 inner.middleware(sandboxLifecycleMw);
@@ -1495,12 +1480,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         skillManageConfig != null
                                 ? skillManageConfig
                                 : SkillManageConfig.defaults();
-                WritableFilesystemSkillRepository mainWritableRepo = null;
+                WorkspaceSkillRepository mainWritableRepo = null;
                 for (int i = orderedSkillRepos.size() - 1; i >= 0; i--) {
                     AgentSkillRepository r = orderedSkillRepos.get(i);
-                    if (r.getClass() == FilesystemBackedSkillRepository.class) {
+                    // The default Layer-4 repo (composeSkillRepositories) is a read-only
+                    // WorkspaceSkillRepository pointed at "skills". Replace it with a
+                    // writable one pointed at the configured main dir so skill_manage can
+                    // persist.
+                    if (r instanceof WorkspaceSkillRepository wsr && !wsr.isWriteable()) {
                         mainWritableRepo =
-                                new WritableFilesystemSkillRepository(
+                                new WorkspaceSkillRepository(
                                         filesystem,
                                         smConfig.mainDir(),
                                         currentRcSupplier,
@@ -1511,15 +1500,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
                 if (mainWritableRepo == null) {
                     mainWritableRepo =
-                            new WritableFilesystemSkillRepository(
+                            new WorkspaceSkillRepository(
                                     filesystem,
                                     smConfig.mainDir(),
                                     currentRcSupplier,
                                     "workspace-writable");
                     orderedSkillRepos.add(mainWritableRepo);
                 }
-                WritableFilesystemSkillRepository draftsWritableRepo =
-                        new WritableFilesystemSkillRepository(
+                WorkspaceSkillRepository draftsWritableRepo =
+                        new WorkspaceSkillRepository(
                                 filesystem,
                                 smConfig.draftsDir(),
                                 currentRcSupplier,
@@ -1569,25 +1558,39 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             if (!orderedSkillRepos.isEmpty() && !disableDynamicSkills) {
-                if (visibilityFilter != null) {
-                    // Harness-specific subclass — opt out of core's auto-install and attach
-                    // the visibility-filter-aware variant ourselves.
-                    inner.dynamicSkillsEnabled(false);
-                    inner.middleware(
-                            new HarnessSkillMiddleware(
-                                    orderedSkillRepos,
-                                    agentToolkit,
-                                    skillFilter,
-                                    visibilityFilter));
+                // Always opt out of core's auto-install; harness owns the skill middleware.
+                inner.dynamicSkillsEnabled(false);
+
+                io.agentscope.harness.agent.skill.runtime.MarketplaceStager stager =
+                        resolvedWorkspace != null
+                                ? new io.agentscope.harness.agent.skill.runtime.MarketplaceStager(
+                                        resolvedWorkspace)
+                                : null;
+
+                io.agentscope.harness.agent.skill.runtime.ShellPathPolicy shellPolicy;
+                if (disableShellTool) {
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
+                } else if (filesystem instanceof LocalFilesystemWithShell) {
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
+                                    .localWithShell(resolvedWorkspace);
+                } else if (filesystem instanceof SandboxBackedFilesystem) {
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox();
                 } else {
-                    // No harness-only behavior needed; let the core builder install
-                    // DynamicSkillMiddleware automatically from the layered repository list.
-                    inner.skillRepositories(orderedSkillRepos);
-                    inner.skillFilter(
-                            skillFilter != null
-                                    ? skillFilter
-                                    : io.agentscope.core.skill.SkillFilter.all());
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
                 }
+
+                inner.middleware(
+                        new HarnessSkillMiddleware(
+                                orderedSkillRepos,
+                                agentToolkit,
+                                skillFilter,
+                                visibilityFilter,
+                                stager,
+                                shellPolicy));
             } else if (disableDynamicSkills) {
                 // Suppress core's auto-install so the static SkillBox fallback (constructed
                 // below by staticSkillBoxFromRepos) remains the only skill source.
@@ -1615,7 +1618,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     delegate,
                     wsManager,
                     workspaceFactoryFn,
-                    sessionFactoryFn,
                     workspaceIndex,
                     defaultSandboxContext,
                     compactionHook,

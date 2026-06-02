@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -34,14 +34,13 @@ class SkillCuratorTest {
 
     private AbstractFilesystem fs;
     private SkillUsageStore store;
-    private WritableFilesystemSkillRepository mainRepo;
+    private WorkspaceSkillRepository mainRepo;
 
     @BeforeEach
     void setUp() {
         fs = new LocalFilesystem(workspace);
         store = new SkillUsageStore(fs);
-        mainRepo =
-                new WritableFilesystemSkillRepository(fs, "skills", RuntimeContext::empty, "main");
+        mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
     }
 
     private SkillCurator newCurator(int staleAfterDays, int archiveAfterDays) {

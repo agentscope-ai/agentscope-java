@@ -20,7 +20,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.skill.WritableFilesystemSkillRepository;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -34,19 +34,17 @@ class SkillManageToolTest {
     @TempDir Path workspace;
 
     private LocalFilesystem fs;
-    private WritableFilesystemSkillRepository mainRepo;
-    private WritableFilesystemSkillRepository draftsRepo;
+    private WorkspaceSkillRepository mainRepo;
+    private WorkspaceSkillRepository draftsRepo;
     private SkillManageTool toolDraftDefault;
     private SkillManageTool toolAutoPromote;
 
     @BeforeEach
     void setUp() {
         fs = new LocalFilesystem(workspace);
-        mainRepo =
-                new WritableFilesystemSkillRepository(fs, "skills", RuntimeContext::empty, "main");
+        mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
         draftsRepo =
-                new WritableFilesystemSkillRepository(
-                        fs, "skills/_drafts", RuntimeContext::empty, "drafts");
+                new WorkspaceSkillRepository(fs, "skills/_drafts", RuntimeContext::empty, "drafts");
         toolDraftDefault = new SkillManageTool(mainRepo, draftsRepo, SkillManageConfig.defaults());
         toolAutoPromote =
                 new SkillManageTool(

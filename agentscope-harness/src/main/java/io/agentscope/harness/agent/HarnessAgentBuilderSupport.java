@@ -41,7 +41,6 @@ import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
-import io.agentscope.harness.agent.skill.FilesystemBackedSkillRepository;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -739,11 +738,17 @@ final class HarnessAgentBuilderSupport {
             }
         }
 
-        // Layer 4 (highest priority): per-user namespaced filesystem view.
-        if (filesystem != null) {
+        // Layer 4 (highest priority): per-user namespaced filesystem view, via the new
+        // WorkspaceSkillRepository (replaces legacy FilesystemBackedSkillRepository).
+        // Skipped when the user opts out with disableDefaultWorkspaceSkills().
+        if (filesystem != null && !b.disableDefaultWorkspaceSkills) {
             ordered.add(
-                    new FilesystemBackedSkillRepository(
-                            filesystem, "skills", currentRcSupplier, "workspace-namespaced"));
+                    new io.agentscope.harness.agent.skill.WorkspaceSkillRepository(
+                            filesystem,
+                            "skills",
+                            currentRcSupplier,
+                            "workspace-namespaced",
+                            false));
         }
 
         return ordered;
