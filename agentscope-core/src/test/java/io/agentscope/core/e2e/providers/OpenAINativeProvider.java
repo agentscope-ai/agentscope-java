@@ -18,7 +18,6 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
@@ -59,11 +58,7 @@ public class OpenAINativeProvider implements ModelProvider {
             builder.baseUrl(baseUrl);
         }
 
-        return ReActAgent.builder()
-                .name(name)
-                .model(builder.build())
-                .toolkit(toolkit)
-                .memory(new InMemoryMemory());
+        return ReActAgent.builder().name(name).model(builder.build()).toolkit(toolkit);
     }
 
     @Override

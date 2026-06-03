@@ -76,9 +76,7 @@ class OllamaMultiAgentFormatterTest {
     }
 
     @Test
-    @DisplayName(
-            "Should format multi-agent conversation - aligned with Python"
-                    + " test_multi_agent_formatter")
+    @DisplayName("Should format multi-agent conversation")
     void testFormatMultiAgentConversation() {
         // Arrange: System messages
         List<Msg> msgsSystem =
@@ -258,9 +256,7 @@ class OllamaMultiAgentFormatterTest {
     }
 
     @Test
-    @DisplayName(
-            "Should format multi-agent conversation without second tools - aligned with Python"
-                    + " test_multi_agent_formatter")
+    @DisplayName("Should format multi-agent conversation without second tools")
     void testFormatMultiAgentWithoutSecondTools() {
         // Arrange: System messages
         List<Msg> msgsSystem =
@@ -384,9 +380,7 @@ class OllamaMultiAgentFormatterTest {
     }
 
     @Test
-    @DisplayName(
-            "Should format multi-agent conversation with promote tool result images - aligned with"
-                    + " Python test_multi_agent_formatter_with_promote_tool_result_images")
+    @DisplayName("Should format multi-agent conversation with promote tool result images")
     void testFormatMultiAgentWithPromoteToolResultImages() {
         // Arrange: Create a formatter with promoteToolResultImages = true
         OllamaMultiAgentFormatter formatterWithPromote = new OllamaMultiAgentFormatter(true);

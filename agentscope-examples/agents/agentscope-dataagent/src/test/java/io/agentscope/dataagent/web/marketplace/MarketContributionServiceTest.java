@@ -54,8 +54,8 @@ import reactor.core.publisher.Flux;
  * thing we want to catch is the two going out of sync.
  *
  * <p>Each run gets a fresh workspace under {@code java.io.tmpdir}/agentscope-dataagent-contrib-it,
- * so {@code bootstrap.cwd().resolve("shared")} resolves to a clean tree the test fully owns and
- * can read back to confirm the snapshot landed verbatim.
+ * so {@code bootstrap.cwd().resolve("shared/agents/<agentId>")} resolves to a clean per-agent slice
+ * the test fully owns and can read back to confirm the snapshot landed verbatim.
  */
 @Disabled("Pending fix for circular dependency between builderBootstrap and userSandboxRegistry")
 @SpringBootTest(classes = DataAgentApp.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
@@ -89,20 +89,26 @@ class MarketContributionServiceTest {
         registry.add("dataagent.workspace", dir::toString);
     }
 
+    private static List<FileEntry> body(String content) {
+        return List.of(new FileEntry("", content));
+    }
+
     @Test
     void submitInsertsPendingRow() {
         ContributionEntity submitted =
                 service.submit(
                         "alice",
                         "data-agent",
+                        null,
                         ContributionEntity.TARGET_SKILL,
                         "cohort-builder",
                         "useful for quarterly cohort analysis",
-                        "# Cohort Builder\n\nbuild cohorts.\n");
+                        body("# Cohort Builder\n\nbuild cohorts.\n"));
 
         assertThat(submitted.getId()).isNotNull();
         assertThat(submitted.getStatus()).isEqualTo(ContributionEntity.STATUS_PENDING);
         assertThat(submitted.getSourceUserId()).isEqualTo("alice");
+        assertThat(submitted.getTargetAgentId()).isEqualTo("data-agent");
         assertThat(submitted.getReviewerUserId()).isNull();
 
         // Visible through both query paths.
@@ -115,22 +121,24 @@ class MarketContributionServiceTest {
     }
 
     /**
-     * Approving a bare skill name materializes {@code SKILL.md} inside the skill directory —
-     * the convention the composite-FS overlay expects.
+     * Approving a bare skill name materializes {@code SKILL.md} inside the skill bundle directory
+     * under the per-agent slice — the convention the sandbox projection expects.
      */
     @Test
     void approveSkillMaterializesSkillMdUnderSharedRoot() throws IOException {
-        String body = "# Demo Skill\n\nhello.\n";
+        String text = "# Demo Skill\n\nhello.\n";
         ContributionEntity submitted =
                 service.submit(
                         "alice",
                         "data-agent",
+                        null,
                         ContributionEntity.TARGET_SKILL,
                         "demo-skill",
                         "demo rationale",
-                        body);
+                        body(text));
 
-        ContributionEntity approved = service.approve(submitted.getId(), "admin", "looks good");
+        ContributionEntity approved =
+                service.approve(submitted.getId(), "admin", "looks good", null);
 
         assertThat(approved.getStatus()).isEqualTo(ContributionEntity.STATUS_APPROVED);
         assertThat(approved.getReviewerUserId()).isEqualTo("admin");
@@ -141,35 +149,44 @@ class MarketContributionServiceTest {
                 bootstrap
                         .cwd()
                         .resolve("shared")
+                        .resolve("agents")
+                        .resolve("data-agent")
                         .resolve("skills")
                         .resolve("demo-skill")
                         .resolve("SKILL.md");
         assertThat(expected).exists();
-        assertThat(Files.readString(expected, StandardCharsets.UTF_8)).isEqualTo(body);
+        assertThat(Files.readString(expected, StandardCharsets.UTF_8)).isEqualTo(text);
     }
 
     /**
-     * Subagents and memory snippets land at the literal target path under their type directory,
-     * not the SKILL.md special-case.
+     * Subagents and memory snippets land at the literal target path under their per-agent type
+     * directory, not the SKILL.md special-case.
      */
     @Test
     void approveSubagentMaterializesAtLiteralPath() throws IOException {
-        String body = "# Report Writer\n\nplain markdown body.\n";
+        String text = "# Report Writer\n\nplain markdown body.\n";
         ContributionEntity submitted =
                 service.submit(
                         "alice",
                         "data-agent",
+                        null,
                         ContributionEntity.TARGET_SUBAGENT,
                         "report-writer.md",
                         null,
-                        body);
+                        body(text));
 
-        service.approve(submitted.getId(), "admin", null);
+        service.approve(submitted.getId(), "admin", null, null);
 
         Path expected =
-                bootstrap.cwd().resolve("shared").resolve("subagents").resolve("report-writer.md");
+                bootstrap
+                        .cwd()
+                        .resolve("shared")
+                        .resolve("agents")
+                        .resolve("data-agent")
+                        .resolve("subagents")
+                        .resolve("report-writer.md");
         assertThat(expected).exists();
-        assertThat(Files.readString(expected, StandardCharsets.UTF_8)).isEqualTo(body);
+        assertThat(Files.readString(expected, StandardCharsets.UTF_8)).isEqualTo(text);
     }
 
     @Test
@@ -178,10 +195,11 @@ class MarketContributionServiceTest {
                 service.submit(
                         "alice",
                         "data-agent",
+                        null,
                         ContributionEntity.TARGET_MEMORY,
                         "rejected-snippet.md",
                         null,
-                        "memory body");
+                        body("memory body"));
 
         ContributionEntity rejected =
                 service.reject(submitted.getId(), "admin", "duplicate of existing entry");
@@ -189,8 +207,14 @@ class MarketContributionServiceTest {
         assertThat(rejected.getStatus()).isEqualTo(ContributionEntity.STATUS_REJECTED);
         assertThat(rejected.getReviewerNote()).isEqualTo("duplicate of existing entry");
 
-        Path memoryDir = bootstrap.cwd().resolve("shared").resolve("memory");
-        // Reject must leave the shared/memory tree alone — no file with the rejected path is
+        Path memoryDir =
+                bootstrap
+                        .cwd()
+                        .resolve("shared")
+                        .resolve("agents")
+                        .resolve("data-agent")
+                        .resolve("memory");
+        // Reject must leave the per-agent memory tree alone — no file with the rejected path is
         // present even though the directory may have been created by a prior approval.
         assertThat(memoryDir.resolve("rejected-snippet.md")).doesNotExist();
     }
@@ -205,14 +229,16 @@ class MarketContributionServiceTest {
                 service.submit(
                         "alice",
                         "data-agent",
+                        null,
                         ContributionEntity.TARGET_SKILL,
                         "idempotent-skill",
                         null,
-                        "# Idempotent\n");
+                        body("# Idempotent\n"));
 
-        service.approve(submitted.getId(), "admin", "first approval");
+        service.approve(submitted.getId(), "admin", "first approval", null);
 
-        assertThatThrownBy(() -> service.approve(submitted.getId(), "admin", "second approval"))
+        assertThatThrownBy(
+                        () -> service.approve(submitted.getId(), "admin", "second approval", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("not pending");
         assertThatThrownBy(() -> service.reject(submitted.getId(), "admin", "too late"))
@@ -226,7 +252,7 @@ class MarketContributionServiceTest {
 
     @Test
     void approveOnMissingIdThrows() {
-        assertThatThrownBy(() -> service.approve(999_999L, "admin", "ghost"))
+        assertThatThrownBy(() -> service.approve(999_999L, "admin", "ghost", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not found");
     }
@@ -240,22 +266,33 @@ class MarketContributionServiceTest {
                                 service.submit(
                                         "",
                                         "agent",
+                                        null,
                                         ContributionEntity.TARGET_SKILL,
                                         "p",
                                         null,
-                                        "body"))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.submit("alice", "agent", "bogus-type", "p", null, "body"))
+                                        body("body")))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 service.submit(
                                         "alice",
                                         "agent",
+                                        null,
+                                        "bogus-type",
+                                        "p",
+                                        null,
+                                        body("body")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(
+                        () ->
+                                service.submit(
+                                        "alice",
+                                        "agent",
+                                        null,
                                         ContributionEntity.TARGET_SKILL,
                                         "",
                                         null,
-                                        "body"))
+                                        body("body")))
                 .isInstanceOf(IllegalArgumentException.class);
         // Path traversal is rejected at submit time — the file-write guard is defence in depth.
         assertThatThrownBy(
@@ -263,20 +300,22 @@ class MarketContributionServiceTest {
                                 service.submit(
                                         "alice",
                                         "agent",
+                                        null,
                                         ContributionEntity.TARGET_SKILL,
                                         "../escape",
                                         null,
-                                        "body"))
+                                        body("body")))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 service.submit(
                                         "alice",
                                         "agent",
+                                        null,
                                         ContributionEntity.TARGET_SKILL,
                                         "p",
                                         null,
-                                        ""))
+                                        List.of()))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThat(repository.count())

@@ -338,13 +338,21 @@ class LocalFilesystemUserIsolationExampleTest {
     /**
      * Verifies that no un-namespaced duplicate user data appears at workspace root.
      *
-     * <p>Exception: {@code WorkspaceTaskRepository} runs a background scheduler that periodically
-     * writes an agent-scoped orphan-sweep coordination marker at
-     * {@code workspace/agents/<agentId>/tasks/_sweep.marker} using {@code RuntimeContext.empty()}.
-     * The marker is shared across all users of the agent by design, so it is intentionally not
-     * subject to per-user namespace prefixing. The sweep fires at a random offset within a
-     * 5-minute window, so on any given test run the file may or may not be present; we tolerate
-     * {@code agents/} at the workspace root but assert it contains only this whitelisted marker.
+     * <p>Exceptions intentionally not subject to per-user namespace prefixing:
+     *
+     * <ul>
+     *   <li>{@code workspace/agents/<agentId>/tasks/_sweep.marker} — {@code WorkspaceTaskRepository}
+     *       runs a background scheduler that writes this orphan-sweep coordination marker using
+     *       {@code RuntimeContext.empty()}. The marker is shared across all users of the agent by
+     *       design. The sweep fires at a random offset within a 5-minute window, so on any given
+     *       test run the file may or may not be present.
+     *   <li>{@code workspace/agents/<agentId>/context/<sessionId>/agent_state.json} —
+     *       {@code WorkspaceSession} persists agent-scoped state via {@code SessionKey} with no
+     *       {@code RuntimeContext}, so it lives outside the per-user namespace by design.
+     * </ul>
+     *
+     * <p>We tolerate {@code agents/} at the workspace root but assert it contains only these
+     * whitelisted entries.
      */
     @Test
     void noDuplicateDataAtWorkspaceRoot() throws Exception {
@@ -390,18 +398,24 @@ class LocalFilesystemUserIsolationExampleTest {
                             + rootNames);
         }
 
-        // If agents/ exists at the root, it must only contain the orphan-sweep marker.
+        // If agents/ exists at the root, it must only contain whitelisted agent-scoped files
+        // (orphan-sweep marker and WorkspaceSession agent_state).
         Path rootAgents = workspace.resolve("agents");
         if (Files.isDirectory(rootAgents)) {
             try (Stream<Path> walk = Files.walk(rootAgents)) {
                 List<String> unexpected =
                         walk.filter(Files::isRegularFile)
                                 .map(p -> rootAgents.relativize(p).toString().replace('\\', '/'))
-                                .filter(rel -> !rel.endsWith("/tasks/_sweep.marker"))
+                                .filter(
+                                        rel ->
+                                                !rel.endsWith("/tasks/_sweep.marker")
+                                                        && !rel.matches(
+                                                                "[^/]+/context/[^/]+/agent_state\\.json"))
                                 .toList();
                 assertTrue(
                         unexpected.isEmpty(),
-                        "workspace/agents/ should contain only tasks/_sweep.marker but found: "
+                        "workspace/agents/ should contain only tasks/_sweep.marker or"
+                                + " context/<sessionId>/agent_state.json but found: "
                                 + unexpected);
             }
         }

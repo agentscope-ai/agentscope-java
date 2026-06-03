@@ -21,7 +21,7 @@ import io.agentscope.builder.runtime.channel.DmScope;
 import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.builder.runtime.config.ChannelConfigEntry;
 import io.agentscope.builder.web.toolbus.ToolEventBus;
-import io.agentscope.builder.web.toolbus.ToolNotificationHook;
+import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.InMemorySession;
@@ -211,7 +211,7 @@ public class BuilderConfig {
 
         builder.configureAllAgents(
                 b -> {
-                    b.hook(new ToolNotificationHook(toolEventBus));
+                    b.middleware(new ToolNotificationMiddleware(toolEventBus));
                     b.session(session);
                     // `activity/` is routed to the shared BaseStore so the per-agent audit log
                     // (written by AgentActivityStore) is visible across pods, not pinned to the

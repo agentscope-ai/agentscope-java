@@ -38,7 +38,9 @@ import java.util.Objects;
  * @see PreReasoningEvent
  * @see PostReasoningEvent
  * @see ReasoningChunkEvent
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public abstract sealed class ReasoningEvent extends HookEvent
         permits PreReasoningEvent, PostReasoningEvent, ReasoningChunkEvent {
 

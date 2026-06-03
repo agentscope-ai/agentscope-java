@@ -25,6 +25,7 @@ import java.util.List;
 /**
  * Utility methods shared by text file tools.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class FileToolUtils {
 
     private FileToolUtils() {

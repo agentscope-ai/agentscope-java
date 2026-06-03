@@ -36,8 +36,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Ground truth tests for GeminiChatFormatter.
- * This test validates that the formatter output matches the expected Gemini API format
- * exactly as defined in the Python version.
+ * This test validates that the formatter output matches the expected Gemini API format.
  */
 class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
@@ -57,7 +56,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
     static void setUp() throws IOException {
         formatter = new GeminiChatFormatter();
 
-        // Create temporary files matching Python test setup
+        // Create temporary files
         imagePath = "./image.png";
         File imageFile = new File(imagePath);
         Files.write(imageFile.toPath(), "fake image content".getBytes());
