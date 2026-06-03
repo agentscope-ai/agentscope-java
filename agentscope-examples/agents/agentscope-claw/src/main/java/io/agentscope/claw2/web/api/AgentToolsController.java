@@ -179,8 +179,9 @@ public class AgentToolsController {
             }
             return new ActiveToolsResponse(tools, warnings);
         } finally {
-            // Best-effort close: HarnessAgent doesn't expose a close hook for the toolkit, so MCP
-            // wrappers stay alive until GC. Acceptable for a single-shot introspect call.
+            if (agent != null) {
+                agent.close();
+            }
         }
     }
 
@@ -231,19 +232,22 @@ public class AgentToolsController {
                                 HttpStatus.BAD_REQUEST, "Request body is required");
                     }
                     validate(body);
-                    WorkspaceContext ctx = resolveContext(agentId);
-                    String json;
-                    try {
-                        json = MAPPER.writeValueAsString(body);
-                    } catch (IOException e) {
-                        throw new ResponseStatusException(
-                                HttpStatus.INTERNAL_SERVER_ERROR,
-                                "Failed to serialize tools.json: " + e.getMessage());
-                    }
-                    ctx.manager()
-                            .writeUtf8WorkspaceRelative(
-                                    RuntimeContext.empty(), "tools.json", json + "\n");
-                    return body;
+                    return withWorkspaceContext(
+                            agentId,
+                            ctx -> {
+                                String json;
+                                try {
+                                    json = MAPPER.writeValueAsString(body);
+                                } catch (IOException e) {
+                                    throw new ResponseStatusException(
+                                            HttpStatus.INTERNAL_SERVER_ERROR,
+                                            "Failed to serialize tools.json: " + e.getMessage());
+                                }
+                                ctx.manager()
+                                        .writeUtf8WorkspaceRelative(
+                                                RuntimeContext.empty(), "tools.json", json + "\n");
+                                return body;
+                            });
                 });
     }
 
@@ -253,15 +257,16 @@ public class AgentToolsController {
     }
 
     private ToolsConfig readConfig(Path workspace) {
+        WorkspaceManager wsm = newWorkspaceManager(workspace);
         try {
-            WorkspaceManager wsm =
-                    new WorkspaceManager(workspace, new LocalFilesystem(workspace, true, 10, null));
             String raw = wsm.readManagedWorkspaceFileUtf8(RuntimeContext.empty(), "tools.json");
             if (raw == null || raw.isBlank()) return null;
             return MAPPER.readValue(raw, ToolsConfig.class);
         } catch (Exception e) {
             log.debug("tools.json missing or unreadable for {}: {}", workspace, e.getMessage());
             return null;
+        } finally {
+            wsm.close();
         }
     }
 
@@ -350,13 +355,12 @@ public class AgentToolsController {
     // -----------------------------------------------------------------
 
     private Path resolveWorkspace(String agentId) {
-        return resolveContext(agentId).workspace();
+        return resolveWorkspacePath(agentId);
     }
 
-    private WorkspaceContext resolveContext(String agentId) {
+    private Path resolveWorkspacePath(String agentId) {
         if (catalogService.isBuiltin(agentId)) {
-            Path ws = bootstrap.resolveWorkspace(agentId).normalize();
-            return new WorkspaceContext(ws, newWorkspaceManager(ws));
+            return bootstrap.resolveWorkspace(agentId).normalize();
         }
         UserAgentDefinitionStore.StoredEntry entry =
                 catalogService
@@ -366,8 +370,26 @@ public class AgentToolsController {
                                         new ResponseStatusException(
                                                 HttpStatus.NOT_FOUND,
                                                 "Agent not found: " + agentId));
-        Path ws = customAgentWorkspace(entry);
+        return customAgentWorkspace(entry);
+    }
+
+    private WorkspaceContext resolveContext(String agentId) {
+        Path ws = resolveWorkspacePath(agentId);
         return new WorkspaceContext(ws, newWorkspaceManager(ws));
+    }
+
+    private <T> T withWorkspaceContext(String agentId, WorkspaceAction<T> action) throws Exception {
+        WorkspaceContext ctx = resolveContext(agentId);
+        try {
+            return action.run(ctx);
+        } finally {
+            ctx.manager().close();
+        }
+    }
+
+    @FunctionalInterface
+    private interface WorkspaceAction<T> {
+        T run(WorkspaceContext ctx) throws Exception;
     }
 
     private Path customAgentWorkspace(UserAgentDefinitionStore.StoredEntry entry) {
