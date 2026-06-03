@@ -23,6 +23,8 @@ import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import jakarta.annotation.PreDestroy;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -50,7 +52,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Lifecycle: a sandbox is created+started lazily on the first {@link #borrow} for a key, kept
  * alive across subsequent borrows, and closed once it has gone idle for {@link #idleTtl}. {@link
- * #shutdownAll()} runs on bean destruction.
+ * #shutdownAll()} runs on bean destruction. Approval of a marketplace contribution calls
+ * {@link #invalidate(String, String)} to evict all sandboxes whose shared layer has changed.
  *
  * <p>Threading: {@link ConcurrentHashMap#compute} serialises {@link #borrow} for the same key, so
  * {@link Sandbox#start()} is only invoked once per container. Concurrent borrows on different keys
@@ -76,9 +79,11 @@ public final class UserSandboxRegistry {
 
     /**
      * @param client backend client used to {@link SandboxClient#create create} new sandboxes
-     * @param hostWorkspaceRoot directory whose contents are projected into every container at
-     *     start. Carries the shared/read-only seed (AGENTS.md, skills/, subagents/, knowledge/).
-     *     May be {@code null} to skip projection entirely (every container starts empty).
+     * @param hostWorkspaceRoot directory under which per-agent shared seed lives, organised as
+     *     {@code <hostWorkspaceRoot>/agents/<agentId>/{AGENTS.md, skills/, subagents/, knowledge/}}.
+     *     Each container is projected with the slice for its own {@code agentId} only, so two
+     *     agents on the same host do not see each other's shared layer. May be {@code null} to
+     *     skip projection entirely (every container starts empty).
      * @param idleTtl how long a sandbox may sit unused before {@link #evictIdle()} closes it
      * @param evictionPollInterval how often the background scheduler checks for idle sandboxes
      */
@@ -151,6 +156,45 @@ public final class UserSandboxRegistry {
     }
 
     /**
+     * Closes and removes cached sandboxes matching {@code (userId, agentId)}.
+     *
+     * <ul>
+     *   <li>{@code userId} non-null: only that user's sandbox for the agent is evicted.
+     *   <li>{@code userId} null: every user's sandbox for the agent is evicted — used by the
+     *       contribution-approval flow so the next {@link #borrow} for any user of that agent
+     *       reconstructs the container and picks up the newly approved shared content.
+     * </ul>
+     *
+     * <p>Safe to call concurrently with other {@link #borrow} calls — they will simply re-create
+     * the sandbox on the next access.
+     */
+    public void invalidate(String userId, String agentId) {
+        validateSegment("agentId", agentId);
+        int removed = 0;
+        var it = entries.entrySet().iterator();
+        while (it.hasNext()) {
+            var e = it.next();
+            Key k = e.getKey();
+            if (!k.agentId().equals(agentId)) {
+                continue;
+            }
+            if (userId != null && !userId.isBlank() && !k.userId().equals(userId)) {
+                continue;
+            }
+            it.remove();
+            closeQuietly(k, e.getValue().sandbox, "invalidate");
+            removed++;
+        }
+        if (removed > 0) {
+            log.info(
+                    "[sandbox-registry] invalidated {} sandbox(es) for agentId={}, userId={}",
+                    removed,
+                    agentId,
+                    userId == null ? "(all)" : userId);
+        }
+    }
+
+    /**
      * Visible for tests. Closes every sandbox whose last access time is older than {@link
      * #idleTtl}.
      */
@@ -186,7 +230,7 @@ public final class UserSandboxRegistry {
 
     private Sandbox createAndStart(Key key) {
         DockerSandboxClientOptions options = new DockerSandboxClientOptions();
-        WorkspaceSpec ws = buildWorkspaceSpec();
+        WorkspaceSpec ws = buildWorkspaceSpec(key);
         Sandbox sandbox = client.create(ws, new NoopSnapshotSpec(), options);
         try {
             sandbox.start();
@@ -206,13 +250,32 @@ public final class UserSandboxRegistry {
         return sandbox;
     }
 
-    private WorkspaceSpec buildWorkspaceSpec() {
+    /**
+     * Builds the workspace projection spec for {@code key}: the source root is the per-agent slice
+     * under {@link #hostWorkspaceRoot} so the container only sees its own agent's shared layer.
+     * The directory is created on demand to avoid a Docker mount failure when the agent's slice
+     * doesn't exist yet.
+     */
+    private WorkspaceSpec buildWorkspaceSpec(Key key) {
         WorkspaceSpec spec = new WorkspaceSpec();
         if (hostWorkspaceRoot == null) {
             return spec;
         }
+        Path agentSlice =
+                hostWorkspaceRoot
+                        .resolve("agents")
+                        .resolve(key.agentId())
+                        .toAbsolutePath()
+                        .normalize();
+        try {
+            Files.createDirectories(agentSlice);
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Failed to ensure per-agent shared dir " + agentSlice + ": " + e.getMessage(),
+                    e);
+        }
         WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
-        projection.setSourceRoot(hostWorkspaceRoot.toAbsolutePath().normalize().toString());
+        projection.setSourceRoot(agentSlice.toString());
         projection.setIncludeRoots(DEFAULT_PROJECTION_ROOTS);
         Map<String, WorkspaceEntry> es = new LinkedHashMap<>();
         es.put("__workspace_projection__", projection);

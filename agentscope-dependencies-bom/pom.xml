@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.1.0-SNAPSHOT</revision>
+        <revision>2.0.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -109,6 +109,8 @@
         <jsonschema-generator.version>5.0.0</jsonschema-generator.version>
         <jackson3.version>3.0.4</jackson3.version>
         <snakeyaml.version>2.6</snakeyaml.version>
+        <tree-sitter.version>0.24.4</tree-sitter.version>
+        <tree-sitter-bash.version>0.23.3</tree-sitter-bash.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
@@ -456,6 +458,18 @@
                 <groupId>org.yaml</groupId>
                 <artifactId>snakeyaml</artifactId>
                 <version>${snakeyaml.version}</version>
+            </dependency>
+
+            <!-- Tree-sitter Java bindings + Bash grammar (used by Bash tool AST safety analysis) -->
+            <dependency>
+                <groupId>io.github.bonede</groupId>
+                <artifactId>tree-sitter</artifactId>
+                <version>${tree-sitter.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.bonede</groupId>
+                <artifactId>tree-sitter-bash</artifactId>
+                <version>${tree-sitter-bash.version}</version>
             </dependency>
 
             <!-- Victools JSON Schema Generator -->

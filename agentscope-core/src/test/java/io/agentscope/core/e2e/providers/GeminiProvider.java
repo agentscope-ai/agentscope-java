@@ -19,7 +19,6 @@ import com.google.genai.types.HttpOptions;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
@@ -66,11 +65,7 @@ public class GeminiProvider extends BaseModelProvider {
             builder.httpOptions(HttpOptions.builder().baseUrl(baseUrl).build());
         }
 
-        return ReActAgent.builder()
-                .name(name)
-                .model(builder.build())
-                .toolkit(toolkit)
-                .memory(new InMemoryMemory());
+        return ReActAgent.builder().name(name).model(builder.build()).toolkit(toolkit);
     }
 
     @Override

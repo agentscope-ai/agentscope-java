@@ -29,7 +29,12 @@ import java.util.stream.Collectors;
  *
  * This implementation stores messages in memory using thread-safe collections
  * and provides state serialization/deserialization for session management.
+ *
+ * @deprecated since 2.0.0. Conversation context lives on
+ *     {@link io.agentscope.core.state.AgentState#getContext()}; this class is retained for
+ *     source compatibility with 1.0.x user code.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class InMemoryMemory implements Memory {
 
     private final List<Msg> messages = new CopyOnWriteArrayList<>();

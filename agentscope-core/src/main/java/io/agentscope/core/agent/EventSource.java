@@ -101,6 +101,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * // grandchild.getDepth() == 2, grandchild.getPath() == "main/researcher/sub-executor"
  * }</pre>
  */
+/**
+ * @deprecated since 2.0.0. Used only by the v1 {@link Event} stream to attribute events to a
+ *     spawned subagent. A subagent-source channel for the new
+ *     {@code io.agentscope.core.event.AgentEvent} stream is on the v2 roadmap; once it lands,
+ *     {@code EventSource} will be marked {@code forRemoval = true}.
+ */
+@Deprecated(since = "2.0.0")
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public final class EventSource {

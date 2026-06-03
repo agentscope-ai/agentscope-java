@@ -21,7 +21,11 @@ import java.util.Objects;
 
 /**
  * Session binding used for shutdown checkpoint persistence.
+ *
+ * @deprecated since 2.0.0. Use {@link ShutdownStateSaver} with
+ *     {@link GracefulShutdownManager#bindStateSaver} instead.
  */
+@Deprecated(since = "2.0.0", forRemoval = true)
 public record ShutdownSessionBinding(Session session, SessionKey sessionKey) {
 
     public ShutdownSessionBinding {

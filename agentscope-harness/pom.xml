@@ -36,6 +36,15 @@
             <artifactId>agentscope-core</artifactId>
         </dependency>
 
+        <!-- Shared test fixtures from agentscope-core (MockModel, MockToolkit, etc.). -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
         <!-- YAML parsing for subagent config -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>

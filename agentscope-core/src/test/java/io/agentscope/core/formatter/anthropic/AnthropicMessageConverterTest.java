@@ -373,6 +373,10 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled(
+            "Stage 1 Msg.validateRoleContent rejects SYSTEM + ToolResultBlock at construction;"
+                    + " this split-message fallback is unreachable. See"
+                    + " io.agentscope.core.message.Msg#validateRoleContent.")
     void testConvertMessageWithToolResultAndRegularContent() {
         Msg msg =
                 Msg.builder()

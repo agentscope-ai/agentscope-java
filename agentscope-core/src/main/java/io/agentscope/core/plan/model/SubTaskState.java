@@ -19,7 +19,10 @@ package io.agentscope.core.plan.model;
  * State of a subtask in a plan.
  *
  * <p>Represents the current status of a subtask during plan execution.
+ *
+ * @deprecated since 2.0.0. The plan package is removed.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public enum SubTaskState {
     /** Subtask is planned but not yet started. */
     TODO("todo"),

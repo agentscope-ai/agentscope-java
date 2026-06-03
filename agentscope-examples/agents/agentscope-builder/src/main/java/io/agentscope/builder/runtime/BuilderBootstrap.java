@@ -38,7 +38,7 @@ import io.agentscope.builder.runtime.session.tool.SessionsTool;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.hook.SubagentsHook;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -557,8 +557,7 @@ public final class BuilderBootstrap {
                 gc.accept(mainEntryBuilder);
             }
 
-            List<SubagentsHook.SubagentEntry> entries =
-                    mainEntryBuilder.buildSubagentEntries(mainWorkspace);
+            List<SubagentEntry> entries = mainEntryBuilder.buildSubagentEntries(mainWorkspace);
 
             WorkspaceManager wsManager = new WorkspaceManager(mainWorkspace);
             DefaultAgentManager dam = new DefaultAgentManager(entries, wsManager);

@@ -39,8 +39,14 @@ import reactor.core.publisher.Mono;
  *
  * <p>Intercepts hook callbacks and emits {@link Event} instances to a FluxSink. Handles event
  * filtering and chunk mode processing.
+ *
+ * @deprecated since 2.0.0. Replaced by the {@link io.agentscope.core.middleware.MiddlewareBase}
+ *     system. Use {@link io.agentscope.core.ReActAgent#streamEvents(java.util.List)} for
+ *     fine-grained event streaming.
  */
-class StreamingHook implements Hook {
+@Deprecated(forRemoval = true, since = "2.0.0")
+@SuppressWarnings("deprecation")
+public class StreamingHook implements Hook {
 
     private final FluxSink<Event> sink;
     private final StreamOptions options;
@@ -54,7 +60,7 @@ class StreamingHook implements Hook {
      * @param sink The FluxSink to emit events to
      * @param options Configuration options for streaming
      */
-    StreamingHook(FluxSink<Event> sink, StreamOptions options) {
+    public StreamingHook(FluxSink<Event> sink, StreamOptions options) {
         this.sink = sink;
         this.options = options;
     }

@@ -148,15 +148,19 @@
   text-decoration: none;
 }
 
+/* Selected option: soft brand-tinted background + brand-coloured text.
+   The earlier rule used ``color: var(--color-brand-content)`` which resolves
+   to the same blue as ``color-brand-primary`` (set in _config.yml), so the
+   text became invisible against the solid blue background. */
 .language-option.active {
-  background: var(--color-brand-primary);
-  color: var(--color-brand-content);
-  font-weight: 500;
+  background: color-mix(in srgb, var(--color-brand-primary) 14%, transparent);
+  color: var(--color-brand-primary);
+  font-weight: 600;
 }
 
 .language-option.active:hover {
-  background: var(--color-brand-primary);
-  color: var(--color-brand-content);
+  background: color-mix(in srgb, var(--color-brand-primary) 22%, transparent);
+  color: var(--color-brand-primary);
 }
 
 .language-button::after {
@@ -415,12 +419,14 @@ html.docs-site-notice-dismissed .docs-site-notice {
 
 .docs-site-header__inner {
   display: flex;
-  flex-wrap: wrap;
+  /* nowrap until ≤ 760px so contents compress smoothly first; wrap is the
+     last-resort fallback at narrow widths (see media query at the bottom of
+     this header section). */
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  column-gap: clamp(1.5rem, 4vw, 3rem);
-  row-gap: 1rem;
-  padding: 0.9rem clamp(1.25rem, 4vw, 2.75rem);
+  column-gap: clamp(0.75rem, 2.4vw, 2.25rem);
+  padding: 0.9rem clamp(1rem, 4vw, 2.75rem);
   max-width: min(100%, 90rem);
   margin-inline: auto;
   overflow: visible;
@@ -428,10 +434,9 @@ html.docs-site-notice-dismissed .docs-site-notice {
 
 .docs-site-header__start {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  column-gap: clamp(1.25rem, 3vw, 2.75rem);
-  row-gap: 0.75rem;
+  column-gap: clamp(0.85rem, 2vw, 2.5rem);
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -465,11 +470,16 @@ html.docs-site-notice-dismissed .docs-site-notice {
 }
 
 .docs-site-header__title {
-  font-size: 1.0625rem;
+  /* Scale title font with viewport so the brand block shrinks first as the
+     window narrows — keeps the bar on a single row longer. */
+  font-size: clamp(0.88rem, 1.05vw, 1.0625rem);
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.28;
   max-width: min(22rem, 42vw);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .docs-site-header__nav-shell {
@@ -489,13 +499,13 @@ html.docs-site-notice-dismissed .docs-site-notice {
 .docs-site-header__actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
-  gap: 1rem 1.25rem;
-  flex: 0 0 auto;
+  gap: clamp(0.5rem, 1.2vw, 1rem);
+  flex: 0 1 auto;
   min-width: 0;
-  padding: 0.2rem 0 0.2rem clamp(1rem, 2.5vw, 2rem);
-  margin-left: clamp(0.5rem, 1.5vw, 1.25rem);
+  padding: 0.2rem 0 0.2rem clamp(0.6rem, 1.5vw, 1.5rem);
+  margin-left: clamp(0.3rem, 0.9vw, 0.9rem);
   border-left: 1px solid var(--color-background-border);
   overflow: visible;
 }
@@ -503,9 +513,11 @@ html.docs-site-notice-dismissed .docs-site-notice {
 .docs-header-search {
   display: flex;
   align-items: stretch;
-  flex: 1 1 11rem;
-  min-width: 0;
-  max-width: 17rem;
+  /* Smaller flex basis + tighter max so search shrinks gracefully before
+     forcing a row wrap on medium widths. */
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  max-width: 14rem;
   border: 1px solid var(--color-background-border);
   border-radius: 0.55rem;
   background: var(--color-background-secondary);
@@ -627,15 +639,42 @@ body.agentscope-home .docs-top-tabs__link {
   font-size: 0.9rem;
 }
 
-@media (max-width: 960px) {
-  body.agentscope-home .docs-site-header__inner,
-  body.agentscope-home .docs-site-header__actions {
+/* Last-resort wrap fallback: only when contents truly cannot compress further
+   does the bar wrap to a second row. Applied to ALL pages, not just home. */
+@media (max-width: 760px) {
+  .docs-site-header__inner,
+  .docs-site-header__start,
+  .docs-site-header__actions {
     flex-wrap: wrap;
+    row-gap: 0.6rem;
   }
 
-  body.agentscope-home .docs-header-search {
-    flex: 1 1 100%;
+  .docs-site-header__nav-shell {
+    flex-basis: 100%;
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
+  }
+
+  .docs-site-header__actions {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
+  }
+
+  .docs-header-search {
+    flex: 1 1 12rem;
     max-width: none;
+  }
+}
+
+/* Below ~520px hide the brand title text — the logo alone is enough — to
+   preserve room for the search/version/lang controls on the same row. */
+@media (max-width: 520px) {
+  .docs-site-header__title {
+    display: none;
   }
 }
 
@@ -845,4 +884,205 @@ body.docs-blog-article-page .toc-drawer {
 
 body.docs-blog-article-page .toc-content-icon {
   display: none !important;
+}
+
+/* ============================================================
+   Version Switcher
+   Mirrors the language-switch component so the two controls
+   look identical side-by-side in the site header.
+   ============================================================ */
+
+.version-switcher {
+  /* Reuse the language-switch reset inside the header */
+}
+
+.docs-site-header .version-switcher {
+  padding: 0;
+  margin: 0;
+  border: none;
+}
+
+.docs-site-header .version-button {
+  width: auto;
+  min-width: 5.5rem;
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  box-shadow: none;
+}
+
+.docs-site-header .version-menu {
+  left: auto;
+  right: 0;
+  min-width: 10rem;
+  z-index: 5000;
+}
+
+/* Fixed placement escapes header stacking & overflow */
+.docs-site-header .version-menu.docs-version-menu--fixed {
+  position: fixed;
+  z-index: 2147483000;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.18);
+}
+
+.docs-site-header .version-switcher {
+  position: relative;
+  z-index: 0;
+}
+
+.docs-site-header .version-selector.open {
+  z-index: 6000;
+}
+
+.version-selector {
+  position: relative;
+  font-size: var(--font-size--small);
+}
+
+.version-button {
+  width: 95%;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-foreground-primary);
+  font-family: var(--font-stack);
+  font-size: inherit;
+  font-weight: 400;
+  transition: all 0.15s ease-out;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
+  margin: 0 auto;
+}
+
+.version-button:hover {
+  background: var(--color-background-hover);
+  border-color: var(--color-brand-primary);
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px 0 rgb(0 0 0 / 0.06);
+}
+
+.version-button:focus {
+  outline: 2px solid var(--color-brand-primary);
+  outline-offset: 2px;
+}
+
+/* Chevron arrow */
+.version-button::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 0.25rem solid transparent;
+  border-right: 0.25rem solid transparent;
+  border-top: 0.25rem solid currentColor;
+  transition: transform 0.15s ease-out;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.version-selector.open .version-button::after {
+  transform: rotate(180deg);
+}
+
+.version-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.375rem;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05);
+  z-index: 1000;
+  overflow: hidden;
+  animation: fadeInUp 0.2s ease-out;
+}
+
+.version-selector.open .version-menu {
+  display: block;
+}
+
+.version-option {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+  color: var(--color-foreground-primary);
+  font-family: var(--font-stack);
+  font-size: inherit;
+  font-weight: 400;
+  transition: all 0.15s ease-out;
+  border-bottom: 1px solid var(--color-background-border);
+}
+
+.version-option:last-child {
+  border-bottom: none;
+}
+
+.version-option:hover {
+  background: var(--color-background-hover);
+  text-decoration: none;
+  color: var(--color-foreground-primary);
+}
+
+/* Mirrors .language-option.active — see note above for the colour rationale. */
+.version-option.active {
+  background: color-mix(in srgb, var(--color-brand-primary) 14%, transparent);
+  color: var(--color-brand-primary);
+  font-weight: 600;
+}
+
+.version-option.active:hover {
+  background: color-mix(in srgb, var(--color-brand-primary) 22%, transparent);
+  color: var(--color-brand-primary);
+}
+
+@media (max-width: 768px) {
+  .docs-site-header .version-button {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .version-option {
+    padding: 0.625rem 0.75rem;
+  }
+}
+
+@media (prefers-contrast: high) {
+  .version-button {
+    border-width: 2px;
+  }
+
+  .version-menu {
+    border-width: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .version-button,
+  .version-option,
+  .version-button::after {
+    transition: none;
+  }
+
+  .version-menu {
+    animation: none;
+  }
+}
+
+/* ================================================================
+   Contributors-table GitHub avatars
+   ----------------------------------------------------------------
+   Avatar URLs without ?s= would otherwise render at full size
+   (~460px for /USER.png) and stretch the column. Cap them and
+   round to a circle. Selector is scoped to GitHub-hosted images
+   inside tables so other inline screenshots are untouched.
+   ================================================================ */
+table img[src*="github.com"],
+table img[src*="githubusercontent.com"] {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  vertical-align: middle;
 }
