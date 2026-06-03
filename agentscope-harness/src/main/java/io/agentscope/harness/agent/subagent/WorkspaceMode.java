@@ -29,6 +29,15 @@ package io.agentscope.harness.agent.subagent;
  * null           SHARED    mainWorkspace
  * (general-purpose, always SHARED)       mainWorkspace  (fully mirrors main agent)
  * </pre>
+ *
+ * <p><b>Phase B-0 — persisted SessionKey bucketing:</b> ISOLATED-mode subagents bucket their
+ * persisted {@link io.agentscope.core.state.SessionKey} by parent ({@code userId},
+ * {@code parentSessionId}) when the spawn-time {@link io.agentscope.core.agent.RuntimeContext}
+ * carries those fields. The composed key has form
+ * {@code {declarationName}[@{parentSessionId}][#{userId}]} and is applied uniformly across
+ * {@link io.agentscope.core.session.Session} backends (Workspace, Redis, InMemory, custom),
+ * because all of them already partition state by {@code SessionKey}. SHARED-mode is unchanged
+ * — those subagents intentionally use the parent's bucket and do not multi-tenant.
  */
 public enum WorkspaceMode {
 

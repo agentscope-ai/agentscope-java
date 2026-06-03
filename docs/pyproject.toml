@@ -16,12 +16,16 @@
 name = "agentscope-java"
 version = "0.3.0b1"
 description = "AgentScope Java is an agent-oriented programming framework for building LLM applications with JDK 17+."
-readme = "./en/README.md"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
+# This pyproject.toml exists solely as a shim to `pip install -e ".[dev]"` the
+# jupyter-book / sphinx toolchain. There is no real Python package to ship —
+# tell setuptools so explicitly to avoid the package-finder scanning a
+# non-existent directory (which used to be `docs/en/` before the v1/v2 split).
 [tool.setuptools]
-packages = { find = { where = ["en"] } }
+py-modules = []
 include-package-data = true
 
 [build-system]
@@ -34,6 +38,7 @@ dev = [
     "sphinx-autoapi>=3.6.0",
     "sphinx-llms-txt>=0.5.3",
     "sphinx-sitemap>=2.5.0",
+    "sphinx-design>=0.6.0",
     "furo>=2025.7.19",
     "sphinxcontrib-mermaid>=0.9.2",
 ]

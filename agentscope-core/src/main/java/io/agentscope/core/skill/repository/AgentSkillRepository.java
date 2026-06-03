@@ -30,6 +30,7 @@ import java.util.List;
  * AgentSkillRepository repo = new GitHubSkillRepository("owner/repo");
  * AgentSkill skill = repo.getByName("calculate").orElseThrow();
  * }</pre>
+ *
  */
 public interface AgentSkillRepository extends AutoCloseable {
 

@@ -91,7 +91,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 .build(),
                         Msg.builder()
                                 .name("system")
-                                .role(MsgRole.SYSTEM)
+                                .role(MsgRole.TOOL)
                                 .content(
                                         ToolResultBlock.builder()
                                                 .id("call_1")
@@ -155,7 +155,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 .build(),
                         Msg.builder()
                                 .name("system")
-                                .role(MsgRole.SYSTEM)
+                                .role(MsgRole.TOOL)
                                 .content(
                                         ToolResultBlock.builder()
                                                 .id("call_1")
@@ -171,7 +171,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 .build(),
                         Msg.builder()
                                 .name("system")
-                                .role(MsgRole.SYSTEM)
+                                .role(MsgRole.TOOL)
                                 .content(
                                         ToolResultBlock.builder()
                                                 .id("call_2")
@@ -267,7 +267,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 .build(),
                         Msg.builder()
                                 .name("system")
-                                .role(MsgRole.SYSTEM)
+                                .role(MsgRole.TOOL)
                                 .content(
                                         ToolResultBlock.builder()
                                                 .id("call_1")
@@ -350,7 +350,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 .build(),
                         Msg.builder()
                                 .name("system")
-                                .role(MsgRole.SYSTEM)
+                                .role(MsgRole.TOOL)
                                 .content(
                                         ToolResultBlock.builder()
                                                 .id("call_1")
@@ -410,7 +410,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 .build(),
                         Msg.builder()
                                 .name("system")
-                                .role(MsgRole.SYSTEM)
+                                .role(MsgRole.TOOL)
                                 .content(
                                         ToolResultBlock.builder()
                                                 .id("call_1")
@@ -439,7 +439,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 .build(),
                         Msg.builder()
                                 .name("system")
-                                .role(MsgRole.SYSTEM)
+                                .role(MsgRole.TOOL)
                                 .content(
                                         ToolResultBlock.builder()
                                                 .id("call_2")

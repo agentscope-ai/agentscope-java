@@ -17,6 +17,11 @@ package io.agentscope.harness.agent.subagent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -112,6 +117,55 @@ public final class AgentSpecLoader {
                             });
         } catch (IOException e) {
             log.warn("Failed to list subagents directory {}: {}", subagentsDir, e.getMessage());
+        }
+        return decls;
+    }
+
+    /**
+     * Loads subagent declarations via the {@link AbstractFilesystem}, respecting namespace
+     * isolation. Scans {@code subagents/} for {@code *.md} files using filesystem glob.
+     *
+     * @param filesystem the filesystem layer (applies namespace transparently)
+     * @param mainWorkspace the parent workspace for resolving relative workspace paths; may be
+     *     {@code null}
+     * @return list of parsed declarations; never {@code null}
+     */
+    public static List<SubagentDeclaration> loadFromFilesystem(
+            AbstractFilesystem filesystem, Path mainWorkspace) {
+        if (filesystem == null) {
+            return Collections.emptyList();
+        }
+        RuntimeContext ctx = RuntimeContext.empty();
+        GlobResult glob = filesystem.glob(ctx, "*.md", "subagents");
+        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<SubagentDeclaration> decls = new ArrayList<>();
+        List<FileInfo> sorted = new ArrayList<>(glob.matches());
+        sorted.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.path(), b.path()));
+
+        for (FileInfo fi : sorted) {
+            String path = fi.path();
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            try {
+                ReadResult rr = filesystem.read(ctx, path, 0, 0);
+                if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
+                    continue;
+                }
+                String filename =
+                        path.contains("/") ? path.substring(path.lastIndexOf('/') + 1) : path;
+                String name = stripMdExtension(filename);
+                SubagentDeclaration decl = parse(rr.fileData().content(), name, mainWorkspace);
+                if (decl != null) {
+                    decls.add(decl);
+                    log.debug("Loaded subagent declaration '{}' from filesystem: {}", name, path);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to load subagent declaration from {}: {}", path, e.getMessage());
+            }
         }
         return decls;
     }
@@ -214,11 +268,27 @@ public final class AgentSpecLoader {
         // ---- optional fields ----
         String model = asString(fm.get("model"));
 
-        int maxIters = 10;
-        Object maxItersObj = fm.get("maxIters");
-        if (maxItersObj instanceof Number n) {
-            maxIters = n.intValue();
+        // steps (preferred) > maxIters (deprecated alias). Both default to 10 via the builder.
+        int steps = 10;
+        Object stepsObj = fm.get("steps");
+        if (stepsObj instanceof Number sn) {
+            steps = sn.intValue();
+        } else {
+            Object maxItersObj = fm.get("maxIters");
+            if (maxItersObj instanceof Number n) {
+                steps = n.intValue();
+            }
         }
+
+        Double temperature = asDouble(fm.get("temperature"));
+        Double topP = asDouble(fm.get("top_p"));
+        if (topP == null) {
+            topP = asDouble(fm.get("topP"));
+        }
+        String variant = asString(fm.get("variant"));
+
+        SubagentDeclaration.Mode declMode = parseDeclarationMode(asString(fm.get("mode")), name);
+        boolean hidden = asBoolean(fm.get("hidden"), false);
 
         List<String> tools = parseToolNames(asString(fm.get("tools")));
 
@@ -228,7 +298,12 @@ public final class AgentSpecLoader {
                         .description(description)
                         .workspaceMode(mode)
                         .model(model)
-                        .maxIters(maxIters)
+                        .steps(steps)
+                        .temperature(temperature)
+                        .topP(topP)
+                        .variant(variant)
+                        .mode(declMode)
+                        .hidden(hidden)
                         .tools(tools.isEmpty() ? null : tools);
 
         if (workspacePath != null) {
@@ -265,6 +340,45 @@ public final class AgentSpecLoader {
 
     private static String asString(Object v) {
         return v != null ? v.toString().trim() : null;
+    }
+
+    private static boolean asBoolean(Object v, boolean def) {
+        if (v == null) return def;
+        if (v instanceof Boolean b) return b;
+        String s = v.toString().trim();
+        if (s.isEmpty()) return def;
+        return Boolean.parseBoolean(s);
+    }
+
+    private static SubagentDeclaration.Mode parseDeclarationMode(String s, String name) {
+        if (s == null || s.isBlank()) return SubagentDeclaration.Mode.ALL;
+        switch (s.toLowerCase()) {
+            case "primary":
+                return SubagentDeclaration.Mode.PRIMARY;
+            case "subagent":
+                return SubagentDeclaration.Mode.SUBAGENT;
+            case "all":
+                return SubagentDeclaration.Mode.ALL;
+            default:
+                log.warn(
+                        "Unknown mode '{}' in subagent declaration '{}', defaulting to all",
+                        s,
+                        name);
+                return SubagentDeclaration.Mode.ALL;
+        }
+    }
+
+    private static Double asDouble(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.doubleValue();
+        String s = v.toString().trim();
+        if (s.isEmpty()) return null;
+        try {
+            return Double.parseDouble(s);
+        } catch (NumberFormatException e) {
+            log.warn("Failed to parse numeric value '{}' — treating as unset", s);
+            return null;
+        }
     }
 
     private static List<String> parseToolNames(String toolsStr) {

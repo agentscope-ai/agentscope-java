@@ -89,7 +89,9 @@ class LocalFilesystemPersonalAssistantExampleTest {
 
         // Call 1: write a note to MEMORY.md through the workspace manager
         agent.call(userMsg("first call"), ctx("session-1", "alice")).block();
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "# Notes\n- item 1");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(
+                        RuntimeContext.empty(), "MEMORY.md", "# Notes\n- item 1");
 
         // The file exists on disk after call 1
         Path memoryFile = workspace.resolve("MEMORY.md");
@@ -128,7 +130,8 @@ class LocalFilesystemPersonalAssistantExampleTest {
 
         // Alice writes during her session
         agent.call(userMsg("alice here"), ctx("session-alice", "alice")).block();
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("shared.txt", "alice was here");
+        agent.getWorkspaceManager()
+                .writeUtf8WorkspaceRelative(RuntimeContext.empty(), "shared.txt", "alice was here");
 
         // Bob calls with a different userId — still reads the same workspace
         agent.call(userMsg("bob here"), ctx("session-bob", "bob")).block();
@@ -162,7 +165,9 @@ class LocalFilesystemPersonalAssistantExampleTest {
 
         // The agent can see the file through its workspace manager
         agent.call(userMsg("check document"), ctx("s1", "user")).block();
-        String read = agent.getWorkspaceManager().readManagedWorkspaceFileUtf8("document.txt");
+        String read =
+                agent.getWorkspaceManager()
+                        .readManagedWorkspaceFileUtf8(RuntimeContext.empty(), "document.txt");
         assertNotNull(read, "agent should be able to read files written directly to the workspace");
         assertTrue(read.contains("Host-written"), "agent should see the host-written content");
     }

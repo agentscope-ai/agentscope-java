@@ -28,7 +28,10 @@ import reactor.core.publisher.Mono;
  * <p>Stores plans in a concurrent hash map for thread-safe access. This implementation is suitable
  * for development and testing. For production use cases requiring persistence, implement a
  * database-backed storage.
+ *
+ * @deprecated since 2.0.0. The plan package is removed.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class InMemoryPlanStorage implements PlanStorage {
 
     private final Map<String, Plan> plans = new ConcurrentHashMap<>();

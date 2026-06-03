@@ -97,6 +97,66 @@ public @interface Tool {
     boolean strict() default false;
 
     /**
+     * Whether the tool only reads data without observable side effects.
+     *
+     * <p>Read-only tools are auto-allowed under {@code PermissionMode.EXPLORE} and
+     * {@code ACCEPT_EDITS}, mirroring the {@code ToolBase.isReadOnly()} contract.
+     *
+     * @return true if this tool performs no mutation
+     */
+    boolean readOnly() default false;
+
+    /**
+     * Whether the tool is safe to invoke concurrently with itself.
+     *
+     * <p>When false, the framework serialises invocations of this tool inside a parallel batch.
+     * Defaults to {@code true} to match the typical pure-function shape of {@code @Tool} methods.
+     *
+     * @return true if multiple invocations may run in parallel without coordination
+     */
+    boolean concurrencySafe() default true;
+
+    /**
+     * Whether the tool is executed outside the framework.
+     *
+     * <p>External tools never run their {@code callAsync} body. Instead the framework throws a
+     * {@code ToolSuspendException} so the agent loop can surface the call to the caller via a
+     * {@code TOOL_SUSPENDED} message.
+     *
+     * @return true if this tool should be surfaced as a suspended call
+     */
+    boolean externalTool() default false;
+
+    /**
+     * Whether the tool requires the agent state to be injected at call time.
+     *
+     * <p>When true, the method signature must declare exactly one
+     * {@code io.agentscope.core.state.AgentState} parameter; the framework excludes that
+     * parameter from the JSON schema and binds the live state at invocation.
+     *
+     * @return true if the tool method consumes the agent state
+     */
+    boolean stateInjected() default false;
+
+    /**
+     * Sensitive filenames that must require explicit permission for this tool.
+     *
+     * <p>An empty array sticks with the default list maintained by {@code ToolBase}.
+     *
+     * @return additional dangerous filenames; empty means use defaults
+     */
+    String[] dangerousFiles() default {};
+
+    /**
+     * Sensitive directory names whose presence in any path segment marks the path dangerous.
+     *
+     * <p>An empty array sticks with the default list maintained by {@code ToolBase}.
+     *
+     * @return additional dangerous directory names; empty means use defaults
+     */
+    String[] dangerousDirectories() default {};
+
+    /**
      * Custom result converter for this tool.
      *
      * <p>Converters transform tool method return values into {@link io.agentscope.core.message.ToolResultBlock}

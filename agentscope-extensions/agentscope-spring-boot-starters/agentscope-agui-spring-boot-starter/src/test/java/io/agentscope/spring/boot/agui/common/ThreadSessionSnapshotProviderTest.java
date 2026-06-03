@@ -27,8 +27,6 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiSnapshotRequest;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -47,8 +45,9 @@ class ThreadSessionSnapshotProviderTest {
         ReActAgent agent =
                 (ReActAgent)
                         sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
-        agent.getMemory()
-                .addMessage(
+        agent.getAgentState()
+                .contextMutable()
+                .add(
                         Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
         ThreadSessionSnapshotProvider provider =
                 new ThreadSessionSnapshotProvider(registry, sessionManager, true);
@@ -69,8 +68,9 @@ class ThreadSessionSnapshotProviderTest {
         ReActAgent agent =
                 (ReActAgent)
                         sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
-        agent.getMemory()
-                .addMessage(
+        agent.getAgentState()
+                .contextMutable()
+                .add(
                         Msg.builder()
                                 .id("msg-1")
                                 .role(MsgRole.ASSISTANT)
@@ -109,8 +109,9 @@ class ThreadSessionSnapshotProviderTest {
         ReActAgent agent =
                 (ReActAgent)
                         sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
-        agent.getMemory()
-                .addMessage(
+        agent.getAgentState()
+                .contextMutable()
+                .add(
                         Msg.builder()
                                 .id("msg-1")
                                 .role(MsgRole.ASSISTANT)
@@ -146,8 +147,9 @@ class ThreadSessionSnapshotProviderTest {
         ReActAgent agent =
                 (ReActAgent)
                         sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
-        agent.getMemory()
-                .addMessage(
+        agent.getAgentState()
+                .contextMutable()
+                .add(
                         Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
         ThreadSessionSnapshotProvider provider =
                 new ThreadSessionSnapshotProvider(registry, sessionManager, true);
@@ -183,8 +185,7 @@ class ThreadSessionSnapshotProviderTest {
     }
 
     private ReActAgent createAgent() {
-        Memory memory = new InMemoryMemory();
-        return ReActAgent.builder().name("test-agent").memory(memory).build();
+        return ReActAgent.builder().name("test-agent").build();
     }
 
     private AguiSnapshotRequest request(String agentId, String threadId) {

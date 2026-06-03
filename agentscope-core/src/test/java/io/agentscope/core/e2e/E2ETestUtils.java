@@ -65,7 +65,6 @@ public class E2ETestUtils {
                 .sysPrompt("A helpful AI assistant that can use tools to solve problems")
                 .model(model)
                 .toolkit(toolkit)
-                .memory(memory)
                 .build();
     }
 

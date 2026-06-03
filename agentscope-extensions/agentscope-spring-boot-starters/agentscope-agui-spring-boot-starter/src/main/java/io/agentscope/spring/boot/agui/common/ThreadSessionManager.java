@@ -17,8 +17,8 @@ package io.agentscope.spring.boot.agui.common;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.state.AgentState;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -130,11 +130,10 @@ public class ThreadSessionManager {
         }
 
         Agent agent = session.getAgent();
-        // Check if the agent has a memory and if it has any messages
-        // ReActAgent is the main agent type that has memory
+        // Check if the agent's AgentState has any context messages.
         if (agent instanceof ReActAgent reactAgent) {
-            Memory memory = reactAgent.getMemory();
-            return memory != null && !memory.getMessages().isEmpty();
+            AgentState state = reactAgent.getAgentState();
+            return state != null && !state.getContext().isEmpty();
         }
 
         return false;
@@ -168,9 +167,9 @@ public class ThreadSessionManager {
 
         Agent agent = session.getAgent();
         if (agent instanceof ReActAgent reactAgent) {
-            Memory memory = reactAgent.getMemory();
-            if (memory != null) {
-                return memory.getMessages();
+            AgentState state = reactAgent.getAgentState();
+            if (state != null) {
+                return state.getContext();
             }
         }
 

@@ -17,6 +17,7 @@ package io.agentscope.core.hook;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.memory.AgentStateMemoryView;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -70,7 +71,9 @@ import java.util.Objects;
  *
  * @see Hook
  * @see HookEventType
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public abstract sealed class HookEvent
         permits PreCallEvent, PostCallEvent, ReasoningEvent, ActingEvent, SummaryEvent, ErrorEvent {
 
@@ -126,13 +129,16 @@ public abstract sealed class HookEvent
     }
 
     /**
-     * Convenient access to agent's memory.
+     * Convenient access to the agent's conversation context wrapped as a read-only
+     * {@link Memory} view. Mutations should be performed against
+     * {@link io.agentscope.core.state.AgentState#contextMutable()} on the running agent's state.
      *
-     * @return The memory, or null if agent doesn't have memory
+     * @return a read-only {@link Memory} view, or {@code null} if the event's agent is not a
+     *     {@link ReActAgent}
      */
     public final Memory getMemory() {
         if (agent instanceof ReActAgent reactAgent) {
-            return reactAgent.getMemory();
+            return new AgentStateMemoryView(reactAgent::getAgentState);
         }
         return null;
     }
