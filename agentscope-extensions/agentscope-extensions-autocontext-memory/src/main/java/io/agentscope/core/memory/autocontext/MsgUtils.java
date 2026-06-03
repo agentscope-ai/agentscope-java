@@ -307,6 +307,7 @@ public class MsgUtils {
      * <ul>
      *   <li>{@code offloaduuid}: UUID of the offloaded original content</li>
      *   <li>{@code compressed_current_round}: Flag indicating current round compression</li>
+     *   <li>{@code event_type}: Compression event type for newer compression strategies</li>
      * </ul>
      *
      * <p>This method checks for the presence of {@code _compress_meta} in the message metadata
@@ -354,6 +355,10 @@ public class MsgUtils {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> compressMetaMap = (Map<String, Object>) compressMeta;
                 if (Boolean.TRUE.equals(compressMetaMap.get("compressed_current_round"))) {
+                    return false;
+                }
+                if (CompressionEvent.RECENT_FOCUS_WINDOW_COMPACT.equals(
+                        compressMetaMap.get("event_type"))) {
                     return false;
                 }
             }

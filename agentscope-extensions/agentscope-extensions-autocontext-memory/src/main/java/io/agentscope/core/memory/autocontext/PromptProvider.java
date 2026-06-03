@@ -24,7 +24,7 @@ package io.agentscope.core.memory.autocontext;
 public class PromptProvider {
 
     /**
-     * Strategy 1: Gets the prompt for compressing previous round tool invocations.
+     * Strategy 2: Gets the prompt for compressing previous round tool invocations.
      * Returns custom prompt if provided, otherwise returns default from Prompts.
      *
      * @param customPrompt the custom prompt configuration, or null to use default
@@ -41,7 +41,7 @@ public class PromptProvider {
     }
 
     /**
-     * Strategy 4: Gets the prompt for summarizing previous round conversations.
+     * Strategy 5: Gets the prompt for summarizing previous round conversations.
      * Returns custom prompt if provided, otherwise returns default from Prompts.
      *
      * @param customPrompt the custom prompt configuration, or null to use default
@@ -58,7 +58,7 @@ public class PromptProvider {
     }
 
     /**
-     * Strategy 5: Gets the prompt for summarizing current round large messages.
+     * Strategy 6: Gets the prompt for summarizing current round large messages.
      * Returns custom prompt if provided, otherwise returns default from Prompts.
      *
      * @param customPrompt the custom prompt configuration, or null to use default
@@ -75,7 +75,7 @@ public class PromptProvider {
     }
 
     /**
-     * Strategy 6: Gets the prompt for compressing current round messages.
+     * Strategy 7: Gets the prompt for compressing current round messages.
      * Returns custom prompt if provided, otherwise returns default from Prompts.
      *
      * <p>Note: This prompt does not include character count requirements. The character count

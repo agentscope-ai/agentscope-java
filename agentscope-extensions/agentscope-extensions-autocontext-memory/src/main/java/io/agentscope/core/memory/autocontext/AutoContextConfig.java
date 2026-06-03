@@ -51,6 +51,12 @@ public class AutoContextConfig {
     /** Number of recent messages to keep uncompressed. */
     int lastKeep = 50;
 
+    /** Number of recent completed rounds to preserve during history rollup. */
+    int historyRollupKeepRecentRounds = 3;
+
+    /** Minimum recent-focus token floor to preserve during history rollup. */
+    int historyRollupKeepRecentTokens = 8000;
+
     /** Minimum number of consecutive tool messages required for compression. */
     int minConsecutiveToolMessages = 6;
 
@@ -92,6 +98,14 @@ public class AutoContextConfig {
 
     public int getLastKeep() {
         return lastKeep;
+    }
+
+    public int getHistoryRollupKeepRecentRounds() {
+        return historyRollupKeepRecentRounds;
+    }
+
+    public int getHistoryRollupKeepRecentTokens() {
+        return historyRollupKeepRecentTokens;
     }
 
     public int getMinConsecutiveToolMessages() {
@@ -146,6 +160,8 @@ public class AutoContextConfig {
         private int offloadSinglePreview = 200;
         private int msgThreshold = 100;
         private int lastKeep = 50;
+        private int historyRollupKeepRecentRounds = 3;
+        private int historyRollupKeepRecentTokens = 8000;
         private int minConsecutiveToolMessages = 6;
         private double currentRoundCompressionRatio = 0.3;
         private int minCompressionTokenThreshold = 5000;
@@ -218,6 +234,30 @@ public class AutoContextConfig {
         }
 
         /**
+         * Sets the number of recent completed rounds to keep outside history rollup.
+         * Default is 3 rounds.
+         *
+         * @param historyRollupKeepRecentRounds the number of recent completed rounds to keep
+         * @return this builder instance for method chaining
+         */
+        public Builder historyRollupKeepRecentRounds(int historyRollupKeepRecentRounds) {
+            this.historyRollupKeepRecentRounds = historyRollupKeepRecentRounds;
+            return this;
+        }
+
+        /**
+         * Sets the minimum token floor for the recent focus window during history rollup.
+         * Default is 8000 tokens.
+         *
+         * @param historyRollupKeepRecentTokens the minimum recent-focus token floor
+         * @return this builder instance for method chaining
+         */
+        public Builder historyRollupKeepRecentTokens(int historyRollupKeepRecentTokens) {
+            this.historyRollupKeepRecentTokens = historyRollupKeepRecentTokens;
+            return this;
+        }
+
+        /**
          * Sets the minimum number of consecutive tool messages required for compression.
          *
          * @param minConsecutiveToolMessages the minimum consecutive tool messages count
@@ -281,6 +321,8 @@ public class AutoContextConfig {
             config.offloadSinglePreview = this.offloadSinglePreview;
             config.msgThreshold = this.msgThreshold;
             config.lastKeep = this.lastKeep;
+            config.historyRollupKeepRecentRounds = this.historyRollupKeepRecentRounds;
+            config.historyRollupKeepRecentTokens = this.historyRollupKeepRecentTokens;
             config.minConsecutiveToolMessages = this.minConsecutiveToolMessages;
             config.currentRoundCompressionRatio = this.currentRoundCompressionRatio;
             config.minCompressionTokenThreshold = this.minCompressionTokenThreshold;

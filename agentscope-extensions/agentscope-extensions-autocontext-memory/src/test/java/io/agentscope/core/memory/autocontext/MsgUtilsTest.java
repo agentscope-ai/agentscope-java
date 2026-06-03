@@ -602,6 +602,25 @@ class MsgUtilsTest {
     }
 
     @Test
+    @DisplayName("Should return false for recent focus rollup summary")
+    void testIsFinalAssistantResponseWithRecentFocusRollupSummary() {
+        Map<String, Object> metadata = new HashMap<>();
+        Map<String, Object> compressMeta = new HashMap<>();
+        compressMeta.put("event_type", CompressionEvent.RECENT_FOCUS_WINDOW_COMPACT);
+        metadata.put("_compress_meta", compressMeta);
+
+        Msg rollupSummary =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(List.of(TextBlock.builder().text("Rolled history").build()))
+                        .metadata(metadata)
+                        .build();
+
+        assertFalse(MsgUtils.isFinalAssistantResponse(rollupSummary));
+    }
+
+    @Test
     @DisplayName("Should return true for assistant message with null metadata")
     void testIsFinalAssistantResponseWithNullMetadata() {
         Msg msg =
