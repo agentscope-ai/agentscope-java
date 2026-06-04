@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -432,6 +433,65 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
 
         return found;
+    }
+
+    // ---- Phase B-3 push delivery -----------------------------------------------------------
+
+    @Override
+    public List<TaskDelivery> findPendingDeliveries(RuntimeContext rc, String sessionId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        Collection<TaskRecord> records =
+                workspaceManager.listTaskRecords(effRc, parentAgentId, sessionId);
+        if (records == null || records.isEmpty()) {
+            return List.of();
+        }
+        List<TaskRecord> ordered = new ArrayList<>(records);
+        ordered.sort(
+                Comparator.comparing(
+                        TaskRecord::getLastUpdatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())));
+        List<TaskDelivery> out = new ArrayList<>();
+        for (TaskRecord r : ordered) {
+            if (r.getStatus() == null || !r.getStatus().isTerminal()) continue;
+            if (r.isDelivered()) continue;
+            out.add(
+                    new TaskDelivery(
+                            r.getTaskId(),
+                            r.getSubAgentId(),
+                            r.getStatus(),
+                            r.getResult(),
+                            r.getErrorMessage(),
+                            r.getLastUpdatedAt()));
+        }
+        return out;
+    }
+
+    /**
+     * Stamps {@code deliveredAt} on the persisted record. Idempotent — the first non-null write
+     * wins; subsequent calls bail out without touching workspace storage. Uses an independent
+     * read-modify-write path rather than going through {@link #updateStatus} so the heartbeat /
+     * orphan-sweeper cannot accidentally clobber the field via their RUNNING/FAILED writes
+     * (those paths reconstruct the record around status-only fields).
+     */
+    @Override
+    public void markDelivered(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        Optional<TaskRecord> existing =
+                workspaceManager.readTaskRecord(effRc, parentAgentId, sessionId, taskId);
+        if (existing.isEmpty()) return;
+        TaskRecord r = existing.get();
+        if (r.getDeliveredAt() != null) return; // already delivered
+        r.setDeliveredAt(Instant.now());
+        persistRecord(effRc, sessionId, r);
+    }
+
+    @Override
+    public boolean isDelivered(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        return workspaceManager
+                .readTaskRecord(effRc, parentAgentId, sessionId, taskId)
+                .map(TaskRecord::isDelivered)
+                .orElse(false);
     }
 
     @Override

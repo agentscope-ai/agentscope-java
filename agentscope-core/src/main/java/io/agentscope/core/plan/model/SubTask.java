@@ -40,7 +40,10 @@ import java.time.format.DateTimeFormatter;
  * // ... execute task
  * task.finish("Project initialized with src/, test/, and docs/ directories");
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The plan package is removed.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class SubTask {
 
     private static final DateTimeFormatter FORMATTER =

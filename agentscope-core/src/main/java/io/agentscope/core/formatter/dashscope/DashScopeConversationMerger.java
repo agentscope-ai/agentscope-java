@@ -163,7 +163,6 @@ public class DashScopeConversationMerger {
 
     /**
      * Merge conversation messages into a single DashScopeMessage (multimodal mode).
-     * Follows Python's _format_agent_message logic exactly.
      *
      * <p>This method combines all agent messages into a single user message with conversation
      * history wrapped in {@code <history>} tags. Images and videos are preserved as separate
@@ -196,7 +195,7 @@ public class DashScopeConversationMerger {
 
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock tb) {
-                    // Accumulate text with agent name (Python format: "name: text")
+                    // Accumulate text with agent name (format: "name: text")
                     accumulatedText.add(name + ": " + tb.getText());
 
                 } else if (block instanceof ImageBlock imageBlock) {

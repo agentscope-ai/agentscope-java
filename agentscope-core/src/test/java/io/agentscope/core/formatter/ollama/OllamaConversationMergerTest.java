@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.Arrays;
@@ -201,7 +202,7 @@ class OllamaConversationMergerTest {
                         "calculator",
                         List.of(TextBlock.builder().text("Result: 42").build()),
                         null);
-        Msg msg = Msg.builder().name("Alice").content(toolResult).build();
+        Msg msg = Msg.builder().name("Alice").role(MsgRole.TOOL).content(toolResult).build();
         List<Msg> msgs = Arrays.asList(msg);
 
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
@@ -233,7 +234,12 @@ class OllamaConversationMergerTest {
                         List.of(TextBlock.builder().text("Result: 42").build()),
                         null);
         TextBlock textBlock = TextBlock.builder().text("Regular text").build();
-        Msg msg = Msg.builder().name("Alice").content(Arrays.asList(textBlock, toolResult)).build();
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .role(MsgRole.TOOL)
+                        .content(Arrays.asList(textBlock, toolResult))
+                        .build();
         List<Msg> msgs = Arrays.asList(msg);
 
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";

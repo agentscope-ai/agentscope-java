@@ -67,7 +67,6 @@ public class MethodToolExample {
                             .name("ToolAgent")
                             .sysPrompt("You are a helpful assistant that can use tools.")
                             .toolkit(toolkit)
-                            .memory(memory)
                             .build();
 
             String[] requests = {

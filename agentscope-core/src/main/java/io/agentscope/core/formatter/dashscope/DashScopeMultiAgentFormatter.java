@@ -157,7 +157,7 @@ public class DashScopeMultiAgentFormatter
      * Format AgentScope Msg objects to DashScope MultiModal message format.
      * This method is used for vision models that require the MultiModalConversation API.
      *
-     * <p>This method follows Python's logic:
+     * <p>Processing steps:
      * 1. Process system message (if any)
      * 2. Group remaining messages into "agent_message" and "tool_sequence"
      * 3. Process each group in order, with first agent_message having history prompt
@@ -230,7 +230,6 @@ public class DashScopeMultiAgentFormatter
 
     /**
      * Group messages sequentially into agent_message and tool_sequence groups.
-     * This follows Python's _group_messages logic.
      *
      * @param msgs Messages to group (excluding system message)
      * @return List of MessageGroup objects in order

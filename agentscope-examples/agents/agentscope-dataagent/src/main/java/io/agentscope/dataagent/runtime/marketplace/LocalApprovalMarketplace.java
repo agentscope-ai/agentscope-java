@@ -31,20 +31,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Filesystem-backed {@link DataAgentMarketplace} reading from
- * {@code ${dataagentHome}/shared/skills/} on disk.
+ * Filesystem-backed {@link DataAgentMarketplace} reading skills from a per-agent slice on disk,
+ * by convention {@code ${dataagentHome}/shared/agents/<agentId>/skills/} (the caller of this
+ * class picks the exact root — see {@link io.agentscope.dataagent.web.config.DataAgentConfig}).
  *
- * <p>This is the in-process implementation that backs the v1 admin-approval contribution flow:
- * approved contributions are dropped into this directory and become visible to every tenant
- * because every per-{@code (ownerId, agentId)} overlay filesystem includes the shared root as its
- * lower layer.
+ * <p>This is the in-process implementation that backs the admin-approval contribution flow:
+ * approved contributions are dropped into the same per-agent slice and become visible to every
+ * tenant of that agent because each per-{@code (userId, agentId)} sandbox projects that slice
+ * into the container as its lower layer.
  *
  * <p>Read-only from the marketplace API's perspective — writes happen out-of-band through
  * {@code MarketContributionService} after admin approval.
  *
- * <p>Layout:
+ * <p>Layout (example for {@code data-agent}):
  * <pre>
- * ${dataagentHome}/shared/skills/
+ * ${dataagentHome}/shared/agents/data-agent/skills/
  *   sql-analysis/
  *     SKILL.md
  *     templates/intro.md     ← side resources flat-keyed by their relative path

@@ -27,9 +27,7 @@ import io.agentscope.core.plan.model.SubTaskState;
 import io.agentscope.core.plan.storage.InMemoryPlanStorage;
 import io.agentscope.core.plan.storage.PlanStorage;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.PlanNotebookState;
 import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;
@@ -100,8 +98,12 @@ import reactor.core.publisher.Mono;
  *   <li>{@link #viewHistoricalPlans} - View historical plans
  *   <li>{@link #recoverHistoricalPlan} - Recover a historical plan
  * </ul>
+ *
+ * @deprecated since 2.0.0. The plan package is removed; use
+ *     {@link io.agentscope.core.state.Task} together with the built-in task tools.
  */
-public class PlanNotebook implements StateModule {
+@Deprecated(forRemoval = true, since = "2.0.0")
+public class PlanNotebook {
 
     public static final String DESCRIPTION =
             "The plan-related tools. Activate this tool when you need to execute "
@@ -143,7 +145,7 @@ public class PlanNotebook implements StateModule {
         return new Builder();
     }
 
-    // ==================== StateModule Implementation ====================
+    // ==================== State Persistence (legacy v1 sessions) ====================
 
     /**
      * Save PlanNotebook state to the session.
@@ -154,7 +156,6 @@ public class PlanNotebook implements StateModule {
      * @param session the session to save state to
      * @param sessionKey the session identifier
      */
-    @Override
     public void saveTo(Session session, SessionKey sessionKey) {
         // Always save, even when null, to ensure cleared state is persisted
         session.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
@@ -166,7 +167,6 @@ public class PlanNotebook implements StateModule {
      * @param session the session to load state from
      * @param sessionKey the session identifier
      */
-    @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
         // Clear existing state first to avoid stale data
         this.currentPlan = null;

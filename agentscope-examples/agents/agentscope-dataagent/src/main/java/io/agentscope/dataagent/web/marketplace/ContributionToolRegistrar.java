@@ -16,6 +16,7 @@
 package io.agentscope.dataagent.web.marketplace;
 
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
+import io.agentscope.dataagent.web.workspace.WorkspaceManagerFactory;
 import io.agentscope.harness.agent.HarnessAgent;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -42,11 +43,15 @@ public class ContributionToolRegistrar {
 
     private final DataAgentBootstrap bootstrap;
     private final MarketContributionService service;
+    private final WorkspaceManagerFactory workspaceFactory;
 
     public ContributionToolRegistrar(
-            DataAgentBootstrap bootstrap, MarketContributionService service) {
+            DataAgentBootstrap bootstrap,
+            MarketContributionService service,
+            WorkspaceManagerFactory workspaceFactory) {
         this.bootstrap = bootstrap;
         this.service = service;
+        this.workspaceFactory = workspaceFactory;
     }
 
     @PostConstruct
@@ -65,7 +70,9 @@ public class ContributionToolRegistrar {
                                                             + " contribute_to_workspace onto"));
         }
         try {
-            main.getDelegate().getToolkit().registerTool(new ContributeWorkspaceTool(service));
+            main.getDelegate()
+                    .getToolkit()
+                    .registerTool(new ContributeWorkspaceTool(service, workspaceFactory));
             log.info(
                     "Registered contribute_to_workspace tool onto main agent '{}'", main.getName());
         } catch (RuntimeException e) {
