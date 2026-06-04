@@ -270,6 +270,41 @@ class OllamaChatModelTest {
     }
 
     @Test
+    @DisplayName("Should handle streaming chat request with null options")
+    void testStreamChatRequestWithNullOptions() {
+        String jsonResponse =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"done\":true}";
+
+        when(httpTransport.stream(any(HttpRequest.class))).thenReturn(Flux.just(jsonResponse));
+
+        List<ChatResponse> responses =
+                assertDoesNotThrow(
+                        () ->
+                                model.stream(
+                                                List.of(
+                                                        Msg.builder()
+                                                                .role(MsgRole.USER)
+                                                                .textContent("Hi")
+                                                                .build()),
+                                                null,
+                                                null)
+                                        .collectList()
+                                        .block());
+
+        assertNotNull(responses);
+        assertFalse(responses.isEmpty());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpTransport).stream(captor.capture());
+
+        HttpRequest request = captor.getValue();
+        assertEquals("POST", request.getMethod());
+        assertTrue(request.getUrl().endsWith("/api/chat"));
+    }
+
+    @Test
     @DisplayName("Integration Test: Real connection to local Ollama")
     void testRealConnection() {
         System.out.println("Running testRealConnection (Mocked for speed)...");

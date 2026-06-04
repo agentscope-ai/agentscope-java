@@ -138,12 +138,9 @@ public class OllamaChatModel extends ChatModelBase {
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        ToolChoice toolChoice = options != null ? options.getToolChoice() : null;
         return streamWithHttpClient(
-                messages,
-                tools,
-                options.getToolChoice(),
-                OllamaOptions.fromGenerateOptions(options),
-                true);
+                messages, tools, toolChoice, OllamaOptions.fromGenerateOptions(options), true);
     }
 
     /**
