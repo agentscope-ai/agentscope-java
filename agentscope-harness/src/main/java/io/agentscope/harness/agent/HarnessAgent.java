@@ -38,7 +38,6 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
@@ -621,32 +620,28 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
-     * Fills in a default SessionKey when the caller didn't provide one, and injects the default
-     * sandbox context. The agent's persistence backend is bound at builder time via
-     * {@code .stateStore(...)}; it is not selectable per-call.
+     * Fills in a default {@code sessionId} when the caller didn't provide one, and injects the
+     * default sandbox context. The agent's persistence backend is bound at builder time via
+     * {@code .stateStore(...)}; the per-call routing is via {@code (userId, sessionId)} on the
+     * RuntimeContext (consumed by {@code ReActAgent.activateSlotForContext}).
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
-        SessionKey ctxSessionKey = ctx.getSessionKey();
-        if (ctxSessionKey == null) {
-            String id = ctx.getSessionId();
-            if (id != null && !id.isBlank()) {
-                ctxSessionKey = SimpleSessionKey.of(id);
-            } else {
-                ctxSessionKey = SimpleSessionKey.of(getName());
-            }
+        String ctxSessionId = ctx.getSessionId();
+        if (ctxSessionId == null || ctxSessionId.isBlank()) {
+            ctxSessionId = getName();
         }
         SandboxContext sandboxCtx =
                 ctx.get(SandboxContext.class) != null
                         ? ctx.get(SandboxContext.class)
                         : defaultSandboxContext;
 
-        if (ctxSessionKey == ctx.getSessionKey() && sandboxCtx == ctx.get(SandboxContext.class)) {
+        if (ctxSessionId.equals(ctx.getSessionId())
+                && sandboxCtx == ctx.get(SandboxContext.class)) {
             return ctx;
         }
         return RuntimeContext.builder()
-                .sessionId(ctx.getSessionId())
+                .sessionId(ctxSessionId)
                 .userId(ctx.getUserId())
-                .sessionKey(ctxSessionKey)
                 .putAll(ctx.getExtra())
                 .put(SandboxContext.class, sandboxCtx)
                 .build();

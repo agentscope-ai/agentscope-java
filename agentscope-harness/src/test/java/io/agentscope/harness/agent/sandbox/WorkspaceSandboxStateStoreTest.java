@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.harness.agent.IsolationScope;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -223,7 +222,7 @@ class WorkspaceSandboxStateStoreTest {
         io.agentscope.core.agent.RuntimeContext.Builder b =
                 io.agentscope.core.agent.RuntimeContext.builder();
         switch (scope) {
-            case SESSION -> b.sessionKey(SimpleSessionKey.of(value));
+            case SESSION -> b.sessionId(value);
             case USER -> b.userId(value);
             default -> {
                 /* AGENT and GLOBAL do not need context fields */

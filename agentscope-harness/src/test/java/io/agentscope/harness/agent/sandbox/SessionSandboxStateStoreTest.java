@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.state.InMemoryAgentStateStore;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.harness.agent.IsolationScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -93,7 +92,7 @@ class SessionSandboxStateStoreTest {
     private static RuntimeContext runtimeContext(IsolationScope scope, String value) {
         RuntimeContext.Builder b = RuntimeContext.builder();
         if (scope == IsolationScope.SESSION) {
-            b.sessionKey(SimpleSessionKey.of(value));
+            b.sessionId(value);
         } else if (scope == IsolationScope.USER) {
             b.userId(value);
         }

@@ -29,7 +29,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -87,11 +86,7 @@ class JsonSessionDefaultLocationTest {
                         .workspace(workspace)
                         .build();
 
-        RuntimeContext rc =
-                RuntimeContext.builder()
-                        .sessionId("s1")
-                        .sessionKey(SimpleSessionKey.of("s1"))
-                        .build();
+        RuntimeContext rc = RuntimeContext.builder().sessionId("s1").sessionId("s1").build();
         agent.call(userMsg("hi"), rc).block();
 
         Path stateRoot = stateHome.resolve(agentName);
@@ -177,12 +172,7 @@ class JsonSessionDefaultLocationTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .build();
-        agent.call(
-                        userMsg("hi"),
-                        RuntimeContext.builder()
-                                .sessionId("s1")
-                                .sessionKey(SimpleSessionKey.of("s1"))
-                                .build())
+        agent.call(userMsg("hi"), RuntimeContext.builder().sessionId("s1").sessionId("s1").build())
                 .block();
 
         Path stateRoot = stateHome.resolve(agentName);

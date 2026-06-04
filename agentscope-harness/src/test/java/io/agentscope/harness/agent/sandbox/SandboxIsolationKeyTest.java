@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.harness.agent.IsolationScope;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -31,8 +30,7 @@ class SandboxIsolationKeyTest {
 
     @Test
     void sessionScope_withSessionKey_resolvesCorrectly() {
-        RuntimeContext ctx =
-                RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-abc")).build();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-abc").build();
         Optional<SandboxIsolationKey> key =
                 SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx, AGENT_ID);
         assertTrue(key.isPresent());
@@ -57,8 +55,7 @@ class SandboxIsolationKeyTest {
 
     @Test
     void nullScope_treatedAsSession_withSessionKey() {
-        RuntimeContext ctx =
-                RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-def")).build();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-def").build();
         Optional<SandboxIsolationKey> key =
                 SandboxIsolationKey.resolve((IsolationScope) null, ctx, AGENT_ID);
         assertTrue(key.isPresent());
@@ -126,7 +123,7 @@ class SandboxIsolationKeyTest {
 
     @Test
     void equalsAndHashCode_sameValues_areEqual() {
-        RuntimeContext ctx = RuntimeContext.builder().sessionKey(SimpleSessionKey.of("s1")).build();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("s1").build();
         Optional<SandboxIsolationKey> k1 =
                 SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx, AGENT_ID);
         Optional<SandboxIsolationKey> k2 =

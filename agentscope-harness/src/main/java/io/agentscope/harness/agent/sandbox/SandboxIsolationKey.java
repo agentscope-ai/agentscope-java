@@ -68,12 +68,11 @@ public final class SandboxIsolationKey {
         IsolationScope effective = scope != null ? scope : IsolationScope.SESSION;
         return switch (effective) {
             case SESSION -> {
-                if (ctx == null || ctx.getSessionKey() == null) {
+                if (ctx == null || ctx.getSessionId() == null || ctx.getSessionId().isBlank()) {
                     yield Optional.empty();
                 }
                 yield Optional.of(
-                        new SandboxIsolationKey(
-                                IsolationScope.SESSION, ctx.getSessionKey().toIdentifier()));
+                        new SandboxIsolationKey(IsolationScope.SESSION, ctx.getSessionId()));
             }
             case USER -> {
                 if (ctx == null || ctx.getUserId() == null || ctx.getUserId().isBlank()) {
