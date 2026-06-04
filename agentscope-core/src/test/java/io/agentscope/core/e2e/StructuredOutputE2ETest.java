@@ -249,7 +249,7 @@ class StructuredOutputE2ETest {
         assertNotNull(result.explanation, "Explanation should be populated");
 
         // Verify tool was called in memory
-        List<Msg> memory = agent.getMemory().getMessages();
+        List<Msg> memory = agent.getAgentState().getContext();
         boolean hasToolRelatedMessage =
                 memory.stream()
                         .anyMatch(
@@ -415,7 +415,8 @@ class StructuredOutputE2ETest {
 
         System.out.println("Memory pre-populated with weather information");
         System.out.println(
-                "Memory size before structured output: " + agent.getMemory().getMessages().size());
+                "Memory size before structured output: "
+                        + agent.getAgentState().getContext().size());
 
         // Request structured output without providing new input message
         // Agent should use existing memory to generate structured output
@@ -456,7 +457,7 @@ class StructuredOutputE2ETest {
                         "User", "The temperature in New York is 68 degrees and it's cloudy.");
         System.out.println("Input: " + TestUtils.extractTextContent(input));
 
-        int memorySizeBeforeStructuredOutput = agent.getMemory().getMessages().size();
+        int memorySizeBeforeStructuredOutput = agent.getAgentState().getContext().size();
         System.out.println("Memory size before: " + memorySizeBeforeStructuredOutput);
 
         // Request structured output
@@ -465,12 +466,12 @@ class StructuredOutputE2ETest {
         assertNotNull(response, "Response should not be null");
 
         // Check memory after structured output
-        int memorySizeAfter = agent.getMemory().getMessages().size();
+        int memorySizeAfter = agent.getAgentState().getContext().size();
         System.out.println("Memory size after: " + memorySizeAfter);
 
         // Memory should contain: user input + final structured output
         // The temporary generate_response tool calls should be cleaned up
-        List<Msg> finalMemory = agent.getMemory().getMessages();
+        List<Msg> finalMemory = agent.getAgentState().getContext();
         System.out.println("\nFinal memory structure:");
         for (int i = 0; i < finalMemory.size(); i++) {
             Msg msg = finalMemory.get(i);

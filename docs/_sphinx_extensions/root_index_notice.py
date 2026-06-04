@@ -18,6 +18,12 @@ The default root ``index.html`` is only a meta-refresh stub and never runs ``pag
 so the notice bar does not appear when users open ``/`` or ``index.html``. This hook
 rebuilds that file when it looks like a redirect stub, using the same ``html_context``
 ``docs_site_notice`` data as the Jinja template.
+
+It also writes a small index stub at each version directory declared in
+``docs_versions`` (e.g. ``v1/index.html``, ``v2/index.html``), so URLs like
+``/v2/`` resolve to the correct ``<slug>/<lang>/intro.html`` instead of 404ing on
+static hosts (GitHub Pages has no try_files / rewrite). The stub respects the
+``preferred-language`` localStorage key set by ``_static/language.js``.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ import html
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def _notice_enabled(dn: dict) -> bool:
@@ -175,10 +182,123 @@ def _patch_root_index(app, _exception) -> None:
     index.write_text(replacement, encoding="utf-8")
 
 
+_VERSION_SLUG_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _version_slug(url_value: str) -> str | None:
+    """Extract the last path segment from a docs_versions URL.
+
+    Accepts both ``https://java.agentscope.io/v2/`` and plain ``v2`` / ``/v2``.
+    Returns ``None`` when the value does not look like a single, safe slug
+    (avoids writing to arbitrary paths if someone configures a weird URL).
+    """
+    if not url_value:
+        return None
+    raw = url_value.strip()
+    if "://" in raw:
+        path = urlparse(raw).path or ""
+    else:
+        path = raw
+    parts = [seg for seg in path.split("/") if seg]
+    if not parts:
+        return None
+    slug = parts[-1]
+    if not _VERSION_SLUG_RE.match(slug):
+        return None
+    return slug
+
+
+def _version_stub_html(slug: str, languages: list[str]) -> str:
+    """Generate the redirect stub for ``<outdir>/<slug>/index.html``.
+
+    The page picks a language target by, in order:
+      1. ``localStorage["preferred-language"]`` (set by _static/language.js)
+      2. ``navigator.language`` prefix (``zh*`` → zh)
+      3. fallback to the first language in ``languages``
+    The fallback language is also used as the ``<meta http-equiv="refresh">``
+    target so the page still works without JS.
+    """
+    if not languages:
+        languages = ["en"]
+    fallback = languages[0]
+    fallback_target = f"{fallback}/intro.html"
+    langs_json = json.dumps(languages)
+    title = html.escape(f"AgentScope Java {slug}")
+    return f"""<!DOCTYPE html>
+<html lang="{html.escape(fallback, quote=True)}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{title}</title>
+  <meta name="robots" content="noindex" />
+  <meta http-equiv="refresh" content="0; url={html.escape(fallback_target, quote=True)}" />
+  <script>
+    (function () {{
+      try {{
+        var languages = {langs_json};
+        var preferred = null;
+        try {{ preferred = localStorage.getItem("preferred-language"); }} catch (e) {{}}
+        if (!preferred || languages.indexOf(preferred) === -1) {{
+          var nav = (navigator.language || navigator.userLanguage || "").toLowerCase();
+          if (nav.indexOf("zh") === 0 && languages.indexOf("zh") !== -1) {{
+            preferred = "zh";
+          }}
+        }}
+        if (!preferred || languages.indexOf(preferred) === -1) {{
+          preferred = languages[0];
+        }}
+        location.replace(preferred + "/intro.html");
+      }} catch (e) {{}}
+    }})();
+  </script>
+</head>
+<body>
+  <p><a href="{html.escape(fallback_target, quote=True)}">Continue to documentation</a></p>
+</body>
+</html>
+"""
+
+
+def _patch_version_indexes(app, _exception) -> None:
+    if _exception is not None:
+        return
+    if app.builder.format != "html":
+        return
+    ctx = getattr(app.config, "html_context", None) or {}
+    if not isinstance(ctx, dict):
+        return
+    versions = ctx.get("docs_versions") or []
+    if not isinstance(versions, list):
+        return
+
+    languages_default = ["en", "zh"]
+    outdir = Path(app.outdir)
+    for entry in versions:
+        if not isinstance(entry, dict):
+            continue
+        slug = _version_slug(str(entry.get("url") or ""))
+        if not slug:
+            continue
+        version_dir = outdir / slug
+        if not version_dir.is_dir():
+            continue
+        target = version_dir / "index.html"
+        # Only write the stub when the version dir has no real index yet.
+        # Sphinx never creates one for a sub-folder; if a future build does, we
+        # do not want to clobber it.
+        if target.exists():
+            continue
+        langs = [l for l in languages_default if (version_dir / l).is_dir()]
+        if not langs:
+            continue
+        target.write_text(_version_stub_html(slug, langs), encoding="utf-8")
+
+
 def setup(app):
     app.connect("build-finished", _patch_root_index)
+    app.connect("build-finished", _patch_version_indexes)
     return {
-        "version": "1.0.0",
+        "version": "1.1.0",
         "parallel_read_safe": True,
         "parallel_write_safe": True,
     }

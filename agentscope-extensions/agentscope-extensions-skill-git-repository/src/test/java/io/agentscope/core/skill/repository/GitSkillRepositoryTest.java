@@ -418,6 +418,56 @@ class GitSkillRepositoryTest {
         assertEquals(customSource, source);
     }
 
+    // ==================== Skills Root Tests ====================
+
+    @Test
+    @DisplayName("Should load skills from configured skillsRoot subdirectory")
+    void testGetSkill_FromCustomSkillsRoot() throws Exception {
+        // Build a repo with skills nested under packs/marketing/ — a layout
+        // the default convention would not find.
+        Path repoDir = tempDir.resolve("custom-root-repo");
+        Files.createDirectories(repoDir);
+        try (Git git = Git.init().setDirectory(repoDir.toFile()).call()) {
+            Path nested = repoDir.resolve("packs").resolve("marketing").resolve("greeter");
+            Files.createDirectories(nested);
+            Files.writeString(
+                    nested.resolve("SKILL.md"),
+                    """
+                    ---
+                    name: greeter
+                    description: A skill nested under packs/marketing
+                    ---
+                    # Greeter
+                    """);
+            git.add().addFilepattern(".").call();
+            git.commit().setMessage("nested skill").call();
+        }
+
+        repository =
+                new GitSkillRepository(
+                        "file://" + repoDir.toString(), null, null, null, true, "packs/marketing");
+
+        AgentSkill skill = repository.getSkill("greeter");
+        assertNotNull(skill);
+        assertEquals("greeter", skill.getName());
+        assertEquals("A skill nested under packs/marketing", skill.getDescription());
+    }
+
+    @Test
+    @DisplayName("Should reject skillsRoot containing '..'")
+    void testConstructor_RejectsParentSkillsRoot() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new GitSkillRepository(
+                                "https://github.com/test/repo.git",
+                                null,
+                                null,
+                                null,
+                                true,
+                                "../escape"));
+    }
+
     // ==================== Error Scenario Tests ====================
 
     @Test

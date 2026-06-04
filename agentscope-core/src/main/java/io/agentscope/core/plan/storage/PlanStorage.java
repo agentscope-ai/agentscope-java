@@ -23,7 +23,10 @@ import reactor.core.publisher.Mono;
  * Storage interface for persisting and retrieving plans.
  *
  * <p>Implementations can store plans in memory, database, or any other persistent storage.
+ *
+ * @deprecated since 2.0.0. The plan package is removed.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public interface PlanStorage {
 
     /**

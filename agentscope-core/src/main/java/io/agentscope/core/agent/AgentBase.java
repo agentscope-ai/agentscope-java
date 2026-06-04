@@ -23,12 +23,10 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.shutdown.GracefulShutdownHook;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -90,7 +88,8 @@ import reactor.core.scheduler.Schedulers;
  * });
  * }</pre>
  */
-public abstract class AgentBase implements StateModule, Agent {
+@SuppressWarnings("deprecation")
+public abstract class AgentBase implements Agent {
 
     private final String agentId;
     private final String name;
@@ -98,9 +97,7 @@ public abstract class AgentBase implements StateModule, Agent {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final boolean checkRunning;
     private final List<Hook> hooks;
-    private static final List<Hook> systemHooks =
-            new CopyOnWriteArrayList<>(
-                    List.of(new GracefulShutdownHook(GracefulShutdownManager.getInstance())));
+    private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
@@ -168,6 +165,14 @@ public abstract class AgentBase implements StateModule, Agent {
     @Override
     public final String getDescription() {
         return description != null ? description : Agent.super.getDescription();
+    }
+
+    /**
+     * Returns the {@code checkRunning} invariant configured at construction. When {@code true},
+     * {@link #call(List)} rejects re-entry while the agent is already running.
+     */
+    public final boolean isCheckRunning() {
+        return checkRunning;
     }
 
     /**
@@ -514,6 +519,14 @@ public abstract class AgentBase implements StateModule, Agent {
     protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
 
     /**
+     * Returns the agent's mutable runtime state, or {@code null} if this agent type does not
+     * maintain an {@link AgentState}.
+     */
+    public AgentState getAgentState() {
+        return null;
+    }
+
+    /**
      * Current per-call {@link RuntimeContext} when bound (e.g. by {@code ReActAgent} during a
      * {@code call}).
      */
@@ -614,7 +627,7 @@ public abstract class AgentBase implements StateModule, Agent {
      *
      * @return Sorted list of hooks
      */
-    protected List<Hook> getSortedHooks() {
+    public List<Hook> getSortedHooks() {
         return hooks;
     }
 
@@ -659,13 +672,11 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Mono containing the new tail messages that {@code doCall} should add to memory
      */
     private Mono<List<Msg>> notifyPreCall(List<Msg> callArgs) {
-        // Take a memory snapshot before hooks run (pre-hook view)
+        // Take a state snapshot before hooks run (pre-hook view)
         List<Msg> snapshot = List.of();
-        if (this instanceof io.agentscope.core.ReActAgent reactAgent) {
-            Memory mem = reactAgent.getMemory();
-            if (mem != null) {
-                snapshot = mem.getMessages();
-            }
+        AgentState agentState = getAgentState();
+        if (agentState != null) {
+            snapshot = agentState.getContext();
         }
         final int snapshotSize = snapshot.size();
 
@@ -846,7 +857,10 @@ public abstract class AgentBase implements StateModule, Agent {
      * @param msgs Input messages
      * @param options Stream configuration options
      * @return Flux of events emitted during execution
+     * @deprecated since 2.0.0, for removal. Use {@code ReActAgent#streamEvents(List)} for the
+     *     fine-grained {@code AgentEvent} stream.
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
         return createEventStream(options, () -> call(msgs));
@@ -859,7 +873,10 @@ public abstract class AgentBase implements StateModule, Agent {
      * @param options Stream configuration options
      * @param structuredModel Optional class defining the structure
      * @return Flux of events emitted during execution
+     * @deprecated since 2.0.0, for removal. Use {@code ReActAgent#streamEvents(...)} for the
+     *     fine-grained {@code AgentEvent} stream.
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
         return createEventStream(options, () -> call(msgs, structuredModel));
@@ -872,7 +889,10 @@ public abstract class AgentBase implements StateModule, Agent {
      * @param options Stream configuration options
      * @param schema JSON schema defining the structure of the response
      * @return Flux of events emitted during execution
+     * @deprecated since 2.0.0, for removal. Use {@code ReActAgent#streamEvents(...)} for the
+     *     fine-grained {@code AgentEvent} stream.
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
         return createEventStream(options, () -> call(msgs, schema));
@@ -936,11 +956,9 @@ public abstract class AgentBase implements StateModule, Agent {
                                                                                     finalMsg,
                                                                                     true));
                                                                 }
-
-                                                                // Complete the stream
-                                                                sink.complete();
                                                             },
-                                                            sink::error);
+                                                            sink::error,
+                                                            sink::complete);
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .publishOn(Schedulers.boundedElastic()));

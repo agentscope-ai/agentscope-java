@@ -107,6 +107,7 @@ public class GitSkillRepository implements AgentSkillRepository {
     private final Path localPath;
     private final String source;
     private final boolean autoSync;
+    private final String skillsRoot;
     private final boolean tempDirectory;
     private final Thread shutdownHook;
     private Path skillsPath;
@@ -213,6 +214,35 @@ public class GitSkillRepository implements AgentSkillRepository {
      */
     public GitSkillRepository(
             String remoteUrl, String branch, Path localPath, String source, boolean autoSync) {
+        this(remoteUrl, branch, localPath, source, autoSync, null);
+    }
+
+    /**
+     * Creates a GitSkillRepository with an explicit in-repo skills root directory.
+     *
+     * <p>{@code skillsRoot} pins where inside the cloned repository the skill folders live (each
+     * containing a {@code SKILL.md}). When non-null, the value is treated as a path relative to the
+     * repo root; absolute paths and paths containing {@code ..} segments are rejected. When null,
+     * the implementation falls back to the legacy convention: use {@code <repo>/skills/} if it
+     * exists, otherwise the repo root.
+     *
+     * @param remoteUrl  The Git repository URL (HTTPS or SSH)
+     * @param branch     The branch name to clone (null for remote default branch)
+     * @param localPath  The local path to clone the repository (null to use temporary directory)
+     * @param source     The custom source identifier (null to use default)
+     * @param autoSync   Whether to auto-sync on read operations
+     * @param skillsRoot Optional in-repo subdirectory containing skill folders
+     * @throws IllegalArgumentException if {@code remoteUrl} is blank, or {@code skillsRoot} is
+     *     absolute / contains a {@code ..} segment / would escape the repo root
+     * @throws RuntimeException if temporary directory creation fails
+     */
+    public GitSkillRepository(
+            String remoteUrl,
+            String branch,
+            Path localPath,
+            String source,
+            boolean autoSync,
+            String skillsRoot) {
         if (remoteUrl == null || remoteUrl.trim().isEmpty()) {
             throw new IllegalArgumentException("Remote URL cannot be null or empty");
         }
@@ -220,6 +250,7 @@ public class GitSkillRepository implements AgentSkillRepository {
         this.branch = branch;
         this.source = source;
         this.autoSync = autoSync;
+        this.skillsRoot = normalizeSkillsRoot(skillsRoot);
 
         if (localPath != null) {
             // User-specified path - not temporary, will not be auto-deleted
@@ -382,6 +413,35 @@ public class GitSkillRepository implements AgentSkillRepository {
     }
 
     /**
+     * Validates a user-supplied in-repo skills root.
+     *
+     * <p>Rejects absolute paths and paths whose segments contain {@code ".."}, so a malicious or
+     * mistaken config cannot read files outside the cloned repository tree. Blank input is treated
+     * as "unspecified" and returns null (preserving the legacy auto-detect behavior).
+     */
+    private static String normalizeSkillsRoot(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        Path p = Path.of(trimmed);
+        if (p.isAbsolute()) {
+            throw new IllegalArgumentException(
+                    "skillsRoot must be a path relative to the repository root, got: " + raw);
+        }
+        for (Path segment : p) {
+            if (segment.toString().equals("..")) {
+                throw new IllegalArgumentException(
+                        "skillsRoot must not contain '..' segments, got: " + raw);
+            }
+        }
+        return trimmed;
+    }
+
+    /**
      * Ensures the Git repository is synchronized (cloned or pulled) before accessing skills.
      *
      * @throws IllegalStateException if local path exists but is not a valid Git repository
@@ -426,16 +486,35 @@ public class GitSkillRepository implements AgentSkillRepository {
 
             // Ensure skills path is initialized
             if (skillsPath == null) {
-                // Convention: skills are located in the "skills" subdirectory if it exists
-                Path skillsSubDir = localPath.resolve("skills");
-
-                if (Files.exists(skillsSubDir) && Files.isDirectory(skillsSubDir)) {
-                    skillsPath = skillsSubDir;
-                    logger.info("Found skills subdirectory, using: {}", skillsPath);
+                if (skillsRoot != null) {
+                    Path explicit = localPath.resolve(skillsRoot).normalize();
+                    if (!explicit.startsWith(localPath.toAbsolutePath().normalize())
+                            && !explicit.startsWith(localPath.normalize())) {
+                        throw new IllegalStateException(
+                                "Configured skillsRoot escapes the repository: " + skillsRoot);
+                    }
+                    if (!Files.isDirectory(explicit)) {
+                        throw new IllegalStateException(
+                                "Configured skillsRoot does not exist in repository: "
+                                        + skillsRoot
+                                        + " (resolved to "
+                                        + explicit
+                                        + ")");
+                    }
+                    skillsPath = explicit;
+                    logger.info("Using configured skillsRoot subdirectory: {}", skillsPath);
                 } else {
-                    skillsPath = localPath;
-                    logger.info(
-                            "No skills subdirectory found, using repository root: {}", skillsPath);
+                    // Convention: skills are located in the "skills" subdirectory if it exists
+                    Path skillsSubDir = localPath.resolve("skills");
+                    if (Files.exists(skillsSubDir) && Files.isDirectory(skillsSubDir)) {
+                        skillsPath = skillsSubDir;
+                        logger.info("Found skills subdirectory, using: {}", skillsPath);
+                    } else {
+                        skillsPath = localPath;
+                        logger.info(
+                                "No skills subdirectory found, using repository root: {}",
+                                skillsPath);
+                    }
                 }
 
                 logger.info(

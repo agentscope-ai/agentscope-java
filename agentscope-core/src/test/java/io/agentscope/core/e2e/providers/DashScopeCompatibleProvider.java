@@ -18,7 +18,6 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.HashSet;
@@ -54,11 +53,7 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
                                         : new OpenAIChatFormatter())
                         .build();
 
-        return ReActAgent.builder()
-                .name(name)
-                .model(model)
-                .toolkit(toolkit)
-                .memory(new InMemoryMemory());
+        return ReActAgent.builder().name(name).model(model).toolkit(toolkit);
     }
 
     @Override

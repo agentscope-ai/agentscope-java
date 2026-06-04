@@ -27,7 +27,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -109,8 +109,10 @@ class HarnessAgentModelStringTest {
         SubagentEntry entry =
                 entries.stream().filter(e -> "sa".equals(e.name())).findFirst().orElseThrow();
 
-        HarnessAgent subAgent = (HarnessAgent) entry.factory().create();
-        assertSame(sub, subAgent.getDelegate().getModel());
+        HarnessAgent subAgent =
+                (HarnessAgent)
+                        entry.factory().create(io.agentscope.core.agent.RuntimeContext.empty());
+        assertSame(sub, subAgent.getModel());
     }
 
     private static Model stubModel(String assistantText) {

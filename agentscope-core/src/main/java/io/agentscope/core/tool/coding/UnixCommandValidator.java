@@ -42,6 +42,7 @@ import org.slf4j.LoggerFactory;
  *   <li>Removes script extensions: {@code .sh}, {@code .py}, {@code .rb}, {@code .pl}, {@code .bash}, {@code .zsh}</li>
  * </ul>
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class UnixCommandValidator implements CommandValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(UnixCommandValidator.class);

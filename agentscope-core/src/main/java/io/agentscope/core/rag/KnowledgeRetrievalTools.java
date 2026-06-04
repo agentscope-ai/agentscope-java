@@ -48,7 +48,11 @@ import java.util.List;
  *     .toolkit(toolkit)
  *     .build();
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
+ *     layer.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class KnowledgeRetrievalTools {
 
     private final Knowledge knowledge;
@@ -139,7 +143,7 @@ public class KnowledgeRetrievalTools {
         // Extract conversation history from agent if available
         List<Msg> conversationHistory = null;
         if (agent instanceof ReActAgent reActAgent) {
-            conversationHistory = reActAgent.getMemory().getMessages();
+            conversationHistory = reActAgent.getAgentState().getContext();
         }
 
         // Build retrieval config with conversation history
