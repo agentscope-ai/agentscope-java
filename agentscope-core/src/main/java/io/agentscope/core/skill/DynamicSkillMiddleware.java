@@ -54,7 +54,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     private static final Logger log = LoggerFactory.getLogger(DynamicSkillMiddleware.class);
 
     private final List<AgentSkillRepository> repositories;
-    private final Toolkit toolkit;
+    private volatile Toolkit toolkit;
     private final SkillFilter builderFilter;
 
     private volatile SkillBox currentSkillBox;
@@ -76,6 +76,20 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
      */
     public SkillBox getCurrentSkillBox() {
         return currentSkillBox;
+    }
+
+    /**
+     * Rebind this middleware to the agent's actual toolkit after the defensive deep copy
+     * performed by {@code ReActAgent.Builder.build()}.
+     *
+     * <p>Without this rebind, the middleware would register skill tools on the pre-copy
+     * toolkit, making them invisible to the agent at runtime.
+     *
+     * @param newToolkit the toolkit copy that the agent will actually use
+     */
+    @Override
+    public void rebindToolkit(Toolkit newToolkit) {
+        this.toolkit = newToolkit;
     }
 
     @Override
