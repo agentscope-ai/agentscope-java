@@ -119,6 +119,202 @@ class ToolCallParamTest {
     }
 
     @Nested
+    @DisplayName("Copy Builder pattern")
+    class CopyBuilderTests {
+
+        @Test
+        @DisplayName("Should copy all fields from source")
+        void testCopyAllFields() {
+            ToolUseBlock toolUseBlock =
+                    ToolUseBlock.builder()
+                            .id("test-id")
+                            .name("test_tool")
+                            .input(Map.of("key", "value"))
+                            .build();
+
+            Agent mockAgent = mock(Agent.class);
+            when(mockAgent.getName()).thenReturn("TestAgent");
+
+            ToolExecutionContext context =
+                    ToolExecutionContext.builder().register("testContext").build();
+
+            List<ToolResultBlock> emittedChunks = new ArrayList<>();
+            ToolEmitter emitter = emittedChunks::add;
+
+            Map<String, Object> input = new HashMap<>();
+            input.put("param1", "value1");
+
+            ToolCallParam original =
+                    ToolCallParam.builder()
+                            .toolUseBlock(toolUseBlock)
+                            .input(input)
+                            .agent(mockAgent)
+                            .context(context)
+                            .emitter(emitter)
+                            .build();
+
+            // Create copy
+            ToolCallParam copy = ToolCallParam.builder(original).build();
+
+            assertNotNull(copy);
+            assertEquals(original.getToolUseBlock(), copy.getToolUseBlock());
+            assertEquals(original.getInput(), copy.getInput());
+            assertEquals(original.getAgent(), copy.getAgent());
+            assertEquals(original.getContext(), copy.getContext());
+            assertSame(original.getEmitter(), copy.getEmitter());
+        }
+
+        @Test
+        @DisplayName("Should allow modifying copied fields")
+        void testModifyCopiedFields() {
+            ToolUseBlock toolUseBlock =
+                    ToolUseBlock.builder()
+                            .id("test-id")
+                            .name("test_tool")
+                            .input(Map.of("key", "value"))
+                            .build();
+
+            Map<String, Object> input = new HashMap<>();
+            input.put("param1", "value1");
+
+            ToolCallParam original =
+                    ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+
+            // Create copy with modified input
+            Map<String, Object> newInput = new HashMap<>();
+            newInput.put("param2", "value2");
+            ToolCallParam modified = ToolCallParam.builder(original).input(newInput).build();
+
+            // Original should be unchanged
+            assertEquals("value1", original.getInput().get("param1"));
+            assertNull(original.getInput().get("param2"));
+
+            // Modified should have new value
+            assertEquals("value2", modified.getInput().get("param2"));
+            assertNull(modified.getInput().get("param1"));
+        }
+
+        @Test
+        @DisplayName("Should shallow copy input map (entries independent, nested values shared)")
+        @SuppressWarnings("unchecked")
+        void testShallowCopyInputMap() {
+            ToolUseBlock toolUseBlock =
+                    ToolUseBlock.builder().id("id").name("tool").input(Map.of()).build();
+
+            // Use a nested mutable value to verify shallow copy semantics
+            List<String> nestedList = new ArrayList<>(List.of("a", "b"));
+            Map<String, Object> input = new HashMap<>();
+            input.put("list", nestedList);
+
+            ToolCallParam original =
+                    ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+
+            // Create copy (no input override)
+            ToolCallParam copy = ToolCallParam.builder(original).build();
+
+            // Input maps should be equal
+            assertEquals(original.getInput(), copy.getInput());
+
+            // Nested mutable value should be the SAME reference (shallow copy)
+            assertSame(
+                    original.getInput().get("list"),
+                    copy.getInput().get("list"),
+                    "Nested values should be shared (shallow copy)");
+
+            // But top-level entries should be independent:
+            // adding a new top-level key to copy's input should NOT affect original
+            // (because ToolCallParam constructor does new HashMap<>(builder.input))
+            Map<String, Object> modifiedInput = new HashMap<>(copy.getInput());
+            modifiedInput.put("newKey", "newValue");
+            ToolCallParam modified = ToolCallParam.builder(original).input(modifiedInput).build();
+
+            assertNull(
+                    original.getInput().get("newKey"),
+                    "Original should not have the new key added to the modified copy");
+            assertEquals("newValue", modified.getInput().get("newKey"));
+        }
+
+        @Test
+        @DisplayName("Should copy with null fields")
+        void testCopyWithNullFields() {
+            ToolUseBlock toolUseBlock =
+                    ToolUseBlock.builder().id("id").name("tool").input(Map.of()).build();
+
+            ToolCallParam original = ToolCallParam.builder().toolUseBlock(toolUseBlock).build();
+
+            // Create copy
+            ToolCallParam copy = ToolCallParam.builder(original).build();
+
+            assertNotNull(copy);
+            assertEquals(original.getToolUseBlock(), copy.getToolUseBlock());
+            assertTrue(copy.getInput().isEmpty());
+            assertNull(copy.getAgent());
+            assertNull(copy.getContext());
+        }
+
+        @Test
+        @DisplayName("Should throw NPE when source is null")
+        void testCopyWithNullSource() {
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    NullPointerException.class, () -> ToolCallParam.builder((ToolCallParam) null));
+        }
+
+        @Test
+        @DisplayName("Should preserve immutable fields as references")
+        void testPreserveImmutableFields() {
+            ToolUseBlock toolUseBlock =
+                    ToolUseBlock.builder()
+                            .id("test-id")
+                            .name("test_tool")
+                            .input(Map.of("key", "value"))
+                            .build();
+
+            Agent mockAgent = mock(Agent.class);
+            when(mockAgent.getName()).thenReturn("TestAgent");
+
+            ToolExecutionContext context =
+                    ToolExecutionContext.builder().register("testContext").build();
+
+            ToolCallParam original =
+                    ToolCallParam.builder()
+                            .toolUseBlock(toolUseBlock)
+                            .agent(mockAgent)
+                            .context(context)
+                            .build();
+
+            ToolCallParam copy = ToolCallParam.builder(original).build();
+
+            // Immutable fields should be the same references
+            assertSame(original.getToolUseBlock(), copy.getToolUseBlock());
+            assertSame(original.getAgent(), copy.getAgent());
+            assertSame(original.getContext(), copy.getContext());
+        }
+
+        @Test
+        @DisplayName("Should allow replacing immutable fields in copy")
+        void testReplaceImmutableFieldsInCopy() {
+            ToolUseBlock originalToolUseBlock =
+                    ToolUseBlock.builder().id("id1").name("tool1").input(Map.of()).build();
+            ToolUseBlock newToolUseBlock =
+                    ToolUseBlock.builder().id("id2").name("tool2").input(Map.of()).build();
+
+            ToolCallParam original =
+                    ToolCallParam.builder().toolUseBlock(originalToolUseBlock).build();
+
+            ToolCallParam modified =
+                    ToolCallParam.builder(original).toolUseBlock(newToolUseBlock).build();
+
+            // Original should be unchanged
+            assertEquals("id1", original.getToolUseBlock().getId());
+            assertEquals("tool1", original.getToolUseBlock().getName());
+
+            // Modified should have new values
+            assertEquals("id2", modified.getToolUseBlock().getId());
+            assertEquals("tool2", modified.getToolUseBlock().getName());
+        }
+    }
+
+    @Nested
     @DisplayName("Emitter functionality")
     class EmitterTests {
 

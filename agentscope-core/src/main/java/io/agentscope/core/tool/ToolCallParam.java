@@ -21,6 +21,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Parameters for tool invocation.
@@ -127,6 +128,34 @@ public class ToolCallParam {
     }
 
     /**
+     * Creates a new builder initialized with values from an existing ToolCallParam.
+     *
+     * <p>This is useful for creating a modified copy of an existing parameter object.
+     * The builder copies all values from the source object, allowing selective
+     * modifications before building a new instance.
+     *
+     * <p><b>Example usage:</b>
+     * <pre>{@code
+     * ToolCallParam original = ...;
+     * ToolCallParam modified = ToolCallParam.builder(original)
+     *     .input(Map.of("newKey", "newValue"))
+     *     .build();
+     * }</pre>
+     *
+     * <p>Note: The input map structure is copied so that entries can be modified
+     * independently, but nested values (typed as Object) remain shared.
+     * Immutable fields (toolUseBlock, agent, context, emitter) are shared by reference.
+     *
+     * @param source The existing ToolCallParam to copy values from
+     * @return A new builder pre-populated with the source's values
+     * @throws NullPointerException if source is null
+     */
+    public static Builder builder(ToolCallParam source) {
+        Objects.requireNonNull(source, "source must not be null");
+        return new Builder(source);
+    }
+
+    /**
      * Builder for ToolCallParam.
      */
     public static class Builder {
@@ -137,6 +166,14 @@ public class ToolCallParam {
         private ToolEmitter emitter;
 
         private Builder() {}
+
+        private Builder(ToolCallParam source) {
+            this.toolUseBlock = source.toolUseBlock;
+            this.input = source.input.isEmpty() ? null : source.input;
+            this.agent = source.agent;
+            this.context = source.context;
+            this.emitter = source.emitter;
+        }
 
         /**
          * Sets the tool use block.
