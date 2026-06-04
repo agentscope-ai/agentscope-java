@@ -589,7 +589,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         doCallInner(input.msgs())
                                 .flatMap(result -> saveStateToSession().thenReturn(result))
                                 .doOnNext(resultHolder::set)
-                                .flatMapMany(m -> Flux.<AgentEvent>empty());
+                                .flatMapMany(ignored -> Flux.<AgentEvent>empty());
 
         return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
                 .apply(new AgentInput(msgs))

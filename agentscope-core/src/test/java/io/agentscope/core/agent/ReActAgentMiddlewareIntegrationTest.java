@@ -185,7 +185,7 @@ class ReActAgentMiddlewareIntegrationTest {
     }
 
     @Test
-    void onAgentHookFirsViaCallPath() {
+    void onAgentHookFiresViaCallPath() {
         List<String> trace = new CopyOnWriteArrayList<>();
         ReActAgent agent =
                 buildAgent(new FixedTextModel("ok"), List.of(new RecordingMiddleware("A", trace)));
