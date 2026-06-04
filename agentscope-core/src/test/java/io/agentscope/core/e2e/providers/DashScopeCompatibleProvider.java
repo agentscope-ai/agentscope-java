@@ -18,7 +18,6 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.HashSet;
@@ -54,11 +53,7 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
                                         : new OpenAIChatFormatter())
                         .build();
 
-        return ReActAgent.builder()
-                .name(name)
-                .model(model)
-                .toolkit(toolkit)
-                .memory(new InMemoryMemory());
+        return ReActAgent.builder().name(name).model(model).toolkit(toolkit);
     }
 
     @Override
@@ -175,6 +170,117 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
     public static class QwenPlusMultiAgentOpenAI extends DashScopeCompatibleProvider {
         public QwenPlusMultiAgentOpenAI() {
             super("qwen-plus", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI to DashScope (Multi-Agent)";
+        }
+    }
+
+    /** Qwen3.5-Plus - Native multimodal model (image, video). */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO
+    })
+    public static class Qwen35PlusOpenAI extends DashScopeCompatibleProvider {
+        public Qwen35PlusOpenAI() {
+            super("qwen3.5-plus", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI to DashScope";
+        }
+    }
+
+    /** Qwen3.5-Plus with multi-agent formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
+    public static class Qwen35PlusMultiAgentOpenAI extends DashScopeCompatibleProvider {
+        public Qwen35PlusMultiAgentOpenAI() {
+            super("qwen3.5-plus", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI to DashScope (Multi-Agent)";
+        }
+    }
+
+    /** Qwen3.5-Flash - Native multimodal model (image, video). */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO
+    })
+    public static class Qwen35FlashOpenAI extends DashScopeCompatibleProvider {
+        public Qwen35FlashOpenAI() {
+            super("qwen3.5-flash", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI to DashScope";
+        }
+    }
+
+    /** Qwen3.5-Flash with multi-agent formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
+    public static class Qwen35FlashMultiAgentOpenAI extends DashScopeCompatibleProvider {
+        public Qwen35FlashMultiAgentOpenAI() {
+            super("qwen3.5-flash", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI to DashScope (Multi-Agent)";
+        }
+    }
+
+    /** Qwen3.5-397B-A17B - Native multimodal MoE model (image, video). */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO
+    })
+    public static class Qwen35_397bA17bOpenAI extends DashScopeCompatibleProvider {
+        public Qwen35_397bA17bOpenAI() {
+            super("qwen3.5-397b-a17b", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI to DashScope";
+        }
+    }
+
+    /** Qwen3.5-397B-A17B with multi-agent formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
+    public static class Qwen35_397bA17bMultiAgentOpenAI extends DashScopeCompatibleProvider {
+        public Qwen35_397bA17bMultiAgentOpenAI() {
+            super("qwen3.5-397b-a17b", true);
         }
 
         @Override

@@ -71,8 +71,14 @@ header:
     - 'NOTICE'
     - 'CNAME'
     - 'Jenkinsfile'
+    - '.gitattributes'
     - '**/vendor/**'
+    - '**/docs/**'
     - '**/.prettierrc'
+    - 'agentscope-examples/**/frontend/**'
+    - '**/Dockerfile'
+    - '**/src/main/resources/**'
+    - '**/src/test/resources/**'
   comment: on-failure
 
   license-location-threshold: 130

@@ -15,18 +15,24 @@
  */
 package io.agentscope.core.tool.subagent;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -36,6 +42,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -147,8 +154,8 @@ public class SubAgentTool implements AgentTool {
                         Agent agent = agentProvider.provide();
 
                         // Load existing state if continuing session
-                        if (!isNewSession && agent instanceof StateModule) {
-                            loadAgentState(finalSessionId, (StateModule) agent);
+                        if (!isNewSession) {
+                            loadAgentState(finalSessionId, agent);
                         }
 
                         // Build user message
@@ -157,6 +164,7 @@ public class SubAgentTool implements AgentTool {
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
                                         .build();
+                        RuntimeContext runtimeContext = resolveRuntimeContext(param);
 
                         logger.debug(
                                 "Session {} with agent '{}': {}",
@@ -170,18 +178,21 @@ public class SubAgentTool implements AgentTool {
                         // Execute and save state after completion
                         Mono<ToolResultBlock> result;
                         if (config.isForwardEvents()) {
-                            result = executeWithStreaming(agent, userMsg, finalSessionId, emitter);
+                            result =
+                                    executeWithStreaming(
+                                            agent,
+                                            userMsg,
+                                            finalSessionId,
+                                            emitter,
+                                            runtimeContext);
                         } else {
-                            result = executeWithoutStreaming(agent, userMsg, finalSessionId);
+                            result =
+                                    executeWithoutStreaming(
+                                            agent, userMsg, finalSessionId, runtimeContext);
                         }
 
                         // Save state after execution
-                        return result.doOnSuccess(
-                                r -> {
-                                    if (agent instanceof StateModule) {
-                                        saveAgentState(finalSessionId, (StateModule) agent);
-                                    }
-                                });
+                        return result.doOnSuccess(r -> saveAgentState(finalSessionId, agent));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
@@ -191,41 +202,64 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Loads agent state from the session storage.
-     *
-     * <p>If the session exists, the agent's state is restored. Any errors during loading are logged
-     * but do not interrupt execution.
-     *
-     * @param sessionId The session ID to load state from
-     * @param agent The state module to restore state into
+     * Loads sub-agent state for the conversation identified by {@code sessionId} from
+     * {@link SubAgentConfig#getSession()} and merges it into the live agent's
+     * {@link AgentState}. Errors are logged but do not interrupt execution.
      */
-    private void loadAgentState(String sessionId, StateModule agent) {
-        Session session = config.getSession();
+    private void loadAgentState(String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent ra)) {
+            return;
+        }
+        Session subSession = config.getSession();
+        if (subSession == null) {
+            return;
+        }
+        SessionKey key = SimpleSessionKey.of(sessionId);
         try {
-            agent.loadIfExists(session, sessionId);
-            logger.debug("Loaded state for session: {}", sessionId);
+            subSession
+                    .get(key, "agent_state", AgentState.class)
+                    .ifPresent(loaded -> applyLoadedState(ra, loaded));
+            logger.debug("Loaded sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
-            logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
+            logger.warn(
+                    "Failed to load sub-agent state for session {}: {}", sessionId, e.getMessage());
         }
     }
 
     /**
-     * Saves agent state to the session storage.
-     *
-     * <p>Persists the agent's current state. Any errors during saving are logged but do not
-     * interrupt execution.
-     *
-     * @param sessionId The session ID to save state under
-     * @param agent The state module to save state from
+     * Saves the live {@link AgentState} for the conversation identified by {@code sessionId} into
+     * {@link SubAgentConfig#getSession()}. Errors are logged but do not interrupt execution.
      */
-    private void saveAgentState(String sessionId, StateModule agent) {
-        Session session = config.getSession();
-        try {
-            agent.saveTo(session, sessionId);
-            logger.debug("Saved state for session: {}", sessionId);
-        } catch (Exception e) {
-            logger.warn("Failed to save state for session {}: {}", sessionId, e.getMessage());
+    private void saveAgentState(String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent ra)) {
+            return;
         }
+        Session subSession = config.getSession();
+        if (subSession == null) {
+            return;
+        }
+        SessionKey key = SimpleSessionKey.of(sessionId);
+        try {
+            subSession.save(key, "agent_state", ra.getAgentState());
+            logger.debug("Saved sub-agent state for session: {}", sessionId);
+        } catch (Exception e) {
+            logger.warn(
+                    "Failed to save sub-agent state for session {}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    private static void applyLoadedState(ReActAgent agent, AgentState loaded) {
+        AgentState live = agent.getAgentState();
+        if (live == null) {
+            return;
+        }
+        live.contextMutable().clear();
+        live.contextMutable().addAll(loaded.getContext());
+        live.setSummary(loaded.getSummary());
+        live.setReplyId(loaded.getReplyId());
+        live.setCurIter(loaded.getCurIter());
+        live.setShutdownInterrupted(loaded.isShutdownInterrupted());
+        live.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
     }
 
     /**
@@ -241,7 +275,11 @@ public class SubAgentTool implements AgentTool {
      * @return A Mono emitting the tool result block
      */
     private Mono<ToolResultBlock> executeWithStreaming(
-            Agent agent, Msg userMsg, String sessionId, ToolEmitter emitter) {
+            Agent agent,
+            Msg userMsg,
+            String sessionId,
+            ToolEmitter emitter,
+            RuntimeContext runtimeContext) {
 
         StreamOptions streamOptions =
                 config.getStreamOptions() != null
@@ -250,7 +288,7 @@ public class SubAgentTool implements AgentTool {
 
         return Mono.deferContextual(
                 ctxView ->
-                        agent.stream(List.of(userMsg), streamOptions)
+                        streamWithContext(agent, userMsg, streamOptions, runtimeContext)
                                 .doOnNext(event -> forwardEvent(event, emitter, agent, sessionId))
                                 .filter(Event::isLast)
                                 .last()
@@ -283,11 +321,11 @@ public class SubAgentTool implements AgentTool {
      * @return A Mono emitting the tool result block
      */
     private Mono<ToolResultBlock> executeWithoutStreaming(
-            Agent agent, Msg userMsg, String sessionId) {
+            Agent agent, Msg userMsg, String sessionId, RuntimeContext runtimeContext) {
 
         return Mono.deferContextual(
                 ctxView ->
-                        agent.call(List.of(userMsg))
+                        callWithContext(agent, userMsg, runtimeContext)
                                 .map(response -> buildResult(response, sessionId))
                                 .onErrorResume(
                                         e -> {
@@ -298,6 +336,35 @@ public class SubAgentTool implements AgentTool {
                                                             "Execution error: " + e.getMessage()));
                                         })
                                 .contextWrite(context -> context.putAll(ctxView)));
+    }
+
+    private Flux<Event> streamWithContext(
+            Agent agent, Msg userMsg, StreamOptions options, RuntimeContext runtimeContext) {
+        if (runtimeContext != null && agent instanceof ReActAgent reActAgent) {
+            return reActAgent.stream(List.of(userMsg), options, runtimeContext);
+        }
+        return agent.stream(List.of(userMsg), options);
+    }
+
+    private Mono<Msg> callWithContext(Agent agent, Msg userMsg, RuntimeContext runtimeContext) {
+        if (runtimeContext != null && agent instanceof ReActAgent reActAgent) {
+            return reActAgent.call(List.of(userMsg), runtimeContext);
+        }
+        return agent.call(List.of(userMsg));
+    }
+
+    private RuntimeContext resolveRuntimeContext(ToolCallParam param) {
+        ToolExecutionContext context = param.getContext();
+        if (context != null) {
+            RuntimeContext runtimeContext = context.get(RuntimeContext.class);
+            if (runtimeContext != null) {
+                return runtimeContext;
+            }
+        }
+        if (param.getAgent() instanceof AgentBase agentBase) {
+            return agentBase.getRuntimeContext();
+        }
+        return null;
     }
 
     /**

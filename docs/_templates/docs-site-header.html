@@ -1,0 +1,63 @@
+<!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+{# Use div+role=banner so Furo's document.querySelector("header") still targets .mobile-header. #}
+<div class="docs-site-header" role="banner">
+  <div class="docs-site-header__inner">
+    <div class="docs-site-header__start">
+      <a class="docs-site-header__brand" href="{{ pathto(master_doc) }}">
+        {%- if logo_url %}
+        <img class="docs-site-header__logo" src="{{ logo_url }}" alt="" width="44" height="44" />
+        {%- elif theme_light_logo and theme_dark_logo %}
+        <img class="docs-site-header__logo only-light" src="{{ pathto('_static/' + theme_light_logo, 1) }}" alt="" width="44" height="44" />
+        <img class="docs-site-header__logo only-dark" src="{{ pathto('_static/' + theme_dark_logo, 1) }}" alt="" width="44" height="44" />
+        {%- endif %}
+        {%- if not theme_sidebar_hide_name %}
+        <span class="docs-site-header__title">{{ docstitle if docstitle else project }}</span>
+        {%- endif %}
+      </a>
+      <div class="docs-site-header__nav-shell">
+        {% include "top-tabs.html" %}
+      </div>
+    </div>
+    <div class="docs-site-header__actions" aria-label="Site actions">
+      {%- if hasdoc('search') %}
+      <form class="docs-header-search" method="get" action="{{ pathto('search') }}" role="search">
+        <input class="docs-header-search__input" type="search" name="q" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" autocomplete="off" />
+        <input type="hidden" name="check_keywords" value="yes" />
+        <input type="hidden" name="area" value="default" />
+        <button class="docs-header-search__submit" type="submit" aria-label="{{ _('Search') }}">
+          <svg class="docs-header-search__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      </form>
+      <div id="searchbox" class="docs-header-searchbox"></div>
+      {%- endif %}
+      <div class="docs-site-header__theme theme-toggle-container">
+        <button class="theme-toggle" type="button" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      {% include "version-switcher.html" %}
+      {% include "language-switch.html" %}
+    </div>
+  </div>
+</div>

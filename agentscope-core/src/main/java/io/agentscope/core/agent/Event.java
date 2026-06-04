@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.message.Msg;
 
@@ -44,8 +45,18 @@ import io.agentscope.core.message.Msg;
  *         }
  *     });
  * }</pre>
+ *
+ * @deprecated since 2.0.0. This is the v1 coarse-grained event type, kept as the return type
+ *     of the deprecated {@code stream(...)} API and as the wire format consumed by the
+ *     harness, AGUI, A2A, chat-completions-web, and Kotlin extension modules. New code should
+ *     use {@code io.agentscope.core.event.AgentEvent} via {@code ReActAgent#streamEvents(...)},
+ *     which exposes the fine-grained event hierarchy (28 typed events covering the full agent
+ *     lifecycle and HITL flow). The class will be marked {@code forRemoval = true} once the
+ *     dependent internal modules migrate to {@code AgentEvent}.
  */
+@Deprecated(since = "2.0.0")
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class Event {
 
     private final EventType type;
@@ -53,20 +64,52 @@ public class Event {
     private final boolean isLast;
 
     /**
-     * Creates a new event.
+     * Identifies the originating (sub)agent when this event was emitted by a nested subagent
+     * during a parent {@code stream()} call. {@code null} for events emitted by the top-level
+     * agent itself.
+     */
+    private final EventSource source;
+
+    /**
+     * Creates a new event (top-level agent — no source).
      *
      * @param type The event type (REASONING, TOOL_RESULT, etc.)
      * @param message The message content
      * @param isLast Whether this is the last/complete message for this event
      */
+    public Event(EventType type, Msg message, boolean isLast) {
+        this(type, message, isLast, null);
+    }
+
+    /**
+     * Creates a new event with optional source.
+     *
+     * @param type The event type
+     * @param message The message content
+     * @param isLast Whether this is the last/complete message
+     * @param source The originating subagent, or {@code null} for the top-level agent
+     */
     @JsonCreator
     public Event(
             @JsonProperty("type") EventType type,
             @JsonProperty("message") Msg message,
-            @JsonProperty("isLast") boolean isLast) {
+            @JsonProperty("isLast") boolean isLast,
+            @JsonProperty("source") EventSource source) {
         this.type = type;
         this.message = message;
         this.isLast = isLast;
+        this.source = source;
+    }
+
+    /**
+     * Returns a copy of this event with the given source attached. The original event is not
+     * modified (immutable copy).
+     *
+     * @param source the originating subagent descriptor
+     * @return new Event with {@code source} set
+     */
+    public Event withSource(EventSource source) {
+        return new Event(this.type, this.message, this.isLast, source);
     }
 
     /**
@@ -138,6 +181,19 @@ public class Event {
     }
 
     /**
+     * Returns the originating subagent descriptor, or {@code null} if this event was emitted by
+     * the top-level agent.
+     *
+     * <p>Consumers can use this to route subagent events to the correct UI card or log channel
+     * without needing out-of-band metadata.
+     *
+     * @return the event source, or {@code null} for the top-level agent
+     */
+    public EventSource getSource() {
+        return source;
+    }
+
+    /**
      * Get the message ID (delegates to {@link Msg#getId()}).
      *
      * <p>Events with the same message ID are parts of the same logical message.
@@ -151,6 +207,11 @@ public class Event {
 
     @Override
     public String toString() {
+        if (source != null) {
+            return String.format(
+                    "Event{type=%s, isLast=%s, msgId=%s, contentBlocks=%d, source=%s}",
+                    type, isLast, message.getId(), message.getContent().size(), source);
+        }
         return String.format(
                 "Event{type=%s, isLast=%s, msgId=%s, contentBlocks=%d}",
                 type, isLast, message.getId(), message.getContent().size());

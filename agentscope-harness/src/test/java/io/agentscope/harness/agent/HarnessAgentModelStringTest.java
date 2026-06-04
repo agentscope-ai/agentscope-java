@@ -27,8 +27,8 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
-import io.agentscope.harness.agent.subagent.SubagentSpec;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -84,14 +84,18 @@ class HarnessAgentModelStringTest {
     }
 
     @Test
-    void subagentSpec_model_resolvedByDefaultResolver() {
+    void subagentDeclaration_model_resolvedByDefaultResolver() {
         Model main = stubModel("main-reply");
         Model sub = stubModel("sub-reply");
         ModelRegistry.register("reg-sub", sub);
 
-        SubagentSpec spec = new SubagentSpec("sa", "subagent");
-        spec.setSysPrompt("You are a test subagent.");
-        spec.setModel("reg-sub");
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("sa")
+                        .description("subagent")
+                        .inlineAgentsBody("You are a test subagent.")
+                        .model("reg-sub")
+                        .build();
 
         List<SubagentEntry> entries =
                 HarnessAgent.builder()
@@ -99,14 +103,16 @@ class HarnessAgentModelStringTest {
                         .model(main)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .subagent(spec)
+                        .subagent(decl)
                         .buildSubagentEntries(workspace);
 
         SubagentEntry entry =
                 entries.stream().filter(e -> "sa".equals(e.name())).findFirst().orElseThrow();
 
-        HarnessAgent subAgent = (HarnessAgent) entry.factory().create();
-        assertSame(sub, subAgent.getDelegate().getModel());
+        HarnessAgent subAgent =
+                (HarnessAgent)
+                        entry.factory().create(io.agentscope.core.agent.RuntimeContext.empty());
+        assertSame(sub, subAgent.getModel());
     }
 
     private static Model stubModel(String assistantText) {

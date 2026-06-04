@@ -16,26 +16,42 @@
 package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
-import io.agentscope.core.hook.ActingChunkEvent;
+import io.agentscope.core.agent.config.ModelConfig;
+import io.agentscope.core.agent.config.ReactConfig;
+import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.ExceedMaxItersEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockEndEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PendingToolRecoveryHook;
+import io.agentscope.core.hook.LegacyHookDispatcher;
 import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.hook.PostSummaryEvent;
-import io.agentscope.core.hook.PreActingEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.hook.PreSummaryEvent;
-import io.agentscope.core.hook.ReasoningChunkEvent;
-import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.AgentStateMemoryView;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.LongTermMemoryTools;
@@ -43,17 +59,31 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
-import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.MiddlewareChain;
+import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionEngine;
+import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.plan.PlanHintMiddleware;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.rag.GenericRAGHook;
 import io.agentscope.core.rag.Knowledge;
@@ -64,30 +94,41 @@ import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
+import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillBox;
-import io.agentscope.core.skill.SkillHook;
-import io.agentscope.core.state.AgentMetaState;
+import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.LegacyStateLoader;
 import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.StatePersistence;
-import io.agentscope.core.state.ToolkitState;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 
 /**
@@ -123,7 +164,6 @@ import reactor.core.publisher.Mono;
  *     .sysPrompt("You are a helpful assistant.")
  *     .model(model)
  *     .toolkit(toolkit)
- *     .memory(new InMemoryMemory())
  *     .maxIters(10)
  *     .build();
  *
@@ -137,25 +177,48 @@ import reactor.core.publisher.Mono;
  *
  * @see StructuredOutputCapableAgent
  */
-public class ReActAgent extends StructuredOutputCapableAgent {
+@SuppressWarnings("deprecation")
+public class ReActAgent extends StructuredOutputCapableAgent implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =
             GracefulShutdownManager.getInstance();
 
+    /**
+     * @deprecated Permission HITL no longer uses a Reactor Sink. Confirm results are now
+     *     delivered via a second {@code agent.call(msgs)} carrying a {@link ConfirmResult}
+     *     payload — see {@code applyConfirmResults}. This constant is retained as a
+     *     compile-time marker and will be removed in a future release.
+     */
+    @Deprecated
+    public static final String CONFIRM_SINK_KEY = "io.agentscope.core.ReActAgent.confirmSink";
+
     // ==================== Core Dependencies ====================
 
-    private final Memory memory;
     private final String sysPrompt;
     private final Model model;
     private final int maxIters;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
     private final GenerateOptions generateOptions;
-    private final PlanNotebook planNotebook;
+
     private final ToolExecutionContext toolExecutionContext;
-    private final StatePersistence statePersistence;
+
+    private final List<MiddlewareBase> middlewares;
+    private final boolean enablePendingToolRecovery;
     private RuntimeContext pendingRuntimeContext;
+
+    // ==================== Persistence ====================
+
+    private final Session session;
+    private final SessionKey sessionKey;
+
+    // ==================== 2.0 Core Fields ====================
+
+    private final AgentState state;
+    private final ModelConfig modelConfig;
+    private final ReactConfig reactConfig;
+    private final PermissionEngine permissionEngine;
 
     /**
      * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
@@ -166,6 +229,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      */
     private final java.util.concurrent.atomic.AtomicReference<Msg> currentSystemMsg =
             new java.util.concurrent.atomic.AtomicReference<>();
+
+    private final AtomicReference<FluxSink<AgentEvent>> activeEventSink = new AtomicReference<>();
+
+    @SuppressWarnings("deprecation")
+    private final LegacyHookDispatcher hookDispatcher;
 
     // ==================== Constructor ====================
 
@@ -178,19 +246,109 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 agentToolkit,
                 builder.structuredOutputReminder);
 
-        this.memory = builder.memory;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
-        this.planNotebook = builder.planNotebook;
         this.toolExecutionContext = builder.toolExecutionContext;
-        this.statePersistence =
-                builder.statePersistence != null
-                        ? builder.statePersistence
-                        : StatePersistence.all();
+        this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
+        List<MiddlewareBase> mws = new ArrayList<>();
+        mws.add(new GracefulShutdownMiddleware(shutdownManager));
+        mws.addAll(builder.middlewares);
+        this.middlewares = List.copyOf(mws);
+
+        this.session = builder.session;
+        this.sessionKey =
+                builder.sessionKey != null
+                        ? builder.sessionKey
+                        : SimpleSessionKey.of(builder.name != null ? builder.name : "ReActAgent");
+        this.state = loadOrCreateAgentState(this.session, this.sessionKey, builder, getAgentId());
+
+        // Restore toolkit activeGroups from persisted state
+        if (agentToolkit != null && !this.state.getToolContext().getActivatedGroups().isEmpty()) {
+            agentToolkit.setActiveGroups(this.state.getToolContext().getActivatedGroups());
+        }
+        this.modelConfig = assembleModelConfig(builder);
+        this.reactConfig = assembleReactConfig(builder);
+        this.permissionEngine = new PermissionEngine(this.state.getPermissionContext());
+        this.hookDispatcher = new LegacyHookDispatcher(this);
+
+        // Wire automatic state save on shutdown / interrupt.
+        if (this.session != null) {
+            shutdownManager.bindStateSaver(
+                    this, agentState -> session.save(sessionKey, "agent_state", agentState));
+        }
+    }
+
+    /**
+     * Initial agent-state load. Tries (in order): the configured Session for an {@code agent_state}
+     * entry, the v1 legacy session keys ({@code memory_messages} + {@code toolkit_activeGroups})
+     * via {@link LegacyStateLoader}, and finally a fresh state if neither yields anything.
+     */
+    private static AgentState loadOrCreateAgentState(
+            Session session, SessionKey sessionKey, Builder builder, String agentId) {
+        AgentState fresh = freshState(builder, agentId);
+        if (session == null) {
+            return fresh;
+        }
+        try {
+            return session.get(sessionKey, "agent_state", AgentState.class)
+                    .orElseGet(
+                            () -> {
+                                AgentState legacy =
+                                        LegacyStateLoader.loadFromLegacySession(
+                                                session, sessionKey);
+                                if (legacy != null
+                                        && (!legacy.getContext().isEmpty()
+                                                || !legacy.getToolContext()
+                                                        .getActivatedGroups()
+                                                        .isEmpty())) {
+                                    return legacy;
+                                }
+                                return fresh;
+                            });
+        } catch (Exception e) {
+            log.warn("Failed to load AgentState from session {}: {}", sessionKey, e.getMessage());
+            return fresh;
+        }
+    }
+
+    private static AgentState freshState(Builder builder, String agentId) {
+        AgentState.Builder asb = AgentState.builder().sessionId(agentId);
+        if (builder.permissionContext != null) {
+            asb.permissionContext(builder.permissionContext);
+        }
+        return asb.build();
+    }
+
+    /**
+     * Persist the current {@link AgentState} via the configured {@link Session}, or {@code
+     * Mono.empty()} when no Session was provided. Synchronises toolkit activeGroups into the state
+     * before writing.
+     */
+    private Mono<Void> saveStateToSession() {
+        if (session == null) {
+            return Mono.empty();
+        }
+        syncToolkitToState();
+        return Mono.fromRunnable(() -> session.save(sessionKey, "agent_state", state));
+    }
+
+    // ==================== Config assembly helpers ====================
+
+    private static ModelConfig assembleModelConfig(Builder b) {
+        int retries = b.flatMaxRetries != null ? b.flatMaxRetries : ModelConfig.DEFAULT_MAX_RETRIES;
+        return new ModelConfig(retries, b.flatFallbackModel);
+    }
+
+    private static ReactConfig assembleReactConfig(Builder b) {
+        boolean stop =
+                b.flatStopOnReject != null
+                        ? b.flatStopOnReject
+                        : ReactConfig.DEFAULT_STOP_ON_REJECT;
+        return new ReactConfig(b.maxIters, stop);
     }
 
     // ==================== RuntimeContext ====================
@@ -209,14 +367,48 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected Msg seedSystemMsg() {
-        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
-            return Msg.builder()
-                    .name("system")
-                    .role(MsgRole.SYSTEM)
-                    .content(TextBlock.builder().text(sysPrompt).build())
-                    .build();
+        String base = sysPrompt != null ? sysPrompt.trim() : "";
+        String prompt = applySystemPromptMiddlewares(base);
+        if (prompt == null || prompt.isEmpty()) {
+            return null;
         }
-        return null;
+        return Msg.builder()
+                .name("system")
+                .role(MsgRole.SYSTEM)
+                .content(TextBlock.builder().text(prompt).build())
+                .build();
+    }
+
+    private String applySystemPromptMiddlewares(String prompt) {
+        if (middlewares.isEmpty()) {
+            return prompt;
+        }
+        // Only build a reactive chain if at least one middleware overrides onSystemPrompt
+        // (the default implementation is identity). This avoids an unnecessary block() call
+        // which would fail on non-blocking schedulers (e.g. Reactor parallel scheduler).
+        boolean hasOverride = false;
+        for (MiddlewareBase mw : middlewares) {
+            try {
+                if (mw.getClass()
+                                .getMethod("onSystemPrompt", Agent.class, String.class)
+                                .getDeclaringClass()
+                        != MiddlewareBase.class) {
+                    hasOverride = true;
+                    break;
+                }
+            } catch (NoSuchMethodException ignored) {
+                hasOverride = true;
+                break;
+            }
+        }
+        if (!hasOverride) {
+            return prompt;
+        }
+        Mono<String> result = Mono.just(prompt);
+        for (MiddlewareBase mw : middlewares) {
+            result = result.flatMap(p -> mw.onSystemPrompt(this, p));
+        }
+        return result.block();
     }
 
     @Override
@@ -229,14 +421,22 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         unbindRuntimeContextFromHooks();
     }
 
-    private ToolExecutionContext buildMergedToolContext() {
+    private RuntimeContext buildMergedRuntimeContext() {
         RuntimeContext run = getRuntimeContext();
         if (run == null) {
-            return toolExecutionContext != null
-                    ? toolExecutionContext
-                    : ToolExecutionContext.empty();
+            if (toolExecutionContext != null) {
+                return RuntimeContext.builder().toolExecutionContext(toolExecutionContext).build();
+            }
+            return RuntimeContext.empty();
         }
-        return ToolExecutionContext.merge(run.asToolExecutionContext(), toolExecutionContext);
+        if (toolExecutionContext != null) {
+            return RuntimeContext.builder()
+                    .toolExecutionContext(
+                            ToolExecutionContext.merge(
+                                    run.asToolExecutionContext(), toolExecutionContext))
+                    .build();
+        }
+        return run;
     }
 
     /**
@@ -258,11 +458,22 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         return call(msgs, outputSchema);
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} (and overloads that
+     *     accept {@link RuntimeContext} via {@code call()}-driven lifecycle) for the
+     *     fine-grained {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext context) {
         this.pendingRuntimeContext = context;
         return stream(msgs, options);
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the
+     *     fine-grained {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
             List<Msg> msgs,
             StreamOptions options,
@@ -272,107 +483,147 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         return stream(msgs, options, structuredModel);
     }
 
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the
+     *     fine-grained {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
             List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext context) {
         this.pendingRuntimeContext = context;
         return stream(msgs, options, schema);
     }
 
-    // ==================== New StateModule API ====================
-
     /**
-     * Save agent state to the session using the new API.
+     * Stream fine-grained {@link AgentEvent}s from the full agent lifecycle.
      *
-     * <p>This method saves the state of all managed components according to the StatePersistence
-     * configuration:
+     * <p>This method goes through the same lifecycle as {@code call()} (acquire execution,
+     * hooks, pre/post call notification) but exposes the internal event stream. The lifecycle
+     * is driven by {@code call()} internally; events are captured via the shared
+     * {@code activeEventSink}.
      *
-     * <ul>
-     *   <li>Agent metadata (always saved)
-     *   <li>Memory messages (if memoryManaged is true)
-     *   <li>Toolkit activeGroups (if toolkitManaged is true)
-     *   <li>PlanNotebook state (if planNotebookManaged is true)
-     * </ul>
-     *
-     * @param session the session to save state to
-     * @param sessionKey the session identifier
+     * @param msgs input messages
+     * @return event stream covering the full agent invocation lifecycle
      */
-    @Override
-    public void saveTo(Session session, SessionKey sessionKey) {
-        // Save agent metadata
-        session.save(
-                sessionKey,
-                "agent_meta",
-                new AgentMetaState(getAgentId(), getName(), getDescription(), sysPrompt));
-
-        // Save memory if managed
-        if (statePersistence.memoryManaged()) {
-            memory.saveTo(session, sessionKey);
-        }
-
-        // Save toolkit activeGroups if managed
-        if (statePersistence.toolkitManaged() && toolkit != null) {
-            session.save(
-                    sessionKey,
-                    "toolkit_activeGroups",
-                    new ToolkitState(toolkit.getActiveGroups()));
-        }
-
-        // Save PlanNotebook if managed
-        if (statePersistence.planNotebookManaged() && planNotebook != null) {
-            planNotebook.saveTo(session, sessionKey);
-        }
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        Function<AgentInput, Flux<AgentEvent>> core =
+                input ->
+                        Flux.<AgentEvent>create(
+                                        sink -> {
+                                            activeEventSink.set(sink);
+                                            sink.next(
+                                                    new AgentStartEvent(null, replyId, getName()));
+                                            reactor.util.context.Context subscriberCtx =
+                                                    reactor.util.context.Context.of(
+                                                            sink.contextView());
+                                            call(input.msgs())
+                                                    .doFinally(
+                                                            signal -> {
+                                                                sink.next(
+                                                                        new AgentEndEvent(replyId));
+                                                                activeEventSink.set(null);
+                                                                sink.complete();
+                                                            })
+                                                    .contextWrite(subscriberCtx)
+                                                    .subscribe(finalMsg -> {}, sink::error);
+                                        },
+                                        FluxSink.OverflowStrategy.BUFFER)
+                                .doOnError(e -> activeEventSink.set(null));
+        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+                .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
     /**
-     * Load agent state from the session using the new API.
+     * Stream fine-grained {@link AgentEvent}s for a single input message.
      *
-     * <p>This method loads the state of all managed components according to the StatePersistence
-     * configuration.
-     *
-     * @param session the session to load state from
-     * @param sessionKey the session identifier
+     * @param msg input message
+     * @return event stream covering the full agent invocation lifecycle
      */
-    @Override
-    public boolean loadIfExists(Session session, SessionKey sessionKey) {
-        shutdownManager.bindSession(this, session, sessionKey);
-        return super.loadIfExists(session, sessionKey);
+    public Flux<AgentEvent> streamEvents(Msg msg) {
+        return streamEvents(List.of(msg));
     }
 
-    @Override
-    public void loadFrom(Session session, SessionKey sessionKey) {
-        shutdownManager.bindSession(this, session, sessionKey);
-        // Load memory if managed
-        if (statePersistence.memoryManaged()) {
-            memory.loadFrom(session, sessionKey);
-        }
+    /**
+     * Stream fine-grained {@link AgentEvent}s with a caller-supplied {@link RuntimeContext}.
+     *
+     * <p>Mirrors the {@code call(msgs, context)} overload: the supplied context is installed
+     * as the pending runtime context for the underlying {@code call()} invocation that drives
+     * the event stream.
+     *
+     * @param msgs input messages
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return streamEvents(msgs);
+    }
 
-        // Load toolkit activeGroups if managed
-        if (statePersistence.toolkitManaged() && toolkit != null) {
-            session.get(sessionKey, "toolkit_activeGroups", ToolkitState.class)
-                    .ifPresent(state -> toolkit.setActiveGroups(state.activeGroups()));
-        }
-
-        // Load PlanNotebook if managed
-        if (statePersistence.planNotebookManaged() && planNotebook != null) {
-            planNotebook.loadFrom(session, sessionKey);
-        }
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single input message with a caller-supplied
+     * {@link RuntimeContext}.
+     *
+     * @param msg input message
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext context) {
+        return streamEvents(List.of(msg), context);
     }
 
     // ==================== Protected API ====================
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
+        return doCallInner(msgs).flatMap(result -> saveStateToSession().thenReturn(result));
+    }
+
+    private Mono<Msg> doCallInner(List<Msg> msgs) {
+        // Graceful-shutdown deduplication: if the agent's session was previously interrupted
+        // by shutdown, the client is likely retrying with the same user prompt that already
+        // exists in memory. Discard the duplicate input so the agent resumes purely from its
+        // saved memory context.
+        if (shutdownManager.checkAndClearShutdownInterrupted(this)) {
+            log.info(
+                    "Detected shutdown-interrupted session for agent {}, discarding duplicate"
+                            + " input",
+                    getName());
+            msgs = List.of();
+        }
+
+        // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
+        // error results so the agent can continue instead of crashing.
+        if (enablePendingToolRecovery) {
+            maybePatchPendingToolCalls(msgs);
+        }
+
         Set<String> pendingIds = getPendingToolUseIds();
 
         // No pending tools -> normal processing
         if (pendingIds.isEmpty()) {
-            addToMemory(msgs);
-            return executeIteration(0);
+            addToContext(msgs);
+            return coreAgent();
+        }
+
+        // Permission HITL: if any pending tool is ASKING, the caller MUST supply
+        // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
+        if (hasAskingToolCalls()) {
+            List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
+            if (confirmResults.isEmpty()) {
+                throw new IllegalStateException(
+                        "Agent is waiting for ConfirmResult(s) on ASKING tool calls but the"
+                                + " incoming call did not supply any. Attach a"
+                                + " List<ConfirmResult> under Msg metadata key "
+                                + Msg.METADATA_CONFIRM_RESULTS);
+            }
+            applyConfirmResults(confirmResults);
+            return resumeAgent();
         }
 
         // Has pending tools but no input -> resume (execute pending tools directly)
         if (msgs == null || msgs.isEmpty()) {
-            return acting(0);
+            return resumeAgent();
         }
 
         // Has pending tools + input -> check if user provided tool results
@@ -384,17 +635,213 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (!providedResults.isEmpty()) {
             // User provided tool results -> validate and add
             validateAndAddToolResults(msgs, pendingIds);
-            return hasPendingToolUse() ? acting(0) : executeIteration(0);
+            return hasPendingToolUse() ? resumeAgent() : coreAgent();
         }
 
-        // If PendingToolRecoveryHook is enabled, pending state should have been
-        // patched during PreCallEvent. If we still reach here, the hook was disabled
-        // and the user did not provide tool results — this is an unrecoverable state.
+        // Recovery was disabled and user did not provide tool results — unrecoverable.
         throw new IllegalStateException(
                 "Pending tool calls exist without results. "
-                        + "Enable PendingToolRecoveryHook or provide tool results. "
+                        + "Enable enablePendingToolRecovery or provide tool results. "
                         + "Pending IDs: "
                         + pendingIds);
+    }
+
+    /**
+     * Pull all {@link ConfirmResult}s out of the {@link Msg#METADATA_CONFIRM_RESULTS} metadata
+     * key across the incoming message list.
+     */
+    @SuppressWarnings("unchecked")
+    private List<ConfirmResult> extractConfirmResults(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return List.of();
+        }
+        List<ConfirmResult> collected = new ArrayList<>();
+        for (Msg m : msgs) {
+            Object raw =
+                    m.getMetadata() == null
+                            ? null
+                            : m.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+            if (raw instanceof List<?> list) {
+                for (Object o : list) {
+                    if (o instanceof ConfirmResult cr) {
+                        collected.add(cr);
+                    }
+                }
+            }
+        }
+        return collected;
+    }
+
+    /**
+     * Apply user confirmation results to the ASKING tool calls in context.
+     *
+     * <p>For each result:
+     * <ul>
+     *   <li>{@code confirmed == true}: replace the ASKING ToolUseBlock with the (possibly
+     *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
+     *       register any attached {@link PermissionRule}s with the engine.</li>
+     *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
+     *       the tool will no longer be pending on resume.</li>
+     * </ul>
+     */
+    private void applyConfirmResults(List<ConfirmResult> results) {
+        // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
+        // promote them to ALLOWED. Collect denied ones for separate handling.
+        List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+        Map<String, ToolUseBlock> replacements = new HashMap<>();
+        Map<String, ToolCallState> stateUpdates = new HashMap<>();
+        for (ConfirmResult r : results) {
+            ToolUseBlock target = r.getToolCall();
+            if (target == null) {
+                continue;
+            }
+            if (r.isConfirmed()) {
+                replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
+                stateUpdates.put(target.getId(), ToolCallState.ALLOWED);
+                if (r.getRules() != null) {
+                    for (PermissionRule rule : r.getRules()) {
+                        if (rule != null) {
+                            permissionEngine.addRule(rule);
+                        }
+                    }
+                }
+            } else {
+                deniedToolCalls.add(target);
+            }
+        }
+        applyToolUseBlockReplacements(replacements);
+        for (ToolUseBlock denied : deniedToolCalls) {
+            ToolResultBlock deniedResult =
+                    ToolResultBlock.text("Permission denied by user")
+                            .withIdAndName(denied.getId(), denied.getName())
+                            .withState(ToolResultState.DENIED);
+            Msg deniedMsg =
+                    ToolResultMessageBuilder.buildToolResultMsg(deniedResult, denied, getName());
+            state.contextMutable().add(deniedMsg);
+        }
+    }
+
+    /**
+     * Locate the last assistant Msg and substitute {@code ToolUseBlock}s in-place when their id
+     * appears in {@code replacements}.
+     */
+    private void applyToolUseBlockReplacements(Map<String, ToolUseBlock> replacements) {
+        if (replacements == null || replacements.isEmpty()) {
+            return;
+        }
+        List<Msg> ctx = state.contextMutable();
+        for (int i = ctx.size() - 1; i >= 0; i--) {
+            Msg m = ctx.get(i);
+            if (m.getRole() != MsgRole.ASSISTANT) {
+                continue;
+            }
+            boolean hasMatch =
+                    m.getContent().stream()
+                            .anyMatch(
+                                    b ->
+                                            b instanceof ToolUseBlock t
+                                                    && replacements.containsKey(t.getId()));
+            if (!hasMatch) {
+                continue;
+            }
+            List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
+            for (ContentBlock block : m.getContent()) {
+                if (block instanceof ToolUseBlock t && replacements.containsKey(t.getId())) {
+                    rebuilt.add(replacements.get(t.getId()));
+                } else {
+                    rebuilt.add(block);
+                }
+            }
+            ctx.set(i, m.withContent(rebuilt));
+            return;
+        }
+    }
+
+    private void maybePatchPendingToolCalls(List<Msg> msgs) {
+        Set<String> pendingIds = getPendingToolUseIds();
+        if (pendingIds.isEmpty()) {
+            return;
+        }
+        if (msgs == null || msgs.isEmpty()) {
+            return;
+        }
+        boolean userProvidedResults =
+                msgs.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
+        if (userProvidedResults) {
+            return;
+        }
+        log.warn(
+                "Pending tool calls detected without results, auto-generating error results."
+                        + " Pending IDs: {}",
+                pendingIds);
+        Msg lastAssistant = findLastAssistantMsg();
+        if (lastAssistant == null) {
+            return;
+        }
+        List<ToolUseBlock> pendingToolCalls =
+                lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                        .toList();
+        for (ToolUseBlock toolCall : pendingToolCalls) {
+            ToolResultBlock errorResult =
+                    buildErrorToolResult(
+                            toolCall.getId(),
+                            "[ERROR] Previous tool execution failed or was interrupted. Tool: "
+                                    + toolCall.getName());
+            Msg toolResultMsg =
+                    ToolResultMessageBuilder.buildToolResultMsg(errorResult, toolCall, getName());
+            state.contextMutable().add(toolResultMsg);
+            log.info(
+                    "Auto-generated error result for pending tool call: {} ({})",
+                    toolCall.getName(),
+                    toolCall.getId());
+        }
+    }
+
+    /**
+     * Execute the full agent invocation as a {@link Flux} of fine-grained {@link AgentEvent}s.
+     *
+     * <p>This method wraps the existing {@code doCall()} logic and captures all events emitted
+     * by the internal stream methods ({@code reasoningStream}, {@code actingStream},
+     * {@code summaryStream}). The stream is bookended by {@link AgentStartEvent} and
+     * {@link AgentEndEvent}.
+     *
+     * @param msgs the input messages
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    Flux<AgentEvent> agentImpl(List<Msg> msgs) {
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+
+        Function<AgentInput, Flux<AgentEvent>> core =
+                input ->
+                        Flux.<AgentEvent>create(
+                                        sink -> {
+                                            activeEventSink.set(sink);
+                                            sink.next(
+                                                    new AgentStartEvent(null, replyId, getName()));
+
+                                            doCall(input.msgs())
+                                                    .doFinally(
+                                                            signal -> {
+                                                                sink.next(
+                                                                        new AgentEndEvent(replyId));
+                                                                activeEventSink.set(null);
+                                                                sink.complete();
+                                                            })
+                                                    .subscribe(finalMsg -> {}, sink::error);
+                                        },
+                                        FluxSink.OverflowStrategy.BUFFER)
+                                .doOnError(e -> activeEventSink.set(null));
+
+        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+                .apply(new AgentInput(msgs));
+    }
+
+    private void publishEvent(AgentEvent event) {
+        FluxSink<AgentEvent> sink = activeEventSink.get();
+        if (sink != null) {
+            sink.next(event);
+        }
     }
 
     /**
@@ -412,14 +859,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
-     * Find the last assistant message in memory.
+     * Find the last assistant message in context.
      *
      * @return The last assistant message, or null if not found
      */
     private Msg findLastAssistantMsg() {
-        List<Msg> memoryMsgs = memory.getMessages();
-        for (int i = memoryMsgs.size() - 1; i >= 0; i--) {
-            Msg msg = memoryMsgs.get(i);
+        List<Msg> contextMsgs = state.contextMutable();
+        for (int i = contextMsgs.size() - 1; i >= 0; i--) {
+            Msg msg = contextMsgs.get(i);
             if (msg.getRole() == MsgRole.ASSISTANT) {
                 return msg;
             }
@@ -448,7 +895,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         Set<String> existingResultIds =
-                memory.getMessages().stream()
+                state.contextMutable().stream()
                         .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
                         .map(ToolResultBlock::getId)
                         .collect(Collectors.toSet());
@@ -460,7 +907,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
-     * Validate input messages when there are pending tool calls, then add to memory.
+     * Validate input messages when there are pending tool calls, then add to context.
      *
      * <p>Validation rules:
      * <ul>
@@ -527,21 +974,36 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             + pendingIds);
         }
 
-        msgs.forEach(memory::addMessage);
+        state.contextMutable().addAll(msgs);
     }
 
     /**
-     * Add messages to memory if not null.
+     * Add messages to the agent state context if not null.
      *
      * @param msgs The messages to add
      */
-    private void addToMemory(List<Msg> msgs) {
+    private void addToContext(List<Msg> msgs) {
         if (msgs != null) {
-            msgs.forEach(memory::addMessage);
+            state.contextMutable().addAll(msgs);
         }
     }
 
     // ==================== Core ReAct Loop ====================
+
+    /**
+     * Entry point for a fresh agent invocation: kicks off the ReAct loop at iteration 0.
+     */
+    private Mono<Msg> coreAgent() {
+        return executeIteration(0);
+    }
+
+    /**
+     * Resume entry point when pending tool calls remain from a previous turn:
+     * jumps directly into the acting phase without another reasoning step.
+     */
+    private Mono<Msg> resumeAgent() {
+        return acting(0);
+    }
 
     private Mono<Msg> executeIteration(int iter) {
         return reasoning(iter, false);
@@ -566,8 +1028,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         ReasoningContext context = new ReasoningContext(getName());
 
         return checkInterruptedAsync()
-                .then(notifyPreReasoningEvent(memory.getMessages()))
-                .flatMapMany(
+                .then(
+                        hookDispatcher.firePreReasoning(
+                                state.contextMutable(),
+                                currentSystemMsg.get(),
+                                model.getModelName()))
+                .flatMap(
                         event -> {
                             GenerateOptions options =
                                     event.getEffectiveGenerateOptions() != null
@@ -576,18 +1042,49 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             List<Msg> modelInput =
                                     prependSystemMsg(
                                             event.getInputMessages(), event.getSystemMessage());
-                            return model.stream(modelInput, toolkit.getToolSchemas(), options)
-                                    .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk));
+                            List<ToolSchema> tools = toolkit.getToolSchemas();
+                            Function<ReasoningInput, Flux<AgentEvent>> reasoningCore =
+                                    ri ->
+                                            reasoningStream(
+                                                    context,
+                                                    ri.messages(),
+                                                    ri.tools(),
+                                                    ri.options());
+                            Flux<AgentEvent> stream =
+                                    MiddlewareChain.build(
+                                                    middlewares,
+                                                    ReActAgent.this,
+                                                    MiddlewareBase::onReasoning,
+                                                    reasoningCore)
+                                            .apply(new ReasoningInput(modelInput, tools, options));
+                            // Track any RequestStopEvent emitted by middlewares while still
+                            // exhausting the stream (publishEvent already fires on each event).
+                            AtomicReference<RequestStopEvent> stopRequested =
+                                    new AtomicReference<>();
+                            return stream.doOnNext(
+                                            ev -> {
+                                                if (ev instanceof RequestStopEvent rs) {
+                                                    stopRequested.compareAndSet(null, rs);
+                                                }
+                                            })
+                                    .then(
+                                            Mono.defer(
+                                                    () -> {
+                                                        Msg finalMsg = context.buildFinalMessage();
+                                                        RequestStopEvent rs = stopRequested.get();
+                                                        if (rs != null && finalMsg != null) {
+                                                            // Persist the reasoning message before
+                                                            // returning so the next call can resume
+                                                            // from pending tool calls.
+                                                            state.contextMutable().add(finalMsg);
+                                                            return Mono.just(
+                                                                    finalMsg.withGenerateReason(
+                                                                            rs
+                                                                                    .getGenerateReason()));
+                                                        }
+                                                        return Mono.justOrEmpty(finalMsg);
+                                                    }));
                         })
-                .doOnNext(
-                        chunk -> {
-                            List<Msg> chunkMsgs = context.processChunk(chunk);
-                            // Notify streaming hooks for each chunk message
-                            for (Msg msg : chunkMsgs) {
-                                notifyReasoningChunk(msg, context).subscribe();
-                            }
-                        })
-                .then(Mono.defer(() -> Mono.justOrEmpty(context.buildFinalMessage())))
                 .onErrorResume(
                         InterruptedException.class,
                         error -> {
@@ -599,43 +1096,56 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                 .getConfig()
                                                                 .partialReasoningPolicy()
                                                         == PartialReasoningPolicy.DISCARD;
-                                // Manually interruption will save the msg, while system
-                                // interruption will discard on specific config
                                 if (!discard) {
-                                    memory.addMessage(msg);
+                                    state.contextMutable().add(msg);
                                 }
                             }
                             return Mono.error(error);
                         })
-                .flatMap(this::notifyPostReasoning)
+                .flatMap(
+                        msg -> {
+                            // Short-circuit: middleware requested stop during reasoning. The msg
+                            // is already persisted to context and tagged with the correct
+                            // GenerateReason; skip legacy postReasoning hook.
+                            if (msg.getGenerateReason() == GenerateReason.MIDDLEWARE_STOP_REQUESTED
+                                    || msg.getGenerateReason()
+                                            == GenerateReason.PERMISSION_ASKING) {
+                                return Mono.just(msg);
+                            }
+                            return runPostReasoningPipeline(msg, iter);
+                        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private Mono<Msg> runPostReasoningPipeline(Msg msg, int iter) {
+        return hookDispatcher
+                .firePostReasoning(msg, model.getModelName())
                 .flatMap(
                         event -> {
-                            Msg msg = event.getReasoningMessage();
-                            if (msg != null) {
-                                memory.addMessage(msg);
+                            Msg eventMsg = event.getReasoningMessage();
+                            if (eventMsg != null) {
+                                state.contextMutable().add(eventMsg);
                             }
 
                             // HITL stop
                             if (event.isStopRequested()) {
                                 return Mono.just(
-                                        msg.withGenerateReason(
+                                        eventMsg.withGenerateReason(
                                                 GenerateReason.REASONING_STOP_REQUESTED));
                             }
 
                             // gotoReasoning requested (e.g., by StructuredOutputHook)
                             if (event.isGotoReasoningRequested()) {
-                                // Validation already done in PostReasoningEvent.gotoReasoning()
                                 List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
                                 if (gotoMsgs != null) {
-                                    gotoMsgs.forEach(memory::addMessage);
+                                    state.contextMutable().addAll(gotoMsgs);
                                 }
-                                // Continue to next iteration, ignoring maxIters for this entry
                                 return reasoning(iter + 1, true);
                             }
 
                             // Check finish conditions
-                            if (isFinished(msg)) {
-                                return Mono.just(msg);
+                            if (isFinished(eventMsg)) {
+                                return Mono.just(eventMsg);
                             }
 
                             // Continue to acting
@@ -650,16 +1160,147 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
+     * Stream fine-grained {@link AgentEvent}s from a model call during reasoning.
+     *
+     * <p>Emits: {@link ModelCallStartEvent} → block start/delta/end events → {@link
+     * ModelCallEndEvent}. The provided {@link ReasoningContext} is used to accumulate chunks
+     * (for building the final {@link Msg}) and to notify legacy {@link Hook}s.
+     *
+     * @param context   reasoning context for chunk accumulation
+     * @param messages  the messages to send to the model
+     * @param tools     the tool schemas available
+     * @param options   generation options
+     * @return event stream from a single model call
+     */
+    Flux<AgentEvent> reasoningStream(
+            ReasoningContext context,
+            List<Msg> messages,
+            List<ToolSchema> tools,
+            GenerateOptions options) {
+
+        Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
+                mci -> modelCallStream(context, mci, true);
+
+        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onModelCall, modelCallCore)
+                .apply(new ModelCallInput(messages, tools, options, model))
+                .doOnNext(this::publishEvent);
+    }
+
+    private Flux<AgentEvent> modelCallStream(
+            ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
+
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        AtomicBoolean textStarted = new AtomicBoolean(false);
+        AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+        Set<String> startedToolCalls = ConcurrentHashMap.newKeySet();
+
+        Flux<AgentEvent> modelEvents =
+                mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                        .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
+                        .concatMap(
+                                chunk -> {
+                                    List<Msg> chunkMsgs = context.processChunk(chunk);
+                                    for (Msg msg : chunkMsgs) {
+                                        hookDispatcher
+                                                .fireReasoningChunk(
+                                                        msg, context, mci.model().getModelName())
+                                                .subscribe();
+                                    }
+
+                                    List<AgentEvent> events = new ArrayList<>();
+                                    for (ContentBlock block : chunk.getContent()) {
+                                        emitBlockEvents(
+                                                block,
+                                                replyId,
+                                                context,
+                                                textStarted,
+                                                thinkingStarted,
+                                                withToolEvents
+                                                        ? startedToolCalls
+                                                        : ConcurrentHashMap.newKeySet(),
+                                                events);
+                                    }
+                                    return Flux.fromIterable(events);
+                                });
+
+        Flux<AgentEvent> endEvents =
+                Flux.defer(
+                        () -> {
+                            List<AgentEvent> events = new ArrayList<>();
+                            if (textStarted.get()) {
+                                events.add(new TextBlockEndEvent(replyId, "text"));
+                            }
+                            if (thinkingStarted.get()) {
+                                events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                            }
+                            for (String toolId : startedToolCalls) {
+                                events.add(new ToolCallEndEvent(replyId, toolId));
+                            }
+                            events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                            return Flux.fromIterable(events);
+                        });
+
+        return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
+    }
+
+    private void emitBlockEvents(
+            ContentBlock block,
+            String replyId,
+            ReasoningContext context,
+            AtomicBoolean textStarted,
+            AtomicBoolean thinkingStarted,
+            Set<String> startedToolCalls,
+            List<AgentEvent> events) {
+
+        if (block instanceof TextBlock tb) {
+            if (textStarted.compareAndSet(false, true)) {
+                events.add(new TextBlockStartEvent(replyId, "text"));
+            }
+            if (tb.getText() != null && !tb.getText().isEmpty()) {
+                events.add(new TextBlockDeltaEvent(replyId, "text", tb.getText()));
+            }
+        } else if (block instanceof ThinkingBlock tb) {
+            if (thinkingStarted.compareAndSet(false, true)) {
+                events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
+            }
+            if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
+                events.add(new ThinkingBlockDeltaEvent(replyId, "thinking", tb.getThinking()));
+            }
+        } else if (block instanceof ToolUseBlock tub) {
+            String toolId = resolveToolCallId(tub, context);
+            if (toolId != null && startedToolCalls.add(toolId)) {
+                String toolName = tub.getName();
+                if (toolName != null && !toolName.startsWith("__")) {
+                    events.add(new ToolCallStartEvent(replyId, toolId, toolName));
+                }
+            }
+            if (tub.getContent() != null && !tub.getContent().isEmpty()) {
+                events.add(
+                        new ToolCallDeltaEvent(
+                                replyId, toolId != null ? toolId : "", tub.getContent()));
+            }
+        }
+    }
+
+    private String resolveToolCallId(ToolUseBlock tub, ReasoningContext context) {
+        if (tub.getId() != null && !tub.getId().isEmpty()) {
+            return tub.getId();
+        }
+        ToolUseBlock accumulated = context.getAccumulatedToolCall(null);
+        return accumulated != null ? accumulated.getId() : null;
+    }
+
+    /**
      * Execute the acting phase.
      *
-     * <p>This method executes only pending tools (those without results in memory),
+     * <p>This method executes only pending tools (those without results in context),
      * notifies hooks for successful tool results, and decides whether to continue iteration
      * or return (HITL stop, suspended tools, or structured output).
      *
      * <p>For tools that throw {@link io.agentscope.core.tool.ToolSuspendException}:
      * <ul>
      *   <li>The exception is caught by Toolkit and converted to a pending ToolResultBlock</li>
-     *   <li>Successful results are stored in memory, pending results are not</li>
+     *   <li>Successful results are stored in context, pending results are not</li>
      *   <li>Returns Msg with {@link GenerateReason#TOOL_SUSPENDED} containing suspended ToolUseBlocks</li>
      * </ul>
      *
@@ -667,24 +1308,48 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * @return Mono containing the final result message
      */
     private Mono<Msg> acting(int iter) {
-        // Extract only pending tool calls (those without results in memory)
         List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
 
         if (pendingToolCalls.isEmpty()) {
-            // No pending tools have been executed, continue to next iteration
             return executeIteration(iter + 1);
         }
 
-        // Forward tool chunks into ActingChunkEvent hooks without overwriting user callbacks.
-        toolkit.setInternalChunkCallback(
-                (toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
+                new AtomicReference<>();
 
-        // Execute only pending tools (those without results in memory)
-        return notifyPreActingHooks(pendingToolCalls)
-                .flatMap(this::executeToolCalls)
+        AtomicReference<RequestStopEvent> actingStopRequested = new AtomicReference<>();
+        return hookDispatcher
+                .firePreActing(pendingToolCalls, toolkit)
+                .flatMap(
+                        toolCalls -> {
+                            Function<ActingInput, Flux<AgentEvent>> actingCore =
+                                    ai -> actingStream(ai.toolCalls(), replyId, resultHolder);
+                            Flux<AgentEvent> stream =
+                                    MiddlewareChain.build(
+                                                    middlewares,
+                                                    this,
+                                                    MiddlewareBase::onActing,
+                                                    actingCore)
+                                            .apply(new ActingInput(toolCalls));
+                            return stream.doOnNext(
+                                            ev -> {
+                                                if (ev instanceof RequestStopEvent rs) {
+                                                    actingStopRequested.compareAndSet(null, rs);
+                                                }
+                                            })
+                                    .then(Mono.defer(() -> Mono.just(resultHolder.get())));
+                        })
                 .flatMap(
                         results -> {
-                            // Separate success and pending results
+                            // Middleware requested stop during acting — return immediately with
+                            // the requested GenerateReason, preserving any results already
+                            // collected.
+                            RequestStopEvent rs = actingStopRequested.get();
+                            if (rs != null) {
+                                Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
+                                return Mono.just(stopMsg);
+                            }
                             List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
                                     results.stream()
                                             .filter(e -> !e.getValue().isSuspended())
@@ -694,7 +1359,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                             .filter(e -> e.getValue().isSuspended())
                                             .toList();
 
-                            // If no success results to process
                             if (successPairs.isEmpty()) {
                                 if (!pendingPairs.isEmpty()) {
                                     return Mono.just(buildSuspendedMsg(pendingPairs));
@@ -702,14 +1366,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                 return executeIteration(iter + 1);
                             }
 
-                            // Process success results through hooks and add to memory
                             return Flux.fromIterable(successPairs)
                                     .concatMap(this::notifyPostActingHook)
                                     .last()
                                     .flatMap(
                                             event -> {
-                                                // HITL stop (also triggered by
-                                                // StructuredOutputHook when completed)
                                                 if (event.isStopRequested()) {
                                                     return Mono.just(
                                                             event.getToolResultMsg()
@@ -718,16 +1379,329 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                                     .ACTING_STOP_REQUESTED));
                                                 }
 
-                                                // If there are pending results, build suspended Msg
                                                 if (!pendingPairs.isEmpty()) {
                                                     return Mono.just(
                                                             buildSuspendedMsg(pendingPairs));
                                                 }
 
-                                                // Continue next iteration
                                                 return executeIteration(iter + 1);
                                             });
                         });
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s from tool execution during the acting phase.
+     *
+     * <p>Emits: {@link ToolResultStartEvent} → delta events → {@link ToolResultEndEvent}
+     * for each tool call. The provided {@code resultHolder} is populated with the execution
+     * results so the caller can process them afterward.
+     *
+     * @param toolCalls    the tool calls to execute
+     * @param replyId      the reply identifier for event correlation
+     * @param resultHolder populated with tool execution results on completion
+     * @return event stream from tool execution
+     */
+    Flux<AgentEvent> actingStream(
+            List<ToolUseBlock> toolCalls,
+            String replyId,
+            AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
+
+        return evaluatePermissions(toolCalls)
+                .flatMapMany(
+                        gate -> {
+                            List<ToolUseBlock> pending = gate.pendingAsk();
+                            Set<String> autoDenied = gate.autoDeniedIds();
+
+                            // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
+                            // calls run immediately; ASKING calls cause the agent to pause and
+                            // return; DENIED calls get DENIED ToolResultBlocks written below.
+                            Map<String, ToolCallState> stateUpdates = new HashMap<>();
+                            for (ToolUseBlock tc : toolCalls) {
+                                if (autoDenied.contains(tc.getId())) {
+                                    // DENIED tools don't need a state change — they'll get a
+                                    // DENIED ToolResultBlock and won't reappear in pending.
+                                    continue;
+                                }
+                                stateUpdates.put(
+                                        tc.getId(),
+                                        pending.stream().anyMatch(p -> p.getId().equals(tc.getId()))
+                                                ? ToolCallState.ASKING
+                                                : ToolCallState.ALLOWED);
+                            }
+                            updateToolCallStates(stateUpdates);
+
+                            if (pending.isEmpty()) {
+                                return runToolBatch(toolCalls, autoDenied, replyId, resultHolder);
+                            }
+
+                            // Permission HITL: surface the pending tool calls, persist any
+                            // auto-denied results so the second call can identify which ones
+                            // still need confirmation, then signal stop via RequestStopEvent.
+                            // The agent's acting() will see the RequestStopEvent, set the
+                            // GenerateReason to PERMISSION_ASKING, and return.
+                            if (!autoDenied.isEmpty()) {
+                                // Write DENIED results in-place so they aren't re-evaluated on
+                                // resume.
+                                writeAutoDeniedResults(toolCalls, autoDenied);
+                            }
+                            // resultHolder may be inspected by the caller after stream completion;
+                            // initialise it to empty since no successful execution happened.
+                            resultHolder.set(List.of());
+                            return Flux.<AgentEvent>just(
+                                    new RequireUserConfirmEvent(replyId, pending),
+                                    new RequestStopEvent(
+                                            "permission asking", GenerateReason.PERMISSION_ASKING));
+                        })
+                .doOnNext(this::publishEvent);
+    }
+
+    /**
+     * Synthesise DENIED ToolResultBlocks for tools that were rejected by deny rules and append
+     * them to context so the conversation reflects the rejection (and resume doesn't see them
+     * as pending).
+     */
+    private void writeAutoDeniedResults(List<ToolUseBlock> toolCalls, Set<String> deniedIds) {
+        for (ToolUseBlock tc : toolCalls) {
+            if (!deniedIds.contains(tc.getId())) {
+                continue;
+            }
+            ToolResultBlock denied =
+                    ToolResultBlock.text("Permission denied by rules")
+                            .withIdAndName(tc.getId(), tc.getName())
+                            .withState(ToolResultState.DENIED);
+            Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
+            state.contextMutable().add(deniedMsg);
+        }
+    }
+
+    /**
+     * Execute the given tool calls, synthesising DENIED results for any tool whose id is in
+     * {@code deniedIds} (skipping toolkit invocation for those) and running the rest through
+     * {@link #executeToolCalls(List)}. The combined results are written to {@code resultHolder}
+     * and emitted as a stream of fine-grained {@link AgentEvent}s.
+     */
+    private Flux<AgentEvent> runToolBatch(
+            List<ToolUseBlock> toolCalls,
+            Set<String> deniedIds,
+            String replyId,
+            AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
+
+        List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries = new ArrayList<>();
+        List<ToolUseBlock> approved = new ArrayList<>();
+        for (ToolUseBlock tc : toolCalls) {
+            if (deniedIds.contains(tc.getId())) {
+                ToolResultBlock denied =
+                        ToolResultBlock.text("Permission denied by user")
+                                .withIdAndName(tc.getId(), tc.getName())
+                                .withState(ToolResultState.DENIED);
+                deniedEntries.add(Map.entry(tc, denied));
+            } else {
+                approved.add(tc);
+            }
+        }
+
+        Flux<AgentEvent> deniedEvents =
+                Flux.fromIterable(deniedEntries)
+                        .concatMap(
+                                entry -> {
+                                    ToolUseBlock use = entry.getKey();
+                                    return Flux.<AgentEvent>just(
+                                            new ToolResultStartEvent(
+                                                    replyId, use.getId(), use.getName()),
+                                            new ToolResultTextDeltaEvent(
+                                                    replyId,
+                                                    use.getId(),
+                                                    "Permission denied by user"),
+                                            new ToolResultEndEvent(
+                                                    replyId, use.getId(), ToolResultState.DENIED));
+                                });
+
+        if (approved.isEmpty()) {
+            resultHolder.set(deniedEntries);
+            return deniedEvents;
+        }
+
+        // Capture the parent Reactor Context (set by AgentBase.createEventStream, which puts the
+        // SubagentEventBus there) so we can forward it into the inner executeToolCalls subscribe.
+        // Without this, the bare .subscribe() below detaches from the upstream chain and tools
+        // like AgentSpawnTool see an empty ContextView, breaking child-event forwarding.
+        Flux<AgentEvent> approvedEvents =
+                Flux.<AgentEvent>deferContextual(
+                        parentCtx ->
+                                Flux.<AgentEvent>create(
+                                        sink -> {
+                                            for (ToolUseBlock tool : approved) {
+                                                sink.next(
+                                                        new ToolResultStartEvent(
+                                                                replyId,
+                                                                tool.getId(),
+                                                                tool.getName()));
+                                            }
+
+                                            toolkit.setInternalChunkCallback(
+                                                    (toolUse, chunk) -> {
+                                                        if (chunk.getOutput() != null) {
+                                                            for (ContentBlock block :
+                                                                    chunk.getOutput()) {
+                                                                if (block instanceof TextBlock tb) {
+                                                                    sink.next(
+                                                                            new ToolResultTextDeltaEvent(
+                                                                                    replyId,
+                                                                                    toolUse.getId(),
+                                                                                    tb.getText()));
+                                                                } else {
+                                                                    sink.next(
+                                                                            new ToolResultDataDeltaEvent(
+                                                                                    replyId,
+                                                                                    toolUse.getId(),
+                                                                                    block));
+                                                                }
+                                                            }
+                                                        }
+                                                        hookDispatcher
+                                                                .fireActingChunk(
+                                                                        toolUse, chunk, toolkit)
+                                                                .subscribe();
+                                                    });
+
+                                            executeToolCalls(approved)
+                                                    .contextWrite(ctx -> ctx.putAll(parentCtx))
+                                                    .subscribe(
+                                                            results -> {
+                                                                List<
+                                                                                Map.Entry<
+                                                                                        ToolUseBlock,
+                                                                                        ToolResultBlock>>
+                                                                        merged =
+                                                                                new ArrayList<>(
+                                                                                        deniedEntries);
+                                                                merged.addAll(results);
+                                                                resultHolder.set(merged);
+                                                                for (Map.Entry<
+                                                                                ToolUseBlock,
+                                                                                ToolResultBlock>
+                                                                        entry : results) {
+                                                                    ToolResultState state =
+                                                                            determineToolResultState(
+                                                                                    entry
+                                                                                            .getValue());
+                                                                    sink.next(
+                                                                            new ToolResultEndEvent(
+                                                                                    replyId,
+                                                                                    entry.getKey()
+                                                                                            .getId(),
+                                                                                    state));
+                                                                }
+                                                                sink.complete();
+                                                            },
+                                                            sink::error);
+                                        }));
+
+        return deniedEvents.concatWith(approvedEvents);
+    }
+
+    /**
+     * Outcome of running every {@link ToolBase} call through the {@link PermissionEngine}.
+     *
+     * @param pendingAsk tool calls that require user confirmation before execution.
+     * @param autoDeniedIds ids of tool calls whose decision was {@code DENY}; the agent loop
+     *     synthesises denied results for them without invoking the tool.
+     */
+    private record PermissionGate(List<ToolUseBlock> pendingAsk, Set<String> autoDeniedIds) {}
+
+    /**
+     * Run every tool call through the permission gate.
+     *
+     * <p>When the agent's {@link io.agentscope.core.permission.PermissionContextState} is trivial
+     * (default mode, no rules, no working directories — i.e. the user has not opted into the
+     * permission system) we fall back to the lightweight pre-2.0 path: the tool's own
+     * {@link ToolBase#checkPermissions} ASK gates a confirmation, anything else is approved.
+     *
+     * <p>Otherwise we engage the full {@link PermissionEngine} pipeline so deny/ask/allow rules
+     * and EXPLORE/ACCEPT_EDITS/BYPASS/DONT_ASK modes are honoured before execution. Legacy
+     * {@link AgentTool}s that do not extend {@link ToolBase} always pass through approved.
+     */
+    private Mono<PermissionGate> evaluatePermissions(List<ToolUseBlock> toolCalls) {
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return Mono.just(new PermissionGate(List.of(), Set.of()));
+        }
+        boolean useEngine = !state.getPermissionContext().isTrivial();
+        return Flux.fromIterable(toolCalls)
+                .concatMap(use -> evaluateOne(use, useEngine))
+                .collectList()
+                .map(
+                        verdicts -> {
+                            List<ToolUseBlock> pending = new ArrayList<>();
+                            Set<String> denied = new HashSet<>();
+                            for (PermissionVerdict v : verdicts) {
+                                switch (v.behavior()) {
+                                    case DENY -> denied.add(v.use().getId());
+                                    case ASK -> pending.add(v.use());
+                                    case ALLOW, PASSTHROUGH -> {
+                                        // auto-approved; falls through to execution
+                                    }
+                                }
+                            }
+                            return new PermissionGate(pending, denied);
+                        });
+    }
+
+    private Mono<PermissionVerdict> evaluateOne(ToolUseBlock use, boolean useEngine) {
+        // Tools already promoted to ALLOWED by user confirmation skip the engine entirely.
+        if (use.getState() == ToolCallState.ALLOWED) {
+            return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
+        }
+        AgentTool tool = toolkit.getTool(use.getName());
+        if (!(tool instanceof ToolBase tb)) {
+            return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
+        }
+        Map<String, Object> input = use.getInput() == null ? Map.of() : use.getInput();
+        if (useEngine) {
+            return permissionEngine
+                    .checkPermission(tb, input)
+                    .map(
+                            decision ->
+                                    new PermissionVerdict(
+                                            use,
+                                            decision == null
+                                                    ? PermissionBehavior.ASK
+                                                    : decision.getBehavior()));
+        }
+        return tb.checkPermissions(input, state.getPermissionContext())
+                .map(
+                        decision -> {
+                            if (decision == null) {
+                                return new PermissionVerdict(use, PermissionBehavior.ALLOW);
+                            }
+                            // In the legacy lightweight path only an explicit ASK from the tool
+                            // gates execution; PASSTHROUGH and ALLOW both run, DENY is honoured.
+                            return switch (decision.getBehavior()) {
+                                case ASK -> new PermissionVerdict(use, PermissionBehavior.ASK);
+                                case DENY -> new PermissionVerdict(use, PermissionBehavior.DENY);
+                                default -> new PermissionVerdict(use, PermissionBehavior.ALLOW);
+                            };
+                        });
+    }
+
+    private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
+
+    private ToolResultState determineToolResultState(ToolResultBlock result) {
+        if (result.isSuspended()) {
+            return ToolResultState.RUNNING;
+        }
+        if (result.getState() != null && result.getState() != ToolResultState.RUNNING) {
+            return result.getState();
+        }
+        if (result.getOutput() != null
+                && result.getOutput().stream()
+                        .anyMatch(
+                                b ->
+                                        b instanceof TextBlock tb
+                                                && tb.getText() != null
+                                                && tb.getText().startsWith("[ERROR]"))) {
+            return ToolResultState.ERROR;
+        }
+        return ToolResultState.SUCCESS;
     }
 
     /**
@@ -754,6 +1728,27 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
+     * Build a stop-acknowledgement Msg for middleware-requested stops during acting. Preserves
+     * any already-collected tool results so the caller sees partial progress.
+     */
+    private Msg buildStopMsg(
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> results, GenerateReason reason) {
+        List<ContentBlock> content = new ArrayList<>();
+        if (results != null) {
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : results) {
+                content.add(pair.getKey());
+                content.add(pair.getValue());
+            }
+        }
+        return Msg.builder()
+                .name(getName())
+                .role(MsgRole.ASSISTANT)
+                .content(content)
+                .generateReason(reason)
+                .build();
+    }
+
+    /**
      * Execute tool calls and return paired results.
      *
      * <p>If tool execution fails (timeout, error, etc.), this method generates error tool results
@@ -765,7 +1760,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      */
     private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
             List<ToolUseBlock> toolCalls) {
-        return toolkit.callTools(toolCalls, toolExecutionConfig, this, buildMergedToolContext())
+        return toolkit.callTools(toolCalls, toolExecutionConfig, this, buildMergedRuntimeContext())
                 .map(
                         results ->
                                 IntStream.range(0, toolCalls.size())
@@ -804,22 +1799,22 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
-     * Notify PostActingEvent hook for a single tool result, build message and add to memory.
+     * Fire PostActingEvent for a single tool result, build message and add to context.
      */
     private Mono<PostActingEvent> notifyPostActingHook(
             Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
         ToolUseBlock toolUse = entry.getKey();
         ToolResultBlock result = entry.getValue();
 
-        // Build tool result message first so hooks can access it
         Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolUse, getName());
 
-        // Create event with toolResultMsg already set
-        PostActingEvent event = new PostActingEvent(this, toolkit, toolUse, result);
-        event.setToolResultMsg(toolMsg);
-
-        // Notify hooks and add to memory
-        return notifyHooks(event).doOnNext(e -> memory.addMessage(e.getToolResultMsg()));
+        return hookDispatcher
+                .firePostActing(toolUse, result, toolkit, toolMsg)
+                .doOnNext(
+                        e -> {
+                            Msg resultMsg = e.getToolResultMsg();
+                            state.contextMutable().add(resultMsg);
+                        });
     }
 
     /**
@@ -828,10 +1823,40 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     protected Mono<Msg> summarizing() {
         log.debug("Maximum iterations reached. Generating summary...");
 
+        // Handle pending tool calls that were not completed before max iterations
+        if (hasPendingToolUse()) {
+            List<ToolUseBlock> pendingTools = extractPendingToolCalls();
+            log.warn(
+                    "Max iterations reached with {} pending tool calls. Adding error results.",
+                    pendingTools.size());
+
+            for (ToolUseBlock toolUse : pendingTools) {
+                ToolResultBlock errorResult =
+                        buildErrorToolResult(
+                                toolUse.getId(),
+                                "Tool execution cancelled because maximum iterations limit ("
+                                        + maxIters
+                                        + ") was reached");
+
+                Msg errorResultMsg =
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                errorResult, toolUse, getName());
+                state.contextMutable().add(errorResultMsg);
+            }
+        }
+
         List<Msg> messageList = prepareSummaryMessages();
         GenerateOptions generateOptions = buildGenerateOptions();
+        ReasoningContext context = new ReasoningContext(getName());
+        publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
-        return notifyPreSummaryHook(messageList, generateOptions)
+        return hookDispatcher
+                .firePreSummary(
+                        messageList,
+                        generateOptions,
+                        model.getModelName(),
+                        maxIters,
+                        currentSystemMsg.get())
                 .flatMap(
                         preSummaryEvent -> {
                             List<Msg> effectiveMessages =
@@ -841,10 +1866,19 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             GenerateOptions effectiveOptions =
                                     preSummaryEvent.getEffectiveGenerateOptions();
 
-                            return streamAndAccumulateSummary(effectiveMessages, effectiveOptions)
+                            return summaryStream(context, effectiveMessages, effectiveOptions)
+                                    .then(
+                                            Mono.defer(
+                                                    () ->
+                                                            Mono.justOrEmpty(
+                                                                    context.buildFinalMessage())))
                                     .flatMap(
                                             msg ->
-                                                    notifyPostSummaryHook(msg, effectiveOptions)
+                                                    hookDispatcher
+                                                            .firePostSummary(
+                                                                    msg,
+                                                                    effectiveOptions,
+                                                                    model.getModelName())
                                                             .map(
                                                                     postEvent -> {
                                                                         Msg finalMsg =
@@ -853,32 +1887,110 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                                         .withGenerateReason(
                                                                                                 GenerateReason
                                                                                                         .MAX_ITERATIONS);
-                                                                        memory.addMessage(finalMsg);
+                                                                        state.contextMutable()
+                                                                                .add(finalMsg);
                                                                         return finalMsg;
                                                                     }));
                         })
                 .onErrorResume(this::handleSummaryError);
     }
 
-    private Mono<Msg> streamAndAccumulateSummary(
-            List<Msg> messages, GenerateOptions generateOptions) {
-        return model.stream(messages, null, generateOptions)
-                .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
-                .reduce(
-                        new ReasoningContext(getName()),
-                        (ctx, chunk) -> {
-                            List<Msg> streamedMessages = ctx.processChunk(chunk);
-                            for (Msg streamedMessage : streamedMessages) {
-                                notifySummaryChunk(streamedMessage, ctx, generateOptions)
-                                        .subscribe();
+    /**
+     * Stream fine-grained {@link AgentEvent}s from a model call during summarization.
+     *
+     * <p>Structurally identical to {@link #reasoningStream} but notifies summary-specific
+     * hooks (SummaryChunkEvent) and does not pass tool schemas to the model.
+     *
+     * @param context   reasoning context for chunk accumulation
+     * @param messages  the messages to send to the model
+     * @param options   generation options
+     * @return event stream from the summary model call
+     */
+    Flux<AgentEvent> summaryStream(
+            ReasoningContext context, List<Msg> messages, GenerateOptions options) {
+
+        Function<ModelCallInput, Flux<AgentEvent>> summaryModelCallCore =
+                mci -> summaryModelCallStream(context, mci, options);
+
+        return MiddlewareChain.build(
+                        middlewares, this, MiddlewareBase::onModelCall, summaryModelCallCore)
+                .apply(new ModelCallInput(messages, null, options, model))
+                .doOnNext(this::publishEvent);
+    }
+
+    private Flux<AgentEvent> summaryModelCallStream(
+            ReasoningContext context, ModelCallInput mci, GenerateOptions hookOptions) {
+
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        AtomicBoolean textStarted = new AtomicBoolean(false);
+        AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+
+        Flux<AgentEvent> modelEvents =
+                mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                        .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
+                        .concatMap(
+                                chunk -> {
+                                    List<Msg> chunkMsgs = context.processChunk(chunk);
+                                    for (Msg msg : chunkMsgs) {
+                                        hookDispatcher
+                                                .fireSummaryChunk(
+                                                        msg,
+                                                        context,
+                                                        hookOptions,
+                                                        model.getModelName())
+                                                .subscribe();
+                                    }
+
+                                    List<AgentEvent> events = new ArrayList<>();
+                                    for (ContentBlock block : chunk.getContent()) {
+                                        if (block instanceof TextBlock tb) {
+                                            if (textStarted.compareAndSet(false, true)) {
+                                                events.add(
+                                                        new TextBlockStartEvent(replyId, "text"));
+                                            }
+                                            if (tb.getText() != null && !tb.getText().isEmpty()) {
+                                                events.add(
+                                                        new TextBlockDeltaEvent(
+                                                                replyId, "text", tb.getText()));
+                                            }
+                                        } else if (block instanceof ThinkingBlock tb) {
+                                            if (thinkingStarted.compareAndSet(false, true)) {
+                                                events.add(
+                                                        new ThinkingBlockStartEvent(
+                                                                replyId, "thinking"));
+                                            }
+                                            if (tb.getThinking() != null
+                                                    && !tb.getThinking().isEmpty()) {
+                                                events.add(
+                                                        new ThinkingBlockDeltaEvent(
+                                                                replyId,
+                                                                "thinking",
+                                                                tb.getThinking()));
+                                            }
+                                        }
+                                    }
+                                    return Flux.fromIterable(events);
+                                });
+
+        Flux<AgentEvent> endEvents =
+                Flux.defer(
+                        () -> {
+                            List<AgentEvent> events = new ArrayList<>();
+                            if (textStarted.get()) {
+                                events.add(new TextBlockEndEvent(replyId, "text"));
                             }
-                            return ctx;
-                        })
-                .map(ReasoningContext::buildFinalMessage);
+                            if (thinkingStarted.get()) {
+                                events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                            }
+                            events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                            return Flux.fromIterable(events);
+                        });
+
+        return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
     }
 
     private List<Msg> prepareSummaryMessages() {
-        List<Msg> messageList = new ArrayList<>(memory.getMessages());
+        List<Msg> messageList = new ArrayList<>(state.contextMutable());
         messageList.add(
                 Msg.builder()
                         .name("user")
@@ -912,7 +2024,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                         maxIters, error.getMessage()))
                                         .build())
                         .build();
-        memory.addMessage(errorMsg);
+        state.contextMutable().add(errorMsg);
         return Mono.just(errorMsg);
     }
 
@@ -922,7 +2034,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * Prepends the system message to {@code msgs} if non-null.
      *
      * <p>Called immediately before each {@code model.stream()} invocation to build the final
-     * LLM input without contaminating the in-memory message list.
+     * LLM input without contaminating the context message list.
      */
     private static List<Msg> prependSystemMsg(List<Msg> msgs, Msg systemMsg) {
         if (systemMsg == null) {
@@ -961,14 +2073,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * Extract tool calls from the most recent assistant message.
      */
     private List<ToolUseBlock> extractRecentToolCalls() {
-        return MessageUtils.extractRecentToolCalls(memory.getMessages(), getName());
+        return MessageUtils.extractRecentToolCalls(state.contextMutable(), getName());
     }
 
     /**
-     * Extract only pending tool calls (those without results in memory) from the most recent
+     * Extract only pending tool calls (those without results in context) from the most recent
      * assistant message.
      *
-     * <p>This method filters out tool calls that already have corresponding results in memory,
+     * <p>This method filters out tool calls that already have corresponding results in context,
      * preventing duplicate execution when resuming from HITL or partial tool result scenarios.
      *
      * @return List of tool use blocks that don't have results yet, or empty list if all tools
@@ -986,6 +2098,60 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .toList();
     }
 
+    // ==================== Tool call state helpers (Permission HITL) ====================
+
+    /**
+     * Locate the last assistant Msg in context and replace the {@code state} of every
+     * {@link ToolUseBlock} whose id matches the given map's key. Mirrors Python's
+     * {@code _update_tool_call_state} but operates in bulk to minimise list rebuilds.
+     */
+    private void updateToolCallStates(Map<String, ToolCallState> updates) {
+        if (updates == null || updates.isEmpty()) {
+            return;
+        }
+        List<Msg> ctx = state.contextMutable();
+        for (int i = ctx.size() - 1; i >= 0; i--) {
+            Msg m = ctx.get(i);
+            if (m.getRole() != MsgRole.ASSISTANT) {
+                continue;
+            }
+            boolean hasMatch =
+                    m.getContent().stream()
+                            .anyMatch(
+                                    b ->
+                                            b instanceof ToolUseBlock t
+                                                    && updates.containsKey(t.getId()));
+            if (!hasMatch) {
+                continue;
+            }
+            List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
+            for (ContentBlock block : m.getContent()) {
+                if (block instanceof ToolUseBlock t && updates.containsKey(t.getId())) {
+                    rebuilt.add(t.withState(updates.get(t.getId())));
+                } else {
+                    rebuilt.add(block);
+                }
+            }
+            ctx.set(i, m.withContent(rebuilt));
+            return; // only the last assistant msg holds the live tool_use blocks
+        }
+    }
+
+    /** Convenience overload for a single tool call. */
+    private void updateToolCallState(String toolCallId, ToolCallState newState) {
+        updateToolCallStates(Map.of(toolCallId, newState));
+    }
+
+    /** Whether any ToolUseBlock in the last assistant Msg is in ASKING state. */
+    private boolean hasAskingToolCalls() {
+        Msg last = findLastAssistantMsg();
+        if (last == null) {
+            return false;
+        }
+        return last.getContent().stream()
+                .anyMatch(b -> b instanceof ToolUseBlock t && t.getState() == ToolCallState.ASKING);
+    }
+
     @Override
     protected GenerateOptions buildGenerateOptions() {
         // Start with user-configured generateOptions if available
@@ -999,137 +2165,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
-    }
-
-    // ==================== Hook Notification Methods ====================
-
-    /**
-     * Generic hook notification method.
-     */
-    private <T extends HookEvent> Mono<T> notifyHooks(T event) {
-        Mono<T> result = Mono.just(event);
-        for (Hook hook : getSortedHooks()) {
-            result = result.flatMap(hook::onEvent);
-        }
-        return result;
-    }
-
-    private Mono<PreReasoningEvent> notifyPreReasoningEvent(List<Msg> msgs) {
-        PreReasoningEvent event = new PreReasoningEvent(this, model.getModelName(), null, msgs);
-        event.setSystemMessage(currentSystemMsg.get());
-        return notifyHooks(event);
-    }
-
-    private Mono<PostReasoningEvent> notifyPostReasoning(Msg msg) {
-        return notifyHooks(new PostReasoningEvent(this, model.getModelName(), null, msg));
-    }
-
-    private Mono<List<ToolUseBlock>> notifyPreActingHooks(List<ToolUseBlock> toolCalls) {
-        return Flux.fromIterable(toolCalls)
-                .concatMap(tool -> notifyHooks(new PreActingEvent(this, toolkit, tool)))
-                .map(PreActingEvent::getToolUse)
-                .collectList();
-    }
-
-    private Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        ActingChunkEvent event =
-                new ActingChunkEvent(
-                        this,
-                        toolkit,
-                        toolUse,
-                        chunk.withIdAndName(toolUse.getId(), toolUse.getName()));
-        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-    }
-
-    private Mono<Void> notifyReasoningChunk(Msg chunkMsg, ReasoningContext context) {
-        ContentBlock content = chunkMsg.getFirstContentBlock();
-
-        ContentBlock accumulatedContent = null;
-        if (content instanceof TextBlock) {
-            accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
-        } else if (content instanceof ThinkingBlock) {
-            accumulatedContent =
-                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
-        } else if (content instanceof ToolUseBlock tub) {
-            // Support streaming ToolUseBlock events
-            ToolUseBlock accumulated = context.getAccumulatedToolCall(tub.getId());
-            if (accumulated != null) {
-                accumulatedContent = accumulated;
-            } else {
-                // If no accumulated data, use the current chunk directly
-                accumulatedContent = tub;
-            }
-        }
-
-        if (accumulatedContent != null) {
-            Msg accumulated =
-                    Msg.builder()
-                            .id(chunkMsg.getId())
-                            .name(chunkMsg.getName())
-                            .role(chunkMsg.getRole())
-                            .content(accumulatedContent)
-                            .build();
-            if (context.getChatUsage() != null) {
-                accumulated
-                        .getMetadata()
-                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
-            }
-            ReasoningChunkEvent event =
-                    new ReasoningChunkEvent(
-                            this, model.getModelName(), null, chunkMsg, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-        }
-
-        return Mono.empty();
-    }
-
-    // ==================== Summary Hook Notification Methods ====================
-
-    private Mono<PreSummaryEvent> notifyPreSummaryHook(
-            List<Msg> msgs, GenerateOptions generateOptions) {
-        PreSummaryEvent event =
-                new PreSummaryEvent(
-                        this, model.getModelName(), generateOptions, msgs, maxIters, maxIters);
-        event.setSystemMessage(currentSystemMsg.get());
-        return notifyHooks(event);
-    }
-
-    private Mono<PostSummaryEvent> notifyPostSummaryHook(Msg msg, GenerateOptions generateOptions) {
-        return notifyHooks(new PostSummaryEvent(this, model.getModelName(), generateOptions, msg));
-    }
-
-    private Mono<Void> notifySummaryChunk(
-            Msg chunkMsg, ReasoningContext context, GenerateOptions generateOptions) {
-        ContentBlock content = chunkMsg.getFirstContentBlock();
-
-        ContentBlock accumulatedContent = null;
-        if (content instanceof TextBlock) {
-            accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
-        } else if (content instanceof ThinkingBlock) {
-            accumulatedContent =
-                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
-        }
-
-        if (accumulatedContent != null) {
-            Msg accumulated =
-                    Msg.builder()
-                            .id(chunkMsg.getId())
-                            .name(chunkMsg.getName())
-                            .role(chunkMsg.getRole())
-                            .content(accumulatedContent)
-                            .build();
-            if (context.getChatUsage() != null) {
-                accumulated
-                        .getMetadata()
-                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
-            }
-            SummaryChunkEvent event =
-                    new SummaryChunkEvent(
-                            this, model.getModelName(), generateOptions, chunkMsg, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-        }
-
-        return Mono.empty();
     }
 
     @Override
@@ -1148,30 +2183,19 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                         .content(TextBlock.builder().text(recoveryText).build())
                         .build();
 
-        memory.addMessage(recoveryMsg);
+        state.contextMutable().add(recoveryMsg);
         return Mono.just(recoveryMsg);
     }
 
     @Override
     protected Mono<Void> doObserve(Msg msg) {
         if (msg != null) {
-            memory.addMessage(msg);
+            state.contextMutable().add(msg);
         }
         return Mono.empty();
     }
 
     // ==================== Getters ====================
-
-    @Override
-    public Memory getMemory() {
-        return memory;
-    }
-
-    public void setMemory(Memory memory) {
-        throw new UnsupportedOperationException(
-                "Memory cannot be replaced after agent construction. "
-                        + "Create a new agent instance if you need different memory.");
-    }
 
     public String getSysPrompt() {
         return sysPrompt;
@@ -1185,10 +2209,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         return maxIters;
     }
 
-    public PlanNotebook getPlanNotebook() {
-        return planNotebook;
-    }
-
     /**
      * Gets the configured generation options for this agent.
      *
@@ -1198,46 +2218,174 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         return generateOptions;
     }
 
+    /** Returns the live conversational state (context + summary + permissions). */
+    public AgentState getState() {
+        syncToolkitToState();
+        return state;
+    }
+
+    @Override
+    public AgentState getAgentState() {
+        syncToolkitToState();
+        return state;
+    }
+
+    /** Returns the {@link Session} configured for state persistence, or {@code null}. */
+    public Session getSession() {
+        return session;
+    }
+
+    /** Returns the {@link SessionKey} used when persisting state. */
+    public SessionKey getSessionKey() {
+        return sessionKey;
+    }
+
+    private void syncToolkitToState() {
+        if (toolkit != null) {
+            state.getToolContext().setActivatedGroups(toolkit.getActiveGroups());
+        }
+    }
+
+    /** Returns the model-call configuration (retries, timeouts). */
+    public ModelConfig getModelConfig() {
+        return modelConfig;
+    }
+
+    /** Returns the reasoning-loop configuration (maxIters, stopOnReject). */
+    public ReactConfig getReactConfig() {
+        return reactConfig;
+    }
+
+    /** Returns the permission engine that gates tool execution. */
+    public PermissionEngine getPermissionEngine() {
+        return permissionEngine;
+    }
+
+    /**
+     * Returns the {@link PermissionContextState} backing this agent's permission engine.
+     * Convenience equivalent to {@code getAgentState().getPermissionContext()}.
+     */
+    public PermissionContextState getPermissionContext() {
+        return state.getPermissionContext();
+    }
+
+    /** Returns the immutable list of registered middlewares. */
+    public List<MiddlewareBase> getMiddlewares() {
+        return middlewares;
+    }
+
+    /** Returns the per-model-call {@link ExecutionConfig}, or {@code null} if none was set. */
+    public ExecutionConfig getModelExecutionConfig() {
+        return modelExecutionConfig;
+    }
+
+    /** Returns the per-tool-call {@link ExecutionConfig}, or {@code null} if none was set. */
+    public ExecutionConfig getToolExecutionConfig() {
+        return toolExecutionConfig;
+    }
+
+    /** Returns the {@link ToolExecutionContext} bound at build time, or {@code null} if none. */
+    public ToolExecutionContext getToolExecutionContext() {
+        return toolExecutionContext;
+    }
+
+    /**
+     * Returns whether pending-tool-call recovery is enabled (HITL: resume tool calls left in
+     * a pending state across {@code call()} invocations).
+     */
+    public boolean isPendingToolRecoveryEnabled() {
+        return enablePendingToolRecovery;
+    }
+
+    /** Returns the system prompt (alias for {@link #getSysPrompt()}). */
+    public String getSystemPrompt() {
+        return sysPrompt;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
+    @Override
+    public void close() {
+        // No-op for the core ReActAgent. Subclasses / wrappers (HarnessAgent) may release
+        // additional resources here.
+    }
+
     // ==================== Builder ====================
 
+    @SuppressWarnings("deprecation")
     public static class Builder {
-        private String name;
-        private String description;
-        private String sysPrompt;
-        private boolean checkRunning = true;
-        private Model model;
-        private Toolkit toolkit = new Toolkit();
-        private Memory memory = new InMemoryMemory();
-        private int maxIters = 10;
-        private ExecutionConfig modelExecutionConfig;
-        private ExecutionConfig toolExecutionConfig;
-        private GenerateOptions generateOptions;
-        private final Set<Hook> hooks = new LinkedHashSet<>();
+        String name;
+        String description;
+        String sysPrompt;
+        boolean checkRunning = true;
+        Model model;
+        Toolkit toolkit = new Toolkit();
+
+        int maxIters = 10;
+        ExecutionConfig modelExecutionConfig;
+        ExecutionConfig toolExecutionConfig;
+        GenerateOptions generateOptions;
+        final Set<Hook> hooks = new LinkedHashSet<>();
+        private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private boolean enableMetaTool = false;
+        private boolean taskListEnabled = false;
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
-        private PlanNotebook planNotebook;
-        private SkillBox skillBox;
+
         private ToolExecutionContext toolExecutionContext;
         private boolean enablePendingToolRecovery = false;
 
-        // Long-term memory configuration
+        // 2.0 core fields
+        private PermissionContextState permissionContext;
+
+        // Flat setters backing ModelConfig / ReactConfig values
+        private Integer flatMaxRetries;
+        private Model flatFallbackModel;
+        private Boolean flatStopOnReject;
+        private Session session;
+        private SessionKey sessionKey;
+
+        // ==================== 1.x legacy compatibility fields ====================
+        // Below fields back the deprecated `planNotebook(...)`, `longTermMemory(...)`,
+        // `knowledge(...)`, `skillBox(...)` setters. They are consumed by configureXxx() during
+        // build() so legacy 1.x user code keeps producing equivalent runtime behavior.
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
         private LongTermMemory longTermMemory;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
         private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
         private boolean longTermMemoryAsyncRecord = false;
 
-        // State persistence configuration
-        private StatePersistence statePersistence;
-
-        // RAG configuration
+        @Deprecated(forRemoval = true, since = "2.0.0")
         private final Set<Knowledge> knowledgeBases = new LinkedHashSet<>();
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
         private RAGMode ragMode = RAGMode.GENERIC;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
         private RetrieveConfig retrieveConfig =
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private PlanNotebook planNotebook;
+
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        private SkillBox skillBox;
+
+        // ==================== 2.0 skill repository entry ====================
+        // The 2.0 way to mount skills: hand the agent one or more
+        // {@link AgentSkillRepository} instances. {@link #build()} installs a
+        // {@link DynamicSkillMiddleware} that rebuilds the skill prompt on every call,
+        // letting per-user namespaced repositories swap content under the same skill name.
+
+        private final List<AgentSkillRepository> skillRepositories = new ArrayList<>();
+        private SkillFilter skillFilter;
+        private boolean dynamicSkillsEnabled = true;
 
         private Builder() {}
 
@@ -1285,6 +2433,23 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
+         * Configures the model from a string id resolved via {@link ModelRegistry}: a named
+         * registration ({@link ModelRegistry#register(String, Model)}) or a built-in pattern such
+         * as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code anthropic:claude-sonnet-4-5},
+         * {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}. API keys for auto-created models
+         * come from standard environment variables ({@code OPENAI_API_KEY}, {@code DASHSCOPE_API_KEY},
+         * etc.).
+         *
+         * @param modelId registry id or {@code provider:model} string
+         * @return this builder
+         * @throws IllegalArgumentException if the id cannot be resolved
+         */
+        public Builder model(String modelId) {
+            this.model = ModelRegistry.resolve(modelId);
+            return this;
+        }
+
+        /**
          * Sets the toolkit containing available tools for this agent.
          *
          * @param toolkit The toolkit with available tools, must not be null
@@ -1292,17 +2457,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          */
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
-            return this;
-        }
-
-        /**
-         * Sets the memory for storing conversation history.
-         *
-         * @param memory The memory implementation, can be null (defaults to InMemoryMemory)
-         * @return This builder instance for method chaining
-         */
-        public Builder memory(Memory memory) {
-            this.memory = memory;
             return this;
         }
 
@@ -1351,6 +2505,28 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
+         * Adds a middleware for intercepting agent execution.
+         *
+         * @param middleware the middleware to add
+         * @return this builder instance for method chaining
+         */
+        public Builder middleware(MiddlewareBase middleware) {
+            this.middlewares.add(middleware);
+            return this;
+        }
+
+        /**
+         * Adds multiple middlewares for intercepting agent execution.
+         *
+         * @param middlewares the list of middlewares to add
+         * @return this builder instance for method chaining
+         */
+        public Builder middlewares(List<? extends MiddlewareBase> middlewares) {
+            this.middlewares.addAll(middlewares);
+            return this;
+        }
+
+        /**
          * Enables or disables the meta-tool functionality.
          *
          * <p>When enabled, the toolkit will automatically register a meta-tool that provides
@@ -1366,19 +2542,44 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
+         * Enables the built-in task-list capability ({@code todo_write} tool + per-turn reminder).
+         *
+         * <p>Equivalent to {@link #enableTaskList(boolean) enableTaskList(true)}.
+         *
+         * @return this builder for chaining
+         */
+        public Builder enableTaskList() {
+            return enableTaskList(true);
+        }
+
+        /**
+         * Enables or disables the built-in task-list capability.
+         *
+         * <p>When enabled, {@link #build()} registers a {@code todo_write} tool (operating on
+         * {@link io.agentscope.core.state.AgentState#getTasksContext()} with full-list-replace
+         * semantics) and a {@link io.agentscope.core.middleware.TaskReminderMiddleware} that
+         * re-surfaces the current list before every reasoning step. Default OFF.
+         *
+         * @param enabled true to enable the task list
+         * @return this builder for chaining
+         */
+        public Builder enableTaskList(boolean enabled) {
+            this.taskListEnabled = enabled;
+            return this;
+        }
+
+        /**
          * Enables or disables automatic recovery from orphaned pending tool calls.
          *
-         * <p>When enabled , a {@link PendingToolRecoveryHook} is automatically
-         * registered to detect and patch orphaned pending tool calls with synthetic error
-         * results before agent processing begins. This prevents {@link IllegalStateException}
-         * when tool execution fails, times out, or is interrupted.
+         * <p>When enabled, the agent automatically detects orphaned pending tool calls and
+         * patches them with synthetic error results before processing new input. This prevents
+         * {@link IllegalStateException} when tool execution fails, times out, or is interrupted.
          *
          * <p>Disable this if you prefer to handle pending tool calls manually, for example
          * through HITL (Human-in-the-loop) mechanisms or custom error handling strategies.
          *
          * @param enable true to enable auto-recovery, false to disable
          * @return This builder instance for method chaining
-         * @see PendingToolRecoveryHook
          */
         public Builder enablePendingToolRecovery(boolean enable) {
             this.enablePendingToolRecovery = enable;
@@ -1462,145 +2663,128 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
-         * Sets the PlanNotebook for plan-based task execution.
+         * Sets the tool execution context for this agent.
          *
-         * <p>When provided, the PlanNotebook will be integrated into the agent:
-         * <ul>
-         *   <li>Plan management tools will be automatically registered to the toolkit
-         *   <li>A hook will be added to inject plan hints before each reasoning step
-         * </ul>
-         *
-         * @param planNotebook The configured PlanNotebook instance, can be null
+         * @param toolExecutionContext The tool execution context
          * @return This builder instance for method chaining
+         * @deprecated Use {@link RuntimeContext} with {@code agent.call(msg, runtimeContext)}
+         *     or register POJOs directly via {@code RuntimeContext.builder().put(Type, value)}.
          */
-        public Builder planNotebook(PlanNotebook planNotebook) {
-            this.planNotebook = planNotebook;
+        @Deprecated
+        public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
+            this.toolExecutionContext = toolExecutionContext;
             return this;
         }
 
         /**
-         * Sets the skill box for this agent.
-         *
-         * <p>The skill box is used to manage the skills for this agent. It will be used to register the skills to the toolkit.
-         * <ul>
-         *   <li>Skill loader tools will be automatically registered to the toolkit</li>
-         *   <li>A skill hook will be added to inject skill prompts on {@link io.agentscope.core.hook.PreCallEvent}
-         *       and manage skill activation</li>
-         * </ul>
-         * @param skillBox The skill box to use for this agent
-         * @return This builder instance for method chaining
+         * Sets the {@link Session} backing automatic AgentState load (at construction) and save
+         * (after every successful {@code call()} and on graceful shutdown). When {@code null}, the
+         * agent runs purely in-memory and persistence is a no-op.
          */
-        public Builder skillBox(SkillBox skillBox) {
-            this.skillBox = skillBox;
+        public Builder session(Session session) {
+            this.session = session;
             return this;
         }
 
         /**
-         * Sets the long-term memory for this agent.
-         *
-         * <p>Long-term memory enables the agent to remember information across sessions.
-         * It can be used in combination with {@link #longTermMemoryMode(LongTermMemoryMode)}
-         * to control whether memory management is automatic, agent-controlled, or both.
-         *
-         * @param longTermMemory The long-term memory implementation
-         * @return This builder instance for method chaining
-         * @see LongTermMemoryMode
+         * Sets the {@link SessionKey} used when reading / writing the {@code agent_state} entry.
+         * Defaults to {@code SimpleSessionKey.of(name)} when unset.
          */
+        public Builder sessionKey(SessionKey sessionKey) {
+            this.sessionKey = sessionKey;
+            return this;
+        }
+
+        /**
+         * Sets the model-call retry budget (max attempts including the first try). Defaults to
+         * {@link ModelConfig#DEFAULT_MAX_RETRIES} when unset.
+         */
+        public Builder maxRetries(int maxRetries) {
+            if (maxRetries <= 0) {
+                throw new IllegalArgumentException("maxRetries must be > 0: " + maxRetries);
+            }
+            this.flatMaxRetries = maxRetries;
+            return this;
+        }
+
+        /**
+         * Sets the fallback model invoked after the primary model exhausts its retry budget.
+         * Pass {@code null} to explicitly clear (no fallback).
+         */
+        public Builder fallbackModel(Model fallbackModel) {
+            this.flatFallbackModel = fallbackModel;
+            return this;
+        }
+
+        /**
+         * Convenience overload that resolves {@code modelId} via
+         * {@link io.agentscope.core.model.ModelRegistry#resolve(String)} (named registration or
+         * {@code provider:model} pattern like {@code openai:gpt-5.5}, {@code dashscope:qwen-max}).
+         *
+         * @throws IllegalArgumentException if the id cannot be resolved
+         */
+        public Builder fallbackModel(String modelId) {
+            this.flatFallbackModel = io.agentscope.core.model.ModelRegistry.resolve(modelId);
+            return this;
+        }
+
+        /**
+         * Controls whether a permission rejection of any tool call terminates the reasoning loop
+         * (instead of feeding the rejection back into the next reasoning round). Defaults to
+         * {@link ReactConfig#DEFAULT_STOP_ON_REJECT}.
+         */
+        public Builder stopOnReject(boolean stopOnReject) {
+            this.flatStopOnReject = stopOnReject;
+            return this;
+        }
+
+        /**
+         * Sets the {@link PermissionContextState} consulted by the {@link PermissionEngine} during tool
+         * execution. When unset, an empty permission context is used (PASSTHROUGH for all tools).
+         */
+        public Builder permissionContext(PermissionContextState permissionContext) {
+            this.permissionContext = permissionContext;
+            return this;
+        }
+
+        // ==================== 1.x legacy compatibility setters ====================
+        // The setters below are deprecated since 2.0 and will be removed in the next minor.
+        // Each one captures a value used later by configureXxx() during build(), wiring the
+        // corresponding legacy hook(s) and/or tool(s) into the agent so 1.x user code keeps
+        // producing equivalent runtime behavior. Internal references use legacy.* packages.
+
+        /**
+         * @deprecated since 2.0.0. Long-term memory is being redesigned around the upcoming reme
+         *     base class. Hooks added through this path still work.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder longTermMemory(LongTermMemory longTermMemory) {
             this.longTermMemory = longTermMemory;
             return this;
         }
 
         /**
-         * Sets the long-term memory mode.
-         *
-         * <p>This determines how long-term memory is integrated with the agent:
-         * <ul>
-         *   <li><b>AGENT_CONTROL:</b> Memory tools are registered for agent to call</li>
-         *   <li><b>STATIC_CONTROL:</b> Framework automatically retrieves/records memory</li>
-         *   <li><b>BOTH:</b> Combines both approaches (default)</li>
-         * </ul>
-         *
-         * @param mode The long-term memory mode
-         * @return This builder instance for method chaining
-         * @see LongTermMemoryMode
+         * @deprecated since 2.0.0. See {@link #longTermMemory}.
          */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder longTermMemoryMode(LongTermMemoryMode mode) {
             this.longTermMemoryMode = mode;
             return this;
         }
 
         /**
-         * Sets whether long-term memory recording should be performed asynchronously.
-         *
-         * <p>When enabled, the framework will record memories to long-term storage
-         * in a fire-and-forget manner, without blocking the agent's main execution flow.
-         * This improves response latency but means memory persistence is not guaranteed
-         * before the agent returns its response.
-         *
-         * <p>When disabled (default), the framework waits for the recording operation
-         * to complete before returning the agent's response. This ensures memory
-         * persistence is finalized but may increase response latency.
-         *
-         * <p>Note: This setting only affects the static control mode (STATIC_CONTROL, BOTH).
-         * Agent-controlled recording through tools is always synchronous.
-         *
-         * @param asyncRecord Whether to record memories asynchronously
-         * @return This builder instance for method chaining
+         * @deprecated since 2.0.0. See {@link #longTermMemory}.
          */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder longTermMemoryAsyncRecord(boolean asyncRecord) {
             this.longTermMemoryAsyncRecord = asyncRecord;
             return this;
         }
 
         /**
-         * Sets the state persistence configuration.
-         *
-         * <p>Use this to control which components' state is managed by the agent during
-         * saveTo/loadFrom operations. By default, all components are managed.
-         *
-         * <p>Example usage:
-         *
-         * <pre>{@code
-         * ReActAgent agent = ReActAgent.builder()
-         *     .name("assistant")
-         *     .model(model)
-         *     .statePersistence(StatePersistence.builder()
-         *         .planNotebookManaged(false)  // Let user manage PlanNotebook separately
-         *         .build())
-         *     .build();
-         * }</pre>
-         *
-         * @param statePersistence The state persistence configuration
-         * @return This builder instance for method chaining
-         * @see StatePersistence
+         * @deprecated since 2.0.0. RAG is being redesigned; legacy adapters remain functional.
          */
-        public Builder statePersistence(StatePersistence statePersistence) {
-            this.statePersistence = statePersistence;
-            return this;
-        }
-
-        /**
-         * Enables plan functionality with default configuration.
-         *
-         * <p>This is a convenience method equivalent to:
-         * <pre>{@code
-         * planNotebook(PlanNotebook.builder().build())
-         * }</pre>
-         *
-         * @return This builder instance for method chaining
-         */
-        public Builder enablePlan() {
-            this.planNotebook = PlanNotebook.builder().build();
-            return this;
-        }
-
-        /**
-         * Adds a knowledge base for RAG (Retrieval-Augmented Generation).
-         *
-         * @param knowledge The knowledge base to add
-         * @return This builder instance for method chaining
-         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder knowledge(Knowledge knowledge) {
             if (knowledge != null) {
                 this.knowledgeBases.add(knowledge);
@@ -1609,11 +2793,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
-         * Adds multiple knowledge bases for RAG.
-         *
-         * @param knowledges The list of knowledge bases to add
-         * @return This builder instance for method chaining
+         * @deprecated since 2.0.0. See {@link #knowledge}.
          */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder knowledges(List<Knowledge> knowledges) {
             if (knowledges != null) {
                 this.knowledgeBases.addAll(knowledges);
@@ -1622,11 +2804,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
-         * Sets the RAG mode.
-         *
-         * @param mode The RAG mode (GENERIC, AGENTIC, or NONE)
-         * @return This builder instance for method chaining
+         * @deprecated since 2.0.0. See {@link #knowledge}.
          */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder ragMode(RAGMode mode) {
             if (mode != null) {
                 this.ragMode = mode;
@@ -1635,11 +2815,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
-         * Sets the retrieve configuration for RAG.
-         *
-         * @param config The retrieve configuration
-         * @return This builder instance for method chaining
+         * @deprecated since 2.0.0. See {@link #knowledge}.
          */
+        @Deprecated(forRemoval = true, since = "2.0.0")
         public Builder retrieveConfig(RetrieveConfig config) {
             if (config != null) {
                 this.retrieveConfig = config;
@@ -1648,19 +2826,244 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
-         * Sets the tool execution context for this agent.
-         *
-         * <p>This context will be passed to all tools invoked by this agent and can include
-         * user identity, session information, permissions, and other metadata. The context
-         * from this agent level will override toolkit-level context but can be overridden by
-         * call-level context.
-         *
-         * @param toolExecutionContext The tool execution context
-         * @return This builder instance for method chaining
+         * @deprecated since 2.0.0. The plan module has been removed from 2.0 core; the legacy
+         *     {@link PlanNotebook} adapter still wires up plan
+         *     tools and a plan-hint hook for source compatibility.
          */
-        public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
-            this.toolExecutionContext = toolExecutionContext;
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder planNotebook(PlanNotebook planNotebook) {
+            this.planNotebook = planNotebook;
             return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. Convenience shortcut for {@code planNotebook(PlanNotebook.builder().build())}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder enablePlan() {
+            this.planNotebook = PlanNotebook.builder().build();
+            return this;
+        }
+
+        /**
+         * @deprecated since 2.0.0. Skills now flow through {@link #skillRepository} /
+         *     {@link #skillRepositories}; legacy {@link io.agentscope.core.skill.SkillBox}
+         *     instances are still accepted for source compatibility, but combining a
+         *     {@code skillBox(...)} with {@code skillRepository(...)} is untested — new code
+         *     should prefer {@link #skillRepository(AgentSkillRepository)}.
+         */
+        @Deprecated(forRemoval = true, since = "2.0.0")
+        public Builder skillBox(SkillBox skillBox) {
+            this.skillBox = skillBox;
+            return this;
+        }
+
+        /**
+         * Adds a single {@link AgentSkillRepository} to the layered skill stack. Multiple calls
+         * append in order from low to high priority — when two repositories expose a skill with
+         * the same {@link io.agentscope.core.skill.AgentSkill#getName()}, the later (higher
+         * priority) entry wins.
+         *
+         * <p>If at least one repository is registered and dynamic skills remain enabled
+         * (see {@link #dynamicSkillsEnabled(boolean)}), {@link #build()} attaches a
+         * {@link DynamicSkillMiddleware} that rebuilds the skill prompt on every {@code call()}.
+         */
+        public Builder skillRepository(AgentSkillRepository repo) {
+            if (repo != null) {
+                this.skillRepositories.add(repo);
+            }
+            return this;
+        }
+
+        /**
+         * Replaces the current repository list with the supplied collection. {@code null}
+         * entries are dropped silently; passing {@code null} clears the list.
+         */
+        public Builder skillRepositories(List<AgentSkillRepository> repos) {
+            this.skillRepositories.clear();
+            if (repos != null) {
+                for (AgentSkillRepository r : repos) {
+                    if (r != null) {
+                        this.skillRepositories.add(r);
+                    }
+                }
+            }
+            return this;
+        }
+
+        /**
+         * Builder-time {@link SkillFilter} applied by the auto-installed
+         * {@link DynamicSkillMiddleware}. Defaults to {@link SkillFilter#all()} when unset.
+         */
+        public Builder skillFilter(SkillFilter filter) {
+            this.skillFilter = filter;
+            return this;
+        }
+
+        /**
+         * Toggles automatic installation of {@link DynamicSkillMiddleware}. Set to {@code false}
+         * when an external orchestrator (e.g. {@code HarnessAgent}) wants to attach its own
+         * subclass of {@link DynamicSkillMiddleware} or fall back to a static
+         * {@link io.agentscope.core.skill.SkillBox}. Defaults to {@code true}.
+         */
+        public Builder dynamicSkillsEnabled(boolean enabled) {
+            this.dynamicSkillsEnabled = enabled;
+            return this;
+        }
+
+        /**
+         * Returns a new {@link Builder} pre-populated with the given agent's observable
+         * configuration: name, description, system prompt, model, maxIters, generateOptions, and
+         * a defensive copy of the toolkit.
+         *
+         * <p>Use to derive a related agent without re-specifying every field.
+         */
+        public static Builder fromAgent(ReActAgent agent) {
+            Builder b = new Builder();
+            b.name = agent.getName();
+            b.description = agent.getDescription();
+            b.sysPrompt = agent.getSysPrompt();
+            b.model = agent.getModel();
+            b.maxIters = agent.getMaxIters();
+            b.generateOptions = agent.getGenerateOptions();
+            b.toolkit = agent.getToolkit().copy();
+            return b;
+        }
+
+        // ==================== 1.x legacy configureXxx helpers ====================
+        // Ported verbatim from 1.x ReActAgent.Builder (origin/1.x ReActAgent.java:1762-1925),
+        // with two adjustments for 2.0:
+        //   1) all legacy classes are referenced through the io.agentscope.core.legacy.* packages;
+        //   2) configureLongTermMemory's static hook receives an AgentStateMemoryView that lazily
+        //      reads AgentState.context via a `selfRef` shared with build().
+
+        /**
+         * Configures long-term memory based on the selected mode.
+         *
+         * <p>AGENT_CONTROL registers memory tools for the agent to call. STATIC_CONTROL adds
+         * a {@link StaticLongTermMemoryHook} that retrieves /
+         * records memory automatically. BOTH combines them. The hook reads context lazily from
+         * {@code selfRef.get().getAgentState()} so it tolerates being constructed before the
+         * agent itself exists.
+         */
+        @SuppressWarnings("deprecation")
+        private void configureLongTermMemory(
+                Toolkit agentToolkit,
+                java.util.concurrent.atomic.AtomicReference<ReActAgent> selfRef) {
+            if (longTermMemoryMode == LongTermMemoryMode.AGENT_CONTROL
+                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
+                agentToolkit.registerTool(new LongTermMemoryTools(longTermMemory));
+            }
+            if (longTermMemoryMode == LongTermMemoryMode.STATIC_CONTROL
+                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
+                Memory contextView =
+                        new AgentStateMemoryView(
+                                () -> {
+                                    ReActAgent a = selfRef.get();
+                                    return a == null ? null : a.getAgentState();
+                                });
+                hooks.add(
+                        new StaticLongTermMemoryHook(
+                                longTermMemory, contextView, longTermMemoryAsyncRecord));
+            }
+        }
+
+        /**
+         * Configures RAG (Retrieval-Augmented Generation) based on the selected mode.
+         */
+        @SuppressWarnings("deprecation")
+        private void configureRAG(Toolkit agentToolkit) {
+            Knowledge aggregatedKnowledge =
+                    knowledgeBases.size() == 1
+                            ? knowledgeBases.iterator().next()
+                            : buildAggregatedKnowledge();
+
+            switch (ragMode) {
+                case GENERIC -> hooks.add(new GenericRAGHook(aggregatedKnowledge, retrieveConfig));
+                case AGENTIC ->
+                        agentToolkit.registerTool(
+                                new KnowledgeRetrievalTools(aggregatedKnowledge, retrieveConfig));
+                case NONE -> {
+                    // intentionally no-op
+                }
+            }
+        }
+
+        @SuppressWarnings("deprecation")
+        private Knowledge buildAggregatedKnowledge() {
+            return new Knowledge() {
+                @Override
+                public Mono<Void> addDocuments(List<Document> documents) {
+                    return reactor.core.publisher.Flux.fromIterable(knowledgeBases)
+                            .flatMap(kb -> kb.addDocuments(documents))
+                            .then();
+                }
+
+                @Override
+                public Mono<List<Document>> retrieve(String query, RetrieveConfig config) {
+                    return reactor.core.publisher.Flux.fromIterable(knowledgeBases)
+                            .flatMap(kb -> kb.retrieve(query, config))
+                            .collectList()
+                            .map(this::mergeAndSortResults);
+                }
+
+                private List<Document> mergeAndSortResults(List<List<Document>> allResults) {
+                    return allResults.stream()
+                            .flatMap(List::stream)
+                            .collect(
+                                    java.util.stream.Collectors.toMap(
+                                            Document::getId,
+                                            d -> d,
+                                            (d1, d2) ->
+                                                    d1.getScore() != null
+                                                                    && d2.getScore() != null
+                                                                    && d1.getScore() > d2.getScore()
+                                                            ? d1
+                                                            : d2))
+                            .values()
+                            .stream()
+                            .sorted(
+                                    java.util.Comparator.comparing(
+                                            Document::getScore,
+                                            java.util.Comparator.nullsLast(
+                                                    java.util.Comparator.reverseOrder())))
+                            .limit(retrieveConfig.getLimit())
+                            .toList();
+                }
+            };
+        }
+
+        /**
+         * Registers plan management tools on the toolkit and a middleware that injects the
+         * current plan hint into every reasoning step's input message list.
+         */
+        @SuppressWarnings("deprecation")
+        private void configurePlan(Toolkit agentToolkit) {
+            agentToolkit.registerTool(planNotebook);
+            middlewares.add(new PlanHintMiddleware(planNotebook));
+        }
+
+        /**
+         * Registers the built-in task-list tool ({@code todo_write}) and a per-turn reminder
+         * middleware. Opt-in via {@link #enableTaskList()}.
+         */
+        private void configureTodoTools(Toolkit agentToolkit) {
+            agentToolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
+            middlewares.add(new io.agentscope.core.middleware.TaskReminderMiddleware());
+        }
+
+        /**
+         * Configures SkillBox by binding the toolkit, registering the skill-load tool, uploading
+         * skill files when auto-upload is enabled, and adding the SkillHook to the chain.
+         */
+        @SuppressWarnings("deprecation")
+        private void configureSkillBox(Toolkit agentToolkit) {
+            skillBox.bindToolkit(agentToolkit);
+            skillBox.registerSkillLoadTool();
+            if (skillBox.isAutoUploadSkill()) {
+                skillBox.uploadSkillFiles();
+            }
+            hooks.add(new io.agentscope.core.skill.SkillHook(skillBox));
         }
 
         /**
@@ -1679,32 +3082,37 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 agentToolkit.registerMetaTool();
             }
 
-            // Register PendingToolRecoveryHook if enabled
-            if (enablePendingToolRecovery) {
-                hooks.add(new PendingToolRecoveryHook());
-            }
+            // 1.x legacy compat: shared selfRef gives the long-term-memory hook (constructed
+            // pre-agent) a way to resolve AgentState.context lazily once the agent exists.
+            AtomicReference<ReActAgent> selfRef = new AtomicReference<>();
 
-            // Configure long-term memory if provided
             if (longTermMemory != null) {
-                configureLongTermMemory(agentToolkit);
+                configureLongTermMemory(agentToolkit, selfRef);
             }
-
-            // Configure RAG if knowledge bases are provided
             if (!knowledgeBases.isEmpty()) {
                 configureRAG(agentToolkit);
             }
-
-            // Configure PlanNotebook if provided
             if (planNotebook != null) {
                 configurePlan(agentToolkit);
             }
-
-            // Configure SkillBox if provided
+            if (taskListEnabled) {
+                configureTodoTools(agentToolkit);
+            }
             if (skillBox != null) {
                 configureSkillBox(agentToolkit);
             }
+            if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
+                middlewares.add(
+                        new DynamicSkillMiddleware(
+                                List.copyOf(skillRepositories),
+                                agentToolkit,
+                                skillFilter != null ? skillFilter : SkillFilter.all()));
+            }
 
-            return new ReActAgent(this, agentToolkit);
+            ReActAgent agent = new ReActAgent(this, agentToolkit);
+            selfRef.set(agent);
+
+            return agent;
         }
 
         /**
@@ -1725,179 +3133,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                     }
                 }
             }
-        }
-
-        /**
-         * Configures long-term memory based on the selected mode.
-         *
-         * <p>This method sets up long-term memory integration:
-         * <ul>
-         *   <li>AGENT_CONTROL: Registers memory tools for agent to call</li>
-         *   <li>STATIC_CONTROL: Registers StaticLongTermMemoryHook for automatic retrieval/recording</li>
-         *   <li>BOTH: Combines both approaches (registers tools + hook)</li>
-         * </ul>
-         */
-        private void configureLongTermMemory(Toolkit agentToolkit) {
-            // If agent control is enabled, register memory tools via adapter
-            if (longTermMemoryMode == LongTermMemoryMode.AGENT_CONTROL
-                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
-                agentToolkit.registerTool(new LongTermMemoryTools(longTermMemory));
-            }
-
-            // If static control is enabled, register the hook for automatic memory management
-            if (longTermMemoryMode == LongTermMemoryMode.STATIC_CONTROL
-                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
-                StaticLongTermMemoryHook hook =
-                        new StaticLongTermMemoryHook(
-                                longTermMemory, memory, longTermMemoryAsyncRecord);
-                hooks.add(hook);
-            }
-        }
-
-        /**
-         * Configures RAG (Retrieval-Augmented Generation) based on the selected mode.
-         *
-         * <p>This method automatically sets up the appropriate hooks or tools based on the RAG mode:
-         * <ul>
-         *   <li>GENERIC: Adds a GenericRAGHook to automatically inject knowledge</li>
-         *   <li>AGENTIC: Registers KnowledgeRetrievalTools for agent-controlled retrieval</li>
-         *   <li>NONE: Does nothing</li>
-         * </ul>
-         */
-        private void configureRAG(Toolkit agentToolkit) {
-            // Aggregate knowledge bases if multiple are provided
-            Knowledge aggregatedKnowledge;
-            if (knowledgeBases.size() == 1) {
-                aggregatedKnowledge = knowledgeBases.iterator().next();
-            } else {
-                aggregatedKnowledge = buildAggregatedKnowledge();
-            }
-
-            // Configure based on mode
-            switch (ragMode) {
-                case GENERIC -> {
-                    // Create and add GenericRAGHook
-                    GenericRAGHook ragHook =
-                            new GenericRAGHook(aggregatedKnowledge, retrieveConfig);
-                    hooks.add(ragHook);
-                }
-                case AGENTIC -> {
-                    // Register knowledge retrieval tools
-                    KnowledgeRetrievalTools tools =
-                            new KnowledgeRetrievalTools(aggregatedKnowledge, retrieveConfig);
-                    agentToolkit.registerTool(tools);
-                }
-                case NONE -> {
-                    // Do nothing
-                }
-            }
-        }
-
-        private Knowledge buildAggregatedKnowledge() {
-            return new Knowledge() {
-                @Override
-                public Mono<Void> addDocuments(List<Document> documents) {
-                    return Flux.fromIterable(knowledgeBases)
-                            .flatMap(kb -> kb.addDocuments(documents))
-                            .then();
-                }
-
-                @Override
-                public Mono<List<Document>> retrieve(String query, RetrieveConfig config) {
-                    return Flux.fromIterable(knowledgeBases)
-                            .flatMap(kb -> kb.retrieve(query, config))
-                            .collectList()
-                            .map(this::mergeAndSortResults);
-                }
-
-                private List<Document> mergeAndSortResults(List<List<Document>> allResults) {
-                    return allResults.stream()
-                            .flatMap(List::stream)
-                            .collect(
-                                    Collectors.toMap(
-                                            Document::getId,
-                                            doc -> doc,
-                                            (doc1, doc2) ->
-                                                    doc1.getScore() != null
-                                                                    && doc2.getScore() != null
-                                                                    && doc1.getScore()
-                                                                            > doc2.getScore()
-                                                            ? doc1
-                                                            : doc2))
-                            .values()
-                            .stream()
-                            .sorted(
-                                    Comparator.comparing(
-                                            Document::getScore,
-                                            Comparator.nullsLast(Comparator.reverseOrder())))
-                            .limit(retrieveConfig.getLimit())
-                            .toList();
-                }
-            };
-        }
-
-        /**
-         * Configures PlanNotebook integration.
-         *
-         * <p>This method automatically:
-         * <ul>
-         *   <li>Registers plan management tools to the toolkit
-         *   <li>Adds a hook to inject plan hints before each reasoning step
-         * </ul>
-         */
-        private void configurePlan(Toolkit agentToolkit) {
-            // Register plan tools to toolkit
-            agentToolkit.registerTool(planNotebook);
-
-            // Add plan hint hook
-            Hook planHintHook =
-                    new Hook() {
-                        @Override
-                        public <T extends HookEvent> Mono<T> onEvent(T event) {
-                            if (event instanceof PreReasoningEvent) {
-                                PreReasoningEvent e = (PreReasoningEvent) event;
-                                return planNotebook
-                                        .getCurrentHint()
-                                        .map(
-                                                hintMsg -> {
-                                                    List<Msg> modifiedMsgs =
-                                                            new ArrayList<>(e.getInputMessages());
-                                                    modifiedMsgs.add(hintMsg);
-                                                    e.setInputMessages(modifiedMsgs);
-                                                    return (T) e;
-                                                })
-                                        .defaultIfEmpty(event);
-                            }
-                            return Mono.just(event);
-                        }
-                    };
-
-            hooks.add(planHintHook);
-        }
-
-        /**
-         * Configures SkillBox integration.
-         *
-         * <p>This method automatically:
-         * <ul>
-         *   <li>Registers skill load tool to the toolkit
-         *   <li>Adds the skill hook to inject skill prompts on {@link io.agentscope.core.hook.PreCallEvent}
-         *       (priority {@link io.agentscope.core.skill.SkillHook#SKILL_HOOK_PRIORITY}) and manage skill
-         *       activation
-         *   <li>Uploads skill files to the upload directory if auto upload is enabled
-         * </ul>
-         */
-        private void configureSkillBox(Toolkit agentToolkit) {
-            skillBox.bindToolkit(agentToolkit);
-            // Register skill loader tools to toolkit
-            skillBox.registerSkillLoadTool();
-
-            // If auto upload is enabled, upload skill files
-            if (skillBox.isAutoUploadSkill()) {
-                skillBox.uploadSkillFiles();
-            }
-
-            hooks.add(new SkillHook(skillBox));
         }
     }
 }

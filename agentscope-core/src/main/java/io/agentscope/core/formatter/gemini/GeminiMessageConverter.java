@@ -216,8 +216,7 @@ public class GeminiMessageConverter {
 
     /**
      * Convert tool result output to string representation.
-     * Follows Python implementation: single item returns directly,
-     * multiple items use "- " prefix per line.
+     * Single item returns directly; multiple items use "- " prefix per line.
      *
      * @param output List of content blocks from tool result
      * @return String representation of the output

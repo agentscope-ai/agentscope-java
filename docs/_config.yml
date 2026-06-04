@@ -50,7 +50,20 @@ sphinx:
     - sphinx.ext.autosummary
     - sphinx_llms_txt
     - sphinx_sitemap
+    - sphinx_design
+    - sphinxcontrib.mermaid
+  # Patches root index.html redirect stub so docs_site_notice appears on "/".
+  local_extensions:
+    root_index_notice: ./_sphinx_extensions
   config:
+    # Mermaid Configuration (CDN client-side rendering, no Node.js required)
+    mermaid_version: "11"
+
+    # MyST: promote frontmatter ``title:`` to an H1 so v2 .md files (which use
+    # Mintlify-style frontmatter and no leading ``#``) get a usable toctree
+    # label and don't trigger "doesn't have a title" warnings.
+    myst_title_to_header: true
+
     # Sitemap Configuration
     html_baseurl: "https://java.agentscope.io/"
     sitemap_url_scheme: "{link}"
@@ -58,7 +71,7 @@ sphinx:
 
     # LLMs.txt Configuration (English only)
     llms_txt_exclude:
-      - "zh/*"
+      - "v1/zh/*"
 
     # API Documentation Configuration
     autosummary_generate: True
@@ -103,15 +116,196 @@ sphinx:
     templates_path: ["./_templates"]
     html_static_path:
       - "_static"
+    # Expose docs/imgs/ at /imgs/ in the built site so raw HTML <img> tags
+    # in landing pages can reference ../../imgs/v2/...  Symlink target is
+    # docs/_extra/imgs -> ../imgs (resolves at build time on Linux/macOS).
+    html_extra_path:
+      - "_extra"
+    html_css_files:
+      - custom.css
+      - homepage.css
     use_multitoc_numbering: false
     html_js_files:
+      - tabs.js
       - language.js
+      - notice-bar.js
+      - mermaid-zoom.js
+      - version.js
+
+    html_context:
+      # Version switcher
+      docs_version: "v2"
+      docs_versions:
+        - label: "v2"
+          url: "https://java.agentscope.io/v2/"
+          current: true
+        - label: "v1"
+          url: "https://java.agentscope.io/v1/"
+      docs_top_tabs:
+        # Order: Home → Docs → Integration → Blogs → Community
+        # Each tab carries v1 and v2 routing data; the template emits both as
+        # data-* attrs so tabs.js can pick the right one based on the current
+        # page's version (detected from URL).
+        - id: home
+          label_en: Home
+          label_zh: 首页
+          href_en: v1/en/intro
+          href_zh: v1/zh/intro
+          href_v2_en: v2/en/intro
+          href_v2_zh: v2/zh/intro
+          mirror_paths: true
+          prefixes_en:
+            - v1/en/intro
+          prefixes_zh:
+            - v1/zh/intro
+          prefixes_v2_en:
+            - v2/en/intro
+          prefixes_v2_zh:
+            - v2/zh/intro
+          sections_en: []
+          sections_zh: []
+          sections_v2_en: []
+          sections_v2_zh: []
+          languages:
+            - en
+            - zh
+        - id: docs
+          label_en: Docs
+          label_zh: 文档
+          href_en: v1/en/docs/quickstart/installation
+          href_zh: v1/zh/docs/quickstart/installation
+          href_v2_en: v2/en/docs/index
+          href_v2_zh: v2/zh/docs/index
+          mirror_paths: true
+          prefixes_en:
+            - v1/en/docs/
+          prefixes_zh:
+            - v1/zh/docs/
+          prefixes_v2_en:
+            - v2/en/docs/
+          prefixes_v2_zh:
+            - v2/zh/docs/
+          sections_en:
+            - Quick Start
+            - Features
+            - Multi Agent
+            - Harness (English)
+          sections_zh:
+            - 快速开始
+            - 功能指南
+            - 多智能体
+            - Harness
+          sections_v2_en:
+            - v2 · Quick Start
+            - v2 · Building Blocks
+            - v2 · Harness (English)
+            - v2 · Reference
+          sections_v2_zh:
+            - v2 · 快速开始
+            - v2 · 核心组件
+            - v2 · Harness
+            - v2 · 参考
+          languages:
+            - en
+            - zh
+        - id: integration
+          label_en: Integration
+          label_zh: 集成
+          href_en: v1/en/integration/overview
+          href_zh: v1/zh/integration/overview
+          href_v2_en: v2/en/integration/overview
+          href_v2_zh: v2/zh/integration/overview
+          mirror_paths: true
+          prefixes_en:
+            - v1/en/integration/
+          prefixes_zh:
+            - v1/zh/integration/
+          prefixes_v2_en:
+            - v2/en/integration/
+          prefixes_v2_zh:
+            - v2/zh/integration/
+          sections_en:
+            - Integration
+          sections_zh:
+            - 集成
+          sections_v2_en:
+            - v2 · Integration
+          sections_v2_zh:
+            - v2 · 集成
+          languages:
+            - en
+            - zh
+        - id: blogs
+          label_en: Blogs
+          label_zh: 博客
+          href_en: v1/en/blogs/index
+          href_zh: v1/zh/blogs/index
+          href_v2_en: v2/en/blogs/agentscope-v2-release
+          href_v2_zh: v2/zh/blogs/agentscope-v2-release
+          mirror_paths: true
+          prefixes_en:
+            - v1/en/blogs/
+          prefixes_zh:
+            - v1/zh/blogs/
+          prefixes_v2_en:
+            - v2/en/blogs/
+          prefixes_v2_zh:
+            - v2/zh/blogs/
+          sections_en:
+            - Blogs
+          sections_zh:
+            - 博客
+          sections_v2_en:
+            - v2 · Blogs
+          sections_v2_zh:
+            - v2 · 博客
+          languages:
+            - en
+            - zh
+        - id: community
+          label_en: Community
+          label_zh: 社区
+          href_en: v1/en/community/overview
+          href_zh: v1/zh/community/overview
+          href_v2_en: v2/en/community/contributors
+          href_v2_zh: v2/zh/community/contributors
+          mirror_paths: true
+          prefixes_en:
+            - v1/en/community/
+          prefixes_zh:
+            - v1/zh/community/
+          prefixes_v2_en:
+            - v2/en/community/
+          prefixes_v2_zh:
+            - v2/zh/community/
+          sections_en:
+            - Community
+          sections_zh:
+            - 社区
+          sections_v2_en:
+            - v2 · Community
+          sections_v2_zh:
+            - v2 · 社区
+          languages:
+            - en
+            - zh
+      # Top notice bar (ADK-style). Set enabled: true and non-empty id + message_* to show.
+      # Bump id when you change copy so users who dismissed the bar see the new notice.
+      # If the bar does not show: (1) open en/intro.html not only index.html before rebuild;
+      # (2) change id or clear localStorage key "agentscope-docs-site-notice".
+      docs_site_notice:
+        enabled: false
+        id: ""
+        variant: "brand"
+        message_en: ""
+        message_zh: ""
+        link_en: ""
+        link_text_en: ""
+        link_zh: ""
+        link_text_zh: ""
     html_sidebars:
       "**":
         - "sidebar/scroll-start.html"
-        - "sidebar/brand.html"
-        - "language-switch.html"
-        - "sidebar/search.html"
         - "sidebar/navigation.html"
         - "sidebar/ethical-ads.html"
         - "sidebar/scroll-end.html"

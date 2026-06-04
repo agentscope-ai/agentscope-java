@@ -813,7 +813,7 @@ class ToolValidatorTest {
                             "tool-2", "fetch", TextBlock.builder().text("result2").build());
 
             Msg userMsg =
-                    Msg.builder().role(MsgRole.USER).content(List.of(result1, result2)).build();
+                    Msg.builder().role(MsgRole.TOOL).content(List.of(result1, result2)).build();
 
             assertDoesNotThrow(
                     () -> ToolValidator.validateToolResultMatch(assistantMsg, List.of(userMsg)));
@@ -846,7 +846,7 @@ class ToolValidatorTest {
                     ToolResultBlock.of(
                             "tool-1", "search", TextBlock.builder().text("result1").build());
 
-            Msg userMsg = Msg.builder().role(MsgRole.USER).content(result1).build();
+            Msg userMsg = Msg.builder().role(MsgRole.TOOL).content(result1).build();
 
             IllegalStateException exception =
                     assertThrows(
@@ -888,8 +888,8 @@ class ToolValidatorTest {
                     ToolResultBlock.of(
                             "tool-2", "fetch", TextBlock.builder().text("result2").build());
 
-            Msg userMsg1 = Msg.builder().role(MsgRole.USER).content(result1).build();
-            Msg userMsg2 = Msg.builder().role(MsgRole.USER).content(result2).build();
+            Msg userMsg1 = Msg.builder().role(MsgRole.TOOL).content(result1).build();
+            Msg userMsg2 = Msg.builder().role(MsgRole.TOOL).content(result2).build();
 
             assertDoesNotThrow(
                     () ->

@@ -24,28 +24,21 @@ import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.coding.ShellCommandTool;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -91,7 +84,7 @@ class SkillE2ETest {
     private static final List<String> ALL_SKILL_NAMES =
             List.of("data-transform", "data-report", "image-resize", "log-parser", "git-changelog");
 
-    // key = "SKILL_RECALL/<skillName>/<provider>" or "CODE_EXEC/<skillName>/<provider>"
+    // key = "SKILL_RECALL/<skillName>/<provider>"
     private static final Map<String, Boolean> RESULTS = new ConcurrentHashMap<>();
 
     // -------------------------------------------------------------------------
@@ -140,44 +133,6 @@ class SkillE2ETest {
     }
 
     // -------------------------------------------------------------------------
-    // Code execution recall benchmark scenarios
-    //
-    // Each test loads ONE skill, uploads its scripts to a temp dir, then verifies
-    // the LLM references the deployed script path in a shell command.
-    // -------------------------------------------------------------------------
-
-    /** Code execution recall: LLM must reference the deployed extract_errors.py script. */
-    @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
-    @DisplayName("[code-exec] log-parser: run extract_errors.py on a log file")
-    void testCodeExecRecall_logParser(ModelProvider provider, @TempDir Path tempDir)
-            throws IOException {
-        runCodeExecutionRecallTest(
-                provider,
-                "log-parser",
-                "scripts/extract_errors.py",
-                "I have a server log file at /var/log/app.log that's 500 MB."
-                        + " I need to extract all ERROR and WARN entries with their"
-                        + " timestamps into a structured format.",
-                tempDir);
-    }
-
-    /** Code execution recall: LLM must reference the deployed generate_changelog.py script. */
-    @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
-    @DisplayName("[code-exec] git-changelog: run generate_changelog.py between two tags")
-    void testCodeExecRecall_gitChangelog(ModelProvider provider, @TempDir Path tempDir)
-            throws IOException {
-        runCodeExecutionRecallTest(
-                provider,
-                "git-changelog",
-                "scripts/generate_changelog.py",
-                "I need to produce a Markdown changelog for our upcoming release,"
-                        + " covering all commits between the v1.5.0 and HEAD tags.",
-                tempDir);
-    }
-
-    // -------------------------------------------------------------------------
     // Aggregate recall-rate assertion (runs once after all tests complete)
     // -------------------------------------------------------------------------
 
@@ -187,25 +142,9 @@ class SkillE2ETest {
             return;
         }
 
-        long skillTotal =
-                RESULTS.keySet().stream().filter(k -> k.startsWith("SKILL_RECALL")).count();
-        long skillHits =
-                RESULTS.entrySet().stream()
-                        .filter(e -> e.getKey().startsWith("SKILL_RECALL") && e.getValue())
-                        .count();
-
-        long codeTotal = RESULTS.keySet().stream().filter(k -> k.startsWith("CODE_EXEC")).count();
-        long codeHits =
-                RESULTS.entrySet().stream()
-                        .filter(e -> e.getKey().startsWith("CODE_EXEC") && e.getValue())
-                        .count();
-
-        long totalRuns = skillTotal + codeTotal;
-        long totalHits = skillHits + codeHits;
-
-        double skillRate = skillTotal > 0 ? (double) skillHits / skillTotal : 1.0;
-        double codeRate = codeTotal > 0 ? (double) codeHits / codeTotal : 1.0;
-        double overallRate = totalRuns > 0 ? (double) totalHits / totalRuns : 1.0;
+        long total = RESULTS.size();
+        long hits = RESULTS.values().stream().filter(Boolean::booleanValue).count();
+        double rate = total > 0 ? (double) hits / total : 1.0;
 
         String sep = "=".repeat(62);
         System.out.println("\n" + sep);
@@ -214,7 +153,6 @@ class SkillE2ETest {
 
         System.out.println("\n  Skill recall:");
         RESULTS.entrySet().stream()
-                .filter(e -> e.getKey().startsWith("SKILL_RECALL"))
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(
                         e -> {
@@ -223,44 +161,17 @@ class SkillE2ETest {
                                     "    %s  %s%n", e.getValue() ? "[PASS]" : "[FAIL]", label);
                         });
 
-        System.out.println("\n  Code execution recall:");
-        RESULTS.entrySet().stream()
-                .filter(e -> e.getKey().startsWith("CODE_EXEC"))
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(
-                        e -> {
-                            String label = e.getKey().substring("CODE_EXEC/".length());
-                            System.out.printf(
-                                    "    %s  %s%n", e.getValue() ? "[PASS]" : "[FAIL]", label);
-                        });
-
         System.out.println();
         System.out.printf(
-                "  Skill recall:          %d / %d  (%.0f%%)%n",
-                skillHits, skillTotal, skillRate * 100);
-        System.out.printf(
-                "  Code execution recall: %d / %d  (%.0f%%)%n",
-                codeHits, codeTotal, codeRate * 100);
-        System.out.printf(
-                "  Overall:               %d / %d  (%.0f%%)   threshold >= %.0f%%%n",
-                totalHits, totalRuns, overallRate * 100, RECALL_THRESHOLD * 100);
+                "  Overall: %d / %d  (%.0f%%)   threshold >= %.0f%%%n",
+                hits, total, rate * 100, RECALL_THRESHOLD * 100);
         System.out.println(sep + "\n");
 
         assertTrue(
-                overallRate >= RECALL_THRESHOLD,
+                rate >= RECALL_THRESHOLD,
                 String.format(
-                        "Recall rate %.0f%% (%d/%d) is below the %.0f%% threshold."
-                                + " skill=%.0f%% (%d/%d), code=%.0f%% (%d/%d)",
-                        overallRate * 100,
-                        totalHits,
-                        totalRuns,
-                        RECALL_THRESHOLD * 100,
-                        skillRate * 100,
-                        skillHits,
-                        skillTotal,
-                        codeRate * 100,
-                        codeHits,
-                        codeTotal));
+                        "Recall rate %.0f%% (%d/%d) is below the %.0f%% threshold.",
+                        rate * 100, hits, total, RECALL_THRESHOLD * 100));
     }
 
     // -------------------------------------------------------------------------
@@ -294,9 +205,7 @@ class SkillE2ETest {
 
             ReActAgent agent =
                     provider.createAgentBuilder("SkillRecallAgent-" + targetSkillName, toolkit)
-                            .memory(new InMemoryMemory())
                             .maxIters(3)
-                            .skillBox(skillBox)
                             .hook(
                                     new Hook() {
                                         @Override
@@ -342,110 +251,6 @@ class SkillE2ETest {
                                 + " — did not call load_skill_through_path(skillId='"
                                 + expectedSkillId
                                 + "')");
-            }
-        }
-    }
-
-    private void runCodeExecutionRecallTest(
-            ModelProvider provider,
-            String skillName,
-            String expectedScriptRelativePath,
-            String prompt,
-            Path tempDir)
-            throws IOException {
-        String resultKey = "CODE_EXEC/" + skillName + "/" + provider.getProviderName();
-        System.out.println(
-                "\n>>> Code Execution Recall [" + skillName + "] | " + provider.getProviderName());
-
-        try (ClasspathSkillRepository repo = new ClasspathSkillRepository(SKILLS_CLASSPATH)) {
-
-            AgentSkill skill = repo.getSkill(skillName);
-            assertNotNull(skill, "Benchmark skill not found in classpath: " + skillName);
-
-            Toolkit toolkit = new Toolkit();
-            SkillBox skillBox = new SkillBox(toolkit);
-            skillBox.registration().skill(skill).apply();
-            skillBox.registerSkillLoadTool();
-
-            String expectedScriptAbsPath =
-                    tempDir.resolve("skills")
-                            .resolve(skill.getSkillId())
-                            .resolve(expectedScriptRelativePath)
-                            .toAbsolutePath()
-                            .toString();
-            System.out.println("    expected script  : " + expectedScriptAbsPath);
-            System.out.println("    prompt           : " + prompt);
-
-            AtomicReference<String> capturedCommand = new AtomicReference<>("<none>");
-            AtomicBoolean calledCorrectScript = new AtomicBoolean(false);
-
-            ShellCommandTool interceptingShell =
-                    new ShellCommandTool(
-                            null,
-                            Set.of("ls"),
-                            command -> {
-                                capturedCommand.set(command);
-                                if (command.contains(expectedScriptAbsPath)) {
-                                    calledCorrectScript.set(true);
-                                }
-                                return false;
-                            });
-
-            skillBox.codeExecution()
-                    .workDir(tempDir.toString())
-                    .withShell(interceptingShell)
-                    .enable();
-
-            Hook earlyExitHook =
-                    new Hook() {
-                        @Override
-                        public <T extends HookEvent> Mono<T> onEvent(T event) {
-                            if (event instanceof PostActingEvent postActing
-                                    && calledCorrectScript.get()) {
-                                postActing.stopAgent();
-                            }
-                            return Mono.just(event);
-                        }
-                    };
-
-            ReActAgent agent =
-                    provider.createAgentBuilder("CodeExecAgent-" + skillName, toolkit)
-                            .memory(new InMemoryMemory())
-                            .maxIters(6)
-                            .skillBox(skillBox)
-                            .hook(earlyExitHook)
-                            .build();
-
-            agent.call(TestUtils.createUserMessage("User", prompt)).block(TIMEOUT);
-
-            // Print tool call trace for diagnosis
-            agent.getMemory().getMessages().stream()
-                    .filter(msg -> msg.getRole() == MsgRole.ASSISTANT)
-                    .filter(msg -> msg.hasContentBlocks(ToolUseBlock.class))
-                    .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
-                    .forEach(
-                            tb ->
-                                    System.out.println(
-                                            "    tool: " + tb.getName() + "  " + tb.getInput()));
-
-            boolean passed = calledCorrectScript.get();
-            RESULTS.put(resultKey, passed);
-
-            if (passed) {
-                System.out.println(
-                        "<<< [PASS] Code execution recall ["
-                                + skillName
-                                + "] | "
-                                + provider.getProviderName());
-            } else {
-                System.out.println(
-                        "<<< [FAIL] Code execution recall ["
-                                + skillName
-                                + "] | "
-                                + provider.getProviderName()
-                                + " — last command: '"
-                                + capturedCommand.get()
-                                + "'");
             }
         }
     }

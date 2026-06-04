@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -68,7 +67,6 @@ class ReActAgentTimeoutTest {
                         .name("TestAgent")
                         .model(modelWithToolCall)
                         .toolkit(toolkit)
-                        .memory(new InMemoryMemory())
                         .toolExecutionConfig(toolExecutionConfig)
                         .build();
 
@@ -86,7 +84,7 @@ class ReActAgentTimeoutTest {
                             // Agent should return a response (not error)
                             assertNotNull(response);
                             // Check memory contains tool result with timeout error
-                            List<Msg> messages = agent.getMemory().getMessages();
+                            List<Msg> messages = agent.getAgentState().getContext();
                             boolean foundTimeoutError = false;
                             for (Msg msg : messages) {
                                 if (msg.getRole() == MsgRole.TOOL) {
@@ -138,7 +136,6 @@ class ReActAgentTimeoutTest {
                         .name("TestAgent")
                         .model(modelWithToolCall)
                         .toolkit(toolkit)
-                        .memory(new InMemoryMemory())
                         // No toolExecutionConfig
                         .build();
 

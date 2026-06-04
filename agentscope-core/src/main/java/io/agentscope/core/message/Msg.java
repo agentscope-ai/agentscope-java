@@ -19,6 +19,8 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.State;
@@ -50,10 +52,45 @@ import java.util.stream.Collectors;
  * for tracking purposes.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonTypeInfo(
+        use = JsonTypeInfo.Id.NAME,
+        include = JsonTypeInfo.As.EXISTING_PROPERTY,
+        property = "role",
+        visible = true,
+        defaultImpl = Msg.class)
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = UserMessage.class, name = "USER"),
+    @JsonSubTypes.Type(value = AssistantMessage.class, name = "ASSISTANT"),
+    @JsonSubTypes.Type(value = SystemMessage.class, name = "SYSTEM"),
+    @JsonSubTypes.Type(value = ToolResultMessage.class, name = "TOOL"),
+})
 public class Msg implements State {
 
     /** Metadata key for storing the generate reason. */
     public static final String METADATA_GENERATE_REASON = "agentscope_generate_reason";
+
+    /**
+     * Metadata key for carrying a {@code List<ConfirmResult>} when resuming a Permission HITL
+     * pause. The receiving {@code ReActAgent.call(msgs)} extracts and applies these results to
+     * the ASKING tool calls in context.
+     */
+    public static final String METADATA_CONFIRM_RESULTS = "agentscope_confirm_results";
+
+    /**
+     * Metadata key (boolean) marking a message as <em>synthetic</em>: framework-injected rather
+     * than authored by the user, the model, or a tool. Synthetic messages (e.g. the per-turn todo
+     * reminder produced by {@code TaskReminderMiddleware}) are appended transiently to the
+     * reasoning input and are not persisted into {@code AgentState.context}; this flag lets any
+     * downstream consumer that does observe such a message recognise and skip it (memory
+     * extraction, compaction, RAG recall).
+     */
+    public static final String METADATA_SYNTHETIC = "agentscope_synthetic";
+
+    /**
+     * Metadata key (string) describing the kind of synthetic reminder carried by a message, e.g.
+     * {@code "todo_state"}. Only meaningful when {@link #METADATA_SYNTHETIC} is {@code true}.
+     */
+    public static final String METADATA_REMINDER_KIND = "agentscope_reminder_kind";
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
@@ -70,6 +107,8 @@ public class Msg implements State {
 
     private final String timestamp;
 
+    private final ChatUsage usage;
+
     /**
      * Creates a new message with the specified fields.
      *
@@ -81,13 +120,14 @@ public class Msg implements State {
      * @param timestamp Optional timestamp string (if null, will be generated automatically)
      */
     @JsonCreator
-    private Msg(
+    protected Msg(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("role") MsgRole role,
             @JsonProperty("content") List<ContentBlock> content,
             @JsonProperty("metadata") Map<String, Object> metadata,
-            @JsonProperty("timestamp") String timestamp) {
+            @JsonProperty("timestamp") String timestamp,
+            @JsonProperty("usage") ChatUsage usage) {
         this.id = id;
         this.name = name;
         this.role = role;
@@ -107,6 +147,54 @@ public class Msg implements State {
             }
         }
         this.timestamp = timestamp;
+        this.usage = usage;
+        validateRoleContent(this.role, this.content);
+    }
+
+    /**
+     * Validates that the content blocks are compatible with the message role.
+     *
+     * <p>The legacy {@link ImageBlock}/{@link AudioBlock}/{@link VideoBlock} types
+     * remain valid on {@link MsgRole#USER} alongside the unified {@link DataBlock}.
+     * {@link MsgRole#TOOL} is legacy and treated as unrestricted (same as assistant)
+     * to preserve back-compat.
+     *
+     * @param role The message role
+     * @param content The content blocks
+     * @throws IllegalArgumentException if any block is not allowed for the role
+     */
+    private static void validateRoleContent(MsgRole role, List<ContentBlock> content) {
+        if (role == null || content == null || content.isEmpty()) {
+            return;
+        }
+        switch (role) {
+            case USER -> {
+                for (ContentBlock block : content) {
+                    if (!(block instanceof TextBlock
+                            || block instanceof DataBlock
+                            || block instanceof ImageBlock
+                            || block instanceof AudioBlock
+                            || block instanceof VideoBlock)) {
+                        throw new IllegalArgumentException(
+                                "USER message may only contain text/data/image/audio/video blocks,"
+                                        + " got "
+                                        + block.getClass().getSimpleName());
+                    }
+                }
+            }
+            case SYSTEM -> {
+                for (ContentBlock block : content) {
+                    if (!(block instanceof TextBlock)) {
+                        throw new IllegalArgumentException(
+                                "SYSTEM message may only contain text blocks, got "
+                                        + block.getClass().getSimpleName());
+                    }
+                }
+            }
+            case ASSISTANT, TOOL -> {
+                // No restriction; TOOL preserved for back-compat.
+            }
+        }
     }
 
     @Override
@@ -139,6 +227,24 @@ public class Msg implements State {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Generates a random UUID string for use as a message ID.
+     * Exposed to subclasses so their convenience constructors can mirror the
+     * behaviour of {@link Builder} without re-implementing UUID logic.
+     */
+    protected static String generateId() {
+        return UUID.randomUUID().toString();
+    }
+
+    /**
+     * Returns the current wall-clock timestamp in this class's canonical format.
+     * Exposed to subclasses so their convenience constructors can stamp messages
+     * identically to {@link Builder}.
+     */
+    protected static String currentTimestamp() {
+        return TIMESTAMP_FORMATTER.format(Instant.now());
     }
 
     /**
@@ -193,6 +299,19 @@ public class Msg implements State {
      */
     public String getTimestamp() {
         return timestamp;
+    }
+
+    /**
+     * Gets the token usage information associated with this message.
+     *
+     * <p>Aligns with Python {@code Msg.usage} (PR #1639). When populated,
+     * contains the input/output token counts from the model call that
+     * produced this message.
+     *
+     * @return The usage object, or null if not available
+     */
+    public ChatUsage getUsage() {
+        return usage;
     }
 
     /**
@@ -434,16 +553,19 @@ public class Msg implements State {
     @Transient
     @JsonIgnore
     public ChatUsage getChatUsage() {
+        if (this.usage != null) {
+            return this.usage;
+        }
         if (metadata == null) {
             return null;
         }
-        Object usage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
-        if (usage instanceof ChatUsage) {
-            return (ChatUsage) usage;
+        Object metaUsage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
+        if (metaUsage instanceof ChatUsage) {
+            return (ChatUsage) metaUsage;
         }
-        if (usage instanceof Map) {
+        if (metaUsage instanceof Map) {
             @SuppressWarnings("unchecked")
-            Map<String, Object> map = (Map<String, Object>) usage;
+            Map<String, Object> map = (Map<String, Object>) metaUsage;
             ChatUsage chatUsage =
                     ChatUsage.builder()
                             .inputTokens(toInt(map.get("inputTokens")))
@@ -517,22 +639,48 @@ public class Msg implements State {
     public Msg withGenerateReason(GenerateReason reason) {
         Map<String, Object> newMetadata = new HashMap<>(this.metadata);
         newMetadata.put(METADATA_GENERATE_REASON, reason.name());
-        return new Msg(this.id, this.name, this.role, this.content, newMetadata, this.timestamp);
+        return new Msg(
+                this.id,
+                this.name,
+                this.role,
+                this.content,
+                newMetadata,
+                this.timestamp,
+                this.usage);
+    }
+
+    /**
+     * Returns a copy of this message with the given content blocks.
+     *
+     * @param newContent the replacement content blocks
+     * @return a new Msg with identical metadata but replaced content
+     */
+    public Msg withContent(List<ContentBlock> newContent) {
+        return new Msg(
+                this.id,
+                this.name,
+                this.role,
+                newContent,
+                this.metadata,
+                this.timestamp,
+                this.usage);
     }
 
     public static class Builder {
 
-        private String id;
+        protected String id;
 
-        private String name;
+        protected String name;
 
-        private MsgRole role = MsgRole.USER;
+        protected MsgRole role = MsgRole.USER;
 
-        private List<ContentBlock> content = List.of();
+        protected List<ContentBlock> content = List.of();
 
-        private Map<String, Object> metadata = Map.of();
+        protected Map<String, Object> metadata = Map.of();
 
-        private String timestamp = TIMESTAMP_FORMATTER.format(Instant.now());
+        protected String timestamp = TIMESTAMP_FORMATTER.format(Instant.now());
+
+        protected ChatUsage usage;
 
         /**
          * Creates a new builder with a randomly generated message ID.
@@ -653,6 +801,17 @@ public class Msg implements State {
          * @param reason The generate reason
          * @return This builder for chaining
          */
+        /**
+         * Sets the token usage information for this message.
+         *
+         * @param usage The ChatUsage containing token counts
+         * @return This builder for chaining
+         */
+        public Builder usage(ChatUsage usage) {
+            this.usage = usage;
+            return this;
+        }
+
         public Builder generateReason(GenerateReason reason) {
             if (reason != null) {
                 if (this.metadata == null || this.metadata.isEmpty()) {
@@ -672,7 +831,7 @@ public class Msg implements State {
          * @return A new immutable message
          */
         public Msg build() {
-            return new Msg(id, name, role, content, metadata, timestamp);
+            return new Msg(id, name, role, content, metadata, timestamp, usage);
         }
     }
 }

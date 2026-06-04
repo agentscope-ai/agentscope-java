@@ -36,7 +36,11 @@ import reactor.util.context.Context;
  * Use with care, and only enable the hook if you require tracing context
  * propagation for all
  * Reactor pipelines.
+ *
+ * @deprecated since 2.0.0. Use {@link OtelTracingMiddleware} instead.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
+@SuppressWarnings("deprecation")
 public class TracerRegistry {
     private static final String HOOK_KEY = "agentscope-trace-context";
     private static volatile boolean hookEnabled = false;
@@ -145,6 +149,13 @@ public class TracerRegistry {
         } else {
             enableTracingHook();
         }
+    }
+
+    public static void resetToNoop() {
+        Tracer previousTracer = TracerRegistry.tracer;
+        TracerRegistry.tracer = new NoopTracer();
+        disableTracingHook();
+        previousTracer.shutdown();
     }
 
     public static Tracer get() {

@@ -42,17 +42,25 @@ public final class ToolResultBlock extends ContentBlock {
     private final String name;
     private final List<ContentBlock> output;
     private final Map<String, Object> metadata;
+    private final ToolResultState state;
 
     @JsonCreator
     public ToolResultBlock(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("output") List<ContentBlock> output,
-            @JsonProperty("metadata") Map<String, Object> metadata) {
+            @JsonProperty("metadata") Map<String, Object> metadata,
+            @JsonProperty("state") ToolResultState state) {
         this.id = id;
         this.name = name;
         this.output = output != null ? List.copyOf(output) : List.of();
         this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
+        this.state = state != null ? state : ToolResultState.RUNNING;
+    }
+
+    public ToolResultBlock(
+            String id, String name, List<ContentBlock> output, Map<String, Object> metadata) {
+        this(id, name, output, metadata, null);
     }
 
     /**
@@ -63,7 +71,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @param output Single content block as output
      */
     public ToolResultBlock(String id, String name, ContentBlock output) {
-        this(id, name, List.of(output), null);
+        this(id, name, List.of(output), null, null);
     }
 
     /**
@@ -74,7 +82,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @param output List of content blocks as output
      */
     public ToolResultBlock(String id, String name, List<ContentBlock> output) {
-        this(id, name, output, null);
+        this(id, name, output, null, null);
     }
 
     /**
@@ -111,6 +119,25 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public Map<String, Object> getMetadata() {
         return metadata;
+    }
+
+    /**
+     * Gets the tool result state.
+     *
+     * @return The tool result state
+     */
+    public ToolResultState getState() {
+        return state;
+    }
+
+    /**
+     * Returns a copy of this block with the given state.
+     *
+     * @param state The new state
+     * @return A new ToolResultBlock with the updated state
+     */
+    public ToolResultBlock withState(ToolResultState state) {
+        return new ToolResultBlock(this.id, this.name, this.output, this.metadata, state);
     }
 
     /**
@@ -287,7 +314,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return New ToolResultBlock with id and name set
      */
     public ToolResultBlock withIdAndName(String id, String name) {
-        return new ToolResultBlock(id, name, this.output, this.metadata);
+        return new ToolResultBlock(id, name, this.output, this.metadata, this.state);
     }
 
     @Override
@@ -327,6 +354,7 @@ public final class ToolResultBlock extends ContentBlock {
         private String name;
         private List<ContentBlock> output;
         private Map<String, Object> metadata;
+        private ToolResultState state;
 
         /**
          * Sets the tool call ID.
@@ -384,12 +412,23 @@ public final class ToolResultBlock extends ContentBlock {
         }
 
         /**
+         * Sets the tool result state.
+         *
+         * @param state The tool result state
+         * @return This builder for chaining
+         */
+        public Builder state(ToolResultState state) {
+            this.state = state;
+            return this;
+        }
+
+        /**
          * Builds a new ToolResultBlock with the configured properties.
          *
          * @return A new ToolResultBlock instance
          */
         public ToolResultBlock build() {
-            return new ToolResultBlock(id, name, output, metadata);
+            return new ToolResultBlock(id, name, output, metadata, state);
         }
     }
 }

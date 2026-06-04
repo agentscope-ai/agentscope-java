@@ -43,6 +43,7 @@ public final class ToolUseBlock extends ContentBlock {
     private final Map<String, Object> input;
     private final String content; // Raw content for streaming tool calls
     private final Map<String, Object> metadata; // Provider-specific metadata
+    private final ToolCallState state;
 
     /**
      * Creates a new tool use block for JSON deserialization.
@@ -54,7 +55,7 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public ToolUseBlock(
             String id, String name, Map<String, Object> input, Map<String, Object> metadata) {
-        this(id, name, input, null, metadata);
+        this(id, name, input, null, metadata, null);
     }
 
     /**
@@ -65,7 +66,7 @@ public final class ToolUseBlock extends ContentBlock {
      * @param input Input parameters for the tool (will be defensively copied)
      */
     public ToolUseBlock(String id, String name, Map<String, Object> input) {
-        this(id, name, input, null, null);
+        this(id, name, input, null, null, null);
     }
 
     /**
@@ -77,13 +78,33 @@ public final class ToolUseBlock extends ContentBlock {
      * @param content Raw content for streaming tool calls
      * @param metadata Provider-specific metadata (will be defensively copied)
      */
+    public ToolUseBlock(
+            String id,
+            String name,
+            Map<String, Object> input,
+            String content,
+            Map<String, Object> metadata) {
+        this(id, name, input, content, metadata, null);
+    }
+
+    /**
+     * Creates a new tool use block with all fields.
+     *
+     * @param id Unique identifier for this tool call
+     * @param name Name of the tool to execute
+     * @param input Input parameters for the tool (will be defensively copied)
+     * @param content Raw content for streaming tool calls
+     * @param metadata Provider-specific metadata (will be defensively copied)
+     * @param state The tool call state, defaults to PENDING if null
+     */
     @JsonCreator
     public ToolUseBlock(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("input") Map<String, Object> input,
             @JsonProperty("content") String content,
-            @JsonProperty("metadata") Map<String, Object> metadata) {
+            @JsonProperty("metadata") Map<String, Object> metadata,
+            @JsonProperty("state") ToolCallState state) {
         this.id = id;
         this.name = name;
         // Defensive copy to prevent external modifications
@@ -96,6 +117,7 @@ public final class ToolUseBlock extends ContentBlock {
                 metadata == null
                         ? Collections.emptyMap()
                         : Collections.unmodifiableMap(normalizeMetadata(metadata));
+        this.state = state != null ? state : ToolCallState.PENDING;
     }
 
     /**
@@ -164,6 +186,25 @@ public final class ToolUseBlock extends ContentBlock {
         return metadata;
     }
 
+    /**
+     * Gets the tool call state.
+     *
+     * @return The tool call state
+     */
+    public ToolCallState getState() {
+        return state;
+    }
+
+    /**
+     * Returns a copy of this block with the given state.
+     *
+     * @param state The new state
+     * @return A new ToolUseBlock with the updated state
+     */
+    public ToolUseBlock withState(ToolCallState state) {
+        return new ToolUseBlock(this.id, this.name, this.input, this.content, this.metadata, state);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -177,12 +218,14 @@ public final class ToolUseBlock extends ContentBlock {
                 && Objects.equals(this.name, that.name)
                 && Objects.equals(this.input, that.input)
                 && Objects.equals(this.content, that.content)
-                && Objects.equals(this.metadata, that.metadata);
+                && Objects.equals(this.metadata, that.metadata)
+                && Objects.equals(this.state, that.state);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.id, this.name, this.input, this.content, this.metadata);
+        return Objects.hash(
+                this.id, this.name, this.input, this.content, this.metadata, this.state);
     }
 
     /**
@@ -203,6 +246,7 @@ public final class ToolUseBlock extends ContentBlock {
         private Map<String, Object> input;
         private String content;
         private Map<String, Object> metadata;
+        private ToolCallState state;
 
         /**
          * Sets the unique identifier for the tool call.
@@ -263,12 +307,23 @@ public final class ToolUseBlock extends ContentBlock {
         }
 
         /**
+         * Sets the tool call state.
+         *
+         * @param state The tool call state
+         * @return This builder for chaining
+         */
+        public Builder state(ToolCallState state) {
+            this.state = state;
+            return this;
+        }
+
+        /**
          * Builds a new ToolUseBlock with the configured properties.
          *
          * @return A new ToolUseBlock instance
          */
         public ToolUseBlock build() {
-            return new ToolUseBlock(id, name, input, content, metadata);
+            return new ToolUseBlock(id, name, input, content, metadata, state);
         }
     }
 }

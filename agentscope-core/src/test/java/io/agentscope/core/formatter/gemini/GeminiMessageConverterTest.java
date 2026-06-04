@@ -208,7 +208,7 @@ class GeminiMessageConverterTest {
                 Msg.builder()
                         .name("system")
                         .content(List.of(toolResultBlock))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -238,7 +238,7 @@ class GeminiMessageConverterTest {
                 Msg.builder()
                         .name("system")
                         .content(List.of(toolResultBlock))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -266,7 +266,7 @@ class GeminiMessageConverterTest {
                 Msg.builder()
                         .name("system")
                         .content(List.of(toolResultBlock))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -298,7 +298,7 @@ class GeminiMessageConverterTest {
                 Msg.builder()
                         .name("system")
                         .content(List.of(toolResultBlock))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -336,7 +336,7 @@ class GeminiMessageConverterTest {
                 Msg.builder()
                         .name("system")
                         .content(List.of(toolResultBlock))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -367,7 +367,7 @@ class GeminiMessageConverterTest {
                 Msg.builder()
                         .name("system")
                         .content(List.of(toolResultBlock))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -398,7 +398,7 @@ class GeminiMessageConverterTest {
                 Msg.builder()
                         .name("system")
                         .content(List.of(toolResultBlock))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -424,7 +424,7 @@ class GeminiMessageConverterTest {
                 Msg.builder()
                         .name("system")
                         .content(List.of(toolResultBlock))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -623,7 +623,7 @@ class GeminiMessageConverterTest {
                                                                         .build()))
                                                 .build(),
                                         TextBlock.builder().text("After tool result").build()))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         List<Content> result = converter.convertMessages(List.of(msg));
@@ -716,7 +716,7 @@ class GeminiMessageConverterTest {
                                                                         .text("Sunny, 25°C")
                                                                         .build()))
                                                 .build()))
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.TOOL)
                         .build();
 
         // Assistant response

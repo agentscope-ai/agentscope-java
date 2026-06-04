@@ -13,152 +13,539 @@
 # limitations under the License.
 
 format: jb-book
-root: en/intro
+root: v2/en/intro
 parts:
 - caption: Quick Start
   chapters:
-  - file: en/quickstart/installation
+  - file: v1/en/intro
+    title: Introduction
+  - file: v1/en/docs/quickstart/installation
     title: Installation
-  - file: en/quickstart/key-concepts
+  - file: v1/en/docs/quickstart/key-concepts
     title: Key Concepts
-  - file: en/quickstart/agent
+  - file: v1/en/docs/quickstart/agent
     title: Agent
 
 - caption: Features
   chapters:
-  - file: en/task/model
+  - file: v1/en/docs/task/model
     title: Model Integration
-  - file: en/task/tool
+  - file: v1/en/docs/task/tool
     title: Tool System
-  - file: en/task/mcp
+  - file: v1/en/docs/task/mcp
     title: Model Context Protocol
-  - file: en/task/agent-as-tool
+  - file: v1/en/docs/task/agent-as-tool
     title: Agent as Tool
-  - file: en/task/agent-skill
+  - file: v1/en/docs/task/agent-skill
     title: Agent Skill
-  - file: en/task/rag
+  - file: v1/en/docs/task/rag
     title: RAG
-  - file: en/task/hook
+  - file: v1/en/docs/task/streaming
+    title: Streaming
+  - file: v1/en/docs/task/hook
     title: Hook System
-  - file: en/task/hitl
+  - file: v1/en/docs/task/hitl
     title: Human-in-the-Loop
-  - file: en/task/memory
+  - file: v1/en/docs/task/memory
     title: Memory Management
-  - file: en/task/plan
+  - file: v1/en/docs/task/plan
     title: Planning
-  - file: en/task/state
+  - file: v1/en/docs/task/state
     title: State Management
-  - file: en/task/session
+  - file: v1/en/docs/task/session
     title: Session Management
-  - file: en/task/multimodal
+  - file: v1/en/docs/task/multimodal
     title: Multimodal
-  - file: en/task/structured-output
+  - file: v1/en/docs/task/structured-output
     title: Structured Output
-  - file: en/task/observability
+  - file: v1/en/docs/task/observability
     title: Observability & Studio
-  - file: en/task/agui
+  - file: v1/en/docs/task/agui
     title: AG-UI Protocol
-  - file: en/task/a2a
+  - file: v1/en/docs/task/a2a
     title: A2A Protocol
-  - file: en/task/msghub
+  - file: v1/en/docs/task/msghub
     title: MsgHub
-  - file: en/task/ai-coding
+  - file: v1/en/docs/task/ai-coding
     title: Coding with AI
-  - file: en/task/online-training.md
+  - file: v1/en/docs/task/online-training.md
     title: Online Training
 
 - caption: Multi Agent
   chapters:
-  - file: en/multi-agent/overview
+  - file: v1/en/docs/multi-agent/overview
     title: Overview
-  - file: en/multi-agent/pipeline
+  - file: v1/en/docs/multi-agent/pipeline
     title: Pipeline
-  - file: en/multi-agent/workflow
+  - file: v1/en/docs/multi-agent/workflow
     title: Custom Workflow
-  - file: en/multi-agent/routing
+  - file: v1/en/docs/multi-agent/routing
     title: Routing
-  - file: en/multi-agent/skills
+  - file: v1/en/docs/multi-agent/skills
     title: Skills
-  - file: en/multi-agent/subagent
+  - file: v1/en/docs/multi-agent/subagent
     title: Subagents
-  - file: en/multi-agent/supervisor
+  - file: v1/en/docs/multi-agent/supervisor
     title: Supervisor
-  - file: en/multi-agent/handoffs
+  - file: v1/en/docs/multi-agent/handoffs
     title: Handoffs
-  - file: en/multi-agent/multiagent-debate
+  - file: v1/en/docs/multi-agent/multiagent-debate
     title: Multi-Agent Debate
+
+# 与中文「Harness」区分标题，否则顶栏 tabs 的 sections_* 会同时匹配两段 caption，侧栏出现两个 HARNESS。
+- caption: Harness (English)
+  chapters:
+  - file: v1/en/docs/harness/overview
+    title: Overview
+  - file: v1/en/docs/harness/architecture
+    title: Architecture
+  - file: v1/en/docs/harness/workspace
+    title: Workspace
+  - file: v1/en/docs/harness/filesystem
+    title: Filesystem
+  - file: v1/en/docs/harness/session
+    title: Session
+  - file: v1/en/docs/harness/memory
+    title: Memory
+  - file: v1/en/docs/harness/tool
+    title: Tooling
+  - file: v1/en/docs/harness/subagent
+    title: Subagent
+  - file: v1/en/docs/harness/streaming
+    title: Subagent Streaming
+  - file: v1/en/docs/harness/quickstart/index
+    title: Quick Start
+  - file: v1/en/docs/harness/sandbox/index
+    title: Sandbox
+  - file: v1/en/docs/harness/example/index
+    title: Examples
+
+- caption: Integration
+  chapters:
+  - file: v1/en/integration/overview
+    title: Overview
+
+- caption: Blogs
+  chapters:
+  - file: v1/en/blogs/index
+    title: Article index
+  - file: v1/en/blogs/agentscope-v1-harness
+    title: AgentScope Java 1.1 · Harness
+
+- caption: Community
+  chapters:
+  - file: v1/en/community/overview
+    title: Community
+  - file: v1/en/community/contributors
+    title: Contributors
 
 - caption: 快速开始
   chapters:
-  - file: zh/intro
+  - file: v1/zh/intro
     title: 简介
-  - file: zh/quickstart/installation
+  - file: v1/zh/docs/quickstart/installation
     title: 安装
-  - file: zh/quickstart/key-concepts
+  - file: v1/zh/docs/quickstart/key-concepts
     title: 核心概念
-  - file: zh/quickstart/agent
+  - file: v1/zh/docs/quickstart/agent
     title: 智能体
 
 - caption: 功能指南
   chapters:
-  - file: zh/task/model
+  - file: v1/zh/docs/task/model
     title: 模型集成
-  - file: zh/task/tool
+  - file: v1/zh/docs/task/tool
     title: 工具系统
-  - file: zh/task/mcp
+  - file: v1/zh/docs/task/mcp
     title: MCP
-  - file: zh/task/agent-as-tool
+  - file: v1/zh/docs/task/agent-as-tool
     title: Agent as Tool
-  - file: zh/task/agent-skill
+  - file: v1/zh/docs/task/agent-skill
     title: Agent Skill
-  - file: zh/task/rag
+  - file: v1/zh/docs/task/rag
     title: RAG
-  - file: zh/task/hook
+  - file: v1/zh/docs/task/streaming
+    title: 流式输出
+  - file: v1/zh/docs/task/hook
     title: 钩子系统
-  - file: zh/task/hitl
+  - file: v1/zh/docs/task/hitl
     title: Human-in-the-Loop
-  - file: zh/task/memory
+  - file: v1/zh/docs/task/memory
     title: 记忆管理
-  - file: zh/task/plan
+  - file: v1/zh/docs/task/plan
     title: 计划
-  - file: zh/task/state
+  - file: v1/zh/docs/task/state
     title: 状态管理
-  - file: zh/task/session
+  - file: v1/zh/docs/task/session
     title: 会话管理
-  - file: zh/task/multimodal
+  - file: v1/zh/docs/task/multimodal
     title: 多模态
-  - file: zh/task/structured-output
+  - file: v1/zh/docs/task/structured-output
     title: 结构化输出
-  - file: zh/task/observability
+  - file: v1/zh/docs/task/observability
     title: 可观测与调试
-  - file: zh/task/agui
+  - file: v1/zh/docs/task/agui
     title: AG-UI 协议
-  - file: zh/task/a2a
+  - file: v1/zh/docs/task/a2a
     title: A2A 协议
-  - file: zh/task/msghub
+  - file: v1/zh/docs/task/msghub
     title: MsgHub
-  - file: zh/task/ai-coding
+  - file: v1/zh/docs/task/ai-coding
     title: 使用 AI 编程
-  - file: zh/task/online-training.md
+  - file: v1/zh/docs/task/online-training.md
     title: 在线训练
 
 - caption: 多智能体
   chapters:
-  - file: zh/multi-agent/overview
+  - file: v1/zh/docs/multi-agent/overview
     title: 概览
-  - file: zh/multi-agent/pipeline
+  - file: v1/zh/docs/multi-agent/pipeline
     title: 管道
-  - file: zh/multi-agent/workflow
+  - file: v1/zh/docs/multi-agent/workflow
     title: 自定义工作流
-  - file: zh/multi-agent/routing
+  - file: v1/zh/docs/multi-agent/routing
     title: Routing
-  - file: zh/multi-agent/skills
+  - file: v1/zh/docs/multi-agent/skills
     title: Skills
-  - file: zh/multi-agent/subagent
+  - file: v1/zh/docs/multi-agent/subagent
     title: Subagents
-  - file: zh/multi-agent/supervisor
+  - file: v1/zh/docs/multi-agent/supervisor
     title: Supervisor
-  - file: zh/multi-agent/handoffs
+  - file: v1/zh/docs/multi-agent/handoffs
     title: Handoffs
-  - file: zh/multi-agent/multiagent-debate
+  - file: v1/zh/docs/multi-agent/multiagent-debate
     title: 多智能体辩论
+
+- caption: 集成
+  chapters:
+  - file: v1/zh/integration/overview
+    title: 概览
+
+- caption: 博客
+  chapters:
+  - file: v1/zh/blogs/index
+    title: 全部文章
+  - file: v1/zh/blogs/agentscope-v1-harness
+    title: AgentScope Java 1.1 · Harness
+  - file: v1/zh/blogs/agentscope-v1-builder
+    title: AgentScope Builder 发布
+
+- caption: 社区
+  chapters:
+  - file: v1/zh/community/overview
+    title: 社区
+  - file: v1/zh/community/contributors
+    title: 核心贡献者
+
+- caption: Harness
+  chapters:
+  - file: v1/zh/docs/harness/overview
+    title: 概览
+  - file: v1/zh/docs/harness/architecture
+    title: 架构
+  - file: v1/zh/docs/harness/workspace
+    title: 工作区
+  - file: v1/zh/docs/harness/filesystem
+    title: 文件系统
+  - file: v1/zh/docs/harness/session
+    title: 会话
+  - file: v1/zh/docs/harness/memory
+    title: 记忆
+  - file: v1/zh/docs/harness/tool
+    title: 工具
+  - file: v1/zh/docs/harness/skill
+    title: 技能
+  - file: v1/zh/docs/harness/subagent
+    title: 子 Agent
+  - file: v1/zh/docs/harness/streaming
+    title: 子 Agent 流式
+  - file: v1/zh/docs/harness/quickstart/index
+    title: 快速开始
+  - file: v1/zh/docs/harness/sandbox/index
+    title: 沙箱
+  - file: v1/zh/docs/harness/sandbox/agentrun
+    title: AgentRun 后端
+  - file: v1/zh/docs/harness/example/index
+    title: 示例
+
+# ---------------------------------------------------------------------------
+# v2 (latest)
+# ---------------------------------------------------------------------------
+
+- caption: v2 · Quick Start
+  chapters:
+  - file: v2/en/docs/index
+    title: What's AgentScope 2.0?
+  - file: v2/en/docs/change-log
+    title: Change Log
+  - file: v2/en/docs/quickstart
+    title: Quickstart
+
+- caption: v2 · Building Blocks
+  chapters:
+  - file: v2/en/docs/building-blocks/agent
+    title: Agent
+  - file: v2/en/docs/building-blocks/message-and-event
+    title: Message & Event
+  - file: v2/en/docs/building-blocks/middleware
+    title: Middleware
+  - file: v2/en/docs/building-blocks/model
+    title: Model
+  - file: v2/en/docs/building-blocks/permission-system
+    title: Permission System
+  - file: v2/en/docs/building-blocks/tool
+    title: Tool
+
+# 与中文「v2 · Harness」区分标题，否则顶栏 tabs 的 sections_v2_* 会同时匹配两段 caption，侧栏出现两个 Harness。
+# tabs.js 在渲染时会剥离 " (English)" 后缀，所以前端实际显示的是 "v2 · Harness"。
+- caption: v2 · Harness (English)
+  chapters:
+  - file: v2/en/docs/harness/architecture
+    title: Architecture
+  - file: v2/en/docs/harness/context
+    title: Context
+  - file: v2/en/docs/harness/workspace
+    title: Workspace
+  - file: v2/en/docs/harness/memory
+    title: Memory
+  - file: v2/en/docs/harness/filesystem
+    title: Filesystem
+  - file: v2/en/docs/harness/sandbox
+    title: Sandbox
+  - file: v2/en/docs/harness/subagent
+    title: Subagent
+  - file: v2/en/docs/harness/skill
+    title: Skill
+  - file: v2/en/docs/harness/plan-mode
+    title: Plan Mode
+
+- caption: v2 · Reference
+  chapters:
+  - file: v2/en/docs/others/going-to-production
+    title: Going to Production
+  - file: v2/en/docs/others/faq
+    title: FAQ
+
+- caption: v2 · Integration
+  chapters:
+  - file: v2/en/integration/overview
+    title: Overview
+  - file: v2/en/integration/memory/index
+    title: Memory
+    sections:
+    - file: v2/en/integration/memory/mem0
+      title: Mem0
+    - file: v2/en/integration/memory/bailian
+      title: Bailian Memory
+    - file: v2/en/integration/memory/reme
+      title: ReMe
+  - file: v2/en/integration/session/index
+    title: Session
+    sections:
+    - file: v2/en/integration/session/mysql
+      title: MySQL Session
+    - file: v2/en/integration/session/redis
+      title: Redis Session
+  - file: v2/en/integration/rag/index
+    title: RAG Knowledge Base
+    sections:
+    - file: v2/en/integration/rag/simple
+      title: Simple
+    - file: v2/en/integration/rag/bailian
+      title: Bailian Knowledge
+    - file: v2/en/integration/rag/dify
+      title: Dify
+    - file: v2/en/integration/rag/haystack
+      title: HayStack
+    - file: v2/en/integration/rag/ragflow
+      title: RAGFlow
+  - file: v2/en/integration/skill/index
+    title: Skill Repository
+    sections:
+    - file: v2/en/integration/skill/git-repository
+      title: Git Skill Repository
+    - file: v2/en/integration/skill/mysql-repository
+      title: MySQL Skill Repository
+  - file: v2/en/integration/protocol/index
+    title: Agent Protocols
+    sections:
+    - file: v2/en/integration/protocol/a2a
+      title: A2A
+    - file: v2/en/integration/protocol/agui
+      title: AG-UI
+    - file: v2/en/integration/protocol/agent-protocol
+      title: Agent Protocol
+  - file: v2/en/integration/infrastructure/index
+    title: Infrastructure
+    sections:
+    - file: v2/en/integration/infrastructure/higress
+      title: Higress
+    - file: v2/en/integration/infrastructure/nacos
+      title: Nacos
+    - file: v2/en/integration/infrastructure/rocketmq
+      title: RocketMQ
+    - file: v2/en/integration/infrastructure/scheduler
+      title: Scheduler
+  - file: v2/en/integration/ecosystem/index
+    title: Ecosystem
+    sections:
+    - file: v2/en/integration/ecosystem/chat-completions-web
+      title: Chat Completions Web
+    - file: v2/en/integration/ecosystem/kotlin
+      title: Kotlin
+    - file: v2/en/integration/ecosystem/studio
+      title: Studio
+    - file: v2/en/integration/ecosystem/training
+      title: Online Training
+
+- caption: v2 · Blogs
+  chapters:
+  - file: v2/en/blogs/agentscope-v2-release
+    title: AgentScope 2.0 Release
+  - file: v2/en/blogs/agentscope-v1-harness
+    title: AgentScope Java 1.1 · Harness
+
+- caption: v2 · Community
+  chapters:
+  - file: v2/en/community/contributors
+    title: Contributors
+
+- caption: v2 · 快速开始
+  chapters:
+  - file: v2/zh/intro
+    title: 首页
+  - file: v2/zh/docs/change-log
+    title: 更新日志
+  - file: v2/zh/docs/index
+    title: 什么是 AgentScope 2.0？
+  - file: v2/zh/docs/quickstart
+    title: 快速上手
+
+- caption: v2 · 核心组件
+  chapters:
+  - file: v2/zh/docs/building-blocks/agent
+    title: 智能体
+  - file: v2/zh/docs/building-blocks/message-and-event
+    title: 消息与事件
+  - file: v2/zh/docs/building-blocks/middleware
+    title: Middleware
+  - file: v2/zh/docs/building-blocks/model
+    title: 模型
+  - file: v2/zh/docs/building-blocks/permission-system
+    title: 权限系统
+  - file: v2/zh/docs/building-blocks/tool
+    title: 工具
+
+- caption: v2 · Harness
+  chapters:
+  - file: v2/zh/docs/harness/architecture
+    title: 架构
+  - file: v2/zh/docs/harness/context
+    title: 上下文
+  - file: v2/zh/docs/harness/workspace
+    title: 工作区
+  - file: v2/zh/docs/harness/memory
+    title: 记忆
+  - file: v2/zh/docs/harness/filesystem
+    title: 文件系统
+  - file: v2/zh/docs/harness/sandbox
+    title: 沙箱
+  - file: v2/zh/docs/harness/subagent
+    title: 子 Agent
+  - file: v2/zh/docs/harness/skill
+    title: 技能
+  - file: v2/zh/docs/harness/plan-mode
+    title: 计划模式
+
+- caption: v2 · 参考
+  chapters:
+  - file: v2/zh/docs/others/going-to-production
+    title: 上生产
+  - file: v2/zh/docs/others/faq
+    title: 常见问题
+
+- caption: v2 · 集成
+  chapters:
+  - file: v2/zh/integration/overview
+    title: 概览
+  - file: v2/zh/integration/memory/index
+    title: 记忆
+    sections:
+    - file: v2/zh/integration/memory/mem0
+      title: Mem0
+    - file: v2/zh/integration/memory/bailian
+      title: 百炼记忆
+    - file: v2/zh/integration/memory/reme
+      title: ReMe
+  - file: v2/zh/integration/session/index
+    title: 会话
+    sections:
+    - file: v2/zh/integration/session/mysql
+      title: MySQL Session
+    - file: v2/zh/integration/session/redis
+      title: Redis Session
+  - file: v2/zh/integration/rag/index
+    title: RAG 知识库
+    sections:
+    - file: v2/zh/integration/rag/simple
+      title: Simple
+    - file: v2/zh/integration/rag/bailian
+      title: 百炼知识库
+    - file: v2/zh/integration/rag/dify
+      title: Dify
+    - file: v2/zh/integration/rag/haystack
+      title: HayStack
+    - file: v2/zh/integration/rag/ragflow
+      title: RAGFlow
+  - file: v2/zh/integration/skill/index
+    title: 技能仓库
+    sections:
+    - file: v2/zh/integration/skill/git-repository
+      title: Git 技能仓库
+    - file: v2/zh/integration/skill/mysql-repository
+      title: MySQL 技能仓库
+  - file: v2/zh/integration/protocol/index
+    title: 智能体协议
+    sections:
+    - file: v2/zh/integration/protocol/a2a
+      title: A2A
+    - file: v2/zh/integration/protocol/agui
+      title: AG-UI
+    - file: v2/zh/integration/protocol/agent-protocol
+      title: Agent Protocol
+  - file: v2/zh/integration/infrastructure/index
+    title: 基础设施
+    sections:
+    - file: v2/zh/integration/infrastructure/higress
+      title: Higress
+    - file: v2/zh/integration/infrastructure/nacos
+      title: Nacos
+    - file: v2/zh/integration/infrastructure/rocketmq
+      title: RocketMQ
+    - file: v2/zh/integration/infrastructure/scheduler
+      title: Scheduler
+  - file: v2/zh/integration/ecosystem/index
+    title: 生态扩展
+    sections:
+    - file: v2/zh/integration/ecosystem/chat-completions-web
+      title: Chat Completions Web
+    - file: v2/zh/integration/ecosystem/kotlin
+      title: Kotlin
+    - file: v2/zh/integration/ecosystem/studio
+      title: Studio
+    - file: v2/zh/integration/ecosystem/training
+      title: 在线训练
+
+- caption: v2 · 博客
+  chapters:
+  - file: v2/zh/blogs/agentscope-v2-release
+    title: AgentScope 2.0 发布
+  - file: v2/zh/blogs/agentscope-v1-harness
+    title: AgentScope Java 1.1 · Harness
+  - file: v2/zh/blogs/agentscope-v1-builder
+    title: AgentScope Builder 发布
+
+- caption: v2 · 社区
+  chapters:
+  - file: v2/zh/community/contributors
+    title: 核心贡献者

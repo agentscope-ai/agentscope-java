@@ -20,6 +20,44 @@
   margin-bottom: 1rem;
 }
 
+/* Compact language switch when embedded in the site header */
+.docs-site-header .language-switch {
+  padding: 0;
+  margin: 0;
+  border: none;
+}
+
+.docs-site-header .language-button {
+  width: auto;
+  min-width: 5.5rem;
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  box-shadow: none;
+}
+
+.docs-site-header .language-menu {
+  left: auto;
+  right: 0;
+  min-width: 10rem;
+  z-index: 5000;
+}
+
+/* Fixed placement (set from tabs.js) escapes header / TOC stacking & overflow */
+.docs-site-header .language-menu.docs-lang-menu--fixed {
+  z-index: 2147483000;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.18);
+}
+
+/* Open language control stacks above search/theme siblings in the header row */
+.docs-site-header .language-switch {
+  position: relative;
+  z-index: 0;
+}
+
+.docs-site-header .language-selector.open {
+  z-index: 6000;
+}
+
 .language-selector {
   position: relative;
   font-size: var(--font-size--small);
@@ -110,15 +148,19 @@
   text-decoration: none;
 }
 
+/* Selected option: soft brand-tinted background + brand-coloured text.
+   The earlier rule used ``color: var(--color-brand-content)`` which resolves
+   to the same blue as ``color-brand-primary`` (set in _config.yml), so the
+   text became invisible against the solid blue background. */
 .language-option.active {
-  background: var(--color-brand-primary);
-  color: var(--color-brand-content);
-  font-weight: 500;
+  background: color-mix(in srgb, var(--color-brand-primary) 14%, transparent);
+  color: var(--color-brand-primary);
+  font-weight: 600;
 }
 
 .language-option.active:hover {
-  background: var(--color-brand-primary);
-  color: var(--color-brand-content);
+  background: color-mix(in srgb, var(--color-brand-primary) 22%, transparent);
+  color: var(--color-brand-primary);
 }
 
 .language-button::after {
@@ -166,6 +208,11 @@ body[data-current-lang="zh"] {
   .language-switch {
     padding: 0.75rem 0;
     margin-bottom: 0.75rem;
+  }
+
+  .docs-site-header .language-switch {
+    padding: 0;
+    margin-bottom: 0;
   }
 
   .language-button {
@@ -218,4 +265,824 @@ body[data-current-lang="zh"] {
   flex-direction: column;
   align-items: center;
   line-height: 0.6;
+}
+
+/* Site-wide notice (above header); dismiss state on <html> */
+html.docs-site-notice-dismissed .docs-site-notice {
+  display: none !important;
+}
+
+/* Root redirect stub page (see _sphinx_extensions/root_index_notice.py) */
+.docs-root-redirect-hint {
+  margin: 1rem auto 2rem;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.docs-root-redirect-hint a {
+  color: var(--color-brand-primary);
+  font-weight: 600;
+}
+
+.docs-site-notice {
+  position: sticky;
+  top: 0;
+  z-index: 70;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.docs-site-notice__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem 1.25rem;
+  max-width: min(100%, 90rem);
+  margin-inline: auto;
+  padding: 0.55rem clamp(1rem, 3vw, 2.5rem);
+  padding-inline-end: 2.75rem;
+}
+
+.docs-site-notice__text {
+  margin: 0;
+  text-align: center;
+  flex: 1 1 12rem;
+}
+
+.docs-site-notice__link {
+  flex-shrink: 0;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  white-space: nowrap;
+}
+
+.docs-site-notice__link:hover,
+.docs-site-notice__link:focus-visible {
+  text-decoration-thickness: 0.12em;
+}
+
+.docs-site-notice__close {
+  position: absolute;
+  top: 50%;
+  right: clamp(0.5rem, 2vw, 1.25rem);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: inherit;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s ease-out, background-color 0.15s ease-out;
+}
+
+.docs-site-notice__close:hover,
+.docs-site-notice__close:focus-visible {
+  opacity: 1;
+}
+
+.docs-site-notice--brand {
+  background: linear-gradient(100deg, #0d47a1 0%, #1565c0 42%, #1976d2 100%);
+  color: #fff;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
+}
+
+.docs-site-notice--brand .docs-site-notice__link {
+  color: #fff;
+}
+
+.docs-site-notice--brand .docs-site-notice__close:hover,
+.docs-site-notice--brand .docs-site-notice__close:focus-visible {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.docs-site-notice--neutral {
+  background: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
+  border-bottom: 1px solid var(--color-background-border);
+}
+
+.docs-site-notice--neutral .docs-site-notice__link {
+  color: var(--color-brand-primary);
+}
+
+.docs-site-notice--neutral .docs-site-notice__close:hover,
+.docs-site-notice--neutral .docs-site-notice__close:focus-visible {
+  background: var(--color-background-hover);
+}
+
+.docs-site-notice--accent {
+  background: color-mix(in srgb, var(--color-brand-primary) 18%, var(--color-background-secondary));
+  color: var(--color-foreground-primary);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-brand-primary) 35%, var(--color-background-border));
+}
+
+.docs-site-notice--accent .docs-site-notice__link {
+  color: var(--color-brand-primary);
+}
+
+.docs-site-notice--accent .docs-site-notice__close:hover,
+.docs-site-notice--accent .docs-site-notice__close:focus-visible {
+  background: var(--color-background-hover);
+}
+
+@media (max-width: 640px) {
+  .docs-site-notice__inner {
+    padding-block: 0.65rem;
+    padding-inline: 2.5rem 2.5rem;
+  }
+
+  .docs-site-notice__text {
+    flex-basis: 100%;
+  }
+}
+
+/* Global site header: left = brand + section tabs, right = utilities */
+.docs-site-header {
+  position: sticky;
+  top: 0;
+  /* Above Furo .toc-drawer (50) / overlays so dropdowns are not covered by page chrome */
+  z-index: 60;
+  background: var(--color-background-primary);
+  border-bottom: 1px solid var(--color-background-border);
+  overflow: visible;
+}
+
+.docs-site-header__inner {
+  display: flex;
+  /* nowrap until ≤ 760px so contents compress smoothly first; wrap is the
+     last-resort fallback at narrow widths (see media query at the bottom of
+     this header section). */
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: clamp(0.75rem, 2.4vw, 2.25rem);
+  padding: 0.9rem clamp(1rem, 4vw, 2.75rem);
+  max-width: min(100%, 90rem);
+  margin-inline: auto;
+  overflow: visible;
+}
+
+.docs-site-header__start {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: clamp(0.85rem, 2vw, 2.5rem);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.docs-site-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.45rem 1.1rem 0.45rem 0.55rem;
+  margin: -0.2rem 0;
+  border-radius: 0.65rem;
+  text-decoration: none;
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+  flex-shrink: 0;
+  transition: background-color 0.18s ease-out, color 0.15s ease-out;
+}
+
+.docs-site-header__brand:hover,
+.docs-site-header__brand:focus-visible {
+  text-decoration: none;
+  color: var(--color-brand-primary);
+  background-color: var(--color-background-secondary);
+}
+
+.docs-site-header__logo {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+
+.docs-site-header__title {
+  /* Scale title font with viewport so the brand block shrinks first as the
+     window narrows — keeps the bar on a single row longer. */
+  font-size: clamp(0.88rem, 1.05vw, 1.0625rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.28;
+  max-width: min(22rem, 42vw);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docs-site-header__nav-shell {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 0.4rem 0 0.4rem clamp(1.25rem, 2.8vw, 2.35rem);
+  margin-left: clamp(0.35rem, 1.2vw, 0.85rem);
+  border-left: 1px solid var(--color-background-border);
+}
+
+.docs-site-header__nav-shell .docs-top-tabs {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.docs-site-header__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: clamp(0.5rem, 1.2vw, 1rem);
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0.2rem 0 0.2rem clamp(0.6rem, 1.5vw, 1.5rem);
+  margin-left: clamp(0.3rem, 0.9vw, 0.9rem);
+  border-left: 1px solid var(--color-background-border);
+  overflow: visible;
+}
+
+.docs-header-search {
+  display: flex;
+  align-items: stretch;
+  /* Smaller flex basis + tighter max so search shrinks gracefully before
+     forcing a row wrap on medium widths. */
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  max-width: 14rem;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.55rem;
+  background: var(--color-background-secondary);
+  overflow: hidden;
+}
+
+.docs-header-search:focus-within {
+  border-color: var(--color-brand-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-brand-primary) 35%, transparent);
+}
+
+.docs-header-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.9375rem;
+  color: var(--color-foreground-primary);
+  font-family: var(--font-stack);
+}
+
+.docs-header-search__input::placeholder {
+  color: var(--color-foreground-secondary);
+}
+
+.docs-header-search__input:focus {
+  outline: none;
+}
+
+.docs-header-search__submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0 0.65rem;
+  border: none;
+  border-left: 1px solid var(--color-background-border);
+  background: var(--color-background-secondary);
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease-out, background-color 0.15s ease-out;
+}
+
+.docs-header-search__submit:hover,
+.docs-header-search__submit:focus-visible {
+  color: var(--color-brand-primary);
+  background: var(--color-background-hover);
+}
+
+.docs-header-search__icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  display: block;
+}
+
+.docs-header-searchbox:empty {
+  display: none;
+}
+
+.docs-site-header__theme .theme-toggle {
+  padding: 0.35rem;
+}
+
+/* Single theme control in the site header; hide Furo's in-page duplicates */
+.docs-site-header ~ .page .mobile-header .theme-toggle-container,
+.docs-site-header ~ .page .content-icon-container .theme-toggle-container {
+  display: none !important;
+}
+
+/* Avoid duplicating the title next to the hamburger on small screens */
+.docs-site-header ~ .page .mobile-header .header-center {
+  display: none;
+}
+
+.docs-site-header .docs-top-tabs__list {
+  gap: 0.35rem 1.125rem;
+  padding-block: 0.15rem;
+}
+
+/* Homepage header: keep utilities on one row on desktop widths */
+body.agentscope-home .docs-site-header__inner {
+  flex-wrap: nowrap;
+  column-gap: clamp(1rem, 2.6vw, 2rem);
+}
+
+body.agentscope-home .docs-site-header__start {
+  column-gap: clamp(0.9rem, 2.3vw, 1.8rem);
+}
+
+body.agentscope-home .docs-site-header__nav-shell {
+  padding-left: clamp(0.75rem, 1.9vw, 1.5rem);
+  margin-left: clamp(0.2rem, 0.8vw, 0.6rem);
+}
+
+body.agentscope-home .docs-site-header__actions {
+  flex-wrap: nowrap;
+  gap: 0.6rem;
+  padding-left: clamp(0.6rem, 1.5vw, 1.1rem);
+  margin-left: clamp(0.3rem, 0.9vw, 0.8rem);
+}
+
+body.agentscope-home .docs-header-search {
+  flex: 0 1 11.5rem;
+  max-width: 11.5rem;
+}
+
+body.agentscope-home .docs-site-header .language-button {
+  min-width: 4.6rem;
+  padding: 0.4rem 0.55rem;
+}
+
+body.agentscope-home .docs-top-tabs__list {
+  gap: 0.3rem 0.7rem;
+}
+
+body.agentscope-home .docs-top-tabs__link {
+  padding: 0.48rem 0.82rem;
+  font-size: 0.9rem;
+}
+
+/* Last-resort wrap fallback: only when contents truly cannot compress further
+   does the bar wrap to a second row. Applied to ALL pages, not just home. */
+@media (max-width: 760px) {
+  .docs-site-header__inner,
+  .docs-site-header__start,
+  .docs-site-header__actions {
+    flex-wrap: wrap;
+    row-gap: 0.6rem;
+  }
+
+  .docs-site-header__nav-shell {
+    flex-basis: 100%;
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
+  }
+
+  .docs-site-header__actions {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
+  }
+
+  .docs-header-search {
+    flex: 1 1 12rem;
+    max-width: none;
+  }
+}
+
+/* Below ~520px hide the brand title text — the logo alone is enough — to
+   preserve room for the search/version/lang controls on the same row. */
+@media (max-width: 520px) {
+  .docs-site-header__title {
+    display: none;
+  }
+}
+
+.docs-top-tabs__list {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.125rem;
+  scrollbar-width: thin;
+}
+
+.docs-top-tabs__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.15rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--color-foreground-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s ease-out, background-color 0.15s ease-out, border-color 0.15s ease-out;
+}
+
+.docs-top-tabs__link:hover,
+.docs-top-tabs__link:focus-visible {
+  color: var(--color-foreground-primary);
+  background: var(--color-background-secondary);
+  border-color: var(--color-background-border);
+  text-decoration: none;
+}
+
+.docs-top-tabs__link.is-active {
+  color: var(--color-brand-primary);
+  background: color-mix(in srgb, var(--color-brand-primary) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-brand-primary) 30%, var(--color-background-border));
+}
+
+.sidebar-scroll .sidebar-tree .docs-nav-group-hidden {
+  display: none !important;
+}
+
+body[data-current-tab="home"] .sidebar-scroll .sidebar-tree .caption,
+body[data-current-tab="home"] .sidebar-scroll .sidebar-tree .caption + ul {
+  display: none !important;
+}
+
+@media (max-width: 960px) {
+  .docs-site-header__nav-shell {
+    flex-basis: 100%;
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
+    padding-top: 0.85rem;
+    margin-top: 0.35rem;
+    border-top: 1px solid var(--color-background-border);
+  }
+
+  .docs-site-header__actions {
+    flex: 1 1 100%;
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
+    justify-content: flex-start;
+    padding-top: 0.75rem;
+    margin-top: 0.25rem;
+    border-top: 1px solid var(--color-background-border);
+  }
+}
+
+@media (max-width: 768px) {
+  .docs-site-header__inner {
+    padding: 0.75rem clamp(0.85rem, 3vw, 1.25rem);
+    row-gap: 0.85rem;
+  }
+
+  .docs-site-header__brand {
+    gap: 0.85rem;
+    padding-inline: 0.35rem 0.65rem;
+  }
+
+  .docs-site-header__title {
+    max-width: none;
+  }
+
+  .docs-site-header__actions {
+    justify-content: flex-end;
+    row-gap: 0.75rem;
+  }
+
+  .docs-header-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .docs-top-tabs__list {
+    gap: 0.5rem;
+  }
+
+  .docs-top-tabs__link {
+    padding: 0.55rem 0.9rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docs-top-tabs__link {
+    transition: none;
+  }
+}
+
+/*
+ * Harness（中文）侧栏：单 caption 扁平 TOC + 分组小标题。
+ * 指纹：11 个 toctree-l1；第 4 项为「文件系统」或其 current-page（当前页为 #）；第 9 项为 quickstart 或其 current-page。
+ */
+body[data-current-tab="harness"][data-current-lang="zh"] .sidebar-tree p.caption:not(.docs-nav-group-hidden):has(
+    + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  ) {
+  text-transform: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  letter-spacing: 0.02em;
+}
+
+body[data-current-tab="harness"][data-current-lang="zh"]
+  .sidebar-tree
+  p.caption:not(.docs-nav-group-hidden)
+  + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  > .toctree-l1:nth-child(1)::before {
+  content: "核心";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  line-height: 1.35;
+  margin-left: 0.45rem;
+  margin-right: 0.45rem;
+  margin-top: 0.15rem;
+  margin-bottom: 0.35rem;
+}
+
+body[data-current-tab="harness"][data-current-lang="zh"]
+  .sidebar-tree
+  p.caption:not(.docs-nav-group-hidden)
+  + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  > .toctree-l1:nth-child(9)::before {
+  content: "快速开始";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  line-height: 1.35;
+  margin-left: 0.45rem;
+  margin-right: 0.45rem;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  margin-bottom: 0.35rem;
+  border-top: 1px solid var(--color-background-border);
+}
+
+body[data-current-tab="harness"][data-current-lang="zh"]
+  .sidebar-tree
+  p.caption:not(.docs-nav-group-hidden)
+  + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  > .toctree-l1:nth-child(10)::before {
+  content: "沙箱";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  line-height: 1.35;
+  margin-left: 0.45rem;
+  margin-right: 0.45rem;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  margin-bottom: 0.35rem;
+  border-top: 1px solid var(--color-background-border);
+}
+
+body[data-current-tab="harness"][data-current-lang="zh"]
+  .sidebar-tree
+  p.caption:not(.docs-nav-group-hidden)
+  + ul:has(> .toctree-l1:nth-child(11)):has(> .toctree-l1:nth-child(4) > a[href*="filesystem"], > .toctree-l1:nth-child(4).current-page):has(> .toctree-l1:nth-child(9) > a[href*="quickstart"], > .toctree-l1:nth-child(9).current-page)
+  > .toctree-l1:nth-child(11)::before {
+  content: "示例";
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-foreground-muted);
+  line-height: 1.35;
+  margin-left: 0.45rem;
+  margin-right: 0.45rem;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  margin-bottom: 0.35rem;
+  border-top: 1px solid var(--color-background-border);
+}
+
+/* 博客文章页：隐藏右侧「本页」目录（长文 ## 过多），左侧仍保留全局 toctree 文章列表 */
+body.docs-blog-article-page .toc-drawer {
+  display: none !important;
+}
+
+body.docs-blog-article-page .toc-content-icon {
+  display: none !important;
+}
+
+/* ============================================================
+   Version Switcher
+   Mirrors the language-switch component so the two controls
+   look identical side-by-side in the site header.
+   ============================================================ */
+
+.version-switcher {
+  /* Reuse the language-switch reset inside the header */
+}
+
+.docs-site-header .version-switcher {
+  padding: 0;
+  margin: 0;
+  border: none;
+}
+
+.docs-site-header .version-button {
+  width: auto;
+  min-width: 5.5rem;
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  box-shadow: none;
+}
+
+.docs-site-header .version-menu {
+  left: auto;
+  right: 0;
+  min-width: 10rem;
+  z-index: 5000;
+}
+
+/* Fixed placement escapes header stacking & overflow */
+.docs-site-header .version-menu.docs-version-menu--fixed {
+  position: fixed;
+  z-index: 2147483000;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.18);
+}
+
+.docs-site-header .version-switcher {
+  position: relative;
+  z-index: 0;
+}
+
+.docs-site-header .version-selector.open {
+  z-index: 6000;
+}
+
+.version-selector {
+  position: relative;
+  font-size: var(--font-size--small);
+}
+
+.version-button {
+  width: 95%;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-foreground-primary);
+  font-family: var(--font-stack);
+  font-size: inherit;
+  font-weight: 400;
+  transition: all 0.15s ease-out;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
+  margin: 0 auto;
+}
+
+.version-button:hover {
+  background: var(--color-background-hover);
+  border-color: var(--color-brand-primary);
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px 0 rgb(0 0 0 / 0.06);
+}
+
+.version-button:focus {
+  outline: 2px solid var(--color-brand-primary);
+  outline-offset: 2px;
+}
+
+/* Chevron arrow */
+.version-button::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 0.25rem solid transparent;
+  border-right: 0.25rem solid transparent;
+  border-top: 0.25rem solid currentColor;
+  transition: transform 0.15s ease-out;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.version-selector.open .version-button::after {
+  transform: rotate(180deg);
+}
+
+.version-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.375rem;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05);
+  z-index: 1000;
+  overflow: hidden;
+  animation: fadeInUp 0.2s ease-out;
+}
+
+.version-selector.open .version-menu {
+  display: block;
+}
+
+.version-option {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+  color: var(--color-foreground-primary);
+  font-family: var(--font-stack);
+  font-size: inherit;
+  font-weight: 400;
+  transition: all 0.15s ease-out;
+  border-bottom: 1px solid var(--color-background-border);
+}
+
+.version-option:last-child {
+  border-bottom: none;
+}
+
+.version-option:hover {
+  background: var(--color-background-hover);
+  text-decoration: none;
+  color: var(--color-foreground-primary);
+}
+
+/* Mirrors .language-option.active — see note above for the colour rationale. */
+.version-option.active {
+  background: color-mix(in srgb, var(--color-brand-primary) 14%, transparent);
+  color: var(--color-brand-primary);
+  font-weight: 600;
+}
+
+.version-option.active:hover {
+  background: color-mix(in srgb, var(--color-brand-primary) 22%, transparent);
+  color: var(--color-brand-primary);
+}
+
+@media (max-width: 768px) {
+  .docs-site-header .version-button {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .version-option {
+    padding: 0.625rem 0.75rem;
+  }
+}
+
+@media (prefers-contrast: high) {
+  .version-button {
+    border-width: 2px;
+  }
+
+  .version-menu {
+    border-width: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .version-button,
+  .version-option,
+  .version-button::after {
+    transition: none;
+  }
+
+  .version-menu {
+    animation: none;
+  }
+}
+
+/* ================================================================
+   Contributors-table GitHub avatars
+   ----------------------------------------------------------------
+   Avatar URLs without ?s= would otherwise render at full size
+   (~460px for /USER.png) and stretch the column. Cap them and
+   round to a circle. Selector is scoped to GitHub-hosted images
+   inside tables so other inline screenshots are untouched.
+   ================================================================ */
+table img[src*="github.com"],
+table img[src*="githubusercontent.com"] {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  vertical-align: middle;
 }
