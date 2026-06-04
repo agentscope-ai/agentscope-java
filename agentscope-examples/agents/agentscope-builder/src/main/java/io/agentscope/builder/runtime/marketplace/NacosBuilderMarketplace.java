@@ -17,6 +17,7 @@ package io.agentscope.builder.runtime.marketplace;
 
 import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.ai.model.skills.Skill;
+import com.alibaba.nacos.api.ai.model.skills.SkillMeta;
 import com.alibaba.nacos.api.ai.model.skills.SkillResource;
 import com.alibaba.nacos.api.ai.model.skills.SkillSummary;
 import com.alibaba.nacos.api.exception.NacosException;
@@ -156,8 +157,24 @@ public class NacosBuilderMarketplace implements BuilderMarketplace {
             return null;
         }
         try {
-            Skill skill =
-                    service.skill().getSkillVersionDetail(namespaceId, name.trim(), LATEST_VERSION);
+            String skillName = name.trim();
+            SkillMeta skillMeta = service.skill().getSkillMeta(namespaceId, skillName);
+            String version =
+                    skillMeta != null && skillMeta.getLabels() != null
+                            ? skillMeta.getLabels().get(LATEST_VERSION)
+                            : null;
+
+            if (version == null || version.isBlank()) {
+                throw new IllegalStateException(
+                        "Cannot resolve Nacos skill version from label "
+                                + LATEST_VERSION
+                                + " for "
+                                + namespaceId
+                                + "/"
+                                + skillName);
+            }
+
+            Skill skill = service.skill().getSkillVersionDetail(namespaceId, skillName, version);
             if (skill == null || skill.getSkillMd() == null || skill.getSkillMd().isEmpty()) {
                 return null;
             }
