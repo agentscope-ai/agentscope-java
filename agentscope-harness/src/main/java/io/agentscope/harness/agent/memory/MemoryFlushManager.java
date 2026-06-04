@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Manages memory flush operations: extracting long-term memories from a conversation
@@ -104,6 +105,38 @@ public class MemoryFlushManager {
             return Mono.empty();
         }
 
+        return Mono.fromCallable(() -> buildFlushInput(rc, conversationText))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(flushInput -> model.stream(flushInput, null, null))
+                .reduce(
+                        new StringBuilder(),
+                        (sb, chatResponse) -> {
+                            List<ContentBlock> blocks = chatResponse.getContent();
+                            if (blocks != null) {
+                                for (ContentBlock block : blocks) {
+                                    if (block instanceof TextBlock tb) {
+                                        String t = tb.getText();
+                                        if (t != null) {
+                                            sb.append(t);
+                                        }
+                                    }
+                                }
+                            }
+                            return sb;
+                        })
+                .flatMap(
+                        sb -> {
+                            String extracted = sb.toString();
+                            if (extracted.isBlank() || extracted.strip().equals("NO_REPLY")) {
+                                log.debug("No memories to flush");
+                                return Mono.<Void>empty();
+                            }
+                            return Mono.<Void>fromRunnable(() -> writeMemoryFiles(rc, extracted))
+                                    .subscribeOn(Schedulers.boundedElastic());
+                        });
+    }
+
+    private List<Msg> buildFlushInput(RuntimeContext rc, String conversationText) {
         String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
@@ -112,7 +145,7 @@ public class MemoryFlushManager {
         StringBuilder userPrompt = new StringBuilder();
         if (!existingMemory.isBlank()) {
             userPrompt
-                    .append("MEMORY.md (read-only curated long-term memory — do NOT restate):\n")
+                    .append("MEMORY.md (read-only curated long-term memory - do NOT restate):\n")
                     .append(existingMemory)
                     .append("\n\n");
         }
@@ -139,34 +172,7 @@ public class MemoryFlushManager {
                         .role(MsgRole.USER)
                         .content(TextBlock.builder().text(userPrompt.toString()).build())
                         .build());
-
-        return model.stream(flushInput, null, null)
-                .reduce(
-                        new StringBuilder(),
-                        (sb, chatResponse) -> {
-                            List<ContentBlock> blocks = chatResponse.getContent();
-                            if (blocks != null) {
-                                for (ContentBlock block : blocks) {
-                                    if (block instanceof TextBlock tb) {
-                                        String t = tb.getText();
-                                        if (t != null) {
-                                            sb.append(t);
-                                        }
-                                    }
-                                }
-                            }
-                            return sb;
-                        })
-                .flatMap(
-                        sb -> {
-                            String extracted = sb.toString();
-                            if (extracted.isBlank() || extracted.strip().equals("NO_REPLY")) {
-                                log.debug("No memories to flush");
-                                return Mono.empty();
-                            }
-                            writeMemoryFiles(rc, extracted);
-                            return Mono.empty();
-                        });
+        return flushInput;
     }
 
     /**
