@@ -16,6 +16,7 @@
 package io.agentscope.core.session.redis.redisson;
 
 import io.agentscope.core.session.redis.RedisClientAdapter;
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -212,6 +213,11 @@ public class RedissonClientAdapter implements RedisClientAdapter {
             result.add(key);
         }
         return result;
+    }
+
+    @Override
+    public void expire(String key, long seconds) {
+        redissonClient.getBucket(key, StringCodec.INSTANCE).expire(Duration.ofSeconds(seconds));
     }
 
     @Override

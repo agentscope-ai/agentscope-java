@@ -281,6 +281,15 @@ public class LettuceClientAdapter implements RedisClientAdapter {
     }
 
     @Override
+    public void expire(String key, long seconds) {
+        if (commands != null) {
+            commands.expire(key, seconds);
+        } else {
+            clusterCommands.expire(key, seconds);
+        }
+    }
+
+    @Override
     public void close() {
         try {
             closeable.close();

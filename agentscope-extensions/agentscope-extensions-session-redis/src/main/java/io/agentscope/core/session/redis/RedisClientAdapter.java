@@ -125,6 +125,14 @@ public interface RedisClientAdapter {
     Set<String> findKeysByPattern(String pattern);
 
     /**
+     * Set a timeout on a key. After the timeout has expired, the key will automatically be deleted.
+     *
+     * @param key the Redis key
+     * @param seconds the timeout in seconds, 0 to remove the existing timeout
+     */
+    void expire(String key, long seconds);
+
+    /**
      * Close the adapter and release resources.
      */
     void close();
