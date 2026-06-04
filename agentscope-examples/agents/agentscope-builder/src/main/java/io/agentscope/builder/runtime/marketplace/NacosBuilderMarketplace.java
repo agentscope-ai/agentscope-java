@@ -25,18 +25,16 @@ import com.alibaba.nacos.api.model.Page;
 import com.alibaba.nacos.maintainer.client.ai.AiMaintainerFactory;
 import com.alibaba.nacos.maintainer.client.ai.AiMaintainerService;
 import com.alibaba.nacos.maintainer.client.ai.SkillMaintainerService;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.*;
+
 /**
  * Nacos-backed marketplace. Uses the maintainer client (not the regular AiService client,
- * which only exposes downloads) to drive the paged {@code listSkills} API and pull SKILL.md
- * via {@code getSkillVersionDetail(..., "LATEST")}.
+ * which only exposes downloads) to drive the paged {@code listSkills} API. Skill content is
+ * fetched by resolving the real version from the skill metadata's {@code latest} label, then
+ * calling {@code getSkillVersionDetail(..., resolvedVersion)}.
  *
  * <p>Pagination: builder is a multi-tenant platform — but we still expect skill counts on the order of 100s per user, not millions. We page through
  * the upstream result in batches of {@link #PAGE_SIZE} until the server reports we have all
@@ -48,7 +46,8 @@ public class NacosBuilderMarketplace implements BuilderMarketplace {
 
     private static final int PAGE_SIZE = 100;
     private static final int MAX_PAGES = 50;
-    private static final String LATEST_VERSION = "LATEST";
+    private static final String LATEST_LABEL = "latest";
+    private static final String ONLINE_STATUS = "online";
 
     private final String id;
     private final String serverAddr;
@@ -158,23 +157,12 @@ public class NacosBuilderMarketplace implements BuilderMarketplace {
         }
         try {
             String skillName = name.trim();
-            SkillMeta skillMeta = service.skill().getSkillMeta(namespaceId, skillName);
-            String version =
-                    skillMeta != null && skillMeta.getLabels() != null
-                            ? skillMeta.getLabels().get(LATEST_VERSION)
-                            : null;
+            SkillMaintainerService skillService = service.skill();
+            SkillMeta skillMeta = skillService.getSkillMeta(namespaceId, skillName);
+            String resolvedVersion = resolveLatestSkillVersion(namespaceId, skillName, skillMeta);
 
-            if (version == null || version.isBlank()) {
-                throw new IllegalStateException(
-                        "Cannot resolve Nacos skill version from label "
-                                + LATEST_VERSION
-                                + " for "
-                                + namespaceId
-                                + "/"
-                                + skillName);
-            }
-
-            Skill skill = service.skill().getSkillVersionDetail(namespaceId, skillName, version);
+            Skill skill =
+                    skillService.getSkillVersionDetail(namespaceId, skillName, resolvedVersion);
             if (skill == null || skill.getSkillMd() == null || skill.getSkillMd().isEmpty()) {
                 return null;
             }
@@ -218,5 +206,63 @@ public class NacosBuilderMarketplace implements BuilderMarketplace {
 
     private static String blankToNull(String v) {
         return (v == null || v.isBlank()) ? null : v.trim();
+    }
+
+    private static String resolveLatestSkillVersion(
+            String namespaceId, String skillName, SkillMeta skillMeta) {
+        String version =
+                skillMeta != null && skillMeta.getLabels() != null
+                        ? skillMeta.getLabels().get(LATEST_LABEL)
+                        : null;
+        if (version == null || version.isBlank()) {
+            throw new IllegalStateException(
+                    "Nacos skill metadata is missing a '"
+                            + LATEST_LABEL
+                            + "' label for "
+                            + namespaceId
+                            + "/"
+                            + skillName
+                            + "; cannot resolve latest version");
+        }
+
+        if (skillMeta.getVersions() == null || skillMeta.getVersions().isEmpty()) {
+            throw new IllegalStateException(
+                    "Nacos skill latest label points to unknown version '"
+                            + version
+                            + "' for "
+                            + namespaceId
+                            + "/"
+                            + skillName
+                            + "; metadata versions are empty");
+        }
+
+        for (SkillMeta.SkillVersionSummary summary : skillMeta.getVersions()) {
+            if (summary == null || !version.equals(summary.getVersion())) {
+                continue;
+            }
+            String status = summary.getStatus();
+            if (!ONLINE_STATUS.equalsIgnoreCase(status)) {
+                throw new IllegalStateException(
+                        "Nacos skill latest version '"
+                                + version
+                                + "' for "
+                                + namespaceId
+                                + "/"
+                                + skillName
+                                + " is not online"
+                                + " (status="
+                                + status
+                                + ")");
+            }
+            return version;
+        }
+
+        throw new IllegalStateException(
+                "Nacos skill latest label points to unknown version '"
+                        + version
+                        + "' for "
+                        + namespaceId
+                        + "/"
+                        + skillName);
     }
 }
