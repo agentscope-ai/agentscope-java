@@ -1900,6 +1900,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // ---- Build inner ReActAgent ----
             inner.toolkit(agentToolkit);
             ReActAgent delegate = inner.build();
+            if (sandboxLifecycleMw == null) {
+                // Reuse an explicitly registered middleware so abstractFilesystem() still
+                // participates in wrappedCall / wrappedStreamEvents lifecycle management.
+                for (MiddlewareBase mw : delegate.getMiddlewares()) {
+                    if (mw instanceof SandboxLifecycleMiddleware slm) {
+                        sandboxLifecycleMw = slm;
+                        break;
+                    }
+                }
+            }
             selfRef.set(delegate);
 
             return new HarnessAgent(

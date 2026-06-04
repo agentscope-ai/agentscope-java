@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,9 +38,15 @@ import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -344,6 +351,43 @@ class HarnessAgentTest {
                                     "/MEMORY.md")
                             != null);
         }
+    }
+
+    @Test
+    void abstractFilesystem_userRegisteredSandboxLifecycleMiddleware_participatesInWrappedCall()
+            throws Exception {
+        Files.createDirectories(workspace);
+
+        Model model = stubModel("assistant-done");
+        SandboxManager sandboxManager = mock(SandboxManager.class);
+        SandboxBackedFilesystem sandboxFilesystem = mock(SandboxBackedFilesystem.class);
+        Sandbox sandbox = mock(Sandbox.class);
+        SandboxAcquireResult acquireResult = SandboxAcquireResult.userManaged(sandbox);
+        when(sandboxManager.acquire(any(), any())).thenReturn(acquireResult);
+
+        SandboxLifecycleMiddleware lifecycle =
+                spy(new SandboxLifecycleMiddleware(sandboxManager, sandboxFilesystem));
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .middleware(lifecycle)
+                        .build()) {
+
+            RuntimeContext runtimeContext =
+                    RuntimeContext.builder()
+                            .sessionId("sandbox-lifecycle")
+                            .put(SandboxContext.class, SandboxContext.builder().build())
+                            .build();
+
+            agent.call(userText("hi"), runtimeContext).block();
+        }
+
+        verify(lifecycle).acquireForCall(any(RuntimeContext.class));
+        verify(lifecycle).releaseForCall(any(RuntimeContext.class));
     }
 
     private static Msg userText(String text) {
