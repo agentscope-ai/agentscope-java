@@ -30,19 +30,24 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Abstract base sandbox implementation with {@link #execute} as the core abstract method.
  *
  * <p>This class provides default implementations for all {@link AbstractFilesystem} methods by
- * delegating
- * to shell commands via {@link #execute}. File listing, grep, and glob use standard Unix
- * commands. Read uses server-side commands for paginated access. Write delegates content
- * transfer to {@link #uploadFiles}. Edit uses server-side commands for string replacement.
+ * delegating to shell commands via {@link #execute}. File listing, grep, and glob use standard
+ * Unix commands. Read uses server-side commands for paginated access. Write delegates content
+ * transfer to {@link #uploadFiles}. Edit downloads the file, applies replacement in Java, and
+ * uploads the updated content back.
  *
  * <p>Subclasses must implement:
  * <ul>
@@ -53,6 +58,8 @@ import java.util.Map;
  * </ul>
  */
 public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem {
+
+    private final ConcurrentHashMap<String, ReentrantLock> editLocks = new ConcurrentHashMap<>();
 
     @Override
     public abstract String id();
@@ -192,84 +199,66 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             String oldString,
             String newString,
             boolean replaceAll) {
-        String payload =
-                "{\"path\":\""
-                        + jsonEscape(filePath)
-                        + "\","
-                        + "\"old\":\""
-                        + jsonEscape(oldString)
-                        + "\","
-                        + "\"new\":\""
-                        + jsonEscape(newString)
-                        + "\","
-                        + "\"replace_all\":"
-                        + replaceAll
-                        + "}";
-        String payloadB64 =
-                Base64.getEncoder()
-                        .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-        String cmd =
-                "python3 -c \"import sys, os, base64, json\\n"
-                    + "payload ="
-                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\\n"
-                    + "path, old, new = payload['path'], payload['old'], payload['new']\\n"
-                    + "replace_all = payload.get('replace_all', False)\\n"
-                    + "if not os.path.isfile(path):\\n"
-                    + "    print(json.dumps({'error': 'file_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\\n"
-                    + "count = text.count(old)\\n"
-                    + "if count == 0:\\n"
-                    + "    print(json.dumps({'error': 'string_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "if count > 1 and not replace_all:\\n"
-                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "result = text.replace(old, new) if replace_all else text.replace(old, new,"
-                    + " 1)\\n"
-                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\\n"
-                    + "print(json.dumps({'count': count}))\\n"
-                    + "\" 2>&1 <<'__EDIT_EOF__'\n"
-                        + payloadB64
-                        + "\n__EDIT_EOF__\n";
-
-        ExecuteResponse result = execute(runtimeContext, cmd, null);
-        String output = result.output() != null ? result.output().strip() : "";
-
-        if (output.contains("\"error\"")) {
-            if (output.contains("file_not_found")) {
-                return EditResult.fail("Error: File '" + filePath + "' not found");
-            }
-            if (output.contains("string_not_found")) {
-                return EditResult.fail("Error: String not found in file: '" + oldString + "'");
-            }
-            if (output.contains("multiple_occurrences")) {
+        ReentrantLock lock = editLocks.computeIfAbsent(filePath, key -> new ReentrantLock());
+        lock.lock();
+        try {
+            List<FileDownloadResponse> downloads = downloadFiles(runtimeContext, List.of(filePath));
+            if (downloads.isEmpty()) {
                 return EditResult.fail(
-                        "Error: String '"
-                                + oldString
-                                + "' appears multiple times. Use replaceAll=true to replace all"
-                                + " occurrences.");
+                        "Error editing file '" + filePath + "': download returned no response");
             }
-            return EditResult.fail("Error editing file '" + filePath + "': " + output);
-        }
 
-        if (output.contains("\"count\"")) {
+            FileDownloadResponse download = downloads.get(0);
+            if (!download.isSuccess() || download.content() == null) {
+                String error =
+                        download.error() != null ? download.error() : "unknown download error";
+                if (isMissingFileError(error)) {
+                    return EditResult.fail("Error: File '" + filePath + "' not found");
+                }
+                return EditResult.fail("Error editing file '" + filePath + "': " + error);
+            }
+
+            String content;
             try {
-                int countIdx = output.indexOf("\"count\":") + 8;
-                int endIdx = output.indexOf('}', countIdx);
-                int count = Integer.parseInt(output.substring(countIdx, endIdx).trim());
-                return EditResult.ok(filePath, count);
-            } catch (NumberFormatException e) {
-                return EditResult.ok(filePath, 1);
+                content = decodeUtf8Strict(download.content());
+            } catch (CharacterCodingException e) {
+                return EditResult.fail(
+                        "Error editing file '" + filePath + "': file content is not valid UTF-8");
             }
-        }
 
-        return EditResult.fail(
-                "Error editing file '"
-                        + filePath
-                        + "': unexpected server response: "
-                        + output.substring(0, Math.min(200, output.length())));
+            Object[] result =
+                    FilesystemUtils.performStringReplacement(
+                            content, oldString, newString, replaceAll);
+
+            if (result.length == 1) {
+                return EditResult.fail((String) result[0]);
+            }
+
+            String newContent = (String) result[0];
+            int occurrences = (int) result[1];
+
+            List<FileUploadResponse> uploads =
+                    uploadFiles(
+                            runtimeContext,
+                            List.of(
+                                    Map.entry(
+                                            filePath,
+                                            newContent.getBytes(StandardCharsets.UTF_8))));
+            if (uploads.isEmpty()) {
+                return EditResult.fail(
+                        "Error editing file '" + filePath + "': upload returned no response");
+            }
+
+            FileUploadResponse upload = uploads.get(0);
+            if (!upload.isSuccess()) {
+                String error = upload.error() != null ? upload.error() : "unknown upload error";
+                return EditResult.fail("Error editing file '" + filePath + "': " + error);
+            }
+
+            return EditResult.ok(filePath, occurrences);
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override
@@ -379,14 +368,21 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         return result.output() != null && result.output().strip().startsWith("yes");
     }
 
-    private static String jsonEscape(String s) {
-        if (s == null) {
-            return "";
+    private String decodeUtf8Strict(byte[] content) throws CharacterCodingException {
+        return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(content))
+                .toString();
+    }
+
+    private boolean isMissingFileError(String error) {
+        if (error == null) {
+            return false;
         }
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+        String normalized = error.toLowerCase();
+        return normalized.contains("no such file")
+                || normalized.contains("not found")
+                || normalized.contains("file_not_found");
     }
 }
