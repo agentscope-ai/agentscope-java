@@ -162,7 +162,9 @@ class ToolCallParamTest {
             assertEquals(original.getAgent(), copy.getAgent());
             assertSame(original.getRuntimeContext(), copy.getRuntimeContext());
             assertNotNull(copy.getContext());
-            assertEquals(original.getContext().get(String.class), copy.getContext().get(String.class));
+            assertEquals(
+                    original.getContext().get(String.class),
+                    copy.getContext().get(String.class));
             assertSame(original.getEmitter(), copy.getEmitter());
         }
 
@@ -292,7 +294,9 @@ class ToolCallParamTest {
             assertSame(original.getAgent(), copy.getAgent());
             assertSame(original.getRuntimeContext(), copy.getRuntimeContext());
             assertNotNull(copy.getContext());
-            assertEquals(original.getContext().get(String.class), copy.getContext().get(String.class));
+            assertEquals(
+                    original.getContext().get(String.class),
+                    copy.getContext().get(String.class));
         }
 
         @Test
