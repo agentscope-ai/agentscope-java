@@ -48,6 +48,7 @@ public class RuntimeContext {
     private final ConcurrentMap<Class<?>, ConcurrentMap<String, Object>> typedAttributes;
 
     private final ToolExecutionContext toolExecutionContext;
+    private volatile ToolExecutionContext toolExecutionContextView;
 
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
@@ -213,6 +214,11 @@ public class RuntimeContext {
      * then stores from the nested {@link #getToolExecutionContext()} (if any).
      */
     public ToolExecutionContext asToolExecutionContext() {
+        ToolExecutionContext cached = toolExecutionContextView;
+        if (cached != null) {
+            return cached;
+        }
+
         ToolExecutionContext.Builder b = ToolExecutionContext.builder();
         b.addStore(new DefaultMutableContextStore(this));
         if (toolExecutionContext != null) {
@@ -222,7 +228,8 @@ public class RuntimeContext {
                 }
             }
         }
-        return b.build();
+        toolExecutionContextView = b.build();
+        return toolExecutionContextView;
     }
 
     public static Builder builder() {

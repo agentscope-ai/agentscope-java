@@ -111,6 +111,17 @@ class RuntimeContextTest {
     }
 
     @Test
+    @DisplayName("asToolExecutionContext() reuses the same view for repeated calls")
+    void asToolExecutionContextIsStable() {
+        RuntimeContext run =
+                RuntimeContext.builder()
+                        .toolExecutionContext(ToolExecutionContext.builder().build())
+                        .build();
+
+        assertSame(run.asToolExecutionContext(), run.asToolExecutionContext());
+    }
+
+    @Test
     @DisplayName("concurrent puts on distinct keys from multiple threads")
     void threadSafety() throws Exception {
         RuntimeContext ctx = RuntimeContext.empty();
