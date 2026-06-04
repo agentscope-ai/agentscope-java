@@ -16,7 +16,7 @@
 package io.agentscope.core.memory;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.SessionKey;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,16 +53,16 @@ public class InMemoryMemory implements Memory {
      * Save memory state to the session.
      *
      * <p>Passes the full message list to the session, including the case where the list is empty.
-     * The Session implementation is responsible for incremental storage (e.g., JsonSession appends
+     * The AgentStateStore implementation is responsible for incremental storage (e.g., JsonFileAgentStateStore appends
      * only new items based on file line count).
      *
      * @param session the session to save state to
      * @param sessionKey the session identifier
      */
     @Override
-    public void saveTo(Session session, SessionKey sessionKey) {
+    public void saveTo(AgentStateStore stateStore, SessionKey sessionKey) {
         // Always save, even when empty, to ensure cleared state is persisted
-        session.save(sessionKey, KEY_PREFIX + "_messages", new ArrayList<>(messages));
+        stateStore.save(sessionKey, KEY_PREFIX + "_messages", new ArrayList<>(messages));
     }
 
     /**
@@ -72,8 +72,8 @@ public class InMemoryMemory implements Memory {
      * @param sessionKey the session identifier
      */
     @Override
-    public void loadFrom(Session session, SessionKey sessionKey) {
-        List<Msg> loaded = session.getList(sessionKey, KEY_PREFIX + "_messages", Msg.class);
+    public void loadFrom(AgentStateStore stateStore, SessionKey sessionKey) {
+        List<Msg> loaded = stateStore.getList(sessionKey, KEY_PREFIX + "_messages", Msg.class);
         messages.clear();
         messages.addAll(loaded);
     }

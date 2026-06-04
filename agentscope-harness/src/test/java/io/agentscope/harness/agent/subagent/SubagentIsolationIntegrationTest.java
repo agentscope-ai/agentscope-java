@@ -33,9 +33,9 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * End-to-end Phase B-0 isolation: spawn the same {@code SubagentDeclaration} under different
  * parent {@link RuntimeContext}s and verify each child {@link ReActAgent} ends up with a
- * distinct {@link io.agentscope.core.state.SessionKey}. Because {@code Session.save}/{@code get}
+ * distinct {@link io.agentscope.core.state.SessionKey}. Because {@code AgentStateStore.save}/{@code get}
  * already partition by SessionKey, distinct keys are sufficient to guarantee state isolation
- * across all configured Session backends.
+ * across all configured AgentStateStore backends.
  */
 class SubagentIsolationIntegrationTest {
 
@@ -129,9 +129,11 @@ class SubagentIsolationIntegrationTest {
 
     @Test
     void sameSessionIdDifferentUsers_isolated_endToEnd() throws Exception {
-        // Sanity: two children with different uids do not collide on the persisted Session.
-        // We don't need to exercise the full Session.save round-trip — distinct SessionKeys are
-        // sufficient: every Session implementation already partitions by key. We just verify
+        // Sanity: two children with different uids do not collide on the persisted AgentStateStore.
+        // We don't need to exercise the full AgentStateStore.save round-trip — distinct SessionKeys
+        // are
+        // sufficient: every AgentStateStore implementation already partitions by key. We just
+        // verify
         // the two keys differ AND aren't accidentally equal as strings (defence vs sanitiser
         // quirks like uid containing the literal "@").
         SubagentEntry entry = workerEntry(buildEntries());

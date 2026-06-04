@@ -25,8 +25,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
@@ -121,7 +121,7 @@ public class SubAgentTool implements AgentTool {
      * <p>This method handles:
      *
      * <ul>
-     *   <li>Session ID generation for new conversations
+     *   <li>AgentStateStore ID generation for new conversations
      *   <li>Agent state loading for continued sessions
      *   <li>Message execution (streaming or non-streaming based on config)
      *   <li>Agent state persistence after execution
@@ -167,7 +167,7 @@ public class SubAgentTool implements AgentTool {
                         RuntimeContext runtimeContext = resolveRuntimeContext(param);
 
                         logger.debug(
-                                "Session {} with agent '{}': {}",
+                                "AgentStateStore {} with agent '{}': {}",
                                 isNewSession ? "started" : "continued",
                                 agent.getName(),
                                 message.substring(0, Math.min(50, message.length())));
@@ -196,21 +196,22 @@ public class SubAgentTool implements AgentTool {
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
-                                ToolResultBlock.error("Session setup failed: " + e.getMessage()));
+                                ToolResultBlock.error(
+                                        "AgentStateStore setup failed: " + e.getMessage()));
                     }
                 });
     }
 
     /**
      * Loads sub-agent state for the conversation identified by {@code sessionId} from
-     * {@link SubAgentConfig#getSession()} and merges it into the live agent's
+     * {@link SubAgentConfig#getStateStore()} and merges it into the live agent's
      * {@link AgentState}. Errors are logged but do not interrupt execution.
      */
     private void loadAgentState(String sessionId, Agent agent) {
         if (!(agent instanceof ReActAgent ra)) {
             return;
         }
-        Session subSession = config.getSession();
+        AgentStateStore subSession = config.getStateStore();
         if (subSession == null) {
             return;
         }
@@ -228,13 +229,13 @@ public class SubAgentTool implements AgentTool {
 
     /**
      * Saves the live {@link AgentState} for the conversation identified by {@code sessionId} into
-     * {@link SubAgentConfig#getSession()}. Errors are logged but do not interrupt execution.
+     * {@link SubAgentConfig#getStateStore()}. Errors are logged but do not interrupt execution.
      */
     private void saveAgentState(String sessionId, Agent agent) {
         if (!(agent instanceof ReActAgent ra)) {
             return;
         }
-        Session subSession = config.getSession();
+        AgentStateStore subSession = config.getStateStore();
         if (subSession == null) {
             return;
         }
@@ -432,12 +433,12 @@ public class SubAgentTool implements AgentTool {
 
         Map<String, Object> properties = new HashMap<>();
 
-        // Session ID (optional)
+        // AgentStateStore ID (optional)
         Map<String, Object> sessionIdProp = new HashMap<>();
         sessionIdProp.put("type", "string");
         sessionIdProp.put(
                 "description",
-                "Session ID for multi-turn dialogue. Omit to start a NEW session."
+                "AgentStateStore ID for multi-turn dialogue. Omit to start a NEW session."
                         + " To CONTINUE an existing session and retain memory, you MUST extract"
                         + " the session_id from the previous response and pass it here.");
         properties.put(PARAM_SESSION_ID, sessionIdProp);

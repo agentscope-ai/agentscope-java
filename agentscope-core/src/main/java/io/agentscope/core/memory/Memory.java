@@ -16,7 +16,7 @@
 package io.agentscope.core.memory;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.SessionKey;
 import java.util.List;
 
@@ -25,7 +25,7 @@ import java.util.List;
  *
  * <p>Different memory implementations can provide various storage strategies such as in-memory,
  * database-backed, or window-based storage. {@link #saveTo} / {@link #loadFrom} let callers
- * persist the message buffer through a {@link Session} for legacy v1 sessions; new code should
+ * persist the message buffer through a {@link AgentStateStore} for legacy v1 sessions; new code should
  * use {@link io.agentscope.core.state.AgentState} instead.
  *
  * @deprecated since 2.0.0. Conversation context is now held on
@@ -38,12 +38,12 @@ public interface Memory {
     /**
      * Save the message buffer under the {@code memory_messages} session key.
      */
-    void saveTo(Session session, SessionKey sessionKey);
+    void saveTo(AgentStateStore stateStore, SessionKey sessionKey);
 
     /**
      * Load a previously saved message buffer (no-op when none exists).
      */
-    void loadFrom(Session session, SessionKey sessionKey);
+    void loadFrom(AgentStateStore stateStore, SessionKey sessionKey);
 
     /**
      * Adds a message to the memory.

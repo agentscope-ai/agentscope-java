@@ -36,6 +36,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -67,6 +69,28 @@ import reactor.core.publisher.Flux;
 class SandboxFilesystemIsolationScopeExampleTest {
 
     @TempDir Path workspace;
+
+    // Phase 0 isolation: each @Test gets a fresh JsonFileAgentStateStore root, preventing
+    // sandbox state for shared agent names ("assistant") from leaking between cases via the
+    // surefire-shared target/test-state-home directory.
+    @TempDir Path stateHome;
+
+    private String previousStateHome;
+
+    @BeforeEach
+    void overrideStateHome() {
+        previousStateHome = System.getProperty("agentscope.state.home");
+        System.setProperty("agentscope.state.home", stateHome.toString());
+    }
+
+    @AfterEach
+    void restoreStateHome() {
+        if (previousStateHome != null) {
+            System.setProperty("agentscope.state.home", previousStateHome);
+        } else {
+            System.clearProperty("agentscope.state.home");
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Scenario A: SESSION scope

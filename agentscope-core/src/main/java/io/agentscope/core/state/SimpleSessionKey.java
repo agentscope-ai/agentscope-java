@@ -30,7 +30,7 @@ import java.util.Objects;
  * ReActAgent agent = ReActAgent.builder()
  *     .name("assistant")
  *     .model(model)
- *     .session(session)
+ *     .stateStore(session)
  *     .sessionKey(sessionKey)
  *     .build();
  * // AgentState is loaded on construction (if present) and saved automatically each call.

@@ -46,7 +46,7 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
 
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
-            ## Session Context
+            ## AgentStateStore Context
             This is the %s. We are setting up the context for our chat.
             Today's date is %s.
             My operating system is: %s
@@ -326,7 +326,7 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
     private String buildSessionDynamicPart(RuntimeContext rc) {
         List<String> parts = new ArrayList<>();
         if (rc != null && rc.getSessionId() != null) {
-            parts.add("Session ID: " + rc.getSessionId());
+            parts.add("AgentStateStore ID: " + rc.getSessionId());
         }
         if (environmentMemory != null && !environmentMemory.isBlank()) {
             parts.add(environmentMemory);

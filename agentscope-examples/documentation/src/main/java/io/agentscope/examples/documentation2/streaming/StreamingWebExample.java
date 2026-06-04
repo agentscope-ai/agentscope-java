@@ -21,8 +21,8 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.examples.documentation2.common.MsgUtils;
 import java.nio.file.Path;
@@ -42,9 +42,9 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Migration notes (from documentation/quickstart):
  * <ul>
- *   <li>Replaced {@code legacy.session.JsonSession} with {@code io.agentscope.core.session.JsonSession}.</li>
+ *   <li>Replaced {@code legacy.session.JsonFileAgentStateStore} with {@code io.agentscope.core.state.JsonFileAgentStateStore}.</li>
  *   <li>Replaced {@code agent.loadIfExists(session, id)} / {@code agent.saveTo(session, id)}
- *       with {@code .session(session).sessionKey(SimpleSessionKey.of(sessionId))} on the builder.</li>
+ *       with {@code .stateStore(session).sessionKey(SimpleSessionKey.of(sessionId))} on the builder.</li>
  * </ul>
  *
  * <p>Usage:
@@ -113,9 +113,9 @@ public class StreamingWebExample {
                 @RequestParam String message,
                 @RequestParam(defaultValue = "default") String sessionId) {
 
-            Session session = new JsonSession(sessionPath);
+            AgentStateStore stateStore = new JsonFileAgentStateStore(sessionPath);
 
-            // Session is loaded automatically on first call when configured on the builder.
+            // AgentStateStore is loaded automatically on first call when configured on the builder.
             // The agent saves state after every successful call() and on graceful shutdown.
             ReActAgent agent =
                     ReActAgent.builder()
@@ -126,7 +126,7 @@ public class StreamingWebExample {
                                             .modelName("qwen-plus")
                                             .stream(true)
                                             .build())
-                            .session(session)
+                            .stateStore(stateStore)
                             .sessionKey(SimpleSessionKey.of(sessionId))
                             .build();
 

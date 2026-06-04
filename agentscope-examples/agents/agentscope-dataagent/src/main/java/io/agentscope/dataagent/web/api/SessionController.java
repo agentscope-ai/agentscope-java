@@ -46,7 +46,7 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 /**
- * Session management endpoints, scoped to a specific agent.
+ * AgentStateStore management endpoints, scoped to a specific agent.
  *
  * <ul>
  *   <li>{@code GET /api/agents/{agentId}/sessions/inbox} — paginated session list with previews
@@ -184,7 +184,8 @@ public class SessionController {
                         .getSession(key)
                         .orElseGet(() -> findSessionByConversationId(agentId, key, userId));
         if (entry == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found: " + key);
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "AgentStateStore not found: " + key);
         }
         String gatewayAgentId = catalogService.peekGatewayAgentId(userId, agentId);
         if (!Objects.equals(entry.userId(), userId)

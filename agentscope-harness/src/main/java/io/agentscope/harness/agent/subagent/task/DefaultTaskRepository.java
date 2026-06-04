@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * In-memory {@link TaskRepository} backed by a cached daemon thread pool.
  *
- * <p>Session IDs are ignored — all tasks share a single flat map. Only supports
+ * <p>AgentStateStore IDs are ignored — all tasks share a single flat map. Only supports
  * {@link TaskRunSpec.LocalTaskRunSpec}; remote-protocol tasks throw {@code UnsupportedOperationException}.
  *
  * <p><b>Deprecated for production use.</b> {@link HarnessAgent} always constructs a workspace

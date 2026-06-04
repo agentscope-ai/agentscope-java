@@ -16,8 +16,8 @@
 package io.agentscope.core.memory;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.SessionKey;
 import java.util.List;
 import java.util.Objects;
@@ -71,12 +71,12 @@ public final class AgentStateMemoryView implements Memory {
     }
 
     @Override
-    public void saveTo(Session session, SessionKey sessionKey) {
-        // No-op: persistence is owned by AgentState + Session binding, not by this view.
+    public void saveTo(AgentStateStore stateStore, SessionKey sessionKey) {
+        // No-op: persistence is owned by AgentState + AgentStateStore binding, not by this view.
     }
 
     @Override
-    public void loadFrom(Session session, SessionKey sessionKey) {
+    public void loadFrom(AgentStateStore stateStore, SessionKey sessionKey) {
         throw readOnly();
     }
 

@@ -68,7 +68,7 @@ import reactor.core.publisher.Mono;
  * chat.send("Hello!").block();                       // gateway is now set
  * }</pre>
  *
- * <h2>Session routing</h2>
+ * <h2>AgentStateStore routing</h2>
  *
  * Requests <em>without</em> a {@link ChatUiRequest#peerId()} are treated as a single shared DM
  * conversation when the channel config uses {@link DmScope#MAIN} (the default). Requests

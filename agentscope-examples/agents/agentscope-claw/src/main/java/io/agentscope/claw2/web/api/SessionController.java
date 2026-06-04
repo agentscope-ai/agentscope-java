@@ -51,7 +51,7 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 /**
- * Session management endpoints, scoped to a specific agent.
+ * AgentStateStore management endpoints, scoped to a specific agent.
  *
  * <ul>
  *   <li>{@code GET /api/agents/{agentId}/sessions/inbox} — paginated session list with previews
@@ -174,7 +174,8 @@ public class SessionController {
                         .orElseThrow(
                                 () ->
                                         new ResponseStatusException(
-                                                HttpStatus.NOT_FOUND, "Session not found: " + key));
+                                                HttpStatus.NOT_FOUND,
+                                                "AgentStateStore not found: " + key));
         String expectedGateKey = expectedChatGateKey(agentId);
         if (!sessionMatchesAgent(entry, expectedGateKey)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");

@@ -473,7 +473,7 @@ public class SkillBox {
          *     .subAgent(
          *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
          *         SubAgentConfig.builder()
-         *             .session(new JsonSession(Path.of("sessions")))
+         *             .stateStore(new JsonFileAgentStateStore(Path.of("sessions")))
          *             .forwardEvents(true)
          *             .build())
          *     .apply();
@@ -481,7 +481,7 @@ public class SkillBox {
          *
          * @param provider Factory for creating agent instances (called for each session)
          * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
-         *     derived from agent name, InMemorySession for state, events forwarded)
+         *     derived from agent name, InMemoryAgentStateStore for state, events forwarded)
          * @return This builder for chaining
          * @see SubAgentConfig
          * @see SubAgentConfig#defaults()

@@ -91,7 +91,6 @@ import io.agentscope.core.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
@@ -101,6 +100,7 @@ import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.LegacyStateLoader;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
@@ -210,7 +210,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     // ==================== Persistence ====================
 
-    private final Session session;
+    private final AgentStateStore stateStore;
     private final SessionKey sessionKey;
 
     // ==================== 2.0 Core Fields ====================
@@ -259,12 +259,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         mws.addAll(builder.middlewares);
         this.middlewares = List.copyOf(mws);
 
-        this.session = builder.session;
+        this.stateStore = builder.stateStore;
         this.sessionKey =
                 builder.sessionKey != null
                         ? builder.sessionKey
                         : SimpleSessionKey.of(builder.name != null ? builder.name : "ReActAgent");
-        this.state = loadOrCreateAgentState(this.session, this.sessionKey, builder, getAgentId());
+        this.state =
+                loadOrCreateAgentState(this.stateStore, this.sessionKey, builder, getAgentId());
 
         // Restore toolkit activeGroups from persisted state
         if (agentToolkit != null && !this.state.getToolContext().getActivatedGroups().isEmpty()) {
@@ -276,30 +277,31 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         this.hookDispatcher = new LegacyHookDispatcher(this);
 
         // Wire automatic state save on shutdown / interrupt.
-        if (this.session != null) {
+        if (this.stateStore != null) {
             shutdownManager.bindStateSaver(
-                    this, agentState -> session.save(sessionKey, "agent_state", agentState));
+                    this, agentState -> stateStore.save(sessionKey, "agent_state", agentState));
         }
     }
 
     /**
-     * Initial agent-state load. Tries (in order): the configured Session for an {@code agent_state}
+     * Initial agent-state load. Tries (in order): the configured AgentStateStore for an {@code agent_state}
      * entry, the v1 legacy session keys ({@code memory_messages} + {@code toolkit_activeGroups})
      * via {@link LegacyStateLoader}, and finally a fresh state if neither yields anything.
      */
     private static AgentState loadOrCreateAgentState(
-            Session session, SessionKey sessionKey, Builder builder, String agentId) {
+            AgentStateStore stateStore, SessionKey sessionKey, Builder builder, String agentId) {
         AgentState fresh = freshState(builder, agentId);
-        if (session == null) {
+        if (stateStore == null) {
             return fresh;
         }
         try {
-            return session.get(sessionKey, "agent_state", AgentState.class)
+            return stateStore
+                    .get(sessionKey, "agent_state", AgentState.class)
                     .orElseGet(
                             () -> {
                                 AgentState legacy =
                                         LegacyStateLoader.loadFromLegacySession(
-                                                session, sessionKey);
+                                                stateStore, sessionKey);
                                 if (legacy != null
                                         && (!legacy.getContext().isEmpty()
                                                 || !legacy.getToolContext()
@@ -324,16 +326,16 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /**
-     * Persist the current {@link AgentState} via the configured {@link Session}, or {@code
-     * Mono.empty()} when no Session was provided. Synchronises toolkit activeGroups into the state
+     * Persist the current {@link AgentState} via the configured {@link AgentStateStore}, or {@code
+     * Mono.empty()} when no AgentStateStore was provided. Synchronises toolkit activeGroups into the state
      * before writing.
      */
     private Mono<Void> saveStateToSession() {
-        if (session == null) {
+        if (stateStore == null) {
             return Mono.empty();
         }
         syncToolkitToState();
-        return Mono.fromRunnable(() -> session.save(sessionKey, "agent_state", state));
+        return Mono.fromRunnable(() -> stateStore.save(sessionKey, "agent_state", state));
     }
 
     // ==================== Config assembly helpers ====================
@@ -2230,9 +2232,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return state;
     }
 
-    /** Returns the {@link Session} configured for state persistence, or {@code null}. */
-    public Session getSession() {
-        return session;
+    /** Returns the {@link AgentStateStore} configured for state persistence, or {@code null}. */
+    public AgentStateStore getStateStore() {
+        return stateStore;
     }
 
     /** Returns the {@link SessionKey} used when persisting state. */
@@ -2344,7 +2346,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         private Integer flatMaxRetries;
         private Model flatFallbackModel;
         private Boolean flatStopOnReject;
-        private Session session;
+        private AgentStateStore stateStore;
         private SessionKey sessionKey;
 
         // ==================== 1.x legacy compatibility fields ====================
@@ -2677,12 +2679,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * Sets the {@link Session} backing automatic AgentState load (at construction) and save
+         * Sets the {@link AgentStateStore} backing automatic AgentState load (at construction) and save
          * (after every successful {@code call()} and on graceful shutdown). When {@code null}, the
          * agent runs purely in-memory and persistence is a no-op.
          */
-        public Builder session(Session session) {
-            this.session = session;
+        public Builder stateStore(AgentStateStore stateStore) {
+            this.stateStore = stateStore;
             return this;
         }
 

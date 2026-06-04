@@ -33,7 +33,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
@@ -331,7 +331,7 @@ class HarnessAgentTest {
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .filesystem(new RemoteFilesystemSpec(store))
-                        .session(mock(Session.class))
+                        .stateStore(mock(AgentStateStore.class))
                         .build()) {
 
             agent.getWorkspaceManager()

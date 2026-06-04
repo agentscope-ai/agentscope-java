@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
  * Phase B-0 — composed child {@code SessionKey} algorithm. Lives in
  * {@code io.agentscope.harness.agent} so it can reach the package-private
  * {@link HarnessAgentBuilderSupport#deriveChildSessionKey}. The derivation works the same way
- * regardless of which {@link io.agentscope.core.session.Session} backend (Workspace, Redis,
+ * regardless of which {@link io.agentscope.core.state.AgentStateStore} backend (Workspace, Redis,
  * InMemory, custom) the agent uses.
  */
 class SubagentSessionKeyTest {

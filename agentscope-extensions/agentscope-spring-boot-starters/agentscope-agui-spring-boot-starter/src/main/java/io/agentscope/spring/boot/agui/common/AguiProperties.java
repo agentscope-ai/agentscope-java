@@ -89,7 +89,7 @@ public class AguiProperties {
     private int maxThreadSessions = 1000;
 
     /**
-     * Session timeout in minutes. Sessions inactive for longer than this will be removed. Set to 0
+     * AgentStateStore timeout in minutes. Sessions inactive for longer than this will be removed. Set to 0
      * for no timeout. Only used when serverSideMemory is enabled.
      */
     private int sessionTimeoutMinutes = 30;

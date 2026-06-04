@@ -218,7 +218,7 @@ public class SubagentsMiddleware implements MiddlewareBase {
     }
 
     /**
-     * Session mode: uses the externally provided tool (typically {@code SessionsTool}).
+     * AgentStateStore mode: uses the externally provided tool (typically {@code SessionsTool}).
      */
     public SubagentsMiddleware(
             List<SubagentEntry> entries,

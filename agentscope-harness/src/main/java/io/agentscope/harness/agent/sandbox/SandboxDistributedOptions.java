@@ -15,7 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.RedisSnapshotSpec;
@@ -29,7 +29,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
  * {@link SandboxFilesystemSpec}:
  *
  * <ul>
- *   <li>distributed {@link Session} (for state-store slots)
+ *   <li>distributed {@link AgentStateStore} (for state-store slots)
  *   <li>optional {@link SandboxSnapshotSpec} override (workspace archive persistence)
  *   <li>{@code requireDistributed} — fail-fast when distributed prerequisites are not met
  * </ul>
@@ -39,12 +39,12 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
  */
 public final class SandboxDistributedOptions {
 
-    private final Session session;
+    private final AgentStateStore stateStore;
     private final SandboxSnapshotSpec snapshotSpec;
     private final boolean requireDistributed;
 
     private SandboxDistributedOptions(Builder builder) {
-        this.session = builder.session;
+        this.stateStore = builder.stateStore;
         this.snapshotSpec = builder.snapshotSpec;
         this.requireDistributed = builder.requireDistributed;
     }
@@ -65,22 +65,24 @@ public final class SandboxDistributedOptions {
     /**
      * Creates options with OSS snapshot backend and distributed-safe defaults.
      */
-    public static SandboxDistributedOptions oss(Session session, OssSnapshotSpec snapshotSpec) {
-        return builder().session(session).snapshotSpec(snapshotSpec).build();
+    public static SandboxDistributedOptions oss(
+            AgentStateStore stateStore, OssSnapshotSpec snapshotSpec) {
+        return builder().stateStore(stateStore).snapshotSpec(snapshotSpec).build();
     }
 
     /**
      * Creates options with Redis snapshot backend and distributed-safe defaults.
      */
-    public static SandboxDistributedOptions redis(Session session, RedisSnapshotSpec snapshotSpec) {
-        return builder().session(session).snapshotSpec(snapshotSpec).build();
+    public static SandboxDistributedOptions redis(
+            AgentStateStore stateStore, RedisSnapshotSpec snapshotSpec) {
+        return builder().stateStore(stateStore).snapshotSpec(snapshotSpec).build();
     }
 
     /**
-     * Returns the distributed session backend used by {@link SessionSandboxStateStore}.
+     * Returns the distributed state store backend used by {@link SessionSandboxStateStore}.
      */
-    public Session getSession() {
-        return session;
+    public AgentStateStore getStateStore() {
+        return stateStore;
     }
 
     /**
@@ -99,17 +101,17 @@ public final class SandboxDistributedOptions {
 
     public static final class Builder {
 
-        private Session session;
+        private AgentStateStore stateStore;
         private SandboxSnapshotSpec snapshotSpec;
         private boolean requireDistributed = true;
 
         private Builder() {}
 
         /**
-         * Sets distributed session backend (for state slot persistence).
+         * Sets distributed state store backend (for state slot persistence).
          */
-        public Builder session(Session session) {
-            this.session = session;
+        public Builder stateStore(AgentStateStore stateStore) {
+            this.stateStore = stateStore;
             return this;
         }
 
@@ -125,7 +127,7 @@ public final class SandboxDistributedOptions {
          * Enables/disables fail-fast checks for distributed prerequisites.
          *
          * <p>When {@code true} (default), builder throws if effective session is a local
-         * in-process implementation ({@code JsonSession} / {@code InMemorySession}) or snapshot
+         * in-process implementation ({@code JsonFileAgentStateStore} / {@code InMemoryAgentStateStore}) or snapshot
          * spec is absent/no-op.
          */
         public Builder requireDistributed(boolean requireDistributed) {

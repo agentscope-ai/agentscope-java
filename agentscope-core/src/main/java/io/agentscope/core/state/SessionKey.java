@@ -23,7 +23,7 @@ import io.agentscope.core.util.JsonUtils;
  * <p>Users can define custom session identifier structures for complex scenarios like multi-tenant
  * applications. The default implementation {@link SimpleSessionKey} uses a simple string.
  *
- * <p>Custom Session implementations can interpret SessionKey structures to determine storage
+ * <p>Custom AgentStateStore implementations can interpret SessionKey structures to determine storage
  * strategies (e.g., multi-tenant database sharding).
  *
  * <p>Example custom implementation:
@@ -37,18 +37,18 @@ import io.agentscope.core.util.JsonUtils;
  * ) implements SessionKey {}
  *
  * // Usage
- * session.save(new TenantSessionKey("tenant_001", "user_123", "session_456"), "agent_meta", state);
+ * stateStore.save(new TenantSessionKey("tenant_001", "user_123", "session_456"), "agent_meta", state);
  * }</pre>
  *
  * @see SimpleSessionKey
- * @see io.agentscope.core.session.Session
+ * @see io.agentscope.core.state.AgentStateStore
  */
 public interface SessionKey {
 
     /**
      * Returns a string identifier for this session key.
      *
-     * <p>This method is used by Session implementations to convert the session key to a string
+     * <p>This method is used by AgentStateStore implementations to convert the session key to a string
      * suitable for storage (e.g., as a directory name, database key, or Redis key prefix).
      *
      * <p>The default implementation uses JSON serialization. Implementations like {@link

@@ -21,8 +21,8 @@ import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.documentation2.common.ExampleUtils;
@@ -32,12 +32,12 @@ import java.util.List;
 
 /**
  * Demonstrates how to thread per-call metadata through {@link RuntimeContext} and
- * combine it with persistent {@link Session} storage so the same agent instance can
+ * combine it with persistent {@link AgentStateStore} storage so the same agent instance can
  * pick up history across runs.
  *
  * <p>{@link RuntimeContext} is a transient, per-call metadata bag — useful for
  * passing tenant ids, request ids, or anything else hooks and tools should see
- * during a single {@code call}. {@link Session} + {@link io.agentscope.core.state.SessionKey}
+ * during a single {@code call}. {@link AgentStateStore} + {@link io.agentscope.core.state.SessionKey}
  * configured on the builder turn the same agent into one that loads and saves
  * conversation context to disk automatically.
  */
@@ -46,13 +46,13 @@ public class RuntimeContextExample {
     public static void main(String[] args) {
         ExampleUtils.printWelcome(
                 "RuntimeContext Example",
-                "Shows per-call RuntimeContext metadata and JsonSession persistence.");
+                "Shows per-call RuntimeContext metadata and JsonFileAgentStateStore persistence.");
 
         String apiKey = ExampleUtils.getDashScopeApiKey();
 
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
-        Session session = new JsonSession(sessionPath);
+        AgentStateStore stateStore = new JsonFileAgentStateStore(sessionPath);
 
         ReActAgent agent =
                 ReActAgent.builder()
@@ -67,7 +67,7 @@ public class RuntimeContextExample {
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(new Toolkit())
-                        .session(session)
+                        .stateStore(stateStore)
                         .sessionKey(SimpleSessionKey.of("runtime-context-demo"))
                         .build();
 

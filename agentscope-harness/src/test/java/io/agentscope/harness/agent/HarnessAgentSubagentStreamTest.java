@@ -65,7 +65,7 @@ class HarnessAgentSubagentStreamTest {
 
     @TempDir Path workspace;
 
-    // Phase 0 isolation: each @Test gets a fresh JsonSession root, preventing the
+    // Phase 0 isolation: each @Test gets a fresh JsonFileAgentStateStore root, preventing the
     // "parent" agent's persisted AgentState from leaking between cases.
     @TempDir Path stateHome;
 

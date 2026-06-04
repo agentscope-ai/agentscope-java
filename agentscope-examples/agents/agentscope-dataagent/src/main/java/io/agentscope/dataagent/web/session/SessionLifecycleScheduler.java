@@ -128,7 +128,7 @@ public class SessionLifecycleScheduler {
                     try {
                         int n = sessionAgentManager.runMaintenance();
                         if (n > 0) {
-                            log.debug("Session maintenance: pruned {} entries", n);
+                            log.debug("AgentStateStore maintenance: pruned {} entries", n);
                         }
                     } catch (Exception e) {
                         log.warn("Maintenance failed", e);

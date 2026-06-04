@@ -24,8 +24,8 @@ import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.store.BaseStore;
@@ -180,7 +180,7 @@ public class BuilderConfig {
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             BaseStore baseStore,
-            Optional<Session> sessionOpt)
+            Optional<AgentStateStore> sessionOpt)
             throws IOException {
         Path cwd = resolveCwd();
         ensureAgentscopeConfig();
@@ -196,23 +196,26 @@ public class BuilderConfig {
                             + " available.");
         }
 
-        // RemoteFilesystemSpec requires a distributed Session backend; the harness rejects the
+        // RemoteFilesystemSpec requires a distributed AgentStateStore backend; the harness rejects
+        // the
         // default WorkspaceSession because conversation state would otherwise be pinned to one pod
-        // while the filesystem is shared. Operators should provide a Redis/MySQL Session bean for
+        // while the filesystem is shared. Operators should provide a Redis/MySQL AgentStateStore
+        // bean for
         // production; if none is wired (typical for unit/integration tests), fall back to a
-        // single-process InMemorySession with a clear warning.
-        Session session = sessionOpt.orElseGet(InMemorySession::new);
+        // single-process InMemoryAgentStateStore with a clear warning.
+        AgentStateStore stateStore = sessionOpt.orElseGet(InMemoryAgentStateStore::new);
         if (sessionOpt.isEmpty()) {
             log.warn(
-                    "No distributed Session bean configured ({}); using InMemorySession. Provide a"
-                            + " RedisSession / MysqlSession bean for multi-replica deployments.",
-                    Session.class.getName());
+                    "No distributed AgentStateStore bean configured ({}); using"
+                            + " InMemoryAgentStateStore. Provide a RedisAgentStateStore /"
+                            + " MysqlAgentStateStore bean for multi-replica deployments.",
+                    AgentStateStore.class.getName());
         }
 
         builder.configureAllAgents(
                 b -> {
                     b.middleware(new ToolNotificationMiddleware(toolEventBus));
-                    b.session(session);
+                    b.stateStore(stateStore);
                     // `activity/` is routed to the shared BaseStore so the per-agent audit log
                     // (written by AgentActivityStore) is visible across pods, not pinned to the
                     // local disk of whichever pod served the write.

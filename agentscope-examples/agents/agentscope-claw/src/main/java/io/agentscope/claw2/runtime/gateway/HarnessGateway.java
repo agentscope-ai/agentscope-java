@@ -45,12 +45,12 @@ import reactor.core.scheduler.Schedulers;
  * Gateway-style gateway: routes inbound turns by {@link MsgContext}, and dispatches subagent
  * completion announces as new {@link HarnessAgent} runs on the root requester.
  *
- * <p>Session management is delegated to {@link SessionAgentManager}. The gateway wires itself as
+ * <p>AgentStateStore management is delegated to {@link SessionAgentManager}. The gateway wires itself as
  * the {@link SessionAgentManager.AnnounceDispatcher} and {@link
  * SessionAgentManager.SpawnInterceptor} on creation, so subagent spawns and announces flow through
  * the correct channel gates.
  *
- * <h2>Session routing</h2>
+ * <h2>AgentStateStore routing</h2>
  *
  * On the first {@link #run} call for a given {@link MsgContext#canonicalKey()}, a MAIN session is
  * registered in the {@link SessionAgentManager}. Subsequent calls for the same key reuse that
@@ -400,7 +400,7 @@ public final class HarnessGateway implements Gateway {
                             return existingSessionKey;
                         }
                         log.info(
-                                "Session stale, rolling over: gateKey={}, oldSessionKey={}",
+                                "AgentStateStore stale, rolling over: gateKey={}, oldSessionKey={}",
                                 gateKey,
                                 existingSessionKey);
                     }

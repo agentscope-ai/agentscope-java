@@ -26,7 +26,7 @@ import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
 import io.agentscope.core.plan.storage.InMemoryPlanStorage;
 import io.agentscope.core.plan.storage.PlanStorage;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -156,9 +156,9 @@ public class PlanNotebook {
      * @param session the session to save state to
      * @param sessionKey the session identifier
      */
-    public void saveTo(Session session, SessionKey sessionKey) {
+    public void saveTo(AgentStateStore stateStore, SessionKey sessionKey) {
         // Always save, even when null, to ensure cleared state is persisted
-        session.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
+        stateStore.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
     }
 
     /**
@@ -167,10 +167,11 @@ public class PlanNotebook {
      * @param session the session to load state from
      * @param sessionKey the session identifier
      */
-    public void loadFrom(Session session, SessionKey sessionKey) {
+    public void loadFrom(AgentStateStore stateStore, SessionKey sessionKey) {
         // Clear existing state first to avoid stale data
         this.currentPlan = null;
-        session.get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
+        stateStore
+                .get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
                 .ifPresent(state -> this.currentPlan = state.currentPlan());
     }
 

@@ -20,8 +20,8 @@ import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.nio.file.Files;
@@ -30,21 +30,21 @@ import java.nio.file.Paths;
 
 /**
  * SessionAutoSaveExample - Demonstrates the automatic save/restore lifecycle of
- * {@link ReActAgent} when wired with a {@link Session}.
+ * {@link ReActAgent} when wired with a {@link AgentStateStore}.
  *
  * <p><b>How auto-save/restore works:</b>
  * <ol>
  *   <li><b>Load:</b> When the agent is constructed with a {@code session} and {@code sessionKey},
- *       it calls {@code session.get(sessionKey, "agent_state", AgentState.class)} to restore any
+ *       it calls {@code stateStore.get(sessionKey, "agent_state", AgentState.class)} to restore any
  *       previously persisted conversation history and toolkit state.</li>
  *   <li><b>Save after each call:</b> After every {@code call()} or {@code stream()} the agent
- *       automatically calls {@code session.save(sessionKey, "agent_state", agentState)} to persist
+ *       automatically calls {@code stateStore.save(sessionKey, "agent_state", agentState)} to persist
  *       the updated state. No manual save is needed.</li>
  *   <li><b>Shutdown save:</b> The {@link io.agentscope.core.shutdown.GracefulShutdownManager}
  *       registers a state saver at construction time, so state is also flushed on JVM shutdown.</li>
  * </ol>
  *
- * <p><b>{@link JsonSession}:</b> A file-backed session store that writes
+ * <p><b>{@link JsonFileAgentStateStore}:</b> A file-backed session store that writes
  * {@code <sessionId>_agent_state.json} into the configured directory. Suitable for local
  * development and testing. Replace with a Redis or database-backed implementation for
  * production.
@@ -69,9 +69,9 @@ public class SessionAutoSaveExample {
      */
     public static void main(String[] args) throws Exception {
         ExampleUtils.printWelcome(
-                "Session Auto-Save Example",
-                "Demonstrates automatic history persistence via Session.\n"
-                        + "Session data is stored in: "
+                "AgentStateStore Auto-Save Example",
+                "Demonstrates automatic history persistence via AgentStateStore.\n"
+                        + "AgentStateStore data is stored in: "
                         + SESSION_DIR);
 
         String apiKey = ExampleUtils.getDashScopeApiKey();
@@ -81,7 +81,7 @@ public class SessionAutoSaveExample {
         // ── Phase 1: First agent instance — starts fresh, sends two messages ──────────
         System.out.println("═══ Phase 1: First agent instance ═══");
 
-        Session session1 = new JsonSession(sessionDir);
+        AgentStateStore session1 = new JsonFileAgentStateStore(sessionDir);
         ReActAgent agent1 = buildAgent("alice", apiKey, session1);
 
         Msg r1 = agent1.call(new UserMessage("user", "My favourite colour is blue.")).block();
@@ -106,7 +106,7 @@ public class SessionAutoSaveExample {
         // ── Phase 2: Second agent instance — loads state from session ─────────────────
         System.out.println("\n═══ Phase 2: Second agent instance (same session) ═══");
 
-        Session session2 = new JsonSession(sessionDir);
+        AgentStateStore session2 = new JsonFileAgentStateStore(sessionDir);
         ReActAgent agent2 = buildAgent("alice", apiKey, session2);
 
         System.out.println(
@@ -127,7 +127,7 @@ public class SessionAutoSaveExample {
     }
 
     /**
-     * Builds a {@link ReActAgent} wired to a {@link JsonSession} with the given user ID.
+     * Builds a {@link ReActAgent} wired to a {@link JsonFileAgentStateStore} with the given user ID.
      *
      * <p>The {@code sessionKey} scopes history to a specific user so multiple users can
      * share the same session store without their histories colliding.
@@ -137,7 +137,7 @@ public class SessionAutoSaveExample {
      * @param session backing session store
      * @return configured agent
      */
-    private static ReActAgent buildAgent(String userId, String apiKey, Session session) {
+    private static ReActAgent buildAgent(String userId, String apiKey, AgentStateStore stateStore) {
         return ReActAgent.builder()
                 .name("SessionAgent")
                 .sysPrompt("You are a helpful assistant. Remember what the user tells you.")
@@ -146,8 +146,8 @@ public class SessionAutoSaveExample {
                                         true)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
-                // session() + sessionKey() wires automatic load-on-start and save-after-call
-                .session(session)
+                // stateStore() + sessionKey() wires automatic load-on-start and save-after-call
+                .stateStore(stateStore)
                 .sessionKey(SimpleSessionKey.of(SESSION_ID + "-" + userId))
                 .build();
     }

@@ -160,19 +160,19 @@ final class HarnessAgentBuilderSupport {
 
     static void validateDistributedSandboxConfig(
             HarnessAgent.Builder b,
-            io.agentscope.core.session.Session effectiveSession,
+            io.agentscope.core.state.AgentStateStore effectiveSession,
             SandboxContext sandboxContext) {
         if (b.sandboxFilesystemSpec.getSandboxStateStore() == null
                 && HarnessAgent.isLocalSession(effectiveSession)) {
             throw new IllegalStateException(
-                    "filesystem(SandboxFilesystemSpec) requires a distributed Session backend"
-                            + " (for example RedisSession) to persist and restore sandbox"
-                            + " state across distributed instances, but the effective Session is"
-                            + " a local in-process implementation (JsonSession /"
-                            + " InMemorySession). Configure a distributed one via .session(...)."
-                            + " For single-node use, opt out via"
-                            + " .sandboxDistributed(SandboxDistributedOptions.builder()"
-                            + ".requireDistributed(false).build()).");
+                    "filesystem(SandboxFilesystemSpec) requires a distributed AgentStateStore"
+                        + " backend (for example RedisAgentStateStore) to persist and restore"
+                        + " sandbox state across distributed instances, but the effective"
+                        + " AgentStateStore is a local in-process implementation"
+                        + " (JsonFileAgentStateStore / InMemoryAgentStateStore). Configure a"
+                        + " distributed one via .stateStore(...). For single-node use, opt out via"
+                        + " .sandboxDistributed(SandboxDistributedOptions.builder()"
+                        + ".requireDistributed(false).build()).");
         }
         if (sandboxContext == null
                 || sandboxContext.getSnapshotSpec() == null
@@ -425,7 +425,7 @@ final class HarnessAgentBuilderSupport {
 
             // ---- Derive child SessionKey: bucket persisted AgentState by parent identity ----
             // (Phase B-0) Without this every (user, parent-session) shares the same bucket and
-            // can read each other's subagent conversations through Session.get(...).
+            // can read each other's subagent conversations through AgentStateStore.get(...).
             SessionKey childSessionKey = deriveChildSessionKey(decl, parentRc);
 
             // ---- Build child agent ----
@@ -528,7 +528,7 @@ final class HarnessAgentBuilderSupport {
      * back to the legacy single-bucket form: they're sharing the parent's full state tree by
      * design.
      *
-     * <p>This works uniformly across {@link io.agentscope.core.session.Session} backends —
+     * <p>This works uniformly across {@link io.agentscope.core.state.AgentStateStore} backends —
      * Workspace, Redis, InMemory, or custom — because all of them bucket {@code save}/{@code get}
      * by {@code SessionKey}. (Phase B-0)
      */
@@ -550,7 +550,7 @@ final class HarnessAgentBuilderSupport {
 
     /**
      * Returns {@code null} when the input is null or blank; otherwise replaces characters that
-     * confuse path-based Session backends (slashes, backslashes, whitespace, controls) with
+     * confuse path-based AgentStateStore backends (slashes, backslashes, whitespace, controls) with
      * underscores. Keeps Redis/InMemory/SQL keys unaffected since their stored form is opaque.
      */
     static String sanitizeIdentifier(String s) {

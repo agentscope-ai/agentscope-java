@@ -45,7 +45,7 @@ import java.util.Objects;
  * <p>Within each tier the first binding in {@link ChannelConfig#bindings()} list order that
  * matches wins.
  *
- * <h2>Session key construction ({@link MsgContext})</h2>
+ * <h2>AgentStateStore key construction ({@link MsgContext})</h2>
  *
  * After resolving {@code agentId}, {@link ChannelRouter} builds a {@link MsgContext} whose {@link
  * MsgContext#canonicalKey()} produces a stable session key:

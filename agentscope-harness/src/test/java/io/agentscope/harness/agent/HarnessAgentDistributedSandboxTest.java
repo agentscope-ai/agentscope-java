@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
@@ -80,9 +80,9 @@ class HarnessAgentDistributedSandboxTest {
                                         .build());
         assertEquals(
                 true,
-                ex.getMessage().contains("distributed Session backend"),
+                ex.getMessage().contains("distributed AgentStateStore backend"),
                 "sandbox mode should fail-fast when effective session is a local in-process"
-                        + " implementation (JsonSession / InMemorySession)");
+                        + " implementation (JsonFileAgentStateStore / InMemoryAgentStateStore)");
     }
 
     @Test
@@ -102,20 +102,20 @@ class HarnessAgentDistributedSandboxTest {
                                         .build());
         assertEquals(
                 true,
-                ex.getMessage().contains("distributed Session backend"),
+                ex.getMessage().contains("distributed AgentStateStore backend"),
                 "should fail-fast when effective session remains local");
     }
 
     @Test
     void sandboxDistributed_appliesSnapshotOverride() {
-        Session distributedSession = mock(Session.class);
+        AgentStateStore distributedSession = mock(AgentStateStore.class);
         DockerFilesystemSpec spec = new DockerFilesystemSpec();
         spec.isolationScope(IsolationScope.AGENT);
         LocalSnapshotSpec snapshotSpec = new LocalSnapshotSpec(workspace.resolve("snapshots"));
 
         SandboxDistributedOptions options =
                 SandboxDistributedOptions.builder()
-                        .session(distributedSession)
+                        .stateStore(distributedSession)
                         .snapshotSpec(snapshotSpec)
                         .build();
 
@@ -152,7 +152,7 @@ class HarnessAgentDistributedSandboxTest {
 
     @Test
     void remoteFilesystemMode_withLocalSession_failsFast() {
-        // Mode 1 (RemoteFilesystemSpec) always requires a distributed Session.
+        // Mode 1 (RemoteFilesystemSpec) always requires a distributed AgentStateStore.
         BaseStore store = mock(BaseStore.class);
         IllegalStateException ex =
                 assertThrows(
@@ -168,21 +168,21 @@ class HarnessAgentDistributedSandboxTest {
                 true,
                 ex.getMessage().contains("RemoteFilesystemSpec"),
                 "Mode 1 should fail-fast when effective session is a local in-process"
-                        + " implementation (JsonSession / InMemorySession)");
+                        + " implementation (JsonFileAgentStateStore / InMemoryAgentStateStore)");
     }
 
     @Test
     void remoteFilesystemMode_withDistributedSession_succeeds() throws Exception {
-        // Mode 1 with a distributed Session should build successfully.
+        // Mode 1 with a distributed AgentStateStore should build successfully.
         BaseStore store = mock(BaseStore.class);
-        Session distributedSession = mock(Session.class);
+        AgentStateStore distributedSession = mock(AgentStateStore.class);
         HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("agent")
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .filesystem(new RemoteFilesystemSpec(store))
-                        .session(distributedSession)
+                        .stateStore(distributedSession)
                         .build();
         // Release the SQLite-backed WorkspaceIndex so @TempDir cleanup can delete the dir on
         // Windows.

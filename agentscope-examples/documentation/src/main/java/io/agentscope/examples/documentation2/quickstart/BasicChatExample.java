@@ -28,7 +28,7 @@ import io.agentscope.examples.documentation2.common.ExampleUtils;
  * <p>Migration notes (from documentation/quickstart):
  * <ul>
  *   <li>Removed {@code .memory(new InMemoryMemory())} — conversation history is now
- *       held internally in {@code AgentState}. Use {@code .session()} to configure
+ *       held internally in {@code AgentState}. Use {@code .stateStore()} to configure
  *       an external persistence back-end when needed.</li>
  * </ul>
  */

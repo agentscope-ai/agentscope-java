@@ -43,8 +43,8 @@ import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 /**
- * Phase 0 regression: the default {@code HarnessAgent} {@code Session} is now {@link
- * io.agentscope.core.session.JsonSession} rooted at {@code ~/.agentscope/state/<agentId>/}, NOT
+ * Phase 0 regression: the default {@code HarnessAgent} {@code AgentStateStore} is now {@link
+ * io.agentscope.core.state.JsonFileAgentStateStore} rooted at {@code ~/.agentscope/state/<agentId>/}, NOT
  * a workspace-scoped session.
  *
  * <p>Each test points the {@code agentscope.state.home} system property at a fresh {@link
@@ -97,10 +97,11 @@ class JsonSessionDefaultLocationTest {
         Path stateRoot = stateHome.resolve(agentName);
         assertTrue(
                 Files.isDirectory(stateRoot),
-                "Default Session should root state at <agentscope.state.home>/<agentId>/, missing: "
+                "Default AgentStateStore should root state at <agentscope.state.home>/<agentId>/,"
+                        + " missing: "
                         + stateRoot);
 
-        // agent_state.json must exist somewhere under the state root (JsonSession may
+        // agent_state.json must exist somewhere under the state root (JsonFileAgentStateStore may
         // url-encode the session id into a subdirectory name).
         long agentStateCount;
         try (Stream<Path> walk = Files.walk(stateRoot)) {

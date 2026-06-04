@@ -524,8 +524,10 @@ public final class CodingBootstrap {
                 spec.workspaceRoot(CodingAgentFactory.resolveSandboxWorkingDir());
                 spec.isolationScope(IsolationScope.SESSION);
                 b.filesystem(spec);
-                // Single-node deployment: SqliteBaseStore is local, so a distributed Session
-                // would be inconsistent. Switch to RedisSession + a distributed store together
+                // Single-node deployment: SqliteBaseStore is local, so a distributed
+                // AgentStateStore
+                // would be inconsistent. Switch to RedisAgentStateStore + a distributed store
+                // together
                 // if this ever runs multi-replica.
                 b.sandboxDistributed(
                         SandboxDistributedOptions.builder().requireDistributed(false).build());

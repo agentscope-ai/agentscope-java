@@ -79,7 +79,7 @@ public abstract class SandboxFilesystemSpec {
      * Overrides the {@link SandboxStateStore} used to persist and resume sandbox metadata across
      * calls. When {@code null} (default), {@link io.agentscope.harness.agent.HarnessAgent} uses
      * {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore} with the effective
-     * {@link io.agentscope.core.session.Session} and agent id at build time.
+     * {@link io.agentscope.core.state.AgentStateStore} and agent id at build time.
      *
      * @param sandboxStateStore custom store, or {@code null} for the default session-backed store
      * @return this spec

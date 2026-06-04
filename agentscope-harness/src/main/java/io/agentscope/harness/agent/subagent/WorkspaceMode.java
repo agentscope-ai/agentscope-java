@@ -35,7 +35,7 @@ package io.agentscope.harness.agent.subagent;
  * {@code parentSessionId}) when the spawn-time {@link io.agentscope.core.agent.RuntimeContext}
  * carries those fields. The composed key has form
  * {@code {declarationName}[@{parentSessionId}][#{userId}]} and is applied uniformly across
- * {@link io.agentscope.core.session.Session} backends (Workspace, Redis, InMemory, custom),
+ * {@link io.agentscope.core.state.AgentStateStore} backends (Workspace, Redis, InMemory, custom),
  * because all of them already partition state by {@code SessionKey}. SHARED-mode is unchanged
  * — those subagents intentionally use the parent's bucket and do not multi-tenant.
  */

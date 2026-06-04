@@ -31,9 +31,9 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.SimpleSessionKey;
 import java.time.Duration;
 import java.util.List;
@@ -449,17 +449,17 @@ class GracefulShutdownTest {
         void rejectsNullSessionKey() {
             assertThrows(
                     NullPointerException.class,
-                    () -> new ShutdownSessionBinding(new InMemorySession(), null));
+                    () -> new ShutdownSessionBinding(new InMemoryAgentStateStore(), null));
         }
 
         @Test
         @DisplayName("Valid construction")
         void validConstruction() {
-            Session session = new InMemorySession();
+            AgentStateStore stateStore = new InMemoryAgentStateStore();
             SimpleSessionKey key = SimpleSessionKey.of("test");
-            ShutdownSessionBinding binding = new ShutdownSessionBinding(session, key);
+            ShutdownSessionBinding binding = new ShutdownSessionBinding(stateStore, key);
 
-            assertSame(session, binding.session());
+            assertSame(stateStore, binding.stateStore());
             assertSame(key, binding.sessionKey());
         }
     }

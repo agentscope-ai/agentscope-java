@@ -47,7 +47,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <ul>
  *   <li>Workspace write on task creation and completion
  *   <li>Cross-node fallback: no local future → read terminal state from workspace
- *   <li>Session-scope isolation: different sessionIds are independent
+ *   <li>AgentStateStore-scope isolation: different sessionIds are independent
  *   <li>Cancel coordination: cancelRequested flag persisted to workspace
  *   <li>Compaction simulation: task_list reads from workspace even after localTasks cleared
  *   <li>Terminal status never overridden by RUNNING overlay
@@ -209,7 +209,7 @@ class WorkspaceTaskRepositoryTest {
     }
 
     // ------------------------------------------------------------------
-    //  Session-scope isolation
+    //  AgentStateStore-scope isolation
     // ------------------------------------------------------------------
 
     @Test

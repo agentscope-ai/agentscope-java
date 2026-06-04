@@ -87,7 +87,7 @@ public class ChatController {
     private final AgentActivityStore activity;
 
     /**
-     * Session keys for which we have already recorded a RUN_SESSION event. Each (userId, agentId)
+     * AgentStateStore keys for which we have already recorded a RUN_SESSION event. Each (userId, agentId)
      * pair gets one entry per process lifetime so the activity log shows one row per session, not
      * one per turn.
      */
@@ -376,8 +376,8 @@ public class ChatController {
                     startedSessions.remove(gateKey);
                     return new CommandResult(
                             ok
-                                    ? "Session reset. Conversation history cleared; the next"
-                                            + " message starts a fresh turn."
+                                    ? "AgentStateStore reset. Conversation history cleared; the"
+                                            + " next message starts a fresh turn."
                                     : "No matching session found for reset.");
                 }
             case "/identity":

@@ -32,11 +32,11 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.permission.PermissionContextState;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
@@ -324,8 +324,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getRuntimeContext();
     }
 
-    public Session getSession() {
-        return delegate.getSession();
+    public AgentStateStore getStateStore() {
+        return delegate.getStateStore();
     }
 
     public SessionKey getSessionKey() {
@@ -623,7 +623,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     /**
      * Fills in a default SessionKey when the caller didn't provide one, and injects the default
      * sandbox context. The agent's persistence backend is bound at builder time via
-     * {@code .session(...)}; it is not selectable per-call.
+     * {@code .stateStore(...)}; it is not selectable per-call.
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
         SessionKey ctxSessionKey = ctx.getSessionKey();
@@ -724,7 +724,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
-     * Default state directory for the built-in {@link JsonSession} backend:
+     * Default state directory for the built-in {@link JsonFileAgentStateStore} backend:
      * {@code ~/.agentscope/state/<agentId>/}. Lives outside any workspace so agent state
      * (a prerequisite for restoring the workspace via {@link
      * io.agentscope.harness.agent.sandbox.SandboxState#getWorkspaceSpec()}) is not entangled
@@ -749,8 +749,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * state across nodes. Used by sandbox / remote-filesystem fail-fast checks to reject
      * configurations that would silently leak per-node state in distributed deployments.
      */
-    static boolean isLocalSession(Session session) {
-        return session instanceof JsonSession || session instanceof InMemorySession;
+    static boolean isLocalSession(AgentStateStore stateStore) {
+        return stateStore instanceof JsonFileAgentStateStore
+                || stateStore instanceof InMemoryAgentStateStore;
     }
 
     // ==================== Builder ====================
@@ -836,10 +837,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         RemoteFilesystemSpec remoteFilesystemSpec;
         LocalFilesystemSpec localFilesystemSpec;
 
-        // Session — mirrored only to pass through to inner; the user-set Session can also be
-        // replaced inside orchestration when none is provided (defaults to a JsonSession rooted
-        // at ~/.agentscope/state/<agentId>/, outside any workspace).
-        Session sessionOverride;
+        // AgentStateStore — mirrored only to pass through to inner; the user-set AgentStateStore
+        // can also be replaced inside orchestration when none is provided (defaults to a
+        // JsonFileAgentStateStore rooted at ~/.agentscope/state/<agentId>/, outside any workspace).
+        AgentStateStore stateStoreOverride;
 
         private Builder() {}
 
@@ -866,7 +867,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <tr><td>{@code generateOptions}</td><td>{@code agent.getGenerateOptions()}</td></tr>
          *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
          *   <tr><td rowspan="2">Persistence</td>
-         *       <td>{@code session}</td><td>{@code agent.getSession()} if non-null</td></tr>
+         *       <td>{@code session}</td><td>{@code agent.getStateStore()} if non-null</td></tr>
          *   <tr><td>{@code sessionKey}</td><td>{@code agent.getSessionKey()} if non-null</td></tr>
          *   <tr><td rowspan="2">Model resilience (from {@code agent.getModelConfig()})</td>
          *       <td>{@code maxRetries}</td><td>{@link ModelConfig#maxRetries()}</td></tr>
@@ -932,7 +933,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * equivalent to the source {@code ReActAgent}: HarnessAgent installs additional
          * orchestration (workspace projection, agent-tracing middleware, default skill /
          * subagent middlewares) that the source did not have. If left unset, {@code session}
-         * also defaults to a {@code JsonSession} rooted at {@code ~/.agentscope/state/<agentId>/}
+         * also defaults to a {@code JsonFileAgentStateStore} rooted at {@code ~/.agentscope/state/<agentId>/}
          * rather than the in-memory default, changing the on-disk persistence layout.
          *
          * @param agent source {@link ReActAgent} to inherit observable configuration from
@@ -951,9 +952,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.toolkit(agent.getToolkit().copy());
 
             // Persistence.
-            Session srcSession = agent.getSession();
+            AgentStateStore srcSession = agent.getStateStore();
             if (srcSession != null) {
-                b.session(srcSession);
+                b.stateStore(srcSession);
             }
             SessionKey srcSessionKey = agent.getSessionKey();
             if (srcSessionKey != null) {
@@ -1115,9 +1116,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        public Builder session(Session session) {
-            this.sessionOverride = session;
-            inner.session(session);
+        public Builder stateStore(AgentStateStore stateStore) {
+            this.stateStoreOverride = stateStore;
+            inner.stateStore(stateStore);
             return this;
         }
 
@@ -1584,28 +1585,28 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     agentId != null && !agentId.isBlank()
                             ? agentId
                             : (name != null && !name.isBlank() ? name : "ReActAgent");
-            Session effectiveSession =
+            AgentStateStore effectiveSession =
                     sandboxDistributedOptions != null
-                                    && sandboxDistributedOptions.getSession() != null
-                            ? sandboxDistributedOptions.getSession()
-                            : sessionOverride;
+                                    && sandboxDistributedOptions.getStateStore() != null
+                            ? sandboxDistributedOptions.getStateStore()
+                            : stateStoreOverride;
             NamespaceFactory nsFactory =
                     rc -> {
                         String uid = rc != null ? rc.getUserId() : null;
                         return (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
                     };
             if (effectiveSession == null) {
-                effectiveSession = new JsonSession(defaultStateDir(resolvedAgentId));
-                inner.session(effectiveSession);
+                effectiveSession = new JsonFileAgentStateStore(defaultStateDir(resolvedAgentId));
+                inner.stateStore(effectiveSession);
             }
 
             if (remoteFilesystemSpec != null && isLocalSession(effectiveSession)) {
                 throw new IllegalStateException(
                         "filesystem(RemoteFilesystemSpec) is designed for distributed /"
-                            + " multi-replica deployments, but the effective Session is a local"
-                            + " in-process implementation (JsonSession / InMemorySession)."
-                            + " Configure a distributed Session backend (for example RedisSession)"
-                            + " via .session(...).");
+                            + " multi-replica deployments, but the effective AgentStateStore is a"
+                            + " local in-process implementation (JsonFileAgentStateStore /"
+                            + " InMemoryAgentStateStore). Configure a distributed AgentStateStore"
+                            + " backend (for example RedisAgentStateStore) via .stateStore(...).");
             }
             WorkspaceIndex workspaceIndex =
                     remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;

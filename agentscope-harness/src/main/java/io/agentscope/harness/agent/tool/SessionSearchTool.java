@@ -168,7 +168,7 @@ public class SessionSearchTool {
     public String sessionHistory(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID") String agentId,
-            @ToolParam(name = "sessionId", description = "Session ID") String sessionId,
+            @ToolParam(name = "sessionId", description = "AgentStateStore ID") String sessionId,
             @ToolParam(
                             name = "lastN",
                             description = "Number of recent messages to return (default: 20)",
@@ -189,7 +189,7 @@ public class SessionSearchTool {
                 log.debug("Falling back to legacy .json session file for {}", sessionId);
                 return readLegacySession(legacyFile, limit);
             }
-            return "Session not found: " + sessionId;
+            return "AgentStateStore not found: " + sessionId;
         }
 
         SessionTree tree = new SessionTree(contextFile, workspaceManager.getWorkspace(), null);
@@ -201,7 +201,7 @@ public class SessionSearchTool {
         StringBuilder sb = new StringBuilder();
         sb.append(
                 String.format(
-                        "Session %s (%d total messages, showing last %d):\n\n",
+                        "AgentStateStore %s (%d total messages, showing last %d):\n\n",
                         sessionId, messages.size(), Math.min(limit, messages.size())));
         for (int i = start; i < messages.size(); i++) {
             SessionEntry.MessageEntry msg = messages.get(i);

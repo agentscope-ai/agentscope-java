@@ -15,7 +15,7 @@
  */
 package io.agentscope.claw2.web.config;
 
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
@@ -38,7 +38,7 @@ import org.springframework.context.annotation.Configuration;
  * <ul>
  *   <li>a {@link SandboxFilesystemSpec} (currently always {@link DockerFilesystemSpec})
  *   <li>a {@link SandboxDistributedOptions} that auto-falls-back to single-node mode ({@code
- *       requireDistributed(false)}) when no distributed {@link Session} bean is present
+ *       requireDistributed(false)}) when no distributed {@link AgentStateStore} bean is present
  * </ul>
  *
  * <p>Both beans are consumed by {@link BuilderConfig#builderBootstrap} which applies them to every
@@ -121,22 +121,22 @@ public class BuilderSandboxConfig {
 
     /**
      * Provides {@link SandboxDistributedOptions} for single-node deployments. If a distributed
-     * {@link Session} bean is wired, it is plumbed through; otherwise we set {@code
+     * {@link AgentStateStore} bean is wired, it is plumbed through; otherwise we set {@code
      * requireDistributed(false)} so the default {@code WorkspaceSession} is accepted.
      */
     @Bean
     public SandboxDistributedOptions sandboxDistributedOptions(
-            Optional<Session> distributedSession) {
+            Optional<AgentStateStore> distributedSession) {
         SandboxDistributedOptions.Builder b = SandboxDistributedOptions.builder();
         if (distributedSession.isPresent()) {
             log.info(
-                    "Sandbox running in distributed mode using Session bean of type {}",
+                    "Sandbox running in distributed mode using AgentStateStore bean of type {}",
                     distributedSession.get().getClass().getSimpleName());
-            b.session(distributedSession.get()).requireDistributed(true);
+            b.stateStore(distributedSession.get()).requireDistributed(true);
         } else {
             log.info(
                     "Sandbox running in single-node mode (requireDistributed=false). For"
-                            + " horizontal scale, expose a distributed Session bean.");
+                            + " horizontal scale, expose a distributed AgentStateStore bean.");
             b.requireDistributed(false);
         }
         return b.build();

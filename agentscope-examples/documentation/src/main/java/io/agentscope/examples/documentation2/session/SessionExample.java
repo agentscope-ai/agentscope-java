@@ -21,8 +21,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.documentation2.common.ExampleUtils;
@@ -38,11 +38,11 @@ import java.util.List;
  *
  * <p>Migration notes (from documentation/quickstart):
  * <ul>
- *   <li>Replaced {@code legacy.session.JsonSession} with {@code io.agentscope.core.session.JsonSession}.</li>
+ *   <li>Replaced {@code legacy.session.JsonFileAgentStateStore} with {@code io.agentscope.core.state.JsonFileAgentStateStore}.</li>
  *   <li>Replaced {@code legacy.memory.InMemoryMemory} and {@code .memory()} — removed entirely;
  *       conversation history is now held in {@code AgentState}.</li>
  *   <li>Replaced {@code agent.loadFrom(session, id)} / {@code agent.saveTo(session, id)} with
- *       {@code .session(session).sessionId(id)} on the builder — the agent loads and saves
+ *       {@code .stateStore(session).sessionId(id)} on the builder — the agent loads and saves
  *       automatically when a session is configured.</li>
  *   <li>Replaced {@code agent.getMemory().getMessages()} with {@code agent.getState().getContext()}.</li>
  * </ul>
@@ -61,7 +61,7 @@ public class SessionExample {
      */
     public static void main(String[] args) throws Exception {
         ExampleUtils.printWelcome(
-                "Session Example",
+                "AgentStateStore Example",
                 "This example demonstrates persistent conversation sessions.\n"
                         + "Your conversations are saved and can be resumed later.");
 
@@ -70,7 +70,7 @@ public class SessionExample {
 
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
-        Session session = new JsonSession(sessionPath);
+        AgentStateStore stateStore = new JsonFileAgentStateStore(sessionPath);
 
         // Configure the agent with a session — it loads existing history on first call
         // and persists after every interaction automatically.
@@ -81,7 +81,7 @@ public class SessionExample {
                                 "You are a helpful AI assistant with persistent memory. You can"
                                         + " remember information from previous conversations.")
                         .toolkit(new Toolkit())
-                        .session(session)
+                        .stateStore(stateStore)
                         .sessionKey(SimpleSessionKey.of(sessionId))
                         .model(
                                 DashScopeChatModel.builder()
@@ -113,7 +113,7 @@ public class SessionExample {
         // Show context size loaded from session
         int ctxSize = agent.getState().getContext().size();
         if (ctxSize > 0) {
-            System.out.println("Session resumed — " + ctxSize + " messages loaded.");
+            System.out.println("AgentStateStore resumed — " + ctxSize + " messages loaded.");
             System.out.println("Type 'history' to view them.\n");
         } else {
             System.out.println("New session: " + sessionId + "\n");

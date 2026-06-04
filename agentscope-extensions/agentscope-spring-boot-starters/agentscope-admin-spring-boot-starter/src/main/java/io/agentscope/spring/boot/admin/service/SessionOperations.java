@@ -18,8 +18,8 @@ package io.agentscope.spring.boot.admin.service;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.spring.boot.admin.dto.AgentTaskView;
 import io.agentscope.spring.boot.admin.dto.CompactRequest;
@@ -44,7 +44,7 @@ import reactor.core.scheduler.Schedulers;
  * Business logic for the per-session data-plane admin actions.
  *
  * <p>Designed so that the REST controller is a thin shell: it parses the request, defers to one
- * method here, and serializes the result. All blocking I/O (Session reads, JSON serialization) is
+ * method here, and serializes the result. All blocking I/O (AgentStateStore reads, JSON serialization) is
  * pushed off the request thread via {@link Schedulers#boundedElastic()}.
  */
 public final class SessionOperations {
@@ -65,14 +65,14 @@ public final class SessionOperations {
         this.snapshots = snapshots;
     }
 
-    /** Read-only listing of known session keys from {@link Session#listSessionKeys()}. */
-    public Mono<List<String>> listSessions(Session session) {
-        if (session == null) {
+    /** Read-only listing of known session keys from {@link AgentStateStore#listSessionKeys()}. */
+    public Mono<List<String>> listSessions(AgentStateStore stateStore) {
+        if (stateStore == null) {
             return Mono.just(List.of());
         }
         return Mono.fromCallable(
                         () -> {
-                            Set<?> keys = session.listSessionKeys();
+                            Set<?> keys = stateStore.listSessionKeys();
                             List<String> out = new ArrayList<>(keys.size());
                             for (Object k : keys) {
                                 out.add(String.valueOf(k));
@@ -104,7 +104,9 @@ public final class SessionOperations {
                         react -> {
                             AgentState state = react.getAgentState();
                             StringBuilder sb = new StringBuilder();
-                            sb.append("# Session ").append(state.getSessionId()).append("\n\n");
+                            sb.append("# AgentStateStore ")
+                                    .append(state.getSessionId())
+                                    .append("\n\n");
                             if (state.getSummary() != null && !state.getSummary().isBlank()) {
                                 sb.append("## Rolling summary\n\n")
                                         .append(state.getSummary())
@@ -145,7 +147,7 @@ public final class SessionOperations {
 
     /**
      * Compact a session: summarize the older portion of the context, truncate to the last
-     * {@code keepLast} messages, and persist via the agent's {@link Session}.
+     * {@code keepLast} messages, and persist via the agent's {@link AgentStateStore}.
      *
      * <p>Returns metrics describing the change. Falls back gracefully when summarization fails —
      * the prior summary is preserved and the context is left untouched.
@@ -431,11 +433,11 @@ public final class SessionOperations {
     }
 
     private Mono<Void> persist(ReActAgent react, AgentState state) {
-        Session session = react.getSession();
-        if (session == null) {
+        AgentStateStore stateStore = react.getStateStore();
+        if (stateStore == null) {
             return Mono.empty();
         }
-        return Mono.fromRunnable(() -> session.save(react.getSessionKey(), "agent_state", state))
+        return Mono.fromRunnable(() -> stateStore.save(react.getSessionKey(), "agent_state", state))
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();
     }

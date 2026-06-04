@@ -275,13 +275,13 @@ class LocalFilesystemUserIsolationExampleTest {
                 workspace.resolve("alice/agents/assistant/sessions/session-1.jsonl");
         assertTrue(
                 Files.isRegularFile(aliceSessionFile),
-                "Session file should be under alice/ namespace");
+                "AgentStateStore file should be under alice/ namespace");
 
         // Verify no session file at workspace root
         Path rootSessionFile = workspace.resolve("agents/assistant/sessions/session-1.jsonl");
         assertFalse(
                 Files.isRegularFile(rootSessionFile),
-                "Session file should NOT exist at workspace root");
+                "AgentStateStore file should NOT exist at workspace root");
     }
 
     /**
@@ -338,7 +338,7 @@ class LocalFilesystemUserIsolationExampleTest {
     /**
      * Verifies that no un-namespaced duplicate user data appears at workspace root.
      *
-     * <p>Phase 0 cleanup: the default {@code Session} is now {@code JsonSession} rooted at
+     * <p>Phase 0 cleanup: the default {@code AgentStateStore} is now {@code JsonFileAgentStateStore} rooted at
      * {@code ~/.agentscope/state/<agentId>/}, so {@code agent_state.json} no longer lives inside
      * the workspace. The only legitimate file under {@code workspace/agents/} is:
      *

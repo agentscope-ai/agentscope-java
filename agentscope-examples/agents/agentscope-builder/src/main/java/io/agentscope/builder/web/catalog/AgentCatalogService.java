@@ -135,7 +135,7 @@ public class AgentCatalogService {
      *       path is robust against races between session restore and UCA registration.
      * </ul>
      *
-     * <p>Session routing keys are unaffected (the gateway still derives them from {@link
+     * <p>AgentStateStore routing keys are unaffected (the gateway still derives them from {@link
      * io.agentscope.builder.runtime.gateway.MsgContext#userId()}), so each caller retains an
      * independent conversation thread on a shared agent.
      */

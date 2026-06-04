@@ -15,21 +15,21 @@
  */
 package io.agentscope.core.shutdown;
 
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.SessionKey;
 import java.util.Objects;
 
 /**
- * Session binding used for shutdown checkpoint persistence.
+ * AgentStateStore binding used for shutdown checkpoint persistence.
  *
  * @deprecated since 2.0.0. Use {@link ShutdownStateSaver} with
  *     {@link GracefulShutdownManager#bindStateSaver} instead.
  */
 @Deprecated(since = "2.0.0", forRemoval = true)
-public record ShutdownSessionBinding(Session session, SessionKey sessionKey) {
+public record ShutdownSessionBinding(AgentStateStore stateStore, SessionKey sessionKey) {
 
     public ShutdownSessionBinding {
-        Objects.requireNonNull(session, "session cannot be null");
+        Objects.requireNonNull(stateStore, "stateStore cannot be null");
         Objects.requireNonNull(sessionKey, "sessionKey cannot be null");
     }
 }

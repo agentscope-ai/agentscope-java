@@ -16,9 +16,9 @@
 package io.agentscope.core.tool.subagent;
 
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 
 /**
  * Configuration for sub-agent registration.
@@ -40,7 +40,7 @@ import io.agentscope.core.session.Session;
  * <ul>
  *   <li>Tool name: derived from agent name (e.g., "ResearchAgent" → "call_researchagent")
  *   <li>Description: uses agent's description, or generates a default
- *   <li>Session: uses {@link InMemorySession} for conversation state management
+ *   <li>AgentStateStore: uses {@link InMemoryAgentStateStore} for conversation state management
  *   <li>Event forwarding: enabled by default
  * </ul>
  *
@@ -54,7 +54,7 @@ import io.agentscope.core.session.Session;
  * SubAgentConfig config = SubAgentConfig.builder()
  *     .toolName("ask_expert")
  *     .description("Ask the expert a question")
- *     .session(new JsonSession(Path.of("sessions")))
+ *     .stateStore(new JsonFileAgentStateStore(Path.of("sessions")))
  *     .build();
  * }</pre>
  */
@@ -64,14 +64,15 @@ public class SubAgentConfig {
     private final String description;
     private final boolean forwardEvents;
     private final StreamOptions streamOptions;
-    private final Session session;
+    private final AgentStateStore stateStore;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
         this.description = builder.description;
         this.forwardEvents = builder.forwardEvents;
         this.streamOptions = builder.streamOptions;
-        this.session = builder.session != null ? builder.session : new InMemorySession();
+        this.stateStore =
+                builder.stateStore != null ? builder.stateStore : new InMemoryAgentStateStore();
     }
 
     /**
@@ -140,12 +141,12 @@ public class SubAgentConfig {
      * Gets the session for conversation state management.
      *
      * <p>The session is used to persist and restore sub-agent state across conversation turns. By
-     * default, an {@link InMemorySession} is used.
+     * default, an {@link InMemoryAgentStateStore} is used.
      *
      * @return The session instance (never null)
      */
-    public Session getSession() {
-        return session;
+    public AgentStateStore getStateStore() {
+        return stateStore;
     }
 
     /** Builder for SubAgentConfig. */
@@ -154,7 +155,7 @@ public class SubAgentConfig {
         private String description;
         private boolean forwardEvents = true;
         private StreamOptions streamOptions;
-        private Session session;
+        private AgentStateStore stateStore;
 
         private Builder() {}
 
@@ -216,16 +217,16 @@ public class SubAgentConfig {
          * Sets the session for conversation state management.
          *
          * <p>The session is used to persist and restore sub-agent state across conversation turns.
-         * If not set, an {@link InMemorySession} is used by default.
+         * If not set, an {@link InMemoryAgentStateStore} is used by default.
          *
          * <p>To enable persistent conversations across process restarts, use a persistent session
-         * implementation like {@link JsonSession}.
+         * implementation like {@link JsonFileAgentStateStore}.
          *
          * @param session The session instance
          * @return This builder
          */
-        public Builder session(Session session) {
-            this.session = session;
+        public Builder stateStore(AgentStateStore stateStore) {
+            this.stateStore = stateStore;
             return this;
         }
 

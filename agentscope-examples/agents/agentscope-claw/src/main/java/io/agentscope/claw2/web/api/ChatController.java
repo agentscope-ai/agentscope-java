@@ -313,7 +313,7 @@ public class ChatController {
                 boolean ok = sessionAgentManager.resetSession(sessionKey);
                 yield new CommandResult(
                         ok
-                                ? "Session reset. Conversation history cleared; the next"
+                                ? "AgentStateStore reset. Conversation history cleared; the next"
                                         + " message starts a fresh turn."
                                 : "No matching session found for reset.");
             }

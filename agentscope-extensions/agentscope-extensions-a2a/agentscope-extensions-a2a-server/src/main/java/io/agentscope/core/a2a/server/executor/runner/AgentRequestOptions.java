@@ -27,7 +27,7 @@ public class AgentRequestOptions {
     private String taskId;
 
     /**
-     * Session id, if null or empty string means not found session id from request.
+     * AgentStateStore id, if null or empty string means not found session id from request.
      */
     private String sessionId;
 

@@ -16,8 +16,7 @@
 package io.agentscope.core.state;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.session.legacy.ToolkitState;
+import io.agentscope.core.state.legacy.ToolkitState;
 import java.util.List;
 
 /**
@@ -45,12 +44,14 @@ public final class LegacyStateLoader {
      * @param sessionKey the session identifier
      * @return a new AgentState populated with the legacy data
      */
-    public static AgentState loadFromLegacySession(Session session, SessionKey sessionKey) {
-        List<Msg> msgs = session.getList(sessionKey, "memory_messages", Msg.class);
+    public static AgentState loadFromLegacySession(
+            AgentStateStore stateStore, SessionKey sessionKey) {
+        List<Msg> msgs = stateStore.getList(sessionKey, "memory_messages", Msg.class);
 
         AgentState.Builder builder = AgentState.builder().context(msgs);
 
-        session.get(sessionKey, "toolkit_activeGroups", ToolkitState.class)
+        stateStore
+                .get(sessionKey, "toolkit_activeGroups", ToolkitState.class)
                 .ifPresent(
                         toolkitState -> {
                             ToolContextState.Builder tc = ToolContextState.builder();
