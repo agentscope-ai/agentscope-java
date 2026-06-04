@@ -47,8 +47,7 @@ class ThreadSessionSnapshotProviderTest {
                         sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
         agent.getAgentState()
                 .contextMutable()
-                .add(
-                        Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
+                .add(Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
         ThreadSessionSnapshotProvider provider =
                 new ThreadSessionSnapshotProvider(registry, sessionManager, true);
 
@@ -149,8 +148,7 @@ class ThreadSessionSnapshotProviderTest {
                         sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
         agent.getAgentState()
                 .contextMutable()
-                .add(
-                        Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
+                .add(Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
         ThreadSessionSnapshotProvider provider =
                 new ThreadSessionSnapshotProvider(registry, sessionManager, true);
 
@@ -171,6 +169,45 @@ class ThreadSessionSnapshotProviderTest {
         List<AguiMessage> messages = provider.messagesSnapshot(request("default", "thread-1"));
 
         assertTrue(messages.isEmpty());
+    }
+
+    @Test
+    void testMessagesSnapshotReturnsEmptyWhenServerSideMemoryDisabledForMissingAgent() {
+        AguiAgentRegistry registry = new AguiAgentRegistry();
+        ThreadSessionSnapshotProvider provider =
+                new ThreadSessionSnapshotProvider(registry, new ThreadSessionManager(10, 0), false);
+
+        List<AguiMessage> messages = provider.messagesSnapshot(request("missing", "thread-1"));
+
+        assertTrue(messages.isEmpty());
+    }
+
+    @Test
+    void testThreadSessionManagerReturnsImmutableMessageSnapshot() {
+        ThreadSessionManager sessionManager = new ThreadSessionManager(10, 0);
+        ReActAgent agent =
+                (ReActAgent)
+                        sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
+        agent.getAgentState()
+                .contextMutable()
+                .add(Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
+
+        List<Msg> snapshot = sessionManager.getMessages("thread-1", "default");
+        agent.getAgentState()
+                .contextMutable()
+                .add(Msg.builder().id("msg-2").role(MsgRole.ASSISTANT).textContent("Hi").build());
+
+        assertEquals(1, snapshot.size());
+        assertEquals("msg-1", snapshot.get(0).getId());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () ->
+                        snapshot.add(
+                                Msg.builder()
+                                        .id("msg-3")
+                                        .role(MsgRole.USER)
+                                        .textContent("Mutable?")
+                                        .build()));
     }
 
     @Test

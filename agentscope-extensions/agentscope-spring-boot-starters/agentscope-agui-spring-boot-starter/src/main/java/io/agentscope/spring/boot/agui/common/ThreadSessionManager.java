@@ -140,20 +140,10 @@ public class ThreadSessionManager {
     }
 
     /**
-     * Get the current messages stored in the session memory.
-     *
-     * @param threadId The thread identifier
-     * @return The messages in memory, or an empty list if no session memory exists
-     */
-    public List<Msg> getMessages(String threadId) {
-        return getMessages(threadId, null);
-    }
-
-    /**
      * Get the current messages stored in the session memory for the matching agent.
      *
      * @param threadId The thread identifier
-     * @param agentId The agent type identifier, or null to ignore agent matching
+     * @param agentId The agent type identifier
      * @return The messages in memory, or an empty list if no matching session memory exists
      */
     public List<Msg> getMessages(String threadId, String agentId) {
@@ -256,7 +246,7 @@ public class ThreadSessionManager {
 
         private final String agentId;
         private final Agent agent;
-        private Instant lastAccess;
+        private volatile Instant lastAccess;
 
         ThreadSession(String agentId, Agent agent) {
             this.agentId = agentId;

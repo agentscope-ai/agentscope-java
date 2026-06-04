@@ -41,9 +41,6 @@ import java.util.stream.Collectors;
  */
 public class AguiMessageConverter {
 
-    private static final String ROLE_ASSISTANT = "assistant";
-    private static final String ROLE_REASONING = "reasoning";
-
     /**
      * Creates a new AguiMessageConverter
      */
@@ -86,50 +83,6 @@ public class AguiMessageConverter {
     }
 
     /**
-     * Convert an AgentScope message to an AG-UI message.
-     *
-     * @param msg The AgentScope message to convert
-     * @return The converted AG-UI message
-     */
-    public AguiMessage toAguiMessage(Msg msg) {
-        String role = convertRole(msg.getRole());
-        StringBuilder content = new StringBuilder();
-        StringBuilder reasoningContent = new StringBuilder();
-        List<AguiToolCall> toolCalls = new ArrayList<>();
-        String toolCallId = null;
-
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
-                appendContent(content, tb.getText());
-            } else if (block instanceof ThinkingBlock tb) {
-                appendContent(reasoningContent, tb.getThinking());
-            } else if (block instanceof ToolUseBlock tub) {
-                toolCalls.add(toAguiToolCall(tub));
-            } else if (block instanceof ToolResultBlock trb) {
-                toolCallId = trb.getId();
-                appendContent(content, extractToolResultText(trb));
-            }
-        }
-
-        // Pure reasoning message
-        if (content.length() == 0 && toolCalls.isEmpty() && toolCallId == null) {
-            return new AguiMessage(
-                    msg.getId(),
-                    reasoningContent.length() > 0 ? ROLE_REASONING : role,
-                    reasoningContent.length() > 0 ? reasoningContent.toString() : null,
-                    null,
-                    null);
-        }
-
-        return new AguiMessage(
-                msg.getId(),
-                role,
-                content.length() > 0 ? content.toString() : null,
-                toolCalls.isEmpty() ? null : toolCalls,
-                toolCallId);
-    }
-
-    /**
      * Convert an AgentScope message to one or more AG-UI messages.
      *
      * @param msg The AgentScope message to convert
@@ -154,38 +107,59 @@ public class AguiMessageConverter {
      * @return The converted AG-UI messages
      */
     public List<AguiMessage> toAguiMessages(Msg msg, boolean includeReasoning) {
-        List<MessageSegment> segments = new ArrayList<>();
-        String normalRole = convertRole(msg.getRole());
+        List<AguiMessage> messages = new ArrayList<>();
         StringBuilder textContent = new StringBuilder();
         StringBuilder reasoningContent = new StringBuilder();
         List<AguiToolCall> toolCalls = new ArrayList<>();
+        List<ToolResultBlock> toolResults = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock tb) {
-                flushReasoningSegment(segments, reasoningContent);
-                flushToolCallSegment(segments, toolCalls);
                 appendContent(textContent, tb.getText());
             } else if (block instanceof ThinkingBlock tb) {
-                flushTextSegment(segments, normalRole, textContent);
-                flushToolCallSegment(segments, toolCalls);
                 if (includeReasoning) {
                     appendContent(reasoningContent, tb.getThinking());
                 }
             } else if (block instanceof ToolUseBlock tub) {
-                flushTextSegment(segments, normalRole, textContent);
-                flushReasoningSegment(segments, reasoningContent);
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
-                segments.add(
-                        new MessageSegment("tool", extractToolResultText(trb), null, trb.getId()));
+                toolResults.add(trb);
             }
         }
 
-        flushTextSegment(segments, normalRole, textContent);
-        flushReasoningSegment(segments, reasoningContent);
-        flushToolCallSegment(segments, toolCalls);
+        if (reasoningContent.length() > 0) {
+            messages.add(
+                    new AguiMessage(
+                            msg.getId(), "reasoning", reasoningContent.toString(), null, null));
+        }
 
-        return toAguiMessages(msg.getId(), segments);
+        if (textContent.length() > 0) {
+            messages.add(
+                    new AguiMessage(
+                            msg.getId(),
+                            convertRole(msg.getRole()),
+                            textContent.toString(),
+                            null,
+                            null));
+        }
+
+        if (!toolCalls.isEmpty()) {
+            messages.add(new AguiMessage(msg.getId(), "assistant", null, toolCalls, null));
+        }
+
+        if (!toolResults.isEmpty()) {
+            for (ToolResultBlock toolResult : toolResults) {
+                messages.add(
+                        new AguiMessage(
+                                msg.getId(),
+                                "tool",
+                                extractToolResultText(toolResult),
+                                null,
+                                toolResult.getId()));
+            }
+        }
+
+        return messages;
     }
 
     /**
@@ -253,20 +227,6 @@ public class AguiMessageConverter {
         };
     }
 
-    private List<AguiMessage> toAguiMessages(String msgId, List<MessageSegment> segments) {
-        List<AguiMessage> messages = new ArrayList<>();
-        for (MessageSegment segment : segments) {
-            messages.add(
-                    new AguiMessage(
-                            msgId,
-                            segment.role(),
-                            segment.content(),
-                            segment.toolCalls(),
-                            segment.toolCallId()));
-        }
-        return messages;
-    }
-
     private void appendContent(StringBuilder builder, String content) {
         if (content == null || content.isEmpty()) {
             return;
@@ -276,34 +236,6 @@ public class AguiMessageConverter {
         }
         builder.append(content);
     }
-
-    private void flushTextSegment(
-            List<MessageSegment> segments, String role, StringBuilder content) {
-        if (content.length() == 0) {
-            return;
-        }
-        segments.add(new MessageSegment(role, content.toString(), null, null));
-        content.setLength(0);
-    }
-
-    private void flushReasoningSegment(List<MessageSegment> segments, StringBuilder content) {
-        if (content.length() == 0) {
-            return;
-        }
-        segments.add(new MessageSegment(ROLE_REASONING, content.toString(), null, null));
-        content.setLength(0);
-    }
-
-    private void flushToolCallSegment(List<MessageSegment> segments, List<AguiToolCall> toolCalls) {
-        if (toolCalls.isEmpty()) {
-            return;
-        }
-        segments.add(new MessageSegment(ROLE_ASSISTANT, null, new ArrayList<>(toolCalls), null));
-        toolCalls.clear();
-    }
-
-    private record MessageSegment(
-            String role, String content, List<AguiToolCall> toolCalls, String toolCallId) {}
 
     private String extractToolResultText(ToolResultBlock toolResult) {
         StringBuilder content = new StringBuilder();

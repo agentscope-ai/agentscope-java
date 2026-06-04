@@ -224,38 +224,32 @@ public class AguiMvcController {
         String threadId = input.getThreadId();
         String runId = input.getRunId();
 
-        executorService.submit(
-                () -> {
-                    try {
-                        processor
-                                .messagesSnapshot(input, headerAgentId, pathAgentId)
-                                .subscribe(
-                                        event -> sendEvent(emitter, event),
-                                        error -> {
-                                            logger.error(
-                                                    "Error creating AG-UI messages snapshot: {}",
-                                                    error.getMessage());
-                                            sendErrorAndComplete(
-                                                    emitter, threadId, runId, error.getMessage());
-                                        },
-                                        () -> {
-                                            try {
-                                                emitter.complete();
-                                            } catch (Exception e) {
-                                                logger.debug(
-                                                        "Error completing emitter: {}",
-                                                        e.getMessage());
-                                            }
-                                        });
-                    } catch (AguiException.AgentNotFoundException e) {
-                        logger.error("Agent not found: {}", e.getMessage());
-                        sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
-                    } catch (Exception e) {
-                        logger.error(
-                                "Error processing AG-UI messages snapshot: {}", e.getMessage());
-                        sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
-                    }
-                });
+        try {
+            // No executorService is needed here
+            processor
+                    .messagesSnapshot(input, headerAgentId, pathAgentId)
+                    .subscribe(
+                            event -> sendEvent(emitter, event),
+                            error -> {
+                                logger.error(
+                                        "Error creating AG-UI messages snapshot: {}",
+                                        error.getMessage());
+                                sendErrorAndComplete(emitter, threadId, runId, error.getMessage());
+                            },
+                            () -> {
+                                try {
+                                    emitter.complete();
+                                } catch (Exception e) {
+                                    logger.debug("Error completing emitter: {}", e.getMessage());
+                                }
+                            });
+        } catch (AguiException.AgentNotFoundException e) {
+            logger.error("Agent not found: {}", e.getMessage());
+            sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
+        } catch (Exception e) {
+            logger.error("Error processing AG-UI messages snapshot: {}", e.getMessage());
+            sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
+        }
 
         return emitter;
     }

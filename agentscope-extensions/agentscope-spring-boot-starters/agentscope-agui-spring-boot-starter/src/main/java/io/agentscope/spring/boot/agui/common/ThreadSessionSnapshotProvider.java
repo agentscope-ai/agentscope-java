@@ -72,11 +72,11 @@ public class ThreadSessionSnapshotProvider implements AguiSnapshotProvider {
 
     @Override
     public List<AguiMessage> messagesSnapshot(AguiSnapshotRequest request) {
-        if (!registry.hasAgent(request.agentId())) {
-            throw new AguiException.AgentNotFoundException(request.agentId());
-        }
         if (!serverSideMemory) {
             return List.of();
+        }
+        if (!registry.hasAgent(request.agentId())) {
+            throw new AguiException.AgentNotFoundException(request.agentId());
         }
         return messageConverter.toAguiMessageList(
                 sessionManager.getMessages(request.threadId(), request.agentId()),
