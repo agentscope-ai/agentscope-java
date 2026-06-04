@@ -111,12 +111,14 @@ import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.MessageUtils;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -211,14 +213,44 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     // ==================== Persistence ====================
 
     private final AgentStateStore stateStore;
-    private final SessionKey sessionKey;
+
+    /**
+     * Builder-time fallback {@link SessionKey}, used only when a call does not supply a
+     * {@code sessionId} via its {@link RuntimeContext}. Each call still picks its own active slot
+     * (see {@link #activateSlotForContext(RuntimeContext)}); this is only the fallback when RC
+     * carries no per-call session identity.
+     */
+    private final SessionKey defaultSessionKey;
 
     // ==================== 2.0 Core Fields ====================
 
-    private final AgentState state;
+    /**
+     * Active {@link AgentState} for the current call. Swapped per-call by
+     * {@link #activateSlotForContext(RuntimeContext)} based on {@code (userId, sessionId)} from
+     * the RuntimeContext. Not {@code final}: mutated under {@code AgentBase.acquireExecution}
+     * serialization, which guarantees no concurrent swap.
+     */
+    private AgentState state;
+
+    /** Live engine for the current active slot. Swapped together with {@link #state}. */
+    private PermissionEngine permissionEngine;
+
+    /** Cache of state per {@code (userId, sessionId)} slot key. */
+    private final java.util.concurrent.ConcurrentHashMap<String, AgentState> stateCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Per-slot permission engine cache: runtime-added ASK rules accumulate within the owning
+     * slot rather than leaking across users / sessions.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, PermissionEngine>
+            permissionEngineCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Active slot key — {@code (userId or "__anon__") + "/" + sessionId}. */
+    private String activeSlotKey;
+
     private final ModelConfig modelConfig;
     private final ReactConfig reactConfig;
-    private final PermissionEngine permissionEngine;
 
     /**
      * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
@@ -260,51 +292,94 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         this.middlewares = List.copyOf(mws);
 
         this.stateStore = builder.stateStore;
-        this.sessionKey =
+        this.defaultSessionKey =
                 builder.sessionKey != null
                         ? builder.sessionKey
                         : SimpleSessionKey.of(builder.name != null ? builder.name : "ReActAgent");
-        this.state =
-                loadOrCreateAgentState(this.stateStore, this.sessionKey, builder, getAgentId());
 
-        // Restore toolkit activeGroups from persisted state
+        // Eagerly activate the default slot so the toolkit / engine / hooks have a usable state
+        // out of the box. Per-call activation in beforeAgentExecution swaps this when the
+        // RuntimeContext carries a different (userId, sessionId).
+        String defaultSlot = slotKey(null, this.defaultSessionKey.toIdentifier());
+        AgentState defaultState =
+                loadOrCreateAgentStateForSlot(
+                        this.stateStore,
+                        null,
+                        this.defaultSessionKey.toIdentifier(),
+                        builder,
+                        getAgentId());
+        this.stateCache.put(defaultSlot, defaultState);
+        this.state = defaultState;
+        this.activeSlotKey = defaultSlot;
+
+        // Restore toolkit activeGroups from the default slot's state (toolkit is shared across
+        // slots; per-call swaps may re-sync via syncToolkitFromState).
         if (agentToolkit != null && !this.state.getToolContext().getActivatedGroups().isEmpty()) {
             agentToolkit.setActiveGroups(this.state.getToolContext().getActivatedGroups());
         }
         this.modelConfig = assembleModelConfig(builder);
         this.reactConfig = assembleReactConfig(builder);
         this.permissionEngine = new PermissionEngine(this.state.getPermissionContext());
+        this.permissionEngineCache.put(defaultSlot, this.permissionEngine);
         this.hookDispatcher = new LegacyHookDispatcher(this);
 
-        // Wire automatic state save on shutdown / interrupt.
+        // Wire automatic state save on shutdown / interrupt. The saver targets the current
+        // active slot — by the time shutdown fires, that's whichever slot the last call was on
+        // (or defaultSlot if no call ever happened).
         if (this.stateStore != null) {
             shutdownManager.bindStateSaver(
                     this,
-                    agentState ->
-                            stateStore.save(
-                                    null, sessionKey.toIdentifier(), "agent_state", agentState));
+                    agentState -> {
+                        String slot = activeSlotKey != null ? activeSlotKey : defaultSlot;
+                        SlotRef ref = SlotRef.parse(slot);
+                        stateStore.save(ref.userId, ref.sessionId, "agent_state", agentState);
+                    });
         }
     }
 
     /**
-     * Initial agent-state load. Tries (in order): the configured AgentStateStore for an {@code agent_state}
-     * entry, the v1 legacy session keys ({@code memory_messages} + {@code toolkit_activeGroups})
-     * via {@link LegacyStateLoader}, and finally a fresh state if neither yields anything.
+     * Internal slot identifier — {@code (userId or "__anon__") + "/" + sessionId}.
+     * Not part of the public API.
      */
-    private static AgentState loadOrCreateAgentState(
-            AgentStateStore stateStore, SessionKey sessionKey, Builder builder, String agentId) {
-        AgentState fresh = freshState(builder, agentId);
+    private static String slotKey(String userId, String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId must not be null");
+        return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
+    }
+
+    /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
+    private record SlotRef(String userId, String sessionId) {
+        static SlotRef parse(String slotKey) {
+            int slash = slotKey.indexOf('/');
+            String u = slotKey.substring(0, slash);
+            String s = slotKey.substring(slash + 1);
+            return new SlotRef("__anon__".equals(u) ? null : u, s);
+        }
+    }
+
+    /**
+     * Initial agent-state load for a specific {@code (userId, sessionId)} slot. Tries (in order):
+     * the configured {@link AgentStateStore} for an {@code agent_state} entry, the v1 legacy
+     * session keys ({@code memory_messages} + {@code toolkit_activeGroups}) via
+     * {@link LegacyStateLoader}, and finally a fresh state if neither yields anything.
+     */
+    private static AgentState loadOrCreateAgentStateForSlot(
+            AgentStateStore stateStore,
+            String userId,
+            String sessionId,
+            Builder builder,
+            String agentId) {
+        AgentState fresh = freshState(builder, agentId, userId, sessionId);
         if (stateStore == null) {
             return fresh;
         }
         try {
             return stateStore
-                    .get(null, sessionKey.toIdentifier(), "agent_state", AgentState.class)
+                    .get(userId, sessionId, "agent_state", AgentState.class)
                     .orElseGet(
                             () -> {
                                 AgentState legacy =
                                         LegacyStateLoader.loadFromLegacySession(
-                                                stateStore, sessionKey);
+                                                stateStore, SimpleSessionKey.of(sessionId));
                                 if (legacy != null
                                         && (!legacy.getContext().isEmpty()
                                                 || !legacy.getToolContext()
@@ -315,14 +390,23 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                 return fresh;
                             });
         } catch (Exception e) {
-            log.warn("Failed to load AgentState from session {}: {}", sessionKey, e.getMessage());
+            log.warn(
+                    "Failed to load AgentState for slot (userId={}, sessionId={}): {}",
+                    userId,
+                    sessionId,
+                    e.getMessage());
             return fresh;
         }
     }
 
-    private static AgentState freshState(Builder builder, String agentId) {
-        AgentState.Builder asb = AgentState.builder().sessionId(agentId);
-        if (builder.permissionContext != null) {
+    private static AgentState freshState(
+            Builder builder, String agentId, String userId, String sessionId) {
+        AgentState.Builder asb =
+                AgentState.builder().sessionId(sessionId != null ? sessionId : agentId);
+        if (userId != null) {
+            asb.userId(userId);
+        }
+        if (builder != null && builder.permissionContext != null) {
             asb.permissionContext(builder.permissionContext);
         }
         return asb.build();
@@ -338,8 +422,52 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return Mono.empty();
         }
         syncToolkitToState();
+        SlotRef ref = SlotRef.parse(activeSlotKey);
         return Mono.fromRunnable(
-                () -> stateStore.save(null, sessionKey.toIdentifier(), "agent_state", state));
+                () -> stateStore.save(ref.userId, ref.sessionId, "agent_state", state));
+    }
+
+    /**
+     * Per-call slot activation. Reads {@code (userId, sessionId)} from the given RuntimeContext
+     * (falling back to {@link #defaultSessionKey} when absent), and atomically swaps the active
+     * {@link #state} + {@link #permissionEngine} to that slot's cached entries (loading them on
+     * first use). Safe to call from {@code beforeAgentExecution} only — caller must hold the
+     * {@code AgentBase.acquireExecution} lock.
+     */
+    private void activateSlotForContext(RuntimeContext ctx) {
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        if (sid == null || sid.isBlank()) {
+            sid = defaultSessionKey.toIdentifier();
+        }
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String slot = slotKey(uid, sid);
+        if (slot.equals(activeSlotKey)) {
+            return;
+        }
+        // Persist any in-flight changes to the outgoing slot before swapping. This is a
+        // best-effort sync of the toolkit's activeGroups to the state we're about to put
+        // back into the cache.
+        if (activeSlotKey != null) {
+            syncToolkitToState();
+        }
+        final String finalUid = uid;
+        final String finalSid = sid;
+        AgentState loaded =
+                stateCache.computeIfAbsent(
+                        slot,
+                        k ->
+                                loadOrCreateAgentStateForSlot(
+                                        stateStore, finalUid, finalSid, null, getAgentId()));
+        this.state = loaded;
+        this.permissionEngine =
+                permissionEngineCache.computeIfAbsent(
+                        slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+        this.activeSlotKey = slot;
+        // Bring the toolkit's activeGroups into alignment with the freshly-active slot so
+        // the model sees the correct per-slot tool surface from the next reasoning step.
+        if (toolkit != null) {
+            toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
+        }
     }
 
     // ==================== Config assembly helpers ====================
@@ -366,6 +494,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         if (ctx == null) {
             ctx = RuntimeContext.empty();
         }
+        // Per-call: switch state / permissionEngine / toolkit to the (userId, sessionId) slot
+        // carried by the RuntimeContext, falling back to the builder-time default when absent.
+        // Safe to mutate the agent-level fields because AgentBase.acquireExecution() serializes
+        // calls on this instance.
+        activateSlotForContext(ctx);
         bindRuntimeContextToHooks(ctx);
         // Reset per-call system message; will be initialised by consumeSystemMsgAfterPreCall
         currentSystemMsg.set(null);
@@ -2241,9 +2374,28 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return stateStore;
     }
 
-    /** Returns the {@link SessionKey} used when persisting state. */
+    /**
+     * Returns the builder-time fallback {@link SessionKey}, used only when a call's
+     * {@link RuntimeContext} carries no {@code sessionId}. The state actually persisted at any
+     * moment is keyed by the active slot — see {@link #getCurrentSessionId()} /
+     * {@link #getCurrentUserId()} for the live identity.
+     */
     public SessionKey getSessionKey() {
-        return sessionKey;
+        return defaultSessionKey;
+    }
+
+    /**
+     * Returns the {@code sessionId} of the currently active slot (the one the next save will
+     * write to). Reads from the live {@link AgentState}; the field is populated by
+     * {@link #activateSlotForContext(RuntimeContext)} on every call entry.
+     */
+    public String getCurrentSessionId() {
+        return state != null ? state.getSessionId() : null;
+    }
+
+    /** Returns the {@code userId} of the currently active slot, or {@code null} if anonymous. */
+    public String getCurrentUserId() {
+        return state != null ? state.getUserId() : null;
     }
 
     private void syncToolkitToState() {
@@ -2392,6 +2544,20 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         private final List<AgentSkillRepository> skillRepositories = new ArrayList<>();
         private SkillFilter skillFilter;
         private boolean dynamicSkillsEnabled = true;
+
+        /**
+         * When true, {@link DynamicSkillMiddleware} toggles the prompt provider's code-execution
+         * block (per-skill {@code <files-root>} listing + instructions). Off by default —
+         * enabling it without also wiring a shell-like tool will produce a prompt that asks the
+         * model to do things it cannot.
+         */
+        private boolean skillCodeExecutionEnabled = false;
+
+        /**
+         * Stable working directory passed to {@link DynamicSkillMiddleware}. {@code null} means
+         * the middleware will mkdtemp one on first reload and reuse it for the agent's lifetime.
+         */
+        private Path skillWorkDir;
 
         private Builder() {}
 
@@ -2918,6 +3084,35 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
+         * Enables the code-execution prompt block emitted by
+         * {@link io.agentscope.core.skill.AgentSkillPromptProvider}. When on:
+         * <ul>
+         *   <li>If every visible skill has an on-disk origin directory (e.g. produced by
+         *       {@link io.agentscope.core.skill.repository.FileSystemSkillRepository}), each
+         *       {@code <skill>} entry includes a {@code <files-root>} child with the absolute
+         *       path so the LLM can shell-execute scripts directly;</li>
+         *   <li>Otherwise the prompt falls back to a single {@code uploadDir} root.</li>
+         * </ul>
+         *
+         * <p>Only flip this on when the agent's toolkit has a shell-like tool wired in —
+         * otherwise the prompt will ask the model to do things it cannot. Defaults to {@code false}.
+         */
+        public Builder skillCodeExecutionEnabled(boolean enabled) {
+            this.skillCodeExecutionEnabled = enabled;
+            return this;
+        }
+
+        /**
+         * Sets a stable working directory used by {@link DynamicSkillMiddleware} for
+         * {@code uploadSkillFiles}. Pass {@code null} (the default) to let the middleware mkdtemp
+         * a fresh directory on first reload and reuse it for the agent's lifetime.
+         */
+        public Builder skillWorkDir(Path dir) {
+            this.skillWorkDir = dir;
+            return this;
+        }
+
+        /**
          * Returns a new {@link Builder} pre-populated with the given agent's observable
          * configuration: name, description, system prompt, model, maxIters, generateOptions, and
          * a defensive copy of the toolkit.
@@ -3112,7 +3307,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         new DynamicSkillMiddleware(
                                 List.copyOf(skillRepositories),
                                 agentToolkit,
-                                skillFilter != null ? skillFilter : SkillFilter.all()));
+                                skillFilter != null ? skillFilter : SkillFilter.all(),
+                                skillCodeExecutionEnabled,
+                                skillWorkDir));
             }
 
             ReActAgent agent = new ReActAgent(this, agentToolkit);

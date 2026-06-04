@@ -122,52 +122,44 @@ class JsonSessionDefaultLocationTest {
     }
 
     @Test
-    void perUserPartitioning_viaPerInstanceSessionKey() throws Exception {
-        // Phase 0 design clarification: per-call RuntimeContext.sessionKey does NOT change
-        // where AgentState is persisted — ReActAgent pins sessionKey at build time. The
-        // supported pattern for per-user isolation is to construct one HarnessAgent per user,
-        // each with its own .sessionKey(...).
+    void perUserPartitioning_viaSharedAgentRoutedByRuntimeContext() throws Exception {
+        // Commit 2 design: ReActAgent reads (userId, sessionId) from the per-call
+        // RuntimeContext and persists state under <stateHome>/<agentId>/<userId>/<sessionId>/.
+        // A single shared agent instance can therefore serve many users without any per-user
+        // builder boilerplate — the in-memory state cache + persistence slot both follow the
+        // RuntimeContext.
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
 
         String agentName = "shared-" + UUID.randomUUID();
-        HarnessAgent agentAlice =
+        HarnessAgent agent =
                 HarnessAgent.builder()
                         .name(agentName)
-                        .sessionKey(SimpleSessionKey.of("users/alice/s1"))
-                        .model(stubModel("done"))
-                        .workspace(workspace)
-                        .build();
-        HarnessAgent agentBob =
-                HarnessAgent.builder()
-                        .name(agentName)
-                        .sessionKey(SimpleSessionKey.of("users/bob/s1"))
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .build();
 
-        agentAlice.call(userMsg("alice"), RuntimeContext.builder().userId("alice").build()).block();
-        agentBob.call(userMsg("bob"), RuntimeContext.builder().userId("bob").build()).block();
+        agent.call(
+                        userMsg("alice"),
+                        RuntimeContext.builder().userId("alice").sessionId("s1").build())
+                .block();
+        agent.call(userMsg("bob"), RuntimeContext.builder().userId("bob").sessionId("s1").build())
+                .block();
 
-        // After Commit 1 the layout is <root>/<userId or __anon__>/<sessionId>/. ReActAgent in
-        // this transitional commit still passes userId=null (per-call userId routing arrives in
-        // Commit 2), so all sessions land under __anon__/. We just need 2 distinct sessionId
-        // subdirs under that anon namespace.
         Path stateRoot = stateHome.resolve(agentName);
-        Path anonRoot = stateRoot.resolve("__anon__");
+        Path aliceSession = stateRoot.resolve("alice/s1");
+        Path bobSession = stateRoot.resolve("bob/s1");
         assertTrue(
-                Files.isDirectory(anonRoot),
-                "Anonymous namespace root should exist under " + stateRoot);
-        try (Stream<Path> children = Files.list(anonRoot)) {
-            long sessionDirs = children.filter(Files::isDirectory).count();
-            assertTrue(
-                    sessionDirs >= 2,
-                    "Expected per-SessionKey partitioning under "
-                            + anonRoot
-                            + " but found "
-                            + sessionDirs
-                            + " session dir(s)");
-        }
+                Files.isDirectory(aliceSession),
+                "alice's session dir should exist under " + stateRoot);
+        assertTrue(
+                Files.isDirectory(bobSession), "bob's session dir should exist under " + stateRoot);
+        assertTrue(
+                Files.isRegularFile(aliceSession.resolve("agent_state.json")),
+                "alice's agent_state.json should exist");
+        assertTrue(
+                Files.isRegularFile(bobSession.resolve("agent_state.json")),
+                "bob's agent_state.json should exist");
     }
 
     @Test
