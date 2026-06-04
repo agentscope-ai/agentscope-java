@@ -453,16 +453,16 @@ class HarnessAgentTest {
                         .findFirst()
                         .orElseThrow()
                         .factory()
-                        .create();
+                        .create(RuntimeContext.empty());
         assertTrue(createdAgent instanceof HarnessAgent);
         HarnessAgent subagent = (HarnessAgent) createdAgent;
 
         Map<String, Object> writeInput =
-                Map.of("path", "/from-subagent.txt", "content", "subagent-project");
+                Map.of("path", "from-subagent.txt", "content", "subagent-project");
         ToolResultBlock result = callTool(subagent, "write_file", writeInput);
 
         assertTrue(
-                joinToolResultText(result).contains("Written to /from-subagent.txt"),
+                joinToolResultText(result).contains("Written to from-subagent.txt"),
                 "subagent file tool should write successfully: " + joinToolResultText(result));
         assertTrue(
                 Files.readString(projectTarget).contains("subagent-project"),
@@ -503,14 +503,14 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
 
         Map<String, Object> writeInput =
-                Map.of("path", "/from-shared-subagent.txt", "content", "shared-project");
+                Map.of("path", "from-shared-subagent.txt", "content", "shared-project");
         ToolResultBlock result = callTool(subagent, "write_file", writeInput);
 
         assertTrue(
-                joinToolResultText(result).contains("Written to /from-shared-subagent.txt"),
+                joinToolResultText(result).contains("Written to from-shared-subagent.txt"),
                 "shared subagent file tool should write successfully: "
                         + joinToolResultText(result));
         assertTrue(

@@ -1715,8 +1715,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             if (toolResultEvictionConfig != null) {
                 inner.middleware(
-                        new ToolResultEvictionMiddleware(
-                                toolFilesystem, toolResultEvictionConfig));
+                        new ToolResultEvictionMiddleware(toolFilesystem, toolResultEvictionConfig));
             }
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {
