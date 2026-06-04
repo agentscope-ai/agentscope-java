@@ -235,8 +235,8 @@ public class GenerateOptions {
      * Gets whether thinking mode is enabled for this request.
      *
      * <p>This parameter allows per-request control over thinking mode. When set, it overrides
-     * the model-level {@code enableThinking} configuration. When null, the model-level setting
-     * is used.
+     * the model-level {@code enableThinking} configuration. When null, the model-level
+     * setting is used.
      *
      * @return true to enable thinking, false to disable, or null to use model default
      */
@@ -688,7 +688,7 @@ public class GenerateOptions {
          * Sets whether thinking mode is enabled for this request.
          *
          * <p>When set, this overrides the model-level {@code enableThinking} configuration,
-         * allowing per-request control over thinking mode via hooks.
+         * allowing per-request control over thinking mode.
          *
          * @param enableThinking true to enable thinking, false to disable, null to use model default
          * @return this builder

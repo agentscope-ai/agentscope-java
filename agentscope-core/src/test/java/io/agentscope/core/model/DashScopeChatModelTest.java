@@ -698,15 +698,31 @@ class DashScopeChatModelTest {
 
     @Test
     @DisplayName(
-            "Should throw an IllegalStateException when setting thinkingBudget while thinking mode"
-                    + " is disabled")
+            "Should throw when thinkingBudget is set but enableThinking is not configured (null)")
     void testApplyThinkingModeValidation() {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(100).build();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> invokeApplyThinkingMode(chatModel, request, options));
+    }
+
+    @Test
+    @DisplayName("Should silently ignore thinkingBudget when enableThinking is explicitly false")
+    void testApplyThinkingModeExplicitlyDisabledWithBudget() {
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder()
                         .apiKey(mockApiKey)
                         .modelName("qwen-plus")
                         .enableThinking(false)
-                        .enableSearch(false)
                         .build();
 
         DashScopeRequest request =
@@ -715,6 +731,54 @@ class DashScopeChatModelTest {
                         .build();
 
         GenerateOptions options = GenerateOptions.builder().thinkingBudget(100).build();
+
+        assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
+        assertFalse(request.getParameters().getEnableThinking());
+        assertNull(request.getParameters().getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName("Should allow per-request enableThinking override from options")
+    void testApplyThinkingModePerRequestOverride() {
+        // Model built with enableThinking=true, but per-request disables it
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder().enableThinking(false).build();
+
+        assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
+        assertFalse(request.getParameters().getEnableThinking());
+    }
+
+    @Test
+    @DisplayName(
+            "Should throw when per-request enableThinking=true but model stream=false")
+    void testApplyThinkingModePerRequestRequiresStreaming() {
+        // Model built with stream=false and no model-level thinking
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .stream(false)
+                        .build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder().enableThinking(true).build();
 
         assertThrows(
                 IllegalStateException.class,
