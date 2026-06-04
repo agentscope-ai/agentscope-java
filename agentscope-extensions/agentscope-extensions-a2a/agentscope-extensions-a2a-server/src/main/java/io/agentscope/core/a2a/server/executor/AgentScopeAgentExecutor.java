@@ -61,6 +61,10 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentExecutor.class);
 
+    private static final String USER_ID_METADATA_KEY = "userId";
+
+    private static final String SESSION_ID_METADATA_KEY = "sessionId";
+
     private final Map<String, Subscription> subscriptions;
 
     private final AgentRunner agentRunner;
@@ -133,15 +137,29 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     }
 
     private String getUserId(Message message) {
-        if (message.getMetadata() != null && message.getMetadata().containsKey("userId")) {
-            return String.valueOf(message.getMetadata().get("userId"));
-        }
-        return "";
+        return getMessageMetadataValue(message, USER_ID_METADATA_KEY);
     }
 
     private String getSessionId(Message message) {
-        if (message.getMetadata() != null && message.getMetadata().containsKey("sessionId")) {
-            return String.valueOf(message.getMetadata().get("sessionId"));
+        return getMessageMetadataValue(message, SESSION_ID_METADATA_KEY);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String getMessageMetadataValue(Message message, String key) {
+        if (null == message || null == message.getMetadata() || message.getMetadata().isEmpty()) {
+            return "";
+        }
+        if (message.getMetadata().containsKey(key)) {
+            return String.valueOf(message.getMetadata().get(key));
+        }
+        for (Object metadata : message.getMetadata().values()) {
+            if (!(metadata instanceof Map<?, ?> metadataMap)) {
+                continue;
+            }
+            Object value = ((Map<String, Object>) metadataMap).get(key);
+            if (null != value) {
+                return String.valueOf(value);
+            }
         }
         return "";
     }
