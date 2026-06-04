@@ -529,7 +529,19 @@ public class SessionAgentManager {
     /** Returns a cached agent instance for the session, or creates a new one. */
     private Agent getOrCreateAgent(SessionEntry entry) {
         return agentCache.computeIfAbsent(
-                entry.sessionKey(), k -> delegate.createAgent(entry.agentId()));
+                entry.sessionKey(),
+                k -> delegate.createAgent(entry.agentId(), parentContext(entry)));
+    }
+
+    private static RuntimeContext parentContext(SessionEntry entry) {
+        RuntimeContext.Builder b = RuntimeContext.builder();
+        if (entry.userId() != null && !entry.userId().isBlank()) {
+            b.userId(entry.userId());
+        }
+        if (entry.sessionId() != null && !entry.sessionId().isBlank()) {
+            b.sessionId(entry.sessionId());
+        }
+        return b.build();
     }
 
     /** Evicts the cached agent for the given session key. */

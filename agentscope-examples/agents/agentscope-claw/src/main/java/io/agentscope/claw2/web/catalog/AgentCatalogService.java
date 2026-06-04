@@ -21,7 +21,7 @@ import io.agentscope.claw2.runtime.gateway.HarnessGateway;
 import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.template.TemplateRegistry;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
-import io.agentscope.claw2.web.toolbus.ToolNotificationHook;
+import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.io.IOException;
@@ -356,7 +356,7 @@ public class AgentCatalogService {
             b.model(model);
         }
         b.workspace(workspace);
-        b.hook(new ToolNotificationHook(toolEventBus));
+        b.middleware(new ToolNotificationMiddleware(toolEventBus));
 
         HarnessAgent agent = b.build();
         HarnessGateway gateway = bootstrap.gateway();

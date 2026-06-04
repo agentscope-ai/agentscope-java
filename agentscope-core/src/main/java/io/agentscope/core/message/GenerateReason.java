@@ -53,6 +53,22 @@ public enum GenerateReason {
     /** Acting phase was stopped by a Hook (PostActingEvent.stopAgent()). */
     ACTING_STOP_REQUESTED,
 
+    /**
+     * Permission engine is asking the user to confirm one or more tool calls.
+     *
+     * <p>The returned Msg contains ToolUseBlocks with {@code state=ASKING}. The caller resumes
+     * by issuing a second {@code agent.call(...)} carrying {@code ConfirmResult}s.
+     */
+    PERMISSION_ASKING,
+
+    /**
+     * A middleware requested the agent to pause via {@code RequestStopEvent}.
+     *
+     * <p>The caller resumes by issuing a second {@code agent.call()} with no arguments — the
+     * agent picks up any pending tool calls and continues from where it stopped.
+     */
+    MIDDLEWARE_STOP_REQUESTED,
+
     /** Agent was interrupted. */
     INTERRUPTED,
 

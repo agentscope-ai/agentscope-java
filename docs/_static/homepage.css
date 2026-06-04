@@ -105,7 +105,7 @@ body.agentscope-home .content-icon-container {
   font-weight: 800;
   line-height: 1.15;
   letter-spacing: -0.03em;
-  margin-bottom: 18px;
+  margin: 0 0 22px;
   color: var(--hs-fg);
 }
 
@@ -117,36 +117,16 @@ body.agentscope-home .content-icon-container {
   font-size: clamp(0.95rem, 1.35vw, 1.1rem);
   color: var(--hs-muted);
   max-width: 500px;
-  margin-bottom: 28px;
+  margin: 0 0 32px;
   line-height: 1.7;
 }
 
 .hs-hero__actions {
   display: flex;
-  gap: 10px;
+  gap: 14px;
   flex-wrap: wrap;
-  margin-bottom: 24px;
+  margin: 0;
   align-items: center;
-}
-
-.hs-hero__badges {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-/* ----- Badge chips (hero row) ----- */
-.hs-badge {
-  display: inline-flex;
-  align-items: center;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  color: var(--hs-muted);
-  background: var(--hs-surface);
-  border: 1px solid var(--hs-border);
-  border-radius: 4px;
-  padding: 3px 9px;
 }
 
 /* ================================================================
@@ -197,6 +177,11 @@ body.agentscope-home .content-icon-container {
   border: 1px solid var(--hs-border);
   border-radius: 10px;
   overflow: hidden;
+  /* Cap hero code window so it doesn't stretch into half the viewport on
+     wide screens; on <1100px the hero collapses to a single column and this
+     cap stops constraining (max-width keeps it fluid within its cell). */
+  max-width: 520px;
+  width: 100%;
 }
 
 .hs-window__bar {
@@ -260,6 +245,21 @@ body.agentscope-home .content-icon-container {
   background: var(--hs-code-bg);
   color: var(--hs-code-fg);
   overflow-x: auto;
+  /* Force horizontal scrollbar to be visible on macOS/iOS where the OS
+     hides it when not actively scrolling — without this, users on long
+     code lines see clipped text with no visual cue that scroll exists. */
+  scrollbar-width: thin;                  /* Firefox */
+  scrollbar-color: var(--hs-border) transparent;
+}
+.hs-code-panel::-webkit-scrollbar {
+  height: 8px;
+}
+.hs-code-panel::-webkit-scrollbar-thumb {
+  background: var(--hs-border);
+  border-radius: 4px;
+}
+.hs-code-panel::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .hs-code-panel pre {
@@ -718,10 +718,6 @@ body.agentscope-home .content-icon-container {
     justify-content: center;
   }
 
-  .hs-hero__badges {
-    justify-content: center;
-  }
-
   .hs-split,
   .hs-split.hs-split--rev {
     grid-template-columns: 1fr !important;
@@ -762,7 +758,16 @@ body.agentscope-home .content-icon-container {
   overflow-x: auto !important;
 }
 
-.agentscope-landing .hs-window,
+/* Hero code window — capped narrow so it doesn't dominate wide screens.
+   The earlier `.hs-window { max-width: 580px }` rule was being overridden
+   here when both selectors set max-width — higher specificity wins, not
+   the smaller value. So the cap lives on this more-specific selector. */
+.agentscope-landing .hs-window {
+  max-width: 520px;
+  min-width: 0;
+}
+
+/* Feature-section image frames stay fluid. */
 .agentscope-landing .hs-visual {
   max-width: 100%;
   min-width: 0;

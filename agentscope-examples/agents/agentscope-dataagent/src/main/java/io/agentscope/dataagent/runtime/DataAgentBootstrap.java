@@ -38,7 +38,7 @@ import io.agentscope.dataagent.runtime.session.SessionStore;
 import io.agentscope.dataagent.runtime.session.SubagentRunRegistry;
 import io.agentscope.dataagent.runtime.session.tool.SessionsTool;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.hook.SubagentsHook;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -553,8 +553,7 @@ public final class DataAgentBootstrap {
                 gc.accept(mainEntryBuilder);
             }
 
-            List<SubagentsHook.SubagentEntry> entries =
-                    mainEntryBuilder.buildSubagentEntries(mainWorkspace);
+            List<SubagentEntry> entries = mainEntryBuilder.buildSubagentEntries(mainWorkspace);
 
             WorkspaceManager wsManager = new WorkspaceManager(mainWorkspace);
             DefaultAgentManager dam = new DefaultAgentManager(entries, wsManager);

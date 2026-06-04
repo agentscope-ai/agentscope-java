@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * <p>When a {@link SandboxExecutionGuard} is configured, the manager acquires an execution
  * {@link SandboxLease} before sandbox resume/create for isolation keys that are present. The
  * lease is carried by the {@link SandboxAcquireResult} and closed by the caller
- * ({@link io.agentscope.harness.agent.hook.SandboxLifecycleHook}) after {@link #release},
+ * ({@link io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware}) after {@link #release},
  * ensuring the full call window is covered.
  *
  * <p>Priority 1 (external sandbox) and Priority 2 (external sandbox state) bypass the guard,

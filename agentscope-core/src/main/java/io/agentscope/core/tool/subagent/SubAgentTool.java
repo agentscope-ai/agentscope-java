@@ -26,7 +26,9 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
@@ -152,8 +154,8 @@ public class SubAgentTool implements AgentTool {
                         Agent agent = agentProvider.provide();
 
                         // Load existing state if continuing session
-                        if (!isNewSession && agent instanceof StateModule) {
-                            loadAgentState(finalSessionId, (StateModule) agent);
+                        if (!isNewSession) {
+                            loadAgentState(finalSessionId, agent);
                         }
 
                         // Build user message
@@ -190,12 +192,7 @@ public class SubAgentTool implements AgentTool {
                         }
 
                         // Save state after execution
-                        return result.doOnSuccess(
-                                r -> {
-                                    if (agent instanceof StateModule) {
-                                        saveAgentState(finalSessionId, (StateModule) agent);
-                                    }
-                                });
+                        return result.doOnSuccess(r -> saveAgentState(finalSessionId, agent));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
@@ -205,41 +202,64 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Loads agent state from the session storage.
-     *
-     * <p>If the session exists, the agent's state is restored. Any errors during loading are logged
-     * but do not interrupt execution.
-     *
-     * @param sessionId The session ID to load state from
-     * @param agent The state module to restore state into
+     * Loads sub-agent state for the conversation identified by {@code sessionId} from
+     * {@link SubAgentConfig#getSession()} and merges it into the live agent's
+     * {@link AgentState}. Errors are logged but do not interrupt execution.
      */
-    private void loadAgentState(String sessionId, StateModule agent) {
-        Session session = config.getSession();
+    private void loadAgentState(String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent ra)) {
+            return;
+        }
+        Session subSession = config.getSession();
+        if (subSession == null) {
+            return;
+        }
+        SessionKey key = SimpleSessionKey.of(sessionId);
         try {
-            agent.loadIfExists(session, sessionId);
-            logger.debug("Loaded state for session: {}", sessionId);
+            subSession
+                    .get(key, "agent_state", AgentState.class)
+                    .ifPresent(loaded -> applyLoadedState(ra, loaded));
+            logger.debug("Loaded sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
-            logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
+            logger.warn(
+                    "Failed to load sub-agent state for session {}: {}", sessionId, e.getMessage());
         }
     }
 
     /**
-     * Saves agent state to the session storage.
-     *
-     * <p>Persists the agent's current state. Any errors during saving are logged but do not
-     * interrupt execution.
-     *
-     * @param sessionId The session ID to save state under
-     * @param agent The state module to save state from
+     * Saves the live {@link AgentState} for the conversation identified by {@code sessionId} into
+     * {@link SubAgentConfig#getSession()}. Errors are logged but do not interrupt execution.
      */
-    private void saveAgentState(String sessionId, StateModule agent) {
-        Session session = config.getSession();
-        try {
-            agent.saveTo(session, sessionId);
-            logger.debug("Saved state for session: {}", sessionId);
-        } catch (Exception e) {
-            logger.warn("Failed to save state for session {}: {}", sessionId, e.getMessage());
+    private void saveAgentState(String sessionId, Agent agent) {
+        if (!(agent instanceof ReActAgent ra)) {
+            return;
         }
+        Session subSession = config.getSession();
+        if (subSession == null) {
+            return;
+        }
+        SessionKey key = SimpleSessionKey.of(sessionId);
+        try {
+            subSession.save(key, "agent_state", ra.getAgentState());
+            logger.debug("Saved sub-agent state for session: {}", sessionId);
+        } catch (Exception e) {
+            logger.warn(
+                    "Failed to save sub-agent state for session {}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    private static void applyLoadedState(ReActAgent agent, AgentState loaded) {
+        AgentState live = agent.getAgentState();
+        if (live == null) {
+            return;
+        }
+        live.contextMutable().clear();
+        live.contextMutable().addAll(loaded.getContext());
+        live.setSummary(loaded.getSummary());
+        live.setReplyId(loaded.getReplyId());
+        live.setCurIter(loaded.getCurIter());
+        live.setShutdownInterrupted(loaded.isShutdownInterrupted());
+        live.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
     }
 
     /**

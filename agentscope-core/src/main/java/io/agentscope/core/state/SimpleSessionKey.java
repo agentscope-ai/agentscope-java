@@ -27,8 +27,13 @@ import java.util.Objects;
  *
  * <pre>{@code
  * SessionKey sessionKey = SimpleSessionKey.of("user_123");
- * agent.loadIfExists(session, sessionKey);
- * agent.saveTo(session, sessionKey);
+ * ReActAgent agent = ReActAgent.builder()
+ *     .name("assistant")
+ *     .model(model)
+ *     .session(session)
+ *     .sessionKey(sessionKey)
+ *     .build();
+ * // AgentState is loaded on construction (if present) and saved automatically each call.
  * }</pre>
  *
  * @param sessionId the unique session identifier string

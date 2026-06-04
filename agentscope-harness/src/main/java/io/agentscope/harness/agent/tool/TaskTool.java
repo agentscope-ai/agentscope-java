@@ -120,6 +120,16 @@ public class TaskTool {
             }
         }
 
+        // If the caller successfully retrieved a terminal result, mark this task delivered so the
+        // SubagentsMiddleware push path doesn't re-deliver the same payload on the next reasoning
+        // round. Idempotent — if already delivered, this is a no-op. (Phase B-3.)
+        if (bgTask.isCompleted() && bgTask.getTaskStatus().isTerminal()) {
+            try {
+                taskRepository.markDelivered(runtimeContext, sessionId, taskId);
+            } catch (RuntimeException ignore) {
+                // Marking is best-effort; failure just risks a redundant push, never wrong data.
+            }
+        }
         return formatTaskDetail(bgTask);
     }
 

@@ -17,7 +17,6 @@ package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.Hook;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -58,10 +57,15 @@ import reactor.core.publisher.Mono;
  * <p><b>Subclass Requirements:</b>
  * <ul>
  *   <li>Provide Toolkit via constructor</li>
- *   <li>Implement {@link #getMemory()} for memory access</li>
  *   <li>Implement {@link #buildGenerateOptions()} for model options</li>
  * </ul>
+ *
+ * @deprecated since 2.0.0. Structured output is handled directly by
+ *     {@link io.agentscope.core.ReActAgent} via the new middleware-based loop.
+ *     This class remains as a base class for backward compatibility but will be
+ *     removed in a future release.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public abstract class StructuredOutputCapableAgent extends AgentBase {
 
     private static final Logger log = LoggerFactory.getLogger(StructuredOutputCapableAgent.class);
@@ -110,10 +114,12 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
     }
 
     /**
-     * Get the memory for structured output hook.
-     * Subclasses must implement this.
+     * Returns the {@link StructuredOutputReminder} mode configured for this agent. Defaults to
+     * {@link StructuredOutputReminder#TOOL_CHOICE} when none was supplied at construction.
      */
-    public abstract Memory getMemory();
+    public StructuredOutputReminder getStructuredOutputReminder() {
+        return structuredOutputReminder;
+    }
 
     /**
      * Build generate options for model calls.
@@ -161,10 +167,14 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                             createStructuredOutputTool(jsonSchema, targetClass, schemaDesc);
                     toolkit.registerAgentTool(structuredOutputTool);
 
-                    // Create hook for flow control
+                    // Create hook for flow control. The hook compacts AgentState.context after
+                    // structured-output generation; we hand it the live agent state directly so
+                    // it can mutate `contextMutable()` without going through a Memory adapter.
                     StructuredOutputHook hook =
                             new StructuredOutputHook(
-                                    structuredOutputReminder, buildGenerateOptions(), getMemory());
+                                    structuredOutputReminder,
+                                    buildGenerateOptions(),
+                                    getAgentState());
 
                     addHook(hook);
 
