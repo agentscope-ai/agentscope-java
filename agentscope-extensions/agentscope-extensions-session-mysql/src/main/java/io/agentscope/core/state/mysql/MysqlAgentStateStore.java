@@ -17,8 +17,6 @@ package io.agentscope.core.state.mysql;
 
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
 import io.agentscope.core.util.JsonUtils;
 import java.sql.Connection;
@@ -325,9 +323,9 @@ public class MysqlAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public void save(SessionKey sessionKey, String key, State value) {
-        String sessionId = sessionKey.toIdentifier();
-        validateSessionId(sessionId);
+    public void save(String userId, String sessionId, String key, State value) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
         validateStateKey(key);
 
         String upsertSql =
@@ -344,7 +342,7 @@ public class MysqlAgentStateStore implements AgentStateStore {
                         try (PreparedStatement stmt = conn.prepareStatement(upsertSql)) {
                             String json = JsonUtils.getJsonCodec().toJson(value);
 
-                            stmt.setString(1, sessionId);
+                            stmt.setString(1, slotId);
                             stmt.setString(2, key);
                             stmt.setInt(3, SINGLE_STATE_INDEX);
                             stmt.setString(4, json);
@@ -374,9 +372,9 @@ public class MysqlAgentStateStore implements AgentStateStore {
      * @param values the list of state values to save
      */
     @Override
-    public void save(SessionKey sessionKey, String key, List<? extends State> values) {
-        String sessionId = sessionKey.toIdentifier();
-        validateSessionId(sessionId);
+    public void save(String userId, String sessionId, String key, List<? extends State> values) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
         validateStateKey(key);
 
         if (values.isEmpty()) {
@@ -389,30 +387,22 @@ public class MysqlAgentStateStore implements AgentStateStore {
             executeInWriteTransaction(
                     conn,
                     () -> {
-                        // Compute current hash
                         String currentHash = ListHashUtil.computeHash(values);
-
-                        // Get stored hash
-                        String storedHash = getStoredHash(conn, sessionId, hashKey);
-
-                        // Get existing count
-                        int existingCount = getListCount(conn, sessionId, key);
-
-                        // Determine if full rewrite is needed
+                        String storedHash = getStoredHash(conn, slotId, hashKey);
+                        int existingCount = getListCount(conn, slotId, key);
                         boolean needsFullRewrite =
                                 ListHashUtil.needsFullRewrite(values, storedHash, existingCount);
 
                         if (needsFullRewrite) {
-                            deleteListItems(conn, sessionId, key);
-                            insertAllItems(conn, sessionId, key, values);
-                            saveHash(conn, sessionId, hashKey, currentHash);
+                            deleteListItems(conn, slotId, key);
+                            insertAllItems(conn, slotId, key, values);
+                            saveHash(conn, slotId, hashKey, currentHash);
                         } else if (values.size() > existingCount) {
                             List<? extends State> newItems =
                                     values.subList(existingCount, values.size());
-                            insertItems(conn, sessionId, key, newItems, existingCount);
-                            saveHash(conn, sessionId, hashKey, currentHash);
+                            insertItems(conn, slotId, key, newItems, existingCount);
+                            saveHash(conn, slotId, hashKey, currentHash);
                         }
-                        // else: no change, skip
                     });
         } catch (Exception e) {
             throw new RuntimeException("Failed to save list: " + key, e);
@@ -571,9 +561,10 @@ public class MysqlAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
-        String sessionId = sessionKey.toIdentifier();
-        validateSessionId(sessionId);
+    public <T extends State> Optional<T> get(
+            String userId, String sessionId, String key, Class<T> type) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
         validateStateKey(key);
 
         String selectSql =
@@ -584,7 +575,7 @@ public class MysqlAgentStateStore implements AgentStateStore {
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(selectSql)) {
 
-            stmt.setString(1, sessionId);
+            stmt.setString(1, slotId);
             stmt.setString(2, key);
             stmt.setInt(3, SINGLE_STATE_INDEX);
 
@@ -602,9 +593,10 @@ public class MysqlAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
-        String sessionId = sessionKey.toIdentifier();
-        validateSessionId(sessionId);
+    public <T extends State> List<T> getList(
+            String userId, String sessionId, String key, Class<T> itemType) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
         validateStateKey(key);
 
         String selectSql =
@@ -616,7 +608,7 @@ public class MysqlAgentStateStore implements AgentStateStore {
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(selectSql)) {
 
-            stmt.setString(1, sessionId);
+            stmt.setString(1, slotId);
             stmt.setString(2, key);
 
             try (ResultSet rs = stmt.executeQuery()) {
@@ -634,29 +626,29 @@ public class MysqlAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public boolean exists(SessionKey sessionKey) {
-        String sessionId = sessionKey.toIdentifier();
-        validateSessionId(sessionId);
+    public boolean exists(String userId, String sessionId) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
 
         String existsSql = "SELECT 1 FROM " + getFullTableName() + " WHERE session_id = ? LIMIT 1";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(existsSql)) {
 
-            stmt.setString(1, sessionId);
+            stmt.setString(1, slotId);
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next();
             }
 
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to check session existence: " + sessionId, e);
+            throw new RuntimeException("Failed to check session existence: " + slotId, e);
         }
     }
 
     @Override
-    public void delete(SessionKey sessionKey) {
-        String sessionId = sessionKey.toIdentifier();
-        validateSessionId(sessionId);
+    public void delete(String userId, String sessionId) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
 
         String deleteSql = "DELETE FROM " + getFullTableName() + " WHERE session_id = ?";
 
@@ -665,33 +657,58 @@ public class MysqlAgentStateStore implements AgentStateStore {
                     conn,
                     () -> {
                         try (PreparedStatement stmt = conn.prepareStatement(deleteSql)) {
-                            stmt.setString(1, sessionId);
+                            stmt.setString(1, slotId);
                             stmt.executeUpdate();
                         }
                     });
         } catch (Exception e) {
-            throw new RuntimeException("Failed to delete session: " + sessionId, e);
+            throw new RuntimeException("Failed to delete session: " + slotId, e);
         }
     }
 
     @Override
-    public Set<SessionKey> listSessionKeys() {
+    public Set<String> listSessionIds(String userId) {
+        String userSegment = normalizeUser(userId);
+        String prefix = userSegment + ":";
         String listSql =
-                "SELECT DISTINCT session_id FROM " + getFullTableName() + " ORDER BY session_id";
+                "SELECT DISTINCT session_id FROM "
+                        + getFullTableName()
+                        + " WHERE session_id LIKE ? ORDER BY session_id";
 
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(listSql);
-                ResultSet rs = stmt.executeQuery()) {
+                PreparedStatement stmt = conn.prepareStatement(listSql)) {
 
-            Set<SessionKey> sessionKeys = new HashSet<>();
-            while (rs.next()) {
-                sessionKeys.add(SimpleSessionKey.of(rs.getString("session_id")));
+            stmt.setString(1, prefix + "%");
+            try (ResultSet rs = stmt.executeQuery()) {
+                Set<String> sessionIds = new HashSet<>();
+                while (rs.next()) {
+                    String slot = rs.getString("session_id");
+                    sessionIds.add(slot.substring(prefix.length()));
+                }
+                return sessionIds;
             }
-            return sessionKeys;
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to list sessions", e);
         }
+    }
+
+    private static final String ANON_USER = "__anon__";
+
+    private static String normalizeUser(String userId) {
+        return userId == null || userId.isBlank() ? ANON_USER : userId;
+    }
+
+    /**
+     * Combine {@code (userId, sessionId)} into the single {@code session_id} column value.
+     * Uses {@code :} as the separator so existing {@link #validateSessionId(String)} (which
+     * forbids {@code /} and {@code \\}) still accepts the combined string.
+     */
+    private static String slotId(String userId, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId must not be blank");
+        }
+        return normalizeUser(userId) + ":" + sessionId;
     }
 
     /**

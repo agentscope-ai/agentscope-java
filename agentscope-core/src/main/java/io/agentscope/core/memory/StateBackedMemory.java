@@ -67,12 +67,17 @@ public class StateBackedMemory implements Memory {
 
     @Override
     public void saveTo(AgentStateStore stateStore, SessionKey sessionKey) {
-        stateStore.save(sessionKey, "memory_messages", new ArrayList<>(state.contextMutable()));
+        stateStore.save(
+                null,
+                sessionKey.toIdentifier(),
+                "memory_messages",
+                new ArrayList<>(state.contextMutable()));
     }
 
     @Override
     public void loadFrom(AgentStateStore stateStore, SessionKey sessionKey) {
-        List<Msg> loaded = stateStore.getList(sessionKey, "memory_messages", Msg.class);
+        List<Msg> loaded =
+                stateStore.getList(null, sessionKey.toIdentifier(), "memory_messages", Msg.class);
         state.contextMutable().clear();
         state.contextMutable().addAll(loaded);
     }

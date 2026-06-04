@@ -98,13 +98,15 @@ class MysqlAgentStateStoreE2ETest {
         SessionKey sessionKey = SimpleSessionKey.of(sessionIdStr);
 
         // Save single states
-        stateStore.save(sessionKey, "moduleA", stateA);
-        stateStore.save(sessionKey, "moduleB", stateB);
-        assertTrue(stateStore.exists(sessionKey));
+        stateStore.save(null, sessionKey.toIdentifier(), "moduleA", stateA);
+        stateStore.save(null, sessionKey.toIdentifier(), "moduleB", stateB);
+        assertTrue(stateStore.exists(null, sessionKey.toIdentifier()));
 
         // Load states
-        Optional<TestState> loadedA = stateStore.get(sessionKey, "moduleA", TestState.class);
-        Optional<TestState> loadedB = stateStore.get(sessionKey, "moduleB", TestState.class);
+        Optional<TestState> loadedA =
+                stateStore.get(null, sessionKey.toIdentifier(), "moduleA", TestState.class);
+        Optional<TestState> loadedB =
+                stateStore.get(null, sessionKey.toIdentifier(), "moduleB", TestState.class);
 
         assertTrue(loadedA.isPresent());
         assertTrue(loadedB.isPresent());
@@ -113,15 +115,15 @@ class MysqlAgentStateStoreE2ETest {
         assertEquals(1, loadedA.get().count());
         assertEquals(2, loadedB.get().count());
 
-        // listSessionKeys
-        Set<SessionKey> sessionKeys = stateStore.listSessionKeys();
+        // listSessionIds returns plain sessionId strings under the userId namespace
+        Set<String> sessionIds = stateStore.listSessionIds(null);
         assertTrue(
-                sessionKeys.contains(sessionKey),
-                "listSessionKeys should contain saved stateStore");
+                sessionIds.contains(sessionKey.toIdentifier()),
+                "listSessionIds should contain saved stateStore");
 
         // delete stateStore
-        stateStore.delete(sessionKey);
-        assertFalse(stateStore.exists(sessionKey));
+        stateStore.delete(null, sessionKey.toIdentifier());
+        assertFalse(stateStore.exists(null, sessionKey.toIdentifier()));
     }
 
     @Test
@@ -143,10 +145,11 @@ class MysqlAgentStateStoreE2ETest {
 
         // Save list state
         List<TestState> states = List.of(new TestState("item1", 1), new TestState("item2", 2));
-        stateStore.save(sessionKey, "stateList", states);
+        stateStore.save(null, sessionKey.toIdentifier(), "stateList", states);
 
         // Load list state
-        List<TestState> loaded = stateStore.getList(sessionKey, "stateList", TestState.class);
+        List<TestState> loaded =
+                stateStore.getList(null, sessionKey.toIdentifier(), "stateList", TestState.class);
         assertEquals(2, loaded.size());
         assertEquals("item1", loaded.get(0).value());
         assertEquals("item2", loaded.get(1).value());
@@ -157,10 +160,11 @@ class MysqlAgentStateStoreE2ETest {
                         new TestState("item1", 1),
                         new TestState("item2", 2),
                         new TestState("item3", 3));
-        stateStore.save(sessionKey, "stateList", moreStates);
+        stateStore.save(null, sessionKey.toIdentifier(), "stateList", moreStates);
 
         // Verify all items
-        List<TestState> allLoaded = stateStore.getList(sessionKey, "stateList", TestState.class);
+        List<TestState> allLoaded =
+                stateStore.getList(null, sessionKey.toIdentifier(), "stateList", TestState.class);
         assertEquals(3, allLoaded.size());
         assertEquals("item3", allLoaded.get(2).value());
     }
@@ -185,19 +189,22 @@ class MysqlAgentStateStoreE2ETest {
         SessionKey sessionKey =
                 SimpleSessionKey.of("mysql_e2e_autocommit_off_" + UUID.randomUUID());
 
-        stateStore.save(sessionKey, "moduleA", new TestState("hello", 1));
+        stateStore.save(null, sessionKey.toIdentifier(), "moduleA", new TestState("hello", 1));
         stateStore.save(
-                sessionKey,
+                null,
+                sessionKey.toIdentifier(),
                 "stateList",
                 List.of(new TestState("item1", 1), new TestState("item2", 2)));
 
-        assertTrue(stateStore.exists(sessionKey));
+        assertTrue(stateStore.exists(null, sessionKey.toIdentifier()));
 
-        Optional<TestState> loadedState = stateStore.get(sessionKey, "moduleA", TestState.class);
+        Optional<TestState> loadedState =
+                stateStore.get(null, sessionKey.toIdentifier(), "moduleA", TestState.class);
         assertTrue(loadedState.isPresent());
         assertEquals("hello", loadedState.get().value());
 
-        List<TestState> loadedList = stateStore.getList(sessionKey, "stateList", TestState.class);
+        List<TestState> loadedList =
+                stateStore.getList(null, sessionKey.toIdentifier(), "stateList", TestState.class);
         assertEquals(2, loadedList.size());
         assertEquals("item1", loadedList.get(0).value());
         assertEquals("item2", loadedList.get(1).value());
@@ -225,21 +232,22 @@ class MysqlAgentStateStoreE2ETest {
         SessionKey sessionKey1 = SimpleSessionKey.of("mysql_e2e_delete_" + UUID.randomUUID());
         SessionKey sessionKey2 = SimpleSessionKey.of("mysql_e2e_clear_" + UUID.randomUUID());
 
-        stateStore.save(sessionKey1, "moduleA", new TestState("hello", 1));
-        stateStore.save(sessionKey2, "moduleA", new TestState("world", 2));
+        stateStore.save(null, sessionKey1.toIdentifier(), "moduleA", new TestState("hello", 1));
+        stateStore.save(null, sessionKey2.toIdentifier(), "moduleA", new TestState("world", 2));
 
-        stateStore.delete(sessionKey1);
-        assertFalse(stateStore.exists(sessionKey1));
-        assertTrue(stateStore.exists(sessionKey2));
+        stateStore.delete(null, sessionKey1.toIdentifier());
+        assertFalse(stateStore.exists(null, sessionKey1.toIdentifier()));
+        assertTrue(stateStore.exists(null, sessionKey2.toIdentifier()));
 
         stateStore.clearAllSessions();
-        assertTrue(stateStore.listSessionKeys().isEmpty());
+        assertTrue(stateStore.listSessionIds(null).isEmpty());
 
-        stateStore.save(sessionKey1, "moduleA", new TestState("hello_again", 3));
-        assertTrue(stateStore.exists(sessionKey1));
+        stateStore.save(
+                null, sessionKey1.toIdentifier(), "moduleA", new TestState("hello_again", 3));
+        assertTrue(stateStore.exists(null, sessionKey1.toIdentifier()));
 
         stateStore.truncateAllSessions();
-        assertTrue(stateStore.listSessionKeys().isEmpty());
+        assertTrue(stateStore.listSessionIds(null).isEmpty());
     }
 
     @Test
@@ -257,7 +265,7 @@ class MysqlAgentStateStoreE2ETest {
                 new MysqlAgentStateStore(dataSource, schemaName, tableName, false);
 
         SessionKey sessionKey = SimpleSessionKey.of("non_existent_" + UUID.randomUUID());
-        assertFalse(stateStore.exists(sessionKey));
+        assertFalse(stateStore.exists(null, sessionKey.toIdentifier()));
     }
 
     @Test
@@ -275,7 +283,8 @@ class MysqlAgentStateStoreE2ETest {
                 new MysqlAgentStateStore(dataSource, schemaName, tableName, false);
 
         SessionKey sessionKey = SimpleSessionKey.of("missing_" + UUID.randomUUID());
-        Optional<TestState> result = stateStore.get(sessionKey, "moduleA", TestState.class);
+        Optional<TestState> result =
+                stateStore.get(null, sessionKey.toIdentifier(), "moduleA", TestState.class);
         assertFalse(result.isPresent());
     }
 

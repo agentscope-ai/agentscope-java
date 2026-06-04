@@ -95,14 +95,15 @@ class JedisAgentStateStoreTest {
         TestState state = new TestState("test_value", 42);
 
         // Save state
-        stateStore.save(sessionKey, "testModule", state);
+        stateStore.save(null, sessionKey.toIdentifier(), "testModule", state);
 
         // Verify save operations
         verify(unifiedJedis).set(anyString(), anyString());
         verify(unifiedJedis).sadd("agentscope:stateStore:session1:_keys", "testModule");
 
         // Get state
-        Optional<TestState> loaded = stateStore.get(sessionKey, "testModule", TestState.class);
+        Optional<TestState> loaded =
+                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
         assertTrue(loaded.isPresent());
         assertEquals("test_value", loaded.get().value());
         assertEquals(42, loaded.get().count());
@@ -128,13 +129,14 @@ class JedisAgentStateStoreTest {
         List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
 
         // Save list state
-        stateStore.save(sessionKey, "testList", states);
+        stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
 
         // Verify rpush was called for each item
         verify(unifiedJedis, atLeast(1)).rpush(anyString(), anyString());
 
         // Get list state
-        List<TestState> loaded = stateStore.getList(sessionKey, "testList", TestState.class);
+        List<TestState> loaded =
+                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
         assertEquals(2, loaded.size());
         assertEquals("value1", loaded.get(0).value());
         assertEquals("value2", loaded.get(1).value());
@@ -152,7 +154,8 @@ class JedisAgentStateStoreTest {
                         .build();
 
         SessionKey sessionKey = SimpleSessionKey.of("non_existent");
-        Optional<TestState> state = stateStore.get(sessionKey, "testModule", TestState.class);
+        Optional<TestState> state =
+                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
         assertFalse(state.isPresent());
     }
 
@@ -169,7 +172,8 @@ class JedisAgentStateStoreTest {
                         .build();
 
         SessionKey sessionKey = SimpleSessionKey.of("non_existent");
-        List<TestState> states = stateStore.getList(sessionKey, "testList", TestState.class);
+        List<TestState> states =
+                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
         assertTrue(states.isEmpty());
     }
 
@@ -186,7 +190,7 @@ class JedisAgentStateStoreTest {
                         .build();
 
         SessionKey sessionKey = SimpleSessionKey.of("session1");
-        assertTrue(stateStore.exists(sessionKey));
+        assertTrue(stateStore.exists(null, sessionKey.toIdentifier()));
     }
 
     @Test
@@ -201,7 +205,7 @@ class JedisAgentStateStoreTest {
                         .build();
 
         SessionKey sessionKey = SimpleSessionKey.of("session1");
-        assertFalse(stateStore.exists(sessionKey));
+        assertFalse(stateStore.exists(null, sessionKey.toIdentifier()));
     }
 
     @Test
@@ -219,7 +223,7 @@ class JedisAgentStateStoreTest {
                         .build();
 
         SessionKey sessionKey = SimpleSessionKey.of("session1");
-        stateStore.delete(sessionKey);
+        stateStore.delete(null, sessionKey.toIdentifier());
 
         // Verify del was called with the keys
         verify(unifiedJedis).smembers("agentscope:stateStore:session1:_keys");
@@ -242,10 +246,10 @@ class JedisAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        Set<SessionKey> sessionKeys = stateStore.listSessionKeys();
-        assertEquals(2, sessionKeys.size());
-        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session1")));
-        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session2")));
+        Set<String> sessionIds = stateStore.listSessionIds(null);
+        assertEquals(2, sessionIds.size());
+        assertTrue(sessionIds.contains("__anon__/session1"));
+        assertTrue(sessionIds.contains("__anon__/session2"));
     }
 
     @Test

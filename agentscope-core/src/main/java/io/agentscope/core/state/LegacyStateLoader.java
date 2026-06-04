@@ -46,12 +46,13 @@ public final class LegacyStateLoader {
      */
     public static AgentState loadFromLegacySession(
             AgentStateStore stateStore, SessionKey sessionKey) {
-        List<Msg> msgs = stateStore.getList(sessionKey, "memory_messages", Msg.class);
+        String sid = sessionKey.toIdentifier();
+        List<Msg> msgs = stateStore.getList(null, sid, "memory_messages", Msg.class);
 
         AgentState.Builder builder = AgentState.builder().context(msgs);
 
         stateStore
-                .get(sessionKey, "toolkit_activeGroups", ToolkitState.class)
+                .get(null, sid, "toolkit_activeGroups", ToolkitState.class)
                 .ifPresent(
                         toolkitState -> {
                             ToolContextState.Builder tc = ToolContextState.builder();

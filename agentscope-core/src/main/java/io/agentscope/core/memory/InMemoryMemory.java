@@ -62,7 +62,11 @@ public class InMemoryMemory implements Memory {
     @Override
     public void saveTo(AgentStateStore stateStore, SessionKey sessionKey) {
         // Always save, even when empty, to ensure cleared state is persisted
-        stateStore.save(sessionKey, KEY_PREFIX + "_messages", new ArrayList<>(messages));
+        stateStore.save(
+                null,
+                sessionKey.toIdentifier(),
+                KEY_PREFIX + "_messages",
+                new ArrayList<>(messages));
     }
 
     /**
@@ -73,7 +77,9 @@ public class InMemoryMemory implements Memory {
      */
     @Override
     public void loadFrom(AgentStateStore stateStore, SessionKey sessionKey) {
-        List<Msg> loaded = stateStore.getList(sessionKey, KEY_PREFIX + "_messages", Msg.class);
+        List<Msg> loaded =
+                stateStore.getList(
+                        null, sessionKey.toIdentifier(), KEY_PREFIX + "_messages", Msg.class);
         messages.clear();
         messages.addAll(loaded);
     }

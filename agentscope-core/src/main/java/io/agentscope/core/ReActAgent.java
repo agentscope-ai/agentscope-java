@@ -279,7 +279,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         // Wire automatic state save on shutdown / interrupt.
         if (this.stateStore != null) {
             shutdownManager.bindStateSaver(
-                    this, agentState -> stateStore.save(sessionKey, "agent_state", agentState));
+                    this,
+                    agentState ->
+                            stateStore.save(
+                                    null, sessionKey.toIdentifier(), "agent_state", agentState));
         }
     }
 
@@ -296,7 +299,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
         try {
             return stateStore
-                    .get(sessionKey, "agent_state", AgentState.class)
+                    .get(null, sessionKey.toIdentifier(), "agent_state", AgentState.class)
                     .orElseGet(
                             () -> {
                                 AgentState legacy =
@@ -335,7 +338,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             return Mono.empty();
         }
         syncToolkitToState();
-        return Mono.fromRunnable(() -> stateStore.save(sessionKey, "agent_state", state));
+        return Mono.fromRunnable(
+                () -> stateStore.save(null, sessionKey.toIdentifier(), "agent_state", state));
     }
 
     // ==================== Config assembly helpers ====================

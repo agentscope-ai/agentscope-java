@@ -149,13 +149,21 @@ class JsonSessionDefaultLocationTest {
         agentAlice.call(userMsg("alice"), RuntimeContext.builder().userId("alice").build()).block();
         agentBob.call(userMsg("bob"), RuntimeContext.builder().userId("bob").build()).block();
 
+        // After Commit 1 the layout is <root>/<userId or __anon__>/<sessionId>/. ReActAgent in
+        // this transitional commit still passes userId=null (per-call userId routing arrives in
+        // Commit 2), so all sessions land under __anon__/. We just need 2 distinct sessionId
+        // subdirs under that anon namespace.
         Path stateRoot = stateHome.resolve(agentName);
-        try (Stream<Path> children = Files.list(stateRoot)) {
+        Path anonRoot = stateRoot.resolve("__anon__");
+        assertTrue(
+                Files.isDirectory(anonRoot),
+                "Anonymous namespace root should exist under " + stateRoot);
+        try (Stream<Path> children = Files.list(anonRoot)) {
             long sessionDirs = children.filter(Files::isDirectory).count();
             assertTrue(
                     sessionDirs >= 2,
                     "Expected per-SessionKey partitioning under "
-                            + stateRoot
+                            + anonRoot
                             + " but found "
                             + sessionDirs
                             + " session dir(s)");

@@ -17,8 +17,6 @@ package io.agentscope.core.state.redis;
 
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ListHashUtil;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.redis.jedis.JedisClientAdapter;
 import io.agentscope.core.state.redis.lettuce.LettuceClientAdapter;
@@ -211,10 +209,10 @@ public class RedisAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public void save(SessionKey sessionKey, String key, State value) {
-        String sessionId = sessionKey.toIdentifier();
-        String redisKey = getStateKey(sessionId, key);
-        String keysKey = getKeysKey(sessionId);
+    public void save(String userId, String sessionId, String key, State value) {
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getStateKey(slotId, key);
+        String keysKey = getKeysKey(slotId);
         try {
             String json = JsonUtils.getJsonCodec().toJson(value);
             client.set(redisKey, json);
@@ -226,11 +224,11 @@ public class RedisAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public void save(SessionKey sessionKey, String key, List<? extends State> values) {
-        String sessionId = sessionKey.toIdentifier();
-        String listKey = getListKey(sessionId, key);
+    public void save(String userId, String sessionId, String key, List<? extends State> values) {
+        String slotId = slotId(userId, sessionId);
+        String listKey = getListKey(slotId, key);
         String hashKey = listKey + HASH_SUFFIX;
-        String keysKey = getKeysKey(sessionId);
+        String keysKey = getKeysKey(slotId);
         try {
             // Compute current hash
             String currentHash = ListHashUtil.computeHash(values);
@@ -267,9 +265,10 @@ public class RedisAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
-        String sessionId = sessionKey.toIdentifier();
-        String redisKey = getStateKey(sessionId, key);
+    public <T extends State> Optional<T> get(
+            String userId, String sessionId, String key, Class<T> type) {
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getStateKey(slotId, key);
         try {
             String json = client.get(redisKey);
             if (json == null) {
@@ -282,9 +281,10 @@ public class RedisAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
-        String sessionId = sessionKey.toIdentifier();
-        String redisKey = getListKey(sessionId, key);
+    public <T extends State> List<T> getList(
+            String userId, String sessionId, String key, Class<T> itemType) {
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getListKey(slotId, key);
         try {
             List<String> jsonList = client.rangeList(redisKey, 0, -1);
             if (jsonList == null || jsonList.isEmpty()) {
@@ -302,70 +302,80 @@ public class RedisAgentStateStore implements AgentStateStore {
     }
 
     @Override
-    public boolean exists(SessionKey sessionKey) {
-        String sessionId = sessionKey.toIdentifier();
-        String keysKey = getKeysKey(sessionId);
-
+    public boolean exists(String userId, String sessionId) {
+        String slotId = slotId(userId, sessionId);
+        String keysKey = getKeysKey(slotId);
         try {
-            // AgentStateStore exists if it has any tracked keys
             return client.keyExists(keysKey) && client.getSetSize(keysKey) > 0;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to check session existence: " + sessionId, e);
+            throw new RuntimeException("Failed to check session existence: " + slotId, e);
         }
     }
 
     @Override
-    public void delete(SessionKey sessionKey) {
-        String sessionId = sessionKey.toIdentifier();
-        String keysKey = getKeysKey(sessionId);
+    public void delete(String userId, String sessionId) {
+        String slotId = slotId(userId, sessionId);
+        String keysKey = getKeysKey(slotId);
 
         try {
-            // Get all tracked keys for this session
             Set<String> trackedKeys = client.getSetMembers(keysKey);
 
             if (trackedKeys != null && !trackedKeys.isEmpty()) {
-                // Build list of actual Redis keys to delete
                 Set<String> keysToDelete = new HashSet<>();
                 keysToDelete.add(keysKey);
 
                 for (String trackedKey : trackedKeys) {
                     if (trackedKey.endsWith(LIST_SUFFIX)) {
-                        // It's a list key
                         String baseKey =
                                 trackedKey.substring(0, trackedKey.length() - LIST_SUFFIX.length());
-                        keysToDelete.add(getListKey(sessionId, baseKey));
-                        keysToDelete.add(getListKey(sessionId, baseKey) + HASH_SUFFIX);
+                        keysToDelete.add(getListKey(slotId, baseKey));
+                        keysToDelete.add(getListKey(slotId, baseKey) + HASH_SUFFIX);
                     } else {
-                        // It's a single state key
-                        keysToDelete.add(getStateKey(sessionId, trackedKey));
+                        keysToDelete.add(getStateKey(slotId, trackedKey));
                     }
                 }
 
                 client.deleteKeys(keysToDelete.toArray(new String[0]));
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to delete session: " + sessionId, e);
+            throw new RuntimeException("Failed to delete session: " + slotId, e);
         }
     }
 
     @Override
-    public Set<SessionKey> listSessionKeys() {
+    public Set<String> listSessionIds(String userId) {
+        String userSegment = normalizeUser(userId);
         try {
-            Set<String> keysKeys = client.findKeysByPattern(keyPrefix + "*" + KEYS_SUFFIX);
-            // Find all session key sets
-            Set<SessionKey> sessionKeys = new HashSet<>();
+            // Pattern: {prefix}{userSegment}/{sessionId}:_keys
+            String pattern = keyPrefix + userSegment + "/*" + KEYS_SUFFIX;
+            Set<String> keysKeys = client.findKeysByPattern(pattern);
+            Set<String> sessionIds = new HashSet<>();
+            String userPrefix = keyPrefix + userSegment + "/";
             for (String keysKey : keysKeys) {
-                // Extract session ID from the keys key
-                // Pattern: {prefix}{sessionId}:_keys
-                String withoutPrefix = keysKey.substring(keyPrefix.length());
+                String withoutPrefix = keysKey.substring(userPrefix.length());
                 String sessionId =
                         withoutPrefix.substring(0, withoutPrefix.length() - KEYS_SUFFIX.length());
-                sessionKeys.add(SimpleSessionKey.of(sessionId));
+                sessionIds.add(sessionId);
             }
-            return sessionKeys;
+            return sessionIds;
         } catch (Exception e) {
             throw new RuntimeException("Failed to list sessions", e);
         }
+    }
+
+    /** Sentinel for {@code userId == null} (anonymous sessions). */
+    private static final String ANON_USER = "__anon__";
+
+    private static String normalizeUser(String userId) {
+        return userId == null || userId.isBlank() ? ANON_USER : userId;
+    }
+
+    /** Combine {@code (userId, sessionId)} into a single Redis slot identifier. */
+    private static String slotId(String userId, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId must not be blank");
+        }
+        return normalizeUser(userId) + "/" + sessionId;
     }
 
     @Override

@@ -27,76 +27,77 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * JSON file-based session implementation.
+ * JSON file-based {@link AgentStateStore} implementation.
  *
- * <p>This implementation stores session state as JSON files on the filesystem. Each session is
- * stored in a directory named by the session ID.
+ * <p>On-disk layout:
  *
- * <p>Features:
+ * <pre>
+ * &lt;root&gt;/
+ *   __anon__/                       ← anonymous (userId == null) sessions
+ *     &lt;safe(sessionId)&gt;/
+ *       agent_state.json
+ *       memory_messages.jsonl
+ *       memory_messages.hash
+ *   &lt;safe(userId)&gt;/                ← per-user sessions
+ *     &lt;safe(sessionId)&gt;/
+ *       agent_state.json
+ *       ...
+ * </pre>
  *
- * <ul>
- *   <li>Multi-module session support
- *   <li>Atomic file operations
- *   <li>UTF-8 encoding
- *   <li>Graceful handling of missing sessions
- *   <li>Configurable storage directory
- * </ul>
+ * <p>{@code safe(...)} keeps the literal string when it matches
+ * {@code ^[a-zA-Z0-9_\-.]+$}; otherwise it is Base64-URL encoded (no padding) so the
+ * filesystem accepts it.
+ *
+ * <p>Features: atomic file operations, UTF-8 encoding, graceful handling of missing
+ * sessions, hash-based append-or-rewrite for list state.
  */
 public class JsonFileAgentStateStore implements AgentStateStore {
 
-    private final Path sessionDirectory;
+    /** Sentinel directory for callers that pass {@code userId == null}. */
+    private static final String ANON_USER = "__anon__";
+
+    /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
+    private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
+
+    private final Path rootDirectory;
 
     /**
-     * Create a JsonFileAgentStateStore with the default session directory.
-     *
-     * <p>Uses the user's home directory with ".agentscope/sessions" as the default storage location
-     * for session files.
+     * Create a {@code JsonFileAgentStateStore} with the default root:
+     * {@code ~/.agentscope/state}.
      */
     public JsonFileAgentStateStore() {
-        this(Paths.get(System.getProperty("user.home"), ".agentscope", "sessions"));
+        this(Paths.get(System.getProperty("user.home"), ".agentscope", "state"));
     }
 
     /**
-     * Create a JsonFileAgentStateStore with a custom session directory.
+     * Create a {@code JsonFileAgentStateStore} rooted at the given directory.
      *
-     * @param sessionDirectory Directory to store session files
+     * @param rootDirectory root directory under which user / session sub-directories live
      */
-    public JsonFileAgentStateStore(Path sessionDirectory) {
-        this.sessionDirectory = sessionDirectory;
-
-        // Create directory if it doesn't exist
+    public JsonFileAgentStateStore(Path rootDirectory) {
+        this.rootDirectory = rootDirectory;
         try {
-            Files.createDirectories(sessionDirectory);
+            Files.createDirectories(rootDirectory);
         } catch (IOException e) {
-            throw new RuntimeException(
-                    "Failed to create session directory: " + sessionDirectory, e);
+            throw new RuntimeException("Failed to create root directory: " + rootDirectory, e);
         }
     }
 
-    /**
-     * Save a single state value to a JSON file.
-     *
-     * <p>The state is stored in the session directory as {key}.json with pretty formatting.
-     *
-     * @param sessionKey the session identifier
-     * @param key the state key (e.g., "agent_meta", "toolkit_activeGroups")
-     * @param value the state value to save
-     */
     @Override
-    public void save(SessionKey sessionKey, String key, State value) {
-        Path file = getStatePath(sessionKey, key);
+    public void save(String userId, String sessionId, String key, State value) {
+        Path file = getStatePath(userId, sessionId, key);
         ensureDirectoryExists(file.getParent());
-
         try {
             String json = JsonUtils.getJsonCodec().toPrettyJson(value);
             Files.writeString(file, json, StandardCharsets.UTF_8);
@@ -105,93 +106,46 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    /**
-     * Save a list of state values to a JSONL file with hash-based change detection.
-     *
-     * <p>This method uses hash-based change detection to handle both append-only and mutable lists:
-     *
-     * <ul>
-     *   <li>If the hash changes (list was modified), the entire file is rewritten
-     *   <li>If the list shrinks, the entire file is rewritten
-     *   <li>If the list only grows (append-only), only new items are appended
-     *   <li>If nothing changes, the operation is skipped
-     * </ul>
-     *
-     * @param sessionKey the session identifier
-     * @param key the state key (e.g., "memory_messages")
-     * @param values the list of state values to save
-     */
     @Override
-    public void save(SessionKey sessionKey, String key, List<? extends State> values) {
-        Path file = getListPath(sessionKey, key);
-        Path hashFile = getHashPath(sessionKey, key);
+    public void save(String userId, String sessionId, String key, List<? extends State> values) {
+        Path file = getListPath(userId, sessionId, key);
+        Path hashFile = getHashPath(userId, sessionId, key);
         ensureDirectoryExists(file.getParent());
 
         try {
-            // Compute current hash
             String currentHash = ListHashUtil.computeHash(values);
-
-            // Read stored hash (may be null if file doesn't exist)
             String storedHash = readHashFile(hashFile);
-
-            // Get the count of already stored items
             long existingCount = countLines(file);
-
-            // Determine if full rewrite is needed
             boolean needsFullRewrite =
                     ListHashUtil.needsFullRewrite(values, storedHash, (int) existingCount);
-
             if (needsFullRewrite) {
-                // Full rewrite: delete existing file and write all items
                 rewriteEntireList(file, values);
             } else if (values.size() > existingCount) {
-                // Incremental append: only write new items
                 List<? extends State> newItems = values.subList((int) existingCount, values.size());
                 appendToList(file, newItems);
             }
             // else: no change, skip writing
-
-            // Update hash file
             writeHashFile(hashFile, currentHash);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save list: " + key, e);
         }
     }
 
-    /**
-     * Rewrite the entire list file with all values.
-     *
-     * @param file the file to write to
-     * @param values the values to write
-     * @throws IOException if writing fails
-     */
     private void rewriteEntireList(Path file, List<? extends State> values) throws IOException {
-        // Delete existing file if it exists
         Files.deleteIfExists(file);
-
-        // Write all items
         try (BufferedWriter writer =
                 Files.newBufferedWriter(
                         file,
                         StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE,
                         StandardOpenOption.WRITE)) {
-
             for (State item : values) {
-                String json = JsonUtils.getJsonCodec().toJson(item);
-                writer.write(json);
+                writer.write(JsonUtils.getJsonCodec().toJson(item));
                 writer.newLine();
             }
         }
     }
 
-    /**
-     * Append items to an existing list file.
-     *
-     * @param file the file to append to
-     * @param items the items to append
-     * @throws IOException if writing fails
-     */
     private void appendToList(Path file, List<? extends State> items) throws IOException {
         try (BufferedWriter writer =
                 Files.newBufferedWriter(
@@ -199,32 +153,20 @@ public class JsonFileAgentStateStore implements AgentStateStore {
                         StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE,
                         StandardOpenOption.APPEND)) {
-
             for (State item : items) {
-                String json = JsonUtils.getJsonCodec().toJson(item);
-                writer.write(json);
+                writer.write(JsonUtils.getJsonCodec().toJson(item));
                 writer.newLine();
             }
         }
     }
 
-    /**
-     * Get a single state value from a JSON file.
-     *
-     * @param sessionKey the session identifier
-     * @param key the state key
-     * @param type the expected state type
-     * @param <T> the state type
-     * @return the state value, or empty if not found
-     */
     @Override
-    public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
-        Path file = getStatePath(sessionKey, key);
-
+    public <T extends State> Optional<T> get(
+            String userId, String sessionId, String key, Class<T> type) {
+        Path file = getStatePath(userId, sessionId, key);
         if (!Files.exists(file)) {
             return Optional.empty();
         }
-
         try {
             String json = Files.readString(file, StandardCharsets.UTF_8);
             return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
@@ -233,161 +175,129 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    /**
-     * Get a list of state values from a JSONL file.
-     *
-     * @param sessionKey the session identifier
-     * @param key the state key
-     * @param itemType the expected item type
-     * @param <T> the item type
-     * @return the list of state values, or empty list if not found
-     */
     @Override
-    public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
-        Path file = getListPath(sessionKey, key);
-
+    public <T extends State> List<T> getList(
+            String userId, String sessionId, String key, Class<T> itemType) {
+        Path file = getListPath(userId, sessionId, key);
         if (!Files.exists(file)) {
             return List.of();
         }
-
         try {
             List<T> result = new ArrayList<>();
-
-            // Read JSONL format - one JSON object per line
             try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     if (!line.isBlank()) {
-                        T item = JsonUtils.getJsonCodec().fromJson(line, itemType);
-                        result.add(item);
+                        result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
                     }
                 }
             }
-
             return result;
         } catch (IOException e) {
             throw new RuntimeException("Failed to load list: " + key, e);
         }
     }
 
-    /**
-     * Check if a session exists.
-     *
-     * @param sessionKey the session identifier
-     * @return true if the session directory exists
-     */
     @Override
-    public boolean exists(SessionKey sessionKey) {
-        return Files.exists(getSessionDir(sessionKey));
+    public boolean exists(String userId, String sessionId) {
+        return Files.exists(getSessionDir(userId, sessionId));
     }
 
-    /**
-     * Delete a session and all its data.
-     *
-     * @param sessionKey the session identifier
-     */
     @Override
-    public void delete(SessionKey sessionKey) {
-        Path sessionDir = getSessionDir(sessionKey);
-        if (Files.exists(sessionDir)) {
-            deleteDirectory(sessionDir);
+    public void delete(String userId, String sessionId) {
+        Path dir = getSessionDir(userId, sessionId);
+        if (Files.exists(dir)) {
+            deleteDirectory(dir);
         }
     }
 
     @Override
-    public void delete(SessionKey sessionKey, String key) {
+    public void delete(String userId, String sessionId, String key) {
         try {
-            Files.deleteIfExists(getStatePath(sessionKey, key));
+            Files.deleteIfExists(getStatePath(userId, sessionId, key));
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete state: " + key, e);
         }
     }
 
-    /**
-     * List all session keys.
-     *
-     * @return set of all session keys
-     */
     @Override
-    public Set<SessionKey> listSessionKeys() {
-        if (!Files.exists(sessionDirectory)) {
+    public Set<String> listSessionIds(String userId) {
+        Path userDir = rootDirectory.resolve(safeSegment(normalizeUser(userId)));
+        if (!Files.isDirectory(userDir)) {
             return Set.of();
         }
-
-        try (Stream<Path> dirs = Files.list(sessionDirectory)) {
-            return dirs.filter(Files::isDirectory)
-                    .map(p -> SimpleSessionKey.of(p.getFileName().toString()))
-                    .collect(Collectors.toSet());
+        try (Stream<Path> dirs = Files.list(userDir)) {
+            Set<String> result = new HashSet<>();
+            for (Path d : (Iterable<Path>) dirs.filter(Files::isDirectory)::iterator) {
+                result.add(decodeSegment(d.getFileName().toString()));
+            }
+            return result;
         } catch (IOException e) {
             throw new RuntimeException("Failed to list sessions", e);
         }
     }
 
-    /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
-    private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
-
-    /**
-     * Get the directory path for a session.
-     *
-     * <p>Uses the session key's identifier. If the identifier contains only file-system safe
-     * characters (alphanumeric, underscore, hyphen, dot), it is used directly. Otherwise, Base64
-     * URL-safe encoding is applied for file system compatibility.
-     *
-     * @param sessionKey the session key
-     * @return Path to the session directory
-     */
-    protected Path getSessionDir(SessionKey sessionKey) {
-        String identifier = sessionKey.toIdentifier();
-        // If identifier contains special characters, encode it for file system safety
-        if (!SAFE_FILENAME_PATTERN.matcher(identifier).matches()) {
-            String encoded =
-                    Base64.getUrlEncoder()
-                            .withoutPadding()
-                            .encodeToString(identifier.getBytes(StandardCharsets.UTF_8));
-            return sessionDirectory.resolve(encoded);
-        }
-        return sessionDirectory.resolve(identifier);
+    /** Returns the configured root directory (for diagnostics). */
+    public Path getRootDirectory() {
+        return rootDirectory;
     }
 
     /**
-     * Get the file path for a single state value.
-     *
-     * @param sessionKey the session key
-     * @param key the state key
-     * @return Path to the state file ({sessionDir}/{key}.json)
+     * Clear every session under every user. Returns the number of session directories removed.
      */
-    private Path getStatePath(SessionKey sessionKey, String key) {
-        return getSessionDir(sessionKey).resolve(key + ".json");
+    public Mono<Integer> clearAllSessions() {
+        return Mono.fromSupplier(
+                        () -> {
+                            try {
+                                if (!Files.exists(rootDirectory)) {
+                                    return 0;
+                                }
+                                int deletedCount = 0;
+                                try (Stream<Path> userDirs = Files.list(rootDirectory)) {
+                                    for (Path userDir :
+                                            (Iterable<Path>)
+                                                    userDirs.filter(Files::isDirectory)::iterator) {
+                                        try (Stream<Path> sessionDirs = Files.list(userDir)) {
+                                            for (Path sessionDir :
+                                                    (Iterable<Path>)
+                                                            sessionDirs.filter(Files::isDirectory)
+                                                                    ::iterator) {
+                                                deleteDirectory(sessionDir);
+                                                deletedCount++;
+                                            }
+                                        }
+                                    }
+                                }
+                                return deletedCount;
+                            } catch (IOException e) {
+                                throw new RuntimeException("Failed to clear sessions", e);
+                            }
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
-     * Get the file path for a list state value.
-     *
-     * @param sessionKey the session key
-     * @param key the state key
-     * @return Path to the list file ({sessionDir}/{key}.jsonl)
+     * Returns the directory under which all state files for {@code (userId, sessionId)} live.
+     * Subclasses can override this if they need a different layout.
      */
-    private Path getListPath(SessionKey sessionKey, String key) {
-        return getSessionDir(sessionKey).resolve(key + ".jsonl");
+    protected Path getSessionDir(String userId, String sessionId) {
+        return rootDirectory
+                .resolve(safeSegment(normalizeUser(userId)))
+                .resolve(safeSegment(requireSessionId(sessionId)));
     }
 
-    /**
-     * Get the file path for a list hash file.
-     *
-     * @param sessionKey the session key
-     * @param key the state key
-     * @return Path to the hash file ({sessionDir}/{key}.hash)
-     */
-    private Path getHashPath(SessionKey sessionKey, String key) {
-        return getSessionDir(sessionKey).resolve(key + ".hash");
+    private Path getStatePath(String userId, String sessionId, String key) {
+        return getSessionDir(userId, sessionId).resolve(key + ".json");
     }
 
-    /**
-     * Read the stored hash from a hash file.
-     *
-     * @param hashFile the hash file path
-     * @return the stored hash, or null if file doesn't exist
-     */
+    private Path getListPath(String userId, String sessionId, String key) {
+        return getSessionDir(userId, sessionId).resolve(key + ".jsonl");
+    }
+
+    private Path getHashPath(String userId, String sessionId, String key) {
+        return getSessionDir(userId, sessionId).resolve(key + ".hash");
+    }
+
     private String readHashFile(Path hashFile) {
         if (!Files.exists(hashFile)) {
             return null;
@@ -395,28 +305,14 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         try {
             return Files.readString(hashFile, StandardCharsets.UTF_8).trim();
         } catch (IOException e) {
-            // If we can't read the hash, treat as no hash (will trigger full rewrite)
             return null;
         }
     }
 
-    /**
-     * Write a hash value to a hash file.
-     *
-     * @param hashFile the hash file path
-     * @param hash the hash value to write
-     * @throws IOException if writing fails
-     */
     private void writeHashFile(Path hashFile, String hash) throws IOException {
         Files.writeString(hashFile, hash, StandardCharsets.UTF_8);
     }
 
-    /**
-     * Count the number of non-blank lines in a file.
-     *
-     * @param file the file to count lines in
-     * @return number of non-blank lines, or 0 if file doesn't exist
-     */
     private long countLines(Path file) {
         if (!Files.exists(file)) {
             return 0;
@@ -428,11 +324,6 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    /**
-     * Ensure a directory exists, creating it if necessary.
-     *
-     * @param dir the directory to ensure exists
-     */
     private void ensureDirectoryExists(Path dir) {
         try {
             Files.createDirectories(dir);
@@ -441,16 +332,11 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    /**
-     * Recursively delete a directory and all its contents.
-     *
-     * @param dir the directory to delete
-     */
     private void deleteDirectory(Path dir) {
         try {
             if (Files.exists(dir)) {
                 try (Stream<Path> paths = Files.walk(dir)) {
-                    paths.sorted(Comparator.reverseOrder()) // Delete files before directories
+                    paths.sorted(Comparator.reverseOrder())
                             .forEach(
                                     path -> {
                                         try {
@@ -467,40 +353,35 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    /**
-     * Get the session directory path.
-     *
-     * @return Path to the session directory
-     */
-    public Path getSessionDirectory() {
-        return sessionDirectory;
+    private static String normalizeUser(String userId) {
+        return userId == null || userId.isBlank() ? ANON_USER : userId;
     }
 
-    /**
-     * Clear all sessions (for testing or cleanup).
-     *
-     * @return Mono that completes when all sessions are deleted
-     */
-    public Mono<Integer> clearAllSessions() {
-        return Mono.fromSupplier(
-                        () -> {
-                            try {
-                                if (!Files.exists(sessionDirectory)) {
-                                    return 0;
-                                }
+    private static String requireSessionId(String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId must not be null");
+        if (sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId must not be blank");
+        }
+        return sessionId;
+    }
 
-                                int deletedCount = 0;
-                                try (Stream<Path> files = Files.list(sessionDirectory)) {
-                                    for (Path file : files.filter(Files::isDirectory).toList()) {
-                                        deleteDirectory(file);
-                                        deletedCount++;
-                                    }
-                                }
-                                return deletedCount;
-                            } catch (IOException e) {
-                                throw new RuntimeException("Failed to clear sessions", e);
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
+    private static String safeSegment(String value) {
+        if (SAFE_FILENAME_PATTERN.matcher(value).matches()) {
+            return value;
+        }
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String decodeSegment(String segment) {
+        if (SAFE_FILENAME_PATTERN.matcher(segment).matches()) {
+            return segment;
+        }
+        try {
+            return new String(Base64.getUrlDecoder().decode(segment), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return segment;
+        }
     }
 }

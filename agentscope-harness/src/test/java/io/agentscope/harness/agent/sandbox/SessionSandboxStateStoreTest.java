@@ -103,7 +103,7 @@ class SessionSandboxStateStoreTest {
     /** Simulates sessions whose per-key delete is not implemented (default no-op). */
     private static final class NoDeleteSession extends InMemoryAgentStateStore {
         @Override
-        public void delete(io.agentscope.core.state.SessionKey sessionKey, String key) {
+        public void delete(String userId, String sessionId, String key) {
             // no-op
         }
     }

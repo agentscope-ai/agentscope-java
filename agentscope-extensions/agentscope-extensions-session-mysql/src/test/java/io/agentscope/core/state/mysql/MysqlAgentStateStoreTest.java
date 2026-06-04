@@ -226,13 +226,14 @@ public class MysqlAgentStateStoreTest {
         TestState state = new TestState("test_value", 42);
 
         // Save state
-        stateStore.save(sessionKey, "testModule", state);
+        stateStore.save(null, sessionKey.toIdentifier(), "testModule", state);
 
         // Verify save operations
         verify(mockStatement, atLeast(1)).executeUpdate();
 
         // Get state
-        Optional<TestState> loaded = stateStore.get(sessionKey, "testModule", TestState.class);
+        Optional<TestState> loaded =
+                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
         assertTrue(loaded.isPresent());
         assertEquals("test_value", loaded.get().value());
         assertEquals(42, loaded.get().count());
@@ -248,7 +249,8 @@ public class MysqlAgentStateStoreTest {
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
         SessionKey sessionKey = SimpleSessionKey.of("session_auto_commit_off");
 
-        stateStore.save(sessionKey, "testModule", new TestState("test_value", 42));
+        stateStore.save(
+                null, sessionKey.toIdentifier(), "testModule", new TestState("test_value", 42));
 
         verify(mockConnection).commit();
         verify(mockConnection, never()).setAutoCommit(true);
@@ -278,10 +280,11 @@ public class MysqlAgentStateStoreTest {
         List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
 
         // Save list state
-        stateStore.save(sessionKey, "testList", states);
+        stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
 
         // Get list state
-        List<TestState> loaded = stateStore.getList(sessionKey, "testList", TestState.class);
+        List<TestState> loaded =
+                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
         assertEquals(2, loaded.size());
         assertEquals("value1", loaded.get(0).value());
         assertEquals("value2", loaded.get(1).value());
@@ -301,7 +304,7 @@ public class MysqlAgentStateStoreTest {
         SessionKey sessionKey = SimpleSessionKey.of("session_list_auto_commit_off");
         List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
 
-        stateStore.save(sessionKey, "testList", states);
+        stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
 
         verify(mockConnection).commit();
         verify(mockConnection, never()).setAutoCommit(true);
@@ -324,7 +327,7 @@ public class MysqlAgentStateStoreTest {
         SessionKey sessionKey = SimpleSessionKey.of("session_full_rewrite_auto_commit_off");
         List<TestState> states = List.of(new TestState("value1", 1));
 
-        stateStore.save(sessionKey, "testList", states);
+        stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
 
         verify(mockConnection).commit();
         verify(mockConnection, never()).setAutoCommit(true);
@@ -340,7 +343,8 @@ public class MysqlAgentStateStoreTest {
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
         SessionKey sessionKey = SimpleSessionKey.of("non_existent");
 
-        Optional<TestState> state = stateStore.get(sessionKey, "testModule", TestState.class);
+        Optional<TestState> state =
+                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
         assertFalse(state.isPresent());
     }
 
@@ -354,7 +358,8 @@ public class MysqlAgentStateStoreTest {
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
         SessionKey sessionKey = SimpleSessionKey.of("non_existent");
 
-        List<TestState> states = stateStore.getList(sessionKey, "testList", TestState.class);
+        List<TestState> states =
+                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
         assertTrue(states.isEmpty());
     }
 
@@ -368,7 +373,7 @@ public class MysqlAgentStateStoreTest {
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
         SessionKey sessionKey = SimpleSessionKey.of("session1");
 
-        assertTrue(stateStore.exists(sessionKey));
+        assertTrue(stateStore.exists(null, sessionKey.toIdentifier()));
     }
 
     @Test
@@ -381,7 +386,7 @@ public class MysqlAgentStateStoreTest {
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
         SessionKey sessionKey = SimpleSessionKey.of("non_existent");
 
-        assertFalse(stateStore.exists(sessionKey));
+        assertFalse(stateStore.exists(null, sessionKey.toIdentifier()));
     }
 
     @Test
@@ -393,7 +398,7 @@ public class MysqlAgentStateStoreTest {
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
         SessionKey sessionKey = SimpleSessionKey.of("session1");
 
-        stateStore.delete(sessionKey);
+        stateStore.delete(null, sessionKey.toIdentifier());
 
         verify(mockStatement).setString(1, "session1");
         verify(mockStatement).executeUpdate();
@@ -409,7 +414,7 @@ public class MysqlAgentStateStoreTest {
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
         SessionKey sessionKey = SimpleSessionKey.of("session1");
 
-        stateStore.delete(sessionKey);
+        stateStore.delete(null, sessionKey.toIdentifier());
 
         verify(mockConnection).commit();
         verify(mockConnection, never()).setAutoCommit(true);
@@ -423,9 +428,9 @@ public class MysqlAgentStateStoreTest {
         when(mockResultSet.next()).thenReturn(false);
 
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
-        Set<SessionKey> sessionKeys = stateStore.listSessionKeys();
+        Set<String> sessionIds = stateStore.listSessionIds(null);
 
-        assertTrue(sessionKeys.isEmpty());
+        assertTrue(sessionIds.isEmpty());
     }
 
     @Test
@@ -434,14 +439,17 @@ public class MysqlAgentStateStoreTest {
         when(mockStatement.execute()).thenReturn(true);
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(true, true, false);
-        when(mockResultSet.getString("session_id")).thenReturn("session1", "session2");
+        // With the (uid, sid) two-segment slot encoding, MysqlAgentStateStore stores
+        // "__anon__:session1" / "__anon__:session2" and listSessionIds(null) strips the prefix.
+        when(mockResultSet.getString("session_id"))
+                .thenReturn("__anon__:session1", "__anon__:session2");
 
         MysqlAgentStateStore stateStore = new MysqlAgentStateStore(mockDataSource, true);
-        Set<SessionKey> sessionKeys = stateStore.listSessionKeys();
+        Set<String> sessionIds = stateStore.listSessionIds(null);
 
-        assertEquals(2, sessionKeys.size());
-        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session1")));
-        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session2")));
+        assertEquals(2, sessionIds.size());
+        assertTrue(sessionIds.contains("session1"));
+        assertTrue(sessionIds.contains("session2"));
     }
 
     @Test

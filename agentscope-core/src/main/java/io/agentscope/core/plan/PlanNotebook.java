@@ -158,7 +158,11 @@ public class PlanNotebook {
      */
     public void saveTo(AgentStateStore stateStore, SessionKey sessionKey) {
         // Always save, even when null, to ensure cleared state is persisted
-        stateStore.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
+        stateStore.save(
+                null,
+                sessionKey.toIdentifier(),
+                keyPrefix + "_state",
+                new PlanNotebookState(currentPlan));
     }
 
     /**
@@ -171,7 +175,7 @@ public class PlanNotebook {
         // Clear existing state first to avoid stale data
         this.currentPlan = null;
         stateStore
-                .get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
+                .get(null, sessionKey.toIdentifier(), keyPrefix + "_state", PlanNotebookState.class)
                 .ifPresent(state -> this.currentPlan = state.currentPlan());
     }
 

@@ -72,7 +72,7 @@ public final class SessionOperations {
         }
         return Mono.fromCallable(
                         () -> {
-                            Set<?> keys = stateStore.listSessionKeys();
+                            Set<?> keys = stateStore.listSessionIds(null);
                             List<String> out = new ArrayList<>(keys.size());
                             for (Object k : keys) {
                                 out.add(String.valueOf(k));
@@ -437,7 +437,13 @@ public final class SessionOperations {
         if (stateStore == null) {
             return Mono.empty();
         }
-        return Mono.fromRunnable(() -> stateStore.save(react.getSessionKey(), "agent_state", state))
+        return Mono.fromRunnable(
+                        () ->
+                                stateStore.save(
+                                        state.getUserId(),
+                                        react.getSessionKey().toIdentifier(),
+                                        "agent_state",
+                                        state))
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();
     }

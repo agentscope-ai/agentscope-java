@@ -23,30 +23,39 @@ import java.util.Set;
  * Persistent storage interface for AgentScope agent state.
  *
  * <p>An {@code AgentStateStore} provides save / load / delete / list operations for
- * {@link State} objects keyed by a session identifier, allowing agents, memories, toolkits,
- * and other stateful components to be persisted and restored across application runs or
- * user interactions.
+ * {@link State} objects keyed by a {@code (userId, sessionId)} pair, allowing agents,
+ * memories, toolkits, and other stateful components to be persisted and restored across
+ * application runs or user interactions.
+ *
+ * <p>Slot addressing is intentionally simple:
  *
  * <ul>
- *   <li>{@link #save(SessionKey, String, State)} - Save a single state object
- *   <li>{@link #save(SessionKey, String, List)} - Save a list (incremental append)
- *   <li>{@link #get(SessionKey, String, Class)} - Get a single state object
- *   <li>{@link #getList(SessionKey, String, Class)} - Get a list of state objects
+ *   <li>{@code sessionId} — non-null, non-blank; identifies a conversation / session.
+ *   <li>{@code userId} — nullable. {@code null} represents an anonymous / single-tenant
+ *       caller (CLI usage, tests). Implementations group all anonymous sessions under a
+ *       single namespace.
  * </ul>
+ *
+ * <p>Implementations decide how to combine the pair into a storage key (filesystem path,
+ * Redis key prefix, SQL column). Callers MUST NOT concatenate them manually before calling.
  *
  * <p>Example usage:
  *
  * <pre>{@code
  * AgentStateStore store = new JsonFileAgentStateStore(Path.of("state"));
- * SessionKey sessionKey = SimpleSessionKey.of("user_123");
  *
- * // Save state
- * store.save(sessionKey, "agent_meta", new AgentMetaState("id", "name", "desc", "prompt"));
- * store.save(sessionKey, "memory_messages", messages);  // incremental append
+ * // Save state for an anonymous session
+ * store.save(null, "session-1", "agent_state", state);
+ *
+ * // Save state scoped to a user
+ * store.save("alice", "session-1", "agent_state", state);
  *
  * // Load state
- * Optional<AgentMetaState> meta = store.get(sessionKey, "agent_meta", AgentMetaState.class);
- * List<Msg> messages = store.getList(sessionKey, "memory_messages", Msg.class);
+ * Optional<AgentState> loaded =
+ *         store.get("alice", "session-1", "agent_state", AgentState.class);
+ *
+ * // List all sessions owned by a user (null lists anonymous sessions)
+ * Set<String> mySessions = store.listSessionIds("alice");
  * }</pre>
  */
 public interface AgentStateStore {
@@ -56,11 +65,12 @@ public interface AgentStateStore {
      *
      * <p>This method saves a single state object, replacing any existing value with the same key.
      *
-     * @param sessionKey the session identifier
-     * @param key the state key (e.g., "agent_meta", "toolkit_activeGroups")
+     * @param userId nullable user identifier; {@code null} = anonymous
+     * @param sessionId session identifier; must be non-null and non-blank
+     * @param key the state key (e.g., {@code "agent_state"}, {@code "toolkit_activeGroups"})
      * @param value the state value to save
      */
-    void save(SessionKey sessionKey, String key, State value);
+    void save(String userId, String sessionId, String key, State value);
 
     /**
      * Save a list of state values.
@@ -68,75 +78,87 @@ public interface AgentStateStore {
      * <p>Different implementations may use different storage strategies:
      *
      * <ul>
-     *   <li>JsonFileAgentStateStore: Incremental append - only appends new elements not yet persisted
-     *   <li>InMemoryAgentStateStore: Full replacement - replaces the entire list
+     *   <li>{@link JsonFileAgentStateStore}: incremental append — only new elements are written
+     *   <li>{@link InMemoryAgentStateStore}: full replacement — replaces the entire list
      * </ul>
      *
      * <p>Callers should always pass the full list. The implementation decides the storage strategy.
      *
-     * @param sessionKey the session identifier
-     * @param key the state key (e.g., "memory_messages")
+     * @param userId nullable user identifier
+     * @param sessionId session identifier; must be non-null and non-blank
+     * @param key the state key (e.g., {@code "memory_messages"})
      * @param values the full list of state values
      */
-    void save(SessionKey sessionKey, String key, List<? extends State> values);
+    void save(String userId, String sessionId, String key, List<? extends State> values);
 
     /**
      * Get a single state value.
      *
-     * @param sessionKey the session identifier
+     * @param userId nullable user identifier
+     * @param sessionId session identifier; must be non-null and non-blank
      * @param key the state key
      * @param type the expected state type
      * @param <T> the state type
      * @return the state value, or empty if not found
      */
-    <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type);
+    <T extends State> Optional<T> get(String userId, String sessionId, String key, Class<T> type);
 
     /**
      * Get a list of state values.
      *
-     * @param sessionKey the session identifier
+     * @param userId nullable user identifier
+     * @param sessionId session identifier; must be non-null and non-blank
      * @param key the state key
      * @param itemType the expected item type
      * @param <T> the item type
      * @return the list of state values, or empty list if not found
      */
-    <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType);
+    <T extends State> List<T> getList(
+            String userId, String sessionId, String key, Class<T> itemType);
 
     /**
      * Check if a session exists.
      *
-     * @param sessionKey the session identifier
-     * @return true if the session exists
+     * @param userId nullable user identifier
+     * @param sessionId session identifier; must be non-null and non-blank
+     * @return true if the session has any persisted state
      */
-    boolean exists(SessionKey sessionKey);
+    boolean exists(String userId, String sessionId);
 
     /**
      * Delete a session and all its data.
      *
-     * @param sessionKey the session identifier
+     * @param userId nullable user identifier
+     * @param sessionId session identifier; must be non-null and non-blank
      */
-    void delete(SessionKey sessionKey);
+    void delete(String userId, String sessionId);
 
     /**
      * Delete a single state entry within a session.
      *
-     * @param sessionKey the session identifier
+     * @param userId nullable user identifier
+     * @param sessionId session identifier; must be non-null and non-blank
      * @param key the state key to delete
      */
-    default void delete(SessionKey sessionKey, String key) {
+    default void delete(String userId, String sessionId, String key) {
         // Default no-op; implementations should override if they support per-key deletion
     }
 
     /**
-     * List all session keys.
+     * List session identifiers visible under the given user namespace.
      *
-     * @return set of all session keys
+     * <p>Use {@code userId == null} to list anonymous sessions. Pass a concrete user to list
+     * only that user's sessions. There is no API to list across users in one call — that is
+     * a separate administrative concern (admin starter handles it by iterating known users).
+     *
+     * @param userId nullable user identifier
+     * @return set of session identifiers stored under {@code userId}
      */
-    Set<SessionKey> listSessionKeys();
+    Set<String> listSessionIds(String userId);
 
     /**
-     * Clean up any resources used by this session manager. Implementations should override this if
-     * they need cleanup.
+     * Clean up any resources used by this store. Implementations should override this if they
+     * need cleanup.
      */
     default void close() {
         // Default implementation does nothing

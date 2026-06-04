@@ -15,92 +15,58 @@
  */
 package io.agentscope.core.state;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * In-memory implementation of the {@link AgentStateStore} interface.
  *
- * <p>This implementation stores agent state in memory using a ConcurrentHashMap. It is suitable
- * for single-process applications where persistence across restarts is not required.
+ * <p>This implementation stores agent state in memory using a {@link ConcurrentHashMap}. It is
+ * suitable for single-process applications where persistence across restarts is not required.
  *
- * <p><b>Thread Safety:</b> This class is thread-safe. It uses ConcurrentHashMap for storage
- * and creates defensive copies of state data during save operations.
+ * <p><b>Slot key:</b> the {@code (userId, sessionId)} pair is the storage slot. {@code null}
+ * userId is mapped to the literal {@code "__anon__"} bucket so anonymous sessions don't
+ * collide with users actually named {@code ""}.
+ *
+ * <p><b>Thread Safety:</b> this class is thread-safe.
  *
  * <p><b>Limitations:</b>
  *
  * <ul>
  *   <li>State is lost when the JVM exits
  *   <li>Not suitable for distributed environments
- *   <li>Memory usage grows with number of sessions
+ *   <li>Memory usage grows with the number of sessions
  * </ul>
- *
- * <p>Example usage:
- *
- * <pre>{@code
- * AgentStateStore store = new InMemoryAgentStateStore();
- * SessionKey sessionKey = SimpleSessionKey.of("user123");
- *
- * // Save state
- * store.save(sessionKey, "agent_meta", new AgentMetaState("id", "name", "desc", "prompt"));
- *
- * // Load state
- * Optional<AgentMetaState> meta = store.get(sessionKey, "agent_meta", AgentMetaState.class);
- * }</pre>
  */
 public class InMemoryAgentStateStore implements AgentStateStore {
 
-    /** Storage for session states. Key: sessionKey string, Value: state data map */
-    private final Map<String, SessionData> sessions = new ConcurrentHashMap<>();
+    /** Sentinel namespace for callers that pass {@code userId == null}. */
+    private static final String ANON_USER = "__anon__";
 
-    /**
-     * Save a single state value.
-     *
-     * @param sessionKey the session identifier
-     * @param key the state key (e.g., "agent_meta", "toolkit_activeGroups")
-     * @param value the state value to save
-     */
+    /** users → (sessionId → SessionData) */
+    private final Map<String, Map<String, SessionData>> users = new ConcurrentHashMap<>();
+
     @Override
-    public void save(SessionKey sessionKey, String key, State value) {
-        String sessionKeyStr = serializeSessionKey(sessionKey);
-        SessionData data = sessions.computeIfAbsent(sessionKeyStr, k -> new SessionData());
+    public void save(String userId, String sessionId, String key, State value) {
+        SessionData data = lookupOrCreate(userId, sessionId);
         data.setSingleState(key, value);
     }
 
-    /**
-     * Save a list of state values (replacement).
-     *
-     * <p>Unlike JsonFileAgentStateStore which uses incremental append, InMemoryAgentStateStore replaces the entire list.
-     * Callers should pass the full list, and InMemoryAgentStateStore stores it as-is.
-     *
-     * @param sessionKey the session identifier
-     * @param key the state key (e.g., "memory_messages")
-     * @param values the full list of state values to store
-     */
     @Override
-    public void save(SessionKey sessionKey, String key, List<? extends State> values) {
-        String sessionKeyStr = serializeSessionKey(sessionKey);
-        SessionData data = sessions.computeIfAbsent(sessionKeyStr, k -> new SessionData());
+    public void save(String userId, String sessionId, String key, List<? extends State> values) {
+        SessionData data = lookupOrCreate(userId, sessionId);
         data.setListState(key, values);
     }
 
-    /**
-     * Get a single state value.
-     *
-     * @param sessionKey the session identifier
-     * @param key the state key
-     * @param type the expected state type
-     * @param <T> the state type
-     * @return the state value, or empty if not found
-     */
     @Override
-    public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
-        String sessionKeyStr = serializeSessionKey(sessionKey);
-        SessionData data = sessions.get(sessionKeyStr);
+    public <T extends State> Optional<T> get(
+            String userId, String sessionId, String key, Class<T> type) {
+        SessionData data = lookup(userId, sessionId);
         if (data == null) {
             return Optional.empty();
         }
@@ -120,20 +86,11 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         return Optional.of(type.cast(state));
     }
 
-    /**
-     * Get a list of state values.
-     *
-     * @param sessionKey the session identifier
-     * @param key the state key
-     * @param itemType the expected item type
-     * @param <T> the item type
-     * @return the list of state values, or empty list if not found
-     */
     @Override
     @SuppressWarnings("unchecked")
-    public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
-        String sessionKeyStr = serializeSessionKey(sessionKey);
-        SessionData data = sessions.get(sessionKeyStr);
+    public <T extends State> List<T> getList(
+            String userId, String sessionId, String key, Class<T> itemType) {
+        SessionData data = lookup(userId, sessionId);
         if (data == null) {
             return List.of();
         }
@@ -144,77 +101,69 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         return (List<T>) list;
     }
 
-    /**
-     * Check if a session exists.
-     *
-     * @param sessionKey the session identifier
-     * @return true if the session exists
-     */
     @Override
-    public boolean exists(SessionKey sessionKey) {
-        String sessionKeyStr = serializeSessionKey(sessionKey);
-        return sessions.containsKey(sessionKeyStr);
-    }
-
-    /**
-     * Delete a session and all its data.
-     *
-     * @param sessionKey the session identifier
-     */
-    @Override
-    public void delete(SessionKey sessionKey) {
-        String sessionKeyStr = serializeSessionKey(sessionKey);
-        sessions.remove(sessionKeyStr);
+    public boolean exists(String userId, String sessionId) {
+        return lookup(userId, sessionId) != null;
     }
 
     @Override
-    public void delete(SessionKey sessionKey, String key) {
-        String sessionKeyStr = serializeSessionKey(sessionKey);
-        SessionData data = sessions.get(sessionKeyStr);
+    public void delete(String userId, String sessionId) {
+        Map<String, SessionData> userBucket = users.get(normalizeUser(userId));
+        if (userBucket != null) {
+            userBucket.remove(requireSessionId(sessionId));
+        }
+    }
+
+    @Override
+    public void delete(String userId, String sessionId, String key) {
+        SessionData data = lookup(userId, sessionId);
         if (data != null) {
             data.removeSingleState(key);
         }
     }
 
-    /**
-     * List all session keys.
-     *
-     * @return set of all session keys
-     */
     @Override
-    public Set<SessionKey> listSessionKeys() {
-        return sessions.keySet().stream().map(SimpleSessionKey::of).collect(Collectors.toSet());
-    }
-
-    /**
-     * Serialize a SessionKey to a string for use as a map key.
-     *
-     * @param sessionKey the session key
-     * @return string representation
-     */
-    private String serializeSessionKey(SessionKey sessionKey) {
-        if (sessionKey instanceof SimpleSessionKey simple) {
-            return simple.sessionId();
+    public Set<String> listSessionIds(String userId) {
+        Map<String, SessionData> userBucket = users.get(normalizeUser(userId));
+        if (userBucket == null) {
+            return Set.of();
         }
-        return sessionKey.toString();
+        return new HashSet<>(userBucket.keySet());
     }
 
-    /**
-     * Get the number of active sessions.
-     *
-     * @return Number of sessions currently stored
-     */
+    /** Total number of {@code (userId, sessionId)} slots currently stored. */
     public int getSessionCount() {
-        return sessions.size();
+        return users.values().stream().mapToInt(Map::size).sum();
     }
 
-    /**
-     * Clear all sessions from memory.
-     *
-     * <p>This is useful for testing or when you want to reset all state.
-     */
+    /** Wipe everything (useful for testing). */
     public void clearAll() {
-        sessions.clear();
+        users.clear();
+    }
+
+    private SessionData lookupOrCreate(String userId, String sessionId) {
+        return users.computeIfAbsent(normalizeUser(userId), u -> new ConcurrentHashMap<>())
+                .computeIfAbsent(requireSessionId(sessionId), s -> new SessionData());
+    }
+
+    private SessionData lookup(String userId, String sessionId) {
+        Map<String, SessionData> userBucket = users.get(normalizeUser(userId));
+        if (userBucket == null) {
+            return null;
+        }
+        return userBucket.get(requireSessionId(sessionId));
+    }
+
+    private static String normalizeUser(String userId) {
+        return userId == null || userId.isBlank() ? ANON_USER : userId;
+    }
+
+    private static String requireSessionId(String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId must not be null");
+        if (sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId must not be blank");
+        }
+        return sessionId;
     }
 
     /** Internal class to hold session data. */
@@ -235,7 +184,6 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         }
 
         void setListState(String key, List<? extends State> values) {
-            // Use List.copyOf for immutable copy to prevent external modification
             listStates.put(key, List.copyOf(values));
         }
 

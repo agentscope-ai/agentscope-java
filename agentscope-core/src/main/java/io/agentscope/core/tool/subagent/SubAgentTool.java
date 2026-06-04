@@ -27,8 +27,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
@@ -215,10 +213,9 @@ public class SubAgentTool implements AgentTool {
         if (subSession == null) {
             return;
         }
-        SessionKey key = SimpleSessionKey.of(sessionId);
         try {
             subSession
-                    .get(key, "agent_state", AgentState.class)
+                    .get(null, sessionId, "agent_state", AgentState.class)
                     .ifPresent(loaded -> applyLoadedState(ra, loaded));
             logger.debug("Loaded sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
@@ -239,9 +236,8 @@ public class SubAgentTool implements AgentTool {
         if (subSession == null) {
             return;
         }
-        SessionKey key = SimpleSessionKey.of(sessionId);
         try {
-            subSession.save(key, "agent_state", ra.getAgentState());
+            subSession.save(null, sessionId, "agent_state", ra.getAgentState());
             logger.debug("Saved sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(

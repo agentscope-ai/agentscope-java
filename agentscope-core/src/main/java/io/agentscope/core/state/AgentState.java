@@ -43,6 +43,7 @@ import java.util.UUID;
  */
 @JsonPropertyOrder({
     "session_id",
+    "user_id",
     "summary",
     "context",
     "reply_id",
@@ -56,6 +57,7 @@ import java.util.UUID;
 public final class AgentState implements State {
 
     private final String sessionId;
+    private final String userId;
     private String summary;
     private final List<Msg> context;
     private String replyId;
@@ -68,6 +70,7 @@ public final class AgentState implements State {
 
     private AgentState(Builder builder) {
         this.sessionId = builder.sessionId == null ? newHex() : builder.sessionId;
+        this.userId = builder.userId;
         this.summary = builder.summary == null ? "" : builder.summary;
         this.context = new ArrayList<>(builder.context);
         this.replyId = builder.replyId == null ? newHex() : builder.replyId;
@@ -92,6 +95,7 @@ public final class AgentState implements State {
     @JsonCreator
     static AgentState fromJson(
             @JsonProperty("session_id") String sessionId,
+            @JsonProperty("user_id") String userId,
             @JsonProperty("summary") String summary,
             @JsonProperty("context") List<Msg> context,
             @JsonProperty("reply_id") String replyId,
@@ -104,6 +108,9 @@ public final class AgentState implements State {
         Builder b = builder();
         if (sessionId != null) {
             b.sessionId(sessionId);
+        }
+        if (userId != null) {
+            b.userId(userId);
         }
         if (summary != null) {
             b.summary(summary);
@@ -142,6 +149,12 @@ public final class AgentState implements State {
     @JsonProperty("session_id")
     public String getSessionId() {
         return sessionId;
+    }
+
+    /** Nullable; {@code null} = anonymous / single-tenant context. */
+    @JsonProperty("user_id")
+    public String getUserId() {
+        return userId;
     }
 
     @JsonProperty("summary")
@@ -243,6 +256,7 @@ public final class AgentState implements State {
         return curIter == other.curIter
                 && shutdownInterrupted == other.shutdownInterrupted
                 && Objects.equals(sessionId, other.sessionId)
+                && Objects.equals(userId, other.userId)
                 && Objects.equals(summary, other.summary)
                 && Objects.equals(context, other.context)
                 && Objects.equals(replyId, other.replyId)
@@ -256,6 +270,7 @@ public final class AgentState implements State {
     public int hashCode() {
         return Objects.hash(
                 sessionId,
+                userId,
                 summary,
                 context,
                 replyId,
@@ -284,6 +299,7 @@ public final class AgentState implements State {
 
     public static final class Builder {
         private String sessionId;
+        private String userId;
         private String summary;
         private List<Msg> context = new ArrayList<>();
         private String replyId;
@@ -298,6 +314,12 @@ public final class AgentState implements State {
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
+            return this;
+        }
+
+        /** Nullable; {@code null} = anonymous / single-tenant context. */
+        public Builder userId(String userId) {
+            this.userId = userId;
             return this;
         }
 

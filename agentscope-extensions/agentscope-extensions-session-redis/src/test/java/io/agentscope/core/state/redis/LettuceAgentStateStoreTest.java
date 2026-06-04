@@ -113,13 +113,13 @@ class LettuceAgentStateStoreTest {
             SessionKey sessionKey = SimpleSessionKey.of("session1");
             TestState state = new TestState("test_value", 42);
 
-            stateStore.save(sessionKey, "testModule", state);
+            stateStore.save(null, sessionKey.toIdentifier(), "testModule", state);
 
             verify(commands).set(anyString(), anyString());
             verify(commands).sadd("agentscope:stateStore:session1:_keys", "testModule");
 
             Optional<TestState> retrievedState =
-                    stateStore.get(sessionKey, "testModule", TestState.class);
+                    stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
 
             verify(commands).get("agentscope:stateStore:session1:testModule");
             assertTrue(retrievedState.isPresent());
@@ -148,14 +148,15 @@ class LettuceAgentStateStoreTest {
             states.add(new TestState("item1", 1));
             states.add(new TestState("item2", 2));
 
-            stateStore.save(sessionKey, "testList", states);
+            stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
 
             verify(commands).llen("agentscope:stateStore:session1:testList:list");
             verify(commands, times(2)).rpush(anyString(), anyString());
             verify(commands).sadd("agentscope:stateStore:session1:_keys", "testList:list");
 
             List<TestState> retrievedStates =
-                    stateStore.getList(sessionKey, "testList", TestState.class);
+                    stateStore.getList(
+                            null, sessionKey.toIdentifier(), "testList", TestState.class);
 
             verify(commands).lrange("agentscope:stateStore:session1:testList:list", 0, -1);
             assertEquals(2, retrievedStates.size());
@@ -180,10 +181,10 @@ class LettuceAgentStateStoreTest {
                             .build();
 
             SessionKey existingSessionKey = SimpleSessionKey.of("session1");
-            assertTrue(stateStore.exists(existingSessionKey));
+            assertTrue(stateStore.exists(null, existingSessionKey.toIdentifier()));
 
             SessionKey nonExistingSessionKey = SimpleSessionKey.of("session2");
-            assertFalse(stateStore.exists(nonExistingSessionKey));
+            assertFalse(stateStore.exists(null, nonExistingSessionKey.toIdentifier()));
         }
 
         @Test
@@ -201,7 +202,7 @@ class LettuceAgentStateStoreTest {
                             .build();
 
             SessionKey sessionKey = SimpleSessionKey.of("session1");
-            stateStore.delete(sessionKey);
+            stateStore.delete(null, sessionKey.toIdentifier());
 
             verify(commands).smembers("agentscope:stateStore:session1:_keys");
         }
@@ -223,13 +224,9 @@ class LettuceAgentStateStoreTest {
                             .keyPrefix("agentscope:stateStore:")
                             .build();
 
-            Set<SessionKey> sessionKeys = stateStore.listSessionKeys();
+            Set<String> sessionIds = stateStore.listSessionIds(null);
 
-            assertEquals(2, sessionKeys.size());
-            Set<String> sessionIds = new HashSet<>();
-            for (SessionKey key : sessionKeys) {
-                sessionIds.add(key.toIdentifier());
-            }
+            assertEquals(2, sessionIds.size());
             assertTrue(sessionIds.contains("session1"));
             assertTrue(sessionIds.contains("session2"));
         }
@@ -329,14 +326,14 @@ class LettuceAgentStateStoreTest {
             SessionKey sessionKey = SimpleSessionKey.of("clusterSession");
             TestState state = new TestState("cluster_value", 100);
 
-            stateStore.save(sessionKey, "testModule", state);
+            stateStore.save(null, sessionKey.toIdentifier(), "testModule", state);
 
             verify(clusterCommands).set(anyString(), anyString());
             verify(clusterCommands)
                     .sadd("agentscope:stateStore:clusterSession:_keys", "testModule");
 
             Optional<TestState> retrievedState =
-                    stateStore.get(sessionKey, "testModule", TestState.class);
+                    stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
 
             verify(clusterCommands).get("agentscope:stateStore:clusterSession:testModule");
             assertTrue(retrievedState.isPresent());
@@ -367,7 +364,7 @@ class LettuceAgentStateStoreTest {
             states.add(new TestState("cluster_item1", 10));
             states.add(new TestState("cluster_item2", 20));
 
-            stateStore.save(sessionKey, "testList", states);
+            stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
 
             verify(clusterCommands).llen("agentscope:stateStore:clusterSession:testList:list");
             verify(clusterCommands, times(2)).rpush(anyString(), anyString());
@@ -375,7 +372,8 @@ class LettuceAgentStateStoreTest {
                     .sadd("agentscope:stateStore:clusterSession:_keys", "testList:list");
 
             List<TestState> retrievedStates =
-                    stateStore.getList(sessionKey, "testList", TestState.class);
+                    stateStore.getList(
+                            null, sessionKey.toIdentifier(), "testList", TestState.class);
 
             verify(clusterCommands)
                     .lrange("agentscope:stateStore:clusterSession:testList:list", 0, -1);
@@ -401,10 +399,10 @@ class LettuceAgentStateStoreTest {
                             .build();
 
             SessionKey existingSessionKey = SimpleSessionKey.of("clusterSession");
-            assertTrue(stateStore.exists(existingSessionKey));
+            assertTrue(stateStore.exists(null, existingSessionKey.toIdentifier()));
 
             SessionKey nonExistingSessionKey = SimpleSessionKey.of("nonexistent");
-            assertFalse(stateStore.exists(nonExistingSessionKey));
+            assertFalse(stateStore.exists(null, nonExistingSessionKey.toIdentifier()));
         }
 
         @Test
@@ -423,7 +421,7 @@ class LettuceAgentStateStoreTest {
                             .build();
 
             SessionKey sessionKey = SimpleSessionKey.of("clusterSession");
-            stateStore.delete(sessionKey);
+            stateStore.delete(null, sessionKey.toIdentifier());
 
             verify(clusterCommands).smembers("agentscope:stateStore:clusterSession:_keys");
         }
@@ -446,13 +444,9 @@ class LettuceAgentStateStoreTest {
                             .keyPrefix("agentscope:stateStore:")
                             .build();
 
-            Set<SessionKey> sessionKeys = stateStore.listSessionKeys();
+            Set<String> sessionIds = stateStore.listSessionIds(null);
 
-            assertEquals(2, sessionKeys.size());
-            Set<String> sessionIds = new HashSet<>();
-            for (SessionKey key : sessionKeys) {
-                sessionIds.add(key.toIdentifier());
-            }
+            assertEquals(2, sessionIds.size());
             assertTrue(sessionIds.contains("cluster1"));
             assertTrue(sessionIds.contains("cluster2"));
         }
