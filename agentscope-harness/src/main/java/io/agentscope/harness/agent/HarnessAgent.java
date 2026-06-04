@@ -32,6 +32,8 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.session.InMemorySession;
+import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
@@ -71,7 +73,6 @@ import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
-import io.agentscope.harness.agent.session.WorkspaceSession;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.skill.curator.RejectAllGate;
 import io.agentscope.harness.agent.skill.curator.SkillAuditLog;
@@ -722,6 +723,36 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return new Builder();
     }
 
+    /**
+     * Default state directory for the built-in {@link JsonSession} backend:
+     * {@code ~/.agentscope/state/<agentId>/}. Lives outside any workspace so agent state
+     * (a prerequisite for restoring the workspace via {@link
+     * io.agentscope.harness.agent.sandbox.SandboxState#getWorkspaceSpec()}) is not entangled
+     * with workspace data.
+     *
+     * <p>The base directory ({@code ~/.agentscope/state}) can be overridden via the
+     * {@code agentscope.state.home} system property. This is primarily for tests / CI to
+     * redirect state into a build-scoped temporary directory rather than polluting the
+     * developer's real home directory; production deployments generally don't need it.
+     */
+    static Path defaultStateDir(String agentId) {
+        String override = System.getProperty("agentscope.state.home");
+        Path root =
+                override != null && !override.isBlank()
+                        ? Paths.get(override)
+                        : Paths.get(System.getProperty("user.home"), ".agentscope", "state");
+        return root.resolve(agentId);
+    }
+
+    /**
+     * Returns true when the given session is a local in-process implementation that cannot share
+     * state across nodes. Used by sandbox / remote-filesystem fail-fast checks to reject
+     * configurations that would silently leak per-node state in distributed deployments.
+     */
+    static boolean isLocalSession(Session session) {
+        return session instanceof JsonSession || session instanceof InMemorySession;
+    }
+
     // ==================== Builder ====================
 
     /**
@@ -806,7 +837,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         LocalFilesystemSpec localFilesystemSpec;
 
         // Session — mirrored only to pass through to inner; the user-set Session can also be
-        // replaced inside orchestration when none is provided (defaults to a WorkspaceSession).
+        // replaced inside orchestration when none is provided (defaults to a JsonSession rooted
+        // at ~/.agentscope/state/<agentId>/, outside any workspace).
         Session sessionOverride;
 
         private Builder() {}
@@ -900,8 +932,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * equivalent to the source {@code ReActAgent}: HarnessAgent installs additional
          * orchestration (workspace projection, agent-tracing middleware, default skill /
          * subagent middlewares) that the source did not have. If left unset, {@code session}
-         * also defaults to a {@code WorkspaceSession} rather than the in-memory default,
-         * changing the on-disk persistence layout.
+         * also defaults to a {@code JsonSession} rooted at {@code ~/.agentscope/state/<agentId>/}
+         * rather than the in-memory default, changing the on-disk persistence layout.
          *
          * @param agent source {@link ReActAgent} to inherit observable configuration from
          * @return a new {@link Builder} pre-populated with the inheritable subset
@@ -1563,17 +1595,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         return (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
                     };
             if (effectiveSession == null) {
-                effectiveSession =
-                        new WorkspaceSession(resolvedWorkspace, resolvedAgentId, nsFactory);
+                effectiveSession = new JsonSession(defaultStateDir(resolvedAgentId));
                 inner.session(effectiveSession);
             }
 
-            if (remoteFilesystemSpec != null && effectiveSession instanceof WorkspaceSession) {
+            if (remoteFilesystemSpec != null && isLocalSession(effectiveSession)) {
                 throw new IllegalStateException(
                         "filesystem(RemoteFilesystemSpec) is designed for distributed /"
-                                + " multi-replica deployments, but the effective Session is a local"
-                                + " WorkspaceSession. Configure a distributed Session backend (for"
-                                + " example RedisSession) via .session(...).");
+                            + " multi-replica deployments, but the effective Session is a local"
+                            + " in-process implementation (JsonSession / InMemorySession)."
+                            + " Configure a distributed Session backend (for example RedisSession)"
+                            + " via .session(...).");
             }
             WorkspaceIndex workspaceIndex =
                     remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
@@ -1602,15 +1634,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             this, effectiveSession, defaultSandboxContext);
                 }
 
-                Session sandboxStateSession =
-                        effectiveSession instanceof WorkspaceSession
-                                ? new WorkspaceSession(resolvedWorkspace, resolvedAgentId, null)
-                                : effectiveSession;
                 SandboxStateStore stateStore =
                         sandboxFilesystemSpec.getSandboxStateStore() != null
                                 ? sandboxFilesystemSpec.getSandboxStateStore()
-                                : new SessionSandboxStateStore(
-                                        sandboxStateSession, resolvedAgentId);
+                                : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
                 SandboxExecutionGuard executionGuard =
                         sandboxFilesystemSpec.getExecutionGuard() != null
                                 ? sandboxFilesystemSpec.getExecutionGuard()

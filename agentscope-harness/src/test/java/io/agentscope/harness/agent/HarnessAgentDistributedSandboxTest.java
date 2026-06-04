@@ -81,8 +81,8 @@ class HarnessAgentDistributedSandboxTest {
         assertEquals(
                 true,
                 ex.getMessage().contains("distributed Session backend"),
-                "sandbox mode should fail-fast when effective session remains local"
-                        + " WorkspaceSession");
+                "sandbox mode should fail-fast when effective session is a local in-process"
+                        + " implementation (JsonSession / InMemorySession)");
     }
 
     @Test
@@ -167,7 +167,8 @@ class HarnessAgentDistributedSandboxTest {
         assertEquals(
                 true,
                 ex.getMessage().contains("RemoteFilesystemSpec"),
-                "Mode 1 should fail-fast when effective session is local WorkspaceSession");
+                "Mode 1 should fail-fast when effective session is a local in-process"
+                        + " implementation (JsonSession / InMemorySession)");
     }
 
     @Test

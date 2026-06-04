@@ -42,6 +42,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -62,6 +64,27 @@ import reactor.core.publisher.Flux;
 class HarnessAgentSubagentStreamTest {
 
     @TempDir Path workspace;
+
+    // Phase 0 isolation: each @Test gets a fresh JsonSession root, preventing the
+    // "parent" agent's persisted AgentState from leaking between cases.
+    @TempDir Path stateHome;
+
+    private String previousStateHome;
+
+    @BeforeEach
+    void overrideStateHome() {
+        previousStateHome = System.getProperty("agentscope.state.home");
+        System.setProperty("agentscope.state.home", stateHome.toString());
+    }
+
+    @AfterEach
+    void restoreStateHome() {
+        if (previousStateHome != null) {
+            System.setProperty("agentscope.state.home", previousStateHome);
+        } else {
+            System.clearProperty("agentscope.state.home");
+        }
+    }
 
     // -----------------------------------------------------------------
     // Helpers

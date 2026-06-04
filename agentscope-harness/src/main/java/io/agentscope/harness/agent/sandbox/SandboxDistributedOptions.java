@@ -124,8 +124,9 @@ public final class SandboxDistributedOptions {
         /**
          * Enables/disables fail-fast checks for distributed prerequisites.
          *
-         * <p>When {@code true} (default), builder throws if effective session remains local
-         * ({@code WorkspaceSession}) or snapshot spec is absent/no-op.
+         * <p>When {@code true} (default), builder throws if effective session is a local
+         * in-process implementation ({@code JsonSession} / {@code InMemorySession}) or snapshot
+         * spec is absent/no-op.
          */
         public Builder requireDistributed(boolean requireDistributed) {
             this.requireDistributed = requireDistributed;

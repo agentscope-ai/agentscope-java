@@ -338,21 +338,17 @@ class LocalFilesystemUserIsolationExampleTest {
     /**
      * Verifies that no un-namespaced duplicate user data appears at workspace root.
      *
-     * <p>Exceptions intentionally not subject to per-user namespace prefixing:
+     * <p>Phase 0 cleanup: the default {@code Session} is now {@code JsonSession} rooted at
+     * {@code ~/.agentscope/state/<agentId>/}, so {@code agent_state.json} no longer lives inside
+     * the workspace. The only legitimate file under {@code workspace/agents/} is:
      *
      * <ul>
-     *   <li>{@code workspace/agents/<agentId>/tasks/_sweep.marker} — {@code WorkspaceTaskRepository}
-     *       runs a background scheduler that writes this orphan-sweep coordination marker using
-     *       {@code RuntimeContext.empty()}. The marker is shared across all users of the agent by
-     *       design. The sweep fires at a random offset within a 5-minute window, so on any given
-     *       test run the file may or may not be present.
-     *   <li>{@code workspace/agents/<agentId>/context/<sessionId>/agent_state.json} —
-     *       {@code WorkspaceSession} persists agent-scoped state via {@code SessionKey} with no
-     *       {@code RuntimeContext}, so it lives outside the per-user namespace by design.
+     *   <li>{@code workspace/agents/<agentId>/tasks/_sweep.marker} —
+     *       {@code WorkspaceTaskRepository} writes this orphan-sweep coordination marker using
+     *       {@code RuntimeContext.empty()}. Shared across all users of the agent by design;
+     *       sweep fires at a random offset within a 5-minute window, so on any given test run
+     *       the file may or may not be present.
      * </ul>
-     *
-     * <p>We tolerate {@code agents/} at the workspace root but assert it contains only these
-     * whitelisted entries.
      */
     @Test
     void noDuplicateDataAtWorkspaceRoot() throws Exception {
@@ -380,7 +376,7 @@ class LocalFilesystemUserIsolationExampleTest {
 
         // Only AGENTS.md should exist at workspace root (it's a shared config file, pre-existing).
         // Namespace-isolated runtime data should be under alice/.
-        // agents/ is permitted as it may hold the agent-scoped orphan-sweep marker; verified below.
+        // agents/ is permitted only for the agent-scoped orphan-sweep marker; verified below.
         try (Stream<Path> rootEntries = Files.list(workspace)) {
             List<String> rootNames =
                     rootEntries
@@ -398,24 +394,20 @@ class LocalFilesystemUserIsolationExampleTest {
                             + rootNames);
         }
 
-        // If agents/ exists at the root, it must only contain whitelisted agent-scoped files
-        // (orphan-sweep marker and WorkspaceSession agent_state).
+        // If agents/ exists at the root, it must only contain the orphan-sweep marker.
+        // Phase 0: agent_state.json no longer lives inside the workspace (moved to
+        // ~/.agentscope/state/<agentId>/), so any other file under agents/ is a regression.
         Path rootAgents = workspace.resolve("agents");
         if (Files.isDirectory(rootAgents)) {
             try (Stream<Path> walk = Files.walk(rootAgents)) {
                 List<String> unexpected =
                         walk.filter(Files::isRegularFile)
                                 .map(p -> rootAgents.relativize(p).toString().replace('\\', '/'))
-                                .filter(
-                                        rel ->
-                                                !rel.endsWith("/tasks/_sweep.marker")
-                                                        && !rel.matches(
-                                                                "[^/]+/context/[^/]+/agent_state\\.json"))
+                                .filter(rel -> !rel.endsWith("/tasks/_sweep.marker"))
                                 .toList();
                 assertTrue(
                         unexpected.isEmpty(),
-                        "workspace/agents/ should contain only tasks/_sweep.marker or"
-                                + " context/<sessionId>/agent_state.json but found: "
+                        "workspace/agents/ should contain only tasks/_sweep.marker but found: "
                                 + unexpected);
             }
         }

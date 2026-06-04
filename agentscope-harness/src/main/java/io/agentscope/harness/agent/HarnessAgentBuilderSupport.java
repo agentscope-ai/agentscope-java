@@ -40,14 +40,12 @@ import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
-import io.agentscope.harness.agent.session.WorkspaceSession;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
@@ -57,6 +55,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -164,12 +163,13 @@ final class HarnessAgentBuilderSupport {
             io.agentscope.core.session.Session effectiveSession,
             SandboxContext sandboxContext) {
         if (b.sandboxFilesystemSpec.getSandboxStateStore() == null
-                && effectiveSession instanceof WorkspaceSession) {
+                && HarnessAgent.isLocalSession(effectiveSession)) {
             throw new IllegalStateException(
                     "filesystem(SandboxFilesystemSpec) requires a distributed Session backend"
                             + " (for example RedisSession) to persist and restore sandbox"
-                            + " state across distributed instances."
-                            + " Configure one via .session(...)."
+                            + " state across distributed instances, but the effective Session is"
+                            + " a local in-process implementation (JsonSession /"
+                            + " InMemorySession). Configure a distributed one via .session(...)."
                             + " For single-node use, opt out via"
                             + " .sandboxDistributed(SandboxDistributedOptions.builder()"
                             + ".requireDistributed(false).build()).");
@@ -686,14 +686,16 @@ final class HarnessAgentBuilderSupport {
         if (b.taskRepository != null) {
             return b.taskRepository;
         }
-        if (wsManager != null) {
-            String taskAgentId =
-                    b.agentId != null && !b.agentId.isBlank()
-                            ? b.agentId
-                            : (b.name != null && !b.name.isBlank() ? b.name : "ReActAgent");
-            return new WorkspaceTaskRepository(wsManager, taskAgentId);
-        }
-        return new DefaultTaskRepository();
+        Objects.requireNonNull(
+                wsManager,
+                "WorkspaceManager must be non-null when resolving the default TaskRepository;"
+                    + " HarnessAgent.build() always constructs one. Pass an explicit"
+                    + " .taskRepository(...) if you need a non-workspace-backed implementation.");
+        String taskAgentId =
+                b.agentId != null && !b.agentId.isBlank()
+                        ? b.agentId
+                        : (b.name != null && !b.name.isBlank() ? b.name : "ReActAgent");
+        return new WorkspaceTaskRepository(wsManager, taskAgentId);
     }
 
     // -----------------------------------------------------------------

@@ -29,10 +29,20 @@ import java.util.concurrent.TimeUnit;
 /**
  * In-memory {@link TaskRepository} backed by a cached daemon thread pool.
  *
- * <p>Session IDs are ignored — all tasks share a single flat map. This is suitable for
- * single-node local deployments and testing. For distributed durability, prefer
- * {@code WorkspaceTaskRepository}.
+ * <p>Session IDs are ignored — all tasks share a single flat map. Only supports
+ * {@link TaskRunSpec.LocalTaskRunSpec}; remote-protocol tasks throw {@code UnsupportedOperationException}.
+ *
+ * <p><b>Deprecated for production use.</b> {@link HarnessAgent} always constructs a workspace
+ * (defaulting to {@code ${cwd}/.agentscope/workspace}) and now resolves the default task
+ * repository to {@link WorkspaceTaskRepository}, which is a behavioral superset (handles both
+ * local and remote specs, persists state across restarts, and supports cross-node visibility
+ * via shared filesystems). This class is retained for test scaffolding and for callers that
+ * use the subagent middlewares standalone (without a {@code WorkspaceManager}). New code should
+ * use {@link WorkspaceTaskRepository} directly.
+ *
+ * @deprecated Use {@link WorkspaceTaskRepository}. Slated for removal in a future major release.
  */
+@Deprecated(since = "2.1.0")
 public class DefaultTaskRepository implements TaskRepository {
 
     private final Map<String, BackgroundTask> tasks = new ConcurrentHashMap<>();
