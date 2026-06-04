@@ -301,6 +301,7 @@ public final class GracefulShutdownManager {
             future.cancel(false);
         }
         state.set(ShutdownState.RUNNING);
+        config.set(GracefulShutdownConfig.DEFAULT);
         activeRequestsByAgentId.clear();
         stateSavers.clear();
         shutdownStartedAt.set(null);

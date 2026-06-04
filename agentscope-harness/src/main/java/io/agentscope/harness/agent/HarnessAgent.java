@@ -42,6 +42,7 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -755,6 +756,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         Path projectGlobalSkillsDir;
 
         Path workspace;
+        Path projectWorkspace;
         String environmentMemory;
         AbstractFilesystem abstractFilesystem;
         SandboxDistributedOptions sandboxDistributedOptions;
@@ -1201,7 +1203,32 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
-         * Sets the workspace directory from a filesystem path string.
+         * Sets the project workspace directory exposed to the built-in file tools.
+         *
+         * <p>{@link #workspace(Path)} remains the harness workspace used for {@code AGENTS.md},
+         * memory, sessions, skills, and other agent state. When this option is set, built-in file
+         * tools such as {@code read_file}, {@code write_file}, {@code edit_file},
+         * {@code list_files}, {@code grep_files}, and {@code glob_files} operate against this
+         * project directory instead, without applying the per-user namespace used by the harness
+         * workspace backend.
+         *
+         * <p>This is useful for applications that keep agent state in one stable directory but need
+         * the agent to work on arbitrary project folders.
+         */
+        public Builder projectWorkspace(Path projectWorkspace) {
+            this.projectWorkspace = projectWorkspace;
+            return this;
+        }
+
+        /**
+         * Sets the workspace directory from a filesystem path string (resolved with
+         * {@link Path#of(String, String...)}). Equivalent to {@link #workspace(Path)} with
+         * {@code Path.of(path.strip())}.
+         *
+         * <p>Pass {@code null} for the same default as {@link #workspace(Path)} with a {@code null}
+         * argument. Blank or whitespace-only strings are rejected.
+         *
+         * @param path absolute or relative path string, or {@code null} for the default workspace
          */
         public Builder workspace(String path) {
             if (path == null) {
@@ -1517,6 +1544,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     this, resolvedWorkspace, sandboxFs);
         }
 
+        private AbstractFilesystem resolveProjectFilesystem(
+                Path projectWorkspace, AbstractFilesystem workspaceFilesystem) {
+            if (projectWorkspace == null) {
+                return workspaceFilesystem;
+            }
+            return new LocalFilesystem(projectWorkspace, true, 10);
+        }
+
         public HarnessAgent build() {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
@@ -1580,6 +1615,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             AbstractFilesystem filesystem =
                     HarnessAgentBuilderSupport.resolveFilesystem(
                             this, resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
+            AbstractFilesystem toolFilesystem =
+                    resolveProjectFilesystem(projectWorkspace, filesystem);
 
             // ---- Sandbox integration ----
             SandboxLifecycleMiddleware sandboxLifecycleMw = null;
@@ -1592,6 +1629,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
                 capturedSandboxFs = new SandboxBackedFilesystem();
                 filesystem = capturedSandboxFs;
+                toolFilesystem = resolveProjectFilesystem(projectWorkspace, filesystem);
 
                 defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
                 boolean skipDistributedValidation =
@@ -1677,7 +1715,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             if (toolResultEvictionConfig != null) {
                 inner.middleware(
-                        new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
+                        new ToolResultEvictionMiddleware(toolFilesystem, toolResultEvictionConfig));
             }
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {
@@ -1710,7 +1748,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 agentToolkit.registerTool(new SessionSearchTool(wsManager));
             }
             if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem));
+                agentToolkit.registerTool(new FilesystemTool(toolFilesystem));
             }
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));

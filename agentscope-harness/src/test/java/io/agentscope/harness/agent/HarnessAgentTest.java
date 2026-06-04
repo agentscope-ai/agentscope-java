@@ -26,20 +26,28 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -346,6 +354,174 @@ class HarnessAgentTest {
         }
     }
 
+    @Test
+    void projectWorkspace_fileToolsUseProjectDirectory() throws Exception {
+        Files.createDirectories(workspace);
+        Path projectWorkspace = Files.createTempDirectory("agentscope-project-workspace");
+        Path projectTarget = projectWorkspace.resolve("from-file-tool.txt");
+        Path stateWorkspaceTarget = workspace.resolve("from-file-tool.txt");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .projectWorkspace(projectWorkspace)
+                        .build()) {
+            Map<String, Object> writeInput =
+                    Map.of("path", "/from-file-tool.txt", "content", "project-only");
+
+            ToolResultBlock result = callTool(agent, "write_file", writeInput);
+
+            assertTrue(
+                    joinToolResultText(result).contains("Written to /from-file-tool.txt"),
+                    "file tool should write successfully: " + joinToolResultText(result));
+            assertTrue(
+                    Files.readString(projectTarget).contains("project-only"),
+                    "file tool should use projectWorkspace");
+            assertTrue(
+                    Files.notExists(stateWorkspaceTarget),
+                    "file tool must not write into the Harness state workspace");
+        }
+    }
+
+    @Test
+    void projectWorkspace_toolResultEvictionUsesProjectFilesystem() throws Exception {
+        Files.createDirectories(workspace);
+        Path projectWorkspace = Files.createTempDirectory("agentscope-project-workspace");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .projectWorkspace(projectWorkspace)
+                        .toolResultEviction(ToolResultEvictionConfig.defaults())
+                        .build()) {
+            assertNotNull(agent);
+        }
+    }
+
+    @Test
+    void sandboxFilesystemMode_fileToolsUseSandboxBackendByDefault() throws Exception {
+        Files.createDirectories(workspace);
+        Path localTarget = workspace.resolve("should-not-be-local.txt");
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new DockerFilesystemSpec())
+                        .sandboxDistributed(
+                                SandboxDistributedOptions.builder()
+                                        .requireDistributed(false)
+                                        .build())
+                        .build();
+        Map<String, Object> writeInput =
+                Map.of("path", "/should-not-be-local.txt", "content", "sandbox-only");
+
+        ToolResultBlock result = callTool(agent, "write_file", writeInput);
+
+        String text = joinToolResultText(result);
+        assertTrue(
+                text.contains("No active sandbox") || text.contains("sandbox filesystem"),
+                "file tool should use the sandbox proxy outside a sandbox call context: " + text);
+        assertTrue(
+                Files.notExists(localTarget),
+                "sandbox file tool must not fall back to the local workspace");
+    }
+
+    @Test
+    void generalPurposeSubagent_inheritsProjectWorkspaceForFileTools() throws Exception {
+        Files.createDirectories(workspace);
+        Path projectWorkspace = Files.createTempDirectory("agentscope-project-workspace");
+        Path projectTarget = projectWorkspace.resolve("from-subagent.txt");
+        Path stateWorkspaceTarget = workspace.resolve("from-subagent.txt");
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .projectWorkspace(projectWorkspace)
+                        .buildSubagentEntries(workspace);
+
+        Agent createdAgent =
+                entries.stream()
+                        .filter(entry -> entry.name().equals("general-purpose"))
+                        .findFirst()
+                        .orElseThrow()
+                        .factory()
+                        .create(RuntimeContext.empty());
+        assertTrue(createdAgent instanceof HarnessAgent);
+        HarnessAgent subagent = (HarnessAgent) createdAgent;
+
+        Map<String, Object> writeInput =
+                Map.of("path", "from-subagent.txt", "content", "subagent-project");
+        ToolResultBlock result = callTool(subagent, "write_file", writeInput);
+
+        assertTrue(
+                joinToolResultText(result).contains("Written to from-subagent.txt"),
+                "subagent file tool should write successfully: " + joinToolResultText(result));
+        assertTrue(
+                Files.readString(projectTarget).contains("subagent-project"),
+                "subagent file tool should use inherited projectWorkspace");
+        assertTrue(
+                Files.notExists(stateWorkspaceTarget),
+                "subagent file tool must not write into the Harness state workspace");
+    }
+
+    @Test
+    void sharedDeclaredSubagent_inheritsProjectWorkspaceForFileTools() throws Exception {
+        Files.createDirectories(workspace);
+        Path projectWorkspace = Files.createTempDirectory("agentscope-project-workspace");
+        Path projectTarget = projectWorkspace.resolve("from-shared-subagent.txt");
+        Path stateWorkspaceTarget = workspace.resolve("from-shared-subagent.txt");
+
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("shared-worker")
+                        .description("shared worker")
+                        .workspaceMode(WorkspaceMode.SHARED)
+                        .inlineAgentsBody("Use shared workspace.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .name("main")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .projectWorkspace(projectWorkspace)
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent subagent =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(entry -> entry.name().equals("shared-worker"))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        Map<String, Object> writeInput =
+                Map.of("path", "from-shared-subagent.txt", "content", "shared-project");
+        ToolResultBlock result = callTool(subagent, "write_file", writeInput);
+
+        assertTrue(
+                joinToolResultText(result).contains("Written to from-shared-subagent.txt"),
+                "shared subagent file tool should write successfully: "
+                        + joinToolResultText(result));
+        assertTrue(
+                Files.readString(projectTarget).contains("shared-project"),
+                "shared declared subagent should use inherited projectWorkspace");
+        assertTrue(
+                Files.notExists(stateWorkspaceTarget),
+                "shared declared subagent file tool must not write into the Harness state"
+                        + " workspace");
+    }
+
     private static Msg userText(String text) {
         return Msg.builder()
                 .role(MsgRole.USER)
@@ -355,6 +531,35 @@ class HarnessAgentTest {
 
     private static String joinAllText(List<Msg> msgs) {
         return msgs.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
+    }
+
+    private static ToolResultBlock callTool(
+            HarnessAgent agent, String toolName, Map<String, Object> input) {
+        return agent.getDelegate()
+                .getToolkit()
+                .callTool(
+                        ToolCallParam.builder()
+                                .toolUseBlock(
+                                        ToolUseBlock.builder()
+                                                .id("call-" + toolName)
+                                                .name(toolName)
+                                                .input(input)
+                                                .content(JsonUtils.getJsonCodec().toJson(input))
+                                                .build())
+                                .input(input)
+                                .build())
+                .block();
+    }
+
+    private static String joinToolResultText(ToolResultBlock result) {
+        if (result == null) {
+            return "";
+        }
+        return result.getOutput().stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .collect(Collectors.joining("\n"));
     }
 
     // =========================================================================

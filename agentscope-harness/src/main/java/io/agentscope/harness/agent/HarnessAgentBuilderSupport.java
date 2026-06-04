@@ -321,6 +321,7 @@ final class HarnessAgentBuilderSupport {
         final List<Hook> capturedHooks = List.copyOf(b.hooks);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
+        final Path capturedProjectWorkspace = b.projectWorkspace;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
@@ -367,6 +368,9 @@ final class HarnessAgentBuilderSupport {
             if (capturedProjectGlobalSkillsDir != null) {
                 sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
             }
+            if (capturedProjectWorkspace != null) {
+                sub.projectWorkspace(capturedProjectWorkspace);
+            }
             if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
@@ -394,6 +398,7 @@ final class HarnessAgentBuilderSupport {
         final Function<String, Model> capturedResolver = b.modelResolver;
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
+        final Path capturedProjectWorkspace = b.projectWorkspace;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
@@ -466,6 +471,10 @@ final class HarnessAgentBuilderSupport {
             } else if (decl.getWorkspaceMode() != WorkspaceMode.SHARED
                     && capturedLocalFilesystemSpec != null) {
                 sub.filesystem(cloneLocalSpecForSubagent(capturedLocalFilesystemSpec));
+            }
+            if (decl.getWorkspaceMode() == WorkspaceMode.SHARED
+                    && capturedProjectWorkspace != null) {
+                sub.projectWorkspace(capturedProjectWorkspace);
             }
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
