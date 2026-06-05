@@ -86,7 +86,7 @@ public class TaskTool {
         }
 
         String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        BackgroundTask bgTask = taskRepository.getTask(sessionId, taskId);
+        BackgroundTask bgTask = taskRepository.getTask(runtimeContext, sessionId, taskId);
         if (bgTask == null) {
             return "Error: No background task found with ID: "
                     + taskId
@@ -120,6 +120,16 @@ public class TaskTool {
             }
         }
 
+        // If the caller successfully retrieved a terminal result, mark this task delivered so the
+        // SubagentsMiddleware push path doesn't re-deliver the same payload on the next reasoning
+        // round. Idempotent — if already delivered, this is a no-op. (Phase B-3.)
+        if (bgTask.isCompleted() && bgTask.getTaskStatus().isTerminal()) {
+            try {
+                taskRepository.markDelivered(runtimeContext, sessionId, taskId);
+            } catch (RuntimeException ignore) {
+                // Marking is best-effort; failure just risks a redundant push, never wrong data.
+            }
+        }
         return formatTaskDetail(bgTask);
     }
 
@@ -137,7 +147,7 @@ public class TaskTool {
         }
 
         String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        BackgroundTask bgTask = taskRepository.getTask(sessionId, taskId);
+        BackgroundTask bgTask = taskRepository.getTask(runtimeContext, sessionId, taskId);
         if (bgTask == null) {
             return "Error: No background task found with ID: " + taskId;
         }
@@ -151,7 +161,7 @@ public class TaskTool {
                     + "\nnote: Task already in terminal state, cannot cancel.";
         }
 
-        taskRepository.cancelTask(sessionId, taskId);
+        taskRepository.cancelTask(runtimeContext, sessionId, taskId);
         return "task_id: " + taskId + "\nstatus: cancelled\nCancellation requested successfully.";
     }
 
@@ -175,7 +185,8 @@ public class TaskTool {
 
         TaskStatus filter = parseStatusFilter(statusFilter);
         String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        Collection<BackgroundTask> tasks = taskRepository.listTasks(sessionId, filter);
+        Collection<BackgroundTask> tasks =
+                taskRepository.listTasks(runtimeContext, sessionId, filter);
 
         if (tasks.isEmpty()) {
             String filterDesc =

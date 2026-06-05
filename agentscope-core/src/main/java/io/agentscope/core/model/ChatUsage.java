@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * Represents token usage information for chat completion responses.
  *
@@ -34,7 +37,11 @@ public class ChatUsage {
      * @param outputTokens the number of tokens used for the output/generated response
      * @param time the execution time in seconds
      */
-    public ChatUsage(int inputTokens, int outputTokens, double time) {
+    @JsonCreator
+    public ChatUsage(
+            @JsonProperty("inputTokens") int inputTokens,
+            @JsonProperty("outputTokens") int outputTokens,
+            @JsonProperty("time") double time) {
         this.inputTokens = inputTokens;
         this.outputTokens = outputTokens;
         this.time = time;

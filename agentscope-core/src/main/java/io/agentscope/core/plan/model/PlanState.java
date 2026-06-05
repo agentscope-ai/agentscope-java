@@ -19,7 +19,10 @@ package io.agentscope.core.plan.model;
  * State of a plan.
  *
  * <p>Represents the overall status of a plan during its lifecycle.
+ *
+ * @deprecated since 2.0.0. The plan package is removed.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public enum PlanState {
     /** Plan is created but not yet started. */
     TODO("todo"),

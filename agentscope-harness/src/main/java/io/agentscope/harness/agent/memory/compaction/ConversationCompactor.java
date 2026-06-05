@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.memory.compaction;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -22,9 +23,9 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.agent.hook.CompactionHook;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
+import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -50,7 +51,7 @@ import reactor.core.publisher.Mono;
  * </ol>
  *
  * <p>The caller is responsible for updating both the agent's working memory and the LLM-facing
- * message list (see {@link CompactionHook}).
+ * message list (see {@link CompactionMiddleware}).
  */
 public class ConversationCompactor {
 
@@ -85,6 +86,7 @@ public class ConversationCompactor {
      *         message list consisting of {@code [summaryUserMsg] + preservedTail}
      */
     public Mono<Optional<List<Msg>>> compactIfNeeded(
+            RuntimeContext rc,
             List<Msg> conversationMessages,
             CompactionConfig config,
             String agentId,
@@ -124,7 +126,7 @@ public class ConversationCompactor {
         Mono<Void> flushStep =
                 config.isFlushBeforeCompact()
                         ? flushManager
-                                .flushMemories(prefix)
+                                .flushMemories(rc, prefix)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
                                 .onErrorResume(
                                         e -> {
@@ -143,8 +145,10 @@ public class ConversationCompactor {
             offloadStep =
                     Mono.fromCallable(
                                     () -> {
-                                        flushManager.offloadMessages(messages, agentId, sessionId);
-                                        return flushManager.resolveOffloadPath(agentId, sessionId);
+                                        flushManager.offloadMessages(
+                                                rc, messages, agentId, sessionId);
+                                        return flushManager.resolveOffloadPath(
+                                                rc, agentId, sessionId);
                                     })
                             .doOnSuccess(
                                     path ->

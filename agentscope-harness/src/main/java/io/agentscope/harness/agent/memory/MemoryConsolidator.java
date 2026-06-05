@@ -57,8 +57,6 @@ import reactor.core.publisher.Mono;
  */
 public class MemoryConsolidator {
 
-    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
-
     private static final Logger log = LoggerFactory.getLogger(MemoryConsolidator.class);
 
     /** Hidden state file inside {@code memory/} tracking the last consolidation Instant. */
@@ -111,12 +109,12 @@ public class MemoryConsolidator {
      *
      * <p>If no daily files have been touched since the last run, this is a no-op.
      */
-    public Mono<Void> consolidate() {
-        Instant watermark = readWatermark();
+    public Mono<Void> consolidate(RuntimeContext rc) {
+        Instant watermark = readWatermark(rc);
         Instant runStart = Instant.now();
 
-        String currentMemory = workspaceManager.readMemoryMd();
-        String dailyEntries = readDailyEntries(watermark);
+        String currentMemory = workspaceManager.readMemoryMd(rc);
+        String dailyEntries = readDailyEntries(rc, watermark);
 
         if (dailyEntries.isBlank()) {
             log.debug("No fresh daily entries since {} — skipping consolidation", watermark);
@@ -167,8 +165,8 @@ public class MemoryConsolidator {
                                 log.warn("Consolidation produced empty output, skipping");
                                 return Mono.empty();
                             }
-                            writeConsolidatedMemory(consolidated);
-                            writeWatermark(runStart);
+                            writeConsolidatedMemory(rc, consolidated);
+                            writeWatermark(rc, runStart);
                             log.info(
                                     "MEMORY.md consolidated ({} chars), watermark advanced to {}",
                                     consolidated.length(),
@@ -184,13 +182,13 @@ public class MemoryConsolidator {
      * <p>All I/O is done through the {@link AbstractFilesystem} so this works equally well
      * with Local, Sandbox, and Store backends.
      */
-    private String readDailyEntries(Instant watermark) {
+    private String readDailyEntries(RuntimeContext rc, Instant watermark) {
         AbstractFilesystem fs = workspaceManager.getFilesystem();
         if (fs == null) {
             return "";
         }
 
-        GlobResult glob = fs.glob(DEFAULT_FS_RUNTIME, "*.md", "memory");
+        GlobResult glob = fs.glob(rc, "*.md", "memory");
         if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
             return "";
         }
@@ -216,7 +214,7 @@ public class MemoryConsolidator {
 
         StringBuilder sb = new StringBuilder();
         for (String rel : eligible) {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(rel);
+            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, rel);
             if (content != null && !content.isBlank()) {
                 sb.append("### ").append(fileName(rel)).append("\n");
                 sb.append(content.strip()).append("\n\n");
@@ -256,29 +254,16 @@ public class MemoryConsolidator {
         return idx >= 0 ? stripped.substring(idx + 1) : stripped;
     }
 
-    /**
-     * Converts an absolute filesystem path (e.g. {@code /memory/2025-01-01.md}) to a
-     * workspace-relative path ({@code memory/2025-01-01.md}) for use with
-     * {@link WorkspaceManager#readManagedWorkspaceFileUtf8}.
-     */
-    private static String toRelative(String path) {
-        if (path == null) {
-            return "";
-        }
-        String normalized = path.replace('\\', '/');
-        return normalized.startsWith("/") ? normalized.substring(1) : normalized;
-    }
-
-    private void writeConsolidatedMemory(String content) {
-        workspaceManager.writeUtf8WorkspaceRelative("MEMORY.md", content);
+    private void writeConsolidatedMemory(RuntimeContext rc, String content) {
+        workspaceManager.writeUtf8WorkspaceRelative(rc, "MEMORY.md", content);
     }
 
     static final String STATE_REL_PATH = "memory/" + STATE_FILE;
 
     /** Reads the last consolidation Instant, or {@link Instant#EPOCH} if none recorded. */
-    Instant readWatermark() {
+    Instant readWatermark(RuntimeContext rc) {
         try {
-            String value = workspaceManager.readManagedWorkspaceFileUtf8(STATE_REL_PATH);
+            String value = workspaceManager.readManagedWorkspaceFileUtf8(rc, STATE_REL_PATH);
             if (value == null || value.isBlank()) {
                 return Instant.EPOCH;
             }
@@ -292,9 +277,9 @@ public class MemoryConsolidator {
         }
     }
 
-    private void writeWatermark(Instant ts) {
+    private void writeWatermark(RuntimeContext rc, Instant ts) {
         try {
-            workspaceManager.writeUtf8WorkspaceRelative(STATE_REL_PATH, ts.toString());
+            workspaceManager.writeUtf8WorkspaceRelative(rc, STATE_REL_PATH, ts.toString());
         } catch (Exception e) {
             log.warn(
                     "Failed to write consolidation watermark at {}: {}",

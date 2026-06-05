@@ -21,7 +21,6 @@ import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -34,6 +33,7 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolChoice;
+import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -57,7 +57,11 @@ import reactor.core.publisher.Mono;
  * </ul>
  *
  * @hidden
+ * @deprecated since 2.0.0. The hook system is replaced by
+ *     {@link io.agentscope.core.middleware.MiddlewareBase}.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
+@SuppressWarnings("deprecation")
 public class StructuredOutputHook implements Hook {
 
     private static final Logger log = LoggerFactory.getLogger(StructuredOutputHook.class);
@@ -69,7 +73,7 @@ public class StructuredOutputHook implements Hook {
 
     private final StructuredOutputReminder reminderMode;
     private final GenerateOptions baseOptions;
-    private final Memory memory;
+    private final AgentState agentState;
 
     private boolean completed = false;
     private Msg resultMsg = null;
@@ -82,13 +86,16 @@ public class StructuredOutputHook implements Hook {
      *
      * @param reminderMode The reminder mode (TOOL_CHOICE or PROMPT)
      * @param baseOptions The base generation options
-     * @param memory The memory for compression in PostCall
+     * @param agentState The live agent state whose {@link AgentState#contextMutable()} list will
+     *     be compacted in {@link #handlePostCall(PostCallEvent)} once structured output completes
      */
     public StructuredOutputHook(
-            StructuredOutputReminder reminderMode, GenerateOptions baseOptions, Memory memory) {
+            StructuredOutputReminder reminderMode,
+            GenerateOptions baseOptions,
+            AgentState agentState) {
         this.reminderMode = reminderMode;
         this.baseOptions = baseOptions;
-        this.memory = memory;
+        this.agentState = agentState;
     }
 
     @Override
@@ -168,8 +175,9 @@ public class StructuredOutputHook implements Hook {
                 completed = true;
                 resultMsg = event.getToolResultMsg();
 
-                // Collect metadata now, before memory compression (which happens in PostCall)
-                List<Msg> messages = new ArrayList<>(memory.getMessages());
+                // Collect metadata now, before context compression (which happens in PostCall)
+                List<Msg> messages =
+                        agentState == null ? List.of() : new ArrayList<>(agentState.getContext());
                 collectStructuredOutputMetadata(messages);
 
                 log.debug("generate_response completed successfully, stopping agent");
@@ -179,24 +187,26 @@ public class StructuredOutputHook implements Hook {
     }
 
     private void handlePostCall(PostCallEvent event) {
-        if (!completed) {
+        if (!completed || agentState == null) {
             return;
         }
-        // Compress memory: remove generate_response related intermediate messages
-        compressMemory();
+        // Compress AgentState.context: remove generate_response related intermediate messages.
+        compressContext();
     }
 
     /**
-     * Remove structured output related messages from memory and add final response.
+     * Remove structured-output-related messages from {@link AgentState#contextMutable()} and
+     * append the final response.
      */
-    private void compressMemory() {
-        List<Msg> original = new ArrayList<>(memory.getMessages());
+    private void compressContext() {
+        List<Msg> contextMutable = agentState.contextMutable();
+        List<Msg> original = new ArrayList<>(contextMutable);
         int originalSize = original.size();
 
-        memory.clear();
+        contextMutable.clear();
         for (Msg msg : original) {
             if (!isStructuredOutputRelated(msg)) {
-                memory.addMessage(msg);
+                contextMutable.add(msg);
             }
         }
 
@@ -206,12 +216,14 @@ public class StructuredOutputHook implements Hook {
             if (finalMsg != null) {
                 // Merge collected metadata into final message
                 finalMsg = mergeCollectedMetadata(finalMsg);
-                memory.addMessage(finalMsg);
+                contextMutable.add(finalMsg);
             }
         }
 
         log.debug(
-                "Memory compressed: {} -> {} messages", originalSize, memory.getMessages().size());
+                "AgentState context compressed: {} -> {} messages",
+                originalSize,
+                contextMutable.size());
     }
 
     /**

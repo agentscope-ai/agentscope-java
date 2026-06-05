@@ -52,6 +52,7 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
 import java.time.Duration;
 import java.util.LinkedList;
@@ -577,7 +578,7 @@ class AgentScopeAgentExecutorTest {
             mockEvents.add(
                     new Event(
                             EventType.TOOL_RESULT,
-                            Msg.builder().content(mockToolResultBlock).build(),
+                            Msg.builder().role(MsgRole.TOOL).content(mockToolResultBlock).build(),
                             true));
         }
         mockEvents.add(

@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * <p>When a {@link SandboxExecutionGuard} is configured, the manager acquires an execution
  * {@link SandboxLease} before sandbox resume/create for isolation keys that are present. The
  * lease is carried by the {@link SandboxAcquireResult} and closed by the caller
- * ({@link io.agentscope.harness.agent.hook.SandboxLifecycleHook}) after {@link #release},
+ * ({@link io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware}) after {@link #release},
  * ensuring the full call window is covered.
  *
  * <p>Priority 1 (external sandbox) and Priority 2 (external sandbox state) bypass the guard,
@@ -147,18 +147,24 @@ public class SandboxManager {
             return;
         }
 
+        // User-managed sandboxes (Priority 1) are owned by the caller — the harness must not
+        // stop/snapshot or shutdown them, since the caller relies on the sandbox staying alive
+        // across multiple acquire/release cycles (e.g. a registry that reuses one container per
+        // user across the browser path and successive agent turns).
+        if (!result.isSelfManaged()) {
+            return;
+        }
+
         try {
             sandbox.stop();
         } catch (Exception e) {
             log.warn("[sandbox] Sandbox stop failed: {}", e.getMessage(), e);
         }
 
-        if (result.isSelfManaged()) {
-            try {
-                sandbox.shutdown();
-            } catch (Exception e) {
-                log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
-            }
+        try {
+            sandbox.shutdown();
+        } catch (Exception e) {
+            log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
         }
     }
 
@@ -167,6 +173,12 @@ public class SandboxManager {
             SandboxContext sandboxContext,
             RuntimeContext runtimeContext) {
         if (result == null || result.getSandbox() == null) {
+            return;
+        }
+        // User-managed sandboxes carry their own persistence story (the registry owns the
+        // lifecycle). Writing through the harness state store would double-track state and
+        // could conflict with the caller's snapshot policy.
+        if (!result.isSelfManaged()) {
             return;
         }
         SandboxState state = result.getSandbox().getState();

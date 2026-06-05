@@ -23,6 +23,7 @@ import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -188,6 +189,13 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
+        // External tool short-circuit: surface the call to the caller without running schema
+        // validation, preset injection, or scheduling. SchemaOnlyTool and any
+        // @Tool(externalTool=true) method end up here.
+        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
+            return Mono.error(new ToolSuspendException());
+        }
+
         // Check tool activation
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
         if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
@@ -211,10 +219,24 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
-        // Merge context
-        ToolExecutionContext toolkitContext = config.getDefaultContext();
-        ToolExecutionContext finalContext =
-                ToolExecutionContext.merge(param.getContext(), toolkitContext);
+        // Merge runtime context: param-level > toolkit default
+        io.agentscope.core.agent.RuntimeContext runtimeContext = param.getRuntimeContext();
+        @SuppressWarnings("deprecation")
+        ToolExecutionContext toolkitDefault = config.getDefaultContext();
+        if (runtimeContext == null && toolkitDefault != null) {
+            runtimeContext =
+                    io.agentscope.core.agent.RuntimeContext.builder()
+                            .toolExecutionContext(toolkitDefault)
+                            .build();
+        } else if (runtimeContext != null && toolkitDefault != null) {
+            ToolExecutionContext merged =
+                    ToolExecutionContext.merge(
+                            runtimeContext.asToolExecutionContext(), toolkitDefault);
+            runtimeContext =
+                    io.agentscope.core.agent.RuntimeContext.builder()
+                            .toolExecutionContext(merged)
+                            .build();
+        }
 
         // Create emitter for streaming
         ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, getEffectiveChunkCallback());
@@ -237,7 +259,7 @@ class ToolExecutor {
                         .toolUseBlock(toolCall)
                         .input(mergedInput)
                         .agent(param.getAgent())
-                        .context(finalContext)
+                        .runtimeContext(runtimeContext)
                         .emitter(toolEmitter)
                         .build();
 
@@ -260,7 +282,12 @@ class ToolExecutor {
                                             : e.getClass().getSimpleName();
                             return Mono.just(
                                     ToolResultBlock.error("Tool execution failed: " + errorMsg));
-                        });
+                        })
+                .switchIfEmpty(
+                        Mono.just(
+                                ToolResultBlock.error(
+                                        "Tool execution failed: Tool completed without returning a"
+                                                + " result")));
     }
 
     // ==================== Batch Tool Execution ====================
@@ -272,7 +299,7 @@ class ToolExecutor {
      * @param parallel Whether to execute in parallel
      * @param executionConfig Execution configuration
      * @param agent The agent making the calls (may be null)
-     * @param agentContext The agent-level context (may be null)
+     * @param agentRuntimeContext The agent-level runtime context (may be null)
      * @return Mono containing list of results
      */
     Mono<List<ToolResultBlock>> executeAll(
@@ -280,27 +307,65 @@ class ToolExecutor {
             boolean parallel,
             ExecutionConfig executionConfig,
             Agent agent,
-            ToolExecutionContext agentContext) {
+            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
 
         logger.debug("Executing {} tool calls (parallel={})", toolCalls.size(), parallel);
 
-        // Map each tool call to an execution Mono
-        List<Mono<ToolResultBlock>> monos =
-                toolCalls.stream()
-                        .map(
-                                toolCall ->
-                                        executeWithInfrastructure(
-                                                toolCall, executionConfig, agent, agentContext))
-                        .toList();
-
-        // Parallel or sequential execution
-        if (parallel) {
-            return Flux.mergeSequential(monos).collectList();
+        // Sequential mode: nothing to partition, run in declared order.
+        if (!parallel) {
+            List<Mono<ToolResultBlock>> monos =
+                    toolCalls.stream()
+                            .map(
+                                    toolCall ->
+                                            executeWithInfrastructure(
+                                                    toolCall,
+                                                    executionConfig,
+                                                    agent,
+                                                    agentRuntimeContext))
+                            .toList();
+            return Flux.concat(monos).collectList();
         }
-        return Flux.concat(monos).collectList();
+
+        // Parallel mode with concurrency-safe partitioning: contiguous runs of safe tools execute
+        // concurrently (output order preserved via mergeSequential); unsafe tools (or unknown
+        // legacy AgentTools we cannot inspect) form their own serial slots so two invocations
+        // that share state never overlap.
+        List<Flux<ToolResultBlock>> chunks = new ArrayList<>();
+        List<Mono<ToolResultBlock>> safeBatch = new ArrayList<>();
+        for (ToolUseBlock toolCall : toolCalls) {
+            Mono<ToolResultBlock> mono =
+                    executeWithInfrastructure(
+                            toolCall, executionConfig, agent, agentRuntimeContext);
+            if (isConcurrencySafe(toolCall)) {
+                safeBatch.add(mono);
+            } else {
+                if (!safeBatch.isEmpty()) {
+                    chunks.add(Flux.mergeSequential(safeBatch));
+                    safeBatch = new ArrayList<>();
+                }
+                chunks.add(mono.flux());
+            }
+        }
+        if (!safeBatch.isEmpty()) {
+            chunks.add(Flux.mergeSequential(safeBatch));
+        }
+        return Flux.concat(chunks).collectList();
+    }
+
+    /**
+     * Whether the tool backing {@code toolCall} can run in parallel with itself. Defaults to
+     * {@code true} for legacy {@link AgentTool} instances that do not extend {@link ToolBase}, so
+     * existing tools keep their pre-2.0 concurrent behaviour.
+     */
+    private boolean isConcurrencySafe(ToolUseBlock toolCall) {
+        AgentTool tool = toolRegistry.getTool(toolCall.getName());
+        if (tool instanceof ToolBase tb) {
+            return tb.isConcurrencySafe();
+        }
+        return true;
     }
 
     /**
@@ -310,13 +375,13 @@ class ToolExecutor {
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
-            ToolExecutionContext agentContext) {
+            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
         // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
                         .agent(agent)
-                        .context(agentContext)
+                        .runtimeContext(agentRuntimeContext)
                         .build();
 
         // Get core execution
@@ -336,7 +401,8 @@ class ToolExecutor {
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
-                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
+                                    ToolResultBlock.error("Tool execution failed: " + errorMsg)
+                                            .withIdAndName(toolCall.getId(), toolCall.getName()));
                         });
     }
 

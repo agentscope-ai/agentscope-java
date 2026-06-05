@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
@@ -59,50 +60,54 @@ class MemoryConsolidatorFilesystemTest {
     }
 
     @Test
-    void readWatermark_returnsEpochWhenStateAbsent(@TempDir Path tmp) {
+    void readWatermark_returnsEpochWhenStateAbsent(@TempDir Path tmp) throws Exception {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
         RemoteFilesystem fs = new RemoteFilesystem(store, ns);
-        WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
-        MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
-
-        assertEquals(Instant.EPOCH, consolidator.readWatermark());
+            assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
+        }
     }
 
     @Test
-    void watermark_roundTripThroughFilesystem(@TempDir Path tmp) {
+    void watermark_roundTripThroughFilesystem(@TempDir Path tmp) throws Exception {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
         RemoteFilesystem fs = new RemoteFilesystem(store, ns);
-        WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
-        MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
+            Instant ts = Instant.parse("2025-06-15T12:00:00Z");
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
-        Instant ts = Instant.parse("2025-06-15T12:00:00Z");
-        wsm.writeUtf8WorkspaceRelative(MemoryConsolidator.STATE_REL_PATH, ts.toString());
-
-        assertEquals(ts, consolidator.readWatermark());
+            assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
+        }
     }
 
     @Test
-    void watermark_doesNotCreateLocalFile(@TempDir Path tmp) {
+    void watermark_doesNotCreateLocalFile(@TempDir Path tmp) throws Exception {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
         RemoteFilesystem fs = new RemoteFilesystem(store, ns);
-        WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
-        MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
+            Instant ts = Instant.now();
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
-        Instant ts = Instant.now();
-        wsm.writeUtf8WorkspaceRelative(MemoryConsolidator.STATE_REL_PATH, ts.toString());
+            // local disk must NOT have the state file — it lives only in the store
+            Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);
+            assertFalse(
+                    Files.exists(localState),
+                    "state file should not be written to local disk when using RemoteFilesystem");
 
-        Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);
-        assertFalse(
-                Files.exists(localState),
-                "state file should not be written to local disk when using RemoteFilesystem");
-
-        assertEquals(ts, consolidator.readWatermark());
+            // but consolidator reads it correctly from the store
+            assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
+        }
     }
 
     @Test
@@ -113,17 +118,18 @@ class MemoryConsolidatorFilesystemTest {
     @Test
     void consolidate_readsRootDailyLedgerAndWritesMemoryMd(@TempDir Path tmp) throws Exception {
         LocalFilesystem fs = new LocalFilesystem(tmp);
-        WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            Path memoryDir = Files.createDirectories(tmp.resolve("memory"));
+            Files.writeString(memoryDir.resolve("2026-05-20.md"), "root daily entry");
 
-        Path memoryDir = Files.createDirectories(tmp.resolve("memory"));
-        Files.writeString(memoryDir.resolve("2026-05-20.md"), "root daily entry");
+            MemoryConsolidator consolidator =
+                    new MemoryConsolidator(wsm, stubModel("updated memory"));
 
-        MemoryConsolidator consolidator = new MemoryConsolidator(wsm, stubModel("updated memory"));
+            consolidator.consolidate(RuntimeContext.empty()).block();
 
-        consolidator.consolidate().block();
-
-        assertEquals("updated memory", wsm.readMemoryMd());
-        assertTrue(consolidator.readWatermark().isAfter(Instant.EPOCH));
+            assertEquals("updated memory", wsm.readMemoryMd(RuntimeContext.empty()));
+            assertTrue(consolidator.readWatermark(RuntimeContext.empty()).isAfter(Instant.EPOCH));
+        }
     }
 
     @Test
@@ -132,12 +138,14 @@ class MemoryConsolidatorFilesystemTest {
 
         MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
 
-        assertEquals(Instant.EPOCH, consolidator.readWatermark());
+        // No file → EPOCH
+        assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
 
         Instant ts = Instant.parse("2025-03-10T09:00:00Z");
-        wsm.writeUtf8WorkspaceRelative(MemoryConsolidator.STATE_REL_PATH, ts.toString());
+        wsm.writeUtf8WorkspaceRelative(
+                RuntimeContext.empty(), MemoryConsolidator.STATE_REL_PATH, ts.toString());
 
-        assertEquals(ts, consolidator.readWatermark());
+        assertEquals(ts, consolidator.readWatermark(RuntimeContext.empty()));
 
         Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);
         assertTrue(

@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>1.1.0-SNAPSHOT</revision>
+        <revision>2.0.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -131,13 +131,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-agent-protocol</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope Extensions AutoContext Memory -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -325,6 +318,12 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-a2a-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-admin-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

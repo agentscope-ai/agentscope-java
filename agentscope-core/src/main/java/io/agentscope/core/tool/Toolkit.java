@@ -309,18 +309,19 @@ public class Toolkit {
     }
 
     /**
-     * Check if a tool is an external tool (schema-only, requires user execution).
+     * Check if a tool is an external tool (requires execution outside the framework).
      *
-     * <p>External tools are registered using {@link #registerSchema(ToolSchema)} and should
-     * be executed outside the framework. When this method returns true, the framework will
-     * skip execution and return the tool call to the user.
+     * <p>A tool is considered external when it extends {@link ToolBase} and reports
+     * {@code isExternalTool() == true} — for example {@link SchemaOnlyTool}, or any
+     * {@code @Tool(externalTool=true)} method. When this returns true, the framework will skip
+     * execution and surface the tool call to the user via {@code TOOL_SUSPENDED}.
      *
      * @param toolName The name of the tool to check
-     * @return true if the tool is an external tool (SchemaOnlyTool), false otherwise
+     * @return true if the tool is an external tool, false otherwise
      */
     public boolean isExternalTool(String toolName) {
         AgentTool tool = getTool(toolName);
-        return tool instanceof SchemaOnlyTool;
+        return tool instanceof ToolBase tb && tb.isExternalTool();
     }
 
     /**
@@ -335,6 +336,10 @@ public class Toolkit {
 
     /**
      * Register a tool method with group, extended model, and preset parameters.
+     *
+     * <p>Builds a {@link ReflectiveFunctionTool} (a {@link ToolBase} subclass) so the registered
+     * tool participates in permission evaluation, the {@link ToolExecutor} safe-flag machinery,
+     * and the agent's pending-confirmation flow alongside MCP and built-in tools.
      */
     private void registerToolMethod(
             Object toolObject,
@@ -354,40 +359,20 @@ public class Toolkit {
         // Parse custom converter from annotation
         ToolResultConverter customConverter = parseConverterFromAnnotation(toolAnnotation);
 
+        Set<String> presetParamNames =
+                presetParameters != null ? presetParameters.keySet() : Collections.emptySet();
+
         AgentTool tool =
-                new AgentTool() {
-                    @Override
-                    public String getName() {
-                        return toolName;
-                    }
-
-                    @Override
-                    public String getDescription() {
-                        return description;
-                    }
-
-                    @Override
-                    public Map<String, Object> getParameters() {
-                        // Exclude preset parameters from the schema
-                        Set<String> excludeParams =
-                                presetParameters != null
-                                        ? presetParameters.keySet()
-                                        : Collections.emptySet();
-                        return schemaGenerator.generateParameterSchema(method, excludeParams);
-                    }
-
-                    @Override
-                    public Boolean getStrict() {
-                        return toolAnnotation.strict() ? Boolean.TRUE : null;
-                    }
-
-                    @Override
-                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-                        // Pass custom converter to method invoker
-                        return methodInvoker.invokeAsync(
-                                toolObject, method, param, customConverter);
-                    }
-                };
+                ReflectiveFunctionTool.create(
+                        toolObject,
+                        method,
+                        toolAnnotation,
+                        toolName,
+                        description,
+                        schemaGenerator,
+                        methodInvoker,
+                        customConverter,
+                        presetParamNames);
 
         registerAgentTool(tool, groupName, extendedModel, null, presetParameters);
     }
@@ -504,14 +489,14 @@ public class Toolkit {
      * @param toolCalls List of tool calls to execute
      * @param agentExecutionConfig Execution config from agent level (can be null)
      * @param agent The agent making the calls (may be null)
-     * @param agentContext The agent-level tool execution context (may be null)
+     * @param agentRuntimeContext The agent-level runtime context (may be null)
      * @return Mono containing list of tool responses
      */
     public Mono<List<ToolResultBlock>> callTools(
             List<ToolUseBlock> toolCalls,
             ExecutionConfig agentExecutionConfig,
             Agent agent,
-            ToolExecutionContext agentContext) {
+            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
         // Merge execution configs: agent-level > toolkit-level > system default
         ExecutionConfig effectiveConfig =
                 ExecutionConfig.mergeConfigs(
@@ -520,7 +505,7 @@ public class Toolkit {
                                 config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
         return executor.executeAll(
-                toolCalls, config.isParallel(), effectiveConfig, agent, agentContext);
+                toolCalls, config.isParallel(), effectiveConfig, agent, agentRuntimeContext);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
@@ -551,7 +536,7 @@ public class Toolkit {
     // ==================== Tool Group Management (Delegated) ====================
 
     /**
-     * Create a new tool group with specified activation status.
+     * Create a new tool group with specified activation status and default META scope.
      *
      * @param groupName Name of the tool group
      * @param description Description of the tool group
@@ -563,7 +548,22 @@ public class Toolkit {
     }
 
     /**
-     * Create a new tool group (active by default).
+     * Create a new tool group with specified activation status and scope.
+     *
+     * @param groupName Name of the tool group
+     * @param description Description of the tool group
+     * @param active Whether the group should be active by default
+     * @param scope Whether the group is managed by the meta tool ({@link ToolGroupScope#META})
+     *              or by developer code ({@link ToolGroupScope#EXTERNAL})
+     * @throws IllegalArgumentException if group already exists
+     */
+    public void createToolGroup(
+            String groupName, String description, boolean active, ToolGroupScope scope) {
+        groupManager.createToolGroup(groupName, description, active, scope);
+    }
+
+    /**
+     * Create a new tool group (active by default, META scope).
      *
      * @param groupName Name of the tool group
      * @param description Description of the tool group
@@ -571,6 +571,37 @@ public class Toolkit {
      */
     public void createToolGroup(String groupName, String description) {
         groupManager.createToolGroup(groupName, description);
+    }
+
+    /**
+     * Create a {@link SkillToolGroup} bound to a specific skill.
+     *
+     * <p>The group defaults to {@link ToolGroupScope#META} scope so the agent can manage it
+     * via {@code reset_equipped_tools}. The description shown to the model will include a
+     * reminder that this group must be activated when the bound skill is in use.
+     *
+     * @param groupName Name of the tool group
+     * @param description Description of the tool group
+     * @param active Whether the group should be active by default
+     * @param activateOnSkill The skill name that this group is bound to
+     * @throws IllegalArgumentException if group already exists
+     */
+    public void createSkillToolGroup(
+            String groupName, String description, boolean active, String activateOnSkill) {
+        groupManager.createSkillToolGroup(groupName, description, active, activateOnSkill);
+    }
+
+    /**
+     * Register a pre-built {@link ToolGroup} instance (including subclasses).
+     *
+     * <p>Use this method when you need full control over the ToolGroup construction,
+     * e.g., for custom subclasses like {@link SkillToolGroup}.
+     *
+     * @param group The tool group to register
+     * @throws IllegalArgumentException if a group with the same name already exists
+     */
+    public void registerToolGroup(ToolGroup group) {
+        groupManager.registerToolGroup(group);
     }
 
     /**

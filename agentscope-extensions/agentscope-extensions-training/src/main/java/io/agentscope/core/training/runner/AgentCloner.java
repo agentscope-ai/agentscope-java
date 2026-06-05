@@ -18,7 +18,6 @@ package io.agentscope.core.training.runner;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
@@ -83,14 +82,15 @@ public class AgentCloner {
                     extractField(original, "toolExecutionContext");
 
             // Rebuild Agent using Builder
+            // v2: ReActAgent no longer takes external Memory; AgentState is owned by the agent
+            // and a fresh agent automatically starts with empty context.
             ReActAgent.Builder builder =
                     ReActAgent.builder()
                             .name(original.getName() + "-shadow")
                             .description(original.getDescription())
                             .sysPrompt(sysPrompt)
                             .model(newModel) // Replace model
-                            .toolkit(toolkit)
-                            .memory(new InMemoryMemory()); // New memory, no shared state
+                            .toolkit(toolkit);
 
             // Set optional fields
             if (maxIters != null) {
