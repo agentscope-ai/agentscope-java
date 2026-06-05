@@ -17,6 +17,7 @@ package io.agentscope.examples.documentation2.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -105,7 +106,7 @@ public class SystemPromptMiddlewareExample {
          * @return updated system prompt with timestamp appended
          */
         @Override
-        public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
             String timestamp = Instant.now().toString();
             String appended = currentPrompt + "\n\n[Context] Current UTC time: " + timestamp;
             return Mono.just(appended);
@@ -139,7 +140,7 @@ public class SystemPromptMiddlewareExample {
          * @return updated system prompt with environment context appended
          */
         @Override
-        public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
             String appended =
                     currentPrompt
                             + "\n[Context] Environment: "

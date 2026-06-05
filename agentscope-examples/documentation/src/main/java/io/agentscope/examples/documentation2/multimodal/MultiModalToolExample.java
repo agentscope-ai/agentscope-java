@@ -17,6 +17,7 @@ package io.agentscope.examples.documentation2.multimodal;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
@@ -139,7 +140,10 @@ public class MultiModalToolExample {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             // Log all tool calls before execution (replaces PreActingEvent)
             for (ToolUseBlock toolCall : input.toolCalls()) {
                 System.out.println(

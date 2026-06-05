@@ -90,6 +90,8 @@ public final class SubagentDeclaration {
     private final int steps;
     private final Mode mode;
     private final boolean hidden;
+    private final boolean persistSession;
+    private final boolean inheritParentPermissions;
     private final List<String> tools;
 
     /** Base URL of the remote task server (e.g. {@code http://host:8080}). */
@@ -110,6 +112,8 @@ public final class SubagentDeclaration {
         this.steps = b.steps;
         this.mode = b.mode != null ? b.mode : Mode.ALL;
         this.hidden = b.hidden;
+        this.persistSession = b.persistSession;
+        this.inheritParentPermissions = b.inheritParentPermissions;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
@@ -223,6 +227,24 @@ public final class SubagentDeclaration {
     }
 
     /**
+     * Whether the subagent's session state should persist across parent calls. When {@code true},
+     * the spawn key is derived deterministically from (parentSessionId, agentId, label), enabling
+     * state recovery after process restarts. When {@code false} (default), a random UUID is used.
+     */
+    public boolean isPersistSession() {
+        return persistSession;
+    }
+
+    /**
+     * Whether the subagent inherits parent DENY permission rules. When {@code true} (default),
+     * all DENY rules from the parent's permission context are propagated to the child's permission
+     * engine at spawn time, preventing the child from circumventing parent-level restrictions.
+     */
+    public boolean isInheritParentPermissions() {
+        return inheritParentPermissions;
+    }
+
+    /**
      * Optional tool allowlist. When non-empty, only inherited parent tools whose names are listed
      * remain on the subagent's inherited toolkit. Empty means inherit all parent tools.
      */
@@ -273,6 +295,8 @@ public final class SubagentDeclaration {
         private int steps = 10;
         private Mode mode = Mode.ALL;
         private boolean hidden = false;
+        private boolean persistSession = false;
+        private boolean inheritParentPermissions = true;
         private List<String> tools;
         private String url;
         private Map<String, String> headers;
@@ -398,6 +422,26 @@ public final class SubagentDeclaration {
          */
         public Builder hidden(boolean hidden) {
             this.hidden = hidden;
+            return this;
+        }
+
+        /**
+         * When {@code true}, the subagent's spawn key is derived deterministically from
+         * (parentSessionId, agentId, label), enabling state recovery across parent calls and
+         * process restarts. Defaults to {@code false}.
+         */
+        public Builder persistSession(boolean persistSession) {
+            this.persistSession = persistSession;
+            return this;
+        }
+
+        /**
+         * When {@code true} (default), parent DENY permission rules are propagated to the child
+         * at spawn time. Set to {@code false} only when the child requires permissions that the
+         * parent explicitly denies (rare).
+         */
+        public Builder inheritParentPermissions(boolean inheritParentPermissions) {
+            this.inheritParentPermissions = inheritParentPermissions;
             return this;
         }
 

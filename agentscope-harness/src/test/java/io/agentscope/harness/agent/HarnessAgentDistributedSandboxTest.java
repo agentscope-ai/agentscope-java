@@ -28,9 +28,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
-import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
 import io.agentscope.harness.agent.store.BaseStore;
 import java.nio.file.Path;
@@ -45,97 +43,8 @@ class HarnessAgentDistributedSandboxTest {
     @TempDir Path workspace;
 
     @Test
-    void sandboxDistributed_requiresSandboxFilesystemMode() {
-        IllegalStateException ex =
-                assertThrows(
-                        IllegalStateException.class,
-                        () ->
-                                HarnessAgent.builder()
-                                        .name("agent")
-                                        .model(stubModel("ok"))
-                                        .workspace(workspace)
-                                        .filesystem(new LocalFilesystemSpec())
-                                        .sandboxDistributed(
-                                                SandboxDistributedOptions.builder().build())
-                                        .build());
-        assertEquals(
-                true,
-                ex.getMessage().contains("requires sandbox mode"),
-                "should fail-fast when sandboxDistributed is used outside sandbox mode");
-    }
-
-    @Test
-    void sandboxMode_withLocalSession_failsFastByDefault() {
-        // Mode 2 (SandboxFilesystemSpec) now validates automatically — no sandboxDistributed()
-        // needed.
-        IllegalStateException ex =
-                assertThrows(
-                        IllegalStateException.class,
-                        () ->
-                                HarnessAgent.builder()
-                                        .name("agent")
-                                        .model(stubModel("ok"))
-                                        .workspace(workspace)
-                                        .filesystem(new DockerFilesystemSpec())
-                                        .build());
-        assertEquals(
-                true,
-                ex.getMessage().contains("distributed AgentStateStore backend"),
-                "sandbox mode should fail-fast when effective session is a local in-process"
-                        + " implementation (JsonFileAgentStateStore / InMemoryAgentStateStore)");
-    }
-
-    @Test
-    void sandboxMode_explicitSandboxDistributed_alsoFailsOnLocalSession() {
-        // Explicit sandboxDistributed() with default requireDistributed=true still fails.
-        IllegalStateException ex =
-                assertThrows(
-                        IllegalStateException.class,
-                        () ->
-                                HarnessAgent.builder()
-                                        .name("agent")
-                                        .model(stubModel("ok"))
-                                        .workspace(workspace)
-                                        .filesystem(new DockerFilesystemSpec())
-                                        .sandboxDistributed(
-                                                SandboxDistributedOptions.builder().build())
-                                        .build());
-        assertEquals(
-                true,
-                ex.getMessage().contains("distributed AgentStateStore backend"),
-                "should fail-fast when effective session remains local");
-    }
-
-    @Test
-    void sandboxDistributed_appliesSnapshotOverride() {
-        AgentStateStore distributedSession = mock(AgentStateStore.class);
-        DockerFilesystemSpec spec = new DockerFilesystemSpec();
-        spec.isolationScope(IsolationScope.AGENT);
-        LocalSnapshotSpec snapshotSpec = new LocalSnapshotSpec(workspace.resolve("snapshots"));
-
-        SandboxDistributedOptions options =
-                SandboxDistributedOptions.builder()
-                        .stateStore(distributedSession)
-                        .snapshotSpec(snapshotSpec)
-                        .build();
-
-        assertDoesNotThrow(
-                () ->
-                        HarnessAgent.builder()
-                                .name("agent")
-                                .model(stubModel("ok"))
-                                .workspace(workspace)
-                                .filesystem(spec)
-                                .sandboxDistributed(options)
-                                .build());
-
-        assertEquals(IsolationScope.AGENT, spec.getIsolationScope());
-        assertInstanceOf(LocalSnapshotSpec.class, spec.toSandboxContext().getSnapshotSpec());
-    }
-
-    @Test
-    void sandboxMode_requireDistributedFalse_allowsLocalSession() {
-        // Single-node sandbox use: opt out of distributed validation explicitly.
+    void sandboxMode_withLocalSession_buildsWithWarning() {
+        // Sandbox mode with a local AgentStateStore now builds successfully (warn-only).
         assertDoesNotThrow(
                 () ->
                         HarnessAgent.builder()
@@ -143,16 +52,46 @@ class HarnessAgentDistributedSandboxTest {
                                 .model(stubModel("ok"))
                                 .workspace(workspace)
                                 .filesystem(new DockerFilesystemSpec())
-                                .sandboxDistributed(
-                                        SandboxDistributedOptions.builder()
-                                                .requireDistributed(false)
-                                                .build())
                                 .build());
     }
 
     @Test
+    void sandboxMode_withDistributedSession_builds() {
+        AgentStateStore distributedSession = mock(AgentStateStore.class);
+        assertDoesNotThrow(
+                () ->
+                        HarnessAgent.builder()
+                                .name("agent")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .stateStore(distributedSession)
+                                .filesystem(new DockerFilesystemSpec())
+                                .build());
+    }
+
+    @Test
+    void sandboxMode_snapshotSpecOnFilesystemSpec() {
+        AgentStateStore distributedSession = mock(AgentStateStore.class);
+        DockerFilesystemSpec spec = new DockerFilesystemSpec();
+        spec.isolationScope(IsolationScope.AGENT);
+        spec.snapshotSpec(new LocalSnapshotSpec(workspace.resolve("snapshots")));
+
+        assertDoesNotThrow(
+                () ->
+                        HarnessAgent.builder()
+                                .name("agent")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .stateStore(distributedSession)
+                                .filesystem(spec)
+                                .build());
+
+        assertEquals(IsolationScope.AGENT, spec.getIsolationScope());
+        assertInstanceOf(LocalSnapshotSpec.class, spec.toSandboxContext().getSnapshotSpec());
+    }
+
+    @Test
     void remoteFilesystemMode_withLocalSession_failsFast() {
-        // Mode 1 (RemoteFilesystemSpec) always requires a distributed AgentStateStore.
         BaseStore store = mock(BaseStore.class);
         IllegalStateException ex =
                 assertThrows(
@@ -173,7 +112,6 @@ class HarnessAgentDistributedSandboxTest {
 
     @Test
     void remoteFilesystemMode_withDistributedSession_succeeds() throws Exception {
-        // Mode 1 with a distributed AgentStateStore should build successfully.
         BaseStore store = mock(BaseStore.class);
         AgentStateStore distributedSession = mock(AgentStateStore.class);
         HarnessAgent agent =
@@ -184,8 +122,6 @@ class HarnessAgentDistributedSandboxTest {
                         .filesystem(new RemoteFilesystemSpec(store))
                         .stateStore(distributedSession)
                         .build();
-        // Release the SQLite-backed WorkspaceIndex so @TempDir cleanup can delete the dir on
-        // Windows.
         agent.close();
     }
 

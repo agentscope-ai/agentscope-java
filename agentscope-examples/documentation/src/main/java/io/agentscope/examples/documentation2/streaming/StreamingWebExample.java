@@ -114,8 +114,9 @@ public class StreamingWebExample {
 
             AgentStateStore stateStore = new JsonFileAgentStateStore(sessionPath);
 
-            // AgentStateStore is loaded automatically on first call when configured on the builder.
-            // The agent saves state after every successful call() and on graceful shutdown.
+            // IMPORTANT: Create a new agent per request. ReActAgent is NOT thread-safe — a single
+            // instance rejects concurrent call()s. Model and AgentStateStore are safe to share;
+            // Toolkit is deep-copied inside build(). This is the recommended pattern for web apps.
             ReActAgent agent =
                     ReActAgent.builder()
                             .name("WebAgent")

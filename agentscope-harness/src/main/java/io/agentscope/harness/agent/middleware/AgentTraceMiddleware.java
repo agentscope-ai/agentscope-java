@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
@@ -53,7 +54,10 @@ public class AgentTraceMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            AgentInput input,
+            Function<AgentInput, Flux<AgentEvent>> next) {
         if (!log.isInfoEnabled()) {
             return next.apply(input);
         }
@@ -82,7 +86,10 @@ public class AgentTraceMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
         if (!log.isInfoEnabled()) {
             return next.apply(input);
         }
@@ -133,7 +140,10 @@ public class AgentTraceMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
         if (!log.isInfoEnabled()) {
             return next.apply(input);
         }

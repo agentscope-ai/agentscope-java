@@ -17,6 +17,7 @@ package io.agentscope.examples.documentation2.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -122,6 +123,7 @@ public class ModelCallMiddlewareExample {
         @Override
         public Flux<AgentEvent> onModelCall(
                 Agent agent,
+                RuntimeContext ctx,
                 ModelCallInput input,
                 Function<ModelCallInput, Flux<AgentEvent>> next) {
 

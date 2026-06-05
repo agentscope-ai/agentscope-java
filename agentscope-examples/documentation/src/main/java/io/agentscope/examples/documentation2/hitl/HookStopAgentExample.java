@@ -17,6 +17,7 @@ package io.agentscope.examples.documentation2.hitl;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
@@ -175,7 +176,10 @@ public class HookStopAgentExample {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             boolean hasDangerousTool =
                     input.toolCalls().stream()
                             .map(ToolUseBlock::getName)

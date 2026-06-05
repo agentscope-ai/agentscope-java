@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -37,7 +36,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * Appends workspace context (session info, AGENTS.md, MEMORY.md, knowledge) to the
- * system prompt via {@link #onSystemPrompt(Agent, String)}.
+ * system prompt via {@link #onSystemPrompt(Agent, RuntimeContext, String)}.
  *
  * <p>Runs once per {@code call()} (just like the previous {@code WorkspaceContextHook}
  * fired on {@code PreCallEvent}).
@@ -118,11 +117,8 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
-        RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         String section = buildWorkspaceSection(rc);
         if (section.isEmpty()) {
             return Mono.just(currentPrompt);

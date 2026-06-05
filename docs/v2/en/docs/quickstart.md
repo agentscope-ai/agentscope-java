@@ -115,6 +115,52 @@ agent.streamEvents(new UserMessage("Summarize today in three bullets."))
 Set `DASHSCOPE_API_KEY` in the environment before running. To switch providers, change the string passed to `.model(...)` and export the matching API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). When you need explicit control over timeouts or custom endpoints, build the model with `DashScopeChatModel.builder()...build()` and pass it to `.model(Model)` instead.
 :::
 
+### Serving concurrent requests
+
+:::{warning}
+`HarnessAgent` (and its underlying `ReActAgent`) is **not thread-safe** — a single instance processes exactly one `call()` at a time. A second concurrent invocation throws `IllegalStateException`.
+:::
+
+For web services, create **one agent per request** via a factory method. The model, workspace path, and session backend are all safe to share:
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class AgentFactory {
+    private final Path workspace = Paths.get(".agentscope/workspace");
+
+    /** Creates an independent agent for a single request. Safe to call concurrently. */
+    public HarnessAgent create(String sessionId) {
+        return HarnessAgent.builder()
+                .name("note-taker")
+                .sysPrompt("You are a note-taking assistant.")
+                .model("dashscope:qwen-plus")
+                .workspace(workspace)
+                .compaction(CompactionConfig.builder()
+                        .triggerMessages(30)
+                        .keepMessages(10)
+                        .build())
+                .build();
+    }
+}
+
+// In your HTTP handler:
+AgentFactory factory = new AgentFactory();   // create once at startup
+
+HarnessAgent agent = factory.create(sessionId);
+agent.call(new UserMessage(userInput), RuntimeContext.builder()
+        .sessionId(sessionId)
+        .userId(userId)
+        .build()).block();
+```
+
+The singleton example above (one `HarnessAgent` with sequential `call()`s) is correct for CLI tools and single-threaded programs. For full production patterns (Redis session, sandbox, skill repositories), see [Going to Production](./others/going-to-production.md).
+
 ## Next steps
 
 - [Agent](./building-blocks/agent.md) — full `ReActAgent` API, builder fields, `call` / `streamEvents` / `observe`, human-in-the-loop, Session configuration

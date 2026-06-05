@@ -42,7 +42,7 @@ class SandboxManagerIsolationTest {
     private static final String STATE_JSON = "{\"sessionId\":\"s42\"}";
 
     @Mock SandboxClient<SandboxClientOptions> client;
-    @Mock SandboxStateStore stateStore;
+    @Mock SessionSandboxStateStore stateStore;
     @Mock Sandbox freshSandbox;
     @Mock Sandbox resumedSandbox;
     @Mock Sandbox externalSandbox;
@@ -131,8 +131,8 @@ class SandboxManagerIsolationTest {
     void noScopeKey_createsFreshSession() throws Exception {
         when(client.create(any(), any(), any())).thenReturn(freshSandbox);
 
-        RuntimeContext rtx = RuntimeContext.builder().build(); // no sessionKey
-        SandboxContext sCtx = SandboxContext.builder().build(); // scope = SESSION (default)
+        RuntimeContext rtx = RuntimeContext.builder().build(); // no userId or sessionId
+        SandboxContext sCtx = SandboxContext.builder().build(); // scope = null → USER default
 
         SandboxAcquireResult result = manager.acquire(sCtx, rtx);
 

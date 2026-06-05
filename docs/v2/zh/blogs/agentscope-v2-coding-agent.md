@@ -581,16 +581,14 @@ HarnessAgent.builder()
     .executionGuard(RedisSandboxExecutionGuard.builder(jedis)
         .leaseTtl(Duration.ofMinutes(30))
         .build()))
-.session(RedisSession.builder().lettuceClient(redisClient).build())
-.sandboxDistributed(SandboxDistributedOptions.oss(redisSession, ossSnapshotSpec))
+.stateStore(RedisSession.builder().lettuceClient(redisClient).build())
 ```
 
-四件事一起做：
+三件事一起做：
 
-1. Session 换 Redis：任意副本都能恢复任意会话；
+1. `stateStore` 换 Redis：任意副本都能恢复任意会话，沙箱元数据也自动存在同一个 Redis 里；
 2. 沙箱快照存 OSS：容器漂到其他节点能从快照恢复；
-3. 用 `IsolationScope.USER` + `executionGuard`：同一用户的并发请求被锁串行化，避免两个副本同时写同一份状态；
-4. `sandboxDistributed` 一次声明所有约束，`build()` 时校验，避免上线后才发现哪个组件没换。
+3. 用 `IsolationScope.USER` + `executionGuard`：同一用户的并发请求被锁串行化，避免两个副本同时写同一份状态。
 
 到这一步，codingagent 就能横向扩展——挂在负载均衡器后面跑 N 个副本，任何副本都能接住任何用户的任何 Issue / PR / IM 对话。
 

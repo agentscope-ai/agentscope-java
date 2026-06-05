@@ -21,7 +21,6 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
-import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.Field;
@@ -77,7 +76,6 @@ public class AgentCloner {
             ExecutionConfig toolExecutionConfig = extractField(original, "toolExecutionConfig");
             StructuredOutputReminder structuredOutputReminder =
                     extractField(original, "structuredOutputReminder");
-            PlanNotebook planNotebook = extractField(original, "planNotebook");
             ToolExecutionContext toolExecutionContext =
                     extractField(original, "toolExecutionContext");
 
@@ -104,9 +102,6 @@ public class AgentCloner {
             }
             if (structuredOutputReminder != null) {
                 builder.structuredOutputReminder(structuredOutputReminder);
-            }
-            if (planNotebook != null) {
-                builder.planNotebook(planNotebook);
             }
             if (toolExecutionContext != null) {
                 builder.toolExecutionContext(toolExecutionContext);

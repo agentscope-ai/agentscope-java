@@ -49,23 +49,24 @@ public final class SandboxIsolationKey {
      *
      * <p>Resolution rules:
      * <ul>
-     *   <li>{@code SESSION} – requires a non-null {@code sessionKey}; value =
-     *       {@code sessionKey}. Returns empty if absent.</li>
-     *   <li>{@code USER} – requires a non-blank {@code userId}; value = {@code userId}.
-     *       Logs a warning and returns empty if absent.</li>
+     *   <li>{@code SESSION} – requires a non-null {@code sessionId}; value =
+     *       {@code sessionId}. Returns empty if absent.</li>
+     *   <li>{@code USER} – uses {@code userId} when present. When userId is absent,
+     *       falls back to {@code SESSION} scope using the sessionId. Returns empty
+     *       only when both userId and sessionId are absent.</li>
      *   <li>{@code AGENT} – value = {@code agentId} (always present).</li>
      *   <li>{@code GLOBAL} – value = {@value #GLOBAL_VALUE} (always present).</li>
-     *   <li>{@code null} scope – treated as {@code SESSION}.</li>
+     *   <li>{@code null} scope – treated as {@code USER}.</li>
      * </ul>
      *
-     * @param scope     the desired isolation scope; {@code null} defaults to {@code SESSION}
+     * @param scope     the desired isolation scope; {@code null} defaults to {@code USER}
      * @param ctx       the runtime context for the current call; may be {@code null}
      * @param agentId   the agent name resolved at build time; must not be null
      * @return resolved key, or empty if the required context field is absent
      */
     public static Optional<SandboxIsolationKey> resolve(
             IsolationScope scope, RuntimeContext ctx, String agentId) {
-        IsolationScope effective = scope != null ? scope : IsolationScope.SESSION;
+        IsolationScope effective = scope != null ? scope : IsolationScope.USER;
         return switch (effective) {
             case SESSION -> {
                 if (ctx == null || ctx.getSessionId() == null || ctx.getSessionId().isBlank()) {
@@ -75,14 +76,23 @@ public final class SandboxIsolationKey {
                         new SandboxIsolationKey(IsolationScope.SESSION, ctx.getSessionId()));
             }
             case USER -> {
-                if (ctx == null || ctx.getUserId() == null || ctx.getUserId().isBlank()) {
-                    log.warn(
-                            "[sandbox] USER isolation scope requested but userId is absent"
-                                    + " — skipping state lookup; a fresh sandbox will be"
-                                    + " created");
-                    yield Optional.empty();
+                if (ctx != null && ctx.getUserId() != null && !ctx.getUserId().isBlank()) {
+                    yield Optional.of(
+                            new SandboxIsolationKey(IsolationScope.USER, ctx.getUserId()));
                 }
-                yield Optional.of(new SandboxIsolationKey(IsolationScope.USER, ctx.getUserId()));
+                // Fall back to SESSION when userId is absent
+                if (ctx != null && ctx.getSessionId() != null && !ctx.getSessionId().isBlank()) {
+                    log.debug(
+                            "[sandbox] USER isolation scope requested but userId is absent"
+                                    + " — falling back to SESSION scope using sessionId");
+                    yield Optional.of(
+                            new SandboxIsolationKey(IsolationScope.SESSION, ctx.getSessionId()));
+                }
+                log.warn(
+                        "[sandbox] USER isolation scope requested but both userId and sessionId"
+                                + " are absent — skipping state lookup; a fresh sandbox will be"
+                                + " created");
+                yield Optional.empty();
             }
             case AGENT ->
                     Optional.of(

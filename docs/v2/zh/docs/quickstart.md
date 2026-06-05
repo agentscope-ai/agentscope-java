@@ -115,6 +115,52 @@ agent.streamEvents(new UserMessage("帮我把今天的关键点列三条。"))
 运行前在环境变量里设置 `DASHSCOPE_API_KEY`。切换厂商只需改 `.model(...)` 的字符串并设置对应的 API key（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`）。需要更精细地控制超时 / 自定义 endpoint 等参数时，仍可显式 `DashScopeChatModel.builder()...build()` 构造实例后传给 `.model(Model)`。
 :::
 
+### 并发请求场景
+
+:::{warning}
+`HarnessAgent`（及其底层的 `ReActAgent`）**不是线程安全的**——单个实例同一时刻只能处理一个 `call()` 调用，第二个并发调用会抛出 `IllegalStateException`。
+:::
+
+在 Web 服务等并发场景下，通过工厂方法**每次请求创建一个新的 agent 实例**。模型、工作区路径和会话后端都可以安全共享：
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class AgentFactory {
+    private final Path workspace = Paths.get(".agentscope/workspace");
+
+    /** 为单次请求创建独立的 agent 实例。可安全并发调用。 */
+    public HarnessAgent create(String sessionId) {
+        return HarnessAgent.builder()
+                .name("note-taker")
+                .sysPrompt("你是一个帮助用户做笔记的助手。")
+                .model("dashscope:qwen-plus")
+                .workspace(workspace)
+                .compaction(CompactionConfig.builder()
+                        .triggerMessages(30)
+                        .keepMessages(10)
+                        .build())
+                .build();
+    }
+}
+
+// 在 HTTP handler 中：
+AgentFactory factory = new AgentFactory();   // 应用启动时创建一次
+
+HarnessAgent agent = factory.create(sessionId);
+agent.call(new UserMessage(userInput), RuntimeContext.builder()
+        .sessionId(sessionId)
+        .userId(userId)
+        .build()).block();
+```
+
+上面单例模式的写法（一个 `HarnessAgent` 实例串行执行多次 `call()`）适用于 CLI 工具和单线程程序。完整生产部署模式（Redis session、沙箱、技能仓库等）参见[上线指南](./others/going-to-production.md)。
+
 ## 接下来
 
 - [智能体（Agent）](./building-blocks/agent.md) —— `ReActAgent` 的完整接口、参数、`call` / `streamEvents` / `observe`、人机交互、Session 配置

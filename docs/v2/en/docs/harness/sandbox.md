@@ -15,7 +15,7 @@ Confines the agent's **file operations and command execution** to an isolated en
 
 ## A minimal example
 
-Local Docker, isolated per conversation:
+Local Docker, isolated per user:
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -27,30 +27,34 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 
 agent.call(msg, RuntimeContext.builder()
-    .sessionId("user-1-conv-1")
+    .userId("alice")
+    .sessionId("conv-1")
     .build()).block();
 ```
 
-Different `sessionId` → different sandbox; same `sessionId` across `call()` → automatically reuses the same sandbox (or restores from snapshot).
+Same `userId` across `call()` → automatically reuses the same sandbox (or restores from snapshot). Different `userId` → separate sandbox. When `userId` is absent, falls back to `sessionId` as the isolation key.
 
 ## IsolationScope — who shares a sandbox
 
-The most-tuned setting:
+All sandbox configuration lives on the `SandboxFilesystemSpec` (e.g. `DockerFilesystemSpec`). The key parameter is `isolationScope`:
 
 | Scope | Sharing | Typical use |
 |-------|---------|-------------|
-| `SESSION` (default) | Each sessionId independent | Multi-user SaaS, each conversation runs on its own |
-| `USER` | Same `userId`'s sessions share | Same user shares the workspace across conversations (including distributed) |
-| `AGENT` | All users / sessions of this agent share | Public-tool-type agent |
+| `USER` (default) | Same `userId`'s sessions share; falls back to `SESSION` when userId is absent | Multi-user SaaS — each user keeps one workspace across conversations |
+| `SESSION` | Each sessionId independent | Strict per-conversation isolation |
+| `AGENT` | All users / sessions of this agent share | Public-tool-type agent, shared knowledge base |
 | `GLOBAL` | One shared slot per store | Use with care |
 
 ```java
+// Explicit SESSION scope (overrides default USER)
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
-    .isolationScope(IsolationScope.USER))
+    .isolationScope(IsolationScope.SESSION))
 ```
 
 `SESSION` is naturally concurrency-safe (each session has its own slot). `USER` / `AGENT` / `GLOBAL` in multi-replica deployments should pair with a mutex (see "Concurrency control" below).
+
+**USER-scope fallback:** when `IsolationScope.USER` is active (either explicitly or by default) but `RuntimeContext.userId` is absent, the framework automatically falls back to `SESSION` scope using `sessionId`. This means you don't need to guard against missing userId — the sandbox degrades gracefully.
 
 ## Cross-call recovery = snapshots
 
@@ -81,24 +85,28 @@ Host-side workspace files (`AGENTS.md` / `skills/` / `subagents/` / `knowledge/`
 
 When multiple replicas run the same agent and any replica must be able to pick up the same user's conversation, you need:
 
-1. A distributed `Session` (e.g. a Redis-backed implementation)
-2. A non-`Noop` snapshot (OSS / Redis / remote store)
-3. An appropriate `IsolationScope` (`USER` / `AGENT` / `GLOBAL`)
+1. A distributed `AgentStateStore` (e.g. Redis-backed) — passed via `.stateStore(...)` on the builder
+2. A non-`Noop` snapshot (OSS / Redis / remote store) — configured directly on the filesystem spec via `.snapshotSpec(...)`
+3. An appropriate `IsolationScope` (default `USER` is usually correct)
 
-To declare these together, use `sandboxDistributed(...)`:
+Everything is configured in one place:
 
 ```java
 HarnessAgent.builder()
     .name("assistant")
     .model(model)
+    .workspace(workspace)
+    .stateStore(redisStateStore)                    // distributed state
     .filesystem(new DockerFilesystemSpec()
         .image("ubuntu:24.04")
-        .isolationScope(IsolationScope.USER))
-    .sandboxDistributed(SandboxDistributedOptions.oss(redisSession, ossSnapshotSpec))
+        .snapshotSpec(ossSnapshotSpec)              // cross-replica snapshot
+        .isolationScope(IsolationScope.USER))       // default, can omit
     .build();
 ```
 
-With `requireDistributed=true`, build fails fast if the actual Session / snapshot don't qualify — catching misconfig before deployment.
+The framework stores sandbox metadata (container ID, snapshot pointers, workspace-ready flag) in the same `AgentStateStore` that holds agent runtime state. Providing a distributed store automatically enables cross-replica sandbox resume — no extra configuration needed.
+
+If you're using a local `AgentStateStore` (the default `JsonFileAgentStateStore`) with sandbox mode, the framework logs a warning at build time reminding you that sandbox state won't survive JVM restarts and can't be shared across instances.
 
 ## Concurrency control (multi-replica)
 

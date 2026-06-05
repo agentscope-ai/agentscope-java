@@ -35,7 +35,7 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.Middleware;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -134,19 +134,25 @@ class ReActAgentNewLoopE2ETest {
         }
     }
 
-    private static final class RecordingMiddleware implements Middleware {
+    private static final class RecordingMiddleware implements MiddlewareBase {
         final List<String> trace = new ArrayList<>();
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
             trace.add("reply:enter");
             return next.apply(input).doOnComplete(() -> trace.add("reply:exit"));
         }
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             trace.add("acting:enter");
             return next.apply(input).doOnComplete(() -> trace.add("acting:exit"));
         }

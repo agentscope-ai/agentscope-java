@@ -17,7 +17,6 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
@@ -68,14 +67,14 @@ public class CompactionMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
         if (!(agent instanceof ReActAgent reActAgent)) {
             return next.apply(input);
         }
-        final RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+        final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
 
         return Flux.defer(
                 () -> {

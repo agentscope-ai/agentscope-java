@@ -5,7 +5,7 @@ description: "From single-node prototype to multi-replica deployment: component 
 
 > Running a `HarnessAgent` on your laptop is easy. Shipping it to production is another story — replicas must share sessions, users must stay isolated, untrusted code must be sandboxed, and pods must be able to resume mid-conversation after a restart. This page only covers what **changes between single-node and distributed production**: which components must be swapped, what to swap them with, and why the builder throws `IllegalStateException` when you miss something.
 
-In the source, any component documented as "distributed-friendly", "cross-replica", or "shared store" — `RemoteFilesystemSpec`, `SandboxDistributedOptions`, `RedisSandboxExecutionGuard`, `SandboxSnapshotSpec`, `RedisStore` / `JdbcStore`, and so on — is purpose-built for the scenarios on this page.
+In the source, any component documented as "distributed-friendly", "cross-replica", or "shared store" — `RemoteFilesystemSpec`, `RedisSandboxExecutionGuard`, `SandboxSnapshotSpec`, `RedisStore` / `JdbcStore`, and so on — is purpose-built for the scenarios on this page.
 
 ## At a glance: single-node defaults vs. distributed production
 
@@ -22,12 +22,8 @@ In the source, any component documented as "distributed-friendly", "cross-replic
 | Graceful shutdown | `GracefulShutdownManager` auto-registers a JVM hook | same + `setConfig(...)` to tune the in-flight wait |
 
 **The key validation chain:**
-- `filesystem(RemoteFilesystemSpec)` without swapping `session(...)` → `build()` throws `IllegalStateException` telling you to swap in `RedisSession`.
-- `filesystem(SandboxFilesystemSpec)` without swapping `session(...)` → same.
-- `filesystem(SandboxFilesystemSpec)` with `NoopSnapshotSpec` → throws, demands an explicit snapshot.
-- Want to bypass for single-node tests: `.sandboxDistributed(SandboxDistributedOptions.builder().requireDistributed(false).build())`.
-
-The checks live in `HarnessAgentBuilderSupport#validateDistributedSandboxConfig` — deliberately fail-fast so "works in dev, loses state in prod" cannot happen.
+- `filesystem(RemoteFilesystemSpec)` without swapping `stateStore(...)` → `build()` throws `IllegalStateException` telling you to provide a distributed `AgentStateStore`.
+- `filesystem(SandboxFilesystemSpec)` with a local `AgentStateStore` → `build()` succeeds but logs a **warning** that sandbox state won't survive JVM restarts and can't be shared across instances. This is intentional for dev/test convenience; in production always supply a distributed store.
 
 ## 1. Session backend: put `AgentState` somewhere durable first
 
@@ -243,7 +239,7 @@ Sandboxes are ephemeral by default — the next `call()` may land on a different
 
 | Spec | Backend | When to use |
 |------|---------|-------------|
-| `NoopSnapshotSpec` | — | not for production; the builder will refuse unless you `requireDistributed(false)` |
+| `NoopSnapshotSpec` | — | not for production; sandbox cold-starts every time the container is lost |
 | `LocalSnapshotSpec(Path)` | local directory `tar` files | single-node debugging |
 | `OssSnapshotSpec(endpoint, AK, SK, bucket, prefix)` | Alibaba Cloud OSS | **default for multi-replica production**; large objects belong in object storage |
 | `RedisSnapshotSpec(jedis, prefix, ttlSeconds)` | Redis | small workspaces + short TTL (watch Redis memory cost) |
@@ -261,15 +257,15 @@ HarnessAgent agent = HarnessAgent.builder()
         .name("coding-agent")
         .model(model)
         .workspace(workspace)
-        .session(RedisSession.builder().jedisClient(jedis).build())
+        .stateStore(RedisSession.builder().jedisClient(jedis).build())
         .filesystem(new DockerFilesystemSpec()
                 .image("python:3.12-slim")
-                .isolationScope(IsolationScope.USER))
-        .sandboxDistributed(SandboxDistributedOptions.oss(redisSession, ossSnap))
+                .isolationScope(IsolationScope.USER)
+                .snapshotSpec(ossSnap))
         .build();
 ```
 
-`SandboxDistributedOptions.oss(session, ossSpec)` / `.redis(session, redisSpec)` are common shortcut factories. Snapshots carry a `snapshotId` (defaults to sessionId), so the same user across multiple devices fetches the same archive as long as the `sessionId` matches.
+All sandbox configuration — isolation scope, snapshot spec, execution guard — lives directly on the `SandboxFilesystemSpec`. The distributed `AgentStateStore` (via `.stateStore(...)`) is the only builder-level knob. Providing a distributed store automatically enables cross-replica sandbox state resume.
 
 ### Sandbox exec serialization: `RedisSandboxExecutionGuard`
 
@@ -330,7 +326,7 @@ Pulling the single-component picks above into one table:
 
 ## 7. A complete production builder template
 
-Wiring everything together:
+`HarnessAgent` is **not thread-safe** — one instance handles one `call()` at a time. In production web services, use a factory that creates one agent per request. Shared dependencies (model, session, sandbox spec, skill repository) are thread-safe; only the agent instance itself is per-request:
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -340,13 +336,13 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.RedisSandboxExecutionGuard;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec;
 import io.agentscope.harness.agent.store.RedisStore;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.core.memory.compaction.CompactionConfig;
 import io.agentscope.core.memory.compaction.ToolResultEvictionConfig;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
@@ -354,33 +350,31 @@ import redis.clients.jedis.JedisPooled;
 
 public class ProductionAgentFactory {
 
-    public HarnessAgent build() {
-        var workspace = Paths.get("/var/agentscope/workspace");
-        var jedis = new JedisPooled(System.getenv("REDIS_URI"));
+    // --- Shared, thread-safe dependencies (create once at startup) ---
+    private final Path workspace = Paths.get("/var/agentscope/workspace");
+    private final JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
+    private final RedisSession session = RedisSession.builder().jedisClient(jedis).build();
+    private final OssSnapshotSpec oss = new OssSnapshotSpec(
+            "oss-cn-hangzhou.aliyuncs.com",
+            System.getenv("OSS_AK"), System.getenv("OSS_SK"),
+            "agentscope-sandbox-snapshots", "prod/");
+    private final DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec()
+            .image("python:3.12-slim")
+            .isolationScope(IsolationScope.USER)
+            .snapshotSpec(oss)
+            .executionGuard(new RedisSandboxExecutionGuard(
+                    jedis, "agentscope:guard:", Duration.ofSeconds(30)));
 
-        // 1. Distributed Session
-        var session = RedisSession.builder().jedisClient(jedis).build();
-
-        // 2. Pick sandbox + OSS snapshot (we need shell)
-        var sandboxSpec = new DockerFilesystemSpec()
-                .image("python:3.12-slim")
-                .isolationScope(IsolationScope.USER)
-                .executionGuard(new RedisSandboxExecutionGuard(
-                        jedis, "agentscope:guard:", Duration.ofSeconds(30)));
-        var oss = new OssSnapshotSpec(
-                "oss-cn-hangzhou.aliyuncs.com",
-                System.getenv("OSS_AK"), System.getenv("OSS_SK"),
-                "agentscope-sandbox-snapshots", "prod/");
-
+    /** Creates an independent agent for each incoming request. Safe to call concurrently. */
+    public HarnessAgent create() {
         return HarnessAgent.builder()
                 .name("coding-assistant")
                 .model("dashscope:qwen-plus")
                 .workspace(workspace)
 
-                // Session + filesystem must be swapped together
-                .session(session)
+                // State store + filesystem must be swapped together for distributed
+                .stateStore(session)
                 .filesystem(sandboxSpec)
-                .sandboxDistributed(SandboxDistributedOptions.oss(session, oss))
 
                 // Memory compaction + large-result offload (mandatory for long-running sessions)
                 .compaction(CompactionConfig.builder()
@@ -406,6 +400,8 @@ public class ProductionAgentFactory {
 At call time, populate `RuntimeContext` so every "bucket-by-user/session" subsystem sees the key:
 
 ```java
+// In your HTTP handler — one agent per request
+HarnessAgent agent = factory.create();
 agent.call(msg, RuntimeContext.builder()
         .userId(httpRequest.tenantUserId())
         .sessionId(httpRequest.sessionId())
@@ -414,13 +410,14 @@ agent.call(msg, RuntimeContext.builder()
 
 ## 8. Common pitfalls
 
+- **Single agent instance serving concurrent requests** — `ReActAgent` is not thread-safe; one instance handles exactly one `call()` at a time (a second concurrent call throws `IllegalStateException`). In web/server environments, create one instance per request via a factory method — `Model`, `Toolkit` (template), and `AgentStateStore` are all safe to share. See the factory pattern in [Agent — Thread Safety](../building-blocks/agent.md#thread-safety-and-concurrency) and the Spring Boot reference `StreamingWebExample.java`.
 - **`java.nio.Files` for workspace writes** — under sandbox / Remote mode this lands in the wrong place. Always go through `agent.getWorkspaceManager()`. **Exception**: builder-time seed files (`initWorkspaceIfAbsent`-style code) — no runtime context yet, `java.nio.Files` is correct because you're seeding the local template.
 - **`tools.json`'s `allow` filters built-in tools too** — when whitelisting, keep `read_file` / `memory_search` / `agent_spawn` and friends in the list, or every built-in gets stripped.
 - **`IsolationScope` changes do not migrate existing data** — pin it before launch. Changing it post-launch is equivalent to switching to a new namespace.
 - **`WorkspaceSession` single-machine constraint**: a K8s multi-replica build throws `IllegalStateException` on the very first `build()`. **This is intentional** — you can't park session state on one pod's local disk.
 - **`NacosSkillRepository` not closed** — subscriptions leak; at fleet scale Nacos complains. Use Spring `@PreDestroy` or `destroyMethod="close"`.
 - **OSS / NAS without IAM** — `OssSnapshotSpec` takes platform AK/SK; RAM Role + STS temporary credentials is more robust.
-- **`SandboxDistributedOptions.requireDistributed(false)` is a debug switch** — make sure it doesn't ship to production config.
+- **Local `AgentStateStore` with sandbox mode is dev-only** — the build-time warning is intentional; don't ignore it in production.
 
 ## Related pages
 

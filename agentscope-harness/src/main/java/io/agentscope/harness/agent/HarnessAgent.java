@@ -42,6 +42,7 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -67,10 +68,8 @@ import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
-import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.skill.curator.RejectAllGate;
@@ -134,6 +133,13 @@ import reactor.core.publisher.Mono;
  *   <li>Plan mode (read-only design phase) with {@code plan_enter}/{@code plan_write}/{@code plan_exit} tools</li>
  *   <li>Context-overflow emergency compaction via {@link CompactionMiddleware}</li>
  * </ul>
+ *
+ * <p><b>Thread Safety:</b> {@code HarnessAgent} is <em>not</em> thread-safe — it delegates to a
+ * single {@link ReActAgent} which processes exactly one {@code call()} at a time. A concurrent
+ * invocation on the same instance throws {@link IllegalStateException}. For web services or other
+ * concurrent scenarios, create one instance per request via a factory method. The
+ * {@link io.agentscope.core.model.Model}, workspace {@link java.nio.file.Path}, and session
+ * backend are all safe to share across instances.
  */
 public class HarnessAgent implements Agent, AutoCloseable {
 
@@ -803,8 +809,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         Path workspace;
         String environmentMemory;
         AbstractFilesystem abstractFilesystem;
-        SandboxDistributedOptions sandboxDistributedOptions;
-
         boolean leafSubagent = false;
         boolean agentTracingLogEnabled = true;
         CompactionConfig compactionConfig = null;
@@ -922,7 +926,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <li>Workspace &amp; filesystem: {@link #workspace(Path)}, {@link #filesystem(SandboxFilesystemSpec)},
          *       {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(RemoteFilesystemSpec)},
          *       {@link #abstractFilesystem(AbstractFilesystem)},
-         *       {@link #sandboxDistributed(SandboxDistributedOptions)},
          *       {@link #environmentMemory(String)}</li>
          *   <li>Subagents: {@link #subagent(SubagentDeclaration)}, {@link #subagents(List)},
          *       {@link #subagentFactory(String, Function)}, {@link #externalSubagentTool(Object)},
@@ -1293,12 +1296,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Enables high-level distributed sandbox configuration. */
-        public Builder sandboxDistributed(SandboxDistributedOptions options) {
-            this.sandboxDistributedOptions = options;
-            return this;
-        }
-
         /** Enables the {@link CompactionMiddleware} with the given configuration. */
         public Builder compaction(CompactionConfig config) {
             this.compactionConfig = config;
@@ -1598,12 +1595,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         "abstractFilesystem() is an escape hatch and is mutually exclusive with"
                                 + " filesystem(...) specs");
             }
-            if (sandboxDistributedOptions != null && sandboxFilesystemSpec == null) {
-                throw new IllegalStateException(
-                        "sandboxDistributed(...) requires sandbox mode."
-                                + " Configure filesystem(SandboxFilesystemSpec) first.");
-            }
-
             Path resolvedWorkspace =
                     workspace != null
                             ? workspace
@@ -1613,11 +1604,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     agentId != null && !agentId.isBlank()
                             ? agentId
                             : (name != null && !name.isBlank() ? name : "ReActAgent");
-            AgentStateStore effectiveSession =
-                    sandboxDistributedOptions != null
-                                    && sandboxDistributedOptions.getStateStore() != null
-                            ? sandboxDistributedOptions.getStateStore()
-                            : stateStoreOverride;
+            AgentStateStore effectiveSession = stateStoreOverride;
             NamespaceFactory nsFactory =
                     rc -> {
                         String uid = rc != null ? rc.getUserId() : null;
@@ -1647,26 +1634,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SandboxContext defaultSandboxContext = null;
             SandboxBackedFilesystem capturedSandboxFs = null;
             if (sandboxFilesystemSpec != null) {
-                if (sandboxDistributedOptions != null
-                        && sandboxDistributedOptions.getSnapshotSpec() != null) {
-                    sandboxFilesystemSpec.snapshotSpec(sandboxDistributedOptions.getSnapshotSpec());
-                }
                 capturedSandboxFs = new SandboxBackedFilesystem();
                 filesystem = capturedSandboxFs;
 
                 defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
-                boolean skipDistributedValidation =
-                        sandboxDistributedOptions != null
-                                && !sandboxDistributedOptions.isRequireDistributed();
-                if (!skipDistributedValidation) {
-                    HarnessAgentBuilderSupport.validateDistributedSandboxConfig(
-                            this, effectiveSession, defaultSandboxContext);
+
+                if (isLocalSession(effectiveSession)) {
+                    log.warn(
+                            "[harness] Sandbox mode is using a local AgentStateStore ({})."
+                                    + " Sandbox state will not survive JVM restarts and cannot be"
+                                    + " shared across instances. For production, configure a"
+                                    + " distributed AgentStateStore via .stateStore(...).",
+                            effectiveSession.getClass().getSimpleName());
                 }
 
-                SandboxStateStore stateStore =
-                        sandboxFilesystemSpec.getSandboxStateStore() != null
-                                ? sandboxFilesystemSpec.getSandboxStateStore()
-                                : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
+                SessionSandboxStateStore stateStore =
+                        new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
                 SandboxExecutionGuard executionGuard =
                         sandboxFilesystemSpec.getExecutionGuard() != null
                                 ? sandboxFilesystemSpec.getExecutionGuard()
@@ -1942,9 +1925,21 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
                                     .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof SandboxBackedFilesystem) {
+                } else if (filesystem instanceof OverlayFilesystem ov
+                        && ov.getUpper() instanceof LocalFilesystemWithShell) {
                     shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox();
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
+                                    .localWithShell(resolvedWorkspace);
+                } else if (filesystem instanceof SandboxBackedFilesystem) {
+                    String wsPrefix =
+                            defaultSandboxContext != null
+                                            && defaultSandboxContext.getClientOptions() != null
+                                    ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
+                                    : io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
+                                            .SANDBOX_WORKSPACE_PREFIX;
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox(
+                                    wsPrefix);
                 } else {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();

@@ -54,7 +54,17 @@ class SandboxIsolationKeyTest {
     }
 
     @Test
-    void nullScope_treatedAsSession_withSessionKey() {
+    void nullScope_treatedAsUser_withUserId() {
+        RuntimeContext ctx = RuntimeContext.builder().userId("user-xyz").build();
+        Optional<SandboxIsolationKey> key =
+                SandboxIsolationKey.resolve((IsolationScope) null, ctx, AGENT_ID);
+        assertTrue(key.isPresent());
+        assertEquals(IsolationScope.USER, key.get().getScope());
+        assertEquals("user-xyz", key.get().getValue());
+    }
+
+    @Test
+    void nullScope_treatedAsUser_fallsBackToSession_whenUserIdAbsent() {
         RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-def").build();
         Optional<SandboxIsolationKey> key =
                 SandboxIsolationKey.resolve((IsolationScope) null, ctx, AGENT_ID);
@@ -74,15 +84,28 @@ class SandboxIsolationKeyTest {
     }
 
     @Test
-    void userScope_blankUserId_returnsEmpty() {
-        RuntimeContext ctx = RuntimeContext.builder().userId("  ").build();
+    void userScope_blankUserId_withSessionId_fallsBackToSession() {
+        RuntimeContext ctx =
+                RuntimeContext.builder().userId("  ").sessionId("sess-fallback").build();
         Optional<SandboxIsolationKey> key =
                 SandboxIsolationKey.resolve(IsolationScope.USER, ctx, AGENT_ID);
-        assertFalse(key.isPresent());
+        assertTrue(key.isPresent());
+        assertEquals(IsolationScope.SESSION, key.get().getScope());
+        assertEquals("sess-fallback", key.get().getValue());
     }
 
     @Test
-    void userScope_nullUserId_returnsEmpty() {
+    void userScope_nullUserId_withSessionId_fallsBackToSession() {
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-fb2").build();
+        Optional<SandboxIsolationKey> key =
+                SandboxIsolationKey.resolve(IsolationScope.USER, ctx, AGENT_ID);
+        assertTrue(key.isPresent());
+        assertEquals(IsolationScope.SESSION, key.get().getScope());
+        assertEquals("sess-fb2", key.get().getValue());
+    }
+
+    @Test
+    void userScope_nullUserId_noSessionId_returnsEmpty() {
         RuntimeContext ctx = RuntimeContext.builder().build();
         Optional<SandboxIsolationKey> key =
                 SandboxIsolationKey.resolve(IsolationScope.USER, ctx, AGENT_ID);

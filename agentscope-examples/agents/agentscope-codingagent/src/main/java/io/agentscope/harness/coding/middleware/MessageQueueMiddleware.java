@@ -16,6 +16,7 @@
 package io.agentscope.harness.coding.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.store.StoreItem;
@@ -63,7 +64,7 @@ public class MessageQueueMiddleware implements MiddlewareBase {
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         String threadId = CURRENT_THREAD_ID.get();
         if (threadId == null || threadId.isBlank()) {
             return Mono.just(currentPrompt);

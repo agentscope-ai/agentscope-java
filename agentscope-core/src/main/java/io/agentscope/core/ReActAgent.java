@@ -83,8 +83,6 @@ import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionEngine;
 import io.agentscope.core.permission.PermissionRule;
-import io.agentscope.core.plan.PlanHintMiddleware;
-import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.rag.GenericRAGHook;
 import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.KnowledgeRetrievalTools;
@@ -174,6 +172,13 @@ import reactor.core.publisher.Mono;
  *     .content(TextBlock.builder().text("What's the weather?").build())
  *     .build()).block();
  * }</pre>
+ *
+ * <p><b>Thread Safety:</b> {@code ReActAgent} is <em>not</em> thread-safe. A single instance
+ * processes exactly one {@code call()} at a time; a concurrent invocation on the same instance
+ * throws {@link IllegalStateException}. For web services or other concurrent scenarios, create
+ * one agent instance per request via a factory method. {@link io.agentscope.core.model.Model},
+ * {@link io.agentscope.core.tool.Toolkit} (as a template — {@code build()} deep-copies it), and
+ * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
  *
  * @see StructuredOutputCapableAgent
  */
@@ -523,7 +528,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         for (MiddlewareBase mw : middlewares) {
             try {
                 if (mw.getClass()
-                                .getMethod("onSystemPrompt", Agent.class, String.class)
+                                .getMethod(
+                                        "onSystemPrompt",
+                                        Agent.class,
+                                        RuntimeContext.class,
+                                        String.class)
                                 .getDeclaringClass()
                         != MiddlewareBase.class) {
                     hasOverride = true;
@@ -537,9 +546,10 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         if (!hasOverride) {
             return prompt;
         }
+        RuntimeContext ctx = getRuntimeContext();
         Mono<String> result = Mono.just(prompt);
         for (MiddlewareBase mw : middlewares) {
-            result = result.flatMap(p -> mw.onSystemPrompt(this, p));
+            result = result.flatMap(p -> mw.onSystemPrompt(this, ctx, p));
         }
         return result.block();
     }
@@ -663,7 +673,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .doOnError(e -> activeEventSink.set(null));
-        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+        return MiddlewareChain.build(
+                        middlewares, this, getRuntimeContext(), MiddlewareBase::onAgent, core)
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
@@ -966,7 +977,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .doOnError(e -> activeEventSink.set(null));
 
-        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+        return MiddlewareChain.build(
+                        middlewares, this, getRuntimeContext(), MiddlewareBase::onAgent, core)
                 .apply(new AgentInput(msgs));
     }
 
@@ -1187,6 +1199,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                     MiddlewareChain.build(
                                                     middlewares,
                                                     ReActAgent.this,
+                                                    getRuntimeContext(),
                                                     MiddlewareBase::onReasoning,
                                                     reasoningCore)
                                             .apply(new ReasoningInput(modelInput, tools, options));
@@ -1314,7 +1327,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
                 mci -> modelCallStream(context, mci, true);
 
-        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onModelCall, modelCallCore)
+        return MiddlewareChain.build(
+                        middlewares,
+                        this,
+                        getRuntimeContext(),
+                        MiddlewareBase::onModelCall,
+                        modelCallCore)
                 .apply(new ModelCallInput(messages, tools, options, model))
                 .doOnNext(this::publishEvent);
     }
@@ -1462,6 +1480,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                     MiddlewareChain.build(
                                                     middlewares,
                                                     this,
+                                                    getRuntimeContext(),
                                                     MiddlewareBase::onActing,
                                                     actingCore)
                                             .apply(new ActingInput(toolCalls));
@@ -2046,7 +2065,11 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 mci -> summaryModelCallStream(context, mci, options);
 
         return MiddlewareChain.build(
-                        middlewares, this, MiddlewareBase::onModelCall, summaryModelCallCore)
+                        middlewares,
+                        this,
+                        getRuntimeContext(),
+                        MiddlewareBase::onModelCall,
+                        summaryModelCallCore)
                 .apply(new ModelCallInput(messages, null, options, model))
                 .doOnNext(this::publishEvent);
     }
@@ -2500,9 +2523,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         private String defaultSessionId;
 
         // ==================== 1.x legacy compatibility fields ====================
-        // Below fields back the deprecated `planNotebook(...)`, `longTermMemory(...)`,
-        // `knowledge(...)`, `skillBox(...)` setters. They are consumed by configureXxx() during
-        // build() so legacy 1.x user code keeps producing equivalent runtime behavior.
+        // Below fields back the deprecated `longTermMemory(...)`, `knowledge(...)`,
+        // `skillBox(...)` setters. They are consumed by configureXxx() during build() so
+        // legacy 1.x user code keeps producing equivalent runtime behavior.
 
         @Deprecated(forRemoval = true, since = "2.0.0")
         private LongTermMemory longTermMemory;
@@ -2522,9 +2545,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         @Deprecated(forRemoval = true, since = "2.0.0")
         private RetrieveConfig retrieveConfig =
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
-
-        @Deprecated(forRemoval = true, since = "2.0.0")
-        private PlanNotebook planNotebook;
 
         @Deprecated(forRemoval = true, since = "2.0.0")
         private SkillBox skillBox;
@@ -2994,26 +3014,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * @deprecated since 2.0.0. The plan module has been removed from 2.0 core; the legacy
-         *     {@link PlanNotebook} adapter still wires up plan
-         *     tools and a plan-hint hook for source compatibility.
-         */
-        @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder planNotebook(PlanNotebook planNotebook) {
-            this.planNotebook = planNotebook;
-            return this;
-        }
-
-        /**
-         * @deprecated since 2.0.0. Convenience shortcut for {@code planNotebook(PlanNotebook.builder().build())}.
-         */
-        @Deprecated(forRemoval = true, since = "2.0.0")
-        public Builder enablePlan() {
-            this.planNotebook = PlanNotebook.builder().build();
-            return this;
-        }
-
-        /**
          * @deprecated since 2.0.0. Skills now flow through {@link #skillRepository} /
          *     {@link #skillRepositories}; legacy {@link io.agentscope.core.skill.SkillBox}
          *     instances are still accepted for source compatibility, but combining a
@@ -3231,16 +3231,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * Registers plan management tools on the toolkit and a middleware that injects the
-         * current plan hint into every reasoning step's input message list.
-         */
-        @SuppressWarnings("deprecation")
-        private void configurePlan(Toolkit agentToolkit) {
-            agentToolkit.registerTool(planNotebook);
-            middlewares.add(new PlanHintMiddleware(planNotebook));
-        }
-
-        /**
          * Registers the built-in task-list tool ({@code todo_write}) and a per-turn reminder
          * middleware. Opt-in via {@link #enableTaskList()}.
          */
@@ -3288,9 +3278,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             }
             if (!knowledgeBases.isEmpty()) {
                 configureRAG(agentToolkit);
-            }
-            if (planNotebook != null) {
-                configurePlan(agentToolkit);
             }
             if (taskListEnabled) {
                 configureTodoTools(agentToolkit);

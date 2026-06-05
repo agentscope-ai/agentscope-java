@@ -149,6 +149,62 @@ The `ModelRegistry` string form (`<provider>:<model>`) supports `dashscope` / `o
 | `reactConfig` | `ReactConfig` | default | Max iterations and reject handling |
 | `maxIters` | `int` | `10` | Max iterations of the ReAct main loop (alternative to `reactConfig`) |
 
+## Thread safety and concurrency
+
+:::{warning}
+`ReActAgent` and `HarnessAgent` are **not thread-safe**. A single instance can only process one `call()` at a time — a second concurrent invocation on the same instance throws `IllegalStateException("Agent is still running")`.
+:::
+
+For web services and other concurrent scenarios, **create one agent instance per request** (or per session with external queuing). The recommended pattern is a factory method that holds the shared, thread-safe dependencies and builds a fresh agent for each incoming request:
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.tool.Toolkit;
+
+public class AgentFactory {
+    private final Model model;
+    private final Toolkit toolkitTemplate;
+    private final AgentStateStore stateStore;
+
+    public AgentFactory(Model model, Toolkit toolkitTemplate, AgentStateStore stateStore) {
+        this.model = model;
+        this.toolkitTemplate = toolkitTemplate;
+        this.stateStore = stateStore;
+    }
+
+    /** Creates an independent agent for the given session. Safe to call concurrently. */
+    public ReActAgent create(String sessionId) {
+        return ReActAgent.builder()
+                .name("assistant")
+                .sysPrompt("You are a helpful assistant.")
+                .model(model)                   // stateless — safe to share
+                .toolkit(toolkitTemplate)       // build() calls toolkit.copy() internally
+                .stateStore(stateStore)         // designed for concurrent access
+                .defaultSessionId(sessionId)
+                .build();
+    }
+}
+```
+
+**What can be shared across instances:**
+
+| Object | Thread-safe? | Notes |
+|--------|:---:|-------|
+| `Model` | Yes | Stateless HTTP client wrapper — share freely |
+| `Toolkit` (as template) | Yes | `build()` deep-copies it via `toolkit.copy()`; the template is never mutated at runtime |
+| `AgentStateStore` | Yes | All built-in implementations (`JsonFileAgentStateStore`, `InMemoryAgentStateStore`) handle concurrent access |
+
+**What is per-instance:**
+
+| Object | Notes |
+|--------|-------|
+| `AgentState` | Mutable conversation context — one per `(userId, sessionId)` slot |
+| `PermissionEngine` | Accumulates allowed rules per session |
+
+A complete Spring Boot example of this pattern: `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
+
 ## Running an agent
 
 `call` and `streamEvents` accept the same input messages and drive the same reasoning-acting loop. They differ in how the result is delivered.

@@ -23,13 +23,13 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * {@link SandboxStateStore} backed by the generic AgentScope {@link AgentStateStore} abstraction.
+ * Sandbox state store backed by the generic AgentScope {@link AgentStateStore} abstraction.
  *
  * <p>This store keeps sandbox lifecycle state in the same state backend as ReActAgent runtime
  * state. As a result, providing a distributed {@link AgentStateStore} implementation (for example Redis)
  * automatically enables distributed sandbox resume state.
  */
-public final class SessionSandboxStateStore implements SandboxStateStore {
+public final class SessionSandboxStateStore {
 
     private static final String SANDBOX_STATE_KEY = "_sandbox_state";
 
@@ -41,7 +41,6 @@ public final class SessionSandboxStateStore implements SandboxStateStore {
         this.agentId = Objects.requireNonNull(agentId, "agentId must not be null");
     }
 
-    @Override
     public Optional<String> load(SandboxIsolationKey key) throws IOException {
         try {
             String slotSid = slotSessionId(key);
@@ -56,7 +55,6 @@ public final class SessionSandboxStateStore implements SandboxStateStore {
         }
     }
 
-    @Override
     public void save(SandboxIsolationKey key, String json) throws IOException {
         try {
             stateStore.save(
@@ -66,7 +64,6 @@ public final class SessionSandboxStateStore implements SandboxStateStore {
         }
     }
 
-    @Override
     public void delete(SandboxIsolationKey key) throws IOException {
         try {
             // Not all AgentStateStore implementations support per-key delete; tombstone keeps

@@ -5,7 +5,7 @@ description: "从单机原型到多副本分布式部署：Session / Filesystem 
 
 > 把 `HarnessAgent` 在你笔记本上跑起来很容易，搬到生产环境是另一回事——多副本要共享会话、要隔离用户、要支持不可信代码执行、要在 pod 重启后接着上次跑。本页**只讲单机 → 分布式生产的差异**：哪些组件必须换、换成什么、为什么 builder 会在你漏配时直接抛 `IllegalStateException`。
 
-源码层面，凡是文档里出现"distributed-friendly"、"cross-replica"、"shared store"字样的组件——`RemoteFilesystemSpec`、`SandboxDistributedOptions`、`RedisSandboxExecutionGuard`、`SandboxSnapshotSpec`、`RedisStore` / `JdbcStore` 等——都是专门为这一页所述场景设计的。
+源码层面，凡是文档里出现"distributed-friendly"、"cross-replica"、"shared store"字样的组件——`RemoteFilesystemSpec`、`RedisSandboxExecutionGuard`、`SandboxSnapshotSpec`、`RedisStore` / `JdbcStore` 等——都是专门为这一页所述场景设计的。
 
 ## 一图速览：单机默认 vs 分布式生产
 
@@ -22,12 +22,8 @@ description: "从单机原型到多副本分布式部署：Session / Filesystem 
 | 优雅停机 | `GracefulShutdownManager` 自动注册 JVM hook | 同上 + `setConfig(...)` 调节 inflight 等待 |
 
 **核心校验链路：**
-- `filesystem(RemoteFilesystemSpec)` + 没换 `session(...)` → `build()` 抛 `IllegalStateException`，告诉你换 `RedisSession`。
-- `filesystem(SandboxFilesystemSpec)` + 没换 `session(...)` → 同上。
-- `filesystem(SandboxFilesystemSpec)` + `NoopSnapshotSpec` → 抛 `IllegalStateException`，要求你显式配快照。
-- 单节点测试想绕过：`.sandboxDistributed(SandboxDistributedOptions.builder().requireDistributed(false).build())`。
-
-这套校验来自 `HarnessAgentBuilderSupport#validateDistributedSandboxConfig`——刻意 fail-fast，避免"测试环境跑得好、上线后状态丢失"。
+- `filesystem(RemoteFilesystemSpec)` + 没换 `stateStore(...)` → `build()` 抛 `IllegalStateException`，告诉你需要提供分布式 `AgentStateStore`。
+- `filesystem(SandboxFilesystemSpec)` + 本地 `AgentStateStore` → `build()` 正常通过但打一条 **warning** 日志，提醒你沙箱状态不能跨 JVM 恢复、也不能跨实例共享。这是为了开发/测试方便而设计的；生产环境务必配分布式 store。
 
 ## 1. Session 后端：先把 `AgentState` 放对地方
 
@@ -243,7 +239,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | Spec | 后端 | 何时用 |
 |------|------|--------|
-| `NoopSnapshotSpec` | — | 不要在生产用；builder 会拦你（除非显式 `requireDistributed(false)`） |
+| `NoopSnapshotSpec` | — | 不要在生产用；容器丢了就走冷启动 |
 | `LocalSnapshotSpec(Path)` | 本地目录 `tar` 文件 | 单机调试 |
 | `OssSnapshotSpec(endpoint, AK, SK, bucket, prefix)` | 阿里云 OSS | **多副本生产首选**；大对象天然适合对象存储 |
 | `RedisSnapshotSpec(jedis, prefix, ttlSeconds)` | Redis | 小工作区 + 短 TTL（注意 Redis 内存代价） |
@@ -261,15 +257,15 @@ HarnessAgent agent = HarnessAgent.builder()
         .name("coding-agent")
         .model(model)
         .workspace(workspace)
-        .session(RedisSession.builder().jedisClient(jedis).build())
+        .stateStore(RedisSession.builder().jedisClient(jedis).build())
         .filesystem(new DockerFilesystemSpec()
                 .image("python:3.12-slim")
-                .isolationScope(IsolationScope.USER))
-        .sandboxDistributed(SandboxDistributedOptions.oss(redisSession, ossSnap))
+                .isolationScope(IsolationScope.USER)
+                .snapshotSpec(ossSnap))
         .build();
 ```
 
-`SandboxDistributedOptions.oss(session, ossSpec)` / `.redis(session, redisSpec)` 是常用快捷工厂。注意：snapshot 自带 `snapshotId`（默认就是 sessionId），所以同一 user 跨多设备访问只要 sessionId 一致就能拉到同一份 archive。
+所有沙箱配置——隔离级别、快照、执行锁——都直接配在 `SandboxFilesystemSpec` 上。Builder 层面只需要一个 `.stateStore(...)` 提供分布式 `AgentStateStore`，框架就自动用它来存取沙箱元数据，实现跨副本 resume。
 
 ### 沙箱执行节点串行化：`RedisSandboxExecutionGuard`
 
@@ -330,7 +326,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 7. 一个完整的生产 builder 模板
 
-把上面所有要点拼到一起：
+`HarnessAgent` **不是线程安全的**——一个实例同一时刻只能处理一个 `call()`。生产 Web 服务中应使用工厂方法为每个请求创建独立实例。共享依赖（model、session、sandbox spec、skill repository）均为线程安全；只有 agent 实例本身是 per-request 的：
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -340,13 +336,13 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.RedisSandboxExecutionGuard;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec;
 import io.agentscope.harness.agent.store.RedisStore;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.core.memory.compaction.CompactionConfig;
 import io.agentscope.core.memory.compaction.ToolResultEvictionConfig;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
@@ -354,33 +350,31 @@ import redis.clients.jedis.JedisPooled;
 
 public class ProductionAgentFactory {
 
-    public HarnessAgent build() {
-        var workspace = Paths.get("/var/agentscope/workspace");
-        var jedis = new JedisPooled(System.getenv("REDIS_URI"));
+    // --- 可共享的线程安全依赖（应用启动时创建一次） ---
+    private final Path workspace = Paths.get("/var/agentscope/workspace");
+    private final JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
+    private final RedisSession session = RedisSession.builder().jedisClient(jedis).build();
+    private final OssSnapshotSpec oss = new OssSnapshotSpec(
+            "oss-cn-hangzhou.aliyuncs.com",
+            System.getenv("OSS_AK"), System.getenv("OSS_SK"),
+            "agentscope-sandbox-snapshots", "prod/");
+    private final DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec()
+            .image("python:3.12-slim")
+            .isolationScope(IsolationScope.USER)
+            .snapshotSpec(oss)
+            .executionGuard(new RedisSandboxExecutionGuard(
+                    jedis, "agentscope:guard:", Duration.ofSeconds(30)));
 
-        // 1. 分布式 Session
-        var session = RedisSession.builder().jedisClient(jedis).build();
-
-        // 2. 选 sandbox + OSS snapshot（要 shell）
-        var sandboxSpec = new DockerFilesystemSpec()
-                .image("python:3.12-slim")
-                .isolationScope(IsolationScope.USER)
-                .executionGuard(new RedisSandboxExecutionGuard(
-                        jedis, "agentscope:guard:", Duration.ofSeconds(30)));
-        var oss = new OssSnapshotSpec(
-                "oss-cn-hangzhou.aliyuncs.com",
-                System.getenv("OSS_AK"), System.getenv("OSS_SK"),
-                "agentscope-sandbox-snapshots", "prod/");
-
+    /** 为每个请求创建独立的 agent 实例。可安全并发调用。 */
+    public HarnessAgent create() {
         return HarnessAgent.builder()
                 .name("coding-assistant")
                 .model("dashscope:qwen-plus")
                 .workspace(workspace)
 
-                // session + filesystem 必须一起换
-                .session(session)
+                // stateStore + filesystem 分布式必须一起配
+                .stateStore(session)
                 .filesystem(sandboxSpec)
-                .sandboxDistributed(SandboxDistributedOptions.oss(session, oss))
 
                 // 记忆压缩 + 大结果卸载（生产长会话必备）
                 .compaction(CompactionConfig.builder()
@@ -403,9 +397,11 @@ public class ProductionAgentFactory {
 }
 ```
 
-调用时填好 `RuntimeContext` 让所有"按用户/会话分桶"的子系统拿到 key：
+调用时填好 `RuntimeContext`，让所有"按用户/会话分桶"的子系统拿到 key：
 
 ```java
+// 在 HTTP handler 中——每个请求一个 agent
+HarnessAgent agent = factory.create();
 agent.call(msg, RuntimeContext.builder()
         .userId(httpRequest.tenantUserId())
         .sessionId(httpRequest.sessionId())
@@ -414,13 +410,14 @@ agent.call(msg, RuntimeContext.builder()
 
 ## 8. 常见坑位
 
+- **单个 agent 实例服务并发请求**——`ReActAgent` 不是线程安全的，一个实例同一时刻只能处理一个 `call()`（第二个并发调用直接抛 `IllegalStateException`）。在 Web / 服务端环境下应通过工厂方法每个请求创建一个新实例——`Model`、`Toolkit`（模板）和 `AgentStateStore` 均可安全共享。参见 [Agent — 线程安全](../building-blocks/agent.md#线程安全与并发) 中的工厂模式和 Spring Boot 参考示例 `StreamingWebExample.java`。
 - **`java.nio.Files` 写工作区**——在沙箱 / Remote 模式下落到错的位置。永远走 `agent.getWorkspaceManager()`。**例外**：builder 装配时的种子文件（`initWorkspaceIfAbsent` 之类）那时还没有运行时上下文，用 `java.nio.Files` 是 OK 的。
 - **`tools.json` 的 `allow` 会过滤内置工具**——用白名单时务必把 `read_file` / `memory_search` / `agent_spawn` 这些保留下来，否则整套内置工具一起被砍。
 - **`IsolationScope` 改了，旧数据不会自动迁移**——上线前定下来，别上线后改。改了等同于"换了一个命名空间"。
 - **`WorkspaceSession` 单机限制**：K8s 多副本部署里第一次 build 就抛 `IllegalStateException`，**这是设计如此**——告诉你别把会话状态留在某个 pod 的本地磁盘上。
 - **`NacosSkillRepository` 不关闭**——会泄露订阅，集群规模大了 Nacos 会喊。Spring 注入用 `@PreDestroy` 或 `destroyMethod="close"`。
 - **OSS / NAS 走完 IAM 再上线**——`OssSnapshotSpec` 的 AK/SK 是平台凭证；用 RAM Role + STS 临时凭证更稳。
-- **`SandboxDistributedOptions.requireDistributed(false)` 是个调试开关**——上线前确认它没漏在生产配置里。
+- **本地 `AgentStateStore` + 沙箱模式仅用于开发**——构建时的 warning 日志是故意的，生产环境别忽略。
 
 ## 相关文档
 

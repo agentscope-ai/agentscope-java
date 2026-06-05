@@ -16,6 +16,7 @@
 package io.agentscope.core.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -41,8 +42,8 @@ import reactor.core.publisher.Mono;
  *       sees the latest state regardless of how many tool calls happened since.
  * </ul>
  *
- * <p>The reminder is appended <i>transiently</i> to the reasoning input only (mirroring the legacy
- * {@code PlanHintMiddleware}); it is never written into {@code AgentState.context}, so it is never
+ * <p>The reminder is appended <i>transiently</i> to the reasoning input only; it is never written
+ * into {@code AgentState.context}, so it is never
  * persisted, compacted, or recalled. It is additionally tagged with
  * {@link Msg#METADATA_SYNTHETIC} so any consumer that does observe it can skip it.
  *
@@ -64,14 +65,17 @@ public class TaskReminderMiddleware implements MiddlewareBase {
             """;
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         String base = currentPrompt != null ? currentPrompt : "";
         return Mono.just(base + GROUNDING);
     }
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
         AgentState state = agent != null ? agent.getAgentState() : null;
         List<Task> tasks = state == null ? List.of() : state.getTasksContext().getTasks();
         if (tasks.isEmpty()) {

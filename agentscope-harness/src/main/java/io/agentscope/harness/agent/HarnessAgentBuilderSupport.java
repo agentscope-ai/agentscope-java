@@ -36,8 +36,6 @@ import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
-import io.agentscope.harness.agent.sandbox.SandboxContext;
-import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -154,35 +152,6 @@ final class HarnessAgentBuilderSupport {
         // Default: route through LocalFilesystemSpec so the default project (= ${user.dir})
         // is overlaid below the agent workspace, matching the Claude-Code-style two-layer model.
         return new LocalFilesystemSpec().toFilesystem(workspace, nsFactory);
-    }
-
-    static void validateDistributedSandboxConfig(
-            HarnessAgent.Builder b,
-            io.agentscope.core.state.AgentStateStore effectiveSession,
-            SandboxContext sandboxContext) {
-        if (b.sandboxFilesystemSpec.getSandboxStateStore() == null
-                && HarnessAgent.isLocalSession(effectiveSession)) {
-            throw new IllegalStateException(
-                    "filesystem(SandboxFilesystemSpec) requires a distributed AgentStateStore"
-                        + " backend (for example RedisAgentStateStore) to persist and restore"
-                        + " sandbox state across distributed instances, but the effective"
-                        + " AgentStateStore is a local in-process implementation"
-                        + " (JsonFileAgentStateStore / InMemoryAgentStateStore). Configure a"
-                        + " distributed one via .stateStore(...). For single-node use, opt out via"
-                        + " .sandboxDistributed(SandboxDistributedOptions.builder()"
-                        + ".requireDistributed(false).build()).");
-        }
-        if (sandboxContext == null
-                || sandboxContext.getSnapshotSpec() == null
-                || sandboxContext.getSnapshotSpec() instanceof NoopSnapshotSpec) {
-            throw new IllegalStateException(
-                    "filesystem(SandboxFilesystemSpec) requires a non-noop snapshotSpec to"
-                            + " restore workspace archives across distributed instances."
-                            + " Configure one via SandboxFilesystemSpec.snapshotSpec(...)."
-                            + " For single-node use, opt out via"
-                            + " .sandboxDistributed(SandboxDistributedOptions.builder()"
-                            + ".requireDistributed(false).build()).");
-        }
     }
 
     /**

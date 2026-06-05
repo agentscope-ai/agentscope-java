@@ -58,6 +58,8 @@ Flush (path 1) is triggered at three different moments:
 
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.
 
+Both flush and offload are **asynchronous**: they are launched in a fire-and-forget fashion via `doOnComplete` after the response stream has ended, so they never block the current `call()` return. The caller receives the full response first; the flush LLM call and JSONL offload run in the background afterward.
+
 ## Enable compaction
 
 ```java

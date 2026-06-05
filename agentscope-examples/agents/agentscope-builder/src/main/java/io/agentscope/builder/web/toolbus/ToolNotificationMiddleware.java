@@ -50,7 +50,10 @@ public class ToolNotificationMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
         String sessionKey = resolveSessionKey(agent);
         if (sessionKey != null && input.toolCalls() != null) {
             for (ToolUseBlock tu : input.toolCalls()) {

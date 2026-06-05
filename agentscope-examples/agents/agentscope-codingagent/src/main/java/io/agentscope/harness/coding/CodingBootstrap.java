@@ -24,7 +24,6 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
@@ -524,13 +523,6 @@ public final class CodingBootstrap {
                 spec.workspaceRoot(CodingAgentFactory.resolveSandboxWorkingDir());
                 spec.isolationScope(IsolationScope.SESSION);
                 b.filesystem(spec);
-                // Single-node deployment: SqliteBaseStore is local, so a distributed
-                // AgentStateStore
-                // would be inconsistent. Switch to RedisAgentStateStore + a distributed store
-                // together
-                // if this ever runs multi-replica.
-                b.sandboxDistributed(
-                        SandboxDistributedOptions.builder().requireDistributed(false).build());
             }
         }
 

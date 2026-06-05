@@ -58,6 +58,8 @@ Flush（路径 1）会在以下三个时机被触发：
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
+Flush 和 offload 都是**异步执行**的：它们在响应流结束后通过 `doOnComplete` 以 fire-and-forget 方式启动，不会阻塞当前 `call()` 的返回。换句话说，调用方拿到完整响应之后，flush LLM 调用和 JSONL offload 才在后台开始。
+
 ## 开启压缩
 
 ```java

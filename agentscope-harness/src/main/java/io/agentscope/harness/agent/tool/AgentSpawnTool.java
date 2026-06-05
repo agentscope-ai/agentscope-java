@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.EventType;
@@ -22,15 +23,25 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -111,6 +122,7 @@ public class AgentSpawnTool {
 
     @Tool(
             name = "agent_spawn",
+            stateInjected = true,
             description =
                     """
                     Spawn an isolated subagent for delegated or background work. \
@@ -121,6 +133,7 @@ public class AgentSpawnTool {
                     """)
     public Mono<String> agentSpawn(
             RuntimeContext runtimeContext,
+            AgentState parentState,
             @ToolParam(name = "agent_id", description = "Subagent identifier to instantiate")
                     String agentId,
             @ToolParam(
@@ -157,9 +170,6 @@ public class AgentSpawnTool {
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
-        if (canonLabel != null && labelToKey.containsKey(canonLabel.toLowerCase())) {
-            return Mono.just("Error: Label already in use: " + canonLabel);
-        }
 
         Optional<Agent> agentOpt = agentManager.createAgentIfPresent(agentId, runtimeContext);
         if (agentOpt.isEmpty()) {
@@ -175,15 +185,56 @@ public class AgentSpawnTool {
         }
         System.err.println("[agentSpawn] hasAgent=true, proceeding");
         Agent agent = agentOpt.get();
-        String key = "agent:" + agentId + ":" + UUID.randomUUID();
-        String sessionId = "sub-" + UUID.randomUUID();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
+        String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        var declOpt = agentManager.getDeclaration(agentId);
+        boolean persist = declOpt.map(SubagentDeclaration::isPersistSession).orElse(false);
+
+        String key;
+        String sessionId;
+        if (persist) {
+            String hash = deterministicHash(parentSessionId, agentId, canonLabel);
+            key = "agent:" + agentId + ":" + hash;
+            sessionId = "sub-" + hash;
+            // Reuse existing agent if same deterministic key was already spawned.
+            SpawnedAgent existing = agentsByKey.get(key);
+            if (existing != null) {
+                String spawnInfo = formatSpawnInfo(key, agentId, sessionId);
+                boolean hasTask = task != null && !task.isBlank();
+                if (!hasTask) {
+                    return Mono.just(spawnInfo + "\nstatus: accepted (reused)");
+                }
+                return execSpawnTask(
+                        existing, runtimeContext, spawnInfo, task, timeoutSeconds, declOpt);
+            }
+        } else {
+            key = "agent:" + agentId + ":" + UUID.randomUUID();
+            sessionId = "sub-" + UUID.randomUUID();
+        }
+
+        // Label uniqueness check — skipped above for persist=true reuse path (already returned).
+        if (canonLabel != null && labelToKey.containsKey(canonLabel.toLowerCase())) {
+            return Mono.just("Error: Label already in use: " + canonLabel);
+        }
 
         SpawnedAgent spawned =
                 new SpawnedAgent(key, agentId, sessionId, canonLabel, agent, nextDepth);
         agentsByKey.put(key, spawned);
         if (canonLabel != null) {
             labelToKey.put(canonLabel.toLowerCase(), key);
+        }
+
+        // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
+        if (parentState != null
+                && parentState.getPlanModeContext().isPlanActive()
+                && agent instanceof HarnessAgent ha) {
+            ha.enterPlanMode();
+        }
+
+        // Propagate DENY permission rules from parent to child (security boundary inheritance).
+        boolean inherit = declOpt.map(SubagentDeclaration::isInheritParentPermissions).orElse(true);
+        if (inherit && parentState != null && agent instanceof ReActAgent ra) {
+            propagateDenyRules(parentState, ra);
         }
 
         String spawnInfo = formatSpawnInfo(key, agentId, sessionId);
@@ -194,8 +245,6 @@ public class AgentSpawnTool {
         }
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
-        String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-        var declOpt = agentManager.getDeclaration(agentId);
         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
         if (timeoutMs == 0) {
@@ -591,5 +640,141 @@ public class AgentSpawnTool {
         sb.append("agent_id: ").append(agentId).append("\n");
         sb.append("session_id: ").append(sessionId);
         return sb.toString();
+    }
+
+    /**
+     * Executes a task against a previously spawned (or reused) subagent. Factored out of
+     * {@code agentSpawn} to handle the deterministic-key reuse path without duplicating the
+     * sync/async/remote dispatch logic.
+     */
+    private Mono<String> execSpawnTask(
+            SpawnedAgent spawned,
+            RuntimeContext runtimeContext,
+            String spawnInfo,
+            String task,
+            Integer timeoutSeconds,
+            Optional<SubagentDeclaration> declOpt) {
+        long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
+        String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
+
+        if (timeoutMs == 0) {
+            String taskId = "task_" + UUID.randomUUID();
+            final String capturedTask = task;
+            TaskRunSpec spec;
+            if (remote) {
+                SubagentDeclaration d = declOpt.get();
+                spec =
+                        new TaskRunSpec.RemoteTaskRunSpec(
+                                d.getUrl(), d.getHeaders(), spawned.agentId(), capturedTask);
+            } else {
+                spec =
+                        new TaskRunSpec.LocalTaskRunSpec(
+                                () -> {
+                                    try {
+                                        Msg reply =
+                                                agentManager
+                                                        .invokeAgent(
+                                                                spawned.agent(),
+                                                                spawned.sessionId(),
+                                                                currentUserId,
+                                                                capturedTask)
+                                                        .block();
+                                        return reply != null ? reply.getTextContent() : "";
+                                    } catch (RuntimeException e) {
+                                        return "Error: "
+                                                + (e.getMessage() != null
+                                                        ? e.getMessage()
+                                                        : e.getClass().getSimpleName());
+                                    }
+                                });
+            }
+            taskRepository.putTask(
+                    runtimeContext, taskId, spawned.agentId(), parentSessionId, spec);
+            return Mono.just(
+                    spawnInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId));
+        }
+
+        if (remote) {
+            final String finalTask = task;
+            return Mono.fromCallable(
+                    () ->
+                            runRemoteSync(
+                                    runtimeContext,
+                                    spawnInfo,
+                                    spawned.agentId(),
+                                    parentSessionId,
+                                    declOpt.get(),
+                                    finalTask.trim(),
+                                    timeoutMs));
+        }
+
+        final String finalTask = task.trim();
+        final String finalSpawnInfo = spawnInfo;
+        return execLocalSync(
+                        spawned.agent(),
+                        spawned.sessionId(),
+                        currentUserId,
+                        finalTask,
+                        spawned,
+                        runtimeContext)
+                .timeout(Duration.ofMillis(timeoutMs))
+                .map(
+                        reply -> {
+                            String text = reply != null ? reply.getTextContent() : "";
+                            return finalSpawnInfo + "\nstatus: ok\nreply:\n" + text;
+                        })
+                .onErrorResume(
+                        e -> {
+                            String err =
+                                    e.getMessage() != null
+                                            ? e.getMessage()
+                                            : e.getClass().getSimpleName();
+                            log.warn(
+                                    "agent_spawn execute failed: agentId={}", spawned.agentId(), e);
+                            return Mono.just(finalSpawnInfo + "\nstatus: error\nerror: " + err);
+                        });
+    }
+
+    /**
+     * Derives a deterministic 12-char hex hash from (parentSessionId, agentId, label). Same inputs
+     * always produce the same key, enabling subagent state recovery across parent calls.
+     */
+    static String deterministicHash(String parentSessionId, String agentId, String label) {
+        String seed =
+                (parentSessionId != null ? parentSessionId : "anon")
+                        + "/"
+                        + agentId
+                        + (label != null ? "/" + label : "");
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(seed.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest, 0, 6);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
+    /**
+     * Copies all DENY rules from the parent's permission context into the child's permission
+     * engine. This enforces the security boundary: anything the parent is explicitly denied, the
+     * child is also denied.
+     */
+    private static void propagateDenyRules(AgentState parentState, ReActAgent child) {
+        PermissionContextState parentPerms = parentState.getPermissionContext();
+        if (parentPerms == null || parentPerms.getDenyRules().isEmpty()) {
+            return;
+        }
+        var childEngine = child.getPermissionEngine();
+        if (childEngine == null) {
+            return;
+        }
+        for (Map.Entry<String, List<PermissionRule>> entry :
+                parentPerms.getDenyRules().entrySet()) {
+            for (PermissionRule rule : entry.getValue()) {
+                childEngine.addRule(rule);
+            }
+        }
     }
 }

@@ -17,6 +17,7 @@ package io.agentscope.examples.documentation2.hitl;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
@@ -159,7 +160,10 @@ public class InterruptionExample {
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
             System.out.println("[Middleware] Agent preCall: " + agent.getName());
             return next.apply(input)
                     .doOnComplete(
@@ -169,7 +173,10 @@ public class InterruptionExample {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             input.toolCalls()
                     .forEach(
                             tc ->

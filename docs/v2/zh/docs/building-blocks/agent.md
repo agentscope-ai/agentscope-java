@@ -149,6 +149,62 @@ ReActAgent agent =
 | `reactConfig` | `ReactConfig` | 默认值 | 最大迭代次数和拒绝处理方式 |
 | `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数（也可放在 `reactConfig` 中） |
 
+## 线程安全与并发
+
+:::{warning}
+`ReActAgent` 和 `HarnessAgent` **不是线程安全的**。单个实例同一时刻只能处理一个 `call()` 调用——第二个并发 `call()` 会直接抛出 `IllegalStateException("Agent is still running")`。
+:::
+
+在 Web 服务等并发场景下，推荐**每次请求创建一个新的 agent 实例**（或按 session 排队串行化）。推荐的模式是一个工厂方法，持有可共享的线程安全依赖，每个请求构建一个独立的 agent：
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.tool.Toolkit;
+
+public class AgentFactory {
+    private final Model model;
+    private final Toolkit toolkitTemplate;
+    private final AgentStateStore stateStore;
+
+    public AgentFactory(Model model, Toolkit toolkitTemplate, AgentStateStore stateStore) {
+        this.model = model;
+        this.toolkitTemplate = toolkitTemplate;
+        this.stateStore = stateStore;
+    }
+
+    /** 为指定 session 创建独立 agent 实例。可安全并发调用。 */
+    public ReActAgent create(String sessionId) {
+        return ReActAgent.builder()
+                .name("assistant")
+                .sysPrompt("你是一个有帮助的助手。")
+                .model(model)                   // 无状态，可安全共享
+                .toolkit(toolkitTemplate)       // build() 内部会调 toolkit.copy()
+                .stateStore(stateStore)         // 为并发访问设计
+                .defaultSessionId(sessionId)
+                .build();
+    }
+}
+```
+
+**可跨实例共享的对象：**
+
+| 对象 | 线程安全? | 说明 |
+|------|:---:|------|
+| `Model` | 是 | 无状态的 HTTP 客户端封装——可随意共享 |
+| `Toolkit`（模板） | 是 | `build()` 通过 `toolkit.copy()` 深拷贝；模板在运行时不会被修改 |
+| `AgentStateStore` | 是 | 所有内置实现（`JsonFileAgentStateStore`、`InMemoryAgentStateStore`）均支持并发访问 |
+
+**每个实例独有的对象：**
+
+| 对象 | 说明 |
+|------|------|
+| `AgentState` | 可变的对话上下文——按 `(userId, sessionId)` 隔离 |
+| `PermissionEngine` | 按 session 累积已允许的规则 |
+
+Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
+
 ## 运行智能体
 
 `call` 和 `streamEvents` 都接受相同的输入消息列表，驱动相同的推理-行动循环，区别在于结果的交付方式。

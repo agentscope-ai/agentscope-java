@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -60,7 +61,12 @@ public class PlanModeMiddleware implements MiddlewareBase {
                     PlanModeTools.PLAN_ENTER,
                     PlanModeTools.PLAN_WRITE,
                     PlanModeTools.PLAN_EXIT,
-                    "todo_write");
+                    "todo_write",
+                    "agent_spawn",
+                    "agent_send",
+                    "agent_list",
+                    "task_output",
+                    "task_list");
 
     private static final String DENY_MESSAGE =
             "Blocked: you are in PLAN mode (read-only). You may investigate and run read-only"
@@ -68,17 +74,21 @@ public class PlanModeMiddleware implements MiddlewareBase {
                     + " execute. Do not modify files or run mutating commands until the plan is"
                     + " approved.";
 
-    private static final String PLAN_BANNER =
+    private static final String PLAN_BANNER_TEMPLATE =
             """
 
             <system-reminder>
-            PLAN MODE is active. This is a READ-ONLY design phase: investigate the problem and draft
-            a plan, but do NOT modify files, run mutating commands, or otherwise change state. Record
-            your plan with the plan_write tool. When the plan is complete, call plan_exit to ask the
-            user for approval; only after approval will you return to BUILD mode and be able to make
-            changes.
+            PLAN MODE is active (read-only). Plan file: %s
+            Investigate the problem and draft a plan, but do NOT modify files, run mutating commands,
+            or otherwise change state. Record your plan with the plan_write tool. When the plan is
+            complete, call plan_exit to ask the user for approval; only after approval will you return
+            to BUILD mode and be able to make changes.
             </system-reminder>\
             """;
+
+    private static final String BUILD_MODE_PLAN_HINT =
+            "\n\n<system-reminder>Approved plan: %s — use read_file to reference it if needed."
+                    + "</system-reminder>";
 
     private final PlanModeManager manager;
     private final Predicate<String> readOnlyResolver;
@@ -94,17 +104,30 @@ public class PlanModeMiddleware implements MiddlewareBase {
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         AgentState state = agent != null ? agent.getAgentState() : null;
-        if (!manager.isPlanActive(state)) {
-            return Mono.just(currentPrompt != null ? currentPrompt : "");
+        String base = currentPrompt != null ? currentPrompt : "";
+
+        if (manager.isPlanActive(state)) {
+            String path = manager.planFilePath(state);
+            return Mono.just(base + PLAN_BANNER_TEMPLATE.formatted(path));
         }
-        return Mono.just((currentPrompt != null ? currentPrompt : "") + PLAN_BANNER);
+
+        // BUILD mode: if a plan file was previously written, surface its path so the model
+        // can re-read it after compaction without needing to remember the original tool call.
+        String planFile = state != null ? state.getPlanModeContext().getCurrentPlanFile() : null;
+        if (planFile != null && !planFile.isBlank()) {
+            return Mono.just(base + BUILD_MODE_PLAN_HINT.formatted(planFile));
+        }
+        return Mono.just(base);
     }
 
     @Override
     public Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
         AgentState state = agent != null ? agent.getAgentState() : null;
         if (!manager.isPlanActive(state) || input.toolCalls() == null) {
             return next.apply(input);

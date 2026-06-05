@@ -17,6 +17,7 @@ package io.agentscope.examples.documentation2.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
@@ -104,7 +105,10 @@ public class CustomizedMiddlewareExample {
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
             System.out.println(
                     "\n[MIDDLEWARE] onAgent START — agent: "
                             + agent.getName()
@@ -117,6 +121,7 @@ public class CustomizedMiddlewareExample {
         @Override
         public Flux<AgentEvent> onReasoning(
                 Agent agent,
+                RuntimeContext ctx,
                 ReasoningInput input,
                 Function<ReasoningInput, Flux<AgentEvent>> next) {
             int msgCount = input.messages() != null ? input.messages().size() : 0;
@@ -127,7 +132,10 @@ public class CustomizedMiddlewareExample {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             String toolNames =
                     input.toolCalls().stream()
                             .map(ToolUseBlock::getName)

@@ -16,7 +16,6 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
@@ -39,7 +38,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * Dynamically composes skills from an ordered list of {@link AgentSkillRepository repositories}
- * on every {@code call()} via {@link #onSystemPrompt(Agent, String)}, replacing the static
+ * on every {@code call()} via {@link #onSystemPrompt(Agent, RuntimeContext, String)}, replacing the static
  * skill prompt with a per-call view that supports per-user skill isolation and one-click
  * marketplace integration.
  *
@@ -121,11 +120,8 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
-        RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         reloadSkills(rc);
         if (currentSkillBox == null) {
             return Mono.just(currentPrompt);
