@@ -956,11 +956,9 @@ public abstract class AgentBase implements Agent {
                                                                                     finalMsg,
                                                                                     true));
                                                                 }
-
-                                                                // Complete the stream
-                                                                sink.complete();
                                                             },
-                                                            sink::error);
+                                                            sink::error,
+                                                            sink::complete);
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .publishOn(Schedulers.boundedElastic()));
