@@ -369,7 +369,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     }
 
     private String decodeUtf8Strict(byte[] content) throws CharacterCodingException {
-        return StandardCharsets.UTF_8.newDecoder()
+        return StandardCharsets.UTF_8
+                .newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(content))
