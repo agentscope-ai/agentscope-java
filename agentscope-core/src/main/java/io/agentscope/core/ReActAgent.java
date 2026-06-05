@@ -506,6 +506,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * @return event stream covering the full agent invocation lifecycle
      */
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
+        // Eagerly bind the pending RuntimeContext so onAgent middlewares can
+        // capture it via agent.getRuntimeContext() before the core executes.
+        // beforeAgentExecution() (inside call()) will re-bind the same value.
+        RuntimeContext pending = this.pendingRuntimeContext;
+        if (pending != null) {
+            bindRuntimeContextToHooks(pending);
+        }
         String replyId = UUID.randomUUID().toString().replace("-", "");
         Function<AgentInput, Flux<AgentEvent>> core =
                 input ->
