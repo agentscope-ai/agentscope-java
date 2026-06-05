@@ -25,6 +25,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
@@ -115,6 +116,24 @@ class ToolCallParamTest {
                             .build();
 
             assertNotNull(param);
+        }
+
+        @Test
+        @DisplayName("context(null) should preserve existing runtime context")
+        void testContextNullPreservesRuntimeContext() {
+            ToolUseBlock toolUseBlock =
+                    ToolUseBlock.builder().id("id").name("tool").input(Map.of()).build();
+            RuntimeContext runtimeContext =
+                    RuntimeContext.builder().userId("alice").sessionId("session-1").build();
+
+            ToolCallParam param =
+                    ToolCallParam.builder()
+                            .toolUseBlock(toolUseBlock)
+                            .runtimeContext(runtimeContext)
+                            .context(null)
+                            .build();
+
+            assertSame(runtimeContext, param.getRuntimeContext());
         }
     }
 

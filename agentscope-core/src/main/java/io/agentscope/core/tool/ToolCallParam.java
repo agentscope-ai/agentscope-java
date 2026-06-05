@@ -241,8 +241,6 @@ public class ToolCallParam {
                 RuntimeContext.Builder rcb = RuntimeContext.builder();
                 rcb.toolExecutionContext(context);
                 this.runtimeContext = rcb.build();
-            } else {
-                this.runtimeContext = null;
             }
             return this;
         }

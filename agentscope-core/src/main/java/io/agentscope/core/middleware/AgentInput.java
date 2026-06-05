@@ -32,7 +32,7 @@ public record AgentInput(List<Msg> msgs, RuntimeContext runtimeContext) {
     }
 
     public AgentInput {
-        msgs = msgs != null ? msgs : List.of();
+        msgs = msgs != null ? List.copyOf(msgs) : List.of();
         runtimeContext = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
     }
 }

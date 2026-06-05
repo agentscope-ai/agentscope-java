@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.middleware;
 
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -34,14 +33,13 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.harness.agent.store.StoreItem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -74,16 +72,18 @@ class MemoryMiddlewareRuntimeContextTest {
                             .block(Duration.ofSeconds(5));
             assertTrue(events != null && !events.isEmpty(), "agent event stream should complete");
 
-            String todayPath = "/" + LocalDate.now() + ".md";
             List<String> aliceNamespace = List.of("agents", "agent-a", "users", "alice", "memory");
             List<String> defaultNamespace =
                     List.of("agents", "agent-a", "users", "_default", "memory");
+            List<StoreItem> aliceItems =
+                    waitForItems(() -> store.search(aliceNamespace, 10, 0), Duration.ofSeconds(10));
 
             assertTrue(
-                    waitUntil(() -> store.get(aliceNamespace, todayPath) != null),
+                    aliceItems.stream()
+                            .anyMatch(item -> item.key().matches("/\\d{4}-\\d{2}-\\d{2}\\.md")),
                     "memory flush should write the daily ledger under the caller user namespace");
-            assertNull(
-                    store.get(defaultNamespace, todayPath),
+            assertTrue(
+                    store.search(defaultNamespace, 10, 0).isEmpty(),
                     "memory flush must not fall back to the anonymous _default namespace");
         }
     }
@@ -109,14 +109,17 @@ class MemoryMiddlewareRuntimeContextTest {
         return model;
     }
 
-    private static boolean waitUntil(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+    private static List<StoreItem> waitForItems(
+            Supplier<List<StoreItem>> supplier, Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        List<StoreItem> items = supplier.get();
         while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) {
-                return true;
+            if (!items.isEmpty()) {
+                return items;
             }
             Thread.sleep(25);
+            items = supplier.get();
         }
-        return condition.getAsBoolean();
+        return items;
     }
 }
