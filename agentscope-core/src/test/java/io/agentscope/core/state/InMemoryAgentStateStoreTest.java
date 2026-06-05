@@ -40,18 +40,18 @@ class InMemoryAgentStateStoreTest {
     @Test
     @DisplayName("Should save and get single state correctly")
     void testSaveAndGetSingleState() {
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        String sessionKey = "session1";
         TestState state = new TestState("test_value", 42);
 
         // Save state
-        stateStore.save(null, sessionKey.toIdentifier(), "testModule", state);
+        stateStore.save(null, sessionKey, "testModule", state);
 
         // Verify session exists
-        assertTrue(stateStore.exists(null, sessionKey.toIdentifier()));
+        assertTrue(stateStore.exists(null, sessionKey));
 
         // Get state
         Optional<TestState> loaded =
-                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
+                stateStore.get(null, sessionKey, "testModule", TestState.class);
         assertTrue(loaded.isPresent());
         assertEquals("test_value", loaded.get().value());
         assertEquals(42, loaded.get().count());
@@ -60,15 +60,14 @@ class InMemoryAgentStateStoreTest {
     @Test
     @DisplayName("Should save and get list state correctly")
     void testSaveAndGetListState() {
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        String sessionKey = "session1";
         List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
 
         // Save list state
-        stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
+        stateStore.save(null, sessionKey, "testList", states);
 
         // Get list state
-        List<TestState> loaded =
-                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
+        List<TestState> loaded = stateStore.getList(null, sessionKey, "testList", TestState.class);
         assertEquals(2, loaded.size());
         assertEquals("value1", loaded.get(0).value());
         assertEquals("value2", loaded.get(1).value());
@@ -77,52 +76,50 @@ class InMemoryAgentStateStoreTest {
     @Test
     @DisplayName("Should return empty for non-existent state")
     void testGetNonExistentState() {
-        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+        String sessionKey = "non_existent";
 
-        Optional<TestState> state =
-                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
+        Optional<TestState> state = stateStore.get(null, sessionKey, "testModule", TestState.class);
         assertFalse(state.isPresent());
     }
 
     @Test
     @DisplayName("Should return empty list for non-existent list state")
     void testGetNonExistentListState() {
-        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+        String sessionKey = "non_existent";
 
-        List<TestState> states =
-                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
+        List<TestState> states = stateStore.getList(null, sessionKey, "testList", TestState.class);
         assertTrue(states.isEmpty());
     }
 
     @Test
     @DisplayName("Should return false for non-existent session")
     void testSessionExistsReturnsFalse() {
-        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
-        assertFalse(stateStore.exists(null, sessionKey.toIdentifier()));
+        String sessionKey = "non_existent";
+        assertFalse(stateStore.exists(null, sessionKey));
     }
 
     @Test
     @DisplayName("Should delete existing session")
     void testDeleteSession() {
-        SessionKey sessionKey = SimpleSessionKey.of("session_to_delete");
-        stateStore.save(null, sessionKey.toIdentifier(), "testModule", new TestState("value", 0));
-        assertTrue(stateStore.exists(null, sessionKey.toIdentifier()));
+        String sessionKey = "session_to_delete";
+        stateStore.save(null, sessionKey, "testModule", new TestState("value", 0));
+        assertTrue(stateStore.exists(null, sessionKey));
 
         // Delete session
-        stateStore.delete(null, sessionKey.toIdentifier());
-        assertFalse(stateStore.exists(null, sessionKey.toIdentifier()));
+        stateStore.delete(null, sessionKey);
+        assertFalse(stateStore.exists(null, sessionKey));
     }
 
     @Test
     @DisplayName("Should list all session keys")
     void testListSessionKeys() {
-        SessionKey key1 = SimpleSessionKey.of("session1");
-        SessionKey key2 = SimpleSessionKey.of("session2");
-        SessionKey key3 = SimpleSessionKey.of("session3");
+        String key1 = "session1";
+        String key2 = "session2";
+        String key3 = "session3";
 
-        stateStore.save(null, key1.toIdentifier(), "testModule", new TestState("value1", 1));
-        stateStore.save(null, key2.toIdentifier(), "testModule", new TestState("value2", 2));
-        stateStore.save(null, key3.toIdentifier(), "testModule", new TestState("value3", 3));
+        stateStore.save(null, key1, "testModule", new TestState("value1", 1));
+        stateStore.save(null, key2, "testModule", new TestState("value2", 2));
+        stateStore.save(null, key3, "testModule", new TestState("value3", 3));
 
         Set<String> sessionIds = stateStore.listSessionIds(null);
         assertEquals(3, sessionIds.size());
@@ -140,48 +137,48 @@ class InMemoryAgentStateStoreTest {
     void testGetSessionCount() {
         assertEquals(0, stateStore.getSessionCount());
 
-        SessionKey key1 = SimpleSessionKey.of("session1");
-        SessionKey key2 = SimpleSessionKey.of("session2");
+        String key1 = "session1";
+        String key2 = "session2";
 
-        stateStore.save(null, key1.toIdentifier(), "testModule", new TestState("value1", 1));
+        stateStore.save(null, key1, "testModule", new TestState("value1", 1));
         assertEquals(1, stateStore.getSessionCount());
 
-        stateStore.save(null, key2.toIdentifier(), "testModule", new TestState("value2", 2));
+        stateStore.save(null, key2, "testModule", new TestState("value2", 2));
         assertEquals(2, stateStore.getSessionCount());
 
-        stateStore.delete(null, key1.toIdentifier());
+        stateStore.delete(null, key1);
         assertEquals(1, stateStore.getSessionCount());
     }
 
     @Test
     @DisplayName("Should clear all sessions")
     void testClearAll() {
-        SessionKey key1 = SimpleSessionKey.of("session1");
-        SessionKey key2 = SimpleSessionKey.of("session2");
+        String key1 = "session1";
+        String key2 = "session2";
 
-        stateStore.save(null, key1.toIdentifier(), "testModule", new TestState("value1", 1));
-        stateStore.save(null, key2.toIdentifier(), "testModule", new TestState("value2", 2));
+        stateStore.save(null, key1, "testModule", new TestState("value1", 1));
+        stateStore.save(null, key2, "testModule", new TestState("value2", 2));
         assertEquals(2, stateStore.getSessionCount());
 
         stateStore.clearAll();
         assertEquals(0, stateStore.getSessionCount());
-        assertFalse(stateStore.exists(null, key1.toIdentifier()));
-        assertFalse(stateStore.exists(null, key2.toIdentifier()));
+        assertFalse(stateStore.exists(null, key1));
+        assertFalse(stateStore.exists(null, key2));
     }
 
     @Test
     @DisplayName("Should update existing state when saving again")
     void testUpdateState() {
-        SessionKey sessionKey = SimpleSessionKey.of("update_session");
+        String sessionKey = "update_session";
 
-        stateStore.save(null, sessionKey.toIdentifier(), "testModule", new TestState("initial", 1));
+        stateStore.save(null, sessionKey, "testModule", new TestState("initial", 1));
 
         // Update the state
-        stateStore.save(null, sessionKey.toIdentifier(), "testModule", new TestState("updated", 2));
+        stateStore.save(null, sessionKey, "testModule", new TestState("updated", 2));
 
         // Load and verify
         Optional<TestState> loaded =
-                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
+                stateStore.get(null, sessionKey, "testModule", TestState.class);
         assertTrue(loaded.isPresent());
         assertEquals("updated", loaded.get().value());
         assertEquals(2, loaded.get().count());
@@ -190,15 +187,13 @@ class InMemoryAgentStateStoreTest {
     @Test
     @DisplayName("Should handle multiple keys in same session")
     void testMultipleKeysInSameSession() {
-        SessionKey sessionKey = SimpleSessionKey.of("multi_key_session");
+        String sessionKey = "multi_key_session";
 
-        stateStore.save(null, sessionKey.toIdentifier(), "module1", new TestState("value1", 1));
-        stateStore.save(null, sessionKey.toIdentifier(), "module2", new TestState("value2", 2));
+        stateStore.save(null, sessionKey, "module1", new TestState("value1", 1));
+        stateStore.save(null, sessionKey, "module2", new TestState("value2", 2));
 
-        Optional<TestState> loaded1 =
-                stateStore.get(null, sessionKey.toIdentifier(), "module1", TestState.class);
-        Optional<TestState> loaded2 =
-                stateStore.get(null, sessionKey.toIdentifier(), "module2", TestState.class);
+        Optional<TestState> loaded1 = stateStore.get(null, sessionKey, "module1", TestState.class);
+        Optional<TestState> loaded2 = stateStore.get(null, sessionKey, "module2", TestState.class);
 
         assertTrue(loaded1.isPresent());
         assertTrue(loaded2.isPresent());
@@ -209,12 +204,12 @@ class InMemoryAgentStateStoreTest {
     @Test
     @DisplayName("Should return empty for missing key in existing session")
     void testMissingKeyInExistingSession() {
-        SessionKey sessionKey = SimpleSessionKey.of("existing_session");
+        String sessionKey = "existing_session";
 
-        stateStore.save(null, sessionKey.toIdentifier(), "module1", new TestState("value1", 1));
+        stateStore.save(null, sessionKey, "module1", new TestState("value1", 1));
 
         Optional<TestState> loaded =
-                stateStore.get(null, sessionKey.toIdentifier(), "missing_key", TestState.class);
+                stateStore.get(null, sessionKey, "missing_key", TestState.class);
         assertFalse(loaded.isPresent());
     }
 

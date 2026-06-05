@@ -40,19 +40,19 @@ public final class LegacyStateLoader {
      *   <li>{@code toolkit_activeGroups} — tool activation state</li>
      * </ul>
      *
-     * @param session the v1 session to read from
-     * @param sessionKey the session identifier
+     * @param stateStore the state store to read from
+     * @param userId nullable user identifier
+     * @param sessionId the session identifier (required)
      * @return a new AgentState populated with the legacy data
      */
     public static AgentState loadFromLegacySession(
-            AgentStateStore stateStore, SessionKey sessionKey) {
-        String sid = sessionKey.toIdentifier();
-        List<Msg> msgs = stateStore.getList(null, sid, "memory_messages", Msg.class);
+            AgentStateStore stateStore, String userId, String sessionId) {
+        List<Msg> msgs = stateStore.getList(userId, sessionId, "memory_messages", Msg.class);
 
         AgentState.Builder builder = AgentState.builder().context(msgs);
 
         stateStore
-                .get(null, sid, "toolkit_activeGroups", ToolkitState.class)
+                .get(userId, sessionId, "toolkit_activeGroups", ToolkitState.class)
                 .ifPresent(
                         toolkitState -> {
                             ToolContextState.Builder tc = ToolContextState.builder();

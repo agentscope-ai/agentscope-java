@@ -23,7 +23,6 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.examples.documentation2.common.MsgUtils;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -44,7 +43,7 @@ import reactor.core.scheduler.Schedulers;
  * <ul>
  *   <li>Replaced {@code legacy.session.JsonFileAgentStateStore} with {@code io.agentscope.core.state.JsonFileAgentStateStore}.</li>
  *   <li>Replaced {@code agent.loadIfExists(session, id)} / {@code agent.saveTo(session, id)}
- *       with {@code .stateStore(session).sessionKey(SimpleSessionKey.of(sessionId))} on the builder.</li>
+ *       with {@code .stateStore(session).defaultSessionId(sessionId)} on the builder.</li>
  * </ul>
  *
  * <p>Usage:
@@ -127,7 +126,7 @@ public class StreamingWebExample {
                                             .stream(true)
                                             .build())
                             .stateStore(stateStore)
-                            .sessionKey(SimpleSessionKey.of(sessionId))
+                            .defaultSessionId(sessionId)
                             .build();
 
             Msg userMsg = new UserMessage(message);

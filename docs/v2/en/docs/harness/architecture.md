@@ -34,7 +34,7 @@ Each capability answers one problem; opt in on the builder.
 |---|---|---|---|
 | Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](./workspace) |
 | Session persistence | Same `sessionId` resumes across requests, processes, replicas | on by default; override with `.session(...)` | [Context](./context) |
-| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | `.compaction(...)` | [Memory](./memory) |
+| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](./memory) |
 | Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Memory](./memory) |
 | Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Memory](./memory) |
 | Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](./subagent) |

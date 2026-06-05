@@ -17,7 +17,6 @@ package io.agentscope.core.memory;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.SessionKey;
 import java.util.List;
 
 /**
@@ -38,12 +37,12 @@ public interface Memory {
     /**
      * Save the message buffer under the {@code memory_messages} session key.
      */
-    void saveTo(AgentStateStore stateStore, SessionKey sessionKey);
+    void saveTo(AgentStateStore stateStore, String userId, String sessionId);
 
     /**
      * Load a previously saved message buffer (no-op when none exists).
      */
-    void loadFrom(AgentStateStore stateStore, SessionKey sessionKey);
+    void loadFrom(AgentStateStore stateStore, String userId, String sessionId);
 
     /**
      * Adds a message to the memory.

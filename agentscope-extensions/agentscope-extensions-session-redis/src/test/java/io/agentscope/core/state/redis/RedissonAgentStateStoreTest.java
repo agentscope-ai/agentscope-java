@@ -28,8 +28,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
 import java.util.List;
 import java.util.Optional;
@@ -107,11 +105,11 @@ class RedissonAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        String sessionKey = "session1";
         TestState state = new TestState("test_value", 42);
 
         // Save state
-        stateStore.save(null, sessionKey.toIdentifier(), "testModule", state);
+        stateStore.save(null, sessionKey, "testModule", state);
 
         // Verify save operations
         verify(bucket).set(anyString());
@@ -119,7 +117,7 @@ class RedissonAgentStateStoreTest {
 
         // Get state
         Optional<TestState> loaded =
-                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
+                stateStore.get(null, sessionKey, "testModule", TestState.class);
         assertTrue(loaded.isPresent());
         assertEquals("test_value", loaded.get().value());
         assertEquals(42, loaded.get().count());
@@ -148,18 +146,17 @@ class RedissonAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        String sessionKey = "session1";
         List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
 
         // Save list state
-        stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
+        stateStore.save(null, sessionKey, "testList", states);
 
         // Verify add was called
         verify(rList, atLeast(1)).add(anyString());
 
         // Get list state
-        List<TestState> loaded =
-                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
+        List<TestState> loaded = stateStore.getList(null, sessionKey, "testList", TestState.class);
         assertEquals(2, loaded.size());
         assertEquals("value1", loaded.get(0).value());
         assertEquals("value2", loaded.get(1).value());
@@ -169,7 +166,8 @@ class RedissonAgentStateStoreTest {
     @DisplayName("Should return empty for non-existent state")
     void testGetNonExistentState() {
         when(redissonClient.getBucket(
-                        eq("agentscope:stateStore:non_existent:testModule"), any(Codec.class)))
+                        eq("agentscope:stateStore:__anon__/non_existent:testModule"),
+                        any(Codec.class)))
                 .thenReturn(bucket);
         when(bucket.get()).thenReturn(null);
 
@@ -179,9 +177,8 @@ class RedissonAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
-        Optional<TestState> state =
-                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
+        String sessionKey = "non_existent";
+        Optional<TestState> state = stateStore.get(null, sessionKey, "testModule", TestState.class);
         assertFalse(state.isPresent());
     }
 
@@ -189,7 +186,8 @@ class RedissonAgentStateStoreTest {
     @DisplayName("Should return empty list for non-existent list state")
     void testGetNonExistentListState() {
         when(redissonClient.getList(
-                        eq("agentscope:stateStore:non_existent:testList:list"), any(Codec.class)))
+                        eq("agentscope:stateStore:__anon__/non_existent:testList:list"),
+                        any(Codec.class)))
                 .thenReturn(rList);
         when(rList.isEmpty()).thenReturn(true);
 
@@ -199,16 +197,15 @@ class RedissonAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
-        List<TestState> states =
-                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
+        String sessionKey = "non_existent";
+        List<TestState> states = stateStore.getList(null, sessionKey, "testList", TestState.class);
         assertTrue(states.isEmpty());
     }
 
     @Test
     @DisplayName("Should return true when stateStore exists")
     void testSessionExists() {
-        when(keys.countExists("agentscope:stateStore:session1:_keys")).thenReturn(1L);
+        when(keys.countExists("agentscope:stateStore:__anon__/session1:_keys")).thenReturn(1L);
         when(rSet.size()).thenReturn(2);
 
         RedisAgentStateStore stateStore =
@@ -217,8 +214,8 @@ class RedissonAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
-        assertTrue(stateStore.exists(null, sessionKey.toIdentifier()));
+        String sessionKey = "session1";
+        assertTrue(stateStore.exists(null, sessionKey));
     }
 
     @Test
@@ -232,8 +229,8 @@ class RedissonAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
-        assertFalse(stateStore.exists(null, sessionKey.toIdentifier()));
+        String sessionKey = "session1";
+        assertFalse(stateStore.exists(null, sessionKey));
     }
 
     @Test
@@ -248,8 +245,8 @@ class RedissonAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
-        stateStore.delete(null, sessionKey.toIdentifier());
+        String sessionKey = "session1";
+        stateStore.delete(null, sessionKey);
 
         // Verify iterator was called to get tracked keys
         verify(rSet).iterator();
@@ -262,8 +259,8 @@ class RedissonAgentStateStoreTest {
         when(keys.getKeys(any(KeysScanOptions.class)))
                 .thenReturn(
                         List.of(
-                                "agentscope:stateStore:session1:_keys",
-                                "agentscope:stateStore:session2:_keys"));
+                                "agentscope:stateStore:__anon__/session1:_keys",
+                                "agentscope:stateStore:__anon__/session2:_keys"));
 
         RedisAgentStateStore stateStore =
                 RedisAgentStateStore.builder()
@@ -273,8 +270,8 @@ class RedissonAgentStateStoreTest {
 
         Set<String> sessionIds = stateStore.listSessionIds(null);
         assertEquals(2, sessionIds.size());
-        assertTrue(sessionIds.contains("__anon__/session1"));
-        assertTrue(sessionIds.contains("__anon__/session2"));
+        assertTrue(sessionIds.contains("session1"));
+        assertTrue(sessionIds.contains("session2"));
     }
 
     @Test
@@ -284,10 +281,10 @@ class RedissonAgentStateStoreTest {
         when(keys.getKeys(any(KeysScanOptions.class)))
                 .thenReturn(
                         List.of(
-                                "agentscope:stateStore:s1:module1",
-                                "agentscope:stateStore:s1:_keys",
-                                "agentscope:stateStore:s2:module1",
-                                "agentscope:stateStore:s2:_keys"));
+                                "agentscope:stateStore:__anon__/s1:module1",
+                                "agentscope:stateStore:__anon__/s1:_keys",
+                                "agentscope:stateStore:__anon__/s2:module1",
+                                "agentscope:stateStore:__anon__/s2:_keys"));
 
         RedisAgentStateStore stateStore =
                 RedisAgentStateStore.builder()

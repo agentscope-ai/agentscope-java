@@ -23,7 +23,6 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.nio.file.Path;
@@ -68,7 +67,7 @@ public class RuntimeContextExample {
                                         .build())
                         .toolkit(new Toolkit())
                         .stateStore(stateStore)
-                        .sessionKey(SimpleSessionKey.of("runtime-context-demo"))
+                        .defaultSessionId("runtime-context-demo")
                         .build();
 
         int loaded = agent.getState().getContext().size();

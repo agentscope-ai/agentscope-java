@@ -61,7 +61,13 @@ public class MemoryConsolidator {
     /** Hidden state file inside {@code memory/} tracking the last consolidation Instant. */
     public static final String STATE_FILE = ".consolidation_state";
 
-    private static final String CONSOLIDATION_PROMPT =
+    /**
+     * Default prompt for the consolidation step. Exposed publicly so callers can extend
+     * (e.g. append project-specific guidelines) when constructing
+     * {@link io.agentscope.harness.agent.memory.MemoryConfig}. The prompt contains exactly
+     * two {@code %d} placeholders (max-tokens, max-chars) that are filled in at call time.
+     */
+    public static final String DEFAULT_CONSOLIDATION_PROMPT =
             """
             You are a memory consolidation assistant. You own the curated long-term memory \
             file MEMORY.md. Your job is to merge new daily ledger entries into MEMORY.md while \
@@ -89,15 +95,31 @@ public class MemoryConsolidator {
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
+    private final String consolidationPrompt;
     private final int maxMemoryTokens;
 
     public MemoryConsolidator(WorkspaceManager workspaceManager, Model model) {
-        this(workspaceManager, model, 4000);
+        this(workspaceManager, model, DEFAULT_CONSOLIDATION_PROMPT, 4000);
     }
 
     public MemoryConsolidator(WorkspaceManager workspaceManager, Model model, int maxMemoryTokens) {
+        this(workspaceManager, model, DEFAULT_CONSOLIDATION_PROMPT, maxMemoryTokens);
+    }
+
+    /**
+     * @param consolidationPrompt prompt template for the consolidation LLM call. Must contain
+     *     exactly two {@code %d} placeholders (max-tokens, max-chars). {@code null} falls back
+     *     to {@link #DEFAULT_CONSOLIDATION_PROMPT}.
+     */
+    public MemoryConsolidator(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String consolidationPrompt,
+            int maxMemoryTokens) {
         this.workspaceManager = workspaceManager;
         this.model = model;
+        this.consolidationPrompt =
+                consolidationPrompt != null ? consolidationPrompt : DEFAULT_CONSOLIDATION_PROMPT;
         this.maxMemoryTokens = maxMemoryTokens;
     }
 
@@ -121,7 +143,7 @@ public class MemoryConsolidator {
         }
 
         int maxChars = maxMemoryTokens * 4;
-        String systemPrompt = String.format(CONSOLIDATION_PROMPT, maxMemoryTokens, maxChars);
+        String systemPrompt = String.format(consolidationPrompt, maxMemoryTokens, maxChars);
 
         StringBuilder userContent = new StringBuilder();
         userContent.append("Current MEMORY.md:\n");

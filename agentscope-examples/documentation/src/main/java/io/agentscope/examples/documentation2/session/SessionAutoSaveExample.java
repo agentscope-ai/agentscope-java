@@ -22,7 +22,6 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,10 +34,10 @@ import java.nio.file.Paths;
  * <p><b>How auto-save/restore works:</b>
  * <ol>
  *   <li><b>Load:</b> When the agent is constructed with a {@code session} and {@code sessionKey},
- *       it calls {@code stateStore.get(null, sessionKey.toIdentifier(), "agent_state", AgentState.class)} to restore any
+ *       it calls {@code stateStore.get(userId, sessionId, "agent_state", AgentState.class)} to restore any
  *       previously persisted conversation history and toolkit state.</li>
  *   <li><b>Save after each call:</b> After every {@code call()} or {@code stream()} the agent
- *       automatically calls {@code stateStore.save(null, sessionKey.toIdentifier(), "agent_state", agentState)} to persist
+ *       automatically calls {@code stateStore.save(userId, sessionId, "agent_state", agentState)} to persist
  *       the updated state. No manual save is needed.</li>
  *   <li><b>Shutdown save:</b> The {@link io.agentscope.core.shutdown.GracefulShutdownManager}
  *       registers a state saver at construction time, so state is also flushed on JVM shutdown.</li>
@@ -146,9 +145,10 @@ public class SessionAutoSaveExample {
                                         true)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
-                // stateStore() + sessionKey() wires automatic load-on-start and save-after-call
+                // stateStore() + defaultSessionId() wires automatic load-on-start and
+                // save-after-call
                 .stateStore(stateStore)
-                .sessionKey(SimpleSessionKey.of(SESSION_ID + "-" + userId))
+                .defaultSessionId(SESSION_ID + "-" + userId)
                 .build();
     }
 }

@@ -29,6 +29,25 @@ package io.agentscope.harness.agent.memory.compaction;
  *   <li>Keep the 20 most recent messages verbatim</li>
  *   <li>Summarization is enabled; memory flush and offload are both enabled before summary</li>
  * </ul>
+ *
+ * <h3>Memory prompt landscape</h3>
+ *
+ * The harness has three LLM-driven memory operations, each with its own prompt; they live
+ * in two complementary config classes:
+ *
+ * <ul>
+ *   <li><b>Compaction summary</b> — distills the conversation prefix into one summary
+ *       message before reasoning. Prompt: {@link #getSummaryPrompt()} on <em>this</em>
+ *       class.</li>
+ *   <li><b>Flush</b> — extracts long-term memories into today's daily ledger. Prompt:
+ *       {@code MemoryConfig.flushPrompt()}.</li>
+ *   <li><b>Consolidation</b> — periodically merges daily ledgers into {@code MEMORY.md}.
+ *       Prompt: {@code MemoryConfig.consolidationPrompt()}.</li>
+ * </ul>
+ *
+ * Configure the latter two via {@code HarnessAgent.builder().memory(MemoryConfig...)}.
+ *
+ * @see io.agentscope.harness.agent.memory.MemoryConfig
  */
 public class CompactionConfig {
 
@@ -127,7 +146,13 @@ public class CompactionConfig {
         return keepTokens;
     }
 
-    /** Prompt template used for the summarization LLM call. Must contain {@code {messages}}. */
+    /**
+     * Prompt template used for the summarization LLM call. Must contain {@code {messages}}.
+     *
+     * <p>This is one of three memory-related prompts in the harness; see the class-level
+     * "Memory prompt landscape" section for the full picture. The other two live on
+     * {@link io.agentscope.harness.agent.memory.MemoryConfig}.
+     */
     public String getSummaryPrompt() {
         return summaryPrompt;
     }

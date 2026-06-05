@@ -34,7 +34,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -440,27 +439,27 @@ class GracefulShutdownTest {
         @DisplayName("Rejects null session")
         void rejectsNullSession() {
             assertThrows(
-                    NullPointerException.class,
-                    () -> new ShutdownSessionBinding(null, SimpleSessionKey.of("s")));
+                    NullPointerException.class, () -> new ShutdownSessionBinding(null, null, "s"));
         }
 
         @Test
-        @DisplayName("Rejects null sessionKey")
-        void rejectsNullSessionKey() {
+        @DisplayName("Rejects null sessionId")
+        void rejectsNullSessionId() {
             assertThrows(
                     NullPointerException.class,
-                    () -> new ShutdownSessionBinding(new InMemoryAgentStateStore(), null));
+                    () -> new ShutdownSessionBinding(new InMemoryAgentStateStore(), null, null));
         }
 
         @Test
         @DisplayName("Valid construction")
         void validConstruction() {
             AgentStateStore stateStore = new InMemoryAgentStateStore();
-            SimpleSessionKey key = SimpleSessionKey.of("test");
-            ShutdownSessionBinding binding = new ShutdownSessionBinding(stateStore, key);
+            ShutdownSessionBinding binding =
+                    new ShutdownSessionBinding(stateStore, "user1", "test");
 
             assertSame(stateStore, binding.stateStore());
-            assertSame(key, binding.sessionKey());
+            assertEquals("user1", binding.userId());
+            assertEquals("test", binding.sessionId());
         }
     }
 

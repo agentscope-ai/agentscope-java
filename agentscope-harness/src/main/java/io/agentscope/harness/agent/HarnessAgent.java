@@ -37,7 +37,6 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
-import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
@@ -49,6 +48,7 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -153,6 +153,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillUsageStore skillUsageStore;
     private final SkillCurator skillCurator;
     private final SkillAuditLog skillAuditLog;
+    private final MemoryConfig memoryConfig;
 
     private HarnessAgent(
             ReActAgent delegate,
@@ -167,7 +168,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SkillPromoter skillPromoter,
             SkillUsageStore skillUsageStore,
             SkillCurator skillCurator,
-            SkillAuditLog skillAuditLog) {
+            SkillAuditLog skillAuditLog,
+            MemoryConfig memoryConfig) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
@@ -182,6 +184,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.skillUsageStore = skillUsageStore;
         this.skillCurator = skillCurator;
         this.skillAuditLog = skillAuditLog;
+        this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
     }
 
     /** Returns the workspace manager bound to this agent, or {@code null} if not configured. */
@@ -327,8 +330,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getStateStore();
     }
 
-    public SessionKey getSessionKey() {
-        return delegate.getSessionKey();
+    /** @see ReActAgent#getDefaultSessionId() */
+    public String getDefaultSessionId() {
+        return delegate.getDefaultSessionId();
+    }
+
+    /** @see ReActAgent#getCurrentSessionId() */
+    public String getCurrentSessionId() {
+        return delegate.getCurrentSessionId();
+    }
+
+    /** @see ReActAgent#getCurrentUserId() */
+    public String getCurrentUserId() {
+        return delegate.getCurrentUserId();
     }
 
     @Override
@@ -673,7 +687,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         : "default";
 
         CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
-        MemoryFlushManager fm = new MemoryFlushManager(workspaceManager, getModel());
+        String effectiveFlushPrompt =
+                memoryConfig.flushPrompt() != null
+                        ? memoryConfig.flushPrompt()
+                        : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
+        MemoryFlushManager fm =
+                new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
         ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
 
         return compactor
@@ -789,6 +808,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean leafSubagent = false;
         boolean agentTracingLogEnabled = true;
         CompactionConfig compactionConfig = null;
+        MemoryConfig memoryConfig = MemoryConfig.defaults();
         ToolResultEvictionConfig toolResultEvictionConfig = null;
 
         final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
@@ -863,7 +883,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
          *   <tr><td rowspan="2">Persistence</td>
          *       <td>{@code session}</td><td>{@code agent.getStateStore()} if non-null</td></tr>
-         *   <tr><td>{@code sessionKey}</td><td>{@code agent.getSessionKey()} if non-null</td></tr>
+         *   <tr><td>{@code defaultSessionId}</td><td>{@code agent.getDefaultSessionId()} if non-null</td></tr>
          *   <tr><td rowspan="2">Model resilience (from {@code agent.getModelConfig()})</td>
          *       <td>{@code maxRetries}</td><td>{@link ModelConfig#maxRetries()}</td></tr>
          *   <tr><td>{@code fallbackModel}</td><td>{@link ModelConfig#fallbackModel()} if non-null</td></tr>
@@ -951,9 +971,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (srcSession != null) {
                 b.stateStore(srcSession);
             }
-            SessionKey srcSessionKey = agent.getSessionKey();
-            if (srcSessionKey != null) {
-                b.sessionKey(srcSessionKey);
+            String srcDefaultSessionId = agent.getDefaultSessionId();
+            if (srcDefaultSessionId != null) {
+                b.defaultSessionId(srcDefaultSessionId);
             }
 
             // Model resilience.
@@ -1117,8 +1137,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        public Builder sessionKey(SessionKey sessionKey) {
-            inner.sessionKey(sessionKey);
+        public Builder defaultSessionId(String defaultSessionId) {
+            inner.defaultSessionId(defaultSessionId);
             return this;
         }
 
@@ -1282,6 +1302,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Enables the {@link CompactionMiddleware} with the given configuration. */
         public Builder compaction(CompactionConfig config) {
             this.compactionConfig = config;
+            return this;
+        }
+
+        /**
+         * Overrides the long-term memory pipeline configuration (flush + consolidation +
+         * maintenance). When not called, {@link MemoryConfig#defaults()} is used and behaviour
+         * matches the harness's historical defaults.
+         *
+         * <p>For the compaction (in-context summarization) pipeline, see
+         * {@link #compaction(CompactionConfig)}.
+         */
+        public Builder memory(MemoryConfig config) {
+            this.memoryConfig = config != null ? config : MemoryConfig.defaults();
             return this;
         }
 
@@ -1687,11 +1720,34 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(new AtPathExpansionMiddleware(wsManager));
             }
             if (model != null && !disableMemoryHooks) {
-                inner.middleware(new MemoryFlushMiddleware(wsManager, model));
-            }
-            if (model != null && !disableMemoryHooks) {
-                MemoryConsolidator consolidator = new MemoryConsolidator(wsManager, model);
-                inner.middleware(new MemoryMaintenanceMiddleware(wsManager, consolidator));
+                String effectiveFlushPrompt =
+                        memoryConfig.flushPrompt() != null
+                                ? memoryConfig.flushPrompt()
+                                : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
+                inner.middleware(
+                        new MemoryFlushMiddleware(
+                                wsManager,
+                                model,
+                                effectiveFlushPrompt,
+                                memoryConfig.flushTrigger()));
+
+                String effectiveConsolidationPrompt =
+                        memoryConfig.consolidationPrompt() != null
+                                ? memoryConfig.consolidationPrompt()
+                                : MemoryConsolidator.DEFAULT_CONSOLIDATION_PROMPT;
+                MemoryConsolidator consolidator =
+                        new MemoryConsolidator(
+                                wsManager,
+                                model,
+                                effectiveConsolidationPrompt,
+                                memoryConfig.consolidationMaxTokens());
+                inner.middleware(
+                        new MemoryMaintenanceMiddleware(
+                                wsManager,
+                                consolidator,
+                                memoryConfig.dailyFileRetentionDays(),
+                                memoryConfig.sessionRetentionDays(),
+                                memoryConfig.consolidationMinGap()));
             }
             CompactionMiddleware compactionHook = null;
             if (compactionConfig != null && model != null) {
@@ -1938,7 +1994,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pendingSkillPromoter,
                     pendingSkillUsageStore,
                     pendingSkillCurator,
-                    pendingSkillAuditLog);
+                    pendingSkillAuditLog,
+                    memoryConfig);
         }
     }
 }

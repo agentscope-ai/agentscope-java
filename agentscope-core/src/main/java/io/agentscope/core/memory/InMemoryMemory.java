@@ -17,7 +17,6 @@ package io.agentscope.core.memory;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.SessionKey;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -60,26 +59,22 @@ public class InMemoryMemory implements Memory {
      * @param sessionKey the session identifier
      */
     @Override
-    public void saveTo(AgentStateStore stateStore, SessionKey sessionKey) {
+    public void saveTo(AgentStateStore stateStore, String userId, String sessionId) {
         // Always save, even when empty, to ensure cleared state is persisted
-        stateStore.save(
-                null,
-                sessionKey.toIdentifier(),
-                KEY_PREFIX + "_messages",
-                new ArrayList<>(messages));
+        stateStore.save(userId, sessionId, KEY_PREFIX + "_messages", new ArrayList<>(messages));
     }
 
     /**
-     * Load memory state from the session.
+     * Load memory state from the store.
      *
-     * @param session the session to load state from
-     * @param sessionKey the session identifier
+     * @param stateStore the state store to load from
+     * @param userId nullable user identifier
+     * @param sessionId session identifier
      */
     @Override
-    public void loadFrom(AgentStateStore stateStore, SessionKey sessionKey) {
+    public void loadFrom(AgentStateStore stateStore, String userId, String sessionId) {
         List<Msg> loaded =
-                stateStore.getList(
-                        null, sessionKey.toIdentifier(), KEY_PREFIX + "_messages", Msg.class);
+                stateStore.getList(userId, sessionId, KEY_PREFIX + "_messages", Msg.class);
         messages.clear();
         messages.addAll(loaded);
     }

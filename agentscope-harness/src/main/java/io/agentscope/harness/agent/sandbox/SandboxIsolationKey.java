@@ -50,7 +50,7 @@ public final class SandboxIsolationKey {
      * <p>Resolution rules:
      * <ul>
      *   <li>{@code SESSION} – requires a non-null {@code sessionKey}; value =
-     *       {@code sessionKey.toIdentifier()}. Returns empty if absent.</li>
+     *       {@code sessionKey}. Returns empty if absent.</li>
      *   <li>{@code USER} – requires a non-blank {@code userId}; value = {@code userId}.
      *       Logs a warning and returns empty if absent.</li>
      *   <li>{@code AGENT} – value = {@code agentId} (always present).</li>

@@ -23,7 +23,6 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.documentation2.common.ExampleUtils;
 import io.agentscope.examples.documentation2.common.MsgUtils;
@@ -82,7 +81,7 @@ public class SessionExample {
                                         + " remember information from previous conversations.")
                         .toolkit(new Toolkit())
                         .stateStore(stateStore)
-                        .sessionKey(SimpleSessionKey.of(sessionId))
+                        .defaultSessionId(sessionId)
                         .model(
                                 DashScopeChatModel.builder()
                                         .apiKey(apiKey)

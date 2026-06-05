@@ -102,8 +102,6 @@ import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.LegacyStateLoader;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolExecutionContext;
@@ -215,12 +213,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     private final AgentStateStore stateStore;
 
     /**
-     * Builder-time fallback {@link SessionKey}, used only when a call does not supply a
+     * Builder-time fallback {@code sessionId}, used only when a call does not supply a
      * {@code sessionId} via its {@link RuntimeContext}. Each call still picks its own active slot
      * (see {@link #activateSlotForContext(RuntimeContext)}); this is only the fallback when RC
      * carries no per-call session identity.
      */
-    private final SessionKey defaultSessionKey;
+    private final String defaultSessionId;
 
     // ==================== 2.0 Core Fields ====================
 
@@ -292,22 +290,18 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         this.middlewares = List.copyOf(mws);
 
         this.stateStore = builder.stateStore;
-        this.defaultSessionKey =
-                builder.sessionKey != null
-                        ? builder.sessionKey
-                        : SimpleSessionKey.of(builder.name != null ? builder.name : "ReActAgent");
+        this.defaultSessionId =
+                builder.defaultSessionId != null && !builder.defaultSessionId.isBlank()
+                        ? builder.defaultSessionId
+                        : (builder.name != null ? builder.name : "ReActAgent");
 
         // Eagerly activate the default slot so the toolkit / engine / hooks have a usable state
         // out of the box. Per-call activation in beforeAgentExecution swaps this when the
         // RuntimeContext carries a different (userId, sessionId).
-        String defaultSlot = slotKey(null, this.defaultSessionKey.toIdentifier());
+        String defaultSlot = slotKey(null, this.defaultSessionId);
         AgentState defaultState =
                 loadOrCreateAgentStateForSlot(
-                        this.stateStore,
-                        null,
-                        this.defaultSessionKey.toIdentifier(),
-                        builder,
-                        getAgentId());
+                        this.stateStore, null, this.defaultSessionId, builder, getAgentId());
         this.stateCache.put(defaultSlot, defaultState);
         this.state = defaultState;
         this.activeSlotKey = defaultSlot;
@@ -379,7 +373,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             () -> {
                                 AgentState legacy =
                                         LegacyStateLoader.loadFromLegacySession(
-                                                stateStore, SimpleSessionKey.of(sessionId));
+                                                stateStore, userId, sessionId);
                                 if (legacy != null
                                         && (!legacy.getContext().isEmpty()
                                                 || !legacy.getToolContext()
@@ -429,7 +423,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     /**
      * Per-call slot activation. Reads {@code (userId, sessionId)} from the given RuntimeContext
-     * (falling back to {@link #defaultSessionKey} when absent), and atomically swaps the active
+     * (falling back to {@link #defaultSessionId} when absent), and atomically swaps the active
      * {@link #state} + {@link #permissionEngine} to that slot's cached entries (loading them on
      * first use). Safe to call from {@code beforeAgentExecution} only — caller must hold the
      * {@code AgentBase.acquireExecution} lock.
@@ -437,7 +431,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     private void activateSlotForContext(RuntimeContext ctx) {
         String sid = ctx != null ? ctx.getSessionId() : null;
         if (sid == null || sid.isBlank()) {
-            sid = defaultSessionKey.toIdentifier();
+            sid = defaultSessionId;
         }
         String uid = ctx != null ? ctx.getUserId() : null;
         String slot = slotKey(uid, sid);
@@ -2375,13 +2369,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     /**
-     * Returns the builder-time fallback {@link SessionKey}, used only when a call's
+     * Returns the builder-time fallback {@code sessionId}, used only when a call's
      * {@link RuntimeContext} carries no {@code sessionId}. The state actually persisted at any
      * moment is keyed by the active slot — see {@link #getCurrentSessionId()} /
      * {@link #getCurrentUserId()} for the live identity.
      */
-    public SessionKey getSessionKey() {
-        return defaultSessionKey;
+    public String getDefaultSessionId() {
+        return defaultSessionId;
     }
 
     /**
@@ -2503,7 +2497,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         private Model flatFallbackModel;
         private Boolean flatStopOnReject;
         private AgentStateStore stateStore;
-        private SessionKey sessionKey;
+        private String defaultSessionId;
 
         // ==================== 1.x legacy compatibility fields ====================
         // Below fields back the deprecated `planNotebook(...)`, `longTermMemory(...)`,
@@ -2859,11 +2853,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
 
         /**
-         * Sets the {@link SessionKey} used when reading / writing the {@code agent_state} entry.
-         * Defaults to {@code SimpleSessionKey.of(name)} when unset.
+         * Sets the builder-time fallback {@code sessionId} used to persist {@code agent_state}
+         * when a call does not supply a {@code sessionId} on its {@link RuntimeContext}. Defaults
+         * to the agent name when unset. Per-call routing is via {@code RuntimeContext.sessionId};
+         * this is only the bootstrap / single-tenant default.
          */
-        public Builder sessionKey(SessionKey sessionKey) {
-            this.sessionKey = sessionKey;
+        public Builder defaultSessionId(String sessionId) {
+            this.defaultSessionId = sessionId;
             return this;
         }
 

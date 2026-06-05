@@ -27,7 +27,6 @@ import io.agentscope.core.plan.model.SubTaskState;
 import io.agentscope.core.plan.storage.InMemoryPlanStorage;
 import io.agentscope.core.plan.storage.PlanStorage;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;
@@ -156,26 +155,24 @@ public class PlanNotebook {
      * @param session the session to save state to
      * @param sessionKey the session identifier
      */
-    public void saveTo(AgentStateStore stateStore, SessionKey sessionKey) {
+    public void saveTo(AgentStateStore stateStore, String userId, String sessionId) {
         // Always save, even when null, to ensure cleared state is persisted
         stateStore.save(
-                null,
-                sessionKey.toIdentifier(),
-                keyPrefix + "_state",
-                new PlanNotebookState(currentPlan));
+                userId, sessionId, keyPrefix + "_state", new PlanNotebookState(currentPlan));
     }
 
     /**
-     * Load PlanNotebook state from the session.
+     * Load PlanNotebook state from the store.
      *
-     * @param session the session to load state from
-     * @param sessionKey the session identifier
+     * @param stateStore the state store to load from
+     * @param userId nullable user identifier
+     * @param sessionId session identifier
      */
-    public void loadFrom(AgentStateStore stateStore, SessionKey sessionKey) {
+    public void loadFrom(AgentStateStore stateStore, String userId, String sessionId) {
         // Clear existing state first to avoid stale data
         this.currentPlan = null;
         stateStore
-                .get(null, sessionKey.toIdentifier(), keyPrefix + "_state", PlanNotebookState.class)
+                .get(userId, sessionId, keyPrefix + "_state", PlanNotebookState.class)
                 .ifPresent(state -> this.currentPlan = state.currentPlan());
     }
 

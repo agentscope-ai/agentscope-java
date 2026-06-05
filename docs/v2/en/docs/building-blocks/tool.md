@@ -71,7 +71,7 @@ toolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
 ```
 
 :::{note}
-The `Toolkit` automatically registers a `reset_tools` meta tool and a `Skill` viewer when extra tool groups or skills are present — you don't need to instantiate them manually. See [self-managed tools](#self-managed-tools) and [Skill](#skill).
+The `Toolkit` automatically registers the `reset_tools` meta tool and the `load_skill_through_path` skill viewer tool when extra tool groups or skills are present — you don't need to instantiate them manually. See [self-managed tools](#self-managed-tools) and [Skill](#skill).
 :::
 
 ### Custom tools (annotation-based)
@@ -371,7 +371,7 @@ Runnable examples: `agentscope-examples/documentation/.../mcp/McpStdioExample.ja
 
 Skills are markdown-based instruction sets that extend an agent's capabilities without writing new tool code. Each skill is a directory containing a `SKILL.md` file with frontmatter metadata and detailed instructions.
 
-Unlike tools, skills are not directly callable. The agent reads skill instructions through an auto-registered `Skill` viewer, then carries them out using whatever tools it already has.
+Unlike tools, skills are not directly callable. The agent reads skill instructions through an auto-registered viewer tool named `load_skill_through_path`, then carries them out using whatever tools it already has.
 
 ### Registering skills
 
@@ -402,17 +402,32 @@ When skills are present, the `Toolkit` performs a two-phase setup.
 Initialisation:
 
 - The toolkit scans every registered skill source and collects each skill's name, description, and directory.
-- It auto-registers the built-in `Skill` viewer.
-- It assembles a system-prompt fragment listing the available skills (names + descriptions) and instructing the agent to read full content via the `Skill` viewer.
+- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) into the `skill-build-in-tools` group.
+- It assembles a system-prompt fragment listing the available skills (names + descriptions) and instructing the agent to read full content via `load_skill_through_path`.
 
-At runtime:
+At runtime, the agent invokes the viewer with two required arguments:
 
-- The agent picks a skill by name and calls the `Skill` viewer.
-- The viewer reads the matching `SKILL.md` and returns the full markdown.
-- The agent follows the instructions using its existing tools.
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `skillId` | `string` (enum of registered skill IDs) | The skill to load. |
+| `path` | `string` | Use `"SKILL.md"` to fetch the skill's markdown instructions, or an exact resource path declared by the skill such as `"references/guide.md"` or `"scripts/run.py"`. Do not pass `"."`, `"./"`, a directory, or an absolute path. |
+
+Example tool call payload:
+
+```json
+{
+  "name": "load_skill_through_path",
+  "input": { "skillId": "pdf-extractor", "path": "SKILL.md" }
+}
+```
+
+Each successful call has two effects:
+
+1. Returns the requested content (the `SKILL.md` markdown, or the named resource file).
+2. **Activates the skill** — its associated tool group is enabled in the `Toolkit`, so any tools bundled with the skill become callable for the rest of the turn. If the requested `path` does not exist, the viewer returns an error that lists the available resource paths (with `SKILL.md` first) so the agent can retry.
 
 :::{note}
-A skill is not a tool — the agent cannot call it directly. The agent must read the instructions via the `Skill` viewer first, then act on them with other tools.
+A skill is not a tool — the agent cannot call it directly. The agent must read the instructions via `load_skill_through_path` first, then act on them with other tools.
 :::
 
 ## Self-managed tools

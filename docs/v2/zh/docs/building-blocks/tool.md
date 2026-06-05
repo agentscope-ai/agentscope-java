@@ -71,7 +71,7 @@ toolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
 ```
 
 :::{note}
-Toolkit 在出现额外 tool group 或 skill 时会自动注册名为 `reset_tools` 的 meta tool 与 `Skill` 查看器，开发者无需手动实例化。详见 [自我管理 Tool](#自我管理-tool) 与 [Skill](#skill)。
+Toolkit 在出现额外 tool group 或 skill 时会自动注册 `reset_tools` meta tool 与 skill 查看器工具 `load_skill_through_path`，开发者无需手动实例化。详见 [自我管理 Tool](#自我管理-tool) 与 [Skill](#skill)。
 :::
 
 ### 自定义 Tool（注解式）
@@ -371,7 +371,7 @@ toolkit.registerMcpClient(search).block();
 
 Skill 是基于 markdown 的指令集，无需写新工具代码即可拓展 agent 能力。每个 skill 是一个目录，包含一个带 frontmatter 元数据与详细指令的 `SKILL.md` 文件。
 
-与 tool 不同，skill 不能被直接调用。Agent 通过自动注册的 `Skill` 查看器读取 skill 指令，再用现有的 tool 按指令执行。
+与 tool 不同，skill 不能被直接调用。Agent 通过自动注册的查看器工具 `load_skill_through_path` 读取 skill 指令，再用现有的 tool 按指令执行。
 
 ### 注册 Skill
 
@@ -402,17 +402,32 @@ ReActAgent agent =
 初始化阶段：
 
 - Toolkit 扫描所有注册的 skill 来源，收集每个 skill 的名称、描述与目录。
-- 自动注册内置的 `Skill` 查看器。
-- 组装一段 system prompt 片段，列出可用 skill（仅名称与描述），并指示 agent 通过 `Skill` 查看器读取完整内容。
+- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）注册到 `skill-build-in-tools` 这个 tool group。
+- 组装一段 system prompt 片段，列出可用 skill（仅名称与描述），并指示 agent 通过 `load_skill_through_path` 读取完整内容。
 
-运行时阶段：
+运行时阶段，agent 用两个必填参数调用查看器：
 
-- Agent 按名字选定一个 skill，调用 `Skill` 查看器。
-- 查看器读取对应 `SKILL.md`，返回完整 markdown。
-- Agent 用已装备的 tool 按这些指令执行。
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `skillId` | `string`（枚举：已注册的 skill ID） | 要加载的 skill。 |
+| `path` | `string` | 传 `"SKILL.md"` 取该 skill 的 markdown 指令；或传 skill 声明过的精确资源路径，例如 `"references/guide.md"`、`"scripts/run.py"`。不要传 `"."`、`"./"`、目录或绝对路径。 |
+
+调用示例：
+
+```json
+{
+  "name": "load_skill_through_path",
+  "input": { "skillId": "pdf-extractor", "path": "SKILL.md" }
+}
+```
+
+每次成功调用产生两件事：
+
+1. 返回请求的内容（`SKILL.md` markdown，或指定的资源文件）。
+2. **激活该 skill** —— Toolkit 中与之绑定的 tool group 被启用，本轮对话余下时段都可调用 skill 自带的工具。如果 `path` 不存在，查看器会返回错误并列出可用资源路径（`SKILL.md` 始终排在第一位），便于 agent 重试。
 
 :::{note}
-Skill 不是 tool —— agent 不能直接调用 skill。它必须先用 `Skill` 查看器读取指令，再用其他 tool 按描述的步骤执行。
+Skill 不是 tool —— agent 不能直接调用 skill。它必须先用 `load_skill_through_path` 读取指令，再用其他 tool 按描述的步骤执行。
 :::
 
 ## 自我管理 Tool

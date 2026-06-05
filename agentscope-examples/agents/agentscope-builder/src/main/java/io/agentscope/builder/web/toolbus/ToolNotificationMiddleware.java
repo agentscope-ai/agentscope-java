@@ -84,8 +84,8 @@ public class ToolNotificationMiddleware implements MiddlewareBase {
             ctx = r.getRuntimeContext();
         }
         if (ctx == null) return null;
-        if (ctx.getSessionKey() != null) {
-            return ctx.getSessionKey().toIdentifier();
+        if (ctx.getSessionId() != null) {
+            return ctx.getSessionId();
         }
         return ctx.getUserId();
     }

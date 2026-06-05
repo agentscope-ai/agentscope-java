@@ -441,7 +441,7 @@ public final class SessionOperations {
                         () ->
                                 stateStore.save(
                                         state.getUserId(),
-                                        react.getSessionKey().toIdentifier(),
+                                        react.getDefaultSessionId(),
                                         "agent_state",
                                         state))
                 .subscribeOn(Schedulers.boundedElastic())

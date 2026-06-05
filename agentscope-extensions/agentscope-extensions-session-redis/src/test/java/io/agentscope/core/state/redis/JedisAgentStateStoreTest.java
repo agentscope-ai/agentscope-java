@@ -27,8 +27,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -83,7 +81,8 @@ class JedisAgentStateStoreTest {
     @DisplayName("Should save and get single state correctly")
     void testSaveAndGetSingleState() {
         String stateJson = "{\"value\":\"test_value\",\"count\":42}";
-        when(unifiedJedis.get("agentscope:stateStore:session1:testModule")).thenReturn(stateJson);
+        when(unifiedJedis.get("agentscope:stateStore:__anon__/session1:testModule"))
+                .thenReturn(stateJson);
 
         RedisAgentStateStore stateStore =
                 RedisAgentStateStore.builder()
@@ -91,19 +90,19 @@ class JedisAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        String sessionKey = "session1";
         TestState state = new TestState("test_value", 42);
 
         // Save state
-        stateStore.save(null, sessionKey.toIdentifier(), "testModule", state);
+        stateStore.save(null, sessionKey, "testModule", state);
 
         // Verify save operations
         verify(unifiedJedis).set(anyString(), anyString());
-        verify(unifiedJedis).sadd("agentscope:stateStore:session1:_keys", "testModule");
+        verify(unifiedJedis).sadd("agentscope:stateStore:__anon__/session1:_keys", "testModule");
 
         // Get state
         Optional<TestState> loaded =
-                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
+                stateStore.get(null, sessionKey, "testModule", TestState.class);
         assertTrue(loaded.isPresent());
         assertEquals("test_value", loaded.get().value());
         assertEquals(42, loaded.get().count());
@@ -112,8 +111,9 @@ class JedisAgentStateStoreTest {
     @Test
     @DisplayName("Should save and get list state correctly")
     void testSaveAndGetListState() {
-        when(unifiedJedis.llen("agentscope:stateStore:session1:testList:list")).thenReturn(0L);
-        when(unifiedJedis.lrange("agentscope:stateStore:session1:testList:list", 0, -1))
+        when(unifiedJedis.llen("agentscope:stateStore:__anon__/session1:testList:list"))
+                .thenReturn(0L);
+        when(unifiedJedis.lrange("agentscope:stateStore:__anon__/session1:testList:list", 0, -1))
                 .thenReturn(
                         List.of(
                                 "{\"value\":\"value1\",\"count\":1}",
@@ -125,18 +125,17 @@ class JedisAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        String sessionKey = "session1";
         List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
 
         // Save list state
-        stateStore.save(null, sessionKey.toIdentifier(), "testList", states);
+        stateStore.save(null, sessionKey, "testList", states);
 
         // Verify rpush was called for each item
         verify(unifiedJedis, atLeast(1)).rpush(anyString(), anyString());
 
         // Get list state
-        List<TestState> loaded =
-                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
+        List<TestState> loaded = stateStore.getList(null, sessionKey, "testList", TestState.class);
         assertEquals(2, loaded.size());
         assertEquals("value1", loaded.get(0).value());
         assertEquals("value2", loaded.get(1).value());
@@ -145,7 +144,8 @@ class JedisAgentStateStoreTest {
     @Test
     @DisplayName("Should return empty for non-existent state")
     void testGetNonExistentState() {
-        when(unifiedJedis.get("agentscope:stateStore:non_existent:testModule")).thenReturn(null);
+        when(unifiedJedis.get("agentscope:stateStore:__anon__/non_existent:testModule"))
+                .thenReturn(null);
 
         RedisAgentStateStore stateStore =
                 RedisAgentStateStore.builder()
@@ -153,16 +153,16 @@ class JedisAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
-        Optional<TestState> state =
-                stateStore.get(null, sessionKey.toIdentifier(), "testModule", TestState.class);
+        String sessionKey = "non_existent";
+        Optional<TestState> state = stateStore.get(null, sessionKey, "testModule", TestState.class);
         assertFalse(state.isPresent());
     }
 
     @Test
     @DisplayName("Should return empty list for non-existent list state")
     void testGetNonExistentListState() {
-        when(unifiedJedis.lrange("agentscope:stateStore:non_existent:testList:list", 0, -1))
+        when(unifiedJedis.lrange(
+                        "agentscope:stateStore:__anon__/non_existent:testList:list", 0, -1))
                 .thenReturn(List.of());
 
         RedisAgentStateStore stateStore =
@@ -171,17 +171,16 @@ class JedisAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
-        List<TestState> states =
-                stateStore.getList(null, sessionKey.toIdentifier(), "testList", TestState.class);
+        String sessionKey = "non_existent";
+        List<TestState> states = stateStore.getList(null, sessionKey, "testList", TestState.class);
         assertTrue(states.isEmpty());
     }
 
     @Test
     @DisplayName("Should return true when stateStore exists")
     void testSessionExists() {
-        when(unifiedJedis.exists("agentscope:stateStore:session1:_keys")).thenReturn(true);
-        when(unifiedJedis.scard("agentscope:stateStore:session1:_keys")).thenReturn(2L);
+        when(unifiedJedis.exists("agentscope:stateStore:__anon__/session1:_keys")).thenReturn(true);
+        when(unifiedJedis.scard("agentscope:stateStore:__anon__/session1:_keys")).thenReturn(2L);
 
         RedisAgentStateStore stateStore =
                 RedisAgentStateStore.builder()
@@ -189,14 +188,15 @@ class JedisAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
-        assertTrue(stateStore.exists(null, sessionKey.toIdentifier()));
+        String sessionKey = "session1";
+        assertTrue(stateStore.exists(null, sessionKey));
     }
 
     @Test
     @DisplayName("Should return false when stateStore does not exist")
     void testSessionDoesNotExist() {
-        when(unifiedJedis.exists("agentscope:stateStore:session1:_keys")).thenReturn(false);
+        when(unifiedJedis.exists("agentscope:stateStore:__anon__/session1:_keys"))
+                .thenReturn(false);
 
         RedisAgentStateStore stateStore =
                 RedisAgentStateStore.builder()
@@ -204,8 +204,8 @@ class JedisAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
-        assertFalse(stateStore.exists(null, sessionKey.toIdentifier()));
+        String sessionKey = "session1";
+        assertFalse(stateStore.exists(null, sessionKey));
     }
 
     @Test
@@ -214,7 +214,8 @@ class JedisAgentStateStoreTest {
         Set<String> trackedKeys = new HashSet<>();
         trackedKeys.add("module1");
         trackedKeys.add("module2:list");
-        when(unifiedJedis.smembers("agentscope:stateStore:session1:_keys")).thenReturn(trackedKeys);
+        when(unifiedJedis.smembers("agentscope:stateStore:__anon__/session1:_keys"))
+                .thenReturn(trackedKeys);
 
         RedisAgentStateStore stateStore =
                 RedisAgentStateStore.builder()
@@ -222,19 +223,19 @@ class JedisAgentStateStoreTest {
                         .keyPrefix("agentscope:stateStore:")
                         .build();
 
-        SessionKey sessionKey = SimpleSessionKey.of("session1");
-        stateStore.delete(null, sessionKey.toIdentifier());
+        String sessionKey = "session1";
+        stateStore.delete(null, sessionKey);
 
         // Verify del was called with the keys
-        verify(unifiedJedis).smembers("agentscope:stateStore:session1:_keys");
+        verify(unifiedJedis).smembers("agentscope:stateStore:__anon__/session1:_keys");
     }
 
     @Test
     @DisplayName("Should list all stateStore keys")
     void testListSessionKeys() {
         Set<String> keysKeys = new HashSet<>();
-        keysKeys.add("agentscope:stateStore:session1:_keys");
-        keysKeys.add("agentscope:stateStore:session2:_keys");
+        keysKeys.add("agentscope:stateStore:__anon__/session1:_keys");
+        keysKeys.add("agentscope:stateStore:__anon__/session2:_keys");
         ScanResult<String> scanResult = mock(ScanResult.class);
         when(scanResult.getResult()).thenReturn(new ArrayList<>(keysKeys));
         when(scanResult.getCursor()).thenReturn(ScanParams.SCAN_POINTER_START);
@@ -248,18 +249,18 @@ class JedisAgentStateStoreTest {
 
         Set<String> sessionIds = stateStore.listSessionIds(null);
         assertEquals(2, sessionIds.size());
-        assertTrue(sessionIds.contains("__anon__/session1"));
-        assertTrue(sessionIds.contains("__anon__/session2"));
+        assertTrue(sessionIds.contains("session1"));
+        assertTrue(sessionIds.contains("session2"));
     }
 
     @Test
     @DisplayName("Should clear all sessions")
     void testClearAllSessions() {
         Set<String> allKeys = new HashSet<>();
-        allKeys.add("agentscope:stateStore:s1:module1");
-        allKeys.add("agentscope:stateStore:s1:_keys");
-        allKeys.add("agentscope:stateStore:s2:module1");
-        allKeys.add("agentscope:stateStore:s2:_keys");
+        allKeys.add("agentscope:stateStore:__anon__/s1:module1");
+        allKeys.add("agentscope:stateStore:__anon__/s1:_keys");
+        allKeys.add("agentscope:stateStore:__anon__/s2:module1");
+        allKeys.add("agentscope:stateStore:__anon__/s2:_keys");
         ScanResult<String> scanResult = mock(ScanResult.class);
         when(scanResult.getResult()).thenReturn(new ArrayList<>(allKeys));
         when(scanResult.getCursor()).thenReturn(ScanParams.SCAN_POINTER_START);

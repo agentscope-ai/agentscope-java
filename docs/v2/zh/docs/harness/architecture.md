@@ -34,7 +34,7 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 `.m
 |---|---|---|---|
 | 工作区驱动的人格 | 人格 / 知识 / 子 agent / 技能 / MCP 白名单都以文件形式存在 | `.workspace(path)` | [工作区](./workspace) |
 | 会话持久化 | 同 `sessionId` 跨请求、跨进程、跨副本恢复 | 默认开启；`.session(...)` 替换实现 | [Context](./context) |
-| 双层长期记忆 | 长会话里有价值的事实自动沉淀到 `MEMORY.md` | `.compaction(...)` | [记忆](./memory) |
+| 双层长期记忆 | 长会话里有价值的事实自动沉淀到 `MEMORY.md` | 默认开启；`.memory(...)` 定制 prompt / 触发策略 | [记忆](./memory) |
 | 对话压缩 | 上下文有界；模型真的溢出时强制重试 | `.compaction(...)` | [记忆](./memory) |
 | 大工具结果卸载 | 超 80K 字符的结果落盘 + 占位符 | `.toolResultEviction(...)` | [记忆](./memory) |
 | 子 agent 编排 | 委派给子 agent，支持同步或后台，自动反向通知 | `.subagent(...)` 或 `workspace/subagents/` | [子 Agent](./subagent) |

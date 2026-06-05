@@ -27,8 +27,6 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -423,10 +421,10 @@ final class HarnessAgentBuilderSupport {
             Model effectiveModel =
                     resolveModel(decl.getModel(), capturedModel, capturedResolver, decl.getName());
 
-            // ---- Derive child SessionKey: bucket persisted AgentState by parent identity ----
+            // ---- Derive child session ID: bucket persisted AgentState by parent identity ----
             // (Phase B-0) Without this every (user, parent-session) shares the same bucket and
             // can read each other's subagent conversations through AgentStateStore.get(...).
-            SessionKey childSessionKey = deriveChildSessionKey(decl, parentRc);
+            String childSessionId = deriveChildSessionId(decl, parentRc);
 
             // ---- Build child agent ----
             HarnessAgent.Builder sub =
@@ -438,7 +436,7 @@ final class HarnessAgentBuilderSupport {
                                     allowlistedInheritedToolkit(
                                             capturedParentToolkit, decl.getTools()))
                             .workspace(runtimeWorkspace)
-                            .sessionKey(childSessionKey)
+                            .defaultSessionId(childSessionId)
                             .maxIters(decl.getSteps())
                             .asLeafSubagent()
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
@@ -516,8 +514,8 @@ final class HarnessAgentBuilderSupport {
     }
 
     /**
-     * Composes the child agent's persisted {@link SessionKey}, bucketing by declaration name and
-     * the spawn-time parent identity:
+     * Composes the child agent's persisted session ID, bucketing by declaration name and the
+     * spawn-time parent identity:
      *
      * <pre>
      * {declarationName}[@{parentSessionId}][#{userId}]
@@ -530,22 +528,22 @@ final class HarnessAgentBuilderSupport {
      *
      * <p>This works uniformly across {@link io.agentscope.core.state.AgentStateStore} backends —
      * Workspace, Redis, InMemory, or custom — because all of them bucket {@code save}/{@code get}
-     * by {@code SessionKey}. (Phase B-0)
+     * by session ID. (Phase B-0)
      */
-    static SessionKey deriveChildSessionKey(SubagentDeclaration decl, RuntimeContext parentRc) {
+    static String deriveChildSessionId(SubagentDeclaration decl, RuntimeContext parentRc) {
         String declName = decl.getName();
         if (decl.getWorkspaceMode() == WorkspaceMode.SHARED || parentRc == null) {
-            return SimpleSessionKey.of(declName);
+            return declName;
         }
         String sid = sanitizeIdentifier(parentRc.getSessionId());
         String uid = sanitizeIdentifier(parentRc.getUserId());
         if (sid == null && uid == null) {
-            return SimpleSessionKey.of(declName);
+            return declName;
         }
         StringBuilder sb = new StringBuilder(declName);
         if (sid != null) sb.append('@').append(sid);
         if (uid != null) sb.append('#').append(uid);
-        return SimpleSessionKey.of(sb.toString());
+        return sb.toString();
     }
 
     /**
