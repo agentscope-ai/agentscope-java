@@ -24,6 +24,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -231,7 +232,7 @@ public class MemoryConsolidator {
 
         StringBuilder sb = new StringBuilder();
         for (FileInfo fi : eligible) {
-            String rel = toRelative(fi.path());
+            String rel = toWorkspaceRelativePath(fi.path());
             String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, rel);
             if (content != null && !content.isBlank()) {
                 sb.append("### ").append(fileName(fi.path())).append("\n");
@@ -258,21 +259,47 @@ public class MemoryConsolidator {
         if (path == null || path.isEmpty()) {
             return "";
         }
-        String stripped = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+        String stripped = path.replace('\\', '/');
+        if (stripped.endsWith("/")) {
+            stripped = stripped.substring(0, stripped.length() - 1);
+        }
         int idx = stripped.lastIndexOf('/');
         return idx >= 0 ? stripped.substring(idx + 1) : stripped;
     }
 
     /**
-     * Converts an absolute filesystem path (e.g. {@code /memory/2025-01-01.md}) to a
-     * workspace-relative path ({@code memory/2025-01-01.md}) for use with
+     * Converts filesystem glob output into a workspace-relative path for use with
      * {@link WorkspaceManager#readManagedWorkspaceFileUtf8}.
+     *
+     * <p>Local filesystem backends may emit absolute paths in unrestricted mode and virtual
+     * slash-prefixed paths in sandboxed mode. This helper normalizes both forms.
      */
-    private static String toRelative(String path) {
+    private String toWorkspaceRelativePath(String path) {
         if (path == null) {
             return "";
         }
-        return path.startsWith("/") ? path.substring(1) : path;
+        String normalized = path.replace('\\', '/').strip();
+        if (normalized.isEmpty()) {
+            return "";
+        }
+
+        try {
+            Path candidate = Path.of(path);
+            if (candidate.isAbsolute()) {
+                Path workspace = workspaceManager.getWorkspace().toAbsolutePath().normalize();
+                Path absolute = candidate.toAbsolutePath().normalize();
+                if (absolute.startsWith(workspace)) {
+                    return workspace.relativize(absolute).toString().replace('\\', '/');
+                }
+            }
+        } catch (Exception ignored) {
+            // Fall through to virtual-path handling below.
+        }
+
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
     }
 
     private void writeConsolidatedMemory(RuntimeContext rc, String content) {
