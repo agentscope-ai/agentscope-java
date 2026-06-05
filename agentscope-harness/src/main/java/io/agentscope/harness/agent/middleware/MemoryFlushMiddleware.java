@@ -17,7 +17,6 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
@@ -58,10 +57,7 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
     @Override
     public Flux<AgentEvent> onAgent(
             Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
-        final RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+        final RuntimeContext rc = input.runtimeContext();
         return next.apply(input).doOnComplete(() -> doFlush(agent, rc).subscribe());
     }
 

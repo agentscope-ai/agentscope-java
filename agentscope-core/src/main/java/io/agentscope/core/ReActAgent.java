@@ -506,6 +506,22 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * @return event stream covering the full agent invocation lifecycle
      */
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
+        return streamEvents(msgs, RuntimeContext.empty());
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with a caller-supplied {@link RuntimeContext}.
+     *
+     * <p>Mirrors the {@code call(msgs, context)} overload: the supplied context is carried
+     * through the {@link AgentInput} so middleware and the underlying {@code call()} invocation
+     * observe the same per-call context.
+     *
+     * @param msgs input messages
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
+        RuntimeContext runtimeContext = context != null ? context : RuntimeContext.empty();
         String replyId = UUID.randomUUID().toString().replace("-", "");
         Function<AgentInput, Flux<AgentEvent>> core =
                 input ->
@@ -517,7 +533,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                             reactor.util.context.Context subscriberCtx =
                                                     reactor.util.context.Context.of(
                                                             sink.contextView());
-                                            call(input.msgs())
+                                            call(input.msgs(), input.runtimeContext())
                                                     .doFinally(
                                                             signal -> {
                                                                 sink.next(
@@ -531,7 +547,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                         FluxSink.OverflowStrategy.BUFFER)
                                 .doOnError(e -> activeEventSink.set(null));
         return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
-                .apply(new AgentInput(msgs == null ? List.of() : msgs));
+                .apply(new AgentInput(msgs == null ? List.of() : msgs, runtimeContext));
     }
 
     /**
@@ -542,22 +558,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      */
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg));
-    }
-
-    /**
-     * Stream fine-grained {@link AgentEvent}s with a caller-supplied {@link RuntimeContext}.
-     *
-     * <p>Mirrors the {@code call(msgs, context)} overload: the supplied context is installed
-     * as the pending runtime context for the underlying {@code call()} invocation that drives
-     * the event stream.
-     *
-     * @param msgs input messages
-     * @param context runtime context to propagate into the call
-     * @return event stream covering the full agent invocation lifecycle
-     */
-    public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
-        this.pendingRuntimeContext = context;
-        return streamEvents(msgs);
     }
 
     /**

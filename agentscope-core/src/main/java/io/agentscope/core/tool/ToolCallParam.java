@@ -49,6 +49,7 @@ public class ToolCallParam {
     private final Map<String, Object> input;
     private final Agent agent;
     private final RuntimeContext runtimeContext;
+    private final ToolExecutionContext context;
     private final ToolEmitter emitter;
 
     private ToolCallParam(Builder builder) {
@@ -56,6 +57,7 @@ public class ToolCallParam {
         this.input = builder.input != null ? new HashMap<>(builder.input) : Collections.emptyMap();
         this.agent = builder.agent;
         this.runtimeContext = builder.runtimeContext;
+        this.context = builder.context;
         this.emitter = builder.emitter;
     }
 
@@ -103,6 +105,9 @@ public class ToolCallParam {
      */
     @Deprecated
     public ToolExecutionContext getContext() {
+        if (context != null) {
+            return context;
+        }
         return runtimeContext != null ? runtimeContext.asToolExecutionContext() : null;
     }
 
@@ -163,6 +168,7 @@ public class ToolCallParam {
         private Map<String, Object> input;
         private Agent agent;
         private RuntimeContext runtimeContext;
+        private ToolExecutionContext context;
         private ToolEmitter emitter;
 
         private Builder() {}
@@ -171,6 +177,7 @@ public class ToolCallParam {
             this.toolUseBlock = source.toolUseBlock;
             this.input = source.input.isEmpty() ? null : source.input;
             this.agent = source.agent;
+            this.runtimeContext = source.runtimeContext;
             this.context = source.context;
             this.emitter = source.emitter;
         }
@@ -216,6 +223,7 @@ public class ToolCallParam {
          */
         public Builder runtimeContext(RuntimeContext runtimeContext) {
             this.runtimeContext = runtimeContext;
+            this.context = null;
             return this;
         }
 
@@ -228,10 +236,13 @@ public class ToolCallParam {
          */
         @Deprecated
         public Builder context(ToolExecutionContext context) {
+            this.context = context;
             if (context != null) {
                 RuntimeContext.Builder rcb = RuntimeContext.builder();
                 rcb.toolExecutionContext(context);
                 this.runtimeContext = rcb.build();
+            } else {
+                this.runtimeContext = null;
             }
             return this;
         }

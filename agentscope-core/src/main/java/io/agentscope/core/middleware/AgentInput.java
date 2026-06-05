@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.middleware;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 
@@ -22,5 +23,16 @@ import java.util.List;
  * Input context for {@link MiddlewareBase#onAgent}.
  *
  * @param msgs the input messages to the agent
+ * @param runtimeContext per-call runtime context for this agent invocation
  */
-public record AgentInput(List<Msg> msgs) {}
+public record AgentInput(List<Msg> msgs, RuntimeContext runtimeContext) {
+
+    public AgentInput(List<Msg> msgs) {
+        this(msgs, RuntimeContext.empty());
+    }
+
+    public AgentInput {
+        msgs = msgs != null ? msgs : List.of();
+        runtimeContext = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+    }
+}
