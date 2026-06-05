@@ -39,8 +39,7 @@ class AguiMvcControllerTest {
                         sessionManager.getOrCreateAgent("thread-1", "default", this::createAgent);
         agent.getAgentState()
                 .contextMutable()
-                .add(
-                        Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
+                .add(Msg.builder().id("msg-1").role(MsgRole.USER).textContent("Hello").build());
         AguiMvcController controller =
                 AguiMvcController.builder()
                         .agentRegistry(registry)
