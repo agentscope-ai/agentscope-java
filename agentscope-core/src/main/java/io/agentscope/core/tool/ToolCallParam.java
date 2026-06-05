@@ -171,7 +171,7 @@ public class ToolCallParam {
             this.toolUseBlock = source.toolUseBlock;
             this.input = source.input.isEmpty() ? null : source.input;
             this.agent = source.agent;
-            this.context = source.context;
+            this.runtimeContext = source.runtimeContext;
             this.emitter = source.emitter;
         }
 
