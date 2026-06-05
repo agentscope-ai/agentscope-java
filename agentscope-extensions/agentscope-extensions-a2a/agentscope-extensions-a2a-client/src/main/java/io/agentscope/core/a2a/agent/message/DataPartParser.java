@@ -73,7 +73,12 @@ public class DataPartParser implements PartParser<DataPart> {
         ToolUseBlock.Builder builder = ToolUseBlock.builder();
         builder.id(getToolCallId(part)).name(getToolName(part));
         builder.metadata(getOriginalMetadata(part));
-        builder.input(part.getData());
+        Map<String, Object> input = new HashMap<>(part.getData());
+        Object content = input.remove(MessageConstants.TOOL_USE_CONTENT_DATA_KEY);
+        builder.input(input);
+        if (content != null) {
+            builder.content(content.toString());
+        }
         return builder.build();
     }
 

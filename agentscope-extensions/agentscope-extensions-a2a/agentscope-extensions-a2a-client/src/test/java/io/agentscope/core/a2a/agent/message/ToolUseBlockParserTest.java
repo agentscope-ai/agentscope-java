@@ -65,6 +65,26 @@ class ToolUseBlockParserTest {
     }
 
     @Test
+    @DisplayName("Should preserve streaming tool use content")
+    void testParseStreamingToolUseContent() {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .name("__fragment__")
+                        .id("call-123")
+                        .content("{\"productName\": \"")
+                        .build();
+
+        Part<?> result = parser.parse(block);
+
+        assertNotNull(result);
+        assertEquals(DataPart.class, result.getClass());
+        DataPart dataPart = (DataPart) result;
+        assertEquals(
+                "{\"productName\": \"",
+                dataPart.getData().get(MessageConstants.TOOL_USE_CONTENT_DATA_KEY));
+    }
+
+    @Test
     @DisplayName("Should have correct metadata")
     void testMetadata() {
         ToolUseBlock block =
