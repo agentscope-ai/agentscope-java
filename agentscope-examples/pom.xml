@@ -45,7 +45,6 @@
         <module>documentation/graceful-shutdown</module>
         <module>integration/micronaut</module>
         <module>integration/quarkus</module>
-        <module>integration/agui</module>
         <module>integration/a2a-rocketmq</module>
         <module>agents/boba-tea-shop</module>
         <module>agents/harness-examples</module>

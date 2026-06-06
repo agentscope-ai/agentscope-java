@@ -11,7 +11,7 @@ hide-toc: true
 <div class="hs-hero">
   <div>
     <h1 class="hs-hero__headline">Harness framework for <span class="hs-hero__accent">distributed, enterprise-grade</span> agents.</h1>
-    <p class="hs-hero__desc">AgentScope Java is the open-source agent framework for the JVM. ReAct reasoning, Harness engineering infrastructure, multi-agent orchestration, and MCP/A2A/AG-UI protocol support — from local prototype to enterprise-scale deployment.</p>
+    <p class="hs-hero__desc">AgentScope Java is the open-source agent framework for the JVM. ReAct reasoning, Harness engineering infrastructure, multi-agent orchestration, and MCP/A2A protocol support — from local prototype to enterprise-scale deployment.</p>
     <div class="hs-hero__actions">
       <a href="harness/overview.html" class="hs-btn hs-btn--primary">Get started →</a>
       <a href="https://github.com/agentscope-ai/agentscope-java" class="hs-btn hs-btn--secondary">
@@ -75,7 +75,7 @@ agent.call(messages, <span class="ty">RuntimeContext</span>.builder()
     <span class="hs-stat__label">built on Project Reactor</span>
   </div>
   <div class="hs-stat">
-    <span class="hs-stat__val">MCP · A2A · AG-UI</span>
+    <span class="hs-stat__val">MCP · A2A</span>
     <span class="hs-stat__label">open protocol support</span>
   </div>
   <div class="hs-stat">
