@@ -47,7 +47,10 @@ package io.agentscope.core.tool;
  *
  * @see ToolExecutionContext
  * @see DefaultContextStore
+ * @deprecated Part of the {@link ToolExecutionContext} layer which is superseded by
+ *     {@link io.agentscope.core.agent.RuntimeContext}.
  */
+@Deprecated
 public interface ContextStore {
 
     /**

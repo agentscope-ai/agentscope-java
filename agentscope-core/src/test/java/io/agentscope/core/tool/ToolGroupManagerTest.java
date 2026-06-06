@@ -446,6 +446,104 @@ class ToolGroupManagerTest {
     }
 
     @Test
+    void testCreateToolGroupWithScope() {
+        // Act
+        manager.createToolGroup("meta_group", "META group", true, ToolGroupScope.META);
+        manager.createToolGroup("ext_group", "EXTERNAL group", true, ToolGroupScope.EXTERNAL);
+
+        // Assert
+        assertEquals(ToolGroupScope.META, manager.getToolGroup("meta_group").getScope());
+        assertEquals(ToolGroupScope.EXTERNAL, manager.getToolGroup("ext_group").getScope());
+    }
+
+    @Test
+    void testCreateToolGroupDefaultScope() {
+        // Act
+        manager.createToolGroup("default_group", "Default scope");
+
+        // Assert - default scope is META
+        assertEquals(ToolGroupScope.META, manager.getToolGroup("default_group").getScope());
+    }
+
+    @Test
+    void testGetMetaGroupNames() {
+        // Arrange
+        manager.createToolGroup("meta1", "META 1", true, ToolGroupScope.META);
+        manager.createToolGroup("meta2", "META 2", false, ToolGroupScope.META);
+        manager.createToolGroup("ext1", "EXTERNAL 1", true, ToolGroupScope.EXTERNAL);
+
+        // Act
+        Set<String> metaNames = manager.getMetaGroupNames();
+
+        // Assert
+        assertEquals(2, metaNames.size());
+        assertTrue(metaNames.contains("meta1"));
+        assertTrue(metaNames.contains("meta2"));
+        assertFalse(metaNames.contains("ext1"));
+    }
+
+    @Test
+    void testReplaceMetaActiveGroups() {
+        // Arrange
+        manager.createToolGroup("meta1", "META 1", true, ToolGroupScope.META);
+        manager.createToolGroup("meta2", "META 2", true, ToolGroupScope.META);
+        manager.createToolGroup("meta3", "META 3", false, ToolGroupScope.META);
+
+        // Act - replace: only meta3 should be active
+        manager.replaceMetaActiveGroups(List.of("meta3"));
+
+        // Assert
+        assertFalse(manager.getToolGroup("meta1").isActive());
+        assertFalse(manager.getToolGroup("meta2").isActive());
+        assertTrue(manager.getToolGroup("meta3").isActive());
+    }
+
+    @Test
+    void testReplaceMetaActiveGroupsPreservesExternal() {
+        // Arrange
+        manager.createToolGroup("meta1", "META 1", true, ToolGroupScope.META);
+        manager.createToolGroup("ext1", "EXTERNAL 1", true, ToolGroupScope.EXTERNAL);
+
+        // Act - replace META groups with empty list
+        manager.replaceMetaActiveGroups(List.of());
+
+        // Assert - META deactivated, EXTERNAL preserved
+        assertFalse(manager.getToolGroup("meta1").isActive());
+        assertTrue(manager.getToolGroup("ext1").isActive());
+    }
+
+    @Test
+    void testSetActiveGroupsDeactivatesOthers() {
+        // Arrange
+        manager.createToolGroup("group1", "Group 1", true);
+        manager.createToolGroup("group2", "Group 2", true);
+        manager.createToolGroup("group3", "Group 3", true);
+
+        // Act - set only group1 as active
+        manager.setActiveGroups(List.of("group1"));
+
+        // Assert - group2 and group3 should be deactivated
+        assertTrue(manager.getToolGroup("group1").isActive());
+        assertFalse(manager.getToolGroup("group2").isActive());
+        assertFalse(manager.getToolGroup("group3").isActive());
+        assertEquals(1, manager.getActiveGroups().size());
+    }
+
+    @Test
+    void testGetNotesOnlyShowsMetaGroups() {
+        // Arrange
+        manager.createToolGroup("meta1", "META tools", true, ToolGroupScope.META);
+        manager.createToolGroup("ext1", "EXTERNAL tools", true, ToolGroupScope.EXTERNAL);
+
+        // Act
+        String notes = manager.getNotes();
+
+        // Assert - EXTERNAL group should not appear
+        assertTrue(notes.contains("meta1"));
+        assertFalse(notes.contains("ext1"));
+    }
+
+    @Test
     void testComplexScenario() {
         // Arrange
         manager.createToolGroup("analytics", "Analytics tools", true);

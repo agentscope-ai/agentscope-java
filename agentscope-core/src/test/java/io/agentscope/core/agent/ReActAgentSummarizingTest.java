@@ -24,13 +24,14 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -52,7 +53,6 @@ class ReActAgentSummarizingTest {
     @Test
     @DisplayName("Should generate summary when max iterations reached")
     void testSummarizingOnMaxIterations() {
-        InMemoryMemory memory = new InMemoryMemory();
 
         // Create model that returns plain text (not calling generate_response tool)
         // This causes the agent to continue iteration without finishing
@@ -109,7 +109,6 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a test assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(2) // Small number to reach limit quickly
                         .build();
 
@@ -143,14 +142,13 @@ class ReActAgentSummarizingTest {
         assertTrue(summaryText.length() > 10, "Summary should be substantial");
 
         // Verify memory contains the summary
-        List<Msg> memoryMessages = agent.getMemory().getMessages();
+        List<Msg> memoryMessages = agent.getState().getContext();
         assertTrue(memoryMessages.contains(response), "Memory should contain summary message");
     }
 
     @Test
     @DisplayName("Should include context from memory in summary")
     void testSummarizingIncludesMemoryContext() {
-        InMemoryMemory memory = new InMemoryMemory();
 
         // Pre-populate memory with some context
         Msg contextMsg1 =
@@ -159,7 +157,6 @@ class ReActAgentSummarizingTest {
                         .role(MsgRole.USER)
                         .content(TextBlock.builder().text("What is the weather today?").build())
                         .build();
-        memory.addMessage(contextMsg1);
 
         Msg contextMsg2 =
                 Msg.builder()
@@ -167,7 +164,6 @@ class ReActAgentSummarizingTest {
                         .role(MsgRole.ASSISTANT)
                         .content(TextBlock.builder().text("I don't have that information.").build())
                         .build();
-        memory.addMessage(contextMsg2);
 
         // Create model that captures the messages sent to it
         final List<Msg>[] capturedMessages = new List[] {null};
@@ -223,7 +219,6 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a helpful assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(1)
                         .build();
 
@@ -259,7 +254,6 @@ class ReActAgentSummarizingTest {
     @Test
     @DisplayName("Should handle summarizing with empty memory")
     void testSummarizingWithEmptyMemory() {
-        InMemoryMemory memory = new InMemoryMemory();
 
         final int[] callCount = {0};
         MockModel mockModel =
@@ -309,7 +303,6 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a test assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(1)
                         .build();
 
@@ -328,7 +321,6 @@ class ReActAgentSummarizingTest {
     @Test
     @DisplayName("Should add summary message to memory")
     void testSummaryAddedToMemory() {
-        InMemoryMemory memory = new InMemoryMemory();
 
         final int[] callCount = {0};
         MockModel mockModel =
@@ -374,27 +366,335 @@ class ReActAgentSummarizingTest {
                         .sysPrompt("You are a helpful assistant.")
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(1)
                         .build();
 
         // Check initial memory size
-        int initialMemorySize = memory.getMessages().size();
+        int initialMemorySize = agent.getState().getContext().size();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Please help");
         Msg response =
                 agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify memory has grown
-        int finalMemorySize = memory.getMessages().size();
+        int finalMemorySize = agent.getState().getContext().size();
         assertTrue(
                 finalMemorySize > initialMemorySize,
                 "Memory should contain additional messages after summarizing");
 
         // Verify the last message is the summary
-        Msg lastMessage = memory.getMessages().get(finalMemorySize - 1);
+        Msg lastMessage = agent.getState().getContext().get(finalMemorySize - 1);
         assertEquals(response, lastMessage, "Last message in memory should be the summary");
         assertEquals(
                 MsgRole.ASSISTANT, lastMessage.getRole(), "Summary message should be ASSISTANT");
+    }
+
+    @Test
+    @DisplayName("Should handle second call after maxIters with pending tool calls - Issue #1005")
+    void testSecondCallAfterMaxItersWithPendingToolCalls() {
+        // This test reproduces the bug reported in Issue #1005:
+        // 1. User has multi-round conversation with tool call
+        // 2. Tool doesn't respond (or times out), leaving pending tool calls
+        // 3. maxIters is reached, session auto-ends
+        // 4. User sends new message -> Should NOT throw IllegalStateException
+        final String toolId = "call_638e428da2cf48ceb8b05762";
+
+        // Mock model that returns a tool call on first call, then summary
+        final int[] callCount = {0};
+        MockModel mockModel =
+                new MockModel(
+                        messages -> {
+                            int callNum = callCount[0]++;
+                            if (callNum == 0) {
+                                // First call: return tool use block (simulating tool call)
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_0")
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .name("search_tool")
+                                                                        .id(toolId)
+                                                                        .input(
+                                                                                Map.of(
+                                                                                        "query",
+                                                                                        "test"))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            } else {
+                                // Second call: summarizing (because maxIters=1 reached)
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_summary")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "I reached the"
+                                                                                    + " maximum"
+                                                                                    + " iteration"
+                                                                                    + " limit."
+                                                                                    + " Please try"
+                                                                                    + " again.")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                        });
+
+        MockToolkit mockToolkit = new MockToolkit();
+
+        // Create agent with maxIters=1 to quickly trigger summarizing
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .maxIters(1)
+                        .build();
+
+        // First user message - triggers tool call and maxIters summarizing
+        Msg firstUserMsg = TestUtils.createUserMessage("User", "Please search for something");
+        Msg firstResponse =
+                agent.call(firstUserMsg)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify first response
+        assertNotNull(firstResponse, "First response should not be null");
+        assertEquals(MsgRole.ASSISTANT, firstResponse.getRole());
+
+        // CRITICAL: Verify that the pending tool call has been resolved in memory
+        // Before the fix, memory would have pending tool calls without results
+        // After the fix, summarizing() should add error results for pending tools
+        List<Msg> memoryMessages = agent.getState().getContext();
+
+        // Find if there's a tool result message for the pending tool
+        boolean hasToolResultForPendingTool =
+                memoryMessages.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .anyMatch(tr -> tr.getId() != null && tr.getId().equals(toolId));
+
+        assertTrue(
+                hasToolResultForPendingTool,
+                "Memory should contain error result for pending tool call after summarizing");
+
+        Msg pendingToolResultMsg =
+                memoryMessages.stream()
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId)))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(pendingToolResultMsg, "Pending tool call should have a result message");
+        assertEquals(
+                MsgRole.TOOL,
+                pendingToolResultMsg.getRole(),
+                "Pending tool error result should be stored as TOOL message");
+
+        // Verify the tool result indicates cancellation due to max iterations
+        ToolResultBlock toolResult =
+                memoryMessages.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> tr.getId() != null && tr.getId().equals(toolId))
+                        .findFirst()
+                        .orElse(null);
+
+        // Tool result should be present (either from toolkit or from summarizing fix)
+        assertNotNull(toolResult);
+
+        // SECOND CALL - This is the critical test for Issue #1005
+        // Before the fix, this would throw:
+        // IllegalStateException: Cannot add messages without tool results when pending tool calls
+        // exist
+
+        // Reset model for second user interaction
+        final int[] secondCallCount = {0};
+        MockModel secondMockModel =
+                new MockModel(
+                        messages -> {
+                            int callNum = secondCallCount[0]++;
+                            if (callNum == 0) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_second_0")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "Hello! How can I"
+                                                                                    + " help you"
+                                                                                    + " today?")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 15))
+                                                .build());
+                            }
+                            return List.of();
+                        });
+
+        ReActAgent secondAgent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(secondMockModel)
+                        .toolkit(mockToolkit)
+                        .maxIters(2)
+                        .build();
+
+        // Second user message - this would throw IllegalStateException before the fix
+        Msg secondUserMsg = TestUtils.createUserMessage("User", "Hello again");
+
+        // This should NOT throw: "Cannot add messages without tool results when pending tool calls
+        // exist"
+        Msg secondResponse =
+                secondAgent
+                        .call(secondUserMsg)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify second response succeeded
+        assertNotNull(secondResponse, "Second response should not be null");
+        assertEquals(MsgRole.ASSISTANT, secondResponse.getRole());
+        assertTrue(
+                secondResponse.getFirstContentBlock() instanceof TextBlock,
+                "Second response should contain TextBlock");
+
+        TextBlock secondText = (TextBlock) secondResponse.getFirstContentBlock();
+        assertEquals("Hello! How can I help you today?", secondText.getText());
+    }
+
+    @Test
+    @DisplayName("Should add exactly one TOOL result for each pending tool during summarizing")
+    void testSummarizingAddsOneToolResultPerPendingTool() {
+        final String toolId1 = "call_pending_1";
+        final String toolId2 = "call_pending_2";
+
+        Msg pendingAssistantMsg =
+                Msg.builder()
+                        .name("TestAgent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("search_tool")
+                                                .id(toolId1)
+                                                .input(Map.of("query", "weather"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .name("search_tool")
+                                                .id(toolId2)
+                                                .input(Map.of("query", "news"))
+                                                .build()))
+                        .build();
+
+        MockModel mockModel =
+                new MockModel(
+                        messages ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_summary")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "Iteration limit"
+                                                                                    + " reached.")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build()));
+
+        MockToolkit mockToolkit = new MockToolkit();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .maxIters(1)
+                        .build();
+        agent.getState().contextMutable().add(pendingAssistantMsg);
+
+        Msg summaryResponse = invokeSummarizing(agent);
+        assertNotNull(summaryResponse, "Summary response should not be null");
+
+        List<Msg> memoryMessages = agent.getState().getContext();
+
+        long toolId1ToolRoleCount =
+                memoryMessages.stream()
+                        .filter(m -> m.getRole() == MsgRole.TOOL)
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId1)))
+                        .count();
+        long toolId2ToolRoleCount =
+                memoryMessages.stream()
+                        .filter(m -> m.getRole() == MsgRole.TOOL)
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId2)))
+                        .count();
+
+        assertEquals(
+                1L, toolId1ToolRoleCount, "toolId1 should have exactly one TOOL result message");
+        assertEquals(
+                1L, toolId2ToolRoleCount, "toolId2 should have exactly one TOOL result message");
+
+        long toolId1NonToolRoleCount =
+                memoryMessages.stream()
+                        .filter(m -> m.getRole() != MsgRole.TOOL)
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId1)))
+                        .count();
+        long toolId2NonToolRoleCount =
+                memoryMessages.stream()
+                        .filter(m -> m.getRole() != MsgRole.TOOL)
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId2)))
+                        .count();
+
+        assertEquals(
+                0L, toolId1NonToolRoleCount, "toolId1 should not have non-TOOL result messages");
+        assertEquals(
+                0L, toolId2NonToolRoleCount, "toolId2 should not have non-TOOL result messages");
+    }
+
+    private static Msg invokeSummarizing(ReActAgent agent) {
+        try {
+            Method method = ReActAgent.class.getDeclaredMethod("summarizing");
+            method.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            reactor.core.publisher.Mono<Msg> mono =
+                    (reactor.core.publisher.Mono<Msg>) method.invoke(agent);
+            return mono.block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to invoke summarizing()", e);
+        }
     }
 }

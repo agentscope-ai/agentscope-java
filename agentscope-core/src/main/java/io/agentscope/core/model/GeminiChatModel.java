@@ -23,9 +23,11 @@ import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.HttpOptions;
+import com.google.genai.types.ProxyOptions;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -354,6 +356,7 @@ public class GeminiChatModel extends ChatModelBase {
         private GenerateOptions defaultOptions;
         private Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
                 formatter;
+        private ProxyConfig proxyConfig;
 
         /**
          * Sets the API key (for Gemini API).
@@ -490,11 +493,56 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets the proxy configuration for HTTP traffic.
+         *
+         * <p><b>Interaction with {@link #clientOptions(ClientOptions)}:</b>
+         * This method performs a <i>smart merge</i> rather than simple overwriting.
+         * The final {@code ClientOptions} passed to the Google SDK client is determined as follows:
+         *
+         * <ul>
+         *   <li>If only {@code proxy()} is called: a new {@code ClientOptions} is created
+         *       containing only the proxy settings.
+         *   <li>If only {@code clientOptions()} is called: the provided options are used as-is.
+         *   <li>If <i>both</i> are called:
+         *       <ul>
+         *         <li>If the provided {@code ClientOptions} does <b>not</b> already contain
+         *             proxy settings ({@code clientOptions.getProxyOptions().isEmpty()}), the
+         *             proxy from {@code proxy()} is <b>merged into</b> the existing options
+         *             (preserving connection pool, etc.).
+         *         <li>If the provided {@code ClientOptions} <b>already contains</b> proxy settings,
+         *             those take precedence. A warning is logged, and the {@code proxy()} setting
+         *             is silently ignored to avoid conflicting configurations.
+         *       </ul>
+         *   <li>If neither is called: no proxy configuration is applied.
+         * </ul>
+         *
+         * <p><b>Note:</b> The {@code nonProxyHosts} field from {@link ProxyConfig} is <b>not
+         * supported</b> by the Google GenAI SDK. When converting, this field will be lost.
+         * If host exclusion is required, consider setting {@code http.nonProxyHosts} as a
+         * JVM system property.
+         *
+         * @param proxyConfig the proxy configuration (see {@link ProxyConfig})
+         * @return this builder
+         */
+        public Builder proxy(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
+            return this;
+        }
+
+        /**
          * Builds the GeminiChatModel instance.
+         *
+         * <p><b>Proxy smart merge:</b> If both {@link #proxy(ProxyConfig)} and
+         * {@link #clientOptions(ClientOptions)} are set, this method performs a smart merge:
+         * if the provided {@code ClientOptions} does not already contain proxy settings,
+         * the proxy from {@code proxy()} is merged into it (preserving connection pool, etc.).
+         * If {@code ClientOptions} already has proxy configured, it takes precedence and
+         * a warning is logged.
          *
          * @return a new GeminiChatModel
          */
         public GeminiChatModel build() {
+            ClientOptions resolvedClientOptions = resolveClientOptions();
             return new GeminiChatModel(
                     apiKey,
                     baseUrl,
@@ -505,9 +553,70 @@ public class GeminiChatModel extends ChatModelBase {
                     vertexAI,
                     httpOptions,
                     credentials,
-                    clientOptions,
+                    resolvedClientOptions,
                     defaultOptions,
                     formatter);
+        }
+
+        /**
+         * Resolves the final ClientOptions by merging proxy() and clientOptions().
+         *
+         * @return the resolved ClientOptions
+         */
+        private ClientOptions resolveClientOptions() {
+            if (proxyConfig == null) {
+                // No proxy set, return clientOptions as-is
+                return clientOptions;
+            }
+
+            ProxyOptions googleProxy = toGoogleProxy(proxyConfig);
+
+            if (clientOptions == null) {
+                // Only proxy() called, create new ClientOptions with proxy
+                return ClientOptions.builder().proxyOptions(googleProxy).build();
+            }
+
+            if (clientOptions.proxyOptions().isEmpty()) {
+                // clientOptions set but no proxy configured → merge proxy into it
+                return clientOptions.toBuilder().proxyOptions(googleProxy).build();
+            }
+
+            // Both have proxy settings → clientOptions takes precedence, warn user
+            log.warn(
+                    "GeminiChatModel: both proxy() and clientOptions.proxyOptions() are set. "
+                            + "clientOptions.proxyOptions() takes precedence, proxy() is ignored.");
+            return clientOptions;
+        }
+
+        /**
+         * Converts agentscope ProxyConfig to Google SDK ProxyOptions.
+         *
+         * <p><b>Note:</b> The {@code nonProxyHosts} field from ProxyConfig is not supported
+         * by the Google GenAI SDK and will be lost during conversion.
+         *
+         * @param config the agentscope proxy configuration
+         * @return the Google SDK ProxyOptions
+         */
+        private static ProxyOptions toGoogleProxy(ProxyConfig config) {
+            ProxyOptions.Builder builder =
+                    ProxyOptions.builder().host(config.getHost()).port(config.getPort());
+
+            // Map proxy type using ProxyType.Known enum
+            switch (config.getType()) {
+                case SOCKS4:
+                case SOCKS5:
+                    builder.type(com.google.genai.types.ProxyType.Known.SOCKS);
+                    break;
+                default:
+                    builder.type(com.google.genai.types.ProxyType.Known.HTTP);
+            }
+
+            // Add authentication if present
+            if (config.hasAuthentication()) {
+                builder.username(config.getUsername()).password(config.getPassword());
+            }
+
+            return builder.build();
         }
     }
 }

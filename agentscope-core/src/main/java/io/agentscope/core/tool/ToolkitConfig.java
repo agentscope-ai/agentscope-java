@@ -93,11 +93,10 @@ public class ToolkitConfig {
     /**
      * Get the default tool execution context.
      *
-     * <p>This context is used as the base for all tool calls and can be overridden by
-     * agent-level or call-level contexts.
-     *
      * @return The default context, or null if not configured
+     * @deprecated Use {@link io.agentscope.core.agent.RuntimeContext} instead.
      */
+    @Deprecated
     public ToolExecutionContext getDefaultContext() {
         return defaultContext;
     }
@@ -183,12 +182,11 @@ public class ToolkitConfig {
         /**
          * Set the default tool execution context for all tools.
          *
-         * <p>This context will be used as the base for all tool executions and can be
-         * overridden by agent-level or call-level contexts through the merge mechanism.
-         *
          * @param defaultContext The default execution context
          * @return this builder
+         * @deprecated Use {@link io.agentscope.core.agent.RuntimeContext} instead.
          */
+        @Deprecated
         public Builder defaultContext(ToolExecutionContext defaultContext) {
             this.defaultContext = defaultContext;
             return this;

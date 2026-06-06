@@ -127,6 +127,53 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should convert empty tool publishers to error responses")
+    void shouldReturnErrorWhenToolCompletesEmpty() {
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "empty_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that completes without a result";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.empty();
+                    }
+                });
+
+        Map<String, Object> emptyInput = Map.of();
+        ToolUseBlock emptyCall =
+                ToolUseBlock.builder()
+                        .id("call-empty")
+                        .name("empty_tool")
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(emptyCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Executor should return an error response");
+        assertEquals(1, responses.size(), "Empty completion should still yield one response");
+        assertEquals("call-empty", responses.get(0).getId(), "Response should keep tool call id");
+        assertEquals("empty_tool", responses.get(0).getName(), "Response should keep tool name");
+        assertEquals(
+                "Error: Tool execution failed: Tool completed without returning a result",
+                extractFirstText(responses.get(0)));
+    }
+
+    @Test
     @DisplayName("Should NOT specially handle InterruptedException in error path")
     void testToolErrorWithoutInterruptSpecialCase() {
         // Create a tool that throws RuntimeException with InterruptedException cause

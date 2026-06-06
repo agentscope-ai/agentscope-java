@@ -339,7 +339,7 @@ public class JsonSession implements Session {
      * @param sessionKey the session key
      * @return Path to the session directory
      */
-    private Path getSessionDir(SessionKey sessionKey) {
+    protected Path getSessionDir(SessionKey sessionKey) {
         String identifier = sessionKey.toIdentifier();
         // If identifier contains special characters, encode it for file system safety
         if (!SAFE_FILENAME_PATTERN.matcher(identifier).matches()) {

@@ -52,7 +52,6 @@ class GeminiPythonConsistencyTest {
 
     @Test
     void testMultiAgentFormatMatchesPythonGroundTruth() {
-        // Test data matching Python's formatter_gemini_test.py lines 37-94
         List<Msg> messages =
                 List.of(
                         Msg.builder()
@@ -81,7 +80,7 @@ class GeminiPythonConsistencyTest {
 
         List<Content> contents = formatter.format(messages);
 
-        // Verify structure matches Python ground truth
+        // Verify expected structure
         assertEquals(2, contents.size(), "Should have 2 Content objects");
 
         // Content 1: System message
@@ -131,7 +130,7 @@ class GeminiPythonConsistencyTest {
                 !secondText.contains("## assistant (assistant)"),
                 "Should NOT use '## name (role)' format");
 
-        System.out.println("\n✅ Java implementation matches Python ground truth!");
+        System.out.println("\n✅ Java implementation matches ground truth!");
     }
 
     @Test

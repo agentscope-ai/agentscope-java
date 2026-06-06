@@ -32,7 +32,11 @@ import java.util.regex.Pattern;
  * AgentSkillPromptProvider provider = new AgentSkillPromptProvider(registry);
  * String prompt = provider.getSkillSystemPrompt();
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
  */
+@Deprecated(since = "2.0.0")
 public class AgentSkillPromptProvider {
     private static final String INDENT = "  ";
     private static final Pattern XML_TAG_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");
@@ -131,23 +135,48 @@ public class AgentSkillPromptProvider {
     }
 
     /**
-     * Gets the skill system prompt for the agent.
-     *
-     * <p>Generates a system prompt containing all registered skills.
+     * Gets the skill system prompt for the agent with all skills included.
      *
      * @return The skill system prompt, or empty string if no skills exist
      */
     public String getSkillSystemPrompt() {
+        return getSkillSystemPrompt(SkillFilter.all());
+    }
+
+    /**
+     * Gets the skill system prompt filtered by the given {@link SkillFilter}.
+     *
+     * @param filter the filter deciding which skills to include (null treated as all)
+     * @return The skill system prompt, or empty string if no skills pass the filter
+     */
+    public String getSkillSystemPrompt(SkillFilter filter) {
+        SkillFilter effectiveFilter = filter != null ? filter : SkillFilter.all();
+
         if (skillRegistry.getAllRegisteredSkills().isEmpty()) {
             return "";
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append(instruction);
+        boolean hasSkills = false;
 
         for (RegisteredSkill registered : skillRegistry.getAllRegisteredSkills().values()) {
-            AgentSkill skill = skillRegistry.getSkill(registered.getSkillId());
+            String skillId = registered.getSkillId();
+            if (!effectiveFilter.isAllowed(skillId)) {
+                continue;
+            }
+            AgentSkill skill = skillRegistry.getSkill(skillId);
+            if (skill == null) {
+                continue;
+            }
+            if (!hasSkills) {
+                sb.append(instruction);
+                hasSkills = true;
+            }
             appendSkill(sb, skill);
+        }
+
+        if (!hasSkills) {
+            return "";
         }
 
         sb.append("</available_skills>");
