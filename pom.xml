@@ -35,7 +35,7 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
 
         <spotless.version>3.4.0</spotless.version>
-        <jacoco.version>0.8.14</jacoco.version>
+        <jacoco.version>0.8.15</jacoco.version>
         <google-java-format.version>1.28.0</google-java-format.version>
 
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
