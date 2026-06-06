@@ -84,6 +84,7 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
                         .emitStateEvents(props.isEmitStateEvents())
                         .emitToolCallArgs(props.isEmitToolCallArgs())
                         .enableReasoning(props.isEnableReasoning())
+                        .enableActingChunk(props.isEnableActingChunk())
                         .defaultAgentId(props.getDefaultAgentId())
                         .build();
 

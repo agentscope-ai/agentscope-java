@@ -30,6 +30,7 @@ public class AguiAdapterConfig {
     private final boolean emitStateEvents;
     private final boolean emitToolCallArgs;
     private final boolean enableReasoning;
+    private final boolean enableActingChunk;
     private final Duration runTimeout;
     private final String defaultAgentId;
 
@@ -38,6 +39,7 @@ public class AguiAdapterConfig {
         this.emitStateEvents = builder.emitStateEvents;
         this.emitToolCallArgs = builder.emitToolCallArgs;
         this.enableReasoning = builder.enableReasoning;
+        this.enableActingChunk = builder.enableActingChunk;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
     }
@@ -80,6 +82,18 @@ public class AguiAdapterConfig {
      */
     public boolean isEnableReasoning() {
         return enableReasoning;
+    }
+
+    /**
+     * Check if intermediate acting chunk emissions should be included.
+     *
+     * <p>When enabled, intermediate tool execution outputs (such as progress)
+     * will be streamed to the frontend.
+     *
+     * @return true if acting chunks should be included
+     */
+    public boolean isEnableActingChunk() {
+        return enableActingChunk;
     }
 
     /**
@@ -127,6 +141,7 @@ public class AguiAdapterConfig {
         private boolean emitStateEvents = true;
         private boolean emitToolCallArgs = true;
         private boolean enableReasoning = false;
+        private boolean enableActingChunk = false;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
 
@@ -175,6 +190,20 @@ public class AguiAdapterConfig {
          */
         public Builder enableReasoning(boolean enableReasoning) {
             this.enableReasoning = enableReasoning;
+            return this;
+        }
+
+        /**
+         * Set whether to enable acting chunk emissions.
+         *
+         * <p>When enabled, tools can emit intermediate chunks (e.g., Custom events for progress
+         * or real-time logs) during execution. Default is true.
+         *
+         * @param enableActingChunk true to enable acting chunks
+         * @return This builder
+         */
+        public Builder enableActingChunk(boolean enableActingChunk) {
+            this.enableActingChunk = enableActingChunk;
             return this;
         }
 
