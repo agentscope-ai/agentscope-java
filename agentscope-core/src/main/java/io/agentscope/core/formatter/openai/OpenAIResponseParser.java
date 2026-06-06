@@ -73,6 +73,15 @@ public class OpenAIResponseParser {
                 : 0;
     }
 
+    private static String previewArguments(String arguments) {
+        if (arguments == null) {
+            return "null";
+        }
+
+        String normalized = arguments.replace("\r", "\\r").replace("\n", "\\n");
+        return normalized.length() > 200 ? normalized.substring(0, 200) + "..." : normalized;
+    }
+
     public OpenAIResponseParser() {}
 
     /**
@@ -232,12 +241,24 @@ public class OpenAIResponseParser {
 
                                     Map<String, Object> argsMap = new HashMap<>();
                                     if (!arguments.isEmpty()) {
-                                        @SuppressWarnings("unchecked")
-                                        Map<String, Object> parsed =
-                                                JsonUtils.getJsonCodec()
-                                                        .fromJson(arguments, Map.class);
-                                        if (parsed != null) {
-                                            argsMap.putAll(parsed);
+                                        try {
+                                            @SuppressWarnings("unchecked")
+                                            Map<String, Object> parsed =
+                                                    JsonUtils.getJsonCodec()
+                                                            .fromJson(arguments, Map.class);
+                                            if (parsed != null) {
+                                                argsMap.putAll(parsed);
+                                            }
+                                        } catch (Exception parseEx) {
+                                            log.warn(
+                                                    "Failed to parse tool call arguments due to"
+                                                            + " JSON error; preserving raw"
+                                                            + " arguments: id={}, name={},"
+                                                            + " arguments={}, error={}",
+                                                    toolCallId,
+                                                    name,
+                                                    previewArguments(arguments),
+                                                    parseEx.getMessage());
                                         }
                                     }
 
