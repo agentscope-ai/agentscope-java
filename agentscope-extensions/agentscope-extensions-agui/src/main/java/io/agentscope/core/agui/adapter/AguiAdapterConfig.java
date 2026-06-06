@@ -197,7 +197,7 @@ public class AguiAdapterConfig {
          * Set whether to enable acting chunk emissions.
          *
          * <p>When enabled, tools can emit intermediate chunks (e.g., Custom events for progress
-         * or real-time logs) during execution. Default is true.
+         * or real-time logs) during execution. Default is false.
          *
          * @param enableActingChunk true to enable acting chunks
          * @return This builder
