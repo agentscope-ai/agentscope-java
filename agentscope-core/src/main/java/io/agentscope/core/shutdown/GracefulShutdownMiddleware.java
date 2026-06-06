@@ -16,6 +16,7 @@
 package io.agentscope.core.shutdown;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.ActingInput;
@@ -29,9 +30,12 @@ import reactor.core.publisher.Flux;
 /**
  * System middleware that integrates graceful shutdown into the agent lifecycle.
  *
- * <p>Request registration and unregistration are handled by {@code AgentBase.call()}
- * via {@code Mono.using} (setup registers, cleanup unregisters), guaranteeing that
- * every registered request is always unregistered regardless of success, error, or cancel.
+ * <p>Per-call request registration and unregistration are handled by {@code AgentBase.call()}:
+ * each call registers a distinct {@code requestId} (carried on the Reactor Context under {@link
+ * io.agentscope.core.agent.AgentBase#SHUTDOWN_REQUEST_ID_KEY}) and unregisters it via
+ * {@code doFinally}, guaranteeing that every registered request is always unregistered regardless
+ * of success, error, or cancel — and that concurrent calls on one agent instance are tracked
+ * independently.
  *
  * <p>This middleware is responsible for:
  * <ul>
@@ -62,7 +66,13 @@ public final class GracefulShutdownMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        return next.apply(input).doOnComplete(() -> manager.interruptIfShuttingDown(agent));
+        return Flux.deferContextual(
+                cv ->
+                        next.apply(input)
+                                .doOnComplete(
+                                        () ->
+                                                manager.interruptIfShuttingDown(
+                                                        currentRequestId(cv))));
     }
 
     @Override
@@ -71,6 +81,16 @@ public final class GracefulShutdownMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
-        return next.apply(input).doOnComplete(() -> manager.interruptIfShuttingDown(agent));
+        return Flux.deferContextual(
+                cv ->
+                        next.apply(input)
+                                .doOnComplete(
+                                        () ->
+                                                manager.interruptIfShuttingDown(
+                                                        currentRequestId(cv))));
+    }
+
+    private static String currentRequestId(reactor.util.context.ContextView cv) {
+        return (String) cv.getOrDefault(AgentBase.SHUTDOWN_REQUEST_ID_KEY, null);
     }
 }

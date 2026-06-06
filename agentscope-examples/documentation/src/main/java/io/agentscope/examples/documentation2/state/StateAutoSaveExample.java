@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.examples.documentation2.session;
+package io.agentscope.examples.documentation2.state;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
@@ -22,7 +22,6 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -55,7 +54,7 @@ import java.nio.file.Paths;
  *       -Dexec.mainClass=io.agentscope.examples.documentation2.session.SessionAutoSaveExample
  * </pre>
  */
-public class SessionAutoSaveExample {
+public class StateAutoSaveExample {
 
     private static final String SESSION_ID = "auto-save-demo";
     private static final String SESSION_DIR = "/tmp/agentscope-sessions";
@@ -67,13 +66,16 @@ public class SessionAutoSaveExample {
      * @throws Exception if session directory setup fails
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "AgentStateStore Auto-Save Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("AgentStateStore Auto-Save Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates automatic history persistence via AgentStateStore.\n"
                         + "AgentStateStore data is stored in: "
                         + SESSION_DIR);
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
         Path sessionDir = Paths.get(SESSION_DIR);
         Files.createDirectories(sessionDir);
 

@@ -16,14 +16,18 @@
 package io.agentscope.examples.documentation2.skill;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -66,14 +70,17 @@ public class AgentSkillExample {
      * @throws Exception if an I/O error occurs
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "Agent Skill Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Agent Skill Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "This example demonstrates a ReActAgent using a FileSystemSkillRepository.\n"
                         + "The agent will:\n"
                         + "  - Load skills from the local file system repository\n"
                         + "  - Use file tools to inspect and create skill files");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         // Resolve skill repository path
         Path skillsDir = Paths.get(SKILLS_DIR).toAbsolutePath().normalize();
@@ -111,7 +118,31 @@ public class AgentSkillExample {
                         .skillRepository(skillRepo) // replaces .skillBox(skillBox)
                         .build();
 
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("Chat started. Type 'exit' to quit.\n");
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+            Msg userMsg = new UserMessage(input.trim());
+            System.out.print("\nAgent: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
     }
 
     private static String buildSystemPrompt(Path outputDir) {

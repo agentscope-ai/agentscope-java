@@ -55,7 +55,7 @@ public class ToolNotificationMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
-        String sessionKey = resolveSessionKey(agent);
+        String sessionKey = resolveSessionKey(agent, ctx);
         if (sessionKey != null && input.toolCalls() != null) {
             for (ToolUseBlock tu : input.toolCalls()) {
                 Map<String, Object> inputData = new LinkedHashMap<>();
@@ -80,13 +80,7 @@ public class ToolNotificationMiddleware implements MiddlewareBase {
         return next.apply(input);
     }
 
-    private static String resolveSessionKey(Agent agent) {
-        RuntimeContext ctx = null;
-        if (agent instanceof HarnessAgent h) {
-            ctx = h.getRuntimeContext();
-        } else if (agent instanceof ReActAgent r) {
-            ctx = r.getRuntimeContext();
-        }
+    private static String resolveSessionKey(Agent agent, RuntimeContext ctx) {
         if (ctx == null) return null;
         if (ctx.getSessionId() != null) {
             return ctx.getSessionId();

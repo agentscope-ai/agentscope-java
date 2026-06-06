@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.examples.documentation2.session;
+package io.agentscope.examples.documentation2.state;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
@@ -24,8 +24,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
-import io.agentscope.examples.documentation2.common.MsgUtils;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
@@ -46,7 +44,7 @@ import java.util.List;
  *   <li>Replaced {@code agent.getMemory().getMessages()} with {@code agent.getAgentState().getContext()}.</li>
  * </ul>
  */
-public class SessionExample {
+public class StateExample {
 
     private static final String DEFAULT_SESSION_ID = "default_session";
     private static final BufferedReader READER =
@@ -59,12 +57,15 @@ public class SessionExample {
      * @throws Exception if an I/O error occurs
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "AgentStateStore Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("AgentStateStore Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "This example demonstrates persistent conversation sessions.\n"
                         + "Your conversations are saved and can be resumed later.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
         String sessionId = getSessionId();
 
         Path sessionPath =
@@ -138,7 +139,7 @@ public class SessionExample {
 
                 Msg response = agent.call(userMsg).block();
                 if (response != null) {
-                    System.out.println("Agent> " + MsgUtils.getTextContent(response) + "\n");
+                    System.out.println("Agent> " + response.getTextContent() + "\n");
                 } else {
                     System.out.println("Agent> [No response]\n");
                 }
@@ -163,7 +164,7 @@ public class SessionExample {
         for (int i = 0; i < messages.size(); i++) {
             Msg msg = messages.get(i);
             String role = msg.getRole() == MsgRole.USER ? "You" : "Agent";
-            String content = MsgUtils.getTextContent(msg);
+            String content = msg.getTextContent();
             if (content.length() > 100) {
                 content = content.substring(0, 97) + "...";
             }

@@ -30,7 +30,6 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 
 /**
  * AgentEventStreamExample - Demonstrates {@link ReActAgent#streamEvents} and the
@@ -77,9 +76,12 @@ public class AgentEventStreamExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) {
-        ExampleUtils.printWelcome(
-                "AgentEvent Stream Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("AgentEvent Stream Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Shows every lifecycle event emitted by streamEvents(), including tool calls.");
+        System.out.println("=".repeat(60) + "\n");
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new WeatherTools());

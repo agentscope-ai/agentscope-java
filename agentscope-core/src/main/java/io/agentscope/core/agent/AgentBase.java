@@ -36,7 +36,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
@@ -95,23 +94,14 @@ public abstract class AgentBase implements Agent {
     private final String agentId;
     private final String name;
     private final String description;
-    private final AtomicBoolean running = new AtomicBoolean(false);
-    private final boolean checkRunning;
     private final List<Hook> hooks;
     private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
-    // Interrupt state management (available to all agents)
-    private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
-    private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
-    // Hook non-null
     private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
-    private final AtomicReference<InterruptSource> interruptSource =
-            new AtomicReference<>(InterruptSource.USER);
 
     private final CopyOnWriteArrayList<RuntimeContextAware> runtimeContextAwareHooks =
             new CopyOnWriteArrayList<>();
-    private final AtomicReference<RuntimeContext> currentRuntimeContext = new AtomicReference<>();
 
     /**
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
@@ -127,7 +117,7 @@ public abstract class AgentBase implements Agent {
      * @param name Agent name
      */
     public AgentBase(String name) {
-        this(name, null, true, List.of());
+        this(name, null, List.of());
     }
 
     /**
@@ -137,7 +127,15 @@ public abstract class AgentBase implements Agent {
      * @param description Agent description
      */
     public AgentBase(String name, String description) {
-        this(name, description, true, List.of());
+        this(name, description, List.of());
+    }
+
+    /**
+     * @deprecated Use {@link #AgentBase(String, String, List)} instead.
+     */
+    @Deprecated
+    public AgentBase(String name, String description, boolean checkRunning, List<Hook> hooks) {
+        this(name, description, hooks);
     }
 
     /**
@@ -145,14 +143,12 @@ public abstract class AgentBase implements Agent {
      *
      * @param name Agent name
      * @param description Agent description
-     * @param checkRunning Whether to check running state
      * @param hooks List of hooks for monitoring/intercepting execution
      */
-    public AgentBase(String name, String description, boolean checkRunning, List<Hook> hooks) {
+    public AgentBase(String name, String description, List<Hook> hooks) {
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
-        this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
         sortHooks();
@@ -176,12 +172,10 @@ public abstract class AgentBase implements Agent {
         return description != null ? description : Agent.super.getDescription();
     }
 
-    /**
-     * Returns the {@code checkRunning} invariant configured at construction. When {@code true},
-     * {@link #call(List)} rejects re-entry while the agent is already running.
-     */
+    /** @deprecated No longer enforced; per-session serialization handles concurrency. */
+    @Deprecated
     public final boolean isCheckRunning() {
-        return checkRunning;
+        return false;
     }
 
     /**
@@ -215,6 +209,16 @@ public abstract class AgentBase implements Agent {
             "io.agentscope.core.agent.AgentBase.runtimeContext";
 
     /**
+     * Reactor Context key carrying this call's graceful-shutdown {@code requestId} (issued by {@link
+     * GracefulShutdownManager#registerRequest}). Threaded per-subscription so shutdown
+     * interrupt/save target the exact in-flight call even when one agent instance serves many
+     * concurrent calls — keying shutdown tracking by agent id would otherwise collapse concurrent
+     * calls into a single entry.
+     */
+    public static final String SHUTDOWN_REQUEST_ID_KEY =
+            "io.agentscope.core.agent.AgentBase.shutdownRequestId";
+
+    /**
      * Shared {@code call()} lifecycle: acquire execution, then (inside {@code deferContextual} so
      * the caller-supplied {@link RuntimeContext} is read per-subscription) run {@link
      * #beforeAgentExecution(List, RuntimeContext)} (which returns this call's per-call scope), carry
@@ -230,24 +234,54 @@ public abstract class AgentBase implements Agent {
                                     RuntimeContext rc =
                                             (RuntimeContext)
                                                     cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
+                                    // Track this call as a distinct shutdown request (keyed by its
+                                    // own requestId, not the shared agent id) so concurrent calls
+                                    // on
+                                    // one instance are interrupted/saved/unregistered
+                                    // independently.
+                                    String requestId =
+                                            GracefulShutdownManager.getInstance()
+                                                    .registerRequest(this);
                                     Object gateKey = callSerializationKey(rc);
                                     // Build the per-call lifecycle lazily so it only runs once the
                                     // serialization gate (if any) admits this call:
                                     // beforeAgentExecution resolves/loads the session slot and must
                                     // not race a concurrent same-session call.
                                     Mono<Msg> lifecycle =
-                                            Mono.defer(() -> runLifecycleBody(msgs, rc, doCallFn));
-                                    return gateKey == null
-                                            ? lifecycle
-                                            : serializeOnKey(gateKey, lifecycle);
+                                            Mono.defer(
+                                                    () ->
+                                                            runLifecycleBody(
+                                                                    msgs, rc, doCallFn, requestId));
+                                    Mono<Msg> gated =
+                                            gateKey == null
+                                                    ? lifecycle
+                                                    : serializeOnKey(gateKey, lifecycle);
+                                    return gated.contextWrite(
+                                                    c ->
+                                                            requestId == null || requestId.isEmpty()
+                                                                    ? c
+                                                                    : c.put(
+                                                                            SHUTDOWN_REQUEST_ID_KEY,
+                                                                            requestId))
+                                            .doFinally(
+                                                    sig ->
+                                                            GracefulShutdownManager.getInstance()
+                                                                    .unregisterRequest(requestId));
                                 }),
                 this::releaseExecution,
                 true);
     }
 
     private Mono<Msg> runLifecycleBody(
-            List<Msg> msgs, RuntimeContext rc, Function<List<Msg>, Mono<Msg>> doCallFn) {
+            List<Msg> msgs,
+            RuntimeContext rc,
+            Function<List<Msg>, Mono<Msg>> doCallFn,
+            String requestId) {
         Object scope = beforeAgentExecution(msgs, rc);
+        // Bind this call's resolved per-session state to the tracked shutdown request so graceful
+        // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
+        // no-arg "most-recently-active" accessors.
+        GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
@@ -381,96 +415,32 @@ public abstract class AgentBase implements Agent {
         systemHooks.remove(hook);
     }
 
-    /**
-     * Interrupt the current agent execution.
-     * Sets an interrupt flag that will be checked by the agent at appropriate checkpoints.
-     */
+    /** @deprecated Subclasses should implement per-session interrupt via RuntimeContext. */
+    @Deprecated
     @Override
-    public void interrupt() {
-        interruptSource.set(InterruptSource.USER);
-        interruptFlag.set(true);
-    }
+    public void interrupt() {}
 
-    /**
-     * Interrupt the current agent execution with a user message.
-     * Sets an interrupt flag and associates a user message with the interruption.
-     *
-     * @param msg User message associated with the interruption
-     */
+    /** @deprecated Subclasses should implement per-session interrupt via RuntimeContext. */
+    @Deprecated
     @Override
-    public void interrupt(Msg msg) {
-        interruptSource.set(InterruptSource.USER);
-        interruptFlag.set(true);
-        if (msg != null) {
-            userInterruptMessage.set(msg);
-        }
-    }
+    public void interrupt(Msg msg) {}
 
-    /**
-     * Interrupt execution with explicit source.
-     *
-     * @param source interruption source
-     */
-    public void interrupt(InterruptSource source) {
-        interruptSource.set(source != null ? source : InterruptSource.SYSTEM);
-        interruptFlag.set(true);
-    }
+    /** @deprecated Subclasses should implement per-session interrupt via RuntimeContext. */
+    @Deprecated
+    public void interrupt(InterruptSource source) {}
 
-    /**
-     * Check if the agent execution has been interrupted (reactive version).
-     * Returns a Mono that completes normally if not interrupted, or errors with
-     * InterruptedException if interrupted.
-     *
-     * <p>Subclasses should call this at appropriate checkpoints in their Mono chains.
-     * For simple agents (like UserAgent), checkpoints may not be needed.
-     * For complex agents (like ReActAgent), call this at:
-     * <ul>
-     *   <li>Start of each iteration</li>
-     *   <li>Before/after reasoning</li>
-     *   <li>Before/after each tool execution</li>
-     *   <li>During streaming (each chunk)</li>
-     * </ul>
-     *
-     * <p>Example usage:
-     * <pre>{@code
-     * return checkInterruptedAsync()
-     *     .then(reasoning())
-     *     .flatMap(result -> checkInterruptedAsync().thenReturn(result))
-     *     .flatMap(result -> executeTools(result));
-     * }</pre>
-     *
-     * @return Mono that completes if not interrupted, or errors if interrupted
-     */
+    /** @deprecated No longer needed; ReActAgent uses per-session InterruptControl. */
+    @Deprecated
     protected Mono<Void> checkInterruptedAsync() {
-        return Mono.defer(
-                () ->
-                        interruptFlag.get()
-                                ? Mono.error(
-                                        new InterruptedException("Agent execution interrupted"))
-                                : Mono.empty());
+        return Mono.empty();
     }
 
-    /**
-     * Reset the interrupt flag and associated state.
-     * This is called at the beginning of each call() to prepare for new execution.
-     */
-    protected void resetInterruptFlag() {
-        interruptFlag.set(false);
-        userInterruptMessage.set(null);
-        interruptSource.set(InterruptSource.USER);
-    }
+    /** @deprecated No-op; per-session interrupt state is managed by AgentState.interruptControl(). */
+    @Deprecated
+    protected void resetInterruptFlag() {}
 
-    /**
-     * Create interrupt context from current interrupt state.
-     * Helper method to avoid code duplication.
-     *
-     * @return InterruptContext with current user message
-     */
     private InterruptContext createInterruptContext() {
-        return InterruptContext.builder()
-                .source(interruptSource.get())
-                .userMessage(userInterruptMessage.get())
-                .build();
+        return InterruptContext.builder().source(InterruptSource.USER).build();
     }
 
     /**
@@ -481,33 +451,12 @@ public abstract class AgentBase implements Agent {
      * @return this agent instance
      */
     private AgentBase acquireExecution() {
-        if (checkRunning && !running.compareAndSet(false, true)) {
-            throw new IllegalStateException("Agent is still running, please wait for it to finish");
-        }
-        try {
-            resetInterruptFlag();
-            GracefulShutdownManager.getInstance().ensureAcceptingRequests();
-            GracefulShutdownManager.getInstance().registerRequest(this);
-        } catch (RuntimeException ex) {
-            if (checkRunning) {
-                running.set(false);
-            }
-            throw ex;
-        }
+        GracefulShutdownManager.getInstance().ensureAcceptingRequests();
         return this;
     }
 
-    /**
-     * Release execution resources after a {@code call()} invocation.
-     * Used as the {@code resourceCleanup} in {@link Mono#using} — guaranteed to run
-     * regardless of how the reactive chain terminates (success, error, or cancel).
-     *
-     * @param resource the agent instance (ignored, uses {@code this})
-     */
     private void releaseExecution(AgentBase resource) {
         afterAgentExecution();
-        running.set(false);
-        GracefulShutdownManager.getInstance().unregisterRequest(this);
     }
 
     /**
@@ -528,24 +477,16 @@ public abstract class AgentBase implements Agent {
         };
     }
 
-    /**
-     * Get the interrupt flag for access by subclasses.
-     * Subclasses can use this flag to implement custom interrupt-checking logic
-     * in addition to the standard checkInterruptedAsync() method.
-     *
-     * @return The atomic boolean interrupt flag
-     */
+    /** @deprecated No-op stub. */
+    @Deprecated
     protected AtomicBoolean getInterruptFlag() {
-        return interruptFlag;
+        return new AtomicBoolean(false);
     }
 
-    /**
-     * Get current interruption source.
-     *
-     * @return interruption source
-     */
+    /** @deprecated Returns USER. Per-session interrupt source is on AgentState.interruptControl(). */
+    @Deprecated
     protected InterruptSource getInterruptSource() {
-        return interruptSource.get();
+        return InterruptSource.USER;
     }
 
     /**
@@ -594,11 +535,15 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
-     * Current per-call {@link RuntimeContext} when bound (e.g. by {@code ReActAgent} during a
-     * {@code call}).
+     * Returns the current per-call {@link RuntimeContext}, or {@code null} when the agent keeps no
+     * per-call scope. The base implementation returns {@code null}; agents with per-call state
+     * (e.g. {@code ReActAgent}) override this to return their active call scope's context. Because
+     * the value is sourced from the agent's most-recently-activated scope, under concurrent calls
+     * on one instance this reflects the latest call — middlewares/tools that need their own call's
+     * context should read it from the per-subscription {@link RuntimeContext} they are handed.
      */
     public RuntimeContext getRuntimeContext() {
-        return currentRuntimeContext.get();
+        return null;
     }
 
     /**
@@ -626,24 +571,23 @@ public abstract class AgentBase implements Agent {
     protected void afterAgentExecution() {}
 
     /**
-     * Binds {@code ctx} to the agent reference and all {@link RuntimeContextAware} hooks
-     * registered for this agent.
+     * Pushes {@code ctx} to all {@link RuntimeContextAware} hooks registered for this agent. The
+     * per-call {@link RuntimeContext} itself is no longer stored on a shared instance field; it
+     * lives on the agent's per-call scope (see {@link #getRuntimeContext()}).
      */
     protected void bindRuntimeContextToHooks(RuntimeContext ctx) {
-        currentRuntimeContext.set(ctx);
         for (RuntimeContextAware h : runtimeContextAwareHooks) {
             h.setRuntimeContext(ctx);
         }
     }
 
     /**
-     * Clears {@link #getRuntimeContext()} and nulls all {@link RuntimeContextAware} hooks.
+     * Clears the {@link RuntimeContext} previously pushed to all {@link RuntimeContextAware} hooks.
      */
     protected void unbindRuntimeContextFromHooks() {
         for (RuntimeContextAware h : runtimeContextAwareHooks) {
             h.setRuntimeContext(null);
         }
-        currentRuntimeContext.set(null);
     }
 
     private void registerRuntimeContextHookIfNeeded(Hook hook) {

@@ -324,7 +324,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 7. 一个完整的生产 builder 模板
 
-`HarnessAgent` **不是线程安全的**——一个实例同一时刻只能处理一个 `call()`。生产 Web 服务中应使用工厂方法为每个请求创建独立实例。共享依赖（model、状态存储、sandbox spec、skill repository）均为线程安全；只有 agent 实例本身是 per-request 的：
+Agent 在调用之间是无状态的——单例即可服务并发请求。每次 `call()` 通过 `RuntimeContext` 的 `(userId, sessionId)` 定位状态，互不干扰。以下是一个生产级 agent 配置模板：
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -348,7 +348,7 @@ import redis.clients.jedis.JedisPooled;
 
 public class ProductionAgentFactory {
 
-    // --- 可共享的线程安全依赖（应用启动时创建一次） ---
+    // --- 共享依赖（应用启动时创建一次） ---
     private final Path workspace = Paths.get("/var/agentscope/workspace");
     private final JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
     private final RedisAgentStateStore stateStore = RedisAgentStateStore.builder().jedisClient(jedis).build();
@@ -408,7 +408,7 @@ agent.call(msg, RuntimeContext.builder()
 
 ## 8. 常见坑位
 
-- **单个 agent 实例服务并发请求**——`ReActAgent` 不是线程安全的，一个实例同一时刻只能处理一个 `call()`（第二个并发调用直接抛 `IllegalStateException`）。在 Web / 服务端环境下应通过工厂方法每个请求创建一个新实例——`Model`、`Toolkit`（模板）和 `AgentStateStore` 均可安全共享。参见 [Agent — 线程安全](../building-blocks/agent.md#线程安全与并发) 中的工厂模式和 Spring Boot 参考示例 `StreamingWebExample.java`。
+- **忘记传 `RuntimeContext`**——不传 `sessionId` 时所有请求共享 `defaultSessionId` 的状态，造成串台。在多用户场景下，**每次 `call()` 都应通过 `RuntimeContext.builder().userId(...).sessionId(...).build()` 传入**，确保各会话状态隔离。参见 [Agent — 多用户并发](../building-blocks/agent.md#多用户--多会话并发)。
 - **`java.nio.Files` 写工作区**——在沙箱 / Remote 模式下落到错的位置。永远走 `agent.getWorkspaceManager()`。**例外**：builder 装配时的种子文件（`initWorkspaceIfAbsent` 之类）那时还没有运行时上下文，用 `java.nio.Files` 是 OK 的。
 - **`tools.json` 的 `allow` 会过滤内置工具**——用白名单时务必把 `read_file` / `memory_search` / `agent_spawn` 这些保留下来，否则整套内置工具一起被砍。
 - **`IsolationScope` 改了，旧数据不会自动迁移**——上线前定下来，别上线后改。改了等同于"换了一个命名空间"。

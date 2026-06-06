@@ -150,61 +150,41 @@ The `ModelRegistry` string form (`<provider>:<model>`) supports `dashscope` / `o
 | `reactConfig` | `ReactConfig` | default | Max iterations and reject handling |
 | `maxIters` | `int` | `10` | Max iterations of the ReAct main loop (alternative to `reactConfig`) |
 
-## Thread safety and concurrency
+## Multi-user / multi-session concurrency
 
-:::{warning}
-`ReActAgent` and `HarnessAgent` are **not thread-safe**. A single instance can only process one `call()` at a time — a second concurrent invocation on the same instance throws `IllegalStateException("Agent is still running")`.
-:::
-
-For web services and other concurrent scenarios, **create one agent instance per request** (or per session with external queuing). The recommended pattern is a factory method that holds the shared, thread-safe dependencies and builds a fresh agent for each incoming request:
+`ReActAgent` is **stateless between calls** — a single instance can serve multiple users and sessions concurrently. Each `call()` uses the `(userId, sessionId)` carried by its `RuntimeContext` to locate the correct conversation state; different sessions are fully isolated.
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.model.Model;
-import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.state.JsonFileAgentStateStore;
+import java.nio.file.Paths;
 
-public class AgentFactory {
-    private final Model model;
-    private final Toolkit toolkitTemplate;
-    private final AgentStateStore stateStore;
+// Create one agent instance at application startup (singleton)
+ReActAgent agent = ReActAgent.builder()
+        .name("assistant")
+        .sysPrompt("You are a helpful assistant.")
+        .model("dashscope:qwen-plus")
+        .stateStore(new JsonFileAgentStateStore(
+                Paths.get(System.getProperty("user.home"), ".agentscope/sessions")))
+        .build();
 
-    public AgentFactory(Model model, Toolkit toolkitTemplate, AgentStateStore stateStore) {
-        this.model = model;
-        this.toolkitTemplate = toolkitTemplate;
-        this.stateStore = stateStore;
-    }
+// In your HTTP handler — different requests pass different RuntimeContexts, fully isolated
+agent.call(List.of(new UserMessage("Hello")),
+        RuntimeContext.builder().userId("alice").sessionId("session-1").build()).block();
 
-    /** Creates an independent agent for the given session. Safe to call concurrently. */
-    public ReActAgent create(String sessionId) {
-        return ReActAgent.builder()
-                .name("assistant")
-                .sysPrompt("You are a helpful assistant.")
-                .model(model)                   // stateless — safe to share
-                .toolkit(toolkitTemplate)       // build() calls toolkit.copy() internally
-                .stateStore(stateStore)         // designed for concurrent access
-                .defaultSessionId(sessionId)
-                .build();
-    }
-}
+agent.call(List.of(new UserMessage("Hi there")),
+        RuntimeContext.builder().userId("bob").sessionId("session-2").build()).block();
 ```
 
-**What can be shared across instances:**
+At the start of each `call()`, the agent automatically loads the `AgentState` (conversation context, permission rules, etc.) for the given `(userId, sessionId)`. When the call finishes, the state is saved back. Different sessions are completely isolated.
 
-| Object | Thread-safe? | Notes |
-|--------|:---:|-------|
-| `Model` | Yes | Stateless HTTP client wrapper — share freely |
-| `Toolkit` (as template) | Yes | `build()` deep-copies it via `toolkit.copy()`; the template is never mutated at runtime |
-| `AgentStateStore` | Yes | All built-in implementations (`JsonFileAgentStateStore`, `InMemoryAgentStateStore`) handle concurrent access |
+:::{tip}
+Calls targeting the same `(userId, sessionId)` are **serialized** — a second request waits for the first to complete. Calls targeting different sessions run in parallel.
+:::
 
-**What is per-instance:**
-
-| Object | Notes |
-|--------|-------|
-| `AgentState` | Mutable conversation context — one per `(userId, sessionId)` slot |
-| `PermissionEngine` | Accumulates allowed rules per session |
-
-A complete Spring Boot example of this pattern: `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
+A complete Spring Boot example: `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
 
 ## Running an agent
 
@@ -473,6 +453,88 @@ String json = state.toJson();               // serialize to JSON
 ```
 
 For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Harness — Context](../harness/context.md).
+
+## Structured Output
+
+Structured output forces the agent to respond according to a JSON Schema you specify, rather than free-form text. Use it whenever your code needs to consume the agent's output programmatically — form filling, data extraction, classification, etc.
+
+### Basic usage
+
+Pass a Java class (or `JsonNode` schema) to `call`:
+
+```java
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
+
+// Define the output structure
+public record WeatherResponse(String location, String temperature, String condition) {}
+
+Msg result = agent.call(List.of(new UserMessage("What's the weather in SF?")), WeatherResponse.class).block();
+
+// Extract strongly-typed data from the result
+WeatherResponse weather = result.getStructuredData(WeatherResponse.class);
+System.out.println(weather.location());      // "San Francisco"
+System.out.println(weather.temperature());   // "18°C"
+```
+
+Structured output works alongside tools — the agent can call tools to gather information first, then emit the final result in the specified schema.
+
+### How it works
+
+The framework automatically selects the implementation path based on model capabilities:
+
+| Path | Condition | Behavior |
+|------|-----------|----------|
+| **Native** | Model supports `response_format` with tools (OpenAI, DashScope, etc.) | JSON Schema is passed directly to the model API via `response_format`; the model guarantees valid JSON output, and the loop terminates naturally |
+| **Fallback** | Model lacks native structured output (Anthropic, Ollama, etc.) | A synthetic `generate_response` tool is injected with an instruction hint; the model calls this tool to emit its structured result |
+
+Either way, the caller's code is identical — path selection is transparent.
+
+```
+┌─── call(msgs, Schema.class) ───┐
+│                                │
+│   model.supportsNative...?     │
+│      ├─ yes → response_format  │  ← zero overhead, model-native
+│      └─ no  → generate_response│  ← synthetic tool + instruction
+│                                │
+└──── returns Msg with schema ───┘
+```
+
+### Reading the result
+
+The `Msg` returned by `call` carries the parsed structured data in its metadata:
+
+```java
+// Option 1: strongly-typed extraction
+WeatherResponse data = result.getStructuredData(WeatherResponse.class);
+
+// Option 2: read as Map
+@SuppressWarnings("unchecked")
+Map<String, Object> map = (Map<String, Object>) result.getMetadata().get("_structured_output");
+```
+
+### Using a JsonNode schema
+
+If you prefer not to define a Java class, pass a raw JSON Schema:
+
+```java
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+ObjectMapper om = new ObjectMapper();
+JsonNode schema = om.readTree("""
+    {
+      "type": "object",
+      "properties": {
+        "sentiment": { "type": "string", "enum": ["positive", "negative", "neutral"] },
+        "confidence": { "type": "number" }
+      },
+      "required": ["sentiment", "confidence"]
+    }
+    """);
+
+Msg result = agent.call(List.of(new UserMessage("Analyze the sentiment of this review")), schema).block();
+```
 
 ## Further reading
 

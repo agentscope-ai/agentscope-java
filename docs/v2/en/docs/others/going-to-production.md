@@ -324,7 +324,7 @@ Pulling the single-component picks above into one table:
 
 ## 7. A complete production builder template
 
-`HarnessAgent` is **not thread-safe** — one instance handles one `call()` at a time. In production web services, use a factory that creates one agent per request. Shared dependencies (model, state store, sandbox spec, skill repository) are thread-safe; only the agent instance itself is per-request:
+The agent is stateless between calls — a singleton handles concurrent requests. Each `call()` locates state via `RuntimeContext`'s `(userId, sessionId)`, fully isolated. Here is a production-grade agent configuration template:
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -348,7 +348,7 @@ import redis.clients.jedis.JedisPooled;
 
 public class ProductionAgentFactory {
 
-    // --- Shared, thread-safe dependencies (create once at startup) ---
+    // --- Shared dependencies (create once at startup) ---
     private final Path workspace = Paths.get("/var/agentscope/workspace");
     private final JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
     private final RedisAgentStateStore stateStore = RedisAgentStateStore.builder().jedisClient(jedis).build();
@@ -408,7 +408,7 @@ agent.call(msg, RuntimeContext.builder()
 
 ## 8. Common pitfalls
 
-- **Single agent instance serving concurrent requests** — `ReActAgent` is not thread-safe; one instance handles exactly one `call()` at a time (a second concurrent call throws `IllegalStateException`). In web/server environments, create one instance per request via a factory method — `Model`, `Toolkit` (template), and `AgentStateStore` are all safe to share. See the factory pattern in [Agent — Thread Safety](../building-blocks/agent.md#thread-safety-and-concurrency) and the Spring Boot reference `StreamingWebExample.java`.
+- **Forgetting to pass `RuntimeContext`** — without a `sessionId`, all requests share the `defaultSessionId` state, causing cross-talk. In multi-user scenarios, **always pass `RuntimeContext.builder().userId(...).sessionId(...).build()` to every `call()`** to ensure state isolation. See [Agent — Multi-user Concurrency](../building-blocks/agent.md#multi-user--multi-session-concurrency).
 - **`java.nio.Files` for workspace writes** — under sandbox / Remote mode this lands in the wrong place. Always go through `agent.getWorkspaceManager()`. **Exception**: builder-time seed files (`initWorkspaceIfAbsent`-style code) — no runtime context yet, `java.nio.Files` is correct because you're seeding the local template.
 - **`tools.json`'s `allow` filters built-in tools too** — when whitelisting, keep `read_file` / `memory_search` / `agent_spawn` and friends in the list, or every built-in gets stripped.
 - **`IsolationScope` changes do not migrate existing data** — pin it before launch. Changing it post-launch is equivalent to switching to a new namespace.

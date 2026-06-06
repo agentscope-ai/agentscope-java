@@ -17,7 +17,6 @@ package io.agentscope.core.tool.subagent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -30,7 +29,6 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
-import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -162,7 +160,7 @@ public class SubAgentTool implements AgentTool {
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
                                         .build();
-                        RuntimeContext runtimeContext = resolveRuntimeContext(param);
+                        RuntimeContext runtimeContext = param.getRuntimeContext();
 
                         logger.debug(
                                 "AgentStateStore {} with agent '{}': {}",
@@ -348,20 +346,6 @@ public class SubAgentTool implements AgentTool {
             return reActAgent.call(List.of(userMsg), runtimeContext);
         }
         return agent.call(List.of(userMsg));
-    }
-
-    private RuntimeContext resolveRuntimeContext(ToolCallParam param) {
-        ToolExecutionContext context = param.getContext();
-        if (context != null) {
-            RuntimeContext runtimeContext = context.get(RuntimeContext.class);
-            if (runtimeContext != null) {
-                return runtimeContext;
-            }
-        }
-        if (param.getAgent() instanceof AgentBase agentBase) {
-            return agentBase.getRuntimeContext();
-        }
-        return null;
     }
 
     /**

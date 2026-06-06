@@ -150,59 +150,39 @@ ReActAgent agent =
 | `reactConfig` | `ReactConfig` | 默认值 | 最大迭代次数和拒绝处理方式 |
 | `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数（也可放在 `reactConfig` 中） |
 
-## 线程安全与并发
+## 多用户 / 多会话并发
 
-:::{warning}
-`ReActAgent` 和 `HarnessAgent` **不是线程安全的**。单个实例同一时刻只能处理一个 `call()` 调用——第二个并发 `call()` 会直接抛出 `IllegalStateException("Agent is still running")`。
-:::
-
-在 Web 服务等并发场景下，推荐**每次请求创建一个新的 agent 实例**（或按 session 排队串行化）。推荐的模式是一个工厂方法，持有可共享的线程安全依赖，每个请求构建一个独立的 agent：
+`ReActAgent` 在调用之间**是无状态的**——同一个 agent 实例可以同时服务多个用户和会话。每次 `call()` 通过 `RuntimeContext` 携带的 `(userId, sessionId)` 来定位该次调用应该使用哪份对话状态，互不干扰。
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.model.Model;
-import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.state.JsonFileAgentStateStore;
+import java.nio.file.Paths;
 
-public class AgentFactory {
-    private final Model model;
-    private final Toolkit toolkitTemplate;
-    private final AgentStateStore stateStore;
+// 应用启动时创建一个 agent 实例（单例）
+ReActAgent agent = ReActAgent.builder()
+        .name("assistant")
+        .sysPrompt("你是一个有帮助的助手。")
+        .model("dashscope:qwen-plus")
+        .stateStore(new JsonFileAgentStateStore(
+                Paths.get(System.getProperty("user.home"), ".agentscope/sessions")))
+        .build();
 
-    public AgentFactory(Model model, Toolkit toolkitTemplate, AgentStateStore stateStore) {
-        this.model = model;
-        this.toolkitTemplate = toolkitTemplate;
-        this.stateStore = stateStore;
-    }
+// 在 HTTP handler 中——不同请求传入不同 RuntimeContext，各自隔离
+agent.call(List.of(new UserMessage("你好")),
+        RuntimeContext.builder().userId("alice").sessionId("session-1").build()).block();
 
-    /** 为指定 session 创建独立 agent 实例。可安全并发调用。 */
-    public ReActAgent create(String sessionId) {
-        return ReActAgent.builder()
-                .name("assistant")
-                .sysPrompt("你是一个有帮助的助手。")
-                .model(model)                   // 无状态，可安全共享
-                .toolkit(toolkitTemplate)       // build() 内部会调 toolkit.copy()
-                .stateStore(stateStore)         // 为并发访问设计
-                .defaultSessionId(sessionId)
-                .build();
-    }
-}
+agent.call(List.of(new UserMessage("Hi there")),
+        RuntimeContext.builder().userId("bob").sessionId("session-2").build()).block();
 ```
 
-**可跨实例共享的对象：**
+每次 `call()` 开始时，agent 根据 `RuntimeContext` 中的 `(userId, sessionId)` 自动加载对应的 `AgentState`（对话上下文、权限规则等）；call 结束后自动保存。不同 session 的状态完全隔离。
 
-| 对象 | 线程安全? | 说明 |
-|------|:---:|------|
-| `Model` | 是 | 无状态的 HTTP 客户端封装——可随意共享 |
-| `Toolkit`（模板） | 是 | `build()` 通过 `toolkit.copy()` 深拷贝；模板在运行时不会被修改 |
-| `AgentStateStore` | 是 | 所有内置实现（`JsonFileAgentStateStore`、`InMemoryAgentStateStore`）均支持并发访问 |
-
-**每个实例独有的对象：**
-
-| 对象 | 说明 |
-|------|------|
-| `AgentState` | 可变的对话上下文——按 `(userId, sessionId)` 隔离 |
-| `PermissionEngine` | 按 session 累积已允许的规则 |
+:::{tip}
+同一个 `(userId, sessionId)` 的调用会按到达顺序**串行化执行**——第二个请求等待第一个完成后再开始。不同 session 的调用可以完全并行。
+:::
 
 Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
 
@@ -473,6 +453,88 @@ String json = state.toJson();               // 序列化为 JSON
 ```
 
 完整字段、跨节点接续、与压缩 / Plan Mode / 子 agent 的协作细节见 [Harness — Context](../harness/context.md)。
+
+## 结构化输出
+
+结构化输出让智能体按照你指定的 JSON Schema 返回结果，而不是自由文本。适用于需要程序化消费 agent 输出的场景——表单填写、数据提取、决策分类等。
+
+### 基本用法
+
+传一个 Java 类（或 `JsonNode` schema）给 `call` 即可：
+
+```java
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
+
+// 定义输出结构
+public record WeatherResponse(String location, String temperature, String condition) {}
+
+Msg result = agent.call(List.of(new UserMessage("旧金山天气如何？")), WeatherResponse.class).block();
+
+// 从结果中取出强类型数据
+WeatherResponse weather = result.getStructuredData(WeatherResponse.class);
+System.out.println(weather.location());      // "San Francisco"
+System.out.println(weather.temperature());   // "18°C"
+```
+
+结构化输出与工具可以同时使用——智能体会先调用工具完成任务，最后以指定 schema 输出最终结果。
+
+### 工作原理
+
+框架根据模型能力自动选择实现路径：
+
+| 路径 | 条件 | 行为 |
+|------|------|------|
+| **原生路径** | 模型支持 `response_format` + tools 并行（OpenAI、DashScope 等） | 将 JSON Schema 通过 `response_format` 直接传给模型 API，模型保证输出合法 JSON，循环自然结束 |
+| **降级路径** | 模型不支持原生结构化输出（Anthropic、Ollama 等） | 注入 `generate_response` 合成工具 + 指令提示，模型以 tool call 方式输出结构化结果 |
+
+无论哪条路径，调用方的代码完全相同——路径选择对用户透明。
+
+```
+┌─── call(msgs, Schema.class) ───┐
+│                                │
+│   model.supportsNative...?     │
+│      ├─ yes → response_format  │  ← 零额外开销，模型原生保证
+│      └─ no  → generate_response│  ← 合成工具 + instruction
+│                                │
+└──── 返回带 schema 数据的 Msg ──┘
+```
+
+### 从结果中读取数据
+
+`call` 返回的 `Msg` 在 metadata 中携带解析后的结构化数据：
+
+```java
+// 方式一：强类型提取
+WeatherResponse data = result.getStructuredData(WeatherResponse.class);
+
+// 方式二：作为 Map 读取
+@SuppressWarnings("unchecked")
+Map<String, Object> map = (Map<String, Object>) result.getMetadata().get("_structured_output");
+```
+
+### 使用 JsonNode Schema
+
+如果不想定义 Java 类，可以直接传 JSON Schema：
+
+```java
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+ObjectMapper om = new ObjectMapper();
+JsonNode schema = om.readTree("""
+    {
+      "type": "object",
+      "properties": {
+        "sentiment": { "type": "string", "enum": ["positive", "negative", "neutral"] },
+        "confidence": { "type": "number" }
+      },
+      "required": ["sentiment", "confidence"]
+    }
+    """);
+
+Msg result = agent.call(List.of(new UserMessage("分析这段评论的情感")), schema).block();
+```
 
 ## 延伸阅读
 

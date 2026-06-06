@@ -18,12 +18,14 @@ package io.agentscope.examples.documentation2.middleware;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.time.Instant;
 import reactor.core.publisher.Mono;
 
@@ -57,13 +59,16 @@ public class SystemPromptMiddlewareExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) throws java.io.IOException {
-        ExampleUtils.printWelcome(
-                "System Prompt Middleware Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("System Prompt Middleware Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates onSystemPrompt() to inject timestamp and environment info.\n"
                         + "Ask 'What time is it?' — the agent knows the current UTC time\n"
                         + "because the middleware injects it on every call.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         ReActAgent agent =
                 ReActAgent.builder()
@@ -87,7 +92,31 @@ public class SystemPromptMiddlewareExample {
                         .block();
         System.out.println("Agent: " + (response != null ? response.getTextContent() : "(null)"));
 
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("Chat started. Type 'exit' to quit.\n");
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+            Msg userMsg = new UserMessage(input.trim());
+            System.out.print("\nAgent: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
     }
 
     /**

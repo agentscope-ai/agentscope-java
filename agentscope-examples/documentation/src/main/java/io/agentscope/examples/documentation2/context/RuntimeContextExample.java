@@ -24,7 +24,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -43,11 +42,14 @@ import java.util.List;
 public class RuntimeContextExample {
 
     public static void main(String[] args) {
-        ExampleUtils.printWelcome(
-                "RuntimeContext Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("RuntimeContext Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Shows per-call RuntimeContext metadata and JsonFileAgentStateStore persistence.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");

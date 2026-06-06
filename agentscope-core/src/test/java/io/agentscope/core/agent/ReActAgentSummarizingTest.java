@@ -31,7 +31,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
@@ -688,11 +687,12 @@ class ReActAgentSummarizingTest {
 
     private static Msg invokeSummarizing(ReActAgent agent) {
         try {
-            // The ReAct loop (including summarizing()) now lives on the per-call CallExecution
-            // inner class; reach it through the agent's current execution scope.
-            Field execField = ReActAgent.class.getDeclaredField("exec");
-            execField.setAccessible(true);
-            Object exec = execField.get(agent);
+            // Create a CallExecution for the default session via activateSlotForContext(null)
+            Method activateMethod =
+                    ReActAgent.class.getDeclaredMethod(
+                            "activateSlotForContext", RuntimeContext.class);
+            activateMethod.setAccessible(true);
+            Object exec = activateMethod.invoke(agent, (Object) null);
             Method method = exec.getClass().getDeclaredMethod("summarizing");
             method.setAccessible(true);
             @SuppressWarnings("unchecked")

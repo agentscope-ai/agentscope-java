@@ -21,7 +21,6 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.agent.StructuredOutputHook;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
@@ -47,6 +46,8 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.formatter.ResponseFormat;
+import io.agentscope.core.formatter.openai.dto.JsonSchema;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.LegacyHookDispatcher;
 import io.agentscope.core.hook.PostActingEvent;
@@ -81,7 +82,6 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
-import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -223,9 +223,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final Toolkit toolkit;
 
-    /** Structured-output enforcement mode (TOOL_CHOICE or PROMPT). */
-    private final StructuredOutputReminder structuredOutputReminder;
-
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
@@ -250,28 +247,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     // ==================== 2.0 Core Fields ====================
 
-    /**
-     * Per-call execution scope for the active {@code (userId, sessionId)} slot, holding the
-     * slot's mutable {@link AgentState} + {@link PermissionEngine} + slot key. Swapped per-call by
-     * {@link #activateSlotForContext(RuntimeContext)}.
-     *
-     * <p>Stage A: still an instance field, mutated under {@code AgentBase.acquireExecution}
-     * serialization (the mutex), which guarantees no concurrent swap. Later stages relocate the
-     * reasoning loop onto this object and carry it per-call via the Reactor Context so the mutex
-     * can be removed.
-     */
-    private CallExecution exec;
+    /** Active per-call RuntimeContext, set during call lifecycle only. */
+    private volatile RuntimeContext activeRc;
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
-    private final ConcurrentHashMap<String, AgentState> stateCache =
-            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AgentState> stateCache = new ConcurrentHashMap<>();
 
     /**
      * Per-slot permission engine cache: runtime-added ASK rules accumulate within the owning
      * slot rather than leaking across users / sessions.
      */
-    private final ConcurrentHashMap<String, PermissionEngine>
-            permissionEngineCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, PermissionEngine> permissionEngineCache =
+            new ConcurrentHashMap<>();
 
     private final ModelConfig modelConfig;
     private final ReactConfig reactConfig;
@@ -291,17 +278,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     // ==================== Constructor ====================
 
     private ReActAgent(Builder builder, Toolkit agentToolkit) {
-        super(
-                builder.name,
-                builder.description,
-                builder.checkRunning,
-                new ArrayList<>(builder.hooks));
+        super(builder.name, builder.description, new ArrayList<>(builder.hooks));
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
-        this.structuredOutputReminder =
-                builder.structuredOutputReminder != null
-                        ? builder.structuredOutputReminder
-                        : StructuredOutputReminder.TOOL_CHOICE;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -320,39 +299,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 builder.defaultSessionId != null && !builder.defaultSessionId.isBlank()
                         ? builder.defaultSessionId
                         : (builder.name != null ? builder.name : "ReActAgent");
+        this.initialPermissionContext = builder.permissionContext;
 
-        // Eagerly activate the default slot so the toolkit / engine / hooks have a usable state
-        // out of the box. Per-call activation in beforeAgentExecution swaps this when the
-        // RuntimeContext carries a different (userId, sessionId).
-        String defaultSlot = slotKey(null, this.defaultSessionId);
-        AgentState defaultState =
-                loadOrCreateAgentStateForSlot(
-                        this.stateStore, null, this.defaultSessionId, builder, getAgentId());
-        this.stateCache.put(defaultSlot, defaultState);
-
-        // Restore toolkit activeGroups from the default slot's state (toolkit is shared across
-        // slots; per-call swaps may re-sync via syncToolkitFromState).
-        if (agentToolkit != null && !defaultState.getToolContext().getActivatedGroups().isEmpty()) {
-            agentToolkit.setActiveGroups(defaultState.getToolContext().getActivatedGroups());
-        }
         this.modelConfig = assembleModelConfig(builder);
         this.reactConfig = assembleReactConfig(builder);
-        PermissionEngine defaultEngine = new PermissionEngine(defaultState.getPermissionContext());
-        this.permissionEngineCache.put(defaultSlot, defaultEngine);
-        this.exec = new CallExecution(defaultState, defaultEngine, defaultSlot);
         this.hookDispatcher = new LegacyHookDispatcher(this);
 
-        // Wire automatic state save on shutdown / interrupt. The saver targets the current
-        // active slot — by the time shutdown fires, that's whichever slot the last call was on
-        // (or defaultSlot if no call ever happened).
         if (this.stateStore != null) {
             shutdownManager.bindStateSaver(
                     this,
-                    agentState -> {
-                        String slot = exec != null ? exec.slotKey : defaultSlot;
-                        SlotRef ref = SlotRef.parse(slot);
-                        stateStore.save(ref.userId, ref.sessionId, "agent_state", agentState);
-                    });
+                    // The saver receives the precise per-(userId, sessionId) AgentState bound to
+                    // the
+                    // interrupted request, so persist that session directly rather than the
+                    // instance "last-active" CallExecution (which is wrong under concurrency).
+                    agentState ->
+                            stateStore.save(
+                                    agentState.getUserId(),
+                                    agentState.getSessionId(),
+                                    "agent_state",
+                                    agentState));
         }
     }
 
@@ -385,9 +350,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             AgentStateStore stateStore,
             String userId,
             String sessionId,
-            Builder builder,
+            PermissionContextState permCtx,
             String agentId) {
-        AgentState fresh = freshState(builder, agentId, userId, sessionId);
+        AgentState fresh = freshState(permCtx, agentId, userId, sessionId);
         if (stateStore == null) {
             return fresh;
         }
@@ -419,14 +384,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     private static AgentState freshState(
-            Builder builder, String agentId, String userId, String sessionId) {
+            PermissionContextState permCtx, String agentId, String userId, String sessionId) {
         AgentState.Builder asb =
                 AgentState.builder().sessionId(sessionId != null ? sessionId : agentId);
         if (userId != null) {
             asb.userId(userId);
         }
-        if (builder != null && builder.permissionContext != null) {
-            asb.permissionContext(builder.permissionContext);
+        if (permCtx != null) {
+            asb.permissionContext(permCtx);
         }
         return asb.build();
     }
@@ -461,16 +426,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
         String uid = ctx != null ? ctx.getUserId() : null;
         String slot = slotKey(uid, sid);
-        CallExecution current = this.exec;
-        if (current != null && slot.equals(current.slotKey)) {
-            return current;
-        }
-        // Persist any in-flight changes to the outgoing slot before swapping. This is a
-        // best-effort sync of the toolkit's activeGroups to the state we're about to put
-        // back into the cache.
-        if (current != null) {
-            syncToolkitToState();
-        }
         final String finalUid = uid;
         final String finalSid = sid;
         AgentState loaded =
@@ -478,17 +433,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         slot,
                         k ->
                                 loadOrCreateAgentStateForSlot(
-                                        stateStore, finalUid, finalSid, null, getAgentId()));
+                                        stateStore,
+                                        finalUid,
+                                        finalSid,
+                                        initialPermissionContext,
+                                        getAgentId()));
         PermissionEngine loadedEngine =
                 permissionEngineCache.computeIfAbsent(
                         slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
-        // Expose the most-recently-activated scope on the instance field for out-of-call
-        // side-channel accessors (no-arg getAgentState() etc.); the authoritative per-call scope
-        // is the returned reference, captured per-subscription and carried on the Reactor Context.
-        this.exec = scope;
-        // Bring the toolkit's activeGroups into alignment with the freshly-active slot so
-        // the model sees the correct per-slot tool surface from the next reasoning step.
         if (toolkit != null) {
             toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
         }
@@ -541,6 +494,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
+        this.activeRc = ctx;
         bindRuntimeContextToHooks(ctx);
         // Seed per-call state onto the active execution scope. The system message is initialised
         // by consumeSystemMsgAfterPreCall; the event sink (if any) is bound in doCall() from the
@@ -553,8 +507,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     @Override
-    protected Msg seedSystemMsg(Object callScope) {
-        RuntimeContext rc = callScope instanceof CallExecution ce ? ce.rc : getRuntimeContext();
+    protected Msg seedSystemMsg(Object callExectution) {
+        RuntimeContext rc =
+                callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
         String base = sysPrompt != null ? sysPrompt.trim() : "";
         String prompt = applySystemPromptMiddlewares(base, rc);
         if (prompt == null || prompt.isEmpty()) {
@@ -610,12 +565,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {
-        CallExecution scope = callScope instanceof CallExecution ce ? ce : this.exec;
-        scope.systemMsg = systemMsg;
+        ((CallExecution) callScope).systemMsg = systemMsg;
     }
 
     @Override
     protected void afterAgentExecution() {
+        this.activeRc = null;
         unbindRuntimeContextFromHooks();
     }
 
@@ -669,31 +624,59 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     // ==================== Interrupt (per-session) ====================
 
     /**
-     * Interrupts the most-recently-activated session's in-flight call. Routes to that session's
-     * {@link InterruptControl} (on its {@link AgentState}) rather than a shared instance flag, so
-     * the {@code ReActAgent} reasoning loop observes it via its per-call scope. For concurrent
-     * multi-session use, prefer {@link #interrupt(String, String)} to target a specific session.
+     * @deprecated Use {@link #interrupt(String, String)} with explicit userId/sessionId.
      */
+    @Deprecated
     @Override
     public void interrupt() {
-        triggerInterrupt(exec, InterruptSource.USER, null);
+        interrupt(null, defaultSessionId);
     }
 
+    /** @deprecated Use {@link #interrupt(String, String, Msg)} with explicit userId/sessionId. */
+    @Deprecated
     @Override
     public void interrupt(Msg msg) {
-        triggerInterrupt(exec, InterruptSource.USER, msg);
+        interrupt(null, defaultSessionId, msg);
     }
 
+    /** @deprecated Use {@link #interrupt(String, String)} with explicit userId/sessionId. */
+    @Deprecated
     @Override
     public void interrupt(InterruptSource source) {
-        triggerInterrupt(exec, source, null);
+        AgentState target = stateCache.get(slotKey(null, defaultSessionId));
+        if (target != null) {
+            target.interruptControl().trigger(source, null);
+        }
     }
 
     /**
-     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session, if one has
-     * been loaded. No-op when the session has no cached state (i.e. no call has run for it). This is
-     * the concurrency-safe entry point: it signals exactly one session without affecting other
-     * concurrent calls on this agent instance.
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext}.
+     * Uses {@code ctx.getUserId()} and {@code ctx.getSessionId()} to locate the session.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     */
+    public void interrupt(RuntimeContext ctx) {
+        interrupt(ctx, null);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext} with an
+     * associated user message.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    public void interrupt(RuntimeContext ctx, Msg msg) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        if (sid == null || sid.isBlank()) {
+            sid = defaultSessionId;
+        }
+        getAgentState(uid, sid).interruptControl().trigger(InterruptSource.USER, msg);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session.
      *
      * @param userId the user id ({@code null} = anonymous / single-tenant)
      * @param sessionId the session id
@@ -704,19 +687,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with an
-     * associated user message. See {@link #interrupt(String, String)}.
+     * associated user message.
      */
     public void interrupt(String userId, String sessionId, Msg msg) {
-        AgentState target = stateCache.get(slotKey(userId, sessionId));
-        if (target != null) {
-            target.interruptControl().trigger(InterruptSource.USER, msg);
-        }
-    }
-
-    private void triggerInterrupt(CallExecution scope, InterruptSource source, Msg msg) {
-        if (scope != null) {
-            scope.state.interruptControl().trigger(source, msg);
-        }
+        getAgentState(userId, sessionId).interruptControl().trigger(InterruptSource.USER, msg);
     }
 
     /**
@@ -837,7 +811,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private CallExecution scopeFrom(reactor.util.context.ContextView cv) {
         Object scope = cv.getOrDefault(CALL_SCOPE_KEY, null);
-        return scope instanceof CallExecution ce ? ce : this.exec;
+        if (!(scope instanceof CallExecution ce)) {
+            throw new IllegalStateException(
+                    "No CallExecution in Reactor Context — scopeFrom called outside call"
+                            + " lifecycle");
+        }
+        return ce;
     }
 
     @Override
@@ -872,10 +851,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Structured-output call: equips this single call with a {@code generate_response} tool and a
-     * {@link StructuredOutputHook} that lives entirely on the per-call {@link CallExecution} scope
-     * (never on the shared {@link #toolkit} or instance hook list), so concurrent structured-output
-     * calls on one agent instance never collide.
+     * Structured-output call dispatcher. Routes to the native path (model's {@code response_format})
+     * when the model supports it, otherwise falls back to the synthetic {@code generate_response}
+     * tool approach.
      */
     private Mono<Msg> doStructuredCall(List<Msg> msgs, Class<?> targetClass, JsonNode schemaDesc) {
         if (targetClass == null && schemaDesc == null) {
@@ -887,6 +865,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return Mono.error(
                     new IllegalArgumentException("Cannot provide both targetClass and schemaDesc"));
         }
+        Map<String, Object> jsonSchema =
+                targetClass != null
+                        ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
+                        : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
+        if (model.supportsNativeStructuredOutput()) {
+            return doNativeStructuredCall(msgs, jsonSchema);
+        }
+        return doFallbackStructuredCall(msgs, jsonSchema);
+    }
+
+    /**
+     * Native structured-output path: passes the schema via {@code response_format} in
+     * {@link GenerateOptions}. The model returns structured JSON as text content and the
+     * ReAct loop terminates naturally (no synthetic tool needed).
+     */
+    private Mono<Msg> doNativeStructuredCall(List<Msg> msgs, Map<String, Object> jsonSchema) {
         return Mono.deferContextual(
                 cv -> {
                     CallExecution scope = scopeFrom(cv);
@@ -897,39 +891,162 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         scope.eventSink = eventSink;
                     }
 
-                    Map<String, Object> jsonSchema =
-                            targetClass != null
-                                    ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
-                                    : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
-                    scope.soTool = createStructuredOutputTool(jsonSchema);
-                    scope.soHook =
-                            new StructuredOutputHook(
-                                    structuredOutputReminder, buildGenerateOptions(), scope.state);
+                    scope.nativeResponseFormat =
+                            ResponseFormat.jsonSchema(
+                                    JsonSchema.builder()
+                                            .name(STRUCTURED_OUTPUT_TOOL_NAME)
+                                            .schema(jsonSchema)
+                                            .strict(true)
+                                            .build());
 
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
-                                        // PostCall step: compress the session context (remove the
-                                        // intermediate generate_response messages, keep the final
-                                        // response). The hook is not on the shared instance hook
-                                        // list, so we drive its post-call behaviour explicitly.
-                                        scope.soHook.onCallCompleted();
+                                        Msg out = wrapNativeStructuredResult(result);
+                                        return saveStateToSession(scope).thenReturn(out);
+                                    });
+                });
+    }
+
+    /**
+     * Fallback structured-output path: injects a {@code generate_response} synthetic tool and
+     * an instruction hint. When the model calls the tool, the loop stops naturally via
+     * {@code PostActingEvent.stopAgent()}.
+     */
+    private Mono<Msg> doFallbackStructuredCall(List<Msg> msgs, Map<String, Object> jsonSchema) {
+        return Mono.deferContextual(
+                cv -> {
+                    CallExecution scope = scopeFrom(cv);
+                    Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
+                    if (sink instanceof FluxSink) {
+                        @SuppressWarnings("unchecked")
+                        FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
+                        scope.eventSink = eventSink;
+                    }
+
+                    scope.soTool = createStructuredOutputTool(jsonSchema);
+
+                    return scope.doCallInner(msgs)
+                            .flatMap(
+                                    result -> {
                                         Msg out = result;
-                                        Msg hookResult = scope.soHook.getResultMsg();
-                                        if (hookResult != null) {
-                                            Msg extracted = extractStructuredResult(hookResult);
+                                        if (scope.soCompleted && scope.soResultMsg != null) {
+                                            ChatUsage aggregatedUsage =
+                                                    collectAggregatedUsage(scope.state);
+                                            ThinkingBlock aggregatedThinking =
+                                                    collectLastThinking(scope.state);
+                                            compressStructuredOutputContext(scope.state);
+                                            Msg extracted =
+                                                    extractStructuredResult(scope.soResultMsg);
                                             if (extracted != null) {
                                                 out =
                                                         mergeCollectedMetadata(
                                                                 extracted,
-                                                                scope.soHook.getAggregatedUsage(),
-                                                                scope.soHook
-                                                                        .getAggregatedThinking());
+                                                                aggregatedUsage,
+                                                                aggregatedThinking);
                                             }
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
                                     });
                 });
+    }
+
+    private Msg wrapNativeStructuredResult(Msg result) {
+        if (result == null) {
+            return null;
+        }
+        String text = result.getTextContent();
+        if (text == null || text.isBlank()) {
+            return result;
+        }
+        try {
+            Object parsed =
+                    io.agentscope.core.util.JsonUtils.getJsonCodec().fromJson(text, Object.class);
+            Map<String, Object> metadata =
+                    new HashMap<>(result.getMetadata() != null ? result.getMetadata() : Map.of());
+            metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, parsed);
+            return Msg.builder()
+                    .id(result.getId())
+                    .name(result.getName())
+                    .role(result.getRole())
+                    .content(result.getContent())
+                    .metadata(metadata)
+                    .timestamp(result.getTimestamp())
+                    .build();
+        } catch (Exception e) {
+            log.warn("Failed to parse native structured output as JSON: {}", e.getMessage());
+            return result;
+        }
+    }
+
+    /**
+     * Remove structured-output-related messages from the conversation context and append
+     * the final response.
+     */
+    private void compressStructuredOutputContext(AgentState agentState) {
+        List<Msg> contextMutable = agentState.contextMutable();
+        List<Msg> original = new ArrayList<>(contextMutable);
+        contextMutable.clear();
+        for (Msg msg : original) {
+            if (!isStructuredOutputRelated(msg)) {
+                contextMutable.add(msg);
+            }
+        }
+    }
+
+    private boolean isStructuredOutputRelated(Msg msg) {
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata != null
+                && Boolean.TRUE.equals(
+                        metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER))) {
+            return true;
+        }
+        if (msg.getContentBlocks(ToolUseBlock.class).stream()
+                .anyMatch(tu -> STRUCTURED_OUTPUT_TOOL_NAME.equals(tu.getName()))) {
+            return true;
+        }
+        List<ToolResultBlock> results = msg.getContentBlocks(ToolResultBlock.class);
+        return !results.isEmpty()
+                && results.stream()
+                        .allMatch(tr -> STRUCTURED_OUTPUT_TOOL_NAME.equals(tr.getName()));
+    }
+
+    private ChatUsage collectAggregatedUsage(AgentState agentState) {
+        int totalInput = 0;
+        int totalOutput = 0;
+        double totalTime = 0;
+        boolean hasUsage = false;
+        for (Msg msg : agentState.getContext()) {
+            if (isStructuredOutputRelated(msg) && msg.getRole() == MsgRole.ASSISTANT) {
+                ChatUsage usage = msg.getChatUsage();
+                if (usage != null) {
+                    hasUsage = true;
+                    totalInput += usage.getInputTokens();
+                    totalOutput += usage.getOutputTokens();
+                    totalTime += usage.getTime();
+                }
+            }
+        }
+        return hasUsage
+                ? ChatUsage.builder()
+                        .inputTokens(totalInput)
+                        .outputTokens(totalOutput)
+                        .time(totalTime)
+                        .build()
+                : null;
+    }
+
+    private ThinkingBlock collectLastThinking(AgentState agentState) {
+        ThinkingBlock last = null;
+        for (Msg msg : agentState.getContext()) {
+            if (isStructuredOutputRelated(msg) && msg.getRole() == MsgRole.ASSISTANT) {
+                ThinkingBlock tb = msg.getFirstContentBlock(ThinkingBlock.class);
+                if (tb != null) {
+                    last = tb;
+                }
+            }
+        }
+        return last;
     }
 
     /**
@@ -1122,31 +1239,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Per-call structured-output tool (the {@code generate_response} tool). Non-null only for
-         * {@code call(msgs, Class/JsonNode)} invocations. Lives on this scope rather than the shared
-         * toolkit so concurrent structured-output calls do not collide.
+         * fallback structured-output calls (when the model does not support native structured
+         * output). Lives on this scope rather than the shared toolkit so concurrent
+         * structured-output calls do not collide.
          */
         AgentTool soTool;
 
-        /**
-         * Per-call structured-output flow controller. Non-null only for structured-output calls.
-         * Fired in-loop ({@link #applyStructuredHook}) at the pre/post-reasoning and post-acting
-         * sites instead of being registered on the shared instance hook list.
-         */
-        StructuredOutputHook soHook;
+        /** Set to {@code true} when the {@code generate_response} tool completes successfully. */
+        boolean soCompleted;
+
+        /** The tool result message from the successful {@code generate_response} call. */
+        Msg soResultMsg;
+
+        /** Native structured-output format set on the per-call scope for native-path calls. */
+        ResponseFormat nativeResponseFormat;
 
         CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
             this.state = state;
             this.permissionEngine = permissionEngine;
             this.slotKey = slotKey;
-        }
-
-        /**
-         * Run this call's structured-output hook (if any) against {@code event}, applying its
-         * side effects (tool_choice forcing, gotoReasoning retry, stop-on-completion) without
-         * touching the shared instance hook list.
-         */
-        private <T extends io.agentscope.core.hook.HookEvent> Mono<T> applyStructuredHook(T event) {
-            return soHook == null ? Mono.just(event) : soHook.onEvent(event);
         }
 
         /**
@@ -1620,13 +1731,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .then(
                             hookDispatcher.firePreReasoning(
                                     state.contextMutable(), systemMsg, model.getModelName()))
-                    .flatMap(this::applyStructuredHook)
                     .flatMap(
                             event -> {
                                 GenerateOptions options =
                                         event.getEffectiveGenerateOptions() != null
                                                 ? event.getEffectiveGenerateOptions()
                                                 : buildGenerateOptions();
+                                if (nativeResponseFormat != null) {
+                                    options =
+                                            GenerateOptions.mergeOptions(
+                                                    GenerateOptions.builder()
+                                                            .responseFormat(nativeResponseFormat)
+                                                            .build(),
+                                                    options);
+                                }
                                 List<Msg> modelInput =
                                         prependSystemMsg(
                                                 event.getInputMessages(), event.getSystemMessage());
@@ -1734,7 +1852,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<Msg> runPostReasoningPipeline(Msg msg, int iter) {
             return hookDispatcher
                     .firePostReasoning(msg, model.getModelName())
-                    .flatMap(this::applyStructuredHook)
                     .flatMap(
                             event -> {
                                 Msg eventMsg = event.getReasoningMessage();
@@ -1749,7 +1866,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     GenerateReason.REASONING_STOP_REQUESTED));
                                 }
 
-                                // gotoReasoning requested (e.g., by StructuredOutputHook)
+                                // gotoReasoning requested (e.g., by a PostReasoning hook)
                                 if (event.isGotoReasoningRequested()) {
                                     List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
                                     if (gotoMsgs != null) {
@@ -2535,9 +2652,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             return hookDispatcher
                     .firePostActing(toolUse, result, toolkit, toolMsg)
-                    .flatMap(this::applyStructuredHook)
                     .doOnNext(
                             e -> {
+                                if (soTool != null
+                                        && STRUCTURED_OUTPUT_TOOL_NAME.equals(toolUse.getName())
+                                        && result.getMetadata() != null
+                                        && Boolean.TRUE.equals(
+                                                result.getMetadata().get("success"))) {
+                                    soCompleted = true;
+                                    soResultMsg = e.getToolResultMsg();
+                                    e.stopAgent();
+                                }
                                 Msg resultMsg = e.getToolResultMsg();
                                 state.contextMutable().add(resultMsg);
                             });
@@ -2781,8 +2906,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Check if the ReAct loop should terminate.
          *
-         * <p>Note: Structured output retry is now handled by StructuredOutputHook via gotoReasoning().
-         *
          * @param msg The reasoning message
          * @return true if should finish, false if should continue to acting
          */
@@ -2910,7 +3033,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     // which is not call-scoped under concurrency).
                     InterruptSource source = scope.state.interruptControl().getSource();
                     if (source == InterruptSource.SYSTEM) {
-                        shutdownManager.saveOnInterruptObserved(this);
+                        String requestId =
+                                (String) cv.getOrDefault(AgentBase.SHUTDOWN_REQUEST_ID_KEY, null);
+                        shutdownManager.saveOnInterruptObserved(requestId);
                         return Mono.error(new AgentShuttingDownException());
                     }
                     String recoveryText =
@@ -2929,7 +3054,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     protected Mono<Void> doObserve(Msg msg) {
         if (msg != null) {
-            exec.state.contextMutable().add(msg);
+            getAgentState().contextMutable().add(msg);
         }
         return Mono.empty();
     }
@@ -2939,11 +3064,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** Returns this agent's toolkit (a per-instance deep copy made at build time). */
     public Toolkit getToolkit() {
         return toolkit;
-    }
-
-    /** Returns the configured structured-output enforcement mode. */
-    public StructuredOutputReminder getStructuredOutputReminder() {
-        return structuredOutputReminder;
     }
 
     public String getSysPrompt() {
@@ -2967,20 +3087,41 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return generateOptions;
     }
 
+    /**
+     * @deprecated Use {@link #getAgentState(RuntimeContext)} or
+     *     {@link #getAgentState(String, String)} with explicit session identity.
+     *     This method delegates to the default session slot.
+     */
+    @Deprecated
     @Override
     public AgentState getAgentState() {
-        syncToolkitToState();
-        return exec.state;
+        return getAgentState(null, defaultSessionId);
+    }
+
+    @Override
+    public RuntimeContext getRuntimeContext() {
+        return activeRc;
+    }
+
+    /**
+     * Returns the {@link AgentState} for the session identified by the given {@link RuntimeContext}.
+     *
+     * @param ctx the runtime context (uses {@code getUserId()} and {@code getSessionId()})
+     * @return the agent state for the identified session
+     */
+    public AgentState getAgentState(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        if (sid == null || sid.isBlank()) {
+            sid = defaultSessionId;
+        }
+        return getAgentState(uid, sid);
     }
 
     /**
      * Returns the {@link AgentState} for the given {@code (userId, sessionId)} slot, loading it
      * from the configured {@link AgentStateStore} on first access and caching it for subsequent
-     * calls. Lets callers inspect or mutate a specific session's state outside of a {@code call()}
-     * (e.g. to toggle plan mode for one session without affecting others).
-     *
-     * <p>Unlike the no-arg {@link #getAgentState()}, this does not depend on the currently active
-     * slot and never syncs the shared toolkit's active groups into the returned state.
+     * calls.
      */
     public AgentState getAgentState(String userId, String sessionId) {
         String slot = slotKey(userId, sessionId);
@@ -2988,7 +3129,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 slot,
                 k ->
                         loadOrCreateAgentStateForSlot(
-                                stateStore, userId, sessionId, null, getAgentId()));
+                                stateStore,
+                                userId,
+                                sessionId,
+                                initialPermissionContext,
+                                getAgentId()));
+    }
+
+    /**
+     * Persists the cached {@link AgentState} for the session identified by the given
+     * {@link RuntimeContext}. No-op when no store is configured or the session has never
+     * been loaded.
+     *
+     * @param ctx the runtime context identifying the session to save
+     */
+    public void saveAgentState(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        if (sid == null || sid.isBlank()) {
+            sid = defaultSessionId;
+        }
+        saveAgentState(uid, sid);
     }
 
     /**
@@ -3013,31 +3174,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Returns the builder-time fallback {@code sessionId}, used only when a call's
-     * {@link RuntimeContext} carries no {@code sessionId}. The state actually persisted at any
-     * moment is keyed by the active slot — see {@link #getCurrentSessionId()} /
-     * {@link #getCurrentUserId()} for the live identity.
+     * Returns the builder-time fallback {@code sessionId}, used when a call's
+     * {@link RuntimeContext} carries no {@code sessionId}.
      */
     public String getDefaultSessionId() {
         return defaultSessionId;
-    }
-
-    /**
-     * Returns the {@code sessionId} of the currently active slot (the one the next save will
-     * write to). Reads from the live {@link AgentState}; the field is populated by
-     * {@link #activateSlotForContext(RuntimeContext)} on every call entry.
-     */
-    public String getCurrentSessionId() {
-        return exec != null && exec.state != null ? exec.state.getSessionId() : null;
-    }
-
-    /** Returns the {@code userId} of the currently active slot, or {@code null} if anonymous. */
-    public String getCurrentUserId() {
-        return exec != null && exec.state != null ? exec.state.getUserId() : null;
-    }
-
-    private void syncToolkitToState() {
-        syncToolkitToState(exec.state);
     }
 
     private void syncToolkitToState(AgentState state) {
@@ -3056,17 +3197,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return reactConfig;
     }
 
-    /** Returns the permission engine that gates tool execution. */
+    /** @deprecated Use {@code getAgentState(userId, sessionId).getPermissionContext()} instead. */
+    @Deprecated
     public PermissionEngine getPermissionEngine() {
-        return exec.permissionEngine;
+        String slot = slotKey(null, defaultSessionId);
+        AgentState s = getAgentState(null, defaultSessionId);
+        return permissionEngineCache.computeIfAbsent(
+                slot, k -> new PermissionEngine(s.getPermissionContext()));
     }
 
-    /**
-     * Returns the {@link PermissionContextState} backing this agent's permission engine.
-     * Convenience equivalent to {@code getAgentState().getPermissionContext()}.
-     */
+    /** @deprecated Use {@code getAgentState(userId, sessionId).getPermissionContext()} instead. */
+    @Deprecated
     public PermissionContextState getPermissionContext() {
-        return exec.state.getPermissionContext();
+        return getAgentState().getPermissionContext();
     }
 
     /** Returns the immutable list of registered middlewares. */
@@ -3119,7 +3262,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String name;
         String description;
         String sysPrompt;
-        boolean checkRunning = false;
         Model model;
         Toolkit toolkit = new Toolkit();
 
@@ -3131,9 +3273,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private boolean enableMetaTool = false;
         private boolean taskListEnabled = false;
-        private StructuredOutputReminder structuredOutputReminder =
-                StructuredOutputReminder.TOOL_CHOICE;
-
         private ToolExecutionContext toolExecutionContext;
         private boolean enablePendingToolRecovery = false;
 
@@ -3216,8 +3355,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return this;
         }
 
+        /** @deprecated No longer enforced; per-session serialization handles concurrency. */
+        @Deprecated
         public Builder checkRunning(boolean checkRunning) {
-            this.checkRunning = checkRunning;
             return this;
         }
 
@@ -3459,17 +3599,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder generateOptions(GenerateOptions generateOptions) {
             this.generateOptions = generateOptions;
-            return this;
-        }
-
-        /**
-         * Sets the structured output enforcement mode.
-         *
-         * @param reminder The structured output reminder mode, must not be null
-         * @return This builder instance for method chaining
-         */
-        public Builder structuredOutputReminder(StructuredOutputReminder reminder) {
-            this.structuredOutputReminder = reminder;
             return this;
         }
 

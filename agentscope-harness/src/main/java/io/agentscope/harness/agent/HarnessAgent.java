@@ -134,12 +134,10 @@ import reactor.core.publisher.Mono;
  *   <li>Context-overflow emergency compaction via {@link CompactionMiddleware}</li>
  * </ul>
  *
- * <p><b>Thread Safety:</b> {@code HarnessAgent} is <em>not</em> thread-safe — it delegates to a
- * single {@link ReActAgent} which processes exactly one {@code call()} at a time. A concurrent
- * invocation on the same instance throws {@link IllegalStateException}. For web services or other
- * concurrent scenarios, create one instance per request via a factory method. The
- * {@link io.agentscope.core.model.Model}, workspace {@link java.nio.file.Path}, and session
- * backend are all safe to share across instances.
+ * <p><b>Thread Safety:</b> {@code HarnessAgent} is stateless between calls and safe to use as a
+ * singleton serving multiple users/sessions concurrently. Each {@code call()} uses the
+ * {@link io.agentscope.core.agent.RuntimeContext}'s {@code (userId, sessionId)} to isolate state.
+ * Calls targeting the same session are serialized automatically; different sessions run in parallel.
  */
 public class HarnessAgent implements Agent, AutoCloseable {
 

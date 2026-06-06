@@ -16,14 +16,12 @@
 package io.agentscope.examples.documentation2.streaming;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.EventType;
-import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
-import io.agentscope.examples.documentation2.common.MsgUtils;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import org.springframework.beans.factory.InitializingBean;
@@ -132,17 +130,10 @@ public class StreamingWebExample {
 
             Msg userMsg = new UserMessage(message);
 
-            StreamOptions streamOptions =
-                    StreamOptions.builder()
-                            .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
-                            .incremental(true)
-                            .includeReasoningResult(false)
-                            .build();
-
-            return agent.stream(userMsg, streamOptions)
+            return agent.streamEvents(userMsg)
                     .subscribeOn(Schedulers.boundedElastic())
-                    .map(event -> MsgUtils.getTextContent(event.getMessage()))
-                    .filter(text -> text != null && !text.isEmpty());
+                    .filter(event -> event instanceof TextBlockDeltaEvent)
+                    .map(event -> ((TextBlockDeltaEvent) event).getDelta());
         }
 
         /**
