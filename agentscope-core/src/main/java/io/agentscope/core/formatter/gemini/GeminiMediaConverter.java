@@ -17,6 +17,7 @@ package io.agentscope.core.formatter.gemini;
 
 import com.google.genai.types.Blob;
 import com.google.genai.types.Part;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -190,10 +191,10 @@ public class GeminiMediaConverter {
      * @return File extension in lowercase (without dot)
      */
     private String extractExtension(String url) {
-        int lastDotIndex = url.lastIndexOf('.');
-        if (lastDotIndex == -1 || lastDotIndex == url.length() - 1) {
+        String extension = MediaUtils.getExtension(url);
+        if (extension.isBlank()) {
             throw new IllegalArgumentException("Cannot extract file extension from: " + url);
         }
-        return url.substring(lastDotIndex + 1).toLowerCase();
+        return extension.toLowerCase();
     }
 }

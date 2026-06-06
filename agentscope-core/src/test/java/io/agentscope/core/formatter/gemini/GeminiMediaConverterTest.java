@@ -23,11 +23,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.Blob;
 import com.google.genai.types.Part;
+import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
@@ -76,6 +80,38 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
         byte[] expectedData = "fake image content".getBytes();
         assertArrayEquals(expectedData, blob.data().get());
         assertEquals("image/png", blob.mimeType().get());
+    }
+
+    @Test
+    void testConvertImageBlockWithUrlQueryString() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/test.png",
+                exchange -> {
+                    byte[] body = "fake image content".getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().add("Content-Type", "image/png");
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream out = exchange.getResponseBody()) {
+                        out.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url =
+                    "http://127.0.0.1:" + server.getAddress().getPort() + "/test.png?token=abc123";
+            URLSource source = URLSource.builder().url(url).build();
+            ImageBlock block = ImageBlock.builder().source(source).build();
+
+            Part result = converter.convertToInlineDataPart(block);
+
+            assertNotNull(result);
+            Blob blob = result.inlineData().orElseThrow();
+            assertArrayEquals(
+                    "fake image content".getBytes(StandardCharsets.UTF_8), blob.data().get());
+            assertEquals("image/png", blob.mimeType().get());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
