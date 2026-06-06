@@ -32,6 +32,8 @@ import io.agentscope.core.message.VideoBlock;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
@@ -176,6 +178,21 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
         ImageBlock block = ImageBlock.builder().source(source).build();
 
         assertThrows(RuntimeException.class, () -> converter.convertToInlineDataPart(block));
+    }
+
+    @Test
+    void testMissingExtension() throws Exception {
+        Path fileWithoutExtension = Files.createTempFile("gemini_media_no_extension", "");
+        Files.writeString(fileWithoutExtension, "fake image content");
+        try {
+            URLSource source = URLSource.builder().url(fileWithoutExtension.toString()).build();
+            ImageBlock block = ImageBlock.builder().source(source).build();
+
+            assertThrows(
+                    IllegalArgumentException.class, () -> converter.convertToInlineDataPart(block));
+        } finally {
+            Files.deleteIfExists(fileWithoutExtension);
+        }
     }
 
     @Test
