@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
@@ -31,6 +32,7 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -42,7 +44,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
-import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -231,6 +232,7 @@ class ReActAgentNewLoopReplyTest {
         int iToolCallEnd = indexOf(events, ToolCallEndEvent.class);
         int iModelCallEnd1 = indexOf(events, ModelCallEndEvent.class);
         int iToolResultStart = indexOf(events, ToolResultStartEvent.class);
+        int iToolResultDelta = indexOf(events, ToolResultTextDeltaEvent.class);
         int iToolResultEnd = indexOf(events, ToolResultEndEvent.class);
         int iReplyEnd = indexOf(events, AgentEndEvent.class);
 
@@ -239,7 +241,12 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(iToolCallEnd > iToolCallStart);
         assertTrue(iModelCallEnd1 > iToolCallEnd);
         assertTrue(iToolResultStart > iModelCallEnd1);
+        assertTrue(iToolResultDelta > iToolResultStart);
         assertTrue(iToolResultEnd > iToolResultStart);
+        assertEquals(
+                1L, events.stream().filter(e -> e instanceof ToolResultTextDeltaEvent).count());
+        assertEquals(
+                "echo:ping", ((ToolResultTextDeltaEvent) events.get(iToolResultDelta)).getDelta());
         assertTrue(iReplyEnd > iToolResultEnd);
 
         int firstModelStart = indexOf(events, ModelCallStartEvent.class);
