@@ -1192,6 +1192,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         String replyId = UUID.randomUUID().toString().replace("-", "");
         AtomicBoolean textStarted = new AtomicBoolean(false);
         AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+        AtomicBoolean thinkingEnded = new AtomicBoolean(false);
         Set<String> startedToolCalls = ConcurrentHashMap.newKeySet();
 
         Flux<AgentEvent> modelEvents =
@@ -1215,6 +1216,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                 context,
                                                 textStarted,
                                                 thinkingStarted,
+                                                thinkingEnded,
                                                 withToolEvents
                                                         ? startedToolCalls
                                                         : ConcurrentHashMap.newKeySet(),
@@ -1230,9 +1232,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             if (textStarted.get()) {
                                 events.add(new TextBlockEndEvent(replyId, "text"));
                             }
-                            if (thinkingStarted.get()) {
-                                events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
-                            }
+                            emitThinkingBlockEndIfNeeded(
+                                    replyId, thinkingStarted, thinkingEnded, events);
                             for (String toolId : startedToolCalls) {
                                 events.add(new ToolCallEndEvent(replyId, toolId));
                             }
@@ -1249,8 +1250,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             ReasoningContext context,
             AtomicBoolean textStarted,
             AtomicBoolean thinkingStarted,
+            AtomicBoolean thinkingEnded,
             Set<String> startedToolCalls,
             List<AgentEvent> events) {
+
+        if (!(block instanceof ThinkingBlock)) {
+            emitThinkingBlockEndIfNeeded(replyId, thinkingStarted, thinkingEnded, events);
+        }
 
         if (block instanceof TextBlock tb) {
             if (textStarted.compareAndSet(false, true)) {
@@ -1279,6 +1285,16 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         new ToolCallDeltaEvent(
                                 replyId, toolId != null ? toolId : "", tub.getContent()));
             }
+        }
+    }
+
+    private void emitThinkingBlockEndIfNeeded(
+            String replyId,
+            AtomicBoolean thinkingStarted,
+            AtomicBoolean thinkingEnded,
+            List<AgentEvent> events) {
+        if (thinkingStarted.get() && thinkingEnded.compareAndSet(false, true)) {
+            events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
         }
     }
 
@@ -1488,6 +1504,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
         List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries = new ArrayList<>();
         List<ToolUseBlock> approved = new ArrayList<>();
+        Set<String> emittedToolResultIds = ConcurrentHashMap.newKeySet();
         for (ToolUseBlock tc : toolCalls) {
             if (deniedIds.contains(tc.getId())) {
                 ToolResultBlock denied =
@@ -1530,6 +1547,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         parentCtx ->
                                 Flux.<AgentEvent>create(
                                         sink -> {
+                                            sink.onDispose(
+                                                    () -> toolkit.setInternalChunkCallback(null));
+
                                             for (ToolUseBlock tool : approved) {
                                                 sink.next(
                                                         new ToolResultStartEvent(
@@ -1540,22 +1560,17 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
                                             toolkit.setInternalChunkCallback(
                                                     (toolUse, chunk) -> {
-                                                        if (chunk.getOutput() != null) {
+                                                        if (chunk.getOutput() != null
+                                                                && !chunk.getOutput().isEmpty()) {
+                                                            emittedToolResultIds.add(
+                                                                    toolUse.getId());
                                                             for (ContentBlock block :
                                                                     chunk.getOutput()) {
-                                                                if (block instanceof TextBlock tb) {
-                                                                    sink.next(
-                                                                            new ToolResultTextDeltaEvent(
-                                                                                    replyId,
-                                                                                    toolUse.getId(),
-                                                                                    tb.getText()));
-                                                                } else {
-                                                                    sink.next(
-                                                                            new ToolResultDataDeltaEvent(
-                                                                                    replyId,
-                                                                                    toolUse.getId(),
-                                                                                    block));
-                                                                }
+                                                                emitToolResultBlock(
+                                                                        sink,
+                                                                        replyId,
+                                                                        toolUse.getId(),
+                                                                        block);
                                                             }
                                                         }
                                                         hookDispatcher
@@ -1581,6 +1596,16 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                                                 ToolUseBlock,
                                                                                 ToolResultBlock>
                                                                         entry : results) {
+                                                                    if (emittedToolResultIds.add(
+                                                                            entry.getKey()
+                                                                                    .getId())) {
+                                                                        emitToolResultOutput(
+                                                                                sink,
+                                                                                replyId,
+                                                                                entry.getKey(),
+                                                                                entry.getValue()
+                                                                                        .getOutput());
+                                                                    }
                                                                     ToolResultState state =
                                                                             determineToolResultState(
                                                                                     entry
@@ -1598,6 +1623,28 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                         }));
 
         return deniedEvents.concatWith(approvedEvents);
+    }
+
+    private void emitToolResultOutput(
+            FluxSink<AgentEvent> sink,
+            String replyId,
+            ToolUseBlock toolUse,
+            List<ContentBlock> output) {
+        if (toolUse == null || output == null || output.isEmpty()) {
+            return;
+        }
+        for (ContentBlock block : output) {
+            emitToolResultBlock(sink, replyId, toolUse.getId(), block);
+        }
+    }
+
+    private void emitToolResultBlock(
+            FluxSink<AgentEvent> sink, String replyId, String toolCallId, ContentBlock block) {
+        if (block instanceof TextBlock tb) {
+            sink.next(new ToolResultTextDeltaEvent(replyId, toolCallId, tb.getText()));
+        } else {
+            sink.next(new ToolResultDataDeltaEvent(replyId, toolCallId, block));
+        }
     }
 
     /**
@@ -1924,6 +1971,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         String replyId = UUID.randomUUID().toString().replace("-", "");
         AtomicBoolean textStarted = new AtomicBoolean(false);
         AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+        AtomicBoolean thinkingEnded = new AtomicBoolean(false);
 
         Flux<AgentEvent> modelEvents =
                 mci.model().stream(mci.messages(), mci.tools(), mci.options())
@@ -1943,6 +1991,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
                                     List<AgentEvent> events = new ArrayList<>();
                                     for (ContentBlock block : chunk.getContent()) {
+                                        if (!(block instanceof ThinkingBlock)) {
+                                            emitThinkingBlockEndIfNeeded(
+                                                    replyId,
+                                                    thinkingStarted,
+                                                    thinkingEnded,
+                                                    events);
+                                        }
                                         if (block instanceof TextBlock tb) {
                                             if (textStarted.compareAndSet(false, true)) {
                                                 events.add(
@@ -1979,9 +2034,8 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                             if (textStarted.get()) {
                                 events.add(new TextBlockEndEvent(replyId, "text"));
                             }
-                            if (thinkingStarted.get()) {
-                                events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
-                            }
+                            emitThinkingBlockEndIfNeeded(
+                                    replyId, thinkingStarted, thinkingEnded, events);
                             events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
                             return Flux.fromIterable(events);
                         });

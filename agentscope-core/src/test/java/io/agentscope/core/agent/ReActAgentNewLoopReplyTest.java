@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
@@ -41,6 +42,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -161,6 +163,33 @@ class ReActAgentNewLoopReplyTest {
         long modelEnds = events.stream().filter(e -> e instanceof ModelCallEndEvent).count();
         assertEquals(1L, modelStarts);
         assertEquals(1L, modelEnds);
+    }
+
+    @Test
+    void thinkingBlockEndsBeforeTextBlockStarts() {
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(MockModel.withThinking("I am thinking.", "Final answer"))
+                        .toolkit(new Toolkit())
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        assertEquals(
+                List.of(
+                        AgentEventType.AGENT_START,
+                        AgentEventType.MODEL_CALL_START,
+                        AgentEventType.THINKING_BLOCK_START,
+                        AgentEventType.THINKING_BLOCK_DELTA,
+                        AgentEventType.THINKING_BLOCK_END,
+                        AgentEventType.TEXT_BLOCK_START,
+                        AgentEventType.TEXT_BLOCK_DELTA,
+                        AgentEventType.TEXT_BLOCK_END,
+                        AgentEventType.MODEL_CALL_END,
+                        AgentEventType.AGENT_END),
+                events.stream().map(AgentEvent::getType).toList());
     }
 
     @Test
