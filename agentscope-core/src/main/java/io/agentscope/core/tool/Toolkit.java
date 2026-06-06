@@ -335,6 +335,22 @@ public class Toolkit {
     }
 
     /**
+     * Get tool schemas filtered by an explicitly supplied set of active group names, independent
+     * of this toolkit's shared per-group activation flags.
+     *
+     * <p>Per-call / stateless variant of {@link #getToolSchemas()}: callers that track activated
+     * groups in their own per-{@code (userId, sessionId)} state (e.g. {@code ReActAgent}) use this
+     * so the model's tool surface is resolved from the call's own slot rather than from the shared,
+     * concurrently-mutated toolkit activation flags.
+     *
+     * @param activeGroups the group names to treat as active for this resolution
+     * @return List of ToolSchema objects visible for the supplied groups (plus all ungrouped tools)
+     */
+    public List<ToolSchema> getToolSchemas(java.util.Collection<String> activeGroups) {
+        return schemaProvider.getToolSchemas(activeGroups);
+    }
+
+    /**
      * Register a tool method with group, extended model, and preset parameters.
      *
      * <p>Builds a {@link ReflectiveFunctionTool} (a {@link ToolBase} subclass) so the registered

@@ -76,7 +76,7 @@ public class TaskReminderMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        AgentState state = agent != null ? agent.getAgentState() : null;
+        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
         List<Task> tasks = state == null ? List.of() : state.getTasksContext().getTasks();
         if (tasks.isEmpty()) {
             return next.apply(input);

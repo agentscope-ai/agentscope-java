@@ -195,6 +195,17 @@ public class StructuredOutputHook implements Hook {
     }
 
     /**
+     * Run the post-call context compression directly, for callers that drive this hook per-call
+     * (e.g. {@code ReActAgent} structured-output calls) rather than registering it on a shared
+     * instance hook list. Equivalent to the {@link PostCallEvent} handling above.
+     */
+    public void onCallCompleted() {
+        if (completed && agentState != null) {
+            compressContext();
+        }
+    }
+
+    /**
      * Remove structured-output-related messages from {@link AgentState#contextMutable()} and
      * append the final response.
      */

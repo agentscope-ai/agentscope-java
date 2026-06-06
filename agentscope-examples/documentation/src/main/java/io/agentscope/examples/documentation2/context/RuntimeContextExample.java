@@ -70,7 +70,7 @@ public class RuntimeContextExample {
                         .defaultSessionId("runtime-context-demo")
                         .build();
 
-        int loaded = agent.getState().getContext().size();
+        int loaded = agent.getAgentState().getContext().size();
         System.out.println("Loaded " + loaded + " message(s) from session.");
 
         RuntimeContext ctx =
@@ -87,6 +87,8 @@ public class RuntimeContextExample {
         System.out.println("Assistant: " + (second == null ? "" : second.getTextContent()));
 
         System.out.println(
-                "Final context size: " + agent.getState().getContext().size() + " message(s).");
+                "Final context size: "
+                        + agent.getAgentState().getContext().size()
+                        + " message(s).");
     }
 }

@@ -16,7 +16,7 @@ description: "HarnessAgent 的设计基石：目录布局、加载机制、跨 f
 | 类型 | 谁写 | 谁读 | 例子 |
 |------|------|------|------|
 | **静态资产**（工程师编辑） | 你 / 团队 | 框架每轮注入 system prompt 或调用时按需读 | `AGENTS.md`、`knowledge/`、`skills/`、`subagents/`、`tools.json` |
-| **运行时状态**（每次 call 写回） | 框架 / agent | 框架下次 call 时还原 | `agents/<agentId>/context/`、`agents/<agentId>/sessions/`、`agents/<agentId>/tasks/`、`plans/` |
+| **运行时状态**（每次 call 写回） | 框架 / agent | 框架下次 call 时还原 | `agents/<agentId>/sessions/`、`agents/<agentId>/tasks/`、`plans/`（序列化的 `AgentState` 本身存在 `AgentStateStore`，默认 `~/.agentscope/state/<agentId>/`，在工作区之外） |
 | **长期记忆**（跨 session 累积） | agent + 后台任务 | 框架每轮注入 system prompt + agent 用工具查询 | `MEMORY.md`、`memory/YYYY-MM-DD.md` |
 
 混在一棵树里只是为了部署方便（一个目录拷贝走就是完整 agent），框架内部走不同的读写路径。
@@ -42,7 +42,6 @@ description: "HarnessAgent 的设计基石：目录布局、加载机制、跨 f
 ├── plans/                       ← 运行时：Plan Mode 写下的计划文件
 │   └── PLAN.md
 └── agents/<agentId>/            ← 运行时：每个 agent 自己的运行时根
-    ├── context/<sessionId>/     ← 运行时：会话快照（AgentState 序列化）
     ├── sessions/                ← 运行时：会话索引 + 永不压缩对话日志
     │   ├── sessions.json
     │   └── <sessionId>.log.jsonl
@@ -137,7 +136,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 `RuntimeContext.userId` 是切多用户的钥匙——让同一个 agent 实例服务多个用户而互不串读。
 
-对**运行时数据**（sessions / tasks / memory），框架按 `NamespaceFactory` 配的命名空间给路径加前缀（本机模式是路径前缀、远端模式是 KV 命名空间、沙箱模式是状态 slot）。详见下一节"Session 与 Memory 怎么存"。
+对**运行时数据**（sessions / tasks / memory），框架按 `NamespaceFactory` 配的命名空间给路径加前缀（本机模式是路径前缀、远端模式是 KV 命名空间、沙箱模式是状态 slot）。详见下一节"状态与 Memory 怎么存"。
 
 对**静态资产**（特别是 `skills/` 和 `subagents/`），用户级目录可以**覆盖**工作区共用版：
 
@@ -208,28 +207,24 @@ HarnessAgent agent = HarnessAgent.builder()
 - **路径安全**：默认 `ROOTED` 模式，绝对路径只允许 `workspace` 和 `project`（shell cwd）这两个根之下；`..` 路径会被路径策略拦掉。
 - **最佳实践**：单进程 / 本机开发 / 单元测试 / 信任环境。生产不要直接用这个模式跑不可信代码——`execute` 是宿主 `sh -c`。
 
-## Session 与 Memory 怎么存
+## 状态与 Memory 怎么存
 
-这两类内容都是"运行时 / 长期"，不会被你手写编辑。它们的存储位置直接和 filesystem 模式挂钩。
+这两类内容都是"运行时 / 长期"，不会被你手写编辑。
 
-### Session（运行时快照）
+### Agent 状态（运行时快照）
 
-每次 `call()` 结束，`AgentState`（对话历史、压缩摘要、权限规则、Plan Mode 状态、tool state）会被序列化成一份 JSON，写到：
+每次 `call()` 结束，`AgentState`（对话历史、压缩摘要、权限规则、Plan Mode 状态、tool state）会被序列化成 JSON，按该次调用的 `(userId, sessionId)` 通过 [`AgentStateStore`](../../integration/session/index.md) 持久化；下次同 `(userId, sessionId)` 的 `call()` 自动加载回来。
 
-```
-<workspace>/[<namespace>/]agents/<agentId>/context/<sessionId>/agent_state.json
-```
+默认情况下 `HarnessAgent` 使用 `JsonFileAgentStateStore`，根目录在工作区**之外**的 `~/.agentscope/state/<agentId>/`（可通过 `agentscope.state.home` 系统属性改根目录），让运行时状态与工作区数据解耦。可通过 `.stateStore(...)` 换成别的后端。
 
-下次同 `sessionId` 的 `call()` 自动加载回来。这是 `WorkspaceSession`（`io.agentscope.harness.agent.session.WorkspaceSession`）—— `HarnessAgent` 不配 `.session(...)` 时的默认实现，基于 `JsonSession`。
-
-`agents/<agentId>/sessions/` 同时还放：
+工作区里仍然保留 `agents/<agentId>/sessions/` 下的**对话日志**（与状态存储是两个独立概念）：
 
 - **`sessions.json`** —— 该 agent 的会话索引（key 是 sessionId，value 是 summary + updatedAt）。
 - **`<sessionId>.log.jsonl`** —— **永不压缩**的原始对话日志，append-only。`session_search` / `session_history` 工具就是查它。
 
-> `WorkspaceSession` 仅适合单机。生产多副本必须换成分布式后端（`RedisSession` / `MysqlSession` ……）。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)` 但没换 Session，`build()` 会直接抛 `IllegalStateException`—— 强制提醒你别让运行时状态成为单点。
+> 默认的 `JsonFileAgentStateStore` 仅适合单机。生产多副本必须换成分布式后端（`RedisAgentStateStore` / `MysqlAgentStateStore` ……）。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)` 但没换成分布式状态存储，`build()` 会直接抛 `IllegalStateException`—— 强制提醒你别让运行时状态成为单点。
 
-完整细节（恢复链路、跨节点接续、`SessionKey`）见 [Context](./context)。
+完整细节（恢复链路、跨节点接续、`(userId, sessionId)` 寻址）见 [Context](./context)。
 
 ### Memory（长期记忆）
 
@@ -351,7 +346,7 @@ plans/
 └── PLAN.md           ← plan_write 写入的当前计划
 ```
 
-注意：`PlanModeContext`（是否处于 plan 阶段、当前计划文件路径）跟着 `AgentState` 走，是**运行时状态**，存在 `agents/<agentId>/context/<sessionId>/`。`plans/` 下只是 markdown 内容本身。详见 [Plan Mode](./plan-mode)。
+注意：`PlanModeContext`（是否处于 plan 阶段、当前计划文件路径）跟着 `AgentState` 走，是**运行时状态**，通过 `AgentStateStore` 持久化（默认 `~/.agentscope/state/<agentId>/`，在工作区之外）。`plans/` 下只是 markdown 内容本身。详见 [Plan Mode](./plan-mode)。
 
 ### `agents/<agentId>/`
 
@@ -359,8 +354,6 @@ plans/
 
 ```
 agents/<agentId>/
-├── context/<sessionId>/
-│   └── agent_state.json      ← AgentState 序列化快照（每次 call 结束写）
 ├── sessions/
 │   ├── sessions.json          ← 该 agent 的会话索引
 │   └── <sessionId>.log.jsonl  ← 永不压缩的原始对话日志（append-only）
@@ -368,7 +361,9 @@ agents/<agentId>/
     └── <sessionId>.json       ← 子 agent 后台任务记录（taskId → TaskRecord）
 ```
 
-跨节点恢复 / 多副本部署时这些数据必须共享（要么走 `RedisSession` + `RemoteFilesystemSpec`，要么走沙箱+分布式状态）。详见 [Context](./context) 与 [filesystem](./filesystem)。
+> 序列化的 `AgentState`（`agent_state`）默认**不**在工作区里——它存在配置的 `AgentStateStore`（默认 `~/.agentscope/state/<agentId>/`）。工作区里只保留上面的对话日志与任务记录。
+
+跨节点恢复 / 多副本部署时这些数据必须共享（要么走 `RedisAgentStateStore` + `RemoteFilesystemSpec`，要么走沙箱+分布式状态）。详见 [Context](./context) 与 [filesystem](./filesystem)。
 
 ### `knowledge/`
 
@@ -397,7 +392,7 @@ knowledge/
 
 - [架构](./architecture) — system prompt 是怎么拼出来的，能力之间如何协作
 - [文件系统](./filesystem) — 工作区在物理上落到哪里（本机 / 沙箱 / 共享存储）、`IsolationScope`、多用户隔离
-- [Context](./context) — `AgentState` 与 `Session` 的持久化、跨节点恢复
+- [Context](./context) — `AgentState` 与 `AgentStateStore` 的持久化、跨节点恢复
 - [记忆](./memory) — `MEMORY.md` / `memory/` 的生成与维护、压缩、卸载
 - [技能](./skill) — 四层合成、自学习闭环、`<available_skills>` 块
 - [子 Agent](./subagent) — `subagents/` 声明文件、同步/后台、流式转发

@@ -1,6 +1,6 @@
 ---
 title: "Going to Production"
-description: "From single-node prototype to multi-replica deployment: component selection and configuration for Session, Filesystem, Skill, Sandbox, Snapshot, and Observability"
+description: "From single-node prototype to multi-replica deployment: component selection and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot, and Observability"
 ---
 
 > Running a `HarnessAgent` on your laptop is easy. Shipping it to production is another story — replicas must share sessions, users must stay isolated, untrusted code must be sandboxed, and pods must be able to resume mid-conversation after a restart. This page only covers what **changes between single-node and distributed production**: which components must be swapped, what to swap them with, and why the builder throws `IllegalStateException` when you miss something.
@@ -11,11 +11,11 @@ In the source, any component documented as "distributed-friendly", "cross-replic
 
 | Dimension | Single-node default (dev / demo) | Distributed production swap |
 |-----------|----------------------------------|-----------------------------|
-| `Session` (`AgentState` persistence) | `WorkspaceSession` (local JSON) | `RedisSession` / `MysqlSession` (or `RedissonSession`) |
+| `AgentStateStore` (`AgentState` persistence) | `JsonFileAgentStateStore` (local JSON) | `RedisAgentStateStore` / `MysqlAgentStateStore` |
 | Filesystem | `LocalFilesystemSpec` (no `filesystem(...)` call) | `RemoteFilesystemSpec(BaseStore)` or `SandboxFilesystemSpec` |
 | `BaseStore` (Remote backend) | `InMemoryStore` (tests) | `RedisStore` / `JdbcStore` (MySQL / PG / SQLite / H2) |
 | Skill source | `workspace/skills/` | `GitSkillRepository` / `MysqlSkillRepository` / `NacosSkillRepository` |
-| Sandbox state | `WorkspaceSession` on local disk | distributed Session-backed store |
+| Sandbox state | local `JsonFileAgentStateStore` on disk | distributed `AgentStateStore`-backed store |
 | Sandbox snapshots | `NoopSnapshotSpec` / `LocalSnapshotSpec` | `OssSnapshotSpec` / `RedisSnapshotSpec` / custom `RemoteSnapshotSpec` |
 | Sandbox exec serialization | none needed in-process | `RedisSandboxExecutionGuard` (required for AGENT/GLOBAL scope across replicas) |
 | Observability | no tracing by default | `OtelTracingMiddleware` + OpenTelemetry SDK |
@@ -25,26 +25,26 @@ In the source, any component documented as "distributed-friendly", "cross-replic
 - `filesystem(RemoteFilesystemSpec)` without swapping `stateStore(...)` → `build()` throws `IllegalStateException` telling you to provide a distributed `AgentStateStore`.
 - `filesystem(SandboxFilesystemSpec)` with a local `AgentStateStore` → `build()` succeeds but logs a **warning** that sandbox state won't survive JVM restarts and can't be shared across instances. This is intentional for dev/test convenience; in production always supply a distributed store.
 
-## 1. Session backend: put `AgentState` somewhere durable first
+## 1. State store backend: put `AgentState` somewhere durable first
 
-`AgentState` (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through `Session`.
+`AgentState` (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through an [`AgentStateStore`](../../integration/session/index.md).
 
 | Implementation | Module | When to use |
 |----------------|--------|-------------|
-| `InMemorySession` | `agentscope-core` | unit tests; everything dies on process exit |
-| `JsonSession` | `agentscope-core` | single-machine dev; one directory per `SessionKey` |
-| `WorkspaceSession` | `agentscope-harness` | **HarnessAgent default**; writes to `<workspace>/agents/<agentId>/context/<sessionId>/`; **single-machine, single-tenant** |
-| `RedisSession` | `agentscope-extensions-session-redis` | **multi-replica production default**; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
-| `MysqlSession` | `agentscope-extensions-session-mysql` | when sessions must live in a relational store (audit / reporting / joins) |
+| `InMemoryAgentStateStore` | `agentscope-core` | unit tests; everything dies on process exit |
+| `JsonFileAgentStateStore` | `agentscope-core` | single-machine dev; one directory per `(userId, sessionId)`. **HarnessAgent default**, rooted at `~/.agentscope/state/<agentId>/`; **single-machine** |
+| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | **multi-replica production default**; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
+| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | when state must live in a relational store (audit / reporting / joins) |
 
-**Redis with any of the three client adapters** through `RedisSession.builder()`:
+**Redis with any of the three client adapters** through `RedisAgentStateStore.builder()`:
 
 ```java
-import io.agentscope.core.session.redis.RedisSession;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.redis.RedisAgentStateStore;
 import redis.clients.jedis.JedisPooled;
 
 // Jedis Standalone
-Session session = RedisSession.builder()
+AgentStateStore stateStore = RedisAgentStateStore.builder()
         .jedisClient(new JedisPooled("redis://localhost:6379"))
         .keyPrefix("myapp:session:")
         .build();
@@ -56,15 +56,13 @@ Session session = RedisSession.builder()
 // .redissonClient(redisson)
 ```
 
-**`SessionKey` design.** `SimpleSessionKey.of(sessionId)` only covers single-tenant. In production, implement `SessionKey` and encode tenant / user / agent into the identifier so multi-tenant calls can't cross-read — `RedisSession` uses it as part of the Redis key, `MysqlSession` uses it as the primary key:
+**Per-tenant isolation.** A bare `sessionId` only covers single-tenant. In production, set both `userId` and `sessionId` on each call's `RuntimeContext` so multi-tenant calls can't cross-read — the store addresses each slot by the `(userId, sessionId)` pair (`RedisAgentStateStore` folds `userId` into the Redis key; `MysqlAgentStateStore` folds it into the primary key). Compose any other dimensions (tenant, agent) into the `sessionId` string yourself:
 
 ```java
-class TenantSessionKey implements SessionKey {
-    private final String tenantId, userId, agentId, sessionId;
-    @Override public String toIdentifier() {
-        return tenantId + ":" + userId + ":" + agentId + ":" + sessionId;
-    }
-}
+agent.call(msg, RuntimeContext.builder()
+        .userId(tenantId + ":" + userId)
+        .sessionId(agentId + ":" + sessionId)
+        .build()).block();
 ```
 
 Full mechanics in [Harness — Context](../harness/context.md).
@@ -119,7 +117,7 @@ HarnessAgent agent = HarnessAgent.builder()
         .name("multi-tenant-agent")
         .model(model)
         .workspace(workspace)
-        .session(RedisSession.builder().jedisClient(jedis).build())
+        .stateStore(RedisAgentStateStore.builder().jedisClient(jedis).build())
         .filesystem(new RemoteFilesystemSpec(store)
                 .isolationScope(IsolationScope.USER)
                 .workspaceIndex(WorkspaceIndex.open(workspace)))  // speeds up ls/glob
@@ -257,7 +255,7 @@ HarnessAgent agent = HarnessAgent.builder()
         .name("coding-agent")
         .model(model)
         .workspace(workspace)
-        .stateStore(RedisSession.builder().jedisClient(jedis).build())
+        .stateStore(RedisAgentStateStore.builder().jedisClient(jedis).build())
         .filesystem(new DockerFilesystemSpec()
                 .image("python:3.12-slim")
                 .isolationScope(IsolationScope.USER)
@@ -314,7 +312,7 @@ Pulling the single-component picks above into one table:
 
 | Concern | Recommended combo |
 |---------|-------------------|
-| Sessions / `AgentState` | `RedisSession` (Lettuce Cluster or Sentinel) + custom multi-dimensional `SessionKey` |
+| Sessions / `AgentState` | `RedisAgentStateStore` (Lettuce Cluster or Sentinel) + `(userId, sessionId)` carrying tenant/user/agent dimensions |
 | Workspace files | `RemoteFilesystemSpec(RedisStore or JdbcStore)` + `WorkspaceIndex` + `IsolationScope.USER` |
 | Large objects / snapshots | `OssSnapshotSpec` (do not write to Redis) |
 | Cross-node sandbox sharing | AgentRun + NAS mount, or self-managed K8s + `RedisSandboxExecutionGuard` |
@@ -326,11 +324,11 @@ Pulling the single-component picks above into one table:
 
 ## 7. A complete production builder template
 
-`HarnessAgent` is **not thread-safe** — one instance handles one `call()` at a time. In production web services, use a factory that creates one agent per request. Shared dependencies (model, session, sandbox spec, skill repository) are thread-safe; only the agent instance itself is per-request:
+`HarnessAgent` is **not thread-safe** — one instance handles one `call()` at a time. In production web services, use a factory that creates one agent per request. Shared dependencies (model, state store, sandbox spec, skill repository) are thread-safe; only the agent instance itself is per-request:
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.redis.RedisSession;
+import io.agentscope.core.state.redis.RedisAgentStateStore;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
@@ -353,7 +351,7 @@ public class ProductionAgentFactory {
     // --- Shared, thread-safe dependencies (create once at startup) ---
     private final Path workspace = Paths.get("/var/agentscope/workspace");
     private final JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
-    private final RedisSession session = RedisSession.builder().jedisClient(jedis).build();
+    private final RedisAgentStateStore stateStore = RedisAgentStateStore.builder().jedisClient(jedis).build();
     private final OssSnapshotSpec oss = new OssSnapshotSpec(
             "oss-cn-hangzhou.aliyuncs.com",
             System.getenv("OSS_AK"), System.getenv("OSS_SK"),
@@ -373,7 +371,7 @@ public class ProductionAgentFactory {
                 .workspace(workspace)
 
                 // State store + filesystem must be swapped together for distributed
-                .stateStore(session)
+                .stateStore(stateStore)
                 .filesystem(sandboxSpec)
 
                 // Memory compaction + large-result offload (mandatory for long-running sessions)
@@ -414,7 +412,7 @@ agent.call(msg, RuntimeContext.builder()
 - **`java.nio.Files` for workspace writes** — under sandbox / Remote mode this lands in the wrong place. Always go through `agent.getWorkspaceManager()`. **Exception**: builder-time seed files (`initWorkspaceIfAbsent`-style code) — no runtime context yet, `java.nio.Files` is correct because you're seeding the local template.
 - **`tools.json`'s `allow` filters built-in tools too** — when whitelisting, keep `read_file` / `memory_search` / `agent_spawn` and friends in the list, or every built-in gets stripped.
 - **`IsolationScope` changes do not migrate existing data** — pin it before launch. Changing it post-launch is equivalent to switching to a new namespace.
-- **`WorkspaceSession` single-machine constraint**: a K8s multi-replica build throws `IllegalStateException` on the very first `build()`. **This is intentional** — you can't park session state on one pod's local disk.
+- **Local `AgentStateStore` single-machine constraint**: a K8s multi-replica build that pairs a distributed filesystem with a local `JsonFileAgentStateStore` throws `IllegalStateException` on the very first `build()`. **This is intentional** — you can't park agent state on one pod's local disk.
 - **`NacosSkillRepository` not closed** — subscriptions leak; at fleet scale Nacos complains. Use Spring `@PreDestroy` or `destroyMethod="close"`.
 - **OSS / NAS without IAM** — `OssSnapshotSpec` takes platform AK/SK; RAM Role + STS temporary credentials is more robust.
 - **Local `AgentStateStore` with sandbox mode is dev-only** — the build-time warning is intentional; don't ignore it in production.
@@ -423,7 +421,7 @@ agent.call(msg, RuntimeContext.builder()
 
 - [Quickstart](../quickstart.md) — end-to-end first `HarnessAgent`
 - [Harness Architecture](../harness/architecture.md) — how capabilities cooperate
-- [Context](../harness/context.md) — `AgentState` / `Session` / cross-node recovery
+- [Context](../harness/context.md) — `AgentState` / `AgentStateStore` / cross-node recovery
 - [Workspace](../harness/workspace.md) — directory layout, two-layer reads, `tools.json`
 - [Filesystem](../harness/filesystem.md) — three deployment modes, `IsolationScope`
 - [Sandbox](../harness/sandbox.md) — sandbox details, five backends, snapshot mechanics

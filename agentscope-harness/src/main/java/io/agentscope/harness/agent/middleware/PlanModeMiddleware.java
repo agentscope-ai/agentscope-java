@@ -105,7 +105,7 @@ public class PlanModeMiddleware implements MiddlewareBase {
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
-        AgentState state = agent != null ? agent.getAgentState() : null;
+        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
         String base = currentPrompt != null ? currentPrompt : "";
 
         if (manager.isPlanActive(state)) {
@@ -128,7 +128,7 @@ public class PlanModeMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
-        AgentState state = agent != null ? agent.getAgentState() : null;
+        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
         if (!manager.isPlanActive(state) || input.toolCalls() == null) {
             return next.apply(input);
         }

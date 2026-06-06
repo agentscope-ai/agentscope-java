@@ -12,12 +12,12 @@
 - [百炼记忆](memory/bailian.md)
 - [ReMe](memory/reme.md)
 
-## 会话（Session）
+## Agent 状态存储（AgentStateStore）
 
-把 Memory / Workspace / Plan 等运行时状态持久化到数据库或缓存。
+把对话上下文 / Workspace / Plan 等 Agent 运行时状态持久化到数据库或缓存，统一通过 [`AgentStateStore`](session/index.md)。
 
-- [MySQL Session](session/mysql.md)
-- [Redis Session](session/redis.md)
+- [MySQL 状态存储](session/mysql.md)
+- [Redis 状态存储](session/redis.md)
 
 ## RAG 知识库
 

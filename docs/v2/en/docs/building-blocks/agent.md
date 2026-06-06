@@ -10,7 +10,7 @@ description: "Learn how to define and configure agents in AgentScope Java 2.0"
 Its primary responsibilities are:
 
 - Receive input messages or events; orchestrate tools to complete tasks.
-- Manage context (conversation history is held on `AgentState.getContext()` and can be persisted automatically via `Session`).
+- Manage context (conversation history is held on `AgentState.getContext()` and can be persisted automatically via an `AgentStateStore`).
 - Provide middleware hooks at key lifecycle points for custom logic.
 - Manage concurrent and sequential tool execution automatically.
 
@@ -143,7 +143,8 @@ The `ModelRegistry` string form (`<provider>:<model>`) supports `dashscope` / `o
 | `model` | `Model` | required | The LLM driving reasoning (extends `ChatModelBase`) |
 | `toolkit` | `Toolkit` | `new Toolkit()` | Manages tools, MCP clients, skills, and tool groups |
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | Applied to agent / reasoning / acting / model call / system prompt hooks |
-| `session` + `sessionKey` | `Session` + `SessionKey` | `null` (no persistence) | When set, agent automatically loads/saves `AgentState` on every `call` |
+| `stateStore` | `AgentStateStore` | `null` (no persistence) | When set, agent automatically loads/saves `AgentState` on every `call`, keyed by the `(userId, sessionId)` of the call's `RuntimeContext` |
+| `defaultSessionId` | `String` | agent `name` | Fallback `sessionId` used when a call's `RuntimeContext` carries none |
 | `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](./permission-system.md) |
 | `modelConfig` | `ModelConfig` | default | Model retries and fallback model |
 | `reactConfig` | `ReactConfig` | default | Max iterations and reject handling |
@@ -269,7 +270,7 @@ It is **not** persistent state — `AgentState` (conversation context, compresse
 
 | Slot | Set via | Read via |
 |------|---------|----------|
-| Session fields | `sessionId(String)` / `userId(String)` / `sessionKey(SessionKey)` | `getSessionId()` / `getUserId()` / `getSessionKey()` |
+| Session fields | `sessionId(String)` / `userId(String)` | `getSessionId()` / `getUserId()` |
 | String attributes (free-form key-value) | `put(String key, Object value)` | `<T> T get(String key)` |
 | Typed attributes (inject business POJOs by `Class<T>`) | `put(Class<T> type, T value)` / `put(String key, Class<T> type, T value)` | `<T> T get(Class<T> type)` / `<T> T get(String key, Class<T> type)` |
 
@@ -281,14 +282,12 @@ Typed attributes power tool injection — declare a parameter of the matching ty
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.util.List;
 
 RuntimeContext ctx =
         RuntimeContext.builder()
-                .userId("alice")
-                .sessionId("session-001")
-                .sessionKey(SimpleSessionKey.of("alice:assistant:session-001"))
+                .userId("alice")                                             // optional; null = anonymous
+                .sessionId("session-001")                                    // selects the state slot
                 .put("request_id", "req-abc-123")                            // string layer
                 .put(UserContext.class, new UserContext("alice", "en"))      // typed layer (POJO)
                 .build();
@@ -296,7 +295,7 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` provides `RuntimeContext` overloads for `call` and `stream`; `streamEvents` does not — when you need a context with the event stream, use `stream(msgs, options, ctx)`, or configure a global `toolExecutionContext` on the builder. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps).
+`ReActAgent` provides `RuntimeContext` overloads for `call` and `stream`; `streamEvents` does not — when you need a context with the event stream, use `stream(msgs, options, ctx)`, or configure a global `toolExecutionContext` on the builder. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
 
 ### Who reads it
 
@@ -306,8 +305,8 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 ### Relation to persistence
 
-- `RuntimeContext` fields never enter `AgentState` and are never written back by `Session`.
-- The `sessionKey` field is a convenience for the business layer; persistence still uses the `sessionKey()` configured on the builder. Setting it on `RuntimeContext` at runtime does not retarget persistence.
+- Free-form / typed `RuntimeContext` attributes never enter `AgentState` and are never written back by the `AgentStateStore`.
+- The `sessionId` / `userId` fields **do** drive persistence: each call activates the `(userId, sessionId)` state slot, so passing different identities on `RuntimeContext` retargets which `AgentState` is loaded and saved. When absent, the agent falls back to its builder-time `defaultSessionId`.
 
 Runnable examples: `agentscope-examples/documentation/.../context/RuntimeContextExample.java`, `tool/ToolExecutionContextExample.java`.
 
@@ -424,15 +423,15 @@ for (var tc : externalEvent.getToolCalls()) {
 Use `streamEvents` when building interactive UIs — it lets you detect pauses in real time and prompt the user immediately. Use `call` for programmatic flows that handle events automatically. Complete runnable examples: `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`.
 :::
 
-## Configuring and using Session
+## Configuring state persistence (AgentStateStore)
 
-`AgentState` holds everything required to resume the agent — conversation context, compressed summaries, permission rules, tool state, and the current reply position. `Session` is its storage abstraction.
+`AgentState` holds everything required to resume the agent — conversation context, compressed summaries, permission rules, tool state, and the current reply position. [`AgentStateStore`](../../integration/session/index.md) is its storage abstraction.
 
-**Set `session(...)` and `sessionKey(...)` on the builder and the agent persists and recovers automatically**: every `call` writes `AgentState` back; on the next startup with the same key, it loads.
+**Set `stateStore(...)` on the builder and the agent persists and recovers automatically**: every `call` writes `AgentState` back; the next time you call with the same `(userId, sessionId)`, it loads. The agent instance is stateless with respect to sessions — the slot is chosen per-call from the `RuntimeContext` (falling back to `defaultSessionId`).
 
 ```java
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import java.nio.file.Paths;
 
 ReActAgent agent = ReActAgent.builder()
@@ -440,37 +439,40 @@ ReActAgent agent = ReActAgent.builder()
         .sysPrompt("You are a helpful assistant.")
         .model(model)
         .toolkit(new Toolkit())
-        .session(new JsonSession(Paths.get(System.getProperty("user.home"), ".agentscope/sessions")))
-        .sessionKey(SimpleSessionKey.of("user_123:agent_456:session_789"))
+        .stateStore(new JsonFileAgentStateStore(
+                Paths.get(System.getProperty("user.home"), ".agentscope/sessions")))
         .build();
 
-// Auto-loaded on startup if data exists for this key.
-int loaded = agent.getState().getContext().size();
+// Pick the slot for this conversation. userId is optional (null = anonymous).
+RuntimeContext rc = RuntimeContext.builder()
+        .userId("user_123")
+        .sessionId("session_789")
+        .build();
 
-// Auto-persisted when the call completes.
-agent.call(List.of(new UserMessage("Resume the previous task."))).block();
+// Auto-loaded if data exists for (user_123, session_789); auto-persisted when the call completes.
+agent.call(List.of(new UserMessage("Resume the previous task.")), rc).block();
 ```
 
 Built-in and extension implementations:
 
 | Implementation | Module | When to use |
 |----------------|--------|-------------|
-| `InMemorySession` | `agentscope-core` | unit tests / single-process demos |
-| `JsonSession` | `agentscope-core` | single-machine dev; JSON per `SessionKey` directory |
-| `RedisSession` | `agentscope-extensions-session-redis` | multi-replica production; shared across processes and nodes |
-| `MysqlSession` | `agentscope-extensions-session-mysql` | when state must live in a relational store (audit / reporting) |
+| `InMemoryAgentStateStore` | `agentscope-core` | unit tests / single-process demos |
+| `JsonFileAgentStateStore` | `agentscope-core` | single-machine dev; JSON per `(userId, sessionId)` directory |
+| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | multi-replica production; shared across processes and nodes |
+| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | when state must live in a relational store (audit / reporting) |
 
-The default `SimpleSessionKey.of(id)` is enough for most cases. For multi-dimensional partitioning like `(userId, agentId, sessionId)`, implement the `SessionKey` interface yourself.
+A single `sessionId` is enough for most cases. For per-user partitioning, also set `userId` on the `RuntimeContext`; the store addresses each slot by the `(userId, sessionId)` pair.
 
-`agent.getAgentState()` exposes the current snapshot for side-channel use (admin console, audit):
+`agent.getAgentState()` exposes the snapshot of the currently active slot for side-channel use (admin console, audit). Use `agent.getAgentState(userId, sessionId)` to inspect a specific slot:
 
 ```java
-AgentState state = agent.getAgentState();
-state.getContext().size();         // current message count
-String json = state.toJson();      // serialize to JSON
+AgentState state = agent.getAgentState();   // current active slot
+state.getContext().size();                  // current message count
+String json = state.toJson();               // serialize to JSON
 ```
 
-For full field-by-field details, cross-node continuation, and how Session interacts with compaction / Plan Mode / subagents, see [Harness — Context](../harness/context.md).
+For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Harness — Context](../harness/context.md).
 
 ## Further reading
 

@@ -16,7 +16,7 @@ Three guiding ideas:
 | Kind | Written by | Read by | Examples |
 |------|------------|---------|----------|
 | **Static assets** (engineer-edited) | You / your team | Framework injects into the system prompt each turn, or reads on demand at call time | `AGENTS.md`, `knowledge/`, `skills/`, `subagents/`, `tools.json` |
-| **Runtime state** (rewritten on every call) | Framework / agent | Framework restores it on the next call | `agents/<agentId>/context/`, `agents/<agentId>/sessions/`, `agents/<agentId>/tasks/`, `plans/` |
+| **Runtime state** (rewritten on every call) | Framework / agent | Framework restores it on the next call | `agents/<agentId>/sessions/`, `agents/<agentId>/tasks/`, `plans/` (the serialized `AgentState` itself lives in the `AgentStateStore`, by default `~/.agentscope/state/<agentId>/`, outside the workspace) |
 | **Long-term memory** (accumulated across sessions) | Agent + background tasks | Framework injects into the system prompt + agent queries via tools | `MEMORY.md`, `memory/YYYY-MM-DD.md` |
 
 They live in one tree purely for deployment convenience (copy a directory, get a complete agent). Inside the framework they travel different read/write paths.
@@ -42,7 +42,6 @@ They live in one tree purely for deployment convenience (copy a directory, get a
 ├── plans/                       ← runtime: plan files written in Plan Mode
 │   └── PLAN.md
 └── agents/<agentId>/            ← runtime: each agent's runtime root
-    ├── context/<sessionId>/     ← runtime: session snapshots (serialized AgentState)
     ├── sessions/                ← runtime: session index + never-compacted log
     │   ├── sessions.json
     │   └── <sessionId>.log.jsonl
@@ -212,24 +211,20 @@ HarnessAgent agent = HarnessAgent.builder()
 
 Both of these are "runtime / long-term" content — you don't hand-edit them. Their physical location is tied to the filesystem mode.
 
-### Session (runtime snapshot)
+### Agent state (runtime snapshot)
 
-When a `call()` completes, `AgentState` (chat history, compaction summary, permission rules, Plan Mode state, tool state) is serialized to JSON and written to:
+When a `call()` completes, `AgentState` (chat history, compaction summary, permission rules, Plan Mode state, tool state) is serialized to JSON and persisted via the configured [`AgentStateStore`](../../integration/session/index.md), addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back.
 
-```
-<workspace>/[<namespace>/]agents/<agentId>/context/<sessionId>/agent_state.json
-```
+By default `HarnessAgent` uses a `JsonFileAgentStateStore` rooted **outside** the workspace at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property), so runtime state stays decoupled from workspace data. Configure another backend via `.stateStore(...)`.
 
-The next `call()` with the same `sessionId` loads it back. This is `WorkspaceSession` (`io.agentscope.harness.agent.session.WorkspaceSession`) — the default `Session` implementation when `HarnessAgent` is built without `.session(...)`, backed by `JsonSession`.
-
-`agents/<agentId>/sessions/` also holds:
+The workspace itself still holds the **conversation logs** under `agents/<agentId>/sessions/` (a separate concept from the state store):
 
 - **`sessions.json`** — the agent's session index (key = sessionId, value = summary + updatedAt).
 - **`<sessionId>.log.jsonl`** — the **never-compacted** raw conversation log, append-only. `session_search` / `session_history` query it.
 
-> `WorkspaceSession` is single-machine only. Multi-replica production must switch to a distributed backend (`RedisSession` / `MysqlSession` / …). If you have configured `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` without swapping the Session, `build()` raises `IllegalStateException` — a forced reminder not to make runtime state a single point of failure.
+> The default `JsonFileAgentStateStore` is single-machine only. Multi-replica production must switch to a distributed backend (`RedisAgentStateStore` / `MysqlAgentStateStore` / …). If you have configured `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` without swapping in a distributed state store, `build()` raises `IllegalStateException` — a forced reminder not to make runtime state a single point of failure.
 
-Full details (recovery flow, cross-node continuation, `SessionKey`) live in [Context](./context).
+Full details (recovery flow, cross-node continuation, `(userId, sessionId)` addressing) live in [Context](./context).
 
 ### Memory (long-term)
 
@@ -351,7 +346,7 @@ plans/
 └── PLAN.md           ← current plan written by plan_write
 ```
 
-Note: `PlanModeContext` (whether the plan phase is active, current plan file path) lives in `AgentState` — it is **runtime state**, persisted under `agents/<agentId>/context/<sessionId>/`. The files under `plans/` are only the markdown content itself. See [Plan Mode](./plan-mode).
+Note: `PlanModeContext` (whether the plan phase is active, current plan file path) lives in `AgentState` — it is **runtime state**, persisted via the `AgentStateStore` (by default `~/.agentscope/state/<agentId>/`, outside the workspace). The files under `plans/` are only the markdown content itself. See [Plan Mode](./plan-mode).
 
 ### `agents/<agentId>/`
 
@@ -359,8 +354,6 @@ This is the **runtime root**, framework-written and rarely hand-edited:
 
 ```
 agents/<agentId>/
-├── context/<sessionId>/
-│   └── agent_state.json      ← serialized AgentState snapshot (written at the end of each call)
 ├── sessions/
 │   ├── sessions.json          ← session index for this agent
 │   └── <sessionId>.log.jsonl  ← never-compacted raw conversation log (append-only)
@@ -368,7 +361,9 @@ agents/<agentId>/
     └── <sessionId>.json       ← subagent background task records (taskId → TaskRecord)
 ```
 
-For cross-node recovery / multi-replica deployments this data must be shared (either `RedisSession` + `RemoteFilesystemSpec`, or sandbox with distributed state). See [Context](./context) and [Filesystem](./filesystem).
+> The serialized `AgentState` (`agent_state`) is **not** in the workspace by default — it lives in the configured `AgentStateStore` (default `~/.agentscope/state/<agentId>/`). Only the conversation logs and task records above stay in the workspace.
+
+For cross-node recovery / multi-replica deployments this data must be shared (either `RedisAgentStateStore` + `RemoteFilesystemSpec`, or sandbox with distributed state). See [Context](./context) and [Filesystem](./filesystem).
 
 ### `knowledge/`
 
@@ -397,7 +392,7 @@ When you need to write files, **go through `HarnessAgent#getWorkspaceManager()`,
 
 - [Architecture](./architecture) — how the system prompt is assembled and how capabilities cooperate
 - [Filesystem](./filesystem) — where the workspace physically lives (local / sandbox / shared store), `IsolationScope`, multi-user isolation
-- [Context](./context) — `AgentState` and `Session` persistence, cross-node recovery
+- [Context](./context) — `AgentState` and `AgentStateStore` persistence, cross-node recovery
 - [Memory](./memory) — how `MEMORY.md` / `memory/` are produced and maintained, compaction, eviction
 - [Skills](./skill) — four-layer composition, self-learning loop, the `<available_skills>` block
 - [Subagent](./subagent) — `subagents/` declarations, sync vs background, stream forwarding

@@ -80,7 +80,7 @@ Three-state permission engine (allow / approve / deny) combines static rules, to
 :::{grid-item-card} Graceful start / stop & session recovery
 :link: harness/context.html
 
-Same `sessionId` across processes resumes the full conversation. The `Session` abstraction (`InMemory` / `JsonSession` / MySQL / Redis) backs zero-downtime rolling deploy and crash recovery.
+Same `(userId, sessionId)` across processes resumes the full conversation. The `AgentStateStore` abstraction (`InMemoryAgentStateStore` / `JsonFileAgentStateStore` / MySQL / Redis) backs zero-downtime rolling deploy and crash recovery.
 :::
 
 ::::

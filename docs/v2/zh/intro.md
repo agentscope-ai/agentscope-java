@@ -215,7 +215,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </details>
   <details class="hs-faq-item">
     <summary>如何在生产环境中水平扩展？</summary>
-    <p>AgentScope Java 天然支持无状态水平扩展：会话状态由 <code>Session</code> 自动持久化（默认 <code>WorkspaceSession</code>），工作区可挂到远端 KV / 对象存储，沙箱模式下连可执行环境本身都能跨调用 resume。配合 Kubernetes 与 HPA，任意副本均可恢复同一用户的完整上下文。</p>
+    <p>AgentScope Java 天然支持无状态水平扩展：Agent 状态由 <code>AgentStateStore</code> 自动持久化（默认本地 <code>JsonFileAgentStateStore</code>，多副本换成 <code>RedisAgentStateStore</code>），按 <code>(userId, sessionId)</code> 寻址，工作区可挂到远端 KV / 对象存储，沙箱模式下连可执行环境本身都能跨调用 resume。配合 Kubernetes 与 HPA，任意副本均可恢复同一用户的完整上下文。</p>
   </details>
 </div>
 

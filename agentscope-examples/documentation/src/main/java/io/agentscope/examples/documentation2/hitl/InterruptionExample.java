@@ -50,7 +50,7 @@ import reactor.core.publisher.Flux;
  *       {@code next.apply()}.</li>
  *   <li>{@code ActingChunkEvent} → tap {@code ToolResultTextDeltaEvent} in acting stream.</li>
  *   <li>{@code ErrorEvent} → {@code doOnError()} on the agent stream.</li>
- *   <li>{@code agent.getMemory().getMessages()} → {@code agent.getState().getContext()}.</li>
+ *   <li>{@code agent.getMemory().getMessages()} → {@code agent.getAgentState().getContext()}.</li>
  *   <li>Removed {@code .memory(new InMemoryMemory())}.</li>
  *   <li>{@code .hooks(List)} → {@code .middleware(...)}.</li>
  *   <li>{@code agent.interrupt(Msg)} is still the public API — no change needed.</li>
@@ -144,7 +144,7 @@ public class InterruptionExample {
             System.out.println("5. Agent returned a user-friendly recovery message");
             System.out.println(
                     "\nContext contains "
-                            + agent.getState().getContext().size()
+                            + agent.getAgentState().getContext().size()
                             + " messages including fake results and recovery.");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

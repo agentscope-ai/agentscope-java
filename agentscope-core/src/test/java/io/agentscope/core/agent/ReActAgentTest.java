@@ -636,13 +636,18 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should have interrupt API methods")
     void testInterruptAfterToolCompletion() {
-        // Verify ReActAgent inherits interrupt API from AgentBase
-        assertNotNull(agent.getInterruptFlag(), "Should have interrupt flag");
-        assertFalse(agent.getInterruptFlag().get(), "Interrupt flag should be false initially");
+        // ReActAgent routes interrupts to the active session's per-session InterruptControl
+        // (on its AgentState) rather than a shared instance flag, so concurrent sessions are
+        // isolated.
+        assertFalse(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session should not be interrupted initially");
 
         // Test interrupt() method
         agent.interrupt();
-        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
+        assertTrue(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session interrupt control should be set");
     }
 
     @Test
@@ -650,12 +655,15 @@ class ReActAgentTest {
     void testInterruptRecoveryMessage() {
         Msg interruptMsg = TestUtils.createUserMessage("User", "Stop processing");
 
-        // Test interrupt(Msg) method
+        // Test interrupt(Msg) method: routed to the active session's InterruptControl
         agent.interrupt(interruptMsg);
-        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
-
-        // Note: The interrupt message is stored but only added to memory during handleInterrupt
-        // This test just verifies the API accepts the message and sets the flag
+        assertTrue(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session interrupt control should be set");
+        assertEquals(
+                interruptMsg,
+                agent.getAgentState().interruptControl().getUserMessage(),
+                "User message should be stored on the session interrupt control");
     }
 
     @Test

@@ -42,6 +42,7 @@ import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -111,6 +112,14 @@ public abstract class AgentBase implements Agent {
     private final CopyOnWriteArrayList<RuntimeContextAware> runtimeContextAwareHooks =
             new CopyOnWriteArrayList<>();
     private final AtomicReference<RuntimeContext> currentRuntimeContext = new AtomicReference<>();
+
+    /**
+     * Per-key call serialization tails. Each entry holds the completion signal of the most recently
+     * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
+     * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
+     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono)}.
+     */
+    private final ConcurrentHashMap<Object, Mono<Void>> callGates = new ConcurrentHashMap<>();
 
     /**
      * Constructor for AgentBase.
@@ -185,24 +194,116 @@ public abstract class AgentBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
+        return runLifecycle(msgs, this::doCall);
+    }
+
+    /**
+     * Reactor Context key carrying the per-call scope object returned by {@link
+     * #currentCallScope()}. Agents that maintain per-call state (e.g. {@code ReActAgent}'s
+     * {@code CallExecution}) read it back from the Context in {@link #doCall} / {@link
+     * #handleInterrupt} so concurrent calls on one instance never share mutable per-call state.
+     */
+    public static final String CALL_SCOPE_KEY = "io.agentscope.core.agent.AgentBase.callScope";
+
+    /**
+     * Reactor Context key carrying the caller-supplied per-call {@link RuntimeContext}. Set by the
+     * {@code call(msgs, context)} / {@code stream(..., context)} / {@code streamEvents(msgs,
+     * context)} overloads via {@code contextWrite}, and read back here at call entry so the RC flows
+     * per-subscription (concurrency-safe) instead of through a shared instance field.
+     */
+    public static final String RUNTIME_CONTEXT_KEY =
+            "io.agentscope.core.agent.AgentBase.runtimeContext";
+
+    /**
+     * Shared {@code call()} lifecycle: acquire execution, then (inside {@code deferContextual} so
+     * the caller-supplied {@link RuntimeContext} is read per-subscription) run {@link
+     * #beforeAgentExecution(List, RuntimeContext)} (which returns this call's per-call scope), carry
+     * that scope on the Reactor Context, and run the preCall → doCall → postCall chain with error
+     * handling, releasing execution on terminate.
+     */
+    private Mono<Msg> runLifecycle(List<Msg> msgs, Function<List<Msg>, Mono<Msg>> doCallFn) {
         return Mono.using(
                 this::acquireExecution,
-                resource -> {
-                    beforeAgentExecution(msgs);
-                    return TracerRegistry.get()
-                            .callAgent(
-                                    this,
-                                    msgs,
-                                    () ->
-                                            notifyPreCall(msgs)
-                                                    .flatMap(this::doCall)
-                                                    .flatMap(this::notifyPostCall)
-                                                    .onErrorResume(
-                                                            createErrorHandler(
-                                                                    msgs.toArray(new Msg[0]))));
-                },
+                resource ->
+                        Mono.deferContextual(
+                                cv -> {
+                                    RuntimeContext rc =
+                                            (RuntimeContext)
+                                                    cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
+                                    Object gateKey = callSerializationKey(rc);
+                                    // Build the per-call lifecycle lazily so it only runs once the
+                                    // serialization gate (if any) admits this call:
+                                    // beforeAgentExecution resolves/loads the session slot and must
+                                    // not race a concurrent same-session call.
+                                    Mono<Msg> lifecycle =
+                                            Mono.defer(() -> runLifecycleBody(msgs, rc, doCallFn));
+                                    return gateKey == null
+                                            ? lifecycle
+                                            : serializeOnKey(gateKey, lifecycle);
+                                }),
                 this::releaseExecution,
                 true);
+    }
+
+    private Mono<Msg> runLifecycleBody(
+            List<Msg> msgs, RuntimeContext rc, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        Object scope = beforeAgentExecution(msgs, rc);
+        Mono<Msg> body =
+                TracerRegistry.get()
+                        .callAgent(
+                                this,
+                                msgs,
+                                () ->
+                                        notifyPreCall(msgs, scope)
+                                                .flatMap(doCallFn)
+                                                .flatMap(this::notifyPostCall)
+                                                .onErrorResume(
+                                                        createErrorHandler(
+                                                                msgs.toArray(new Msg[0]))));
+        return scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
+    }
+
+    /**
+     * Returns a key that serializes concurrent calls sharing it: calls with an equal, non-null key
+     * run one-at-a-time in FIFO order, while calls with different keys (or a {@code null} key) run
+     * concurrently. The default returns {@code null} (no serialization). {@code ReActAgent} returns
+     * its {@code (userId, sessionId)} slot key so same-session calls do not corrupt shared
+     * conversation state while distinct sessions run in parallel.
+     *
+     * @param rc the caller-supplied per-call {@link RuntimeContext} (may be {@code null})
+     * @return the serialization key, or {@code null} to run without serialization
+     */
+    protected Object callSerializationKey(RuntimeContext rc) {
+        return null;
+    }
+
+    /**
+     * Serializes {@code action} against other actions sharing {@code key}: this call waits for the
+     * previously-enqueued call with the same key to terminate before running, then becomes the tail
+     * the next same-key call waits on. Releases its slot on any terminal signal (complete, error, or
+     * cancel) so a failed/cancelled call never blocks the queue.
+     */
+    private <T> Mono<T> serializeOnKey(Object key, Mono<T> action) {
+        return Mono.defer(
+                () -> {
+                    Sinks.Empty<Void> release = Sinks.empty();
+                    Mono<Void> releaseMono = release.asMono();
+                    @SuppressWarnings("unchecked")
+                    Mono<Void>[] prev = new Mono[1];
+                    callGates.compute(
+                            key,
+                            (k, tail) -> {
+                                prev[0] = tail == null ? Mono.empty() : tail;
+                                return releaseMono;
+                            });
+                    return prev[0].onErrorComplete()
+                            .then(action)
+                            .doFinally(
+                                    sig -> {
+                                        release.tryEmitEmpty();
+                                        callGates.remove(key, releaseMono);
+                                    });
+                });
     }
 
     /**
@@ -216,24 +317,7 @@ public abstract class AgentBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
-        return Mono.using(
-                this::acquireExecution,
-                resource -> {
-                    beforeAgentExecution(msgs);
-                    return TracerRegistry.get()
-                            .callAgent(
-                                    this,
-                                    msgs,
-                                    () ->
-                                            notifyPreCall(msgs)
-                                                    .flatMap(m -> doCall(m, structuredOutputClass))
-                                                    .flatMap(this::notifyPostCall)
-                                                    .onErrorResume(
-                                                            createErrorHandler(
-                                                                    msgs.toArray(new Msg[0]))));
-                },
-                this::releaseExecution,
-                true);
+        return runLifecycle(msgs, m -> doCall(m, structuredOutputClass));
     }
 
     /**
@@ -247,24 +331,7 @@ public abstract class AgentBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        return Mono.using(
-                this::acquireExecution,
-                resource -> {
-                    beforeAgentExecution(msgs);
-                    return TracerRegistry.get()
-                            .callAgent(
-                                    this,
-                                    msgs,
-                                    () ->
-                                            notifyPreCall(msgs)
-                                                    .flatMap(m -> doCall(m, schema))
-                                                    .flatMap(this::notifyPostCall)
-                                                    .onErrorResume(
-                                                            createErrorHandler(
-                                                                    msgs.toArray(new Msg[0]))));
-                },
-                this::releaseExecution,
-                true);
+        return runLifecycle(msgs, m -> doCall(m, schema));
     }
 
     /**
@@ -536,14 +603,25 @@ public abstract class AgentBase implements Agent {
 
     /**
      * Invoked at the start of a {@code call} / stream-backed call, after {@link
-     * #acquireExecution} and before any hooks. The default is a no-op. {@link
-     * io.agentscope.core.ReActAgent} uses this to bind a {@link RuntimeContext}.
+     * #acquireExecution} and before any hooks. {@link io.agentscope.core.ReActAgent} uses this to
+     * activate the per-call session slot from the supplied {@link RuntimeContext} and returns the
+     * freshly-built per-call scope object, which is carried on the Reactor Context under {@link
+     * #CALL_SCOPE_KEY}. Returning the scope here (rather than via a separate accessor) avoids any
+     * window in which a concurrent call could overwrite a shared field between construction and
+     * capture.
+     *
+     * @param msgs the messages passed by the caller to {@code call()}
+     * @param rc the caller-supplied per-call {@link RuntimeContext}, or {@code null} when none was
+     *     provided (read from the Reactor Context, so concurrency-safe)
+     * @return this call's per-call scope object, or {@code null} if this agent type keeps none
      */
-    protected void beforeAgentExecution(List<Msg> msgs) {}
+    protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc) {
+        return null;
+    }
 
     /**
      * Invoked in {@code Mono.using} cleanup, before clearing the running state. Pairs with {@link
-     * #beforeAgentExecution(List)}. The default is a no-op.
+     * #beforeAgentExecution(List, RuntimeContext)}. The default is a no-op.
      */
     protected void afterAgentExecution() {}
 
@@ -637,10 +715,26 @@ public abstract class AgentBase implements Agent {
      * <p>The default implementation returns {@code null}. Subclasses (e.g. {@code ReActAgent})
      * override this to build a system message from their configured {@code sysPrompt}.
      *
+     * @param callScope the per-call scope captured at call entry (may be {@code null}); lets
+     *     subclasses resolve the call's {@link RuntimeContext} for system-prompt middlewares without
+     *     reading a shared instance field
      * @return the seed system message, or {@code null} if none
      */
-    protected Msg seedSystemMsg() {
+    protected Msg seedSystemMsg(Object callScope) {
         return null;
+    }
+
+    /**
+     * Returns the {@link AgentState} whose conversation buffer should seed the pre-call memory
+     * snapshot for this invocation. The default reads the agent-level {@link #getAgentState()};
+     * subclasses with per-call scope (e.g. {@code ReActAgent}) return the scope's session state so
+     * the snapshot is concurrency-correct.
+     *
+     * @param callScope the per-call scope captured at call entry (may be {@code null})
+     * @return the state to snapshot, or {@code null} if none
+     */
+    protected AgentState stateForCall(Object callScope) {
+        return getAgentState();
     }
 
     /**
@@ -651,8 +745,10 @@ public abstract class AgentBase implements Agent {
      * available to subsequent events ({@code PreReasoningEvent}, {@code PreSummaryEvent}).
      *
      * @param systemMsg the system message produced by all PreCall hooks (may be null)
+     * @param callScope the per-call scope captured at call entry (see {@link #currentCallScope()});
+     *     may be {@code null}
      */
-    protected void consumeSystemMsgAfterPreCall(Msg systemMsg) {}
+    protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {}
 
     /**
      * Notify all hooks that agent is starting (preCall hook).
@@ -665,16 +761,16 @@ public abstract class AgentBase implements Agent {
      * {@link PreCallEvent#appendSystemContent} instead.
      *
      * <p>After hooks run the system message is handed off via
-     * {@link #consumeSystemMsgAfterPreCall(Msg)}, and only the tail (messages beyond the
+     * {@link #consumeSystemMsgAfterPreCall(Msg, Object)}, and only the tail (messages beyond the
      * snapshot boundary) is returned for {@code doCall} to add to memory.
      *
      * @param callArgs messages passed by the caller to {@code call()}
      * @return Mono containing the new tail messages that {@code doCall} should add to memory
      */
-    private Mono<List<Msg>> notifyPreCall(List<Msg> callArgs) {
-        // Take a state snapshot before hooks run (pre-hook view)
+    private Mono<List<Msg>> notifyPreCall(List<Msg> callArgs, Object callScope) {
+        // Take a state snapshot before hooks run (pre-hook view), from this call's scope state.
         List<Msg> snapshot = List.of();
-        AgentState agentState = getAgentState();
+        AgentState agentState = stateForCall(callScope);
         if (agentState != null) {
             snapshot = agentState.getContext();
         }
@@ -687,7 +783,7 @@ public abstract class AgentBase implements Agent {
         }
 
         PreCallEvent event = new PreCallEvent(this, fullInput);
-        event.setSystemMessage(seedSystemMsg());
+        event.setSystemMessage(seedSystemMsg(callScope));
 
         Mono<PreCallEvent> result = Mono.just(event);
         for (Hook hook : getSortedHooks()) {
@@ -697,7 +793,7 @@ public abstract class AgentBase implements Agent {
         return result.map(
                 e -> {
                     // Hand off the system message to the per-call state
-                    consumeSystemMsgAfterPreCall(e.getSystemMessage());
+                    consumeSystemMsgAfterPreCall(e.getSystemMessage(), callScope);
 
                     // Extract the tail: messages appended beyond the snapshot boundary
                     List<Msg> currentInput = e.getInputMessages();

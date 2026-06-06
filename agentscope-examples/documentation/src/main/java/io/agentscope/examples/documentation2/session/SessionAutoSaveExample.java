@@ -87,14 +87,14 @@ public class SessionAutoSaveExample {
         System.out.println("Agent: " + (r1 != null ? r1.getTextContent() : "(null)"));
         System.out.println(
                 "History size after call 1: "
-                        + agent1.getState().getContext().size()
+                        + agent1.getAgentState().getContext().size()
                         + " messages");
 
         Msg r2 = agent1.call(new UserMessage("user", "My lucky number is 7.")).block();
         System.out.println("Agent: " + (r2 != null ? r2.getTextContent() : "(null)"));
         System.out.println(
                 "History size after call 2: "
-                        + agent1.getState().getContext().size()
+                        + agent1.getAgentState().getContext().size()
                         + " messages");
 
         // Closing the first agent persists any in-flight state (not strictly required
@@ -110,7 +110,7 @@ public class SessionAutoSaveExample {
 
         System.out.println(
                 "History size after reload: "
-                        + agent2.getState().getContext().size()
+                        + agent2.getAgentState().getContext().size()
                         + " messages");
 
         // The agent remembers the conversation from Phase 1:
@@ -133,7 +133,7 @@ public class SessionAutoSaveExample {
      *
      * @param userId  user identifier (used as the session key)
      * @param apiKey  DashScope API key
-     * @param session backing session store
+     * @param stateStore backing session store
      * @return configured agent
      */
     private static ReActAgent buildAgent(String userId, String apiKey, AgentStateStore stateStore) {

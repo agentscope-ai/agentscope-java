@@ -65,7 +65,7 @@ public final class SessionOperations {
         this.snapshots = snapshots;
     }
 
-    /** Read-only listing of known session keys from {@link AgentStateStore#listSessionKeys()}. */
+    /** Read-only listing of known session ids from {@link AgentStateStore#listSessionIds(String)}. */
     public Mono<List<String>> listSessions(AgentStateStore stateStore) {
         if (stateStore == null) {
             return Mono.just(List.of());

@@ -1,22 +1,22 @@
 ---
-title: "Context & Session"
+title: "Context & State Persistence"
 description: "Persist agent runtime state across machines, and keep conversation context within the model's token budget"
 ---
 
 `HarnessAgent` manages working memory along two cooperating tracks:
 
-1. **Session — persist agent runtime state**, so the same `sessionId` can resume in another process or on another machine.
+1. **State persistence — persist agent runtime state** via an `AgentStateStore`, so the same `(userId, sessionId)` can resume in another process or on another machine.
 2. **Context compaction — keep the conversation within the model's token budget**, without losing the information the agent still needs.
 
-Both tracks share one data structure: `AgentState`. Compaction mutates it in memory; Session writes it out at end of call. The two sections below cover each track in turn.
+Both tracks share one data structure: `AgentState`. Compaction mutates it in memory; the state store writes it out at end of call. The two sections below cover each track in turn.
 
 ---
 
-## Part 1: Session — persistence of agent runtime state
+## Part 1: State persistence of agent runtime state
 
-### What Session stores —— `AgentState`
+### What the state store persists —— `AgentState`
 
-Session persists an **`AgentState`** (`io.agentscope.core.state.AgentState`) — a complete snapshot of everything that makes the agent restartable:
+An [`AgentStateStore`](../../integration/session/index.md) persists an **`AgentState`** (`io.agentscope.core.state.AgentState`) — a complete snapshot of everything that makes the agent restartable:
 
 | `AgentState` field | Content |
 |---|---|
@@ -27,71 +27,70 @@ Session persists an **`AgentState`** (`io.agentscope.core.state.AgentState`) —
 | `getTasksContext()` | The `todo_write` task list |
 | `getToolContext()` | Active toolkit groups (`activatedGroups`) |
 
-At the end of each `call()`, the framework writes the entire `AgentState` to Session under the key `agent_state`. On construction, the next `call()` with the same `sessionId` loads it back automatically. **Provided the Session backend is distributed (e.g. Redis), agent instances on different processes — even different physical machines — see identical state.**
+At the end of each `call()`, the framework writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. **Provided the state store is distributed (e.g. Redis), agent instances on different processes — even different physical machines — see identical state.**
 
 ### The auto-persistence and recovery flow
 
 ```
-agent starts ─► loadOrCreateAgentState(session, sessionKey)
-                │
-                ├─ agent_state present in Session ─► restore it
-                └─ absent ─► construct fresh AgentState
+call() with (userId, sessionId) ─► activate slot ─► loadOrCreateAgentState(store, userId, sessionId)
+                                    │
+                                    ├─ agent_state present in store ─► restore it
+                                    └─ absent ─► construct fresh AgentState
 
 agent.call() running ─► middlewares mutate AgentState.contextMutable()
                         (compaction, Plan, todo_write, permissions, …)
 
-process exits / interrupt ─► shutdownManager fires
-                             session.save(sessionKey, "agent_state", state)
+call completes / process exits / interrupt ─► state store save
+                             stateStore.save(userId, sessionId, "agent_state", state)
 ```
 
-This wiring lives in `ReActAgent` itself (`loadOrCreateAgentState` + `shutdownManager.bindStateSaver`); `HarnessAgent` inherits it for free.
+This wiring lives in `ReActAgent` itself (per-call slot activation + `shutdownManager.bindStateSaver`); `HarnessAgent` inherits it for free. The agent instance holds no fixed session — each call reads / writes the slot named by its `RuntimeContext` (falling back to the builder-time `defaultSessionId`).
 
-> Mid-`call()` state changes happen against the in-memory `AgentState`. **Session is written once per call (and on shutdown), not on every message** — so the throughput pressure on your Session backend stays low.
+> Mid-`call()` state changes happen against the in-memory `AgentState`. **The state store is written once per call (and on shutdown), not on every message** — so the throughput pressure on your backend stays low.
 
 ### Built-in and extension implementations
 
-Anything implementing `io.agentscope.core.session.Session` works. Pick by deployment shape:
+Anything implementing `io.agentscope.core.state.AgentStateStore` works. Pick by deployment shape:
 
 | Implementation | Module | Use case |
 |---|---|---|
-| `InMemorySession` | `agentscope-core` | Unit tests / single-process demos; lost on exit |
-| `JsonSession` | `agentscope-core` | Local dev with file persistence; not cross-node |
-| `WorkspaceSession` | `agentscope-harness` | **`HarnessAgent` default**, built on `JsonSession`, writes under `<workspace>/agents/<agentId>/context/<sessionId>/`; **single-host single-tenant** |
-| `RedisSession` | `agentscope-extensions-session-redis` | **Production default** for multi-replica deployments; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
-| `MysqlSession` | `agentscope-extensions-session-mysql` | When session data needs to flow into a relational store (audit, reporting) |
+| `InMemoryAgentStateStore` | `agentscope-core` | Unit tests / single-process demos; lost on exit |
+| `JsonFileAgentStateStore` | `agentscope-core` | Local dev with file persistence; not cross-node. **`HarnessAgent` default**, rooted at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property); **single-host** |
+| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | **Production default** for multi-replica deployments; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
+| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | When state needs to flow into a relational store (audit, reporting) |
 
 Switching is one call at builder time:
 
 ```java
-// Default (single host) — omit .session(...); WorkspaceSession is used automatically
+// Default (single host) — omit .stateStore(...); a local JsonFileAgentStateStore is used automatically
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
     .build();
 
-// Production multi-replica — swap in RedisSession
+// Production multi-replica — swap in RedisAgentStateStore
 RedisClient client = RedisClient.create("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
-    .session(RedisSession.builder().lettuceClient(client).build())
+    .stateStore(RedisAgentStateStore.builder().lettuceClient(client).build())
     .build();
 ```
 
 :::{warning}
-`WorkspaceSession` is single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent **rejects** a `WorkspaceSession` at build time with `IllegalStateException` — sandbox state must be shared across replicas.
+The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed `AgentStateStore` (e.g. `RedisAgentStateStore`) via `.stateStore(...)`.
 :::
 
 ### Real-time resume across processes and machines
 
-Once Session is distributed (e.g. Redis), cross-machine resume is **automatic**:
+Once the state store is distributed (e.g. Redis), cross-machine resume is **automatic**:
 
 ```java
 // Node A — start a conversation
 HarnessAgent agentA = HarnessAgent.builder()
-    .session(redisSession)
+    .stateStore(redisStore)
     /* ... */ .build();
 agentA.call(msg, RuntimeContext.builder()
     .sessionId("alice-2026-06-02-001")
@@ -100,10 +99,10 @@ agentA.call(msg, RuntimeContext.builder()
 
 // Node B — different physical machine, separate JVM
 HarnessAgent agentB = HarnessAgent.builder()
-    .session(redisSession)
-    /* same sessionId, same sessionKey */ .build();
+    .stateStore(redisStore)
+    /* same store backend */ .build();
 
-// Node B's first call() loads the AgentState node A left in Redis
+// Node B's first call() with the same (userId, sessionId) loads the AgentState node A left in Redis
 agentB.call(nextMsg, RuntimeContext.builder()
     .sessionId("alice-2026-06-02-001")
     .userId("alice")
@@ -114,16 +113,16 @@ This buys you:
 
 - **Failover**: a crashed node — conversations migrate to a healthy one, user notices nothing.
 - **Rolling deploys**: old pods save on shutdown, new pods load on first call — **conversations never break across releases**.
-- **Cross-surface continuity**: a user starts in the Web UI, switches to the CLI — same `sessionId`, all memory present.
+- **Cross-surface continuity**: a user starts in the Web UI, switches to the CLI — same `(userId, sessionId)`, all memory present.
 
-`SessionKey` defines the namespacing. `SimpleSessionKey.of(sessionId)` is enough for most cases; implement your own when you need `(tenantId, userId, agentId, sessionId)` keying.
+The `(userId, sessionId)` pair defines the namespacing: `sessionId` alone is enough for most cases; add `userId` when you need per-user partitioning.
 
 ### Multi-user isolation
 
 `sessionId` and `userId` solve different problems:
 
 - **`sessionId`** — which conversation this is; independent `AgentState` snapshot.
-- **`userId`** — which user's namespace files land in; see [Filesystem](./filesystem).
+- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](./filesystem).
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -133,7 +132,7 @@ agent.call(msg, RuntimeContext.builder()
     .sessionId("bob-1").userId("bob").build()).block();
 ```
 
-Two users — separate state, separate filesystem paths, no crosstalk. For `AgentState`-level user isolation in production, encode `userId` into `SessionKey` (with `RedisSession` it becomes part of the Redis key) rather than relying on filesystem path bucketing.
+Two users — separate state, separate filesystem paths, no crosstalk. For `AgentState`-level user isolation in production, set `userId` on the `RuntimeContext`: the store addresses each slot by `(userId, sessionId)` (with `RedisAgentStateStore` the `userId` becomes part of the Redis key) rather than relying on filesystem path bucketing.
 
 ### Reading and writing `AgentState` directly
 
@@ -157,7 +156,7 @@ AgentState restored = AgentState.fromJsonString(json);
 | `toJson()` / `fromJsonString(String)` | Serialize / deserialize |
 
 :::{note}
-The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Deprecated(forRemoval = true)` in 2.0. New code should use `AgentState.getContext()` + `Session`; `Memory` remains only as a source-compat shim.
+The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Deprecated(forRemoval = true)` in 2.0. New code should use `AgentState.getContext()` + an `AgentStateStore`; `Memory` remains only as a source-compat shim.
 :::
 
 ### Letting the agent inspect its own history
@@ -176,7 +175,7 @@ These tools read the **uncompressed conversation log** (`<workspace>/agents/<age
 
 The model's token budget is finite. A long-running conversation either compacts proactively or eventually crashes into the model's hard limit. `HarnessAgent` ships a full compaction stack — opt-in via `.compaction(...)` / `.toolResultEviction(...)`.
 
-**Core invariant**: **compaction mutates `AgentState` in memory; Session writes the updated `AgentState` at end of call**. Compaction and persistence are independent paths that always run in that order — Session sees the post-compaction state.
+**Core invariant**: **compaction mutates `AgentState` in memory; the state store writes the updated `AgentState` at end of call**. Compaction and persistence are independent paths that always run in that order — the state store sees the post-compaction state.
 
 ### What `HarnessAgent` ships
 
@@ -263,7 +262,7 @@ Each of these owns its own state machine and recovery path; the compaction track
 
 ## Appendix: `RuntimeContext` — per-call metadata
 
-`RuntimeContext` (in `io.agentscope.core.agent`) is a lightweight per-call carrier passed to `agent.call(msgs, ctx)`; hooks and tools share it for the duration of one call. **Not persisted. Does not participate in Session.**
+`RuntimeContext` (in `io.agentscope.core.agent`) is a lightweight per-call carrier passed to `agent.call(msgs, ctx)`; hooks and tools share it for the duration of one call. Its free-form / typed attributes are **not persisted**; its `sessionId` / `userId` fields select which `AgentState` slot the state store loads and saves for this call.
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -282,21 +281,21 @@ Available accessors:
 
 | Method | Description |
 |------|------|
-| `getSessionId()` / `getUserId()` / `getSessionKey()` | Built-in fields used to route session and tenant |
+| `getSessionId()` / `getUserId()` | Built-in fields used to route the state slot and tenant |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
 | `get(Class<T>)` / `put(Class<T>, T)` | Typed singleton get/put |
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
 
 :::{tip}
-**The Session backend is bound at builder time and cannot be switched per call via `RuntimeContext`.** For per-user Session isolation, use `userId` + `SessionKey` (or a custom `keyPrefix`); do not try to hand each call a different Session instance.
+**The `AgentStateStore` backend is bound at builder time and cannot be switched per call via `RuntimeContext`.** What *does* vary per call is the `(userId, sessionId)` slot it addresses — set `userId` for per-user isolation (or a custom `keyPrefix` on the store); do not try to hand each call a different state store instance.
 :::
 
 ---
 
 ## Related pages
 
-- [Architecture](./architecture) — how Context, Session, and workspace cooperate inside one call
+- [Architecture](./architecture) — how Context, state persistence, and workspace cooperate inside one call
 - [Memory](./memory) — long-term memory, full compaction configuration, large tool-result offloading, background maintenance
 - [Plan Mode](./plan-mode) — independent persistence and recovery of plan state
 - [Subagent](./subagent) — where background tasks live and how they survive node migration

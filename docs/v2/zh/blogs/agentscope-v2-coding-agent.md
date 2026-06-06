@@ -65,7 +65,7 @@ AgentScope Java 2.0 的 Harness 模块就是为开头那两个核心问题准备
 | 沙箱文件系统 | `.filesystem(new DockerFilesystemSpec()…)` | 把 `git clone`、`mvn test`、`execute` 全部关进容器，宿主无感 |
 | 跨调用快照 | `.snapshotSpec(…)` | 第二轮 `call()` 能看到第一轮装好的 `node_modules` 和克隆下来的仓库 |
 | 隔离粒度 | `.isolationScope(IsolationScope.SESSION)` | 每个 issue / PR / IM 对话一个独立沙箱，互不串台 |
-| 会话持久化 | 默认开启 / `.session(RedisSession.…)` | 同 `sessionId` 跨进程、跨副本恢复对话 |
+| 状态持久化 | 默认开启 / `.stateStore(RedisAgentStateStore.…)` | 同 `(userId, sessionId)` 跨进程、跨副本恢复对话 |
 | 双层记忆 | `.compaction(…)` | 长会话压缩 + 长期事实沉淀到 `MEMORY.md` |
 | 大工具结果卸载 | `.toolResultEviction(…)` | `git diff` / `mvn test` 输出动辄几十 K 字符，自动落盘 + 占位符 |
 | 子 agent | `workspace/subagents/` 或 `.subagent(…)` | 把 PR Review 这种独立任务委派出去，主 agent 不被淹没 |
@@ -173,9 +173,9 @@ codingagent 用两套独立的 `HarnessAgent`：
 **所以选型的判断标准很简单：你要做的是一个"开发者自己用的工具"，还是一个"组织里随便谁触发都能用的服务"？**
 
 - 前者直接装 Claude Code / Cursor，或者用 Harness 跑[默认本机模式](../docs/harness/filesystem.md)（不配 `filesystem`），就是一个能装记忆、能装技能、能 spawn 子 agent 的"加强版本地 Coding Agent"。
-- 后者就是 codingagent 这套范式：Harness + 沙箱 + 分布式 Session + Channel 适配器，每一层都是为"多人、异步、安全"而存在的。
+- 后者就是 codingagent 这套范式：Harness + 沙箱 + 分布式 `AgentStateStore` + Channel 适配器，每一层都是为"多人、异步、安全"而存在的。
 
-Harness 的设计目标恰好是让**同一份 agent 代码逻辑，能在两种形态间通过配置切换**——`HarnessAgent.builder()` 不写 `.filesystem(...)` 就是 Claude Code 那种本机形态，加一行 `.filesystem(new DockerFilesystemSpec()...)` + `.session(RedisSession.…)` 就升级成 codingagent 这种组织服务。本文剩下的部分都是后者的实现。
+Harness 的设计目标恰好是让**同一份 agent 代码逻辑，能在两种形态间通过配置切换**——`HarnessAgent.builder()` 不写 `.filesystem(...)` 就是 Claude Code 那种本机形态，加一行 `.filesystem(new DockerFilesystemSpec()...)` + `.stateStore(RedisAgentStateStore.…)` 就升级成 codingagent 这种组织服务。本文剩下的部分都是后者的实现。
 
 ---
 
@@ -327,11 +327,11 @@ codingagent 是个**长生命周期**应用：一个 Issue 可能从早上聊到
 
 Harness 把这件事拆成两条互相配合的链路：
 
-- **Session** —— `AgentState`（对话历史、压缩摘要、Plan 状态、todo 列表、权限规则、工具状态）每次 `call()` 结束自动落盘；下次同 `sessionId` 的 `call()` 自动加载。
+- **AgentStateStore** —— `AgentState`（对话历史、压缩摘要、Plan 状态、todo 列表、权限规则、工具状态）每次 `call()` 结束自动落盘；下次同 `(userId, sessionId)` 的 `call()` 自动加载。
 - **永不压缩的对话日志** —— 原始 messages 永远以 `sessions/<sessionId>.log.jsonl` 追加保留，供审计和 `session_search` 查询。
 
 ```java
-// 单机开发（默认）：WorkspaceSession，落在 workspace/agents/<id>/context/
+// 单机开发（默认）：本地 JsonFileAgentStateStore，落在 ~/.agentscope/state/<id>/
 HarnessAgent.builder()
     .workspace(workspace)
     .build();
@@ -340,7 +340,7 @@ HarnessAgent.builder()
 RedisClient client = RedisClient.create("redis://redis.prod:6379");
 HarnessAgent.builder()
     .workspace(workspace)
-    .session(RedisSession.builder().lettuceClient(client).build())
+    .stateStore(RedisAgentStateStore.builder().lettuceClient(client).build())
     .build();
 ```
 
@@ -555,7 +555,7 @@ HarnessAgent.builder()
     .model(model)
     .workspace(workspace)
     // .filesystem(...) 不写 = 本机 + shell
-    // session 默认是 WorkspaceSession，写到 workspace/agents/<id>/context/
+    // 状态存储默认是本地 JsonFileAgentStateStore，写到 ~/.agentscope/state/<id>/
     .build();
 ```
 
@@ -581,7 +581,7 @@ HarnessAgent.builder()
     .executionGuard(RedisSandboxExecutionGuard.builder(jedis)
         .leaseTtl(Duration.ofMinutes(30))
         .build()))
-.stateStore(RedisSession.builder().lettuceClient(redisClient).build())
+.stateStore(RedisAgentStateStore.builder().lettuceClient(redisClient).build())
 ```
 
 三件事一起做：

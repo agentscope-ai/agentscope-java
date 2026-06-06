@@ -43,7 +43,7 @@ import java.util.List;
  *   <li>Replaced {@code agent.loadFrom(session, id)} / {@code agent.saveTo(session, id)} with
  *       {@code .stateStore(session).sessionId(id)} on the builder — the agent loads and saves
  *       automatically when a session is configured.</li>
- *   <li>Replaced {@code agent.getMemory().getMessages()} with {@code agent.getState().getContext()}.</li>
+ *   <li>Replaced {@code agent.getMemory().getMessages()} with {@code agent.getAgentState().getContext()}.</li>
  * </ul>
  */
 public class SessionExample {
@@ -110,7 +110,7 @@ public class SessionExample {
         System.out.println("Commands: 'exit' to quit, 'history' to view message history\n");
 
         // Show context size loaded from session
-        int ctxSize = agent.getState().getContext().size();
+        int ctxSize = agent.getAgentState().getContext().size();
         if (ctxSize > 0) {
             System.out.println("AgentStateStore resumed — " + ctxSize + " messages loaded.");
             System.out.println("Type 'history' to view them.\n");
@@ -152,7 +152,7 @@ public class SessionExample {
     }
 
     private static void showHistory(ReActAgent agent) {
-        List<Msg> messages = agent.getState().getContext();
+        List<Msg> messages = agent.getAgentState().getContext();
 
         if (messages.isEmpty()) {
             System.out.println("\n[No message history]\n");

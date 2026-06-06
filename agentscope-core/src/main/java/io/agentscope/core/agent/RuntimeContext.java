@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.HashMap;
@@ -36,6 +37,14 @@ public class RuntimeContext {
     private final String sessionId;
     private final String userId;
 
+    /**
+     * Call-scoped {@link AgentState} for the active {@code (userId, sessionId)} slot. Set once at
+     * call entry by the agent and read by middlewares / tools that need the live conversational
+     * state during the call (instead of {@code agent.getAgentState()}, which is not call-scoped
+     * under concurrency). {@code null} outside of a call.
+     */
+    private volatile AgentState agentState;
+
     /** String-keyed extras (legacy and generic extension). */
     private final ConcurrentMap<String, Object> stringAttributes;
 
@@ -53,6 +62,7 @@ public class RuntimeContext {
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
+        this.agentState = builder.agentState;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
@@ -79,6 +89,41 @@ public class RuntimeContext {
 
     public String getUserId() {
         return userId;
+    }
+
+    /**
+     * Returns the call-scoped {@link AgentState} for this run, or {@code null} when accessed
+     * outside of an active {@code call()}. Prefer this over {@code agent.getAgentState()} from
+     * middlewares and tools so the correct session's state is used under concurrency.
+     */
+    public AgentState getAgentState() {
+        return agentState;
+    }
+
+    /**
+     * Installs the call-scoped {@link AgentState}. Called by the agent at call entry; not part of
+     * the public tool/middleware contract.
+     */
+    public void setAgentState(AgentState agentState) {
+        this.agentState = agentState;
+    }
+
+    /**
+     * Resolves the live {@link AgentState} for the current call, preferring the call-scoped state
+     * carried on {@code ctx} (concurrency-safe) and falling back to {@code fallbackAgent}'s state
+     * only when the context carries none. Middlewares and tools should use this instead of calling
+     * {@code agent.getAgentState()} directly, which is not call-scoped under concurrency.
+     *
+     * @param ctx the per-call runtime context (may be {@code null})
+     * @param fallbackAgent the agent to fall back to (may be {@code null})
+     * @return the resolved {@link AgentState}, or {@code null} if neither source provides one
+     */
+    public static AgentState resolveAgentState(RuntimeContext ctx, Agent fallbackAgent) {
+        AgentState s = ctx != null ? ctx.getAgentState() : null;
+        if (s != null) {
+            return s;
+        }
+        return fallbackAgent != null ? fallbackAgent.getAgentState() : null;
     }
 
     /**
@@ -228,6 +273,7 @@ public class RuntimeContext {
         private Map<String, Object> stringExtras;
         private final Map<Class<?>, Object> typedSingletons = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
+        private AgentState agentState;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -236,6 +282,11 @@ public class RuntimeContext {
 
         public Builder userId(String userId) {
             this.userId = userId;
+            return this;
+        }
+
+        public Builder agentState(AgentState agentState) {
+            this.agentState = agentState;
             return this;
         }
 

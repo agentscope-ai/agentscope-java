@@ -311,7 +311,7 @@ public class SubagentsMiddleware implements MiddlewareBase {
         if (!pending.isEmpty() && agent instanceof ReActAgent reAct) {
             deliveryMsg = buildDeliveryReminder(pending);
             try {
-                reAct.getAgentState().contextMutable().add(deliveryMsg);
+                RuntimeContext.resolveAgentState(rc, reAct).contextMutable().add(deliveryMsg);
             } catch (RuntimeException e) {
                 log.warn(
                         "Failed to append task delivery reminder to AgentState; "

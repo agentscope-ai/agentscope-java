@@ -110,7 +110,9 @@ public class CompactionMiddleware implements MiddlewareBase {
                                             return next.apply(input);
                                         }
                                         List<Msg> compacted = optResult.get();
-                                        applyToContext(reActAgent.getAgentState(), compacted);
+                                        applyToContext(
+                                                RuntimeContext.resolveAgentState(rc, reActAgent),
+                                                compacted);
                                         log.debug(
                                                 "Compacted to {} messages before reasoning",
                                                 compacted.size());

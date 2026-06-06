@@ -12,12 +12,12 @@ Persist user preferences and facts across sessions. All implementations satisfy 
 - [Bailian Memory](memory/bailian.md)
 - [ReMe](memory/reme.md)
 
-## Session
+## Agent State Store
 
-Persist runtime state (Memory, Workspace, Plan, ...) into a database or cache.
+Persist agent runtime state (conversation context, Workspace, Plan, ...) into a database or cache via [`AgentStateStore`](session/index.md).
 
-- [MySQL Session](session/mysql.md)
-- [Redis Session](session/redis.md)
+- [MySQL State Store](session/mysql.md)
+- [Redis State Store](session/redis.md)
 
 ## RAG Knowledge Base
 

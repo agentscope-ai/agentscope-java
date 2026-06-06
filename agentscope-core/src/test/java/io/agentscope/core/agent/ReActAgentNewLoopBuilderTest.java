@@ -91,7 +91,7 @@ class ReActAgentNewLoopBuilderTest {
         List<MiddlewareBase> registered = agent.getMiddlewares();
         assertTrue(registered.stream().anyMatch(m -> m instanceof GracefulShutdownMiddleware));
         assertTrue(registered.containsAll(mw));
-        assertNotNull(agent.getState());
+        assertNotNull(agent.getAgentState());
         assertNotNull(agent.getModelConfig());
         assertNotNull(agent.getReactConfig());
         assertNotNull(agent.getPermissionEngine());
@@ -121,6 +121,6 @@ class ReActAgentNewLoopBuilderTest {
         StepVerifier.create(agent.observe(m1)).verifyComplete();
         StepVerifier.create(agent.observe(List.of(m2))).verifyComplete();
 
-        assertEquals(2, agent.getState().getContext().size());
+        assertEquals(2, agent.getAgentState().getContext().size());
     }
 }

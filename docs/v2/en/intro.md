@@ -215,7 +215,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </details>
   <details class="hs-faq-item">
     <summary>How does it scale horizontally in production?</summary>
-    <p>AgentScope Java is built for stateless horizontal scaling. Session state is persisted by <code>Session</code> (defaulting to <code>WorkspaceSession</code>); workspaces can be mounted on a remote KV / object store; in sandbox mode even the execution environment itself resumes across calls. Combined with Kubernetes + HPA, any replica can pick up the full context of any user.</p>
+    <p>AgentScope Java is built for stateless horizontal scaling. Agent state is persisted by an <code>AgentStateStore</code> (defaulting to a local <code>JsonFileAgentStateStore</code>; swap in <code>RedisAgentStateStore</code> for multi-replica), addressed by <code>(userId, sessionId)</code>; workspaces can be mounted on a remote KV / object store; in sandbox mode even the execution environment itself resumes across calls. Combined with Kubernetes + HPA, any replica can pick up the full context of any user.</p>
   </details>
 </div>
 

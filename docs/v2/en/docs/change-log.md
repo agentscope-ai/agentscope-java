@@ -24,8 +24,8 @@ Items in this section are removed, renamed, or have their semantics tightened. C
 
 | Removed in 2.0 | Replacement |
 |---|---|
-| `.memory(Memory)` | `.session(Session).sessionKey(SessionKey)` — `AgentState.getContext()` holds the conversation; the configured `Session` saves/loads automatically on every `call()` |
-| `.statePersistence(StatePersistence)` | Same — `Session` subsumes persistence |
+| `.memory(Memory)` | `.stateStore(AgentStateStore)` — `AgentState.getContext()` holds the conversation; the configured `AgentStateStore` saves/loads automatically on every `call()`, keyed by the call's `(userId, sessionId)` from `RuntimeContext` |
+| `.statePersistence(StatePersistence)` | Same — `AgentStateStore` subsumes persistence |
 
 Detail → [Context](harness/context.md)
 
@@ -33,7 +33,7 @@ Detail → [Context](harness/context.md)
 
 | Removed in 2.0 | Replacement |
 |---|---|
-| `io.agentscope.core.session.SessionManager` | Configure `Session` + `SessionKey` on the agent builder; persistence happens automatically |
+| `io.agentscope.core.session.SessionManager` | Configure `.stateStore(AgentStateStore)` on the agent builder; persistence happens automatically per `(userId, sessionId)` |
 | `io.agentscope.core.pipeline.*` — `Pipeline`, `Pipelines`, `SequentialPipeline`, `FanoutPipeline`, `MsgHub` | Compose middleware + sub-agents + the event stream for multi-agent orchestration. See the subagent guide → [Subagent](harness/subagent.md) |
 | `io.agentscope.core.model.tts.*` (14 files, DashScope TTS / Realtime TTS / `AudioPlayer`, etc.) | Core no longer ships TTS. Integrate the upstream provider SDK directly if you need TTS |
 | `io.agentscope.core.hook.PendingToolRecoveryHook` | Use `Builder.enablePendingToolRecovery(boolean)` |
@@ -45,8 +45,8 @@ Detail → [Context](harness/context.md)
 |---|---|
 | `AgentMetaState` | `AgentState` |
 | `StateModule` | **removed** — no longer a superclass for `Memory`, `Toolkit`, etc. |
-| `StatePersistence` | **removed** — replaced by the `Session` abstraction |
-| `ToolkitState` | Moved to `io.agentscope.core.session.legacy.ToolkitState` (kept for compatibility only — do not reference in new code) |
+| `StatePersistence` | **removed** — replaced by the `AgentStateStore` abstraction |
+| `ToolkitState` | Moved to `io.agentscope.core.state.legacy.ToolkitState` (kept for compatibility only — do not reference in new code) |
 | (new) | `Task`, `TaskContextState`, `ToolContextState`, `PlanModeContextState`, `ReadCacheEntry` |
 
 Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `ToolkitState` from `io.agentscope.core.state` will fail to compile. Detail → [Context](harness/context.md)
@@ -85,14 +85,14 @@ The entire `io.agentscope.core.hook` package — the `Hook` interface, `HookEven
 
 Detail → [Middleware](building-blocks/middleware.md)
 
-#### B.3 `Memory` → `Session` + `AgentState`
+#### B.3 `Memory` → `AgentStateStore` + `AgentState`
 
 - The `io.agentscope.core.memory.Memory` interface and every implementation (`InMemoryMemory`, `LongTermMemory`, …) are `@Deprecated(forRemoval = true, since = "2.0.0")`.
-- `Memory` no longer extends `StateModule`. It gains `saveTo(Session, SessionKey)` / `loadFrom(Session, SessionKey)` as a v1 bridge so existing implementations can still round-trip through `Session`.
+- `Memory` no longer extends `StateModule`. It gains `saveTo(AgentStateStore, userId, sessionId)` / `loadFrom(AgentStateStore, userId, sessionId)` as a bridge so existing implementations can still round-trip through an `AgentStateStore`.
 - Recommended model:
   - **Conversation history** lives on `AgentState.getContext()`.
-  - **Persistence** uses the `Session` abstraction (built-in: `InMemorySession`, `JsonSession`), partitioned by `SessionKey`.
-  - Builder chain: `.session(Session).sessionKey(SessionKey)` — `AgentState` is saved/loaded automatically on every `call()`.
+  - **Persistence** uses the `AgentStateStore` abstraction (built-in: `InMemoryAgentStateStore`, `JsonFileAgentStateStore`), partitioned by the `(userId, sessionId)` pair.
+  - Builder chain: `.stateStore(AgentStateStore)` — `AgentState` is saved/loaded automatically on every `call()`, keyed by the `(userId, sessionId)` carried on the call's `RuntimeContext`.
 
 Detail → [Context](harness/context.md)
 

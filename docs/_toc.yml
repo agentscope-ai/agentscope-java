@@ -340,12 +340,12 @@ parts:
     - file: v2/en/integration/memory/reme
       title: ReMe
   - file: v2/en/integration/session/index
-    title: Session
+    title: Agent State Store
     sections:
     - file: v2/en/integration/session/mysql
-      title: MySQL Session
+      title: MySQL State Store
     - file: v2/en/integration/session/redis
-      title: Redis Session
+      title: Redis State Store
   - file: v2/en/integration/rag/index
     title: RAG Knowledge Base
     sections:
@@ -478,12 +478,12 @@ parts:
     - file: v2/zh/integration/memory/reme
       title: ReMe
   - file: v2/zh/integration/session/index
-    title: 会话
+    title: Agent 状态存储
     sections:
     - file: v2/zh/integration/session/mysql
-      title: MySQL Session
+      title: MySQL 状态存储
     - file: v2/zh/integration/session/redis
-      title: Redis Session
+      title: Redis 状态存储
   - file: v2/zh/integration/rag/index
     title: RAG 知识库
     sections:

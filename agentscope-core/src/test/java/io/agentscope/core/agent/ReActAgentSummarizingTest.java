@@ -31,6 +31,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
@@ -142,7 +143,7 @@ class ReActAgentSummarizingTest {
         assertTrue(summaryText.length() > 10, "Summary should be substantial");
 
         // Verify memory contains the summary
-        List<Msg> memoryMessages = agent.getState().getContext();
+        List<Msg> memoryMessages = agent.getAgentState().getContext();
         assertTrue(memoryMessages.contains(response), "Memory should contain summary message");
     }
 
@@ -370,20 +371,20 @@ class ReActAgentSummarizingTest {
                         .build();
 
         // Check initial memory size
-        int initialMemorySize = agent.getState().getContext().size();
+        int initialMemorySize = agent.getAgentState().getContext().size();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Please help");
         Msg response =
                 agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify memory has grown
-        int finalMemorySize = agent.getState().getContext().size();
+        int finalMemorySize = agent.getAgentState().getContext().size();
         assertTrue(
                 finalMemorySize > initialMemorySize,
                 "Memory should contain additional messages after summarizing");
 
         // Verify the last message is the summary
-        Msg lastMessage = agent.getState().getContext().get(finalMemorySize - 1);
+        Msg lastMessage = agent.getAgentState().getContext().get(finalMemorySize - 1);
         assertEquals(response, lastMessage, "Last message in memory should be the summary");
         assertEquals(
                 MsgRole.ASSISTANT, lastMessage.getRole(), "Summary message should be ASSISTANT");
@@ -468,7 +469,7 @@ class ReActAgentSummarizingTest {
         // CRITICAL: Verify that the pending tool call has been resolved in memory
         // Before the fix, memory would have pending tool calls without results
         // After the fix, summarizing() should add error results for pending tools
-        List<Msg> memoryMessages = agent.getState().getContext();
+        List<Msg> memoryMessages = agent.getAgentState().getContext();
 
         // Find if there's a tool result message for the pending tool
         boolean hasToolResultForPendingTool =
@@ -617,12 +618,12 @@ class ReActAgentSummarizingTest {
                         .toolkit(mockToolkit)
                         .maxIters(1)
                         .build();
-        agent.getState().contextMutable().add(pendingAssistantMsg);
+        agent.getAgentState().contextMutable().add(pendingAssistantMsg);
 
         Msg summaryResponse = invokeSummarizing(agent);
         assertNotNull(summaryResponse, "Summary response should not be null");
 
-        List<Msg> memoryMessages = agent.getState().getContext();
+        List<Msg> memoryMessages = agent.getAgentState().getContext();
 
         long toolId1ToolRoleCount =
                 memoryMessages.stream()
@@ -687,11 +688,16 @@ class ReActAgentSummarizingTest {
 
     private static Msg invokeSummarizing(ReActAgent agent) {
         try {
-            Method method = ReActAgent.class.getDeclaredMethod("summarizing");
+            // The ReAct loop (including summarizing()) now lives on the per-call CallExecution
+            // inner class; reach it through the agent's current execution scope.
+            Field execField = ReActAgent.class.getDeclaredField("exec");
+            execField.setAccessible(true);
+            Object exec = execField.get(agent);
+            Method method = exec.getClass().getDeclaredMethod("summarizing");
             method.setAccessible(true);
             @SuppressWarnings("unchecked")
             reactor.core.publisher.Mono<Msg> mono =
-                    (reactor.core.publisher.Mono<Msg>) method.invoke(agent);
+                    (reactor.core.publisher.Mono<Msg>) method.invoke(exec);
             return mono.block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
         } catch (Exception e) {
             throw new RuntimeException("Failed to invoke summarizing()", e);

@@ -10,7 +10,7 @@ description: "了解如何在 AgentScope Java 2.0 中定义和配置智能体"
 其主要职责包括：
 
 - 接收输入消息或事件，调用工具完成任务
-- 管理上下文（会话历史保存在 `AgentState.getContext()` 中，可通过 `Session` 自动持久化）
+- 管理上下文（会话历史保存在 `AgentState.getContext()` 中，可通过 `AgentStateStore` 自动持久化）
 - 在关键生命周期阶段提供中间件钩子，支持自定义逻辑
 - 自动管理并发和串行工具执行
 
@@ -143,7 +143,8 @@ ReActAgent agent =
 | `model` | `Model` | 必填 | 用于推理的大语言模型（继承自 `ChatModelBase`） |
 | `toolkit` | `Toolkit` | `new Toolkit()` | 管理工具、MCP 客户端、技能和工具组 |
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | 应用于 agent / reasoning / acting / model call / system prompt 钩子 |
-| `session` + `sessionKey` | `Session` + `SessionKey` | `null`（不持久化） | 配置后 agent 在每次 `call` 后自动加载/保存 `AgentState` |
+| `stateStore` | `AgentStateStore` | `null`（不持久化） | 配置后 agent 在每次 `call` 后自动加载/保存 `AgentState`，按该次调用 `RuntimeContext` 的 `(userId, sessionId)` 寻址 |
+| `defaultSessionId` | `String` | agent `name` | 当某次调用的 `RuntimeContext` 没带 `sessionId` 时的兜底值 |
 | `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则，参见 [权限系统](./permission-system.md) |
 | `modelConfig` | `ModelConfig` | 默认值 | 模型重试次数和备用模型 |
 | `reactConfig` | `ReactConfig` | 默认值 | 最大迭代次数和拒绝处理方式 |
@@ -269,7 +270,7 @@ agent.observe(otherAgentMsg).block();
 
 | 槽位 | 设置方式 | 读取方式 |
 |------|---------|---------|
-| 会话字段 | `sessionId(String)` / `userId(String)` / `sessionKey(SessionKey)` | `getSessionId()` / `getUserId()` / `getSessionKey()` |
+| 会话字段 | `sessionId(String)` / `userId(String)` | `getSessionId()` / `getUserId()` |
 | 字符串属性（任意 key-value） | `put(String key, Object value)` | `<T> T get(String key)` |
 | 类型化属性（按 `Class<T>` 注入业务 POJO） | `put(Class<T> type, T value)` / `put(String key, Class<T> type, T value)` | `<T> T get(Class<T> type)` / `<T> T get(String key, Class<T> type)` |
 
@@ -281,14 +282,12 @@ agent.observe(otherAgentMsg).block();
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.util.List;
 
 RuntimeContext ctx =
         RuntimeContext.builder()
-                .userId("alice")
-                .sessionId("session-001")
-                .sessionKey(SimpleSessionKey.of("alice:assistant:session-001"))
+                .userId("alice")                           // 可选；null 表示匿名
+                .sessionId("session-001")                  // 选择状态槽位
                 .put("request_id", "req-abc-123")          // 字符串层
                 .put(UserContext.class, new UserContext("alice", "en"))  // 类型层（业务 POJO）
                 .build();
@@ -296,7 +295,7 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` 提供 `call` / `stream` 的 `RuntimeContext` 重载；`streamEvents` 未直接重载，需要传 context 时改用 `stream(msgs, options, ctx)` 或先在 builder 上配置全局 `toolExecutionContext`。不传 context 时框架使用 `RuntimeContext.empty()`，会话字段为 `null`，属性表为空。
+`ReActAgent` 提供 `call` / `stream` 的 `RuntimeContext` 重载；`streamEvents` 未直接重载，需要传 context 时改用 `stream(msgs, options, ctx)` 或先在 builder 上配置全局 `toolExecutionContext`。不传 context 时框架使用 `RuntimeContext.empty()`，会话字段为 `null`，属性表为空，此时 agent 回退到 builder 上配置的 `defaultSessionId`。
 
 ### 谁能读到
 
@@ -306,8 +305,8 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 ### 与持久化的关系
 
-- `RuntimeContext` 的字段**不会**进 `AgentState`，也不会被 `Session` 写回磁盘。
-- `sessionKey` 字段是给业务层使用的便利字段；agent 自身依然以 builder 上配置的 `sessionKey()` 作为持久化 key，运行时 `RuntimeContext.sessionKey()` 不会切换持久化目标。
+- `RuntimeContext` 的自由 / 类型属性**不会**进 `AgentState`，也不会被 `AgentStateStore` 写回磁盘。
+- `sessionId` / `userId` 字段**会**驱动持久化：每次调用激活对应的 `(userId, sessionId)` 状态槽位，因此在 `RuntimeContext` 上传不同身份就会切换加载/保存的 `AgentState`。不传时回退到 builder 上配置的 `defaultSessionId`。
 
 完整示例：`agentscope-examples/documentation/.../context/RuntimeContextExample.java`、`tool/ToolExecutionContextExample.java`。
 
@@ -424,15 +423,15 @@ for (var tc : externalEvent.getToolCalls()) {
 构建交互式 UI 时使用 `streamEvents`——它可以实时检测暂停事件并立即提示用户。以编程方式处理事件的自动化流程则使用 `call`。完整可运行示例见 `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`。
 :::
 
-## 配置和使用 Session
+## 配置状态持久化（AgentStateStore）
 
-`AgentState` 是 agent 的全部可恢复状态——对话上下文、压缩摘要、权限规则、工具状态和当前 reply 位置。`Session` 是它的存储抽象。
+`AgentState` 是 agent 的全部可恢复状态——对话上下文、压缩摘要、权限规则、工具状态和当前 reply 位置。[`AgentStateStore`](../../integration/session/index.md) 是它的存储抽象。
 
-**只需在 builder 上配 `session(...)` 与 `sessionKey(...)` 两项，agent 就会自动持久化与恢复**：每次 `call` 结束把 `AgentState` 写回，下次同 key 启动时自动加载。
+**只需在 builder 上配 `stateStore(...)`，agent 就会自动持久化与恢复**：每次 `call` 结束把 `AgentState` 写回，下次用同一 `(userId, sessionId)` 调用时自动加载。Agent 实例本身对 session 无状态——具体读写哪个槽位由该次调用的 `RuntimeContext` 决定（缺省回退到 `defaultSessionId`）。
 
 ```java
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import java.nio.file.Paths;
 
 ReActAgent agent = ReActAgent.builder()
@@ -440,34 +439,37 @@ ReActAgent agent = ReActAgent.builder()
         .sysPrompt("你是一个有帮助的助手。")
         .model(model)
         .toolkit(new Toolkit())
-        .session(new JsonSession(Paths.get(System.getProperty("user.home"), ".agentscope/sessions")))
-        .sessionKey(SimpleSessionKey.of("user_123:agent_456:session_789"))
+        .stateStore(new JsonFileAgentStateStore(
+                Paths.get(System.getProperty("user.home"), ".agentscope/sessions")))
         .build();
 
-// 启动时已自动加载（如该 key 有历史数据）
-int loaded = agent.getState().getContext().size();
+// 选定本次会话的槽位；userId 可选（null 表示匿名）
+RuntimeContext rc = RuntimeContext.builder()
+        .userId("user_123")
+        .sessionId("session_789")
+        .build();
 
-// 完成后自动持久化
-agent.call(List.of(new UserMessage("继续之前的任务。"))).block();
+// 若 (user_123, session_789) 有历史数据会自动加载；调用结束自动持久化
+agent.call(List.of(new UserMessage("继续之前的任务。")), rc).block();
 ```
 
 内置与扩展实现：
 
 | 实现 | 模块 | 适用 |
 |------|------|------|
-| `InMemorySession` | `agentscope-core` | 单元测试 / 单进程 demo |
-| `JsonSession` | `agentscope-core` | 单机开发，按 `SessionKey` 分目录落 JSON |
-| `RedisSession` | `agentscope-extensions-session-redis` | 多副本生产，跨进程跨机器共享 |
-| `MysqlSession` | `agentscope-extensions-session-mysql` | 需要落关系型库（审计 / 报表） |
+| `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 / 单进程 demo |
+| `JsonFileAgentStateStore` | `agentscope-core` | 单机开发，按 `(userId, sessionId)` 分目录落 JSON |
+| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | 多副本生产，跨进程跨机器共享 |
+| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | 需要落关系型库（审计 / 报表） |
 
-`SessionKey` 默认实现 `SimpleSessionKey.of(id)` 已经够用；要按 `(userId, agentId, sessionId)` 多维分桶就自实现 `SessionKey` 接口。
+大多数场景只用一个 `sessionId` 就够；要按用户分桶就在 `RuntimeContext` 上同时设置 `userId`，存储会按 `(userId, sessionId)` 二元组寻址每个槽位。
 
-通过 `agent.getAgentState()` 可以读写当前快照（旁路场景，如管理台、审计）：
+通过 `agent.getAgentState()` 可以读取当前活跃槽位的快照（旁路场景，如管理台、审计）；用 `agent.getAgentState(userId, sessionId)` 可读取指定槽位：
 
 ```java
-AgentState state = agent.getAgentState();
-state.getContext().size();         // 当前对话消息数
-String json = state.toJson();      // 序列化为 JSON
+AgentState state = agent.getAgentState();   // 当前活跃槽位
+state.getContext().size();                  // 当前对话消息数
+String json = state.toJson();               // 序列化为 JSON
 ```
 
 完整字段、跨节点接续、与压缩 / Plan Mode / 子 agent 的协作细节见 [Harness — Context](../harness/context.md)。

@@ -1,6 +1,6 @@
 ---
 title: "上生产（Going to Production）"
-description: "从单机原型到多副本分布式部署：Session / Filesystem / Skill / Sandbox / 快照 / 观测的组件选型与配置清单"
+description: "从单机原型到多副本分布式部署：AgentStateStore / Filesystem / Skill / Sandbox / 快照 / 观测的组件选型与配置清单"
 ---
 
 > 把 `HarnessAgent` 在你笔记本上跑起来很容易，搬到生产环境是另一回事——多副本要共享会话、要隔离用户、要支持不可信代码执行、要在 pod 重启后接着上次跑。本页**只讲单机 → 分布式生产的差异**：哪些组件必须换、换成什么、为什么 builder 会在你漏配时直接抛 `IllegalStateException`。
@@ -11,11 +11,11 @@ description: "从单机原型到多副本分布式部署：Session / Filesystem 
 
 | 维度 | 单机默认（开发 / demo） | 分布式生产替换 |
 |------|----------------------|----------------|
-| `Session`（`AgentState` 持久化） | `WorkspaceSession`（本地 JSON） | `RedisSession` / `MysqlSession`（或 `RedissonSession`） |
+| `AgentStateStore`（`AgentState` 持久化） | `JsonFileAgentStateStore`（本地 JSON） | `RedisAgentStateStore` / `MysqlAgentStateStore` |
 | Filesystem | `LocalFilesystemSpec`（不配 = 此项） | `RemoteFilesystemSpec(BaseStore)` 或 `SandboxFilesystemSpec` |
 | `BaseStore`（Remote 后端） | `InMemoryStore`（测试） | `RedisStore` / `JdbcStore`（MySQL / PG / SQLite / H2） |
 | Skill 来源 | `workspace/skills/` | `GitSkillRepository` / `MysqlSkillRepository` / `NacosSkillRepository` |
-| Sandbox 状态 | `WorkspaceSession` 写本地 | 分布式 Session 写后端 KV |
+| Sandbox 状态 | 本地 `JsonFileAgentStateStore` 写本地 | 分布式 `AgentStateStore` 写后端 KV |
 | Sandbox 快照 | `NoopSnapshotSpec` / `LocalSnapshotSpec` | `OssSnapshotSpec` / `RedisSnapshotSpec` / 自定义 `RemoteSnapshotSpec` |
 | 沙箱执行串行化 | 单进程内即可 | `RedisSandboxExecutionGuard`（AGENT/GLOBAL scope 多副本必备） |
 | 观测 | 默认无 tracing | `OtelTracingMiddleware` + OpenTelemetry SDK |
@@ -25,26 +25,26 @@ description: "从单机原型到多副本分布式部署：Session / Filesystem 
 - `filesystem(RemoteFilesystemSpec)` + 没换 `stateStore(...)` → `build()` 抛 `IllegalStateException`，告诉你需要提供分布式 `AgentStateStore`。
 - `filesystem(SandboxFilesystemSpec)` + 本地 `AgentStateStore` → `build()` 正常通过但打一条 **warning** 日志，提醒你沙箱状态不能跨 JVM 恢复、也不能跨实例共享。这是为了开发/测试方便而设计的；生产环境务必配分布式 store。
 
-## 1. Session 后端：先把 `AgentState` 放对地方
+## 1. 状态存储后端：先把 `AgentState` 放对地方
 
-`AgentState`（对话上下文、压缩摘要、权限规则、Plan Mode 状态、tool state）跨进程恢复的唯一通路就是 `Session`。
+`AgentState`（对话上下文、压缩摘要、权限规则、Plan Mode 状态、tool state）跨进程恢复的唯一通路就是 [`AgentStateStore`](../../integration/session/index.md)。
 
 | 实现 | 模块 | 何时使用 |
 |------|------|---------|
-| `InMemorySession` | `agentscope-core` | 单元测试；进程退出全部丢 |
-| `JsonSession` | `agentscope-core` | 单机开发；按 `SessionKey` 在文件系统分目录 |
-| `WorkspaceSession` | `agentscope-harness` | **HarnessAgent 默认**；落到 `<workspace>/agents/<agentId>/context/<sessionId>/`；**单机单租户** |
-| `RedisSession` | `agentscope-extensions-session-redis` | **多副本生产首选**；支持 Jedis / Lettuce / Redisson（Standalone / Cluster / Sentinel） |
-| `MysqlSession` | `agentscope-extensions-session-mysql` | 需要把会话沉淀进关系型库（审计 / 报表 / 联表查询） |
+| `InMemoryAgentStateStore` | `agentscope-core` | 单元测试；进程退出全部丢 |
+| `JsonFileAgentStateStore` | `agentscope-core` | 单机开发；按 `(userId, sessionId)` 在文件系统分目录。**HarnessAgent 默认**，根目录 `~/.agentscope/state/<agentId>/`；**单机** |
+| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | **多副本生产首选**；支持 Jedis / Lettuce / Redisson（Standalone / Cluster / Sentinel） |
+| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | 需要把状态沉淀进关系型库（审计 / 报表 / 联表查询） |
 
-**Redis 三种 client adapter** 都通过 `RedisSession.builder()` 切换：
+**Redis 三种 client adapter** 都通过 `RedisAgentStateStore.builder()` 切换：
 
 ```java
-import io.agentscope.core.session.redis.RedisSession;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.redis.RedisAgentStateStore;
 import redis.clients.jedis.JedisPooled;
 
 // Jedis Standalone
-Session session = RedisSession.builder()
+AgentStateStore stateStore = RedisAgentStateStore.builder()
         .jedisClient(new JedisPooled("redis://localhost:6379"))
         .keyPrefix("myapp:session:")
         .build();
@@ -56,15 +56,13 @@ Session session = RedisSession.builder()
 // .redissonClient(redisson)
 ```
 
-**`SessionKey` 的设计要点。** `SimpleSessionKey.of(sessionId)` 只够单租户。生产应自定义实现，把租户 / 用户 / agent id 编进 key 防止跨用户串读——`RedisSession` 把它作为 Redis key 的一部分，`MysqlSession` 用作主键：
+**按租户隔离。** 单用 `sessionId` 只够单租户。生产应在每次调用的 `RuntimeContext` 上同时设置 `userId` 与 `sessionId`，防止跨用户串读——存储按 `(userId, sessionId)` 二元组寻址每个槽位（`RedisAgentStateStore` 把 `userId` 折进 Redis key，`MysqlAgentStateStore` 折进主键）。其他维度（租户、agent）自行拼进 `sessionId` 字符串：
 
 ```java
-class TenantSessionKey implements SessionKey {
-    private final String tenantId, userId, agentId, sessionId;
-    @Override public String toIdentifier() {
-        return tenantId + ":" + userId + ":" + agentId + ":" + sessionId;
-    }
-}
+agent.call(msg, RuntimeContext.builder()
+        .userId(tenantId + ":" + userId)
+        .sessionId(agentId + ":" + sessionId)
+        .build()).block();
 ```
 
 完整细节见 [Harness — Context](../harness/context.md)。
@@ -119,7 +117,7 @@ HarnessAgent agent = HarnessAgent.builder()
         .name("multi-tenant-agent")
         .model(model)
         .workspace(workspace)
-        .session(RedisSession.builder().jedisClient(jedis).build())
+        .stateStore(RedisAgentStateStore.builder().jedisClient(jedis).build())
         .filesystem(new RemoteFilesystemSpec(store)
                 .isolationScope(IsolationScope.USER)
                 .workspaceIndex(WorkspaceIndex.open(workspace)))  // 加速 ls/glob
@@ -257,7 +255,7 @@ HarnessAgent agent = HarnessAgent.builder()
         .name("coding-agent")
         .model(model)
         .workspace(workspace)
-        .stateStore(RedisSession.builder().jedisClient(jedis).build())
+        .stateStore(RedisAgentStateStore.builder().jedisClient(jedis).build())
         .filesystem(new DockerFilesystemSpec()
                 .image("python:3.12-slim")
                 .isolationScope(IsolationScope.USER)
@@ -314,7 +312,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | 关注点 | 推荐组合 |
 |-------|----------|
-| 会话 / `AgentState` | `RedisSession`（Lettuce Cluster 或 Sentinel）+ 自定义多维 `SessionKey` |
+| 会话 / `AgentState` | `RedisAgentStateStore`（Lettuce Cluster 或 Sentinel）+ `(userId, sessionId)` 承载租户/用户/agent 维度 |
 | 工作区文件 | `RemoteFilesystemSpec(RedisStore or JdbcStore)` + `WorkspaceIndex` + `IsolationScope.USER` |
 | 大对象 / 快照 | `OssSnapshotSpec`（不要写 Redis） |
 | 跨节点 sandbox 共享 | AgentRun + NAS mount，或自管 K8s + RedisSandboxExecutionGuard |
@@ -326,11 +324,11 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 7. 一个完整的生产 builder 模板
 
-`HarnessAgent` **不是线程安全的**——一个实例同一时刻只能处理一个 `call()`。生产 Web 服务中应使用工厂方法为每个请求创建独立实例。共享依赖（model、session、sandbox spec、skill repository）均为线程安全；只有 agent 实例本身是 per-request 的：
+`HarnessAgent` **不是线程安全的**——一个实例同一时刻只能处理一个 `call()`。生产 Web 服务中应使用工厂方法为每个请求创建独立实例。共享依赖（model、状态存储、sandbox spec、skill repository）均为线程安全；只有 agent 实例本身是 per-request 的：
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.redis.RedisSession;
+import io.agentscope.core.state.redis.RedisAgentStateStore;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
@@ -353,7 +351,7 @@ public class ProductionAgentFactory {
     // --- 可共享的线程安全依赖（应用启动时创建一次） ---
     private final Path workspace = Paths.get("/var/agentscope/workspace");
     private final JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
-    private final RedisSession session = RedisSession.builder().jedisClient(jedis).build();
+    private final RedisAgentStateStore stateStore = RedisAgentStateStore.builder().jedisClient(jedis).build();
     private final OssSnapshotSpec oss = new OssSnapshotSpec(
             "oss-cn-hangzhou.aliyuncs.com",
             System.getenv("OSS_AK"), System.getenv("OSS_SK"),
@@ -373,7 +371,7 @@ public class ProductionAgentFactory {
                 .workspace(workspace)
 
                 // stateStore + filesystem 分布式必须一起配
-                .stateStore(session)
+                .stateStore(stateStore)
                 .filesystem(sandboxSpec)
 
                 // 记忆压缩 + 大结果卸载（生产长会话必备）
@@ -414,7 +412,7 @@ agent.call(msg, RuntimeContext.builder()
 - **`java.nio.Files` 写工作区**——在沙箱 / Remote 模式下落到错的位置。永远走 `agent.getWorkspaceManager()`。**例外**：builder 装配时的种子文件（`initWorkspaceIfAbsent` 之类）那时还没有运行时上下文，用 `java.nio.Files` 是 OK 的。
 - **`tools.json` 的 `allow` 会过滤内置工具**——用白名单时务必把 `read_file` / `memory_search` / `agent_spawn` 这些保留下来，否则整套内置工具一起被砍。
 - **`IsolationScope` 改了，旧数据不会自动迁移**——上线前定下来，别上线后改。改了等同于"换了一个命名空间"。
-- **`WorkspaceSession` 单机限制**：K8s 多副本部署里第一次 build 就抛 `IllegalStateException`，**这是设计如此**——告诉你别把会话状态留在某个 pod 的本地磁盘上。
+- **本地 `AgentStateStore` 单机限制**：K8s 多副本部署里如果把分布式文件系统和本地 `JsonFileAgentStateStore` 搭配，第一次 build 就抛 `IllegalStateException`，**这是设计如此**——告诉你别把 agent 状态留在某个 pod 的本地磁盘上。
 - **`NacosSkillRepository` 不关闭**——会泄露订阅，集群规模大了 Nacos 会喊。Spring 注入用 `@PreDestroy` 或 `destroyMethod="close"`。
 - **OSS / NAS 走完 IAM 再上线**——`OssSnapshotSpec` 的 AK/SK 是平台凭证；用 RAM Role + STS 临时凭证更稳。
 - **本地 `AgentStateStore` + 沙箱模式仅用于开发**——构建时的 warning 日志是故意的，生产环境别忽略。
@@ -423,7 +421,7 @@ agent.call(msg, RuntimeContext.builder()
 
 - [Quickstart](../quickstart.md) —— 端到端跑通第一个 `HarnessAgent`
 - [Harness 架构](../harness/architecture.md) —— 各能力如何协作
-- [Context](../harness/context.md) —— `AgentState` / `Session` / 跨节点恢复
+- [Context](../harness/context.md) —— `AgentState` / `AgentStateStore` / 跨节点恢复
 - [Workspace](../harness/workspace.md) —— 目录布局、两层读、`tools.json`
 - [Filesystem](../harness/filesystem.md) —— 三种部署模式、`IsolationScope`
 - [Sandbox](../harness/sandbox.md) —— 沙箱细节、五种后端、快照机制

@@ -1,22 +1,22 @@
 ---
-title: "上下文与会话"
+title: "上下文与状态持久化"
 description: "Agent 运行时状态的持久化、跨机恢复,以及上下文长度的多重压缩策略"
 ---
 
 HarnessAgent 在两条互相配合的链路上管理工作记忆:
 
-1. **Session — 把 agent 的运行时状态持久化下来**,让同一个 `sessionId` 能在不同进程、不同机器上接着上次执行。
+1. **状态持久化 — 通过 `AgentStateStore` 把 agent 的运行时状态持久化下来**,让同一个 `(userId, sessionId)` 能在不同进程、不同机器上接着上次执行。
 2. **Context 压缩 — 让对话上下文不至于把模型的 token 预算吃光**,在不丢失关键信息的前提下尽量延长一次会话的有效寿命。
 
-两条链路通过同一个数据结构 `AgentState` 串起来:压缩在内存里更新它,Session 把它落到外部存储。下面分两部分展开。
+两条链路通过同一个数据结构 `AgentState` 串起来:压缩在内存里更新它,状态存储把它落到外部存储。下面分两部分展开。
 
 ---
 
-## 一、Session:Agent 运行时状态的持久化
+## 一、状态持久化:Agent 运行时状态的持久化
 
-### Session 装的是什么 —— AgentState
+### 状态存储装的是什么 —— AgentState
 
-Session 持久化的是一份 **`AgentState`**(`io.agentscope.core.state.AgentState`),它是 agent 当前"瞬时"运行状态的完整快照:
+[`AgentStateStore`](../../integration/session/index.md) 持久化的是一份 **`AgentState`**(`io.agentscope.core.state.AgentState`),它是 agent 当前"瞬时"运行状态的完整快照:
 
 | `AgentState` 字段 | 内容 |
 |---|---|
@@ -27,71 +27,70 @@ Session 持久化的是一份 **`AgentState`**(`io.agentscope.core.state.AgentSt
 | `getTasksContext()` | `todo_write` 维护的任务清单 |
 | `getToolContext()` | 工具组激活状态(`activatedGroups`) |
 
-一次 `call()` 结束,框架自动把整份 `AgentState` 以 `agent_state` 这个键写进 Session。下次同 `sessionId` 的 `call()` 在构造 agent 时会优先从 Session 读回——**只要 Session 后端是分布式的(例如 Redis),不同进程、不同物理机上的 agent 实例都能拿到完全一致的状态**。
+一次 `call()` 结束,框架自动把整份 `AgentState` 以 `agent_state` 这个键写进状态存储,按该次调用的 `(userId, sessionId)` 寻址。下次同 `(userId, sessionId)` 的 `call()` 会自动从存储读回——**只要状态存储是分布式的(例如 Redis),不同进程、不同物理机上的 agent 实例都能拿到完全一致的状态**。
 
 ### 自动持久化与恢复链路
 
 ```
-agent 启动 ─► loadOrCreateAgentState(session, sessionKey)
-              │
-              ├─ Session 里有 agent_state ─► 直接还原
-              └─ 没有 ─► 构造一份空 AgentState
+call() 携带 (userId, sessionId) ─► 激活槽位 ─► loadOrCreateAgentState(store, userId, sessionId)
+                                   │
+                                   ├─ 存储里有 agent_state ─► 直接还原
+                                   └─ 没有 ─► 构造一份空 AgentState
 
 agent.call() 进行中 ─► 中间件就地改写 AgentState.contextMutable()
                        (压缩、Plan、todo_write、权限调整……都在改它)
 
-进程退出 / interrupt ─► shutdownManager 触发
-                       session.save(sessionKey, "agent_state", state)
+call 结束 / 进程退出 / interrupt ─► 状态存储写入
+                       stateStore.save(userId, sessionId, "agent_state", state)
 ```
 
-这套机制是 **`ReActAgent` 自带**的(`ReActAgent.java` 构造函数与 `shutdownManager.bindStateSaver`),`HarnessAgent` 直接继承,无需额外配置。
+这套机制是 **`ReActAgent` 自带**的(per-call 槽位激活与 `shutdownManager.bindStateSaver`),`HarnessAgent` 直接继承,无需额外配置。Agent 实例不绑定固定 session——每次调用读写的是其 `RuntimeContext` 指定的槽位(缺省回退到 builder 上的 `defaultSessionId`)。
 
-> 单次 `call()` 期间的中间状态变更靠的是内存里的 `AgentState` 对象。**Session 不在每条消息后落盘,而是在 call 结束 / shutdown 时整体写入**——所以对 Session 后端的吞吐压力很低。
+> 单次 `call()` 期间的中间状态变更靠的是内存里的 `AgentState` 对象。**状态存储不在每条消息后落盘,而是在 call 结束 / shutdown 时整体写入**——所以对后端的吞吐压力很低。
 
 ### 内置与扩展实现
 
-只要实现 `io.agentscope.core.session.Session` 接口,任何后端都能接进来。选择哪一种,取决于你的部署形态:
+只要实现 `io.agentscope.core.state.AgentStateStore` 接口,任何后端都能接进来。选择哪一种,取决于你的部署形态:
 
 | 实现 | 模块 | 适用场景 |
 |---|---|---|
-| `InMemorySession` | `agentscope-core` | 单元测试 / 单进程演示;进程退出全部丢失 |
-| `JsonSession` | `agentscope-core` | 单机开发、文件落盘即可恢复;不能跨节点共享 |
-| `WorkspaceSession` | `agentscope-harness` | `HarnessAgent` 默认值,基于 `JsonSession`,把状态写到 `<workspace>/agents/<agentId>/context/<sessionId>/`;**单机单租户** |
-| `RedisSession` | `agentscope-extensions-session-redis` | **生产首选**,多副本共享;支持 Jedis / Lettuce / Redisson(Standalone / Cluster / Sentinel) |
-| `MysqlSession` | `agentscope-extensions-session-mysql` | 需要把会话数据沉淀进关系型库(审计、报表)时使用 |
+| `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 / 单进程演示;进程退出全部丢失 |
+| `JsonFileAgentStateStore` | `agentscope-core` | 单机开发、文件落盘即可恢复;不能跨节点共享。**`HarnessAgent` 默认值**,落在 `~/.agentscope/state/<agentId>/`(可通过 `agentscope.state.home` 系统属性改根目录);**单机** |
+| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | **生产首选**,多副本共享;支持 Jedis / Lettuce / Redisson(Standalone / Cluster / Sentinel) |
+| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | 需要把状态沉淀进关系型库(审计、报表)时使用 |
 
-切换非常简单——只在构造期 `.session(...)` 一次:
+切换非常简单——只在构造期 `.stateStore(...)` 一次:
 
 ```java
-// 默认(单机):省略 .session(...) 即可,自动用 WorkspaceSession
+// 默认(单机):省略 .stateStore(...) 即可,自动用本地 JsonFileAgentStateStore
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
     .build();
 
-// 多副本生产:换成 RedisSession
+// 多副本生产:换成 RedisAgentStateStore
 RedisClient client = RedisClient.create("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
-    .session(RedisSession.builder().lettuceClient(client).build())
+    .stateStore(RedisAgentStateStore.builder().lettuceClient(client).build())
     .build();
 ```
 
 :::{warning}
-`WorkspaceSession` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),HarnessAgent 会**强制要求** Session 也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。
+内置的 `JsonFileAgentStateStore` / `InMemoryAgentStateStore` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),HarnessAgent 会**强制要求**状态存储也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。请通过 `.stateStore(...)` 配置分布式 `AgentStateStore`(例如 `RedisAgentStateStore`)。
 :::
 
-### 同 sessionId 跨进程、跨机器实时恢复
+### 同 (userId, sessionId) 跨进程、跨机器实时恢复
 
-只要 Session 后端是分布式的(例如 Redis),这一切就是**自动**的:
+只要状态存储是分布式的(例如 Redis),这一切就是**自动**的:
 
 ```java
 // 节点 A:开了一段对话
 HarnessAgent agentA = HarnessAgent.builder()
-    .session(redisSession)
+    .stateStore(redisStore)
     /* ... */ .build();
 agentA.call(msg, RuntimeContext.builder()
     .sessionId("alice-2026-06-02-001")
@@ -100,10 +99,10 @@ agentA.call(msg, RuntimeContext.builder()
 
 // 节点 B:不同物理机,完全独立的 JVM
 HarnessAgent agentB = HarnessAgent.builder()
-    .session(redisSession)
-    /* 同一份 sessionId,同一份 sessionKey */ .build();
+    .stateStore(redisStore)
+    /* 同一份存储后端 */ .build();
 
-// 节点 B 第一次 call() 会自动从 Redis 拉到节点 A 之前留下的 AgentState
+// 节点 B 第一次用相同 (userId, sessionId) 的 call() 会自动从 Redis 拉到节点 A 之前留下的 AgentState
 agentB.call(nextMsg, RuntimeContext.builder()
     .sessionId("alice-2026-06-02-001")
     .userId("alice")
@@ -113,17 +112,17 @@ agentB.call(nextMsg, RuntimeContext.builder()
 这意味着:
 
 - **故障转移**:节点崩了,会话漂到另一个节点,用户感知不到。
-- **滚动发布**:旧 pod 退出前 `shutdownManager` 自动保存,新 pod 接到流量时自动从 Session 还原,**对话不会断**。
-- **跨场景接续**:在 Web UI 里和 agent 聊到一半,切换到 CLI 工具继续聊——只要 `sessionId` 一致,记忆都在。
+- **滚动发布**:旧 pod 退出前 `shutdownManager` 自动保存,新 pod 接到流量时自动从存储还原,**对话不会断**。
+- **跨场景接续**:在 Web UI 里和 agent 聊到一半,切换到 CLI 工具继续聊——只要 `(userId, sessionId)` 一致,记忆都在。
 
-`SessionKey` 接口决定写入键的命名空间。默认 `SimpleSessionKey.of(sessionId)` 就够用;需要 `(tenantId, userId, agentId, sessionId)` 这种多维分桶时,实现自己的 `SessionKey`。
+`(userId, sessionId)` 二元组决定命名空间:大多数场景只用 `sessionId` 就够;需要按用户分桶时再加上 `userId`。
 
 ### 多用户隔离
 
 `sessionId` 和 `userId` 解决的不是同一件事:
 
 - **`sessionId`** —— 决定哪段对话是哪段,独立的 `AgentState` 快照。
-- **`userId`** —— 决定文件落到谁的命名空间下,详见[文件系统](./filesystem)。
+- **`userId`** —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见[文件系统](./filesystem)。
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -133,7 +132,7 @@ agent.call(msg, RuntimeContext.builder()
     .sessionId("bob-1").userId("bob").build()).block();
 ```
 
-两个用户的对话状态与文件路径互不干扰。生产部署如果想做 `AgentState` 级别的用户隔离,首选把 `userId` 编码进 `SessionKey`(配合 `RedisSession` 时它就是 Redis key 的一部分),而不是依赖文件路径分桶。
+两个用户的对话状态与文件路径互不干扰。生产部署如果想做 `AgentState` 级别的用户隔离,在 `RuntimeContext` 上设置 `userId` 即可:存储会按 `(userId, sessionId)` 寻址每个槽位(配合 `RedisAgentStateStore` 时 `userId` 就是 Redis key 的一部分),而不是依赖文件路径分桶。
 
 ### 直接读写 AgentState
 
@@ -157,7 +156,7 @@ AgentState restored = AgentState.fromJsonString(json);
 | `toJson()` / `fromJsonString(String)` | 序列化与反序列化 |
 
 :::{note}
-1.0 中的 `Memory` 接口(`InMemoryMemory` / `LongTermMemory` 等)在 2.0 已 `@Deprecated(forRemoval = true)`。新代码请使用 `AgentState.getContext()` + `Session` —— `Memory` 仅作为源代码兼容层保留。
+1.0 中的 `Memory` 接口(`InMemoryMemory` / `LongTermMemory` 等)在 2.0 已 `@Deprecated(forRemoval = true)`。新代码请使用 `AgentState.getContext()` + `AgentStateStore` —— `Memory` 仅作为源代码兼容层保留。
 :::
 
 ### 用 agent 自己查历史会话
@@ -176,7 +175,7 @@ AgentState restored = AgentState.fromJsonString(json);
 
 LLM 的 token 预算是有限的。一段对话越跑越长,要么主动压缩、要么撞到模型的硬上限报错。`HarnessAgent` 内置了一整套压缩链路,默认是关的,按需 `.compaction(...)` 或 `.toolResultEviction(...)` 开启。
 
-**核心规则**:**压缩在内存里更新 `AgentState`,Session 在 call 结束时把更新后的 `AgentState` 整体落盘**——也就是说,压缩与持久化是两条独立但互相支撑的路径。压缩永远先于落盘,Session 永远拿到的是压缩后的版本。
+**核心规则**:**压缩在内存里更新 `AgentState`,状态存储在 call 结束时把更新后的 `AgentState` 整体落盘**——也就是说,压缩与持久化是两条独立但互相支撑的路径。压缩永远先于落盘,状态存储永远拿到的是压缩后的版本。
 
 ### HarnessAgent 内置的几种策略
 
@@ -263,7 +262,7 @@ CompactionConfig.builder()
 
 ## 附:`RuntimeContext` —— per-call 元数据
 
-`RuntimeContext`(位于 `io.agentscope.core.agent`)是一个轻量容器,在 `agent.call(msgs, ctx)` 中传入,hook 与 tool 在本次调用期间共享。**不持久化、不参与 Session**。
+`RuntimeContext`(位于 `io.agentscope.core.agent`)是一个轻量容器,在 `agent.call(msgs, ctx)` 中传入,hook 与 tool 在本次调用期间共享。其自由 / 类型属性**不持久化**;而 `sessionId` / `userId` 字段决定本次调用状态存储读写哪个 `AgentState` 槽位。
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -282,21 +281,21 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 
 | 方法 | 说明 |
 |------|------|
-| `getSessionId()` / `getUserId()` / `getSessionKey()` | 内置字段,用于路由会话与租户 |
+| `getSessionId()` / `getUserId()` | 内置字段,用于路由状态槽位与租户 |
 | `get(String)` / `put(String, Object)` | 字符串键存取 |
 | `get(Class<T>)` / `put(Class<T>, T)` | 按类型存取(typed singleton) |
 | `getExtra()` | 直接拿到字符串属性 map(可变视图) |
 | `RuntimeContext.empty()` | 空上下文 |
 
 :::{tip}
-**Session 后端在 builder 时绑定,不能通过 RuntimeContext per-call 切换**。要按用户隔离 Session,用 `userId` + `SessionKey`(或自定义 `keyPrefix`),不要试图给每次 call 传不同的 Session 实例。
+**`AgentStateStore` 后端在 builder 时绑定,不能通过 RuntimeContext per-call 切换**。per-call 变化的是它寻址的 `(userId, sessionId)` 槽位——按用户隔离时设置 `userId`(或在存储上自定义 `keyPrefix`),不要试图给每次 call 传不同的存储实例。
 :::
 
 ---
 
 ## 相关文档
 
-- [架构](./architecture) —— Context、Session、工作区在一次 call 内如何协作
+- [架构](./architecture) —— Context、状态持久化、工作区在一次 call 内如何协作
 - [记忆](./memory) —— 长期记忆、对话压缩的详细配置、大工具结果卸载、后台维护
 - [Plan Mode](./plan-mode) —— plan 状态的独立持久化与恢复
 - [子 Agent](./subagent) —— 后台任务的存储位置与跨节点恢复

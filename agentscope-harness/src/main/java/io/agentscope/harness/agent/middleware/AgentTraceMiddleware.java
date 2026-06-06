@@ -74,7 +74,7 @@ public class AgentTraceMiddleware implements MiddlewareBase {
             }
         }
         return next.apply(input)
-                .doOnComplete(() -> logPostCall(agent))
+                .doOnComplete(() -> logPostCall(agent, ctx))
                 .doOnError(
                         e ->
                                 log.info(
@@ -159,11 +159,11 @@ public class AgentTraceMiddleware implements MiddlewareBase {
                 }
             }
         }
-        return next.apply(input).doOnComplete(() -> logPostActingFromState(agent));
+        return next.apply(input).doOnComplete(() -> logPostActingFromState(agent, ctx));
     }
 
-    private void logPostActingFromState(Agent agent) {
-        AgentState state = agent.getAgentState();
+    private void logPostActingFromState(Agent agent, RuntimeContext rc) {
+        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null) {
             return;
         }
@@ -191,9 +191,9 @@ public class AgentTraceMiddleware implements MiddlewareBase {
         }
     }
 
-    private void logPostCall(Agent agent) {
+    private void logPostCall(Agent agent, RuntimeContext rc) {
         String name = agent.getName();
-        AgentState state = agent.getAgentState();
+        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         String preview = "<n/a>";
         if (state != null) {
             List<Msg> ctx = state.getContext();

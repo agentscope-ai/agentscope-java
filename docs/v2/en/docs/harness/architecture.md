@@ -21,7 +21,7 @@ Each capability does one job and is unaware of the others. They cooperate throug
 
 - **`RuntimeContext`** — who is speaking in this call: `sessionId`, `userId`, plus arbitrary extras. Not persisted.
 - **The workspace** — who reads and writes which files. Where they physically land (local disk, sandbox, KV store) is a configuration choice.
-- **`Session`** — how runtime state is restored across calls.
+- **`AgentStateStore`** — how runtime state is restored across calls.
 
 **3. Built-ins run in a fixed order; your middleware runs first.**
 Harness wires its built-in middleware in a fixed order at build time. Anything you add via `.middleware(...)` runs **before** Harness's built-ins.
@@ -33,7 +33,7 @@ Each capability answers one problem; opt in on the builder.
 | Capability | What it solves | Builder hook | Detail |
 |---|---|---|---|
 | Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](./workspace) |
-| Session persistence | Same `sessionId` resumes across requests, processes, replicas | on by default; override with `.session(...)` | [Context](./context) |
+| State persistence | Same `(userId, sessionId)` resumes across requests, processes, replicas | on by default; override with `.stateStore(...)` | [Context](./context) |
 | Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](./memory) |
 | Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Memory](./memory) |
 | Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Memory](./memory) |
@@ -49,14 +49,14 @@ Each capability answers one problem; opt in on the builder.
 Three layers exist; the framework moves data between them automatically.
 
 - **In-call state** — `AgentState` (conversation context, permission rules, Plan Mode state, tool state) plus `RuntimeContext` (`sessionId`, `userId`, sandbox handle, extras).
-- **Cross-call state** — auto-saved at the end of every `call()` and auto-loaded on the next: the runtime snapshot under `agents/<agentId>/context/<sessionId>/`, the never-compacted full conversation log under `sessions/<sessionId>.log.jsonl`, subtask records, and sandbox metadata.
+- **Cross-call state** — auto-saved at the end of every `call()` and auto-loaded on the next: the `AgentState` runtime snapshot in the configured `AgentStateStore` (default `~/.agentscope/state/<agentId>/`, addressed by `(userId, sessionId)`), the never-compacted full conversation log under `sessions/<sessionId>.log.jsonl`, subtask records, and sandbox metadata.
 - **Long-term memory** — accumulated across sessions: `memory/YYYY-MM-DD.md` is append-only, periodically merged into `MEMORY.md` by a throttled background job; `MEMORY.md` is injected into the system prompt every reasoning step.
 
 Three invariants worth remembering:
 
 - The system prompt is rebuilt every reasoning step, so edits to `AGENTS.md` or `MEMORY.md` take effect immediately — no restart.
 - Compaction, memory distillation, and background maintenance are throttled; they don't run every turn.
-- `AgentState` is persisted by core's `ReActAgent` + `Session`. Harness no longer adds its own persistence hook.
+- `AgentState` is persisted by core's `ReActAgent` + `AgentStateStore`. Harness no longer adds its own persistence hook.
 
 ## Adding your own middleware
 
@@ -69,7 +69,7 @@ To insert custom behaviour without bypassing Harness's plumbing:
 ## Related pages
 
 - [Workspace](./workspace) — directory layout, what gets injected into the system prompt, `tools.json`
-- [Context](./context) — `AgentState`, `RuntimeContext`, `Session` persistence, multi-user isolation
+- [Context](./context) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
 - [Memory](./memory) — two-layer memory, compaction, large-result offloading
 - [Filesystem](./filesystem) — local + shell / shared store / sandbox
 - [Sandbox](./sandbox) — isolated execution, cross-call recovery, distributed

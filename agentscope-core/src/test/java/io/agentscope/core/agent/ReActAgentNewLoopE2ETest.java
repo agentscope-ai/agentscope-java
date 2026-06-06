@@ -180,7 +180,7 @@ class ReActAgentNewLoopE2ETest {
                         .toolkit(tk)
                         .middleware(mw)
                         .build();
-        AgentState state = agent.getState();
+        AgentState state = agent.getAgentState();
 
         List<AgentEvent> events =
                 agent.streamEvents(

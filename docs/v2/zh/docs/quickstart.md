@@ -163,7 +163,7 @@ agent.call(new UserMessage(userInput), RuntimeContext.builder()
 
 ## 接下来
 
-- [智能体（Agent）](./building-blocks/agent.md) —— `ReActAgent` 的完整接口、参数、`call` / `streamEvents` / `observe`、人机交互、Session 配置
+- [智能体（Agent）](./building-blocks/agent.md) —— `ReActAgent` 的完整接口、参数、`call` / `streamEvents` / `observe`、人机交互、`AgentStateStore` 配置
 - [Harness 架构](./harness/architecture.md) —— `HarnessAgent` 的各项能力如何协作、状态如何流转
 - [工作区](./harness/workspace.md) —— `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` 的目录布局与加载机制
 - [文件系统](./harness/filesystem.md) —— 本机 + shell / 共享存储 / 沙箱三种部署模式

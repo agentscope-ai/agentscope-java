@@ -102,7 +102,7 @@ public class MemoryFlushMiddleware implements MiddlewareBase {
         if (!(agent instanceof ReActAgent reActAgent)) {
             return reactor.core.publisher.Mono.empty();
         }
-        AgentState state = reActAgent.getAgentState();
+        AgentState state = RuntimeContext.resolveAgentState(rc, reActAgent);
         if (state == null) {
             return reactor.core.publisher.Mono.empty();
         }

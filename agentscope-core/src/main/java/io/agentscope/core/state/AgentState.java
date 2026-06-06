@@ -16,8 +16,10 @@
 package io.agentscope.core.state;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import io.agentscope.core.interruption.InterruptControl;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
 import java.util.ArrayList;
@@ -67,6 +69,14 @@ public final class AgentState implements State {
     private final ToolContextState toolContext;
     private final TaskContextState tasksContext;
     private final PlanModeContextState planModeContext;
+
+    /**
+     * Per-session interrupt signal. Runtime-only (never serialized): a stateless agent engine
+     * attaches one of these per {@code (userId, sessionId)} slot so a targeted {@code interrupt}
+     * signals exactly one session's in-flight call. Lazily created and {@code transient} so it is
+     * not part of {@code equals}/{@code hashCode} or JSON.
+     */
+    private transient volatile InterruptControl interruptControl;
 
     private AgentState(Builder builder) {
         this.sessionId = builder.sessionId == null ? newHex() : builder.sessionId;
@@ -222,6 +232,25 @@ public final class AgentState implements State {
     @JsonProperty("plan_mode_context")
     public PlanModeContextState getPlanModeContext() {
         return planModeContext;
+    }
+
+    /**
+     * The per-session interrupt signal for this state, created on first access. Runtime-only and not
+     * serialized.
+     */
+    @JsonIgnore
+    public InterruptControl interruptControl() {
+        InterruptControl local = interruptControl;
+        if (local == null) {
+            synchronized (this) {
+                local = interruptControl;
+                if (local == null) {
+                    local = new InterruptControl();
+                    interruptControl = local;
+                }
+            }
+        }
+        return local;
     }
 
     public static Builder builder() {

@@ -17,10 +17,11 @@ package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.agent.StructuredOutputCapableAgent;
+import io.agentscope.core.agent.StructuredOutputHook;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
@@ -50,6 +51,7 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.LegacyHookDispatcher;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.interruption.InterruptControl;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.memory.AgentStateMemoryView;
 import io.agentscope.core.memory.LongTermMemory;
@@ -59,6 +61,7 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -73,6 +76,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -102,10 +106,14 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.LegacyStateLoader;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.core.util.JsonSchemaUtils;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -141,7 +149,7 @@ import reactor.core.publisher.Mono;
  *   <li><b>Reactive Streaming:</b> Uses Project Reactor for non-blocking execution
  *   <li><b>Hook System:</b> Extensible hooks for monitoring and intercepting agent execution
  *   <li><b>HITL Support:</b> Human-in-the-loop via stopAgent() in PostReasoningEvent/PostActingEvent
- *   <li><b>Structured Output:</b> StructuredOutputCapableAgent provides type-safe output generation
+ *   <li><b>Structured Output:</b> per-call {@code generate_response} tool provides type-safe output
  * </ul>
  *
  * <p><b>Usage Example:</b>
@@ -179,15 +187,16 @@ import reactor.core.publisher.Mono;
  * one agent instance per request via a factory method. {@link io.agentscope.core.model.Model},
  * {@link io.agentscope.core.tool.Toolkit} (as a template — {@code build()} deep-copies it), and
  * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
- *
- * @see StructuredOutputCapableAgent
  */
 @SuppressWarnings("deprecation")
-public class ReActAgent extends StructuredOutputCapableAgent implements AutoCloseable {
+public class ReActAgent extends AgentBase implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =
             GracefulShutdownManager.getInstance();
+
+    /** Tool name used for the per-call structured-output {@code generate_response} tool. */
+    public static final String STRUCTURED_OUTPUT_TOOL_NAME = "generate_response";
 
     /**
      * @deprecated Permission HITL no longer uses a Reactor Sink. Confirm results are now
@@ -207,11 +216,20 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     private final ExecutionConfig toolExecutionConfig;
     private final GenerateOptions generateOptions;
 
+    /**
+     * Agent-owned toolkit (a deep copy made at {@code build()} time, isolated per agent instance).
+     * Shared across this agent's concurrent calls; per-call structured-output tools are NOT
+     * registered here — they live on the per-call {@link CallExecution} scope.
+     */
+    private final Toolkit toolkit;
+
+    /** Structured-output enforcement mode (TOOL_CHOICE or PROMPT). */
+    private final StructuredOutputReminder structuredOutputReminder;
+
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
     private final boolean enablePendingToolRecovery;
-    private RuntimeContext pendingRuntimeContext;
 
     // ==================== Persistence ====================
 
@@ -225,47 +243,47 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      */
     private final String defaultSessionId;
 
+    /**
+     * Builder-time permission template, applied to every freshly-created slot. Nullable.
+     */
+    private final PermissionContextState initialPermissionContext;
+
     // ==================== 2.0 Core Fields ====================
 
     /**
-     * Active {@link AgentState} for the current call. Swapped per-call by
-     * {@link #activateSlotForContext(RuntimeContext)} based on {@code (userId, sessionId)} from
-     * the RuntimeContext. Not {@code final}: mutated under {@code AgentBase.acquireExecution}
-     * serialization, which guarantees no concurrent swap.
+     * Per-call execution scope for the active {@code (userId, sessionId)} slot, holding the
+     * slot's mutable {@link AgentState} + {@link PermissionEngine} + slot key. Swapped per-call by
+     * {@link #activateSlotForContext(RuntimeContext)}.
+     *
+     * <p>Stage A: still an instance field, mutated under {@code AgentBase.acquireExecution}
+     * serialization (the mutex), which guarantees no concurrent swap. Later stages relocate the
+     * reasoning loop onto this object and carry it per-call via the Reactor Context so the mutex
+     * can be removed.
      */
-    private AgentState state;
-
-    /** Live engine for the current active slot. Swapped together with {@link #state}. */
-    private PermissionEngine permissionEngine;
+    private CallExecution exec;
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
-    private final java.util.concurrent.ConcurrentHashMap<String, AgentState> stateCache =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AgentState> stateCache =
+            new ConcurrentHashMap<>();
 
     /**
      * Per-slot permission engine cache: runtime-added ASK rules accumulate within the owning
      * slot rather than leaking across users / sessions.
      */
-    private final java.util.concurrent.ConcurrentHashMap<String, PermissionEngine>
-            permissionEngineCache = new java.util.concurrent.ConcurrentHashMap<>();
-
-    /** Active slot key — {@code (userId or "__anon__") + "/" + sessionId}. */
-    private String activeSlotKey;
+    private final ConcurrentHashMap<String, PermissionEngine>
+            permissionEngineCache = new ConcurrentHashMap<>();
 
     private final ModelConfig modelConfig;
     private final ReactConfig reactConfig;
 
     /**
-     * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
-     * PreSummaryEvent. It is safe to use an {@link java.util.concurrent.atomic.AtomicReference}
-     * here because {@code AgentBase.acquireExecution()} guarantees that only one {@code call()}
-     * runs concurrently per agent instance, so this reference is effectively owned by a single
-     * logical execution at any time.
+     * Reactor Context key carrying the {@code streamEvents} event sink into the underlying
+     * {@code call()} subscription. The sink is read in {@link #doCall(List)} and bound to the
+     * freshly-built {@link CallExecution#eventSink} for that subscription, so concurrent
+     * {@code streamEvents} invocations on one agent each carry their own sink (no shared instance
+     * field, no race).
      */
-    private final java.util.concurrent.atomic.AtomicReference<Msg> currentSystemMsg =
-            new java.util.concurrent.atomic.AtomicReference<>();
-
-    private final AtomicReference<FluxSink<AgentEvent>> activeEventSink = new AtomicReference<>();
+    private static final String EVENT_SINK_KEY = "io.agentscope.core.ReActAgent.eventSink";
 
     @SuppressWarnings("deprecation")
     private final LegacyHookDispatcher hookDispatcher;
@@ -277,10 +295,13 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 builder.name,
                 builder.description,
                 builder.checkRunning,
-                new ArrayList<>(builder.hooks),
-                agentToolkit,
-                builder.structuredOutputReminder);
+                new ArrayList<>(builder.hooks));
 
+        this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
+        this.structuredOutputReminder =
+                builder.structuredOutputReminder != null
+                        ? builder.structuredOutputReminder
+                        : StructuredOutputReminder.TOOL_CHOICE;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -308,18 +329,17 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 loadOrCreateAgentStateForSlot(
                         this.stateStore, null, this.defaultSessionId, builder, getAgentId());
         this.stateCache.put(defaultSlot, defaultState);
-        this.state = defaultState;
-        this.activeSlotKey = defaultSlot;
 
         // Restore toolkit activeGroups from the default slot's state (toolkit is shared across
         // slots; per-call swaps may re-sync via syncToolkitFromState).
-        if (agentToolkit != null && !this.state.getToolContext().getActivatedGroups().isEmpty()) {
-            agentToolkit.setActiveGroups(this.state.getToolContext().getActivatedGroups());
+        if (agentToolkit != null && !defaultState.getToolContext().getActivatedGroups().isEmpty()) {
+            agentToolkit.setActiveGroups(defaultState.getToolContext().getActivatedGroups());
         }
         this.modelConfig = assembleModelConfig(builder);
         this.reactConfig = assembleReactConfig(builder);
-        this.permissionEngine = new PermissionEngine(this.state.getPermissionContext());
-        this.permissionEngineCache.put(defaultSlot, this.permissionEngine);
+        PermissionEngine defaultEngine = new PermissionEngine(defaultState.getPermissionContext());
+        this.permissionEngineCache.put(defaultSlot, defaultEngine);
+        this.exec = new CallExecution(defaultState, defaultEngine, defaultSlot);
         this.hookDispatcher = new LegacyHookDispatcher(this);
 
         // Wire automatic state save on shutdown / interrupt. The saver targets the current
@@ -329,7 +349,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             shutdownManager.bindStateSaver(
                     this,
                     agentState -> {
-                        String slot = activeSlotKey != null ? activeSlotKey : defaultSlot;
+                        String slot = exec != null ? exec.slotKey : defaultSlot;
                         SlotRef ref = SlotRef.parse(slot);
                         stateStore.save(ref.userId, ref.sessionId, "agent_state", agentState);
                     });
@@ -416,14 +436,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * Mono.empty()} when no AgentStateStore was provided. Synchronises toolkit activeGroups into the state
      * before writing.
      */
-    private Mono<Void> saveStateToSession() {
+    private Mono<Void> saveStateToSession(CallExecution scope) {
         if (stateStore == null) {
             return Mono.empty();
         }
-        syncToolkitToState();
-        SlotRef ref = SlotRef.parse(activeSlotKey);
+        syncToolkitToState(scope.state);
+        SlotRef ref = SlotRef.parse(scope.slotKey);
+        AgentState toSave = scope.state;
         return Mono.fromRunnable(
-                () -> stateStore.save(ref.userId, ref.sessionId, "agent_state", state));
+                () -> stateStore.save(ref.userId, ref.sessionId, "agent_state", toSave));
     }
 
     /**
@@ -433,20 +454,21 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * first use). Safe to call from {@code beforeAgentExecution} only — caller must hold the
      * {@code AgentBase.acquireExecution} lock.
      */
-    private void activateSlotForContext(RuntimeContext ctx) {
+    private CallExecution activateSlotForContext(RuntimeContext ctx) {
         String sid = ctx != null ? ctx.getSessionId() : null;
         if (sid == null || sid.isBlank()) {
             sid = defaultSessionId;
         }
         String uid = ctx != null ? ctx.getUserId() : null;
         String slot = slotKey(uid, sid);
-        if (slot.equals(activeSlotKey)) {
-            return;
+        CallExecution current = this.exec;
+        if (current != null && slot.equals(current.slotKey)) {
+            return current;
         }
         // Persist any in-flight changes to the outgoing slot before swapping. This is a
         // best-effort sync of the toolkit's activeGroups to the state we're about to put
         // back into the cache.
-        if (activeSlotKey != null) {
+        if (current != null) {
             syncToolkitToState();
         }
         final String finalUid = uid;
@@ -457,16 +479,20 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                         k ->
                                 loadOrCreateAgentStateForSlot(
                                         stateStore, finalUid, finalSid, null, getAgentId()));
-        this.state = loaded;
-        this.permissionEngine =
+        PermissionEngine loadedEngine =
                 permissionEngineCache.computeIfAbsent(
                         slot, k -> new PermissionEngine(loaded.getPermissionContext()));
-        this.activeSlotKey = slot;
+        CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
+        // Expose the most-recently-activated scope on the instance field for out-of-call
+        // side-channel accessors (no-arg getAgentState() etc.); the authoritative per-call scope
+        // is the returned reference, captured per-subscription and carried on the Reactor Context.
+        this.exec = scope;
         // Bring the toolkit's activeGroups into alignment with the freshly-active slot so
         // the model sees the correct per-slot tool surface from the next reasoning step.
         if (toolkit != null) {
             toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
         }
+        return scope;
     }
 
     // ==================== Config assembly helpers ====================
@@ -487,26 +513,50 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     // ==================== RuntimeContext ====================
 
     @Override
-    protected void beforeAgentExecution(List<Msg> msgs) {
-        RuntimeContext ctx = this.pendingRuntimeContext;
-        this.pendingRuntimeContext = null;
-        if (ctx == null) {
-            ctx = RuntimeContext.empty();
+    protected Object callSerializationKey(RuntimeContext rc) {
+        // Serialize calls per (userId, sessionId) slot: same-session calls share cached AgentState
+        // /
+        // conversation history, so they must run one-at-a-time; distinct sessions run in parallel.
+        String sid = rc != null ? rc.getSessionId() : null;
+        if (sid == null || sid.isBlank()) {
+            sid = defaultSessionId;
         }
-        // Per-call: switch state / permissionEngine / toolkit to the (userId, sessionId) slot
-        // carried by the RuntimeContext, falling back to the builder-time default when absent.
-        // Safe to mutate the agent-level fields because AgentBase.acquireExecution() serializes
-        // calls on this instance.
-        activateSlotForContext(ctx);
-        bindRuntimeContextToHooks(ctx);
-        // Reset per-call system message; will be initialised by consumeSystemMsgAfterPreCall
-        currentSystemMsg.set(null);
+        String uid = rc != null ? rc.getUserId() : null;
+        return slotKey(uid, sid);
     }
 
     @Override
-    protected Msg seedSystemMsg() {
+    protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc) {
+        RuntimeContext ctx = rc;
+        if (ctx == null) {
+            ctx = RuntimeContext.empty();
+        }
+        // Per-call: resolve the (userId, sessionId) slot carried by the RuntimeContext (falling
+        // back to the builder-time default when absent) and build a fresh per-call scope bound to
+        // that slot's cached state / permissionEngine. The returned reference is the authoritative
+        // per-call scope (carried on the Reactor Context); the instance field is only a
+        // side-channel default for out-of-call accessors.
+        CallExecution scope = activateSlotForContext(ctx);
+        // Expose the call-scoped AgentState on the RuntimeContext so middlewares / tools resolve
+        // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
+        // rather than agent.getAgentState() (not call-scoped under concurrency).
+        ctx.setAgentState(scope.state);
+        bindRuntimeContextToHooks(ctx);
+        // Seed per-call state onto the active execution scope. The system message is initialised
+        // by consumeSystemMsgAfterPreCall; the event sink (if any) is bound in doCall() from the
+        // per-subscription Reactor Context carried by streamEvents.
+        scope.rc = ctx;
+        scope.systemMsg = null;
+        // Clear any stale interrupt signal for this session before the new call begins.
+        scope.state.interruptControl().reset();
+        return scope;
+    }
+
+    @Override
+    protected Msg seedSystemMsg(Object callScope) {
+        RuntimeContext rc = callScope instanceof CallExecution ce ? ce.rc : getRuntimeContext();
         String base = sysPrompt != null ? sysPrompt.trim() : "";
-        String prompt = applySystemPromptMiddlewares(base);
+        String prompt = applySystemPromptMiddlewares(base, rc);
         if (prompt == null || prompt.isEmpty()) {
             return null;
         }
@@ -517,7 +567,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                 .build();
     }
 
-    private String applySystemPromptMiddlewares(String prompt) {
+    @Override
+    protected AgentState stateForCall(Object callScope) {
+        return callScope instanceof CallExecution ce ? ce.state : getAgentState();
+    }
+
+    private String applySystemPromptMiddlewares(String prompt, RuntimeContext ctx) {
         if (middlewares.isEmpty()) {
             return prompt;
         }
@@ -546,7 +601,6 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         if (!hasOverride) {
             return prompt;
         }
-        RuntimeContext ctx = getRuntimeContext();
         Mono<String> result = Mono.just(prompt);
         for (MiddlewareBase mw : middlewares) {
             result = result.flatMap(p -> mw.onSystemPrompt(this, ctx, p));
@@ -555,8 +609,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     @Override
-    protected void consumeSystemMsgAfterPreCall(Msg systemMsg) {
-        currentSystemMsg.set(systemMsg);
+    protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {
+        CallExecution scope = callScope instanceof CallExecution ce ? ce : this.exec;
+        scope.systemMsg = systemMsg;
     }
 
     @Override
@@ -564,8 +619,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         unbindRuntimeContextFromHooks();
     }
 
-    private RuntimeContext buildMergedRuntimeContext() {
-        RuntimeContext run = getRuntimeContext();
+    private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
         if (run == null) {
             if (toolExecutionContext != null) {
                 return RuntimeContext.builder().toolExecutionContext(toolExecutionContext).build();
@@ -574,6 +628,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         }
         if (toolExecutionContext != null) {
             return RuntimeContext.builder()
+                    .agentState(run.getAgentState())
                     .toolExecutionContext(
                             ToolExecutionContext.merge(
                                     run.asToolExecutionContext(), toolExecutionContext))
@@ -587,18 +642,81 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * persisted).
      */
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
-        this.pendingRuntimeContext = context;
-        return call(msgs);
+        return withRuntimeContext(call(msgs), context);
     }
 
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass, RuntimeContext context) {
-        this.pendingRuntimeContext = context;
-        return call(msgs, structuredOutputClass);
+        return withRuntimeContext(call(msgs, structuredOutputClass), context);
     }
 
     public Mono<Msg> call(List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
-        this.pendingRuntimeContext = context;
-        return call(msgs, outputSchema);
+        return withRuntimeContext(call(msgs, outputSchema), context);
+    }
+
+    /**
+     * Attaches the caller-supplied {@link RuntimeContext} to the Reactor Context of the given
+     * publisher under {@link AgentBase#RUNTIME_CONTEXT_KEY}, so the call lifecycle reads it
+     * per-subscription (concurrency-safe) rather than from a shared instance field.
+     */
+    private Mono<Msg> withRuntimeContext(Mono<Msg> mono, RuntimeContext context) {
+        return context == null ? mono : mono.contextWrite(c -> c.put(RUNTIME_CONTEXT_KEY, context));
+    }
+
+    private Flux<Event> withRuntimeContext(Flux<Event> flux, RuntimeContext context) {
+        return context == null ? flux : flux.contextWrite(c -> c.put(RUNTIME_CONTEXT_KEY, context));
+    }
+
+    // ==================== Interrupt (per-session) ====================
+
+    /**
+     * Interrupts the most-recently-activated session's in-flight call. Routes to that session's
+     * {@link InterruptControl} (on its {@link AgentState}) rather than a shared instance flag, so
+     * the {@code ReActAgent} reasoning loop observes it via its per-call scope. For concurrent
+     * multi-session use, prefer {@link #interrupt(String, String)} to target a specific session.
+     */
+    @Override
+    public void interrupt() {
+        triggerInterrupt(exec, InterruptSource.USER, null);
+    }
+
+    @Override
+    public void interrupt(Msg msg) {
+        triggerInterrupt(exec, InterruptSource.USER, msg);
+    }
+
+    @Override
+    public void interrupt(InterruptSource source) {
+        triggerInterrupt(exec, source, null);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session, if one has
+     * been loaded. No-op when the session has no cached state (i.e. no call has run for it). This is
+     * the concurrency-safe entry point: it signals exactly one session without affecting other
+     * concurrent calls on this agent instance.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     */
+    public void interrupt(String userId, String sessionId) {
+        interrupt(userId, sessionId, null);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with an
+     * associated user message. See {@link #interrupt(String, String)}.
+     */
+    public void interrupt(String userId, String sessionId, Msg msg) {
+        AgentState target = stateCache.get(slotKey(userId, sessionId));
+        if (target != null) {
+            target.interruptControl().trigger(InterruptSource.USER, msg);
+        }
+    }
+
+    private void triggerInterrupt(CallExecution scope, InterruptSource source, Msg msg) {
+        if (scope != null) {
+            scope.state.interruptControl().trigger(source, msg);
+        }
     }
 
     /**
@@ -608,8 +726,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext context) {
-        this.pendingRuntimeContext = context;
-        return stream(msgs, options);
+        return withRuntimeContext(stream(msgs, options), context);
     }
 
     /**
@@ -622,8 +739,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
             StreamOptions options,
             Class<?> structuredModel,
             RuntimeContext context) {
-        this.pendingRuntimeContext = context;
-        return stream(msgs, options, structuredModel);
+        return withRuntimeContext(stream(msgs, options, structuredModel), context);
     }
 
     /**
@@ -633,8 +749,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     @Deprecated(since = "2.0.0", forRemoval = true)
     public Flux<Event> stream(
             List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext context) {
-        this.pendingRuntimeContext = context;
-        return stream(msgs, options, schema);
+        return withRuntimeContext(stream(msgs, options, schema), context);
     }
 
     /**
@@ -642,40 +757,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      *
      * <p>This method goes through the same lifecycle as {@code call()} (acquire execution,
      * hooks, pre/post call notification) but exposes the internal event stream. The lifecycle
-     * is driven by {@code call()} internally; events are captured via the shared
-     * {@code activeEventSink}.
+     * is driven by {@code call()} internally; events are captured via the per-call
+     * {@link CallExecution#eventSink} (carried on the per-subscription Reactor Context).
      *
      * @param msgs input messages
      * @return event stream covering the full agent invocation lifecycle
      */
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
-        String replyId = UUID.randomUUID().toString().replace("-", "");
-        Function<AgentInput, Flux<AgentEvent>> core =
-                input ->
-                        Flux.<AgentEvent>create(
-                                        sink -> {
-                                            activeEventSink.set(sink);
-                                            sink.next(
-                                                    new AgentStartEvent(null, replyId, getName()));
-                                            reactor.util.context.Context subscriberCtx =
-                                                    reactor.util.context.Context.of(
-                                                            sink.contextView());
-                                            call(input.msgs())
-                                                    .doFinally(
-                                                            signal -> {
-                                                                sink.next(
-                                                                        new AgentEndEvent(replyId));
-                                                                activeEventSink.set(null);
-                                                                sink.complete();
-                                                            })
-                                                    .contextWrite(subscriberCtx)
-                                                    .subscribe(finalMsg -> {}, sink::error);
-                                        },
-                                        FluxSink.OverflowStrategy.BUFFER)
-                                .doOnError(e -> activeEventSink.set(null));
-        return MiddlewareChain.build(
-                        middlewares, this, getRuntimeContext(), MiddlewareBase::onAgent, core)
-                .apply(new AgentInput(msgs == null ? List.of() : msgs));
+        return streamEvents(msgs, (RuntimeContext) null);
     }
 
     /**
@@ -691,17 +780,39 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     /**
      * Stream fine-grained {@link AgentEvent}s with a caller-supplied {@link RuntimeContext}.
      *
-     * <p>Mirrors the {@code call(msgs, context)} overload: the supplied context is installed
-     * as the pending runtime context for the underlying {@code call()} invocation that drives
-     * the event stream.
+     * <p>Mirrors the {@code call(msgs, context)} overload: the supplied context is attached to the
+     * Reactor Context of the underlying {@code call()} invocation that drives the event stream, so
+     * concurrent {@code streamEvents} calls do not share it.
      *
      * @param msgs input messages
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
-        this.pendingRuntimeContext = context;
-        return streamEvents(msgs);
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        Function<AgentInput, Flux<AgentEvent>> core =
+                input ->
+                        Flux.<AgentEvent>create(
+                                sink -> {
+                                    sink.next(new AgentStartEvent(null, replyId, getName()));
+                                    reactor.util.context.Context subscriberCtx =
+                                            reactor.util.context.Context.of(sink.contextView());
+                                    // Carry the per-subscription event sink on the Reactor Context
+                                    // so doCall() can bind it onto this call's CallExecution scope;
+                                    // concurrent streamEvents calls never share an instance field.
+                                    withRuntimeContext(call(input.msgs()), context)
+                                            .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
+                                            .doFinally(
+                                                    signal -> {
+                                                        sink.next(new AgentEndEvent(replyId));
+                                                        sink.complete();
+                                                    })
+                                            .contextWrite(subscriberCtx)
+                                            .subscribe(finalMsg -> {}, sink::error);
+                                },
+                                FluxSink.OverflowStrategy.BUFFER);
+        return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
+                .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
     /**
@@ -718,1597 +829,2063 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     // ==================== Protected API ====================
 
+    /**
+     * Resolves the per-call {@link CallExecution} from the Reactor Context (carried by the shared
+     * {@code call()} lifecycle). Falls back to the instance {@link #exec} when absent (e.g. legacy
+     * paths that do not flow through {@code call()}), so concurrent calls each operate on their own
+     * scope.
+     */
+    private CallExecution scopeFrom(reactor.util.context.ContextView cv) {
+        Object scope = cv.getOrDefault(CALL_SCOPE_KEY, null);
+        return scope instanceof CallExecution ce ? ce : this.exec;
+    }
+
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
-        return doCallInner(msgs).flatMap(result -> saveStateToSession().thenReturn(result));
-    }
-
-    private Mono<Msg> doCallInner(List<Msg> msgs) {
-        // Graceful-shutdown deduplication: if the agent's session was previously interrupted
-        // by shutdown, the client is likely retrying with the same user prompt that already
-        // exists in memory. Discard the duplicate input so the agent resumes purely from its
-        // saved memory context.
-        if (shutdownManager.checkAndClearShutdownInterrupted(this)) {
-            log.info(
-                    "Detected shutdown-interrupted session for agent {}, discarding duplicate"
-                            + " input",
-                    getName());
-            msgs = List.of();
-        }
-
-        // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
-        // error results so the agent can continue instead of crashing.
-        if (enablePendingToolRecovery) {
-            maybePatchPendingToolCalls(msgs);
-        }
-
-        Set<String> pendingIds = getPendingToolUseIds();
-
-        // No pending tools -> normal processing
-        if (pendingIds.isEmpty()) {
-            addToContext(msgs);
-            return coreAgent();
-        }
-
-        // Permission HITL: if any pending tool is ASKING, the caller MUST supply
-        // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
-        if (hasAskingToolCalls()) {
-            List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
-            if (confirmResults.isEmpty()) {
-                throw new IllegalStateException(
-                        "Agent is waiting for ConfirmResult(s) on ASKING tool calls but the"
-                                + " incoming call did not supply any. Attach a"
-                                + " List<ConfirmResult> under Msg metadata key "
-                                + Msg.METADATA_CONFIRM_RESULTS);
-            }
-            applyConfirmResults(confirmResults);
-            return resumeAgent();
-        }
-
-        // Has pending tools but no input -> resume (execute pending tools directly)
-        if (msgs == null || msgs.isEmpty()) {
-            return resumeAgent();
-        }
-
-        // Has pending tools + input -> check if user provided tool results
-        List<ToolResultBlock> providedResults =
-                msgs.stream()
-                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
-                        .toList();
-
-        if (!providedResults.isEmpty()) {
-            // User provided tool results -> validate and add
-            validateAndAddToolResults(msgs, pendingIds);
-            return hasPendingToolUse() ? resumeAgent() : coreAgent();
-        }
-
-        // Recovery was disabled and user did not provide tool results — unrecoverable.
-        throw new IllegalStateException(
-                "Pending tool calls exist without results. "
-                        + "Enable enablePendingToolRecovery or provide tool results. "
-                        + "Pending IDs: "
-                        + pendingIds);
-    }
-
-    /**
-     * Pull all {@link ConfirmResult}s out of the {@link Msg#METADATA_CONFIRM_RESULTS} metadata
-     * key across the incoming message list.
-     */
-    @SuppressWarnings("unchecked")
-    private List<ConfirmResult> extractConfirmResults(List<Msg> msgs) {
-        if (msgs == null || msgs.isEmpty()) {
-            return List.of();
-        }
-        List<ConfirmResult> collected = new ArrayList<>();
-        for (Msg m : msgs) {
-            Object raw =
-                    m.getMetadata() == null
-                            ? null
-                            : m.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
-            if (raw instanceof List<?> list) {
-                for (Object o : list) {
-                    if (o instanceof ConfirmResult cr) {
-                        collected.add(cr);
+        return Mono.deferContextual(
+                cv -> {
+                    CallExecution scope = scopeFrom(cv);
+                    // Bind this subscription's streamEvents sink (if any) onto the per-call scope
+                    // so
+                    // publishEvent emits to the correct caller; concurrent calls stay isolated.
+                    Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
+                    if (sink instanceof FluxSink) {
+                        @SuppressWarnings("unchecked")
+                        FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
+                        scope.eventSink = eventSink;
                     }
-                }
-            }
-        }
-        return collected;
+                    return scope.doCallInner(msgs)
+                            .flatMap(result -> saveStateToSession(scope).thenReturn(result));
+                });
+    }
+
+    // ==================== Structured output (per-call) ====================
+
+    @Override
+    protected Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredOutputClass) {
+        return doStructuredCall(msgs, structuredOutputClass, null);
+    }
+
+    @Override
+    protected Mono<Msg> doCall(List<Msg> msgs, JsonNode outputSchema) {
+        return doStructuredCall(msgs, null, outputSchema);
     }
 
     /**
-     * Apply user confirmation results to the ASKING tool calls in context.
-     *
-     * <p>For each result:
-     * <ul>
-     *   <li>{@code confirmed == true}: replace the ASKING ToolUseBlock with the (possibly
-     *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
-     *       register any attached {@link PermissionRule}s with the engine.</li>
-     *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
-     *       the tool will no longer be pending on resume.</li>
-     * </ul>
+     * Structured-output call: equips this single call with a {@code generate_response} tool and a
+     * {@link StructuredOutputHook} that lives entirely on the per-call {@link CallExecution} scope
+     * (never on the shared {@link #toolkit} or instance hook list), so concurrent structured-output
+     * calls on one agent instance never collide.
      */
-    private void applyConfirmResults(List<ConfirmResult> results) {
-        // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
-        // promote them to ALLOWED. Collect denied ones for separate handling.
-        List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
-        Map<String, ToolUseBlock> replacements = new HashMap<>();
-        Map<String, ToolCallState> stateUpdates = new HashMap<>();
-        for (ConfirmResult r : results) {
-            ToolUseBlock target = r.getToolCall();
-            if (target == null) {
-                continue;
-            }
-            if (r.isConfirmed()) {
-                replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
-                stateUpdates.put(target.getId(), ToolCallState.ALLOWED);
-                if (r.getRules() != null) {
-                    for (PermissionRule rule : r.getRules()) {
-                        if (rule != null) {
-                            permissionEngine.addRule(rule);
-                        }
+    private Mono<Msg> doStructuredCall(List<Msg> msgs, Class<?> targetClass, JsonNode schemaDesc) {
+        if (targetClass == null && schemaDesc == null) {
+            return Mono.error(
+                    new IllegalArgumentException(
+                            "Either targetClass or schemaDesc must be provided"));
+        }
+        if (targetClass != null && schemaDesc != null) {
+            return Mono.error(
+                    new IllegalArgumentException("Cannot provide both targetClass and schemaDesc"));
+        }
+        return Mono.deferContextual(
+                cv -> {
+                    CallExecution scope = scopeFrom(cv);
+                    Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
+                    if (sink instanceof FluxSink) {
+                        @SuppressWarnings("unchecked")
+                        FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
+                        scope.eventSink = eventSink;
                     }
+
+                    Map<String, Object> jsonSchema =
+                            targetClass != null
+                                    ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
+                                    : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
+                    scope.soTool = createStructuredOutputTool(jsonSchema);
+                    scope.soHook =
+                            new StructuredOutputHook(
+                                    structuredOutputReminder, buildGenerateOptions(), scope.state);
+
+                    return scope.doCallInner(msgs)
+                            .flatMap(
+                                    result -> {
+                                        // PostCall step: compress the session context (remove the
+                                        // intermediate generate_response messages, keep the final
+                                        // response). The hook is not on the shared instance hook
+                                        // list, so we drive its post-call behaviour explicitly.
+                                        scope.soHook.onCallCompleted();
+                                        Msg out = result;
+                                        Msg hookResult = scope.soHook.getResultMsg();
+                                        if (hookResult != null) {
+                                            Msg extracted = extractStructuredResult(hookResult);
+                                            if (extracted != null) {
+                                                out =
+                                                        mergeCollectedMetadata(
+                                                                extracted,
+                                                                scope.soHook.getAggregatedUsage(),
+                                                                scope.soHook
+                                                                        .getAggregatedThinking());
+                                            }
+                                        }
+                                        return saveStateToSession(scope).thenReturn(out);
+                                    });
+                });
+    }
+
+    /**
+     * Build the per-call {@code generate_response} tool that captures the model's structured
+     * response. The tool only stores the raw response payload; schema validation is performed by
+     * the tool executor before this is invoked.
+     */
+    private AgentTool createStructuredOutputTool(Map<String, Object> schema) {
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return STRUCTURED_OUTPUT_TOOL_NAME;
+            }
+
+            @Override
+            public String getDescription() {
+                return "Generate the final structured response. Call this function when"
+                        + " you have all the information needed to provide a complete answer.";
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                Map<String, Object> params = new HashMap<>();
+                params.put("type", "object");
+
+                // Shallow-copy the inner schema so we can safely hoist $defs to the outer params
+                // root without mutating the shared `schema` instance.
+                Map<String, Object> innerSchema = new HashMap<>(schema);
+                Map<String, Object> hoistedDefs = new HashMap<>();
+                hoistDefsKey(innerSchema, "$defs", hoistedDefs);
+                hoistDefsKey(innerSchema, "definitions", hoistedDefs);
+
+                params.put("properties", Map.of("response", innerSchema));
+                params.put("required", List.of("response"));
+                if (!hoistedDefs.isEmpty()) {
+                    params.put("$defs", hoistedDefs);
                 }
-            } else {
-                deniedToolCalls.add(target);
+                return params;
             }
-        }
-        applyToolUseBlockReplacements(replacements);
-        for (ToolUseBlock denied : deniedToolCalls) {
-            ToolResultBlock deniedResult =
-                    ToolResultBlock.text("Permission denied by user")
-                            .withIdAndName(denied.getId(), denied.getName())
-                            .withState(ToolResultState.DENIED);
-            Msg deniedMsg =
-                    ToolResultMessageBuilder.buildToolResultMsg(deniedResult, denied, getName());
-            state.contextMutable().add(deniedMsg);
-        }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                return Mono.fromCallable(
+                        () -> {
+                            Object responseData = param.getInput().get("response");
+                            String contentText = "";
+                            if (responseData != null) {
+                                try {
+                                    contentText = JsonUtils.getJsonCodec().toJson(responseData);
+                                } catch (Exception e) {
+                                    contentText = responseData.toString();
+                                }
+                            }
+                            log.debug("Structured output generated: {}", contentText);
+
+                            Msg responseMsg =
+                                    Msg.builder()
+                                            .name(getName())
+                                            .role(MsgRole.ASSISTANT)
+                                            .content(TextBlock.builder().text(contentText).build())
+                                            .metadata(
+                                                    responseData != null
+                                                            ? Map.of("response", responseData)
+                                                            : Map.of())
+                                            .build();
+
+                            Map<String, Object> toolMetadata = new HashMap<>();
+                            toolMetadata.put("success", true);
+                            toolMetadata.put("response_msg", responseMsg);
+
+                            return ToolResultBlock.of(
+                                    List.of(
+                                            TextBlock.builder()
+                                                    .text("Successfully generated response.")
+                                                    .build()),
+                                    toolMetadata);
+                        });
+            }
+        };
     }
 
-    /**
-     * Locate the last assistant Msg and substitute {@code ToolUseBlock}s in-place when their id
-     * appears in {@code replacements}.
-     */
-    private void applyToolUseBlockReplacements(Map<String, ToolUseBlock> replacements) {
-        if (replacements == null || replacements.isEmpty()) {
-            return;
+    /** Extract the structured result message from the {@code generate_response} tool result. */
+    private Msg extractStructuredResult(Msg hookResultMsg) {
+        if (hookResultMsg == null) {
+            return null;
         }
-        List<Msg> ctx = state.contextMutable();
-        for (int i = ctx.size() - 1; i >= 0; i--) {
-            Msg m = ctx.get(i);
-            if (m.getRole() != MsgRole.ASSISTANT) {
-                continue;
-            }
-            boolean hasMatch =
-                    m.getContent().stream()
-                            .anyMatch(
-                                    b ->
-                                            b instanceof ToolUseBlock t
-                                                    && replacements.containsKey(t.getId()));
-            if (!hasMatch) {
-                continue;
-            }
-            List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
-            for (ContentBlock block : m.getContent()) {
-                if (block instanceof ToolUseBlock t && replacements.containsKey(t.getId())) {
-                    rebuilt.add(replacements.get(t.getId()));
-                } else {
-                    rebuilt.add(block);
+        List<ToolResultBlock> toolResults = hookResultMsg.getContentBlocks(ToolResultBlock.class);
+        for (ToolResultBlock result : toolResults) {
+            if (result.getMetadata() != null
+                    && Boolean.TRUE.equals(result.getMetadata().get("success"))
+                    && result.getMetadata().containsKey("response_msg")) {
+                Object responseMsgObj = result.getMetadata().get("response_msg");
+                if (responseMsgObj instanceof Msg responseMsg) {
+                    return extractResponseData(responseMsg);
                 }
             }
-            ctx.set(i, m.withContent(rebuilt));
-            return;
         }
+        return hookResultMsg;
     }
 
-    private void maybePatchPendingToolCalls(List<Msg> msgs) {
-        Set<String> pendingIds = getPendingToolUseIds();
-        if (pendingIds.isEmpty()) {
-            return;
+    private Msg extractResponseData(Msg responseMsg) {
+        if (responseMsg.getMetadata() != null
+                && responseMsg.getMetadata().containsKey("response")) {
+            Object responseData = responseMsg.getMetadata().get("response");
+            Map<String, Object> metadata = new HashMap<>(responseMsg.getMetadata());
+            metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, responseData);
+            metadata.remove("response");
+            return Msg.builder()
+                    .name(responseMsg.getName())
+                    .role(responseMsg.getRole())
+                    .content(responseMsg.getContent())
+                    .metadata(metadata)
+                    .build();
         }
-        if (msgs == null || msgs.isEmpty()) {
-            return;
-        }
-        boolean userProvidedResults =
-                msgs.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
-        if (userProvidedResults) {
-            return;
-        }
-        log.warn(
-                "Pending tool calls detected without results, auto-generating error results."
-                        + " Pending IDs: {}",
-                pendingIds);
-        Msg lastAssistant = findLastAssistantMsg();
-        if (lastAssistant == null) {
-            return;
-        }
-        List<ToolUseBlock> pendingToolCalls =
-                lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
-                        .filter(toolUse -> pendingIds.contains(toolUse.getId()))
-                        .toList();
-        for (ToolUseBlock toolCall : pendingToolCalls) {
-            ToolResultBlock errorResult =
-                    buildErrorToolResult(
-                            toolCall.getId(),
-                            "[ERROR] Previous tool execution failed or was interrupted. Tool: "
-                                    + toolCall.getName());
-            Msg toolResultMsg =
-                    ToolResultMessageBuilder.buildToolResultMsg(errorResult, toolCall, getName());
-            state.contextMutable().add(toolResultMsg);
-            log.info(
-                    "Auto-generated error result for pending tool call: {} ({})",
-                    toolCall.getName(),
-                    toolCall.getId());
-        }
+        return responseMsg;
     }
 
-    /**
-     * Execute the full agent invocation as a {@link Flux} of fine-grained {@link AgentEvent}s.
-     *
-     * <p>This method wraps the existing {@code doCall()} logic and captures all events emitted
-     * by the internal stream methods ({@code reasoningStream}, {@code actingStream},
-     * {@code summaryStream}). The stream is bookended by {@link AgentStartEvent} and
-     * {@link AgentEndEvent}.
-     *
-     * @param msgs the input messages
-     * @return event stream covering the full agent invocation lifecycle
-     */
-    Flux<AgentEvent> agentImpl(List<Msg> msgs) {
-        String replyId = UUID.randomUUID().toString().replace("-", "");
-
-        Function<AgentInput, Flux<AgentEvent>> core =
-                input ->
-                        Flux.<AgentEvent>create(
-                                        sink -> {
-                                            activeEventSink.set(sink);
-                                            sink.next(
-                                                    new AgentStartEvent(null, replyId, getName()));
-
-                                            doCall(input.msgs())
-                                                    .doFinally(
-                                                            signal -> {
-                                                                sink.next(
-                                                                        new AgentEndEvent(replyId));
-                                                                activeEventSink.set(null);
-                                                                sink.complete();
-                                                            })
-                                                    .subscribe(finalMsg -> {}, sink::error);
-                                        },
-                                        FluxSink.OverflowStrategy.BUFFER)
-                                .doOnError(e -> activeEventSink.set(null));
-
-        return MiddlewareChain.build(
-                        middlewares, this, getRuntimeContext(), MiddlewareBase::onAgent, core)
-                .apply(new AgentInput(msgs));
-    }
-
-    private void publishEvent(AgentEvent event) {
-        FluxSink<AgentEvent> sink = activeEventSink.get();
-        if (sink != null) {
-            sink.next(event);
+    /** Merge aggregated {@link ChatUsage} / {@link ThinkingBlock} into the final message. */
+    private Msg mergeCollectedMetadata(Msg msg, ChatUsage chatUsage, ThinkingBlock thinking) {
+        Map<String, Object> metadata =
+                new HashMap<>(msg.getMetadata() != null ? msg.getMetadata() : Map.of());
+        if (chatUsage != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
         }
-    }
 
-    /**
-     * Build a {@link ToolResultBlock} representing a tool execution error.
-     *
-     * @param toolId the id of the tool call that failed
-     * @param errorMessage the human-readable error description
-     * @return a {@link ToolResultBlock} containing the formatted error message
-     */
-    private static ToolResultBlock buildErrorToolResult(String toolId, String errorMessage) {
-        return ToolResultBlock.builder()
-                .id(toolId)
-                .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
+        List<ContentBlock> newContent;
+        if (thinking != null) {
+            newContent = new ArrayList<>();
+            newContent.add(thinking);
+            if (msg.getContent() != null) {
+                newContent.addAll(msg.getContent());
+            }
+        } else {
+            newContent = msg.getContent();
+        }
+
+        return Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .content(newContent)
+                .metadata(metadata)
+                .timestamp(msg.getTimestamp())
                 .build();
     }
 
+    /** Hoist {@code $defs}/{@code definitions} from a nested schema up to the params root. */
+    @SuppressWarnings("unchecked")
+    private static void hoistDefsKey(
+            Map<String, Object> innerSchema, String key, Map<String, Object> target) {
+        Object raw = innerSchema.remove(key);
+        if (raw instanceof Map<?, ?> defs && !defs.isEmpty()) {
+            target.putAll((Map<String, Object>) defs);
+        }
+    }
+
     /**
-     * Find the last assistant message in context.
-     *
-     * @return The last assistant message, or null if not found
+     * Per-call execution scope: holds the active {@code (userId, sessionId)} slot's mutable
+     * {@link AgentState} + {@link PermissionEngine} + slot key, and hosts the entire ReAct
+     * reasoning loop. Non-static inner class so the loop references the enclosing agent's
+     * immutable config ({@code model}, {@code toolkit}, {@code middlewares}, …) and lifecycle
+     * helpers directly. Built per-call by {@link #activateSlotForContext(RuntimeContext)}.
      */
-    private Msg findLastAssistantMsg() {
-        List<Msg> contextMsgs = state.contextMutable();
-        for (int i = contextMsgs.size() - 1; i >= 0; i--) {
-            Msg msg = contextMsgs.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT) {
-                return msg;
+    final class CallExecution {
+        AgentState state;
+        PermissionEngine permissionEngine;
+        String slotKey;
+
+        /**
+         * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
+         * PreSummaryEvent. Owned by a single logical execution: seeded to {@code null} at call
+         * entry ({@code #beforeAgentExecution(List)}) and set by
+         * {@link #consumeSystemMsgAfterPreCall(Msg, Object)}.
+         */
+        Msg systemMsg;
+
+        /**
+         * Per-call event sink for {@code streamEvents}. Bound in {@link ReActAgent#doCall(List)}
+         * from the per-subscription Reactor Context ({@code EVENT_SINK_KEY}) and read by
+         * {@link #publishEvent}.
+         */
+        FluxSink<AgentEvent> eventSink;
+
+        /**
+         * The call's {@link RuntimeContext} (caller-supplied metadata for hooks / tools). Set once
+         * at call entry; read directly by the reasoning loop instead of the instance-level
+         * {@code rc} so the loop is self-contained per call.
+         */
+        RuntimeContext rc;
+
+        /**
+         * Per-call structured-output tool (the {@code generate_response} tool). Non-null only for
+         * {@code call(msgs, Class/JsonNode)} invocations. Lives on this scope rather than the shared
+         * toolkit so concurrent structured-output calls do not collide.
+         */
+        AgentTool soTool;
+
+        /**
+         * Per-call structured-output flow controller. Non-null only for structured-output calls.
+         * Fired in-loop ({@link #applyStructuredHook}) at the pre/post-reasoning and post-acting
+         * sites instead of being registered on the shared instance hook list.
+         */
+        StructuredOutputHook soHook;
+
+        CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
+            this.state = state;
+            this.permissionEngine = permissionEngine;
+            this.slotKey = slotKey;
+        }
+
+        /**
+         * Run this call's structured-output hook (if any) against {@code event}, applying its
+         * side effects (tool_choice forcing, gotoReasoning retry, stop-on-completion) without
+         * touching the shared instance hook list.
+         */
+        private <T extends io.agentscope.core.hook.HookEvent> Mono<T> applyStructuredHook(T event) {
+            return soHook == null ? Mono.just(event) : soHook.onEvent(event);
+        }
+
+        /**
+         * Per-call interrupt checkpoint: reads this call's session-scoped {@link InterruptControl}
+         * (on its {@link AgentState}) so a targeted {@code interrupt(userId, sessionId)} only aborts
+         * the matching session's in-flight call, not other concurrent calls on the same agent.
+         */
+        private Mono<Void> checkInterrupted() {
+            return Mono.defer(
+                    () ->
+                            state.interruptControl().isInterrupted()
+                                    ? Mono.error(
+                                            new InterruptedException("Agent execution interrupted"))
+                                    : Mono.empty());
+        }
+
+        private Mono<Msg> doCallInner(List<Msg> msgs) {
+            // Graceful-shutdown deduplication: if the agent's session was previously interrupted
+            // by shutdown, the client is likely retrying with the same user prompt that already
+            // exists in memory. Discard the duplicate input so the agent resumes purely from its
+            // saved memory context.
+            if (shutdownManager.checkAndClearShutdownInterrupted(ReActAgent.this)) {
+                log.info(
+                        "Detected shutdown-interrupted session for agent {}, discarding duplicate"
+                                + " input",
+                        getName());
+                msgs = List.of();
             }
-        }
-        return null;
-    }
 
-    /**
-     * Check if there are pending tool calls without corresponding results.
-     *
-     * @return true if there are pending tool calls
-     */
-    private boolean hasPendingToolUse() {
-        return !getPendingToolUseIds().isEmpty();
-    }
+            // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
+            // error results so the agent can continue instead of crashing.
+            if (enablePendingToolRecovery) {
+                maybePatchPendingToolCalls(msgs);
+            }
 
-    /**
-     * Get the set of pending tool use IDs from the last assistant message.
-     *
-     * @return Set of tool use IDs that have no corresponding results in memory
-     */
-    private Set<String> getPendingToolUseIds() {
-        Msg lastAssistant = findLastAssistantMsg();
-        if (lastAssistant == null || !lastAssistant.hasContentBlocks(ToolUseBlock.class)) {
-            return Set.of();
-        }
+            Set<String> pendingIds = getPendingToolUseIds();
 
-        Set<String> existingResultIds =
-                state.contextMutable().stream()
-                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
-                        .map(ToolResultBlock::getId)
-                        .collect(Collectors.toSet());
+            // No pending tools -> normal processing
+            if (pendingIds.isEmpty()) {
+                addToContext(msgs);
+                return coreAgent();
+            }
 
-        return lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
-                .map(ToolUseBlock::getId)
-                .filter(id -> !existingResultIds.contains(id))
-                .collect(Collectors.toSet());
-    }
+            // Permission HITL: if any pending tool is ASKING, the caller MUST supply
+            // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
+            if (hasAskingToolCalls()) {
+                List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
+                if (confirmResults.isEmpty()) {
+                    throw new IllegalStateException(
+                            "Agent is waiting for ConfirmResult(s) on ASKING tool calls but the"
+                                    + " incoming call did not supply any. Attach a"
+                                    + " List<ConfirmResult> under Msg metadata key "
+                                    + Msg.METADATA_CONFIRM_RESULTS);
+                }
+                applyConfirmResults(confirmResults);
+                return resumeAgent();
+            }
 
-    /**
-     * Validate input messages when there are pending tool calls, then add to context.
-     *
-     * <p>Validation rules:
-     * <ul>
-     *   <li>Empty input: no-op (will proceed to acting)</li>
-     *   <li>No tool results: throw error</li>
-     *   <li>Has tool results: validate IDs match pending, no duplicates</li>
-     *   <li>Partial results + text content: throw error (text only allowed when all tools
-     *       completed)</li>
-     * </ul>
-     *
-     * @param msgs The input messages to validate
-     * @param pendingIds The set of pending tool use IDs
-     * @throws IllegalStateException if validation fails
-     */
-    private void validateAndAddToolResults(List<Msg> msgs, Set<String> pendingIds) {
-        if (msgs == null || msgs.isEmpty()) {
-            return;
-        }
+            // Has pending tools but no input -> resume (execute pending tools directly)
+            if (msgs == null || msgs.isEmpty()) {
+                return resumeAgent();
+            }
 
-        List<ToolResultBlock> results =
-                msgs.stream()
-                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
-                        .toList();
+            // Has pending tools + input -> check if user provided tool results
+            List<ToolResultBlock> providedResults =
+                    msgs.stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .toList();
 
-        if (results.isEmpty()) {
+            if (!providedResults.isEmpty()) {
+                // User provided tool results -> validate and add
+                validateAndAddToolResults(msgs, pendingIds);
+                return hasPendingToolUse() ? resumeAgent() : coreAgent();
+            }
+
+            // Recovery was disabled and user did not provide tool results — unrecoverable.
             throw new IllegalStateException(
-                    "Cannot add messages without tool results when pending tool calls exist. "
+                    "Pending tool calls exist without results. "
+                            + "Enable enablePendingToolRecovery or provide tool results. "
                             + "Pending IDs: "
                             + pendingIds);
         }
 
-        // Check for duplicate IDs
-        Set<String> providedIds = new HashSet<>();
-        for (ToolResultBlock r : results) {
-            if (!providedIds.add(r.getId())) {
-                throw new IllegalStateException("Duplicate tool result ID: " + r.getId());
+        /**
+         * Pull all {@link ConfirmResult}s out of the {@link Msg#METADATA_CONFIRM_RESULTS} metadata
+         * key across the incoming message list.
+         */
+        @SuppressWarnings("unchecked")
+        private List<ConfirmResult> extractConfirmResults(List<Msg> msgs) {
+            if (msgs == null || msgs.isEmpty()) {
+                return List.of();
             }
-        }
-
-        // Check all provided IDs match pending IDs
-        Set<String> invalidIds =
-                providedIds.stream()
-                        .filter(id -> !pendingIds.contains(id))
-                        .collect(Collectors.toSet());
-        if (!invalidIds.isEmpty()) {
-            throw new IllegalStateException(
-                    "Invalid tool result IDs: " + invalidIds + ". Expected: " + pendingIds);
-        }
-
-        // Check for non-ToolResultBlock content
-        boolean hasTextContent =
-                msgs.stream()
-                        .flatMap(m -> m.getContent().stream())
-                        .anyMatch(block -> !(block instanceof ToolResultBlock));
-
-        // If only partial results provided, text content is not allowed
-        boolean isPartialResults = !providedIds.containsAll(pendingIds);
-        if (isPartialResults && hasTextContent) {
-            throw new IllegalStateException(
-                    "Cannot include text content when providing partial tool results. "
-                            + "Provided: "
-                            + providedIds
-                            + ", Pending: "
-                            + pendingIds);
-        }
-
-        state.contextMutable().addAll(msgs);
-    }
-
-    /**
-     * Add messages to the agent state context if not null.
-     *
-     * @param msgs The messages to add
-     */
-    private void addToContext(List<Msg> msgs) {
-        if (msgs != null) {
-            state.contextMutable().addAll(msgs);
-        }
-    }
-
-    // ==================== Core ReAct Loop ====================
-
-    /**
-     * Entry point for a fresh agent invocation: kicks off the ReAct loop at iteration 0.
-     */
-    private Mono<Msg> coreAgent() {
-        return executeIteration(0);
-    }
-
-    /**
-     * Resume entry point when pending tool calls remain from a previous turn:
-     * jumps directly into the acting phase without another reasoning step.
-     */
-    private Mono<Msg> resumeAgent() {
-        return acting(0);
-    }
-
-    private Mono<Msg> executeIteration(int iter) {
-        return reasoning(iter, false);
-    }
-
-    /**
-     * Execute the reasoning phase.
-     *
-     * <p>This method streams from the model, accumulates chunks, notifies hooks, and
-     * decides whether to continue to acting or return early (HITL stop, gotoReasoning, or finished).
-     *
-     * @param iter Current iteration number
-     * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning)
-     * @return Mono containing the final result message
-     */
-    private Mono<Msg> reasoning(int iter, boolean ignoreMaxIters) {
-        // Check maxIters unless ignoreMaxIters is set
-        if (!ignoreMaxIters && iter >= maxIters) {
-            return summarizing();
-        }
-
-        ReasoningContext context = new ReasoningContext(getName());
-
-        return checkInterruptedAsync()
-                .then(
-                        hookDispatcher.firePreReasoning(
-                                state.contextMutable(),
-                                currentSystemMsg.get(),
-                                model.getModelName()))
-                .flatMap(
-                        event -> {
-                            GenerateOptions options =
-                                    event.getEffectiveGenerateOptions() != null
-                                            ? event.getEffectiveGenerateOptions()
-                                            : buildGenerateOptions();
-                            List<Msg> modelInput =
-                                    prependSystemMsg(
-                                            event.getInputMessages(), event.getSystemMessage());
-                            List<ToolSchema> tools = toolkit.getToolSchemas();
-                            Function<ReasoningInput, Flux<AgentEvent>> reasoningCore =
-                                    ri ->
-                                            reasoningStream(
-                                                    context,
-                                                    ri.messages(),
-                                                    ri.tools(),
-                                                    ri.options());
-                            Flux<AgentEvent> stream =
-                                    MiddlewareChain.build(
-                                                    middlewares,
-                                                    ReActAgent.this,
-                                                    getRuntimeContext(),
-                                                    MiddlewareBase::onReasoning,
-                                                    reasoningCore)
-                                            .apply(new ReasoningInput(modelInput, tools, options));
-                            // Track any RequestStopEvent emitted by middlewares while still
-                            // exhausting the stream (publishEvent already fires on each event).
-                            AtomicReference<RequestStopEvent> stopRequested =
-                                    new AtomicReference<>();
-                            return stream.doOnNext(
-                                            ev -> {
-                                                if (ev instanceof RequestStopEvent rs) {
-                                                    stopRequested.compareAndSet(null, rs);
-                                                }
-                                            })
-                                    .then(
-                                            Mono.defer(
-                                                    () -> {
-                                                        Msg finalMsg = context.buildFinalMessage();
-                                                        RequestStopEvent rs = stopRequested.get();
-                                                        if (rs != null && finalMsg != null) {
-                                                            // Persist the reasoning message before
-                                                            // returning so the next call can resume
-                                                            // from pending tool calls.
-                                                            state.contextMutable().add(finalMsg);
-                                                            return Mono.just(
-                                                                    finalMsg.withGenerateReason(
-                                                                            rs
-                                                                                    .getGenerateReason()));
-                                                        }
-                                                        return Mono.justOrEmpty(finalMsg);
-                                                    }));
-                        })
-                .onErrorResume(
-                        InterruptedException.class,
-                        error -> {
-                            Msg msg = context.buildFinalMessage();
-                            if (msg != null) {
-                                boolean discard =
-                                        getInterruptSource() == InterruptSource.SYSTEM
-                                                && shutdownManager
-                                                                .getConfig()
-                                                                .partialReasoningPolicy()
-                                                        == PartialReasoningPolicy.DISCARD;
-                                if (!discard) {
-                                    state.contextMutable().add(msg);
-                                }
-                            }
-                            return Mono.error(error);
-                        })
-                .flatMap(
-                        msg -> {
-                            // Short-circuit: middleware requested stop during reasoning. The msg
-                            // is already persisted to context and tagged with the correct
-                            // GenerateReason; skip legacy postReasoning hook.
-                            if (msg.getGenerateReason() == GenerateReason.MIDDLEWARE_STOP_REQUESTED
-                                    || msg.getGenerateReason()
-                                            == GenerateReason.PERMISSION_ASKING) {
-                                return Mono.just(msg);
-                            }
-                            return runPostReasoningPipeline(msg, iter);
-                        });
-    }
-
-    @SuppressWarnings("deprecation")
-    private Mono<Msg> runPostReasoningPipeline(Msg msg, int iter) {
-        return hookDispatcher
-                .firePostReasoning(msg, model.getModelName())
-                .flatMap(
-                        event -> {
-                            Msg eventMsg = event.getReasoningMessage();
-                            if (eventMsg != null) {
-                                state.contextMutable().add(eventMsg);
-                            }
-
-                            // HITL stop
-                            if (event.isStopRequested()) {
-                                return Mono.just(
-                                        eventMsg.withGenerateReason(
-                                                GenerateReason.REASONING_STOP_REQUESTED));
-                            }
-
-                            // gotoReasoning requested (e.g., by StructuredOutputHook)
-                            if (event.isGotoReasoningRequested()) {
-                                List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
-                                if (gotoMsgs != null) {
-                                    state.contextMutable().addAll(gotoMsgs);
-                                }
-                                return reasoning(iter + 1, true);
-                            }
-
-                            // Check finish conditions
-                            if (isFinished(eventMsg)) {
-                                return Mono.just(eventMsg);
-                            }
-
-                            // Continue to acting
-                            return checkInterruptedAsync().then(acting(iter));
-                        })
-                .switchIfEmpty(
-                        Mono.defer(
-                                () -> {
-                                    // No message was produced
-                                    return Mono.justOrEmpty((Msg) null);
-                                }));
-    }
-
-    /**
-     * Stream fine-grained {@link AgentEvent}s from a model call during reasoning.
-     *
-     * <p>Emits: {@link ModelCallStartEvent} → block start/delta/end events → {@link
-     * ModelCallEndEvent}. The provided {@link ReasoningContext} is used to accumulate chunks
-     * (for building the final {@link Msg}) and to notify legacy {@link Hook}s.
-     *
-     * @param context   reasoning context for chunk accumulation
-     * @param messages  the messages to send to the model
-     * @param tools     the tool schemas available
-     * @param options   generation options
-     * @return event stream from a single model call
-     */
-    Flux<AgentEvent> reasoningStream(
-            ReasoningContext context,
-            List<Msg> messages,
-            List<ToolSchema> tools,
-            GenerateOptions options) {
-
-        Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
-                mci -> modelCallStream(context, mci, true);
-
-        return MiddlewareChain.build(
-                        middlewares,
-                        this,
-                        getRuntimeContext(),
-                        MiddlewareBase::onModelCall,
-                        modelCallCore)
-                .apply(new ModelCallInput(messages, tools, options, model))
-                .doOnNext(this::publishEvent);
-    }
-
-    private Flux<AgentEvent> modelCallStream(
-            ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
-
-        String replyId = UUID.randomUUID().toString().replace("-", "");
-        AtomicBoolean textStarted = new AtomicBoolean(false);
-        AtomicBoolean thinkingStarted = new AtomicBoolean(false);
-        Set<String> startedToolCalls = ConcurrentHashMap.newKeySet();
-
-        Flux<AgentEvent> modelEvents =
-                mci.model().stream(mci.messages(), mci.tools(), mci.options())
-                        .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
-                        .concatMap(
-                                chunk -> {
-                                    List<Msg> chunkMsgs = context.processChunk(chunk);
-                                    for (Msg msg : chunkMsgs) {
-                                        hookDispatcher
-                                                .fireReasoningChunk(
-                                                        msg, context, mci.model().getModelName())
-                                                .subscribe();
-                                    }
-
-                                    List<AgentEvent> events = new ArrayList<>();
-                                    for (ContentBlock block : chunk.getContent()) {
-                                        emitBlockEvents(
-                                                block,
-                                                replyId,
-                                                context,
-                                                textStarted,
-                                                thinkingStarted,
-                                                withToolEvents
-                                                        ? startedToolCalls
-                                                        : ConcurrentHashMap.newKeySet(),
-                                                events);
-                                    }
-                                    return Flux.fromIterable(events);
-                                });
-
-        Flux<AgentEvent> endEvents =
-                Flux.defer(
-                        () -> {
-                            List<AgentEvent> events = new ArrayList<>();
-                            if (textStarted.get()) {
-                                events.add(new TextBlockEndEvent(replyId, "text"));
-                            }
-                            if (thinkingStarted.get()) {
-                                events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
-                            }
-                            for (String toolId : startedToolCalls) {
-                                events.add(new ToolCallEndEvent(replyId, toolId));
-                            }
-                            events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
-                            return Flux.fromIterable(events);
-                        });
-
-        return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
-    }
-
-    private void emitBlockEvents(
-            ContentBlock block,
-            String replyId,
-            ReasoningContext context,
-            AtomicBoolean textStarted,
-            AtomicBoolean thinkingStarted,
-            Set<String> startedToolCalls,
-            List<AgentEvent> events) {
-
-        if (block instanceof TextBlock tb) {
-            if (textStarted.compareAndSet(false, true)) {
-                events.add(new TextBlockStartEvent(replyId, "text"));
-            }
-            if (tb.getText() != null && !tb.getText().isEmpty()) {
-                events.add(new TextBlockDeltaEvent(replyId, "text", tb.getText()));
-            }
-        } else if (block instanceof ThinkingBlock tb) {
-            if (thinkingStarted.compareAndSet(false, true)) {
-                events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
-            }
-            if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
-                events.add(new ThinkingBlockDeltaEvent(replyId, "thinking", tb.getThinking()));
-            }
-        } else if (block instanceof ToolUseBlock tub) {
-            String toolId = resolveToolCallId(tub, context);
-            if (toolId != null && startedToolCalls.add(toolId)) {
-                String toolName = tub.getName();
-                if (toolName != null && !toolName.startsWith("__")) {
-                    events.add(new ToolCallStartEvent(replyId, toolId, toolName));
+            List<ConfirmResult> collected = new ArrayList<>();
+            for (Msg m : msgs) {
+                Object raw =
+                        m.getMetadata() == null
+                                ? null
+                                : m.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+                if (raw instanceof List<?> list) {
+                    for (Object o : list) {
+                        if (o instanceof ConfirmResult cr) {
+                            collected.add(cr);
+                        }
+                    }
                 }
             }
-            if (tub.getContent() != null && !tub.getContent().isEmpty()) {
-                events.add(
-                        new ToolCallDeltaEvent(
-                                replyId, toolId != null ? toolId : "", tub.getContent()));
+            return collected;
+        }
+
+        /**
+         * Apply user confirmation results to the ASKING tool calls in context.
+         *
+         * <p>For each result:
+         * <ul>
+         *   <li>{@code confirmed == true}: replace the ASKING ToolUseBlock with the (possibly
+         *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
+         *       register any attached {@link PermissionRule}s with the engine.</li>
+         *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
+         *       the tool will no longer be pending on resume.</li>
+         * </ul>
+         */
+        private void applyConfirmResults(List<ConfirmResult> results) {
+            // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
+            // promote them to ALLOWED. Collect denied ones for separate handling.
+            List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+            Map<String, ToolUseBlock> replacements = new HashMap<>();
+            Map<String, ToolCallState> stateUpdates = new HashMap<>();
+            for (ConfirmResult r : results) {
+                ToolUseBlock target = r.getToolCall();
+                if (target == null) {
+                    continue;
+                }
+                if (r.isConfirmed()) {
+                    replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
+                    stateUpdates.put(target.getId(), ToolCallState.ALLOWED);
+                    if (r.getRules() != null) {
+                        for (PermissionRule rule : r.getRules()) {
+                            if (rule != null) {
+                                permissionEngine.addRule(rule);
+                            }
+                        }
+                    }
+                } else {
+                    deniedToolCalls.add(target);
+                }
             }
-        }
-    }
-
-    private String resolveToolCallId(ToolUseBlock tub, ReasoningContext context) {
-        if (tub.getId() != null && !tub.getId().isEmpty()) {
-            return tub.getId();
-        }
-        ToolUseBlock accumulated = context.getAccumulatedToolCall(null);
-        return accumulated != null ? accumulated.getId() : null;
-    }
-
-    /**
-     * Execute the acting phase.
-     *
-     * <p>This method executes only pending tools (those without results in context),
-     * notifies hooks for successful tool results, and decides whether to continue iteration
-     * or return (HITL stop, suspended tools, or structured output).
-     *
-     * <p>For tools that throw {@link io.agentscope.core.tool.ToolSuspendException}:
-     * <ul>
-     *   <li>The exception is caught by Toolkit and converted to a pending ToolResultBlock</li>
-     *   <li>Successful results are stored in context, pending results are not</li>
-     *   <li>Returns Msg with {@link GenerateReason#TOOL_SUSPENDED} containing suspended ToolUseBlocks</li>
-     * </ul>
-     *
-     * @param iter Current iteration number
-     * @return Mono containing the final result message
-     */
-    private Mono<Msg> acting(int iter) {
-        List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
-
-        if (pendingToolCalls.isEmpty()) {
-            return executeIteration(iter + 1);
-        }
-
-        String replyId = UUID.randomUUID().toString().replace("-", "");
-        AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
-                new AtomicReference<>();
-
-        AtomicReference<RequestStopEvent> actingStopRequested = new AtomicReference<>();
-        return hookDispatcher
-                .firePreActing(pendingToolCalls, toolkit)
-                .flatMap(
-                        toolCalls -> {
-                            Function<ActingInput, Flux<AgentEvent>> actingCore =
-                                    ai -> actingStream(ai.toolCalls(), replyId, resultHolder);
-                            Flux<AgentEvent> stream =
-                                    MiddlewareChain.build(
-                                                    middlewares,
-                                                    this,
-                                                    getRuntimeContext(),
-                                                    MiddlewareBase::onActing,
-                                                    actingCore)
-                                            .apply(new ActingInput(toolCalls));
-                            return stream.doOnNext(
-                                            ev -> {
-                                                if (ev instanceof RequestStopEvent rs) {
-                                                    actingStopRequested.compareAndSet(null, rs);
-                                                }
-                                            })
-                                    .then(Mono.defer(() -> Mono.just(resultHolder.get())));
-                        })
-                .flatMap(
-                        results -> {
-                            // Middleware requested stop during acting — return immediately with
-                            // the requested GenerateReason, preserving any results already
-                            // collected.
-                            RequestStopEvent rs = actingStopRequested.get();
-                            if (rs != null) {
-                                Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
-                                return Mono.just(stopMsg);
-                            }
-                            List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
-                                    results.stream()
-                                            .filter(e -> !e.getValue().isSuspended())
-                                            .toList();
-                            List<Map.Entry<ToolUseBlock, ToolResultBlock>> pendingPairs =
-                                    results.stream()
-                                            .filter(e -> e.getValue().isSuspended())
-                                            .toList();
-
-                            if (successPairs.isEmpty()) {
-                                if (!pendingPairs.isEmpty()) {
-                                    return Mono.just(buildSuspendedMsg(pendingPairs));
-                                }
-                                return executeIteration(iter + 1);
-                            }
-
-                            return Flux.fromIterable(successPairs)
-                                    .concatMap(this::notifyPostActingHook)
-                                    .last()
-                                    .flatMap(
-                                            event -> {
-                                                if (event.isStopRequested()) {
-                                                    return Mono.just(
-                                                            event.getToolResultMsg()
-                                                                    .withGenerateReason(
-                                                                            GenerateReason
-                                                                                    .ACTING_STOP_REQUESTED));
-                                                }
-
-                                                if (!pendingPairs.isEmpty()) {
-                                                    return Mono.just(
-                                                            buildSuspendedMsg(pendingPairs));
-                                                }
-
-                                                return executeIteration(iter + 1);
-                                            });
-                        });
-    }
-
-    /**
-     * Stream fine-grained {@link AgentEvent}s from tool execution during the acting phase.
-     *
-     * <p>Emits: {@link ToolResultStartEvent} → delta events → {@link ToolResultEndEvent}
-     * for each tool call. The provided {@code resultHolder} is populated with the execution
-     * results so the caller can process them afterward.
-     *
-     * @param toolCalls    the tool calls to execute
-     * @param replyId      the reply identifier for event correlation
-     * @param resultHolder populated with tool execution results on completion
-     * @return event stream from tool execution
-     */
-    Flux<AgentEvent> actingStream(
-            List<ToolUseBlock> toolCalls,
-            String replyId,
-            AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
-
-        return evaluatePermissions(toolCalls)
-                .flatMapMany(
-                        gate -> {
-                            List<ToolUseBlock> pending = gate.pendingAsk();
-                            Set<String> autoDenied = gate.autoDeniedIds();
-
-                            // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
-                            // calls run immediately; ASKING calls cause the agent to pause and
-                            // return; DENIED calls get DENIED ToolResultBlocks written below.
-                            Map<String, ToolCallState> stateUpdates = new HashMap<>();
-                            for (ToolUseBlock tc : toolCalls) {
-                                if (autoDenied.contains(tc.getId())) {
-                                    // DENIED tools don't need a state change — they'll get a
-                                    // DENIED ToolResultBlock and won't reappear in pending.
-                                    continue;
-                                }
-                                stateUpdates.put(
-                                        tc.getId(),
-                                        pending.stream().anyMatch(p -> p.getId().equals(tc.getId()))
-                                                ? ToolCallState.ASKING
-                                                : ToolCallState.ALLOWED);
-                            }
-                            updateToolCallStates(stateUpdates);
-
-                            if (pending.isEmpty()) {
-                                return runToolBatch(toolCalls, autoDenied, replyId, resultHolder);
-                            }
-
-                            // Permission HITL: surface the pending tool calls, persist any
-                            // auto-denied results so the second call can identify which ones
-                            // still need confirmation, then signal stop via RequestStopEvent.
-                            // The agent's acting() will see the RequestStopEvent, set the
-                            // GenerateReason to PERMISSION_ASKING, and return.
-                            if (!autoDenied.isEmpty()) {
-                                // Write DENIED results in-place so they aren't re-evaluated on
-                                // resume.
-                                writeAutoDeniedResults(toolCalls, autoDenied);
-                            }
-                            // resultHolder may be inspected by the caller after stream completion;
-                            // initialise it to empty since no successful execution happened.
-                            resultHolder.set(List.of());
-                            return Flux.<AgentEvent>just(
-                                    new RequireUserConfirmEvent(replyId, pending),
-                                    new RequestStopEvent(
-                                            "permission asking", GenerateReason.PERMISSION_ASKING));
-                        })
-                .doOnNext(this::publishEvent);
-    }
-
-    /**
-     * Synthesise DENIED ToolResultBlocks for tools that were rejected by deny rules and append
-     * them to context so the conversation reflects the rejection (and resume doesn't see them
-     * as pending).
-     */
-    private void writeAutoDeniedResults(List<ToolUseBlock> toolCalls, Set<String> deniedIds) {
-        for (ToolUseBlock tc : toolCalls) {
-            if (!deniedIds.contains(tc.getId())) {
-                continue;
-            }
-            ToolResultBlock denied =
-                    ToolResultBlock.text("Permission denied by rules")
-                            .withIdAndName(tc.getId(), tc.getName())
-                            .withState(ToolResultState.DENIED);
-            Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
-            state.contextMutable().add(deniedMsg);
-        }
-    }
-
-    /**
-     * Execute the given tool calls, synthesising DENIED results for any tool whose id is in
-     * {@code deniedIds} (skipping toolkit invocation for those) and running the rest through
-     * {@link #executeToolCalls(List)}. The combined results are written to {@code resultHolder}
-     * and emitted as a stream of fine-grained {@link AgentEvent}s.
-     */
-    private Flux<AgentEvent> runToolBatch(
-            List<ToolUseBlock> toolCalls,
-            Set<String> deniedIds,
-            String replyId,
-            AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
-
-        List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries = new ArrayList<>();
-        List<ToolUseBlock> approved = new ArrayList<>();
-        for (ToolUseBlock tc : toolCalls) {
-            if (deniedIds.contains(tc.getId())) {
-                ToolResultBlock denied =
+            applyToolUseBlockReplacements(replacements);
+            for (ToolUseBlock denied : deniedToolCalls) {
+                ToolResultBlock deniedResult =
                         ToolResultBlock.text("Permission denied by user")
-                                .withIdAndName(tc.getId(), tc.getName())
+                                .withIdAndName(denied.getId(), denied.getName())
                                 .withState(ToolResultState.DENIED);
-                deniedEntries.add(Map.entry(tc, denied));
-            } else {
-                approved.add(tc);
+                Msg deniedMsg =
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                deniedResult, denied, getName());
+                state.contextMutable().add(deniedMsg);
             }
         }
 
-        Flux<AgentEvent> deniedEvents =
-                Flux.fromIterable(deniedEntries)
-                        .concatMap(
-                                entry -> {
-                                    ToolUseBlock use = entry.getKey();
-                                    return Flux.<AgentEvent>just(
-                                            new ToolResultStartEvent(
-                                                    replyId, use.getId(), use.getName()),
-                                            new ToolResultTextDeltaEvent(
-                                                    replyId,
-                                                    use.getId(),
-                                                    "Permission denied by user"),
-                                            new ToolResultEndEvent(
-                                                    replyId, use.getId(), ToolResultState.DENIED));
-                                });
-
-        if (approved.isEmpty()) {
-            resultHolder.set(deniedEntries);
-            return deniedEvents;
+        /**
+         * Locate the last assistant Msg and substitute {@code ToolUseBlock}s in-place when their id
+         * appears in {@code replacements}.
+         */
+        private void applyToolUseBlockReplacements(Map<String, ToolUseBlock> replacements) {
+            if (replacements == null || replacements.isEmpty()) {
+                return;
+            }
+            List<Msg> ctx = state.contextMutable();
+            for (int i = ctx.size() - 1; i >= 0; i--) {
+                Msg m = ctx.get(i);
+                if (m.getRole() != MsgRole.ASSISTANT) {
+                    continue;
+                }
+                boolean hasMatch =
+                        m.getContent().stream()
+                                .anyMatch(
+                                        b ->
+                                                b instanceof ToolUseBlock t
+                                                        && replacements.containsKey(t.getId()));
+                if (!hasMatch) {
+                    continue;
+                }
+                List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
+                for (ContentBlock block : m.getContent()) {
+                    if (block instanceof ToolUseBlock t && replacements.containsKey(t.getId())) {
+                        rebuilt.add(replacements.get(t.getId()));
+                    } else {
+                        rebuilt.add(block);
+                    }
+                }
+                ctx.set(i, m.withContent(rebuilt));
+                return;
+            }
         }
 
-        // Capture the parent Reactor Context (set by AgentBase.createEventStream, which puts the
-        // SubagentEventBus there) so we can forward it into the inner executeToolCalls subscribe.
-        // Without this, the bare .subscribe() below detaches from the upstream chain and tools
-        // like AgentSpawnTool see an empty ContextView, breaking child-event forwarding.
-        Flux<AgentEvent> approvedEvents =
-                Flux.<AgentEvent>deferContextual(
-                        parentCtx ->
-                                Flux.<AgentEvent>create(
-                                        sink -> {
-                                            for (ToolUseBlock tool : approved) {
+        private void maybePatchPendingToolCalls(List<Msg> msgs) {
+            Set<String> pendingIds = getPendingToolUseIds();
+            if (pendingIds.isEmpty()) {
+                return;
+            }
+            if (msgs == null || msgs.isEmpty()) {
+                return;
+            }
+            boolean userProvidedResults =
+                    msgs.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
+            if (userProvidedResults) {
+                return;
+            }
+            log.warn(
+                    "Pending tool calls detected without results, auto-generating error results."
+                            + " Pending IDs: {}",
+                    pendingIds);
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant == null) {
+                return;
+            }
+            List<ToolUseBlock> pendingToolCalls =
+                    lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
+                            .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                            .toList();
+            for (ToolUseBlock toolCall : pendingToolCalls) {
+                ToolResultBlock errorResult =
+                        buildErrorToolResult(
+                                toolCall.getId(),
+                                "[ERROR] Previous tool execution failed or was interrupted. Tool: "
+                                        + toolCall.getName());
+                Msg toolResultMsg =
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                errorResult, toolCall, getName());
+                state.contextMutable().add(toolResultMsg);
+                log.info(
+                        "Auto-generated error result for pending tool call: {} ({})",
+                        toolCall.getName(),
+                        toolCall.getId());
+            }
+        }
+
+        /**
+         * Execute the full agent invocation as a {@link Flux} of fine-grained {@link AgentEvent}s.
+         *
+         * <p>This method wraps the existing {@code doCall()} logic and captures all events emitted
+         * by the internal stream methods ({@code reasoningStream}, {@code actingStream},
+         * {@code summaryStream}). The stream is bookended by {@link AgentStartEvent} and
+         * {@link AgentEndEvent}.
+         *
+         * @param msgs the input messages
+         * @return event stream covering the full agent invocation lifecycle
+         */
+        Flux<AgentEvent> agentImpl(List<Msg> msgs) {
+            String replyId = UUID.randomUUID().toString().replace("-", "");
+
+            Function<AgentInput, Flux<AgentEvent>> core =
+                    input ->
+                            Flux.<AgentEvent>create(
+                                            sink -> {
+                                                eventSink = sink;
                                                 sink.next(
-                                                        new ToolResultStartEvent(
-                                                                replyId,
-                                                                tool.getId(),
-                                                                tool.getName()));
-                                            }
+                                                        new AgentStartEvent(
+                                                                null, replyId, getName()));
 
-                                            toolkit.setInternalChunkCallback(
-                                                    (toolUse, chunk) -> {
-                                                        if (chunk.getOutput() != null) {
-                                                            for (ContentBlock block :
-                                                                    chunk.getOutput()) {
-                                                                if (block instanceof TextBlock tb) {
+                                                doCall(input.msgs())
+                                                        .doFinally(
+                                                                signal -> {
                                                                     sink.next(
-                                                                            new ToolResultTextDeltaEvent(
-                                                                                    replyId,
-                                                                                    toolUse.getId(),
-                                                                                    tb.getText()));
-                                                                } else {
-                                                                    sink.next(
-                                                                            new ToolResultDataDeltaEvent(
-                                                                                    replyId,
-                                                                                    toolUse.getId(),
-                                                                                    block));
-                                                                }
-                                                            }
-                                                        }
-                                                        hookDispatcher
-                                                                .fireActingChunk(
-                                                                        toolUse, chunk, toolkit)
-                                                                .subscribe();
-                                                    });
+                                                                            new AgentEndEvent(
+                                                                                    replyId));
+                                                                    eventSink = null;
+                                                                    sink.complete();
+                                                                })
+                                                        .subscribe(finalMsg -> {}, sink::error);
+                                            },
+                                            FluxSink.OverflowStrategy.BUFFER)
+                                    .doOnError(e -> eventSink = null);
 
-                                            executeToolCalls(approved)
-                                                    .contextWrite(ctx -> ctx.putAll(parentCtx))
-                                                    .subscribe(
-                                                            results -> {
-                                                                List<
-                                                                                Map.Entry<
-                                                                                        ToolUseBlock,
-                                                                                        ToolResultBlock>>
-                                                                        merged =
-                                                                                new ArrayList<>(
-                                                                                        deniedEntries);
-                                                                merged.addAll(results);
-                                                                resultHolder.set(merged);
-                                                                for (Map.Entry<
-                                                                                ToolUseBlock,
-                                                                                ToolResultBlock>
-                                                                        entry : results) {
-                                                                    ToolResultState state =
-                                                                            determineToolResultState(
-                                                                                    entry
-                                                                                            .getValue());
-                                                                    sink.next(
-                                                                            new ToolResultEndEvent(
-                                                                                    replyId,
-                                                                                    entry.getKey()
-                                                                                            .getId(),
-                                                                                    state));
-                                                                }
-                                                                sink.complete();
-                                                            },
-                                                            sink::error);
-                                        }));
-
-        return deniedEvents.concatWith(approvedEvents);
-    }
-
-    /**
-     * Outcome of running every {@link ToolBase} call through the {@link PermissionEngine}.
-     *
-     * @param pendingAsk tool calls that require user confirmation before execution.
-     * @param autoDeniedIds ids of tool calls whose decision was {@code DENY}; the agent loop
-     *     synthesises denied results for them without invoking the tool.
-     */
-    private record PermissionGate(List<ToolUseBlock> pendingAsk, Set<String> autoDeniedIds) {}
-
-    /**
-     * Run every tool call through the permission gate.
-     *
-     * <p>When the agent's {@link io.agentscope.core.permission.PermissionContextState} is trivial
-     * (default mode, no rules, no working directories — i.e. the user has not opted into the
-     * permission system) we fall back to the lightweight pre-2.0 path: the tool's own
-     * {@link ToolBase#checkPermissions} ASK gates a confirmation, anything else is approved.
-     *
-     * <p>Otherwise we engage the full {@link PermissionEngine} pipeline so deny/ask/allow rules
-     * and EXPLORE/ACCEPT_EDITS/BYPASS/DONT_ASK modes are honoured before execution. Legacy
-     * {@link AgentTool}s that do not extend {@link ToolBase} always pass through approved.
-     */
-    private Mono<PermissionGate> evaluatePermissions(List<ToolUseBlock> toolCalls) {
-        if (toolCalls == null || toolCalls.isEmpty()) {
-            return Mono.just(new PermissionGate(List.of(), Set.of()));
+            return MiddlewareChain.build(
+                            middlewares, ReActAgent.this, rc, MiddlewareBase::onAgent, core)
+                    .apply(new AgentInput(msgs));
         }
-        boolean useEngine = !state.getPermissionContext().isTrivial();
-        return Flux.fromIterable(toolCalls)
-                .concatMap(use -> evaluateOne(use, useEngine))
-                .collectList()
-                .map(
-                        verdicts -> {
-                            List<ToolUseBlock> pending = new ArrayList<>();
-                            Set<String> denied = new HashSet<>();
-                            for (PermissionVerdict v : verdicts) {
-                                switch (v.behavior()) {
-                                    case DENY -> denied.add(v.use().getId());
-                                    case ASK -> pending.add(v.use());
-                                    case ALLOW, PASSTHROUGH -> {
-                                        // auto-approved; falls through to execution
+
+        private void publishEvent(AgentEvent event) {
+            FluxSink<AgentEvent> sink = eventSink;
+            if (sink != null) {
+                sink.next(event);
+            }
+        }
+
+        /**
+         * Build a {@link ToolResultBlock} representing a tool execution error.
+         *
+         * @param toolId the id of the tool call that failed
+         * @param errorMessage the human-readable error description
+         * @return a {@link ToolResultBlock} containing the formatted error message
+         */
+        private static ToolResultBlock buildErrorToolResult(String toolId, String errorMessage) {
+            return ToolResultBlock.builder()
+                    .id(toolId)
+                    .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
+                    .build();
+        }
+
+        /**
+         * Find the last assistant message in context.
+         *
+         * @return The last assistant message, or null if not found
+         */
+        private Msg findLastAssistantMsg() {
+            List<Msg> contextMsgs = state.contextMutable();
+            for (int i = contextMsgs.size() - 1; i >= 0; i--) {
+                Msg msg = contextMsgs.get(i);
+                if (msg.getRole() == MsgRole.ASSISTANT) {
+                    return msg;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Check if there are pending tool calls without corresponding results.
+         *
+         * @return true if there are pending tool calls
+         */
+        private boolean hasPendingToolUse() {
+            return !getPendingToolUseIds().isEmpty();
+        }
+
+        /**
+         * Get the set of pending tool use IDs from the last assistant message.
+         *
+         * @return Set of tool use IDs that have no corresponding results in memory
+         */
+        private Set<String> getPendingToolUseIds() {
+            Msg lastAssistant = findLastAssistantMsg();
+            if (lastAssistant == null || !lastAssistant.hasContentBlocks(ToolUseBlock.class)) {
+                return Set.of();
+            }
+
+            Set<String> existingResultIds =
+                    state.contextMutable().stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .map(ToolResultBlock::getId)
+                            .collect(Collectors.toSet());
+
+            return lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
+                    .map(ToolUseBlock::getId)
+                    .filter(id -> !existingResultIds.contains(id))
+                    .collect(Collectors.toSet());
+        }
+
+        /**
+         * Validate input messages when there are pending tool calls, then add to context.
+         *
+         * <p>Validation rules:
+         * <ul>
+         *   <li>Empty input: no-op (will proceed to acting)</li>
+         *   <li>No tool results: throw error</li>
+         *   <li>Has tool results: validate IDs match pending, no duplicates</li>
+         *   <li>Partial results + text content: throw error (text only allowed when all tools
+         *       completed)</li>
+         * </ul>
+         *
+         * @param msgs The input messages to validate
+         * @param pendingIds The set of pending tool use IDs
+         * @throws IllegalStateException if validation fails
+         */
+        private void validateAndAddToolResults(List<Msg> msgs, Set<String> pendingIds) {
+            if (msgs == null || msgs.isEmpty()) {
+                return;
+            }
+
+            List<ToolResultBlock> results =
+                    msgs.stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .toList();
+
+            if (results.isEmpty()) {
+                throw new IllegalStateException(
+                        "Cannot add messages without tool results when pending tool calls exist. "
+                                + "Pending IDs: "
+                                + pendingIds);
+            }
+
+            // Check for duplicate IDs
+            Set<String> providedIds = new HashSet<>();
+            for (ToolResultBlock r : results) {
+                if (!providedIds.add(r.getId())) {
+                    throw new IllegalStateException("Duplicate tool result ID: " + r.getId());
+                }
+            }
+
+            // Check all provided IDs match pending IDs
+            Set<String> invalidIds =
+                    providedIds.stream()
+                            .filter(id -> !pendingIds.contains(id))
+                            .collect(Collectors.toSet());
+            if (!invalidIds.isEmpty()) {
+                throw new IllegalStateException(
+                        "Invalid tool result IDs: " + invalidIds + ". Expected: " + pendingIds);
+            }
+
+            // Check for non-ToolResultBlock content
+            boolean hasTextContent =
+                    msgs.stream()
+                            .flatMap(m -> m.getContent().stream())
+                            .anyMatch(block -> !(block instanceof ToolResultBlock));
+
+            // If only partial results provided, text content is not allowed
+            boolean isPartialResults = !providedIds.containsAll(pendingIds);
+            if (isPartialResults && hasTextContent) {
+                throw new IllegalStateException(
+                        "Cannot include text content when providing partial tool results. "
+                                + "Provided: "
+                                + providedIds
+                                + ", Pending: "
+                                + pendingIds);
+            }
+
+            state.contextMutable().addAll(msgs);
+        }
+
+        /**
+         * Add messages to the agent state context if not null.
+         *
+         * @param msgs The messages to add
+         */
+        private void addToContext(List<Msg> msgs) {
+            if (msgs != null) {
+                state.contextMutable().addAll(msgs);
+            }
+        }
+
+        // ==================== Core ReAct Loop ====================
+
+        /**
+         * Entry point for a fresh agent invocation: kicks off the ReAct loop at iteration 0.
+         */
+        private Mono<Msg> coreAgent() {
+            return executeIteration(0);
+        }
+
+        /**
+         * Resume entry point when pending tool calls remain from a previous turn:
+         * jumps directly into the acting phase without another reasoning step.
+         */
+        private Mono<Msg> resumeAgent() {
+            return acting(0);
+        }
+
+        private Mono<Msg> executeIteration(int iter) {
+            return reasoning(iter, false);
+        }
+
+        /**
+         * Execute the reasoning phase.
+         *
+         * <p>This method streams from the model, accumulates chunks, notifies hooks, and
+         * decides whether to continue to acting or return early (HITL stop, gotoReasoning, or finished).
+         *
+         * @param iter Current iteration number
+         * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning)
+         * @return Mono containing the final result message
+         */
+        private Mono<Msg> reasoning(int iter, boolean ignoreMaxIters) {
+            // Check maxIters unless ignoreMaxIters is set
+            if (!ignoreMaxIters && iter >= maxIters) {
+                return summarizing();
+            }
+
+            ReasoningContext context = new ReasoningContext(getName());
+
+            return checkInterrupted()
+                    .then(
+                            hookDispatcher.firePreReasoning(
+                                    state.contextMutable(), systemMsg, model.getModelName()))
+                    .flatMap(this::applyStructuredHook)
+                    .flatMap(
+                            event -> {
+                                GenerateOptions options =
+                                        event.getEffectiveGenerateOptions() != null
+                                                ? event.getEffectiveGenerateOptions()
+                                                : buildGenerateOptions();
+                                List<Msg> modelInput =
+                                        prependSystemMsg(
+                                                event.getInputMessages(), event.getSystemMessage());
+                                List<ToolSchema> tools =
+                                        toolkit.getToolSchemas(
+                                                state.getToolContext().getActivatedGroups());
+                                // Per-call structured-output tool: expose generate_response to the
+                                // model for this call only (not registered on the shared toolkit).
+                                if (soTool != null) {
+                                    tools = new ArrayList<>(tools);
+                                    tools.add(
+                                            ToolSchema.builder()
+                                                    .name(soTool.getName())
+                                                    .description(soTool.getDescription())
+                                                    .parameters(soTool.getParameters())
+                                                    .strict(soTool.getStrict())
+                                                    .outputSchema(soTool.getOutputSchema())
+                                                    .build());
+                                }
+                                Function<ReasoningInput, Flux<AgentEvent>> reasoningCore =
+                                        ri ->
+                                                reasoningStream(
+                                                        context,
+                                                        ri.messages(),
+                                                        ri.tools(),
+                                                        ri.options());
+                                Flux<AgentEvent> stream =
+                                        MiddlewareChain.build(
+                                                        middlewares,
+                                                        ReActAgent.this,
+                                                        rc,
+                                                        MiddlewareBase::onReasoning,
+                                                        reasoningCore)
+                                                .apply(
+                                                        new ReasoningInput(
+                                                                modelInput, tools, options));
+                                // Track any RequestStopEvent emitted by middlewares while still
+                                // exhausting the stream (publishEvent already fires on each event).
+                                AtomicReference<RequestStopEvent> stopRequested =
+                                        new AtomicReference<>();
+                                return stream.doOnNext(
+                                                ev -> {
+                                                    if (ev instanceof RequestStopEvent rs) {
+                                                        stopRequested.compareAndSet(null, rs);
+                                                    }
+                                                })
+                                        .then(
+                                                Mono.defer(
+                                                        () -> {
+                                                            Msg finalMsg =
+                                                                    context.buildFinalMessage();
+                                                            RequestStopEvent rs =
+                                                                    stopRequested.get();
+                                                            if (rs != null && finalMsg != null) {
+                                                                // Persist the reasoning message
+                                                                // before
+                                                                // returning so the next call can
+                                                                // resume
+                                                                // from pending tool calls.
+                                                                state.contextMutable()
+                                                                        .add(finalMsg);
+                                                                return Mono.just(
+                                                                        finalMsg.withGenerateReason(
+                                                                                rs
+                                                                                        .getGenerateReason()));
+                                                            }
+                                                            return Mono.justOrEmpty(finalMsg);
+                                                        }));
+                            })
+                    .onErrorResume(
+                            InterruptedException.class,
+                            error -> {
+                                Msg msg = context.buildFinalMessage();
+                                if (msg != null) {
+                                    boolean discard =
+                                            state.interruptControl().getSource()
+                                                            == InterruptSource.SYSTEM
+                                                    && shutdownManager
+                                                                    .getConfig()
+                                                                    .partialReasoningPolicy()
+                                                            == PartialReasoningPolicy.DISCARD;
+                                    if (!discard) {
+                                        state.contextMutable().add(msg);
                                     }
                                 }
-                            }
-                            return new PermissionGate(pending, denied);
-                        });
-    }
+                                return Mono.error(error);
+                            })
+                    .flatMap(
+                            msg -> {
+                                // Short-circuit: middleware requested stop during reasoning. The
+                                // msg
+                                // is already persisted to context and tagged with the correct
+                                // GenerateReason; skip legacy postReasoning hook.
+                                if (msg.getGenerateReason()
+                                                == GenerateReason.MIDDLEWARE_STOP_REQUESTED
+                                        || msg.getGenerateReason()
+                                                == GenerateReason.PERMISSION_ASKING) {
+                                    return Mono.just(msg);
+                                }
+                                return runPostReasoningPipeline(msg, iter);
+                            });
+        }
 
-    private Mono<PermissionVerdict> evaluateOne(ToolUseBlock use, boolean useEngine) {
-        // Tools already promoted to ALLOWED by user confirmation skip the engine entirely.
-        if (use.getState() == ToolCallState.ALLOWED) {
-            return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
+        @SuppressWarnings("deprecation")
+        private Mono<Msg> runPostReasoningPipeline(Msg msg, int iter) {
+            return hookDispatcher
+                    .firePostReasoning(msg, model.getModelName())
+                    .flatMap(this::applyStructuredHook)
+                    .flatMap(
+                            event -> {
+                                Msg eventMsg = event.getReasoningMessage();
+                                if (eventMsg != null) {
+                                    state.contextMutable().add(eventMsg);
+                                }
+
+                                // HITL stop
+                                if (event.isStopRequested()) {
+                                    return Mono.just(
+                                            eventMsg.withGenerateReason(
+                                                    GenerateReason.REASONING_STOP_REQUESTED));
+                                }
+
+                                // gotoReasoning requested (e.g., by StructuredOutputHook)
+                                if (event.isGotoReasoningRequested()) {
+                                    List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
+                                    if (gotoMsgs != null) {
+                                        state.contextMutable().addAll(gotoMsgs);
+                                    }
+                                    return reasoning(iter + 1, true);
+                                }
+
+                                // Check finish conditions
+                                if (isFinished(eventMsg)) {
+                                    return Mono.just(eventMsg);
+                                }
+
+                                // Continue to acting
+                                return checkInterrupted().then(acting(iter));
+                            })
+                    .switchIfEmpty(
+                            Mono.defer(
+                                    () -> {
+                                        // No message was produced
+                                        return Mono.justOrEmpty((Msg) null);
+                                    }));
         }
-        AgentTool tool = toolkit.getTool(use.getName());
-        if (!(tool instanceof ToolBase tb)) {
-            return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
+
+        /**
+         * Stream fine-grained {@link AgentEvent}s from a model call during reasoning.
+         *
+         * <p>Emits: {@link ModelCallStartEvent} → block start/delta/end events → {@link
+         * ModelCallEndEvent}. The provided {@link ReasoningContext} is used to accumulate chunks
+         * (for building the final {@link Msg}) and to notify legacy {@link Hook}s.
+         *
+         * @param context   reasoning context for chunk accumulation
+         * @param messages  the messages to send to the model
+         * @param tools     the tool schemas available
+         * @param options   generation options
+         * @return event stream from a single model call
+         */
+        Flux<AgentEvent> reasoningStream(
+                ReasoningContext context,
+                List<Msg> messages,
+                List<ToolSchema> tools,
+                GenerateOptions options) {
+
+            Function<ModelCallInput, Flux<AgentEvent>> modelCallCore =
+                    mci -> modelCallStream(context, mci, true);
+
+            return MiddlewareChain.build(
+                            middlewares,
+                            ReActAgent.this,
+                            rc,
+                            MiddlewareBase::onModelCall,
+                            modelCallCore)
+                    .apply(new ModelCallInput(messages, tools, options, model))
+                    .doOnNext(this::publishEvent);
         }
-        Map<String, Object> input = use.getInput() == null ? Map.of() : use.getInput();
-        if (useEngine) {
-            return permissionEngine
-                    .checkPermission(tb, input)
+
+        private Flux<AgentEvent> modelCallStream(
+                ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
+
+            String replyId = UUID.randomUUID().toString().replace("-", "");
+            AtomicBoolean textStarted = new AtomicBoolean(false);
+            AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+            Set<String> startedToolCalls = ConcurrentHashMap.newKeySet();
+
+            Flux<AgentEvent> modelEvents =
+                    mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                            .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
+                            .concatMap(
+                                    chunk -> {
+                                        List<Msg> chunkMsgs = context.processChunk(chunk);
+                                        for (Msg msg : chunkMsgs) {
+                                            hookDispatcher
+                                                    .fireReasoningChunk(
+                                                            msg,
+                                                            context,
+                                                            mci.model().getModelName())
+                                                    .subscribe();
+                                        }
+
+                                        List<AgentEvent> events = new ArrayList<>();
+                                        for (ContentBlock block : chunk.getContent()) {
+                                            emitBlockEvents(
+                                                    block,
+                                                    replyId,
+                                                    context,
+                                                    textStarted,
+                                                    thinkingStarted,
+                                                    withToolEvents
+                                                            ? startedToolCalls
+                                                            : ConcurrentHashMap.newKeySet(),
+                                                    events);
+                                        }
+                                        return Flux.fromIterable(events);
+                                    });
+
+            Flux<AgentEvent> endEvents =
+                    Flux.defer(
+                            () -> {
+                                List<AgentEvent> events = new ArrayList<>();
+                                if (textStarted.get()) {
+                                    events.add(new TextBlockEndEvent(replyId, "text"));
+                                }
+                                if (thinkingStarted.get()) {
+                                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                                }
+                                for (String toolId : startedToolCalls) {
+                                    events.add(new ToolCallEndEvent(replyId, toolId));
+                                }
+                                events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                                return Flux.fromIterable(events);
+                            });
+
+            return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
+        }
+
+        private void emitBlockEvents(
+                ContentBlock block,
+                String replyId,
+                ReasoningContext context,
+                AtomicBoolean textStarted,
+                AtomicBoolean thinkingStarted,
+                Set<String> startedToolCalls,
+                List<AgentEvent> events) {
+
+            if (block instanceof TextBlock tb) {
+                if (textStarted.compareAndSet(false, true)) {
+                    events.add(new TextBlockStartEvent(replyId, "text"));
+                }
+                if (tb.getText() != null && !tb.getText().isEmpty()) {
+                    events.add(new TextBlockDeltaEvent(replyId, "text", tb.getText()));
+                }
+            } else if (block instanceof ThinkingBlock tb) {
+                if (thinkingStarted.compareAndSet(false, true)) {
+                    events.add(new ThinkingBlockStartEvent(replyId, "thinking"));
+                }
+                if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
+                    events.add(new ThinkingBlockDeltaEvent(replyId, "thinking", tb.getThinking()));
+                }
+            } else if (block instanceof ToolUseBlock tub) {
+                String toolId = resolveToolCallId(tub, context);
+                if (toolId != null && startedToolCalls.add(toolId)) {
+                    String toolName = tub.getName();
+                    if (toolName != null && !toolName.startsWith("__")) {
+                        events.add(new ToolCallStartEvent(replyId, toolId, toolName));
+                    }
+                }
+                if (tub.getContent() != null && !tub.getContent().isEmpty()) {
+                    events.add(
+                            new ToolCallDeltaEvent(
+                                    replyId, toolId != null ? toolId : "", tub.getContent()));
+                }
+            }
+        }
+
+        private String resolveToolCallId(ToolUseBlock tub, ReasoningContext context) {
+            if (tub.getId() != null && !tub.getId().isEmpty()) {
+                return tub.getId();
+            }
+            ToolUseBlock accumulated = context.getAccumulatedToolCall(null);
+            return accumulated != null ? accumulated.getId() : null;
+        }
+
+        /**
+         * Execute the acting phase.
+         *
+         * <p>This method executes only pending tools (those without results in context),
+         * notifies hooks for successful tool results, and decides whether to continue iteration
+         * or return (HITL stop, suspended tools, or structured output).
+         *
+         * <p>For tools that throw {@link io.agentscope.core.tool.ToolSuspendException}:
+         * <ul>
+         *   <li>The exception is caught by Toolkit and converted to a pending ToolResultBlock</li>
+         *   <li>Successful results are stored in context, pending results are not</li>
+         *   <li>Returns Msg with {@link GenerateReason#TOOL_SUSPENDED} containing suspended ToolUseBlocks</li>
+         * </ul>
+         *
+         * @param iter Current iteration number
+         * @return Mono containing the final result message
+         */
+        private Mono<Msg> acting(int iter) {
+            List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
+
+            if (pendingToolCalls.isEmpty()) {
+                return executeIteration(iter + 1);
+            }
+
+            String replyId = UUID.randomUUID().toString().replace("-", "");
+            AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
+                    new AtomicReference<>();
+
+            AtomicReference<RequestStopEvent> actingStopRequested = new AtomicReference<>();
+            return hookDispatcher
+                    .firePreActing(pendingToolCalls, toolkit)
+                    .flatMap(
+                            toolCalls -> {
+                                Function<ActingInput, Flux<AgentEvent>> actingCore =
+                                        ai -> actingStream(ai.toolCalls(), replyId, resultHolder);
+                                Flux<AgentEvent> stream =
+                                        MiddlewareChain.build(
+                                                        middlewares,
+                                                        ReActAgent.this,
+                                                        rc,
+                                                        MiddlewareBase::onActing,
+                                                        actingCore)
+                                                .apply(new ActingInput(toolCalls));
+                                return stream.doOnNext(
+                                                ev -> {
+                                                    if (ev instanceof RequestStopEvent rs) {
+                                                        actingStopRequested.compareAndSet(null, rs);
+                                                    }
+                                                })
+                                        .then(Mono.defer(() -> Mono.just(resultHolder.get())));
+                            })
+                    .flatMap(
+                            results -> {
+                                // Middleware requested stop during acting — return immediately with
+                                // the requested GenerateReason, preserving any results already
+                                // collected.
+                                RequestStopEvent rs = actingStopRequested.get();
+                                if (rs != null) {
+                                    Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
+                                    return Mono.just(stopMsg);
+                                }
+                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
+                                        results.stream()
+                                                .filter(e -> !e.getValue().isSuspended())
+                                                .toList();
+                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> pendingPairs =
+                                        results.stream()
+                                                .filter(e -> e.getValue().isSuspended())
+                                                .toList();
+
+                                if (successPairs.isEmpty()) {
+                                    if (!pendingPairs.isEmpty()) {
+                                        return Mono.just(buildSuspendedMsg(pendingPairs));
+                                    }
+                                    return executeIteration(iter + 1);
+                                }
+
+                                return Flux.fromIterable(successPairs)
+                                        .concatMap(this::notifyPostActingHook)
+                                        .last()
+                                        .flatMap(
+                                                event -> {
+                                                    if (event.isStopRequested()) {
+                                                        return Mono.just(
+                                                                event.getToolResultMsg()
+                                                                        .withGenerateReason(
+                                                                                GenerateReason
+                                                                                        .ACTING_STOP_REQUESTED));
+                                                    }
+
+                                                    if (!pendingPairs.isEmpty()) {
+                                                        return Mono.just(
+                                                                buildSuspendedMsg(pendingPairs));
+                                                    }
+
+                                                    return executeIteration(iter + 1);
+                                                });
+                            });
+        }
+
+        /**
+         * Stream fine-grained {@link AgentEvent}s from tool execution during the acting phase.
+         *
+         * <p>Emits: {@link ToolResultStartEvent} → delta events → {@link ToolResultEndEvent}
+         * for each tool call. The provided {@code resultHolder} is populated with the execution
+         * results so the caller can process them afterward.
+         *
+         * @param toolCalls    the tool calls to execute
+         * @param replyId      the reply identifier for event correlation
+         * @param resultHolder populated with tool execution results on completion
+         * @return event stream from tool execution
+         */
+        Flux<AgentEvent> actingStream(
+                List<ToolUseBlock> toolCalls,
+                String replyId,
+                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
+
+            return evaluatePermissions(toolCalls)
+                    .flatMapMany(
+                            gate -> {
+                                List<ToolUseBlock> pending = gate.pendingAsk();
+                                Set<String> autoDenied = gate.autoDeniedIds();
+
+                                // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
+                                // calls run immediately; ASKING calls cause the agent to pause and
+                                // return; DENIED calls get DENIED ToolResultBlocks written below.
+                                Map<String, ToolCallState> stateUpdates = new HashMap<>();
+                                for (ToolUseBlock tc : toolCalls) {
+                                    if (autoDenied.contains(tc.getId())) {
+                                        // DENIED tools don't need a state change — they'll get a
+                                        // DENIED ToolResultBlock and won't reappear in pending.
+                                        continue;
+                                    }
+                                    stateUpdates.put(
+                                            tc.getId(),
+                                            pending.stream()
+                                                            .anyMatch(
+                                                                    p ->
+                                                                            p.getId()
+                                                                                    .equals(
+                                                                                            tc
+                                                                                                    .getId()))
+                                                    ? ToolCallState.ASKING
+                                                    : ToolCallState.ALLOWED);
+                                }
+                                updateToolCallStates(stateUpdates);
+
+                                if (pending.isEmpty()) {
+                                    return runToolBatch(
+                                            toolCalls, autoDenied, replyId, resultHolder);
+                                }
+
+                                // Permission HITL: surface the pending tool calls, persist any
+                                // auto-denied results so the second call can identify which ones
+                                // still need confirmation, then signal stop via RequestStopEvent.
+                                // The agent's acting() will see the RequestStopEvent, set the
+                                // GenerateReason to PERMISSION_ASKING, and return.
+                                if (!autoDenied.isEmpty()) {
+                                    // Write DENIED results in-place so they aren't re-evaluated on
+                                    // resume.
+                                    writeAutoDeniedResults(toolCalls, autoDenied);
+                                }
+                                // resultHolder may be inspected by the caller after stream
+                                // completion;
+                                // initialise it to empty since no successful execution happened.
+                                resultHolder.set(List.of());
+                                return Flux.<AgentEvent>just(
+                                        new RequireUserConfirmEvent(replyId, pending),
+                                        new RequestStopEvent(
+                                                "permission asking",
+                                                GenerateReason.PERMISSION_ASKING));
+                            })
+                    .doOnNext(this::publishEvent);
+        }
+
+        /**
+         * Synthesise DENIED ToolResultBlocks for tools that were rejected by deny rules and append
+         * them to context so the conversation reflects the rejection (and resume doesn't see them
+         * as pending).
+         */
+        private void writeAutoDeniedResults(List<ToolUseBlock> toolCalls, Set<String> deniedIds) {
+            for (ToolUseBlock tc : toolCalls) {
+                if (!deniedIds.contains(tc.getId())) {
+                    continue;
+                }
+                ToolResultBlock denied =
+                        ToolResultBlock.text("Permission denied by rules")
+                                .withIdAndName(tc.getId(), tc.getName())
+                                .withState(ToolResultState.DENIED);
+                Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
+                state.contextMutable().add(deniedMsg);
+            }
+        }
+
+        /**
+         * Execute the given tool calls, synthesising DENIED results for any tool whose id is in
+         * {@code deniedIds} (skipping toolkit invocation for those) and running the rest through
+         * {@link #executeToolCalls(List)}. The combined results are written to {@code resultHolder}
+         * and emitted as a stream of fine-grained {@link AgentEvent}s.
+         */
+        private Flux<AgentEvent> runToolBatch(
+                List<ToolUseBlock> toolCalls,
+                Set<String> deniedIds,
+                String replyId,
+                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
+
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries = new ArrayList<>();
+            List<ToolUseBlock> approved = new ArrayList<>();
+            for (ToolUseBlock tc : toolCalls) {
+                if (deniedIds.contains(tc.getId())) {
+                    ToolResultBlock denied =
+                            ToolResultBlock.text("Permission denied by user")
+                                    .withIdAndName(tc.getId(), tc.getName())
+                                    .withState(ToolResultState.DENIED);
+                    deniedEntries.add(Map.entry(tc, denied));
+                } else {
+                    approved.add(tc);
+                }
+            }
+
+            Flux<AgentEvent> deniedEvents =
+                    Flux.fromIterable(deniedEntries)
+                            .concatMap(
+                                    entry -> {
+                                        ToolUseBlock use = entry.getKey();
+                                        return Flux.<AgentEvent>just(
+                                                new ToolResultStartEvent(
+                                                        replyId, use.getId(), use.getName()),
+                                                new ToolResultTextDeltaEvent(
+                                                        replyId,
+                                                        use.getId(),
+                                                        "Permission denied by user"),
+                                                new ToolResultEndEvent(
+                                                        replyId,
+                                                        use.getId(),
+                                                        ToolResultState.DENIED));
+                                    });
+
+            if (approved.isEmpty()) {
+                resultHolder.set(deniedEntries);
+                return deniedEvents;
+            }
+
+            // Capture the parent Reactor Context (set by AgentBase.createEventStream, which puts
+            // the
+            // SubagentEventBus there) so we can forward it into the inner executeToolCalls
+            // subscribe.
+            // Without this, the bare .subscribe() below detaches from the upstream chain and tools
+            // like AgentSpawnTool see an empty ContextView, breaking child-event forwarding.
+            Flux<AgentEvent> approvedEvents =
+                    Flux.<AgentEvent>deferContextual(
+                            parentCtx ->
+                                    Flux.<AgentEvent>create(
+                                            sink -> {
+                                                for (ToolUseBlock tool : approved) {
+                                                    sink.next(
+                                                            new ToolResultStartEvent(
+                                                                    replyId,
+                                                                    tool.getId(),
+                                                                    tool.getName()));
+                                                }
+
+                                                toolkit.setInternalChunkCallback(
+                                                        (toolUse, chunk) -> {
+                                                            if (chunk.getOutput() != null) {
+                                                                for (ContentBlock block :
+                                                                        chunk.getOutput()) {
+                                                                    if (block
+                                                                            instanceof
+                                                                            TextBlock tb) {
+                                                                        sink.next(
+                                                                                new ToolResultTextDeltaEvent(
+                                                                                        replyId,
+                                                                                        toolUse
+                                                                                                .getId(),
+                                                                                        tb
+                                                                                                .getText()));
+                                                                    } else {
+                                                                        sink.next(
+                                                                                new ToolResultDataDeltaEvent(
+                                                                                        replyId,
+                                                                                        toolUse
+                                                                                                .getId(),
+                                                                                        block));
+                                                                    }
+                                                                }
+                                                            }
+                                                            hookDispatcher
+                                                                    .fireActingChunk(
+                                                                            toolUse, chunk, toolkit)
+                                                                    .subscribe();
+                                                        });
+
+                                                executeToolCalls(approved)
+                                                        .contextWrite(ctx -> ctx.putAll(parentCtx))
+                                                        .subscribe(
+                                                                results -> {
+                                                                    List<
+                                                                                    Map.Entry<
+                                                                                            ToolUseBlock,
+                                                                                            ToolResultBlock>>
+                                                                            merged =
+                                                                                    new ArrayList<>(
+                                                                                            deniedEntries);
+                                                                    merged.addAll(results);
+                                                                    resultHolder.set(merged);
+                                                                    for (Map.Entry<
+                                                                                    ToolUseBlock,
+                                                                                    ToolResultBlock>
+                                                                            entry : results) {
+                                                                        ToolResultState state =
+                                                                                determineToolResultState(
+                                                                                        entry
+                                                                                                .getValue());
+                                                                        sink.next(
+                                                                                new ToolResultEndEvent(
+                                                                                        replyId,
+                                                                                        entry.getKey()
+                                                                                                .getId(),
+                                                                                        state));
+                                                                    }
+                                                                    sink.complete();
+                                                                },
+                                                                sink::error);
+                                            }));
+
+            return deniedEvents.concatWith(approvedEvents);
+        }
+
+        /**
+         * Outcome of running every {@link ToolBase} call through the {@link PermissionEngine}.
+         *
+         * @param pendingAsk tool calls that require user confirmation before execution.
+         * @param autoDeniedIds ids of tool calls whose decision was {@code DENY}; the agent loop
+         *     synthesises denied results for them without invoking the tool.
+         */
+        private record PermissionGate(List<ToolUseBlock> pendingAsk, Set<String> autoDeniedIds) {}
+
+        /**
+         * Run every tool call through the permission gate.
+         *
+         * <p>When the agent's {@link io.agentscope.core.permission.PermissionContextState} is trivial
+         * (default mode, no rules, no working directories — i.e. the user has not opted into the
+         * permission system) we fall back to the lightweight pre-2.0 path: the tool's own
+         * {@link ToolBase#checkPermissions} ASK gates a confirmation, anything else is approved.
+         *
+         * <p>Otherwise we engage the full {@link PermissionEngine} pipeline so deny/ask/allow rules
+         * and EXPLORE/ACCEPT_EDITS/BYPASS/DONT_ASK modes are honoured before execution. Legacy
+         * {@link AgentTool}s that do not extend {@link ToolBase} always pass through approved.
+         */
+        private Mono<PermissionGate> evaluatePermissions(List<ToolUseBlock> toolCalls) {
+            if (toolCalls == null || toolCalls.isEmpty()) {
+                return Mono.just(new PermissionGate(List.of(), Set.of()));
+            }
+            boolean useEngine = !state.getPermissionContext().isTrivial();
+            return Flux.fromIterable(toolCalls)
+                    .concatMap(use -> evaluateOne(use, useEngine))
+                    .collectList()
                     .map(
-                            decision ->
-                                    new PermissionVerdict(
-                                            use,
-                                            decision == null
-                                                    ? PermissionBehavior.ASK
-                                                    : decision.getBehavior()));
+                            verdicts -> {
+                                List<ToolUseBlock> pending = new ArrayList<>();
+                                Set<String> denied = new HashSet<>();
+                                for (PermissionVerdict v : verdicts) {
+                                    switch (v.behavior()) {
+                                        case DENY -> denied.add(v.use().getId());
+                                        case ASK -> pending.add(v.use());
+                                        case ALLOW, PASSTHROUGH -> {
+                                            // auto-approved; falls through to execution
+                                        }
+                                    }
+                                }
+                                return new PermissionGate(pending, denied);
+                            });
         }
-        return tb.checkPermissions(input, state.getPermissionContext())
-                .map(
-                        decision -> {
-                            if (decision == null) {
-                                return new PermissionVerdict(use, PermissionBehavior.ALLOW);
-                            }
-                            // In the legacy lightweight path only an explicit ASK from the tool
-                            // gates execution; PASSTHROUGH and ALLOW both run, DENY is honoured.
-                            return switch (decision.getBehavior()) {
-                                case ASK -> new PermissionVerdict(use, PermissionBehavior.ASK);
-                                case DENY -> new PermissionVerdict(use, PermissionBehavior.DENY);
-                                default -> new PermissionVerdict(use, PermissionBehavior.ALLOW);
-                            };
-                        });
-    }
 
-    private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
+        private Mono<PermissionVerdict> evaluateOne(ToolUseBlock use, boolean useEngine) {
+            // Tools already promoted to ALLOWED by user confirmation skip the engine entirely.
+            if (use.getState() == ToolCallState.ALLOWED) {
+                return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
+            }
+            AgentTool tool = toolkit.getTool(use.getName());
+            if (!(tool instanceof ToolBase tb)) {
+                return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
+            }
+            Map<String, Object> input = use.getInput() == null ? Map.of() : use.getInput();
+            if (useEngine) {
+                return permissionEngine
+                        .checkPermission(tb, input)
+                        .map(
+                                decision ->
+                                        new PermissionVerdict(
+                                                use,
+                                                decision == null
+                                                        ? PermissionBehavior.ASK
+                                                        : decision.getBehavior()));
+            }
+            return tb.checkPermissions(input, state.getPermissionContext())
+                    .map(
+                            decision -> {
+                                if (decision == null) {
+                                    return new PermissionVerdict(use, PermissionBehavior.ALLOW);
+                                }
+                                // In the legacy lightweight path only an explicit ASK from the tool
+                                // gates execution; PASSTHROUGH and ALLOW both run, DENY is
+                                // honoured.
+                                return switch (decision.getBehavior()) {
+                                    case ASK -> new PermissionVerdict(use, PermissionBehavior.ASK);
+                                    case DENY ->
+                                            new PermissionVerdict(use, PermissionBehavior.DENY);
+                                    default -> new PermissionVerdict(use, PermissionBehavior.ALLOW);
+                                };
+                            });
+        }
 
-    private ToolResultState determineToolResultState(ToolResultBlock result) {
-        if (result.isSuspended()) {
-            return ToolResultState.RUNNING;
-        }
-        if (result.getState() != null && result.getState() != ToolResultState.RUNNING) {
-            return result.getState();
-        }
-        if (result.getOutput() != null
-                && result.getOutput().stream()
-                        .anyMatch(
-                                b ->
-                                        b instanceof TextBlock tb
-                                                && tb.getText() != null
-                                                && tb.getText().startsWith("[ERROR]"))) {
-            return ToolResultState.ERROR;
-        }
-        return ToolResultState.SUCCESS;
-    }
+        private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
 
-    /**
-     * Build a message containing suspended tool calls for user execution.
-     *
-     * <p>The message contains both the ToolUseBlocks and corresponding pending ToolResultBlocks
-     * for the suspended tools.
-     *
-     * @param pendingPairs List of (ToolUseBlock, pending ToolResultBlock) pairs
-     * @return Msg with GenerateReason.TOOL_SUSPENDED
-     */
-    private Msg buildSuspendedMsg(List<Map.Entry<ToolUseBlock, ToolResultBlock>> pendingPairs) {
-        List<ContentBlock> content = new ArrayList<>();
-        for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : pendingPairs) {
-            content.add(pair.getKey());
-            content.add(pair.getValue());
+        private ToolResultState determineToolResultState(ToolResultBlock result) {
+            if (result.isSuspended()) {
+                return ToolResultState.RUNNING;
+            }
+            if (result.getState() != null && result.getState() != ToolResultState.RUNNING) {
+                return result.getState();
+            }
+            if (result.getOutput() != null
+                    && result.getOutput().stream()
+                            .anyMatch(
+                                    b ->
+                                            b instanceof TextBlock tb
+                                                    && tb.getText() != null
+                                                    && tb.getText().startsWith("[ERROR]"))) {
+                return ToolResultState.ERROR;
+            }
+            return ToolResultState.SUCCESS;
         }
-        return Msg.builder()
-                .name(getName())
-                .role(MsgRole.ASSISTANT)
-                .content(content)
-                .generateReason(GenerateReason.TOOL_SUSPENDED)
-                .build();
-    }
 
-    /**
-     * Build a stop-acknowledgement Msg for middleware-requested stops during acting. Preserves
-     * any already-collected tool results so the caller sees partial progress.
-     */
-    private Msg buildStopMsg(
-            List<Map.Entry<ToolUseBlock, ToolResultBlock>> results, GenerateReason reason) {
-        List<ContentBlock> content = new ArrayList<>();
-        if (results != null) {
-            for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : results) {
+        /**
+         * Build a message containing suspended tool calls for user execution.
+         *
+         * <p>The message contains both the ToolUseBlocks and corresponding pending ToolResultBlocks
+         * for the suspended tools.
+         *
+         * @param pendingPairs List of (ToolUseBlock, pending ToolResultBlock) pairs
+         * @return Msg with GenerateReason.TOOL_SUSPENDED
+         */
+        private Msg buildSuspendedMsg(List<Map.Entry<ToolUseBlock, ToolResultBlock>> pendingPairs) {
+            List<ContentBlock> content = new ArrayList<>();
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : pendingPairs) {
                 content.add(pair.getKey());
                 content.add(pair.getValue());
             }
-        }
-        return Msg.builder()
-                .name(getName())
-                .role(MsgRole.ASSISTANT)
-                .content(content)
-                .generateReason(reason)
-                .build();
-    }
-
-    /**
-     * Execute tool calls and return paired results.
-     *
-     * <p>If tool execution fails (timeout, error, etc.), this method generates error tool results
-     * for all pending tool calls instead of propagating the error. This ensures the agent can
-     * continue processing and the model receives proper error feedback.
-     *
-     * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
-     * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
-     */
-    private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
-            List<ToolUseBlock> toolCalls) {
-        return toolkit.callTools(toolCalls, toolExecutionConfig, this, buildMergedRuntimeContext())
-                .map(
-                        results ->
-                                IntStream.range(0, toolCalls.size())
-                                        .mapToObj(i -> Map.entry(toolCalls.get(i), results.get(i)))
-                                        .toList())
-                .onErrorResume(
-                        Exception.class,
-                        error -> {
-                            // Preserve interruption signal for agent stop policy
-                            if (error instanceof InterruptedException) {
-                                return Mono.error(error);
-                            }
-                            // Generate error tool results for all pending tool calls.
-                            // Only catch Exception subclasses; critical JVM errors
-                            // (e.g. OutOfMemoryError) are left to propagate.
-                            String errorMsg = ExceptionUtils.getErrorMessage(error);
-                            log.error(
-                                    "Tool execution failed, generating error results for {} tool"
-                                            + " calls",
-                                    toolCalls.size(),
-                                    error);
-                            List<Map.Entry<ToolUseBlock, ToolResultBlock>> errorResults =
-                                    toolCalls.stream()
-                                            .map(
-                                                    toolCall -> {
-                                                        ToolResultBlock errorResult =
-                                                                buildErrorToolResult(
-                                                                        toolCall.getId(),
-                                                                        "Tool execution failed: "
-                                                                                + errorMsg);
-                                                        return Map.entry(toolCall, errorResult);
-                                                    })
-                                            .toList();
-                            return Mono.just(errorResults);
-                        });
-    }
-
-    /**
-     * Fire PostActingEvent for a single tool result, build message and add to context.
-     */
-    private Mono<PostActingEvent> notifyPostActingHook(
-            Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
-        ToolUseBlock toolUse = entry.getKey();
-        ToolResultBlock result = entry.getValue();
-
-        Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolUse, getName());
-
-        return hookDispatcher
-                .firePostActing(toolUse, result, toolkit, toolMsg)
-                .doOnNext(
-                        e -> {
-                            Msg resultMsg = e.getToolResultMsg();
-                            state.contextMutable().add(resultMsg);
-                        });
-    }
-
-    /**
-     * Generate summary when max iterations reached.
-     */
-    protected Mono<Msg> summarizing() {
-        log.debug("Maximum iterations reached. Generating summary...");
-
-        // Handle pending tool calls that were not completed before max iterations
-        if (hasPendingToolUse()) {
-            List<ToolUseBlock> pendingTools = extractPendingToolCalls();
-            log.warn(
-                    "Max iterations reached with {} pending tool calls. Adding error results.",
-                    pendingTools.size());
-
-            for (ToolUseBlock toolUse : pendingTools) {
-                ToolResultBlock errorResult =
-                        buildErrorToolResult(
-                                toolUse.getId(),
-                                "Tool execution cancelled because maximum iterations limit ("
-                                        + maxIters
-                                        + ") was reached");
-
-                Msg errorResultMsg =
-                        ToolResultMessageBuilder.buildToolResultMsg(
-                                errorResult, toolUse, getName());
-                state.contextMutable().add(errorResultMsg);
-            }
+            return Msg.builder()
+                    .name(getName())
+                    .role(MsgRole.ASSISTANT)
+                    .content(content)
+                    .generateReason(GenerateReason.TOOL_SUSPENDED)
+                    .build();
         }
 
-        List<Msg> messageList = prepareSummaryMessages();
-        GenerateOptions generateOptions = buildGenerateOptions();
-        ReasoningContext context = new ReasoningContext(getName());
-        publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
-
-        return hookDispatcher
-                .firePreSummary(
-                        messageList,
-                        generateOptions,
-                        model.getModelName(),
-                        maxIters,
-                        currentSystemMsg.get())
-                .flatMap(
-                        preSummaryEvent -> {
-                            List<Msg> effectiveMessages =
-                                    prependSystemMsg(
-                                            preSummaryEvent.getInputMessages(),
-                                            preSummaryEvent.getSystemMessage());
-                            GenerateOptions effectiveOptions =
-                                    preSummaryEvent.getEffectiveGenerateOptions();
-
-                            return summaryStream(context, effectiveMessages, effectiveOptions)
-                                    .then(
-                                            Mono.defer(
-                                                    () ->
-                                                            Mono.justOrEmpty(
-                                                                    context.buildFinalMessage())))
-                                    .flatMap(
-                                            msg ->
-                                                    hookDispatcher
-                                                            .firePostSummary(
-                                                                    msg,
-                                                                    effectiveOptions,
-                                                                    model.getModelName())
-                                                            .map(
-                                                                    postEvent -> {
-                                                                        Msg finalMsg =
-                                                                                postEvent
-                                                                                        .getSummaryMessage()
-                                                                                        .withGenerateReason(
-                                                                                                GenerateReason
-                                                                                                        .MAX_ITERATIONS);
-                                                                        state.contextMutable()
-                                                                                .add(finalMsg);
-                                                                        return finalMsg;
-                                                                    }));
-                        })
-                .onErrorResume(this::handleSummaryError);
-    }
-
-    /**
-     * Stream fine-grained {@link AgentEvent}s from a model call during summarization.
-     *
-     * <p>Structurally identical to {@link #reasoningStream} but notifies summary-specific
-     * hooks (SummaryChunkEvent) and does not pass tool schemas to the model.
-     *
-     * @param context   reasoning context for chunk accumulation
-     * @param messages  the messages to send to the model
-     * @param options   generation options
-     * @return event stream from the summary model call
-     */
-    Flux<AgentEvent> summaryStream(
-            ReasoningContext context, List<Msg> messages, GenerateOptions options) {
-
-        Function<ModelCallInput, Flux<AgentEvent>> summaryModelCallCore =
-                mci -> summaryModelCallStream(context, mci, options);
-
-        return MiddlewareChain.build(
-                        middlewares,
-                        this,
-                        getRuntimeContext(),
-                        MiddlewareBase::onModelCall,
-                        summaryModelCallCore)
-                .apply(new ModelCallInput(messages, null, options, model))
-                .doOnNext(this::publishEvent);
-    }
-
-    private Flux<AgentEvent> summaryModelCallStream(
-            ReasoningContext context, ModelCallInput mci, GenerateOptions hookOptions) {
-
-        String replyId = UUID.randomUUID().toString().replace("-", "");
-        AtomicBoolean textStarted = new AtomicBoolean(false);
-        AtomicBoolean thinkingStarted = new AtomicBoolean(false);
-
-        Flux<AgentEvent> modelEvents =
-                mci.model().stream(mci.messages(), mci.tools(), mci.options())
-                        .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
-                        .concatMap(
-                                chunk -> {
-                                    List<Msg> chunkMsgs = context.processChunk(chunk);
-                                    for (Msg msg : chunkMsgs) {
-                                        hookDispatcher
-                                                .fireSummaryChunk(
-                                                        msg,
-                                                        context,
-                                                        hookOptions,
-                                                        model.getModelName())
-                                                .subscribe();
-                                    }
-
-                                    List<AgentEvent> events = new ArrayList<>();
-                                    for (ContentBlock block : chunk.getContent()) {
-                                        if (block instanceof TextBlock tb) {
-                                            if (textStarted.compareAndSet(false, true)) {
-                                                events.add(
-                                                        new TextBlockStartEvent(replyId, "text"));
-                                            }
-                                            if (tb.getText() != null && !tb.getText().isEmpty()) {
-                                                events.add(
-                                                        new TextBlockDeltaEvent(
-                                                                replyId, "text", tb.getText()));
-                                            }
-                                        } else if (block instanceof ThinkingBlock tb) {
-                                            if (thinkingStarted.compareAndSet(false, true)) {
-                                                events.add(
-                                                        new ThinkingBlockStartEvent(
-                                                                replyId, "thinking"));
-                                            }
-                                            if (tb.getThinking() != null
-                                                    && !tb.getThinking().isEmpty()) {
-                                                events.add(
-                                                        new ThinkingBlockDeltaEvent(
-                                                                replyId,
-                                                                "thinking",
-                                                                tb.getThinking()));
-                                            }
-                                        }
-                                    }
-                                    return Flux.fromIterable(events);
-                                });
-
-        Flux<AgentEvent> endEvents =
-                Flux.defer(
-                        () -> {
-                            List<AgentEvent> events = new ArrayList<>();
-                            if (textStarted.get()) {
-                                events.add(new TextBlockEndEvent(replyId, "text"));
-                            }
-                            if (thinkingStarted.get()) {
-                                events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
-                            }
-                            events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
-                            return Flux.fromIterable(events);
-                        });
-
-        return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
-    }
-
-    private List<Msg> prepareSummaryMessages() {
-        List<Msg> messageList = new ArrayList<>(state.contextMutable());
-        messageList.add(
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(
-                                TextBlock.builder()
-                                        .text(
-                                                "You have failed to generate response within the"
-                                                    + " maximum iterations. Now respond directly by"
-                                                    + " summarizing the current situation.")
-                                        .build())
-                        .build());
-        return messageList;
-    }
-
-    private Mono<Msg> handleSummaryError(Throwable error) {
-        if (error instanceof InterruptedException) {
-            return Mono.error(error);
-        }
-        log.error("Error generating summary", error);
-        Msg errorMsg =
-                Msg.builder()
-                        .name(getName())
-                        .role(MsgRole.ASSISTANT)
-                        .content(
-                                TextBlock.builder()
-                                        .text(
-                                                String.format(
-                                                        "Maximum iterations (%d) reached."
-                                                                + " Error generating summary: %s",
-                                                        maxIters, error.getMessage()))
-                                        .build())
-                        .build();
-        state.contextMutable().add(errorMsg);
-        return Mono.just(errorMsg);
-    }
-
-    // ==================== Helper Methods ====================
-
-    /**
-     * Prepends the system message to {@code msgs} if non-null.
-     *
-     * <p>Called immediately before each {@code model.stream()} invocation to build the final
-     * LLM input without contaminating the context message list.
-     */
-    private static List<Msg> prependSystemMsg(List<Msg> msgs, Msg systemMsg) {
-        if (systemMsg == null) {
-            return msgs != null ? msgs : List.of();
-        }
-        List<Msg> result = new ArrayList<>();
-        result.add(systemMsg);
-        if (msgs != null) {
-            result.addAll(msgs);
-        }
-        return result;
-    }
-
-    /**
-     * Check if the ReAct loop should terminate.
-     *
-     * <p>Note: Structured output retry is now handled by StructuredOutputHook via gotoReasoning().
-     *
-     * @param msg The reasoning message
-     * @return true if should finish, false if should continue to acting
-     */
-    private boolean isFinished(Msg msg) {
-        if (msg == null) {
-            return true;
-        }
-
-        List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
-
-        // No tool calls - finished
-        // If there are tool calls (even non-existent ones), continue to acting phase
-        // where ToolExecutor will return "Tool not found" error for the model to see
-        return toolCalls.isEmpty();
-    }
-
-    /**
-     * Extract tool calls from the most recent assistant message.
-     */
-    private List<ToolUseBlock> extractRecentToolCalls() {
-        return MessageUtils.extractRecentToolCalls(state.contextMutable(), getName());
-    }
-
-    /**
-     * Extract only pending tool calls (those without results in context) from the most recent
-     * assistant message.
-     *
-     * <p>This method filters out tool calls that already have corresponding results in context,
-     * preventing duplicate execution when resuming from HITL or partial tool result scenarios.
-     *
-     * @return List of tool use blocks that don't have results yet, or empty list if all tools
-     *     have been executed
-     */
-    private List<ToolUseBlock> extractPendingToolCalls() {
-        List<ToolUseBlock> allToolCalls = extractRecentToolCalls();
-        if (allToolCalls.isEmpty()) {
-            return List.of();
-        }
-
-        Set<String> pendingIds = getPendingToolUseIds();
-        return allToolCalls.stream()
-                .filter(toolUse -> pendingIds.contains(toolUse.getId()))
-                .toList();
-    }
-
-    // ==================== Tool call state helpers (Permission HITL) ====================
-
-    /**
-     * Locate the last assistant Msg in context and replace the {@code state} of every
-     * {@link ToolUseBlock} whose id matches the given map's key. Mirrors Python's
-     * {@code _update_tool_call_state} but operates in bulk to minimise list rebuilds.
-     */
-    private void updateToolCallStates(Map<String, ToolCallState> updates) {
-        if (updates == null || updates.isEmpty()) {
-            return;
-        }
-        List<Msg> ctx = state.contextMutable();
-        for (int i = ctx.size() - 1; i >= 0; i--) {
-            Msg m = ctx.get(i);
-            if (m.getRole() != MsgRole.ASSISTANT) {
-                continue;
-            }
-            boolean hasMatch =
-                    m.getContent().stream()
-                            .anyMatch(
-                                    b ->
-                                            b instanceof ToolUseBlock t
-                                                    && updates.containsKey(t.getId()));
-            if (!hasMatch) {
-                continue;
-            }
-            List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
-            for (ContentBlock block : m.getContent()) {
-                if (block instanceof ToolUseBlock t && updates.containsKey(t.getId())) {
-                    rebuilt.add(t.withState(updates.get(t.getId())));
-                } else {
-                    rebuilt.add(block);
+        /**
+         * Build a stop-acknowledgement Msg for middleware-requested stops during acting. Preserves
+         * any already-collected tool results so the caller sees partial progress.
+         */
+        private Msg buildStopMsg(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> results, GenerateReason reason) {
+            List<ContentBlock> content = new ArrayList<>();
+            if (results != null) {
+                for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : results) {
+                    content.add(pair.getKey());
+                    content.add(pair.getValue());
                 }
             }
-            ctx.set(i, m.withContent(rebuilt));
-            return; // only the last assistant msg holds the live tool_use blocks
+            return Msg.builder()
+                    .name(getName())
+                    .role(MsgRole.ASSISTANT)
+                    .content(content)
+                    .generateReason(reason)
+                    .build();
+        }
+
+        /**
+         * Execute tool calls and return paired results.
+         *
+         * <p>If tool execution fails (timeout, error, etc.), this method generates error tool results
+         * for all pending tool calls instead of propagating the error. This ensures the agent can
+         * continue processing and the model receives proper error feedback.
+         *
+         * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
+         * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
+         */
+        private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
+                List<ToolUseBlock> toolCalls) {
+            return dispatchToolCalls(toolCalls)
+                    .map(
+                            results ->
+                                    IntStream.range(0, toolCalls.size())
+                                            .mapToObj(
+                                                    i ->
+                                                            Map.entry(
+                                                                    toolCalls.get(i),
+                                                                    results.get(i)))
+                                            .toList())
+                    .onErrorResume(
+                            Exception.class,
+                            error -> {
+                                // Preserve interruption signal for agent stop policy
+                                if (error instanceof InterruptedException) {
+                                    return Mono.error(error);
+                                }
+                                // Generate error tool results for all pending tool calls.
+                                // Only catch Exception subclasses; critical JVM errors
+                                // (e.g. OutOfMemoryError) are left to propagate.
+                                String errorMsg = ExceptionUtils.getErrorMessage(error);
+                                log.error(
+                                        "Tool execution failed, generating error results for {}"
+                                                + " tool calls",
+                                        toolCalls.size(),
+                                        error);
+                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> errorResults =
+                                        toolCalls.stream()
+                                                .map(
+                                                        toolCall -> {
+                                                            ToolResultBlock errorResult =
+                                                                    buildErrorToolResult(
+                                                                            toolCall.getId(),
+                                                                            "Tool execution failed:"
+                                                                                    + " "
+                                                                                    + errorMsg);
+                                                            return Map.entry(toolCall, errorResult);
+                                                        })
+                                                .toList();
+                                return Mono.just(errorResults);
+                            });
+        }
+
+        /**
+         * Resolve tool results for {@code toolCalls}, in the same order. When this call is a
+         * structured-output call, any {@code generate_response} invocations are executed against
+         * the per-call {@link #soTool} (never registered on the shared toolkit); all other tools go
+         * through {@link Toolkit#callTools}.
+         */
+        private Mono<List<ToolResultBlock>> dispatchToolCalls(List<ToolUseBlock> toolCalls) {
+            boolean hasStructured =
+                    soTool != null
+                            && toolCalls.stream()
+                                    .anyMatch(t -> STRUCTURED_OUTPUT_TOOL_NAME.equals(t.getName()));
+            if (!hasStructured) {
+                return toolkit.callTools(
+                        toolCalls,
+                        toolExecutionConfig,
+                        ReActAgent.this,
+                        buildMergedRuntimeContext(rc));
+            }
+
+            List<ToolUseBlock> regular =
+                    toolCalls.stream()
+                            .filter(t -> !STRUCTURED_OUTPUT_TOOL_NAME.equals(t.getName()))
+                            .toList();
+            Mono<Map<String, ToolResultBlock>> regularResults =
+                    regular.isEmpty()
+                            ? Mono.just(Map.of())
+                            : toolkit.callTools(
+                                            regular,
+                                            toolExecutionConfig,
+                                            ReActAgent.this,
+                                            buildMergedRuntimeContext(rc))
+                                    .map(
+                                            list -> {
+                                                Map<String, ToolResultBlock> byId = new HashMap<>();
+                                                for (int i = 0; i < regular.size(); i++) {
+                                                    byId.put(regular.get(i).getId(), list.get(i));
+                                                }
+                                                return byId;
+                                            });
+            return regularResults.flatMap(
+                    byId ->
+                            Flux.fromIterable(toolCalls)
+                                    .concatMap(
+                                            use ->
+                                                    STRUCTURED_OUTPUT_TOOL_NAME.equals(
+                                                                    use.getName())
+                                                            ? executeStructuredTool(use)
+                                                            : Mono.just(byId.get(use.getId())))
+                                    .collectList());
+        }
+
+        /**
+         * Execute the per-call {@code generate_response} tool for a single tool call, mirroring the
+         * schema validation the executor performs for registered tools.
+         */
+        private Mono<ToolResultBlock> executeStructuredTool(ToolUseBlock use) {
+            String validationError =
+                    ToolValidator.validateInput(use.getContent(), soTool.getParameters());
+            if (validationError != null) {
+                return Mono.just(
+                        buildErrorToolResult(
+                                use.getId(),
+                                "Parameter validation failed for tool '"
+                                        + STRUCTURED_OUTPUT_TOOL_NAME
+                                        + "': "
+                                        + validationError));
+            }
+            ToolCallParam param =
+                    ToolCallParam.builder()
+                            .toolUseBlock(use)
+                            .input(use.getInput() == null ? Map.of() : use.getInput())
+                            .agent(ReActAgent.this)
+                            .runtimeContext(buildMergedRuntimeContext(rc))
+                            .build();
+            return soTool.callAsync(param).map(rb -> rb.withIdAndName(use.getId(), use.getName()));
+        }
+
+        /**
+         * Fire PostActingEvent for a single tool result, build message and add to context.
+         */
+        private Mono<PostActingEvent> notifyPostActingHook(
+                Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
+            ToolUseBlock toolUse = entry.getKey();
+            ToolResultBlock result = entry.getValue();
+
+            Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolUse, getName());
+
+            return hookDispatcher
+                    .firePostActing(toolUse, result, toolkit, toolMsg)
+                    .flatMap(this::applyStructuredHook)
+                    .doOnNext(
+                            e -> {
+                                Msg resultMsg = e.getToolResultMsg();
+                                state.contextMutable().add(resultMsg);
+                            });
+        }
+
+        /**
+         * Generate summary when max iterations reached.
+         */
+        protected Mono<Msg> summarizing() {
+            log.debug("Maximum iterations reached. Generating summary...");
+
+            // Handle pending tool calls that were not completed before max iterations
+            if (hasPendingToolUse()) {
+                List<ToolUseBlock> pendingTools = extractPendingToolCalls();
+                log.warn(
+                        "Max iterations reached with {} pending tool calls. Adding error results.",
+                        pendingTools.size());
+
+                for (ToolUseBlock toolUse : pendingTools) {
+                    ToolResultBlock errorResult =
+                            buildErrorToolResult(
+                                    toolUse.getId(),
+                                    "Tool execution cancelled because maximum iterations limit ("
+                                            + maxIters
+                                            + ") was reached");
+
+                    Msg errorResultMsg =
+                            ToolResultMessageBuilder.buildToolResultMsg(
+                                    errorResult, toolUse, getName());
+                    state.contextMutable().add(errorResultMsg);
+                }
+            }
+
+            List<Msg> messageList = prepareSummaryMessages();
+            GenerateOptions generateOptions = buildGenerateOptions();
+            ReasoningContext context = new ReasoningContext(getName());
+            publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
+
+            return hookDispatcher
+                    .firePreSummary(
+                            messageList, generateOptions, model.getModelName(), maxIters, systemMsg)
+                    .flatMap(
+                            preSummaryEvent -> {
+                                List<Msg> effectiveMessages =
+                                        prependSystemMsg(
+                                                preSummaryEvent.getInputMessages(),
+                                                preSummaryEvent.getSystemMessage());
+                                GenerateOptions effectiveOptions =
+                                        preSummaryEvent.getEffectiveGenerateOptions();
+
+                                return summaryStream(context, effectiveMessages, effectiveOptions)
+                                        .then(
+                                                Mono.defer(
+                                                        () ->
+                                                                Mono.justOrEmpty(
+                                                                        context
+                                                                                .buildFinalMessage())))
+                                        .flatMap(
+                                                msg ->
+                                                        hookDispatcher
+                                                                .firePostSummary(
+                                                                        msg,
+                                                                        effectiveOptions,
+                                                                        model.getModelName())
+                                                                .map(
+                                                                        postEvent -> {
+                                                                            Msg finalMsg =
+                                                                                    postEvent
+                                                                                            .getSummaryMessage()
+                                                                                            .withGenerateReason(
+                                                                                                    GenerateReason
+                                                                                                            .MAX_ITERATIONS);
+                                                                            state.contextMutable()
+                                                                                    .add(finalMsg);
+                                                                            return finalMsg;
+                                                                        }));
+                            })
+                    .onErrorResume(this::handleSummaryError);
+        }
+
+        /**
+         * Stream fine-grained {@link AgentEvent}s from a model call during summarization.
+         *
+         * <p>Structurally identical to {@link #reasoningStream} but notifies summary-specific
+         * hooks (SummaryChunkEvent) and does not pass tool schemas to the model.
+         *
+         * @param context   reasoning context for chunk accumulation
+         * @param messages  the messages to send to the model
+         * @param options   generation options
+         * @return event stream from the summary model call
+         */
+        Flux<AgentEvent> summaryStream(
+                ReasoningContext context, List<Msg> messages, GenerateOptions options) {
+
+            Function<ModelCallInput, Flux<AgentEvent>> summaryModelCallCore =
+                    mci -> summaryModelCallStream(context, mci, options);
+
+            return MiddlewareChain.build(
+                            middlewares,
+                            ReActAgent.this,
+                            rc,
+                            MiddlewareBase::onModelCall,
+                            summaryModelCallCore)
+                    .apply(new ModelCallInput(messages, null, options, model))
+                    .doOnNext(this::publishEvent);
+        }
+
+        private Flux<AgentEvent> summaryModelCallStream(
+                ReasoningContext context, ModelCallInput mci, GenerateOptions hookOptions) {
+
+            String replyId = UUID.randomUUID().toString().replace("-", "");
+            AtomicBoolean textStarted = new AtomicBoolean(false);
+            AtomicBoolean thinkingStarted = new AtomicBoolean(false);
+
+            Flux<AgentEvent> modelEvents =
+                    mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                            .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
+                            .concatMap(
+                                    chunk -> {
+                                        List<Msg> chunkMsgs = context.processChunk(chunk);
+                                        for (Msg msg : chunkMsgs) {
+                                            hookDispatcher
+                                                    .fireSummaryChunk(
+                                                            msg,
+                                                            context,
+                                                            hookOptions,
+                                                            model.getModelName())
+                                                    .subscribe();
+                                        }
+
+                                        List<AgentEvent> events = new ArrayList<>();
+                                        for (ContentBlock block : chunk.getContent()) {
+                                            if (block instanceof TextBlock tb) {
+                                                if (textStarted.compareAndSet(false, true)) {
+                                                    events.add(
+                                                            new TextBlockStartEvent(
+                                                                    replyId, "text"));
+                                                }
+                                                if (tb.getText() != null
+                                                        && !tb.getText().isEmpty()) {
+                                                    events.add(
+                                                            new TextBlockDeltaEvent(
+                                                                    replyId, "text", tb.getText()));
+                                                }
+                                            } else if (block instanceof ThinkingBlock tb) {
+                                                if (thinkingStarted.compareAndSet(false, true)) {
+                                                    events.add(
+                                                            new ThinkingBlockStartEvent(
+                                                                    replyId, "thinking"));
+                                                }
+                                                if (tb.getThinking() != null
+                                                        && !tb.getThinking().isEmpty()) {
+                                                    events.add(
+                                                            new ThinkingBlockDeltaEvent(
+                                                                    replyId,
+                                                                    "thinking",
+                                                                    tb.getThinking()));
+                                                }
+                                            }
+                                        }
+                                        return Flux.fromIterable(events);
+                                    });
+
+            Flux<AgentEvent> endEvents =
+                    Flux.defer(
+                            () -> {
+                                List<AgentEvent> events = new ArrayList<>();
+                                if (textStarted.get()) {
+                                    events.add(new TextBlockEndEvent(replyId, "text"));
+                                }
+                                if (thinkingStarted.get()) {
+                                    events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
+                                }
+                                events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                                return Flux.fromIterable(events);
+                            });
+
+            return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
+        }
+
+        private List<Msg> prepareSummaryMessages() {
+            List<Msg> messageList = new ArrayList<>(state.contextMutable());
+            messageList.add(
+                    Msg.builder()
+                            .name("user")
+                            .role(MsgRole.USER)
+                            .content(
+                                    TextBlock.builder()
+                                            .text(
+                                                    "You have failed to generate response within"
+                                                            + " the maximum iterations. Now respond"
+                                                            + " directly by summarizing the current"
+                                                            + " situation.")
+                                            .build())
+                            .build());
+            return messageList;
+        }
+
+        private Mono<Msg> handleSummaryError(Throwable error) {
+            if (error instanceof InterruptedException) {
+                return Mono.error(error);
+            }
+            log.error("Error generating summary", error);
+            Msg errorMsg =
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.ASSISTANT)
+                            .content(
+                                    TextBlock.builder()
+                                            .text(
+                                                    String.format(
+                                                            "Maximum iterations (%d) reached. Error"
+                                                                    + " generating summary: %s",
+                                                            maxIters, error.getMessage()))
+                                            .build())
+                            .build();
+            state.contextMutable().add(errorMsg);
+            return Mono.just(errorMsg);
+        }
+
+        // ==================== Helper Methods ====================
+
+        /**
+         * Prepends the system message to {@code msgs} if non-null.
+         *
+         * <p>Called immediately before each {@code model.stream()} invocation to build the final
+         * LLM input without contaminating the context message list.
+         */
+        private static List<Msg> prependSystemMsg(List<Msg> msgs, Msg systemMsg) {
+            if (systemMsg == null) {
+                return msgs != null ? msgs : List.of();
+            }
+            List<Msg> result = new ArrayList<>();
+            result.add(systemMsg);
+            if (msgs != null) {
+                result.addAll(msgs);
+            }
+            return result;
+        }
+
+        /**
+         * Check if the ReAct loop should terminate.
+         *
+         * <p>Note: Structured output retry is now handled by StructuredOutputHook via gotoReasoning().
+         *
+         * @param msg The reasoning message
+         * @return true if should finish, false if should continue to acting
+         */
+        private boolean isFinished(Msg msg) {
+            if (msg == null) {
+                return true;
+            }
+
+            List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
+
+            // No tool calls - finished
+            // If there are tool calls (even non-existent ones), continue to acting phase
+            // where ToolExecutor will return "Tool not found" error for the model to see
+            return toolCalls.isEmpty();
+        }
+
+        /**
+         * Extract tool calls from the most recent assistant message.
+         */
+        private List<ToolUseBlock> extractRecentToolCalls() {
+            return MessageUtils.extractRecentToolCalls(state.contextMutable(), getName());
+        }
+
+        /**
+         * Extract only pending tool calls (those without results in context) from the most recent
+         * assistant message.
+         *
+         * <p>This method filters out tool calls that already have corresponding results in context,
+         * preventing duplicate execution when resuming from HITL or partial tool result scenarios.
+         *
+         * @return List of tool use blocks that don't have results yet, or empty list if all tools
+         *     have been executed
+         */
+        private List<ToolUseBlock> extractPendingToolCalls() {
+            List<ToolUseBlock> allToolCalls = extractRecentToolCalls();
+            if (allToolCalls.isEmpty()) {
+                return List.of();
+            }
+
+            Set<String> pendingIds = getPendingToolUseIds();
+            return allToolCalls.stream()
+                    .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                    .toList();
+        }
+
+        // ==================== Tool call state helpers (Permission HITL) ====================
+
+        /**
+         * Locate the last assistant Msg in context and replace the {@code state} of every
+         * {@link ToolUseBlock} whose id matches the given map's key. Mirrors Python's
+         * {@code _update_tool_call_state} but operates in bulk to minimise list rebuilds.
+         */
+        private void updateToolCallStates(Map<String, ToolCallState> updates) {
+            if (updates == null || updates.isEmpty()) {
+                return;
+            }
+            List<Msg> ctx = state.contextMutable();
+            for (int i = ctx.size() - 1; i >= 0; i--) {
+                Msg m = ctx.get(i);
+                if (m.getRole() != MsgRole.ASSISTANT) {
+                    continue;
+                }
+                boolean hasMatch =
+                        m.getContent().stream()
+                                .anyMatch(
+                                        b ->
+                                                b instanceof ToolUseBlock t
+                                                        && updates.containsKey(t.getId()));
+                if (!hasMatch) {
+                    continue;
+                }
+                List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
+                for (ContentBlock block : m.getContent()) {
+                    if (block instanceof ToolUseBlock t && updates.containsKey(t.getId())) {
+                        rebuilt.add(t.withState(updates.get(t.getId())));
+                    } else {
+                        rebuilt.add(block);
+                    }
+                }
+                ctx.set(i, m.withContent(rebuilt));
+                return; // only the last assistant msg holds the live tool_use blocks
+            }
+        }
+
+        /** Convenience overload for a single tool call. */
+        private void updateToolCallState(String toolCallId, ToolCallState newState) {
+            updateToolCallStates(Map.of(toolCallId, newState));
+        }
+
+        /** Whether any ToolUseBlock in the last assistant Msg is in ASKING state. */
+        private boolean hasAskingToolCalls() {
+            Msg last = findLastAssistantMsg();
+            if (last == null) {
+                return false;
+            }
+            return last.getContent().stream()
+                    .anyMatch(
+                            b ->
+                                    b instanceof ToolUseBlock t
+                                            && t.getState() == ToolCallState.ASKING);
         }
     }
 
-    /** Convenience overload for a single tool call. */
-    private void updateToolCallState(String toolCallId, ToolCallState newState) {
-        updateToolCallStates(Map.of(toolCallId, newState));
-    }
-
-    /** Whether any ToolUseBlock in the last assistant Msg is in ASKING state. */
-    private boolean hasAskingToolCalls() {
-        Msg last = findLastAssistantMsg();
-        if (last == null) {
-            return false;
-        }
-        return last.getContent().stream()
-                .anyMatch(b -> b instanceof ToolUseBlock t && t.getState() == ToolCallState.ASKING);
-    }
-
-    @Override
     protected GenerateOptions buildGenerateOptions() {
         // Start with user-configured generateOptions if available
         GenerateOptions baseOptions = generateOptions;
@@ -2325,33 +2902,49 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     @Override
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
-        if (context.getSource() == InterruptSource.SYSTEM) {
-            shutdownManager.saveOnInterruptObserved(this);
-            return Mono.error(new AgentShuttingDownException());
-        }
-
-        String recoveryText = "I noticed that you have interrupted me. What can I do for you?";
-
-        Msg recoveryMsg =
-                Msg.builder()
-                        .name(getName())
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text(recoveryText).build())
-                        .build();
-
-        state.contextMutable().add(recoveryMsg);
-        return Mono.just(recoveryMsg);
+        return Mono.deferContextual(
+                cv -> {
+                    CallExecution scope = scopeFrom(cv);
+                    // Resolve the source from this call's session-scoped control (the
+                    // context passed by AgentBase is derived from the instance-level signal,
+                    // which is not call-scoped under concurrency).
+                    InterruptSource source = scope.state.interruptControl().getSource();
+                    if (source == InterruptSource.SYSTEM) {
+                        shutdownManager.saveOnInterruptObserved(this);
+                        return Mono.error(new AgentShuttingDownException());
+                    }
+                    String recoveryText =
+                            "I noticed that you have interrupted me. What can I do for you?";
+                    Msg recoveryMsg =
+                            Msg.builder()
+                                    .name(getName())
+                                    .role(MsgRole.ASSISTANT)
+                                    .content(TextBlock.builder().text(recoveryText).build())
+                                    .build();
+                    scope.state.contextMutable().add(recoveryMsg);
+                    return Mono.just(recoveryMsg);
+                });
     }
 
     @Override
     protected Mono<Void> doObserve(Msg msg) {
         if (msg != null) {
-            state.contextMutable().add(msg);
+            exec.state.contextMutable().add(msg);
         }
         return Mono.empty();
     }
 
     // ==================== Getters ====================
+
+    /** Returns this agent's toolkit (a per-instance deep copy made at build time). */
+    public Toolkit getToolkit() {
+        return toolkit;
+    }
+
+    /** Returns the configured structured-output enforcement mode. */
+    public StructuredOutputReminder getStructuredOutputReminder() {
+        return structuredOutputReminder;
+    }
 
     public String getSysPrompt() {
         return sysPrompt;
@@ -2374,16 +2967,44 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         return generateOptions;
     }
 
-    /** Returns the live conversational state (context + summary + permissions). */
-    public AgentState getState() {
-        syncToolkitToState();
-        return state;
-    }
-
     @Override
     public AgentState getAgentState() {
         syncToolkitToState();
-        return state;
+        return exec.state;
+    }
+
+    /**
+     * Returns the {@link AgentState} for the given {@code (userId, sessionId)} slot, loading it
+     * from the configured {@link AgentStateStore} on first access and caching it for subsequent
+     * calls. Lets callers inspect or mutate a specific session's state outside of a {@code call()}
+     * (e.g. to toggle plan mode for one session without affecting others).
+     *
+     * <p>Unlike the no-arg {@link #getAgentState()}, this does not depend on the currently active
+     * slot and never syncs the shared toolkit's active groups into the returned state.
+     */
+    public AgentState getAgentState(String userId, String sessionId) {
+        String slot = slotKey(userId, sessionId);
+        return stateCache.computeIfAbsent(
+                slot,
+                k ->
+                        loadOrCreateAgentStateForSlot(
+                                stateStore, userId, sessionId, null, getAgentId()));
+    }
+
+    /**
+     * Persists the cached {@link AgentState} for the given {@code (userId, sessionId)} slot via the
+     * configured {@link AgentStateStore}. No-op when no store is configured or the slot has never
+     * been loaded into the cache.
+     */
+    public void saveAgentState(String userId, String sessionId) {
+        if (stateStore == null) {
+            return;
+        }
+        String slot = slotKey(userId, sessionId);
+        AgentState s = stateCache.get(slot);
+        if (s != null) {
+            stateStore.save(userId, sessionId, "agent_state", s);
+        }
     }
 
     /** Returns the {@link AgentStateStore} configured for state persistence, or {@code null}. */
@@ -2407,16 +3028,20 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * {@link #activateSlotForContext(RuntimeContext)} on every call entry.
      */
     public String getCurrentSessionId() {
-        return state != null ? state.getSessionId() : null;
+        return exec != null && exec.state != null ? exec.state.getSessionId() : null;
     }
 
     /** Returns the {@code userId} of the currently active slot, or {@code null} if anonymous. */
     public String getCurrentUserId() {
-        return state != null ? state.getUserId() : null;
+        return exec != null && exec.state != null ? exec.state.getUserId() : null;
     }
 
     private void syncToolkitToState() {
-        if (toolkit != null) {
+        syncToolkitToState(exec.state);
+    }
+
+    private void syncToolkitToState(AgentState state) {
+        if (toolkit != null && state != null) {
             state.getToolContext().setActivatedGroups(toolkit.getActiveGroups());
         }
     }
@@ -2433,7 +3058,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     /** Returns the permission engine that gates tool execution. */
     public PermissionEngine getPermissionEngine() {
-        return permissionEngine;
+        return exec.permissionEngine;
     }
 
     /**
@@ -2441,7 +3066,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * Convenience equivalent to {@code getAgentState().getPermissionContext()}.
      */
     public PermissionContextState getPermissionContext() {
-        return state.getPermissionContext();
+        return exec.state.getPermissionContext();
     }
 
     /** Returns the immutable list of registered middlewares. */
@@ -2494,7 +3119,7 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
         String name;
         String description;
         String sysPrompt;
-        boolean checkRunning = true;
+        boolean checkRunning = false;
         Model model;
         Toolkit toolkit = new Toolkit();
 

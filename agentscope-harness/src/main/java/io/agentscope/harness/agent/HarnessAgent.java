@@ -302,6 +302,38 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return s != null && s.getPlanModeContext().isPlanActive();
     }
 
+    /**
+     * Enters plan mode for the given {@code (userId, sessionId)} session, independent of which slot
+     * is currently active. The change is persisted so the next {@code call} on that session sees
+     * it.
+     */
+    public void enterPlanMode(String userId, String sessionId) {
+        AgentState s = delegate.getAgentState(userId, sessionId);
+        if (planModeManager != null) {
+            planModeManager.enter(s);
+        } else {
+            s.getPlanModeContext().setPlanActive(true);
+        }
+        delegate.saveAgentState(userId, sessionId);
+    }
+
+    /** Exits plan mode for the given {@code (userId, sessionId)} session and persists the change. */
+    public void exitPlanMode(String userId, String sessionId) {
+        AgentState s = delegate.getAgentState(userId, sessionId);
+        if (planModeManager != null) {
+            planModeManager.exit(s);
+        } else {
+            s.getPlanModeContext().setPlanActive(false);
+        }
+        delegate.saveAgentState(userId, sessionId);
+    }
+
+    /** @return whether plan mode is active for the given {@code (userId, sessionId)} session. */
+    public boolean isPlanModeActive(String userId, String sessionId) {
+        AgentState s = delegate.getAgentState(userId, sessionId);
+        return s.getPlanModeContext().isPlanActive();
+    }
+
     @Override
     public void close() {
         try {
@@ -680,7 +712,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
-        AgentState state = delegate.getAgentState();
+        AgentState state = RuntimeContext.resolveAgentState(effective, delegate);
         List<Msg> allMsgs = state.contextMutable();
         if (allMsgs.isEmpty()) {
             return Mono.error(

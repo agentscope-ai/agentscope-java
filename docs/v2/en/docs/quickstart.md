@@ -163,7 +163,7 @@ The singleton example above (one `HarnessAgent` with sequential `call()`s) is co
 
 ## Next steps
 
-- [Agent](./building-blocks/agent.md) — full `ReActAgent` API, builder fields, `call` / `streamEvents` / `observe`, human-in-the-loop, Session configuration
+- [Agent](./building-blocks/agent.md) — full `ReActAgent` API, builder fields, `call` / `streamEvents` / `observe`, human-in-the-loop, `AgentStateStore` configuration
 - [Harness Architecture](./harness/architecture.md) — how `HarnessAgent`'s capabilities cooperate, how state flows
 - [Workspace](./harness/workspace.md) — `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` directory layout and loading model
 - [Filesystem](./harness/filesystem.md) — local + shell / shared store / sandbox deployment modes
