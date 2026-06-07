@@ -140,12 +140,16 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
         String sessionContext = buildSessionContextSection(workspace, rc);
 
         String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
+        String subagentsBlock = buildSubagentsBlock(rc, workspace);
+        String skillsBlock = buildSkillsBlock(rc, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
 
         int fixedTokens =
                 estimateTokens(sessionContext)
                         + estimateTokens(agentsContent)
                         + estimateTokens(knowledgeBlock)
+                        + estimateTokens(subagentsBlock)
+                        + estimateTokens(skillsBlock)
                         + estimateTokens(additionalBlock);
         int memoryTokens = estimateTokens(memoryContent);
         int available = maxContextTokens - fixedTokens;
@@ -157,7 +161,13 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
                 buildWorkspaceParagraph(workspace, workspaceManager.getFilesystem());
         String loadedContext =
                 buildLoadedContextSection(
-                        agentsContent, memoryContent, knowledgeBlock, additionalBlock, rc);
+                        agentsContent,
+                        memoryContent,
+                        knowledgeBlock,
+                        subagentsBlock,
+                        skillsBlock,
+                        additionalBlock,
+                        rc);
         return assembleSection(
                 sessionContext, GUIDANCE_TEMPLATE, workspaceParagraph, loadedContext);
     }
@@ -338,6 +348,8 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
             String agentsContent,
             String memoryContent,
             String knowledgeBlock,
+            String subagentsBlock,
+            String skillsBlock,
             String additionalBlock,
             RuntimeContext rc) {
         StringBuilder sb = new StringBuilder();
@@ -345,6 +357,12 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
         sb.append(buildXmlContext("agents_context", agentsContent));
         sb.append(buildXmlContext("memory_context", memoryContent));
         sb.append(buildXmlContext("domain_knowledge_context", knowledgeBlock));
+        if (!subagentsBlock.isBlank()) {
+            sb.append("  ").append(subagentsBlock).append("\n");
+        }
+        if (!skillsBlock.isBlank()) {
+            sb.append("  ").append(skillsBlock).append("\n");
+        }
         if (!additionalBlock.isBlank()) {
             sb.append(additionalBlock);
         }
@@ -413,5 +431,97 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Builds a summary of subagent declarations found in the workspace {@code subagents/} directory.
+     * Lists available subagent names and their description from YAML frontmatter.
+     */
+    private String buildSubagentsBlock(RuntimeContext rc, Path workspace) {
+        List<Path> subagentFiles = workspaceManager.listSubagentFiles(rc);
+        if (subagentFiles.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<subagents_context>\n");
+        sb.append("Available subagents (declare via agent_spawn tool):\n");
+        for (Path subagentFile : subagentFiles) {
+            String fileName = subagentFile.getFileName().toString();
+            String agentId =
+                    fileName.endsWith(".md")
+                            ? fileName.substring(0, fileName.length() - 3)
+                            : fileName;
+            String content =
+                    workspaceManager.readManagedWorkspaceFileUtf8(
+                            rc, workspace.relativize(subagentFile).toString().replace('\\', '/'));
+            String description = extractDescriptionFromFrontmatter(content);
+            sb.append("- ").append(agentId);
+            if (description != null && !description.isBlank()) {
+                sb.append(": ").append(description.strip());
+            }
+            sb.append("\n");
+        }
+        sb.append("</subagents_context>");
+        return sb.toString();
+    }
+
+    /**
+     * Builds a summary of skill directories found in the workspace {@code skills/} directory.
+     * Lists available skill names and their description from SKILL.md frontmatter.
+     */
+    private String buildSkillsBlock(RuntimeContext rc, Path workspace) {
+        List<Path> skillDirs = workspaceManager.listSkillDirs(rc);
+        if (skillDirs.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<skills_context>\n");
+        sb.append("Available skills (load via load_skill_through_path tool):\n");
+        for (Path skillDir : skillDirs) {
+            String skillName = skillDir.getFileName().toString();
+            String skillMdRel =
+                    workspace.relativize(skillDir).toString().replace('\\', '/') + "/SKILL.md";
+            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, skillMdRel);
+            String description = extractDescriptionFromFrontmatter(content);
+            sb.append("- ").append(skillName);
+            if (description != null && !description.isBlank()) {
+                sb.append(": ").append(description.strip());
+            }
+            sb.append("\n");
+        }
+        sb.append("</skills_context>");
+        return sb.toString();
+    }
+
+    /**
+     * Best-effort extraction of the {@code description} field from YAML frontmatter.
+     * Returns {@code null} if no frontmatter or no description field is found.
+     */
+    static String extractDescriptionFromFrontmatter(String content) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        String stripped = content.strip();
+        if (!stripped.startsWith("---")) {
+            return null;
+        }
+        int end = stripped.indexOf("---", 3);
+        if (end < 0) {
+            return null;
+        }
+        String frontmatter = stripped.substring(3, end);
+        // Simple line-by-line parse for "description:" key
+        for (String line : frontmatter.split("\n")) {
+            String trimmed = line.strip();
+            if (trimmed.startsWith("description:")) {
+                return trimmed.substring("description:".length()).strip();
+            }
+            if (trimmed.startsWith("description :")) {
+                return trimmed.substring("description :".length()).strip();
+            }
+        }
+        return null;
     }
 }

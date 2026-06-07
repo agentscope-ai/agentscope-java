@@ -28,6 +28,7 @@ public final class WorkspaceConstants {
 
     public static final String MEMORY_DIR = "memory";
     public static final String SKILLS_DIR = "skills";
+    public static final String SUBAGENTS_DIR = "subagents";
     public static final String KNOWLEDGE_DIR = "knowledge";
     public static final String KNOWLEDGE_MD = "KNOWLEDGE.md";
     public static final String RULES_DIR = "rules";
