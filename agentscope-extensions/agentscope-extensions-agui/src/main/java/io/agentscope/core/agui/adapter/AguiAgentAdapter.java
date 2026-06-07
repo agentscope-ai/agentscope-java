@@ -30,6 +30,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,7 +63,7 @@ public class AguiAgentAdapter {
     private final Agent agent;
     private final AguiAdapterConfig config;
     private final AguiMessageConverter messageConverter;
-    private final Map<Class<?>, BlockEventConverter<?>> converters = new HashMap<>();
+    private final Map<Class<?>, BlockEventConverter<?>> converters;
 
     /**
      * Creates a new AguiAgentAdapter and registers all block conversion strategies.
@@ -75,23 +76,28 @@ public class AguiAgentAdapter {
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
 
+        Map<Class<?>, BlockEventConverter<?>> tempConverters = new HashMap<>();
+
         // Register default block conversion strategies
-        registerDefault(new TextBlockConverter());
-        registerDefault(new ThinkingBlockConverter());
-        registerDefault(new ToolUseBlockConverter());
-        registerDefault(new ToolResultBlockConverter());
+        registerDefault(tempConverters, new TextBlockConverter());
+        registerDefault(tempConverters, new ThinkingBlockConverter());
+        registerDefault(tempConverters, new ToolUseBlockConverter());
+        registerDefault(tempConverters, new ToolResultBlockConverter());
 
         // Override with custom converters if provided by the user
         if (!config.getCustomConverters().isEmpty()) {
-            converters.putAll(config.getCustomConverters());
+            tempConverters.putAll(config.getCustomConverters());
         }
+
+        this.converters = Collections.unmodifiableMap(tempConverters);
     }
 
     /**
      * Helper method to safely register a default converter using its own declared supported type.
      */
-    private void registerDefault(BlockEventConverter<?> converter) {
-        converters.put(converter.supportedBlockType(), converter);
+    private void registerDefault(
+            Map<Class<?>, BlockEventConverter<?>> map, BlockEventConverter<?> converter) {
+        map.put(converter.supportedBlockType(), converter);
     }
 
     /**
@@ -152,6 +158,10 @@ public class AguiAgentAdapter {
      */
     @SuppressWarnings("unchecked")
     private List<AguiEvent> processEvent(Event event, StreamContext ctx) {
+        if (event == null || event.getMessage() == null) {
+            return ctx.getAndClearEmittedEvents();
+        }
+
         // Dispatch each content block to its corresponding converter
         for (ContentBlock block : event.getMessage().getContent()) {
             BlockEventConverter<ContentBlock> converter =
@@ -178,6 +188,7 @@ public class AguiAgentAdapter {
     private Flux<AguiEvent> handleError(
             String threadId, String runId, StreamContext ctx, Throwable error) {
         List<AguiEvent> events = new ArrayList<>();
+        events.addAll(ctx.getAndClearEmittedEvents());
         events.addAll(ctx.flushAllRemainingDeferred());
 
         String msg =
