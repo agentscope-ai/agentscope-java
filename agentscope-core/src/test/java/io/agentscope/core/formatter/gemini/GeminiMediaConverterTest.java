@@ -143,6 +143,45 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
     }
 
     @Test
+    void testUrlWithQueryString() {
+        // Issue #1645: URL with query string should strip ?... before extracting extension
+        URLSource source =
+                URLSource.builder().url(tempImageFile.toString() + "?token=abc123").build();
+        ImageBlock block = ImageBlock.builder().source(source).build();
+
+        // Should resolve to image/png and read the file successfully
+        Part result = converter.convertToInlineDataPart(block);
+        assertNotNull(result);
+        assertTrue(result.inlineData().isPresent());
+        assertEquals("image/png", result.inlineData().get().mimeType().get());
+    }
+
+    @Test
+    void testUrlWithFragment() {
+        // Issue #1645: URL with fragment should strip #... before extracting extension
+        URLSource source = URLSource.builder().url(tempAudioFile.toString() + "#preview").build();
+        AudioBlock block = AudioBlock.builder().source(source).build();
+
+        Part result = converter.convertToInlineDataPart(block);
+        assertNotNull(result);
+        assertTrue(result.inlineData().isPresent());
+        assertEquals("audio/mp3", result.inlineData().get().mimeType().get());
+    }
+
+    @Test
+    void testUrlWithQueryStringAndFragment() {
+        // Issue #1645: URL with both query string and fragment
+        URLSource source =
+                URLSource.builder().url(tempImageFile.toString() + "?download=1#preview").build();
+        ImageBlock block = ImageBlock.builder().source(source).build();
+
+        Part result = converter.convertToInlineDataPart(block);
+        assertNotNull(result);
+        assertTrue(result.inlineData().isPresent());
+        assertEquals("image/png", result.inlineData().get().mimeType().get());
+    }
+
+    @Test
     void testFileNotFound() {
         URLSource source = URLSource.builder().url("/nonexistent/file.png").build();
         ImageBlock block = ImageBlock.builder().source(source).build();
