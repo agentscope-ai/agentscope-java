@@ -23,6 +23,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
@@ -171,6 +172,43 @@ class ToolExecutorTest {
         assertEquals(
                 "Error: Tool execution failed: Tool completed without returning a result",
                 extractFirstText(responses.get(0)));
+    }
+
+    @Test
+    @DisplayName("Should return suspended result for external tools")
+    void shouldReturnSuspendedResultForExternalTools() {
+        toolkit.registerSchema(
+                ToolSchema.builder()
+                        .name("external_api")
+                        .description("Execute API outside the agent runtime")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("endpoint", Map.of("type", "string"))))
+                        .build());
+
+        Map<String, Object> input = Map.of("endpoint", "/users");
+        ToolUseBlock externalCall =
+                ToolUseBlock.builder()
+                        .id("call-external")
+                        .name("external_api")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Executor should return a suspended response");
+        assertEquals(1, responses.size(), "Single external call should yield one response");
+
+        ToolResultBlock response = responses.get(0);
+        assertEquals("call-external", response.getId(), "Response should keep tool call id");
+        assertEquals("external_api", response.getName(), "Response should keep tool name");
+        assertTrue(response.isSuspended(), "External tool should surface as suspended");
+        assertEquals("[Awaiting external execution]", extractFirstText(response));
     }
 
     @Test

@@ -193,7 +193,7 @@ class ToolExecutor {
         // validation, preset injection, or scheduling. SchemaOnlyTool and any
         // @Tool(externalTool=true) method end up here.
         if (tool instanceof ToolBase tb && tb.isExternalTool()) {
-            return Mono.error(new ToolSuspendException());
+            return Mono.just(ToolResultBlock.suspended(toolCall));
         }
 
         // Check tool activation

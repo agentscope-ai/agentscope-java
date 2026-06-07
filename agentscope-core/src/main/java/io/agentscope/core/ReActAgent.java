@@ -32,6 +32,7 @@ import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
@@ -1297,9 +1298,9 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * notifies hooks for successful tool results, and decides whether to continue iteration
      * or return (HITL stop, suspended tools, or structured output).
      *
-     * <p>For tools that throw {@link io.agentscope.core.tool.ToolSuspendException}:
+     * <p>For tools that require external execution:
      * <ul>
-     *   <li>The exception is caught by Toolkit and converted to a pending ToolResultBlock</li>
+     *   <li>Toolkit returns a pending ToolResultBlock without local execution</li>
      *   <li>Successful results are stored in context, pending results are not</li>
      *   <li>Returns Msg with {@link GenerateReason#TOOL_SUSPENDED} containing suspended ToolUseBlocks</li>
      * </ul>
@@ -1592,6 +1593,15 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
                                                                                             .getId(),
                                                                                     state));
                                                                 }
+                                                                List<ToolUseBlock> suspendedCalls =
+                                                                        getSuspendedToolCalls(
+                                                                                results);
+                                                                if (!suspendedCalls.isEmpty()) {
+                                                                    sink.next(
+                                                                            new RequireExternalExecutionEvent(
+                                                                                    replyId,
+                                                                                    suspendedCalls));
+                                                                }
                                                                 sink.complete();
                                                             },
                                                             sink::error);
@@ -1684,6 +1694,14 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     }
 
     private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
+
+    private List<ToolUseBlock> getSuspendedToolCalls(
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
+        return results.stream()
+                .filter(entry -> entry.getValue().isSuspended())
+                .map(Map.Entry::getKey)
+                .toList();
+    }
 
     private ToolResultState determineToolResultState(ToolResultBlock result) {
         if (result.isSuspended()) {
