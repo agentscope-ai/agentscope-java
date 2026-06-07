@@ -227,7 +227,7 @@ Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as fr
 |----------------|--------|
 | `ToolEmitter` | Streaming emitter (no-op when none configured) |
 | `Agent` | The current agent instance |
-| `AgentState` | `agent.getAgentState()` (also the target of `@Tool(stateInjected = true)`) |
+| `AgentState` | The per-session state for the current call (via `RuntimeContext.getAgentState()`) |
 | `RuntimeContext` | The current per-call context |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
 | Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |

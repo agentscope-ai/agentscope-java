@@ -37,6 +37,16 @@
 - [MySQL 技能仓库](skill/mysql-repository.md)
 - 也可以使用 [Nacos 技能仓库](infrastructure/nacos.md#skill-仓库)
 
+## Channel 适配器
+
+通过 Harness Channel 接口将 Agent 接入消息平台。
+
+- [钉钉](channel/dingtalk.md)
+- [飞书 / Lark](channel/feishu.md)
+- [GitHub](channel/github.md)
+- [GitLab](channel/gitlab.md)
+- [企业微信](channel/wecom.md)
+
 ## 智能体协议
 
 让 Agent 与外部世界以标准方式交互。

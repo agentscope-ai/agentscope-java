@@ -37,6 +37,16 @@ Multiple storage implementations of `AgentSkillRepository`.
 - [MySQL Skill Repository](skill/mysql-repository.md)
 - See also [Nacos Skill Repository](infrastructure/nacos.md#skill-repository)
 
+## Channel Adapters
+
+Connect your Agent to messaging platforms through the Harness Channel interface.
+
+- [DingTalk (钉钉)](channel/dingtalk.md)
+- [Feishu / Lark (飞书)](channel/feishu.md)
+- [GitHub](channel/github.md)
+- [GitLab](channel/gitlab.md)
+- [WeCom (企业微信)](channel/wecom.md)
+
 ## Agent Protocols
 
 Standardized ways for the Agent to talk to the outside world.

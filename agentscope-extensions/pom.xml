@@ -61,5 +61,7 @@
         <module>agentscope-extensions-scheduler</module>
         <module>agentscope-extensions-training</module>
         <module>agentscope-extensions-kotlin</module>
+
+        <module>agentscope-extensions-channel</module>
     </modules>
 </project>

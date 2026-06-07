@@ -227,7 +227,7 @@ public class HumanApprovalTool extends ToolBase {
 |---------|---------|
 | `ToolEmitter` | 流式中间产物 emitter（无配置时为 no-op） |
 | `Agent` | 当前 agent 实例 |
-| `AgentState` | `agent.getAgentState()`（也对应 `@Tool(stateInjected = true)`） |
+| `AgentState` | 当前 call 的 per-session 状态（通过 `RuntimeContext.getAgentState()` 获取） |
 | `RuntimeContext` | 当前 per-call 上下文 |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()`（兼容层，已 deprecated） |
 | 其它用户自定义 POJO 类型 | `runtimeContext.get(ParamType.class)` —— 即调用方在 `RuntimeContext.builder().put(ParamType.class, value)` 注册的对象 |

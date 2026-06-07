@@ -324,7 +324,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 7. 一个完整的生产 builder 模板
 
-Agent 在调用之间是无状态的——单例即可服务并发请求。每次 `call()` 通过 `RuntimeContext` 的 `(userId, sessionId)` 定位状态，互不干扰。以下是一个生产级 agent 配置模板：
+Agent 在调用之间是无状态的——单例即可服务并发请求。每次 `call()` 通过 `RuntimeContext` 的 `(userId, sessionId)` 定位状态，互不干扰。
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -332,12 +332,9 @@ import io.agentscope.core.state.redis.RedisAgentStateStore;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.RedisSandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec;
-import io.agentscope.harness.agent.store.RedisStore;
-import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.core.memory.compaction.CompactionConfig;
 import io.agentscope.core.memory.compaction.ToolResultEvictionConfig;
 import java.nio.file.Path;
@@ -346,60 +343,46 @@ import java.time.Duration;
 import java.util.List;
 import redis.clients.jedis.JedisPooled;
 
-public class ProductionAgentFactory {
+// --- 依赖（应用启动时创建一次） ---
+Path workspace = Paths.get("/var/agentscope/workspace");
+JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
+RedisAgentStateStore stateStore = RedisAgentStateStore.builder().jedisClient(jedis).build();
+OssSnapshotSpec oss = new OssSnapshotSpec(
+        "oss-cn-hangzhou.aliyuncs.com",
+        System.getenv("OSS_AK"), System.getenv("OSS_SK"),
+        "agentscope-sandbox-snapshots", "prod/");
+DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec()
+        .image("python:3.12-slim")
+        .isolationScope(IsolationScope.USER)
+        .snapshotSpec(oss)
+        .executionGuard(new RedisSandboxExecutionGuard(
+                jedis, "agentscope:guard:", Duration.ofSeconds(30)));
 
-    // --- 共享依赖（应用启动时创建一次） ---
-    private final Path workspace = Paths.get("/var/agentscope/workspace");
-    private final JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
-    private final RedisAgentStateStore stateStore = RedisAgentStateStore.builder().jedisClient(jedis).build();
-    private final OssSnapshotSpec oss = new OssSnapshotSpec(
-            "oss-cn-hangzhou.aliyuncs.com",
-            System.getenv("OSS_AK"), System.getenv("OSS_SK"),
-            "agentscope-sandbox-snapshots", "prod/");
-    private final DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec()
-            .image("python:3.12-slim")
-            .isolationScope(IsolationScope.USER)
-            .snapshotSpec(oss)
-            .executionGuard(new RedisSandboxExecutionGuard(
-                    jedis, "agentscope:guard:", Duration.ofSeconds(30)));
-
-    /** 为每个请求创建独立的 agent 实例。可安全并发调用。 */
-    public HarnessAgent create() {
-        return HarnessAgent.builder()
-                .name("coding-assistant")
-                .model("dashscope:qwen-plus")
-                .workspace(workspace)
-
-                // stateStore + filesystem 分布式必须一起配
-                .stateStore(stateStore)
-                .filesystem(sandboxSpec)
-
-                // 记忆压缩 + 大结果卸载（生产长会话必备）
-                .compaction(CompactionConfig.builder()
-                        .triggerMessages(50)
-                        .keepMessages(20)
-                        .build())
-                .toolResultEviction(ToolResultEvictionConfig.defaults())
-
-                // 集中治理的 skill 仓库（只读分发）
-                .skillRepository(io.agentscope.core.skill.repository.mysql.MysqlSkillRepository
-                        .builder(skillsDataSource())
-                        .createIfNotExist(false)
-                        .writeable(false)
-                        .build())
-
-                // tracing
-                .middlewares(List.of(new OtelTracingMiddleware()))
-                .build();
-    }
-}
+// --- 单例 agent（应用启动时创建一次） ---
+HarnessAgent agent = HarnessAgent.builder()
+        .name("coding-assistant")
+        .model("dashscope:qwen-plus")
+        .workspace(workspace)
+        .stateStore(stateStore)
+        .filesystem(sandboxSpec)
+        .compaction(CompactionConfig.builder()
+                .triggerMessages(50)
+                .keepMessages(20)
+                .build())
+        .toolResultEviction(ToolResultEvictionConfig.defaults())
+        .skillRepository(io.agentscope.core.skill.repository.mysql.MysqlSkillRepository
+                .builder(skillsDataSource())
+                .createIfNotExist(false)
+                .writeable(false)
+                .build())
+        .middlewares(List.of(new OtelTracingMiddleware()))
+        .build();
 ```
 
-调用时填好 `RuntimeContext`，让所有"按用户/会话分桶"的子系统拿到 key：
+调用时传入 `RuntimeContext` 标识用户和会话。不同 session 在同一个 agent 实例上自动并行：
 
 ```java
-// 在 HTTP handler 中——每个请求一个 agent
-HarnessAgent agent = factory.create();
+// 在 HTTP handler 中
 agent.call(msg, RuntimeContext.builder()
         .userId(httpRequest.tenantUserId())
         .sessionId(httpRequest.sessionId())

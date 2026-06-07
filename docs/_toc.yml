@@ -318,6 +318,8 @@ parts:
     title: Skill
   - file: v2/en/docs/harness/plan-mode
     title: Plan Mode
+  - file: v2/en/docs/harness/channel
+    title: Channel
 
 - caption: v2 · Reference
   chapters:
@@ -456,6 +458,8 @@ parts:
     title: 技能
   - file: v2/zh/docs/harness/plan-mode
     title: 计划模式
+  - file: v2/zh/docs/harness/channel
+    title: Channel
 
 - caption: v2 · 参考
   chapters:

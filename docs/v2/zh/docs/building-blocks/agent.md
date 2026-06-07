@@ -16,7 +16,7 @@ description: "了解如何在 AgentScope Java 2.0 中定义和配置智能体"
 
 ### 核心接口
 
-`Agent` 接口由三个能力接口组合而成：`CallableAgent`、`StreamableAgent`、`ObservableAgent`。最常用的方法如下：
+`Agent` 接口常用的方法如下：
 
 | 方法 | 描述 |
 |------|------|
@@ -185,6 +185,40 @@ agent.call(List.of(new UserMessage("Hi there")),
 :::
 
 Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
+
+## 中断执行（Interrupt）
+
+当需要从外部中断一个正在运行的 agent call 时（用户取消、超时、优雅停机），使用 `interrupt`：
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+
+// 构造标识目标 session 的 RuntimeContext
+RuntimeContext target = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("session-001")
+        .build();
+
+// 中断该 session 正在进行的 call
+agent.interrupt(target);
+
+// 带消息中断——中断消息会被 LLM 在恢复时看到
+agent.interrupt(target, new UserMessage("用户已取消操作"));
+```
+
+中断是 **per-session** 的：只影响指定 `(userId, sessionId)` 的 in-flight call，不会波及同一 agent 上其他 session 的并发请求。
+
+**中断后的行为：**
+- 当前推理/工具执行在下一个检查点（reasoning 开始、acting 开始、streaming 每个 chunk）被拦截
+- agent 返回一个带 `GenerateReason.INTERRUPTED` 标记的 Msg
+- 对话上下文（AgentState）自动保存——下次对同一 session 发起 `call()` 时从中断点恢复
+
+也可以直接用 `(userId, sessionId)` 字符串：
+
+```java
+agent.interrupt("alice", "session-001");
+agent.interrupt("alice", "session-001", interruptMsg);
+```
 
 ## 运行智能体
 
@@ -444,10 +478,10 @@ agent.call(List.of(new UserMessage("继续之前的任务。")), rc).block();
 
 大多数场景只用一个 `sessionId` 就够；要按用户分桶就在 `RuntimeContext` 上同时设置 `userId`，存储会按 `(userId, sessionId)` 二元组寻址每个槽位。
 
-通过 `agent.getAgentState()` 可以读取当前活跃槽位的快照（旁路场景，如管理台、审计）；用 `agent.getAgentState(userId, sessionId)` 可读取指定槽位：
+通过 `agent.getAgentState(userId, sessionId)` 或 `agent.getAgentState(runtimeContext)` 可读取指定会话的状态快照：
 
 ```java
-AgentState state = agent.getAgentState();   // 当前活跃槽位
+AgentState state = agent.getAgentState("alice", "session-001");
 state.getContext().size();                  // 当前对话消息数
 String json = state.toJson();               // 序列化为 JSON
 ```
@@ -535,6 +569,38 @@ JsonNode schema = om.readTree("""
 
 Msg result = agent.call(List.of(new UserMessage("分析这段评论的情感")), schema).block();
 ```
+
+## 更多能力
+
+以下能力均通过 builder 配置，详情参见各自的文档页面：
+
+### 模型容错
+
+```java
+ReActAgent.builder()
+        .model("dashscope:qwen-plus")
+        .maxRetries(3)                              // 模型调用失败时自动重试
+        .fallbackModel("dashscope:qwen-max")        // 主模型连续失败后切换到备用模型
+        .build();
+```
+
+### 技能系统（Skills）
+
+技能是可热加载的 Markdown 提示词模块，运行时由 LLM 按需激活：
+
+```java
+ReActAgent.builder()
+        .skillRepository(new MysqlSkillRepository(dataSource))
+        .dynamicSkillsEnabled(true)     // 允许 LLM 动态加载新技能
+        .build();
+```
+
+### 内置工具
+
+| Builder 方法 | 说明 |
+|---|---|
+| `enableMetaTool(true)` | 注册 `list_tools` / `activate_group` 元工具，让 LLM 能发现和切换工具组 |
+| `enableTaskList()` | 注册任务列表工具，让 LLM 拆解复杂任务为步骤并逐步完成 |
 
 ## 延伸阅读
 

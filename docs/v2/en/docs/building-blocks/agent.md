@@ -186,6 +186,40 @@ Calls targeting the same `(userId, sessionId)` are **serialized** — a second r
 
 A complete Spring Boot example: `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
 
+## Interrupt
+
+To cancel an in-flight call from the outside (user cancellation, timeout, graceful shutdown), use `interrupt`:
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+
+// Identify the target session
+RuntimeContext target = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("session-001")
+        .build();
+
+// Interrupt the in-flight call for that session
+agent.interrupt(target);
+
+// Interrupt with a message — the LLM sees this message when the session resumes
+agent.interrupt(target, new UserMessage("User cancelled the operation"));
+```
+
+Interrupt is **per-session**: it only affects the call running on the specified `(userId, sessionId)` — other concurrent sessions on the same agent are unaffected.
+
+**What happens after interrupt:**
+- The current reasoning/tool execution is stopped at the next checkpoint (start of reasoning, start of acting, each streaming chunk)
+- The agent returns a Msg tagged with `GenerateReason.INTERRUPTED`
+- The conversation state (AgentState) is saved automatically — the next `call()` to the same session resumes from the interruption point
+
+You can also use raw `(userId, sessionId)` strings:
+
+```java
+agent.interrupt("alice", "session-001");
+agent.interrupt("alice", "session-001", interruptMsg);
+```
+
 ## Running an agent
 
 `call` and `streamEvents` accept the same input messages and drive the same reasoning-acting loop. They differ in how the result is delivered.
@@ -444,10 +478,10 @@ Built-in and extension implementations:
 
 A single `sessionId` is enough for most cases. For per-user partitioning, also set `userId` on the `RuntimeContext`; the store addresses each slot by the `(userId, sessionId)` pair.
 
-`agent.getAgentState()` exposes the snapshot of the currently active slot for side-channel use (admin console, audit). Use `agent.getAgentState(userId, sessionId)` to inspect a specific slot:
+Use `agent.getAgentState(userId, sessionId)` or `agent.getAgentState(runtimeContext)` to inspect a specific session's state:
 
 ```java
-AgentState state = agent.getAgentState();   // current active slot
+AgentState state = agent.getAgentState("alice", "session-001");
 state.getContext().size();                  // current message count
 String json = state.toJson();               // serialize to JSON
 ```
@@ -535,6 +569,38 @@ JsonNode schema = om.readTree("""
 
 Msg result = agent.call(List.of(new UserMessage("Analyze the sentiment of this review")), schema).block();
 ```
+
+## More capabilities
+
+The following features are configured via the builder. See their respective documentation for details:
+
+### Model fault tolerance
+
+```java
+ReActAgent.builder()
+        .model("dashscope:qwen-plus")
+        .maxRetries(3)                              // auto-retry on model call failure
+        .fallbackModel("dashscope:qwen-max")        // switch to fallback after consecutive failures
+        .build();
+```
+
+### Skills
+
+Skills are hot-loadable Markdown prompt modules that the LLM activates on demand:
+
+```java
+ReActAgent.builder()
+        .skillRepository(new MysqlSkillRepository(dataSource))
+        .dynamicSkillsEnabled(true)     // allow LLM to load new skills at runtime
+        .build();
+```
+
+### Built-in tools
+
+| Builder method | Description |
+|---|---|
+| `enableMetaTool(true)` | Registers `list_tools` / `activate_group` meta tools — lets the LLM discover and switch tool groups |
+| `enableTaskList()` | Registers task-list tools — lets the LLM decompose complex tasks into steps and track progress |
 
 ## Further reading
 

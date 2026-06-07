@@ -22,6 +22,8 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
+import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionRule;
@@ -29,6 +31,8 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
@@ -97,6 +101,7 @@ public class AgentSpawnTool {
     private final DefaultAgentManager agentManager;
     private final TaskRepository taskRepository;
     private final int parentSpawnDepth;
+    private final SubagentGatewayBridge gatewayBridge;
 
     private record SpawnedAgent(
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
@@ -115,9 +120,27 @@ public class AgentSpawnTool {
      */
     public AgentSpawnTool(
             DefaultAgentManager agentManager, TaskRepository taskRepository, int parentSpawnDepth) {
+        this(agentManager, taskRepository, parentSpawnDepth, null);
+    }
+
+    /**
+     * Creates an {@code AgentSpawnTool} with an optional gateway bridge for exposing subagents
+     * as user-addressable threads.
+     *
+     * @param agentManager factory and invoker for subagents
+     * @param taskRepository background task store
+     * @param parentSpawnDepth current spawn-depth of the parent (0 for top-level main agent)
+     * @param gatewayBridge optional bridge for thread exposure; null for standalone mode
+     */
+    public AgentSpawnTool(
+            DefaultAgentManager agentManager,
+            TaskRepository taskRepository,
+            int parentSpawnDepth,
+            SubagentGatewayBridge gatewayBridge) {
         this.agentManager = Objects.requireNonNull(agentManager, "agentManager");
         this.taskRepository = taskRepository;
         this.parentSpawnDepth = parentSpawnDepth;
+        this.gatewayBridge = gatewayBridge;
     }
 
     @Tool(
@@ -155,7 +178,17 @@ public class AgentSpawnTool {
                                     returns task_id. Default: 30. Max: 600.\
                                     """,
                             required = false)
-                    Integer timeoutSeconds) {
+                    Integer timeoutSeconds,
+            @ToolParam(
+                            name = "expose_to_user",
+                            description =
+                                    """
+                                    When true, the spawned subagent becomes directly addressable \
+                                    by the user via a thread_id handle. Returns thread_id in the \
+                                    response. Requires a gateway bridge to be configured.\
+                                    """,
+                            required = false)
+                    Boolean exposeToUser) {
 
         System.err.println(
                 "[agentSpawn] called agentId="
@@ -199,7 +232,7 @@ public class AgentSpawnTool {
             // Reuse existing agent if same deterministic key was already spawned.
             SpawnedAgent existing = agentsByKey.get(key);
             if (existing != null) {
-                String spawnInfo = formatSpawnInfo(key, agentId, sessionId);
+                String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                 boolean hasTask = task != null && !task.isBlank();
                 if (!hasTask) {
                     return Mono.just(spawnInfo + "\nstatus: accepted (reused)");
@@ -237,11 +270,28 @@ public class AgentSpawnTool {
             propagateDenyRules(parentState, ra);
         }
 
-        String spawnInfo = formatSpawnInfo(key, agentId, sessionId);
+        // Expose subagent to user via gateway bridge if requested.
+        String subagentId = null;
+        if (Boolean.TRUE.equals(exposeToUser) && gatewayBridge != null) {
+            OutboundAddress replyTo =
+                    runtimeContext != null
+                            ? runtimeContext.get("outboundAddress", OutboundAddress.class)
+                            : null;
+            SubagentGatewayBridge.ExposeResult er =
+                    gatewayBridge.expose(agentId, sessionId, agent, replyTo);
+            subagentId = er.subagentId();
+        }
+
+        String spawnInfo = formatSpawnInfo(key, agentId, sessionId, subagentId);
         boolean hasTask = task != null && !task.isBlank();
 
         if (!hasTask) {
-            return Mono.just(spawnInfo + "\nstatus: accepted");
+            return withSubagentExposedEvent(
+                    Mono.just(spawnInfo + "\nstatus: accepted"),
+                    subagentId,
+                    agentId,
+                    sessionId,
+                    canonLabel);
         }
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
@@ -279,44 +329,64 @@ public class AgentSpawnTool {
                                 });
             }
             taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
-            return Mono.just(
-                    spawnInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId));
+            return withSubagentExposedEvent(
+                    Mono.just(
+                            spawnInfo
+                                    + "\n"
+                                    + String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId)),
+                    subagentId,
+                    agentId,
+                    sessionId,
+                    canonLabel);
         }
 
         if (remote) {
             final String finalTask = task;
-            return Mono.fromCallable(
-                    () ->
-                            runRemoteSync(
-                                    runtimeContext,
-                                    spawnInfo,
-                                    agentId,
-                                    parentSessionId,
-                                    declOpt.get(),
-                                    finalTask.trim(),
-                                    timeoutMs));
+            return withSubagentExposedEvent(
+                    Mono.fromCallable(
+                            () ->
+                                    runRemoteSync(
+                                            runtimeContext,
+                                            spawnInfo,
+                                            agentId,
+                                            parentSessionId,
+                                            declOpt.get(),
+                                            finalTask.trim(),
+                                            timeoutMs)),
+                    subagentId,
+                    agentId,
+                    sessionId,
+                    canonLabel);
         }
 
         // Sync-local execution. Returns Mono<String> so that ToolMethodInvoker's flatMap
         // propagates the Reactor Context into the deferContextual below.
         final String finalTask = task.trim();
         final String finalSpawnInfo = spawnInfo;
-        return execLocalSync(agent, sessionId, currentUserId, finalTask, spawned, runtimeContext)
-                .timeout(Duration.ofMillis(timeoutMs))
-                .map(
-                        reply -> {
-                            String text = reply != null ? reply.getTextContent() : "";
-                            return finalSpawnInfo + "\nstatus: ok\nreply:\n" + text;
-                        })
-                .onErrorResume(
-                        e -> {
-                            String err =
-                                    e.getMessage() != null
-                                            ? e.getMessage()
-                                            : e.getClass().getSimpleName();
-                            log.warn("agent_spawn execute failed: agentId={}", agentId, e);
-                            return Mono.just(finalSpawnInfo + "\nstatus: error\nerror: " + err);
-                        });
+        final String finalSubagentId = subagentId;
+        final String finalLabel = canonLabel;
+        return withSubagentExposedEvent(
+                execLocalSync(agent, sessionId, currentUserId, finalTask, spawned, runtimeContext)
+                        .timeout(Duration.ofMillis(timeoutMs))
+                        .map(
+                                reply -> {
+                                    String text = reply != null ? reply.getTextContent() : "";
+                                    return finalSpawnInfo + "\nstatus: ok\nreply:\n" + text;
+                                })
+                        .onErrorResume(
+                                e -> {
+                                    String err =
+                                            e.getMessage() != null
+                                                    ? e.getMessage()
+                                                    : e.getClass().getSimpleName();
+                                    log.warn("agent_spawn execute failed: agentId={}", agentId, e);
+                                    return Mono.just(
+                                            finalSpawnInfo + "\nstatus: error\nerror: " + err);
+                                }),
+                finalSubagentId,
+                agentId,
+                sessionId,
+                finalLabel);
     }
 
     @Tool(
@@ -634,11 +704,45 @@ public class AgentSpawnTool {
         return (long) Math.min(timeoutSeconds, MAX_TIMEOUT_SECONDS) * 1_000;
     }
 
-    private static String formatSpawnInfo(String key, String agentId, String sessionId) {
+    /**
+     * Wraps a {@code Mono<String>} to emit a {@link SubagentExposedEvent} into the parent's event
+     * stream when {@code subagentId} is non-null. When subagentId is null (no expose), returns the
+     * original Mono unchanged.
+     */
+    private static Mono<String> withSubagentExposedEvent(
+            Mono<String> source,
+            String subagentId,
+            String agentId,
+            String sessionId,
+            String label) {
+        if (subagentId == null) {
+            return source;
+        }
+        return Mono.deferContextual(
+                ctx -> {
+                    AgentEventEmitter.fromContext(ctx)
+                            .ifPresent(
+                                    emitter ->
+                                            emitter.emit(
+                                                    new SubagentExposedEvent(
+                                                            subagentId,
+                                                            agentId,
+                                                            sessionId,
+                                                            label)));
+                    return source;
+                });
+    }
+
+    private static String formatSpawnInfo(
+            String key, String agentId, String sessionId, String subagentId) {
         StringBuilder sb = new StringBuilder();
         sb.append("agent_key: ").append(key).append("\n");
         sb.append("agent_id: ").append(agentId).append("\n");
         sb.append("session_id: ").append(sessionId);
+        if (subagentId != null) {
+            sb.append("\nsubagent_id: ").append(subagentId);
+            sb.append("\nstatus: exposed (user can send messages directly via subagent_id)");
+        }
         return sb.toString();
     }
 

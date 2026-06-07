@@ -49,6 +49,9 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
+import io.agentscope.harness.agent.gateway.HarnessGateway;
+import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
+import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
@@ -159,6 +162,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
 
+    /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
+    private final Object subagentMiddleware;
+
+    /** Lazily created internal gateway for {@link #channel}. */
+    private volatile HarnessGateway internalGateway;
+
     private HarnessAgent(
             ReActAgent delegate,
             WorkspaceManager workspaceManager,
@@ -173,7 +182,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SkillUsageStore skillUsageStore,
             SkillCurator skillCurator,
             SkillAuditLog skillAuditLog,
-            MemoryConfig memoryConfig) {
+            MemoryConfig memoryConfig,
+            Object subagentMiddleware) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
@@ -189,6 +199,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.skillCurator = skillCurator;
         this.skillAuditLog = skillAuditLog;
         this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
+        this.subagentMiddleware = subagentMiddleware;
     }
 
     /** Returns the workspace manager bound to this agent, or {@code null} if not configured. */
@@ -409,6 +420,63 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public void interrupt(Msg msg) {
         delegate.interrupt(msg);
+    }
+
+    // -----------------------------------------------------------------
+    //  Channel / Gateway
+    // -----------------------------------------------------------------
+
+    /**
+     * Returns a channel bound to this agent's internal gateway. The gateway is created lazily on
+     * the first call and this agent is registered as the sole (main) agent.
+     *
+     * <p>Typical usage in a Spring controller:
+     * <pre>{@code
+     * HarnessAgent agent = HarnessAgent.builder()...build();
+     * ChatUiChannel chat = agent.channel(ChatUiChannel.perPeer());
+     *
+     * // in controller
+     * chat.send("user-123", "hello");
+     * }</pre>
+     *
+     * @param channel the channel instance to bind (e.g. {@code ChatUiChannel.perPeer()})
+     * @param <T> the channel type
+     * @return the same channel instance, now wired to this agent's gateway
+     */
+    public <T extends Channel> T channel(T channel) {
+        ensureGateway();
+        channel.init(internalGateway);
+        return channel;
+    }
+
+    /**
+     * Returns the internal gateway backing {@link #channel}. Creates it lazily if not yet
+     * initialized. Exposed for advanced usage (e.g. direct {@code runSubagent} calls).
+     */
+    public HarnessGateway gateway() {
+        ensureGateway();
+        return internalGateway;
+    }
+
+    private synchronized void ensureGateway() {
+        if (internalGateway != null) {
+            return;
+        }
+        HarnessGateway gw = HarnessGateway.create();
+        gw.bindMainAgent(this);
+
+        SubagentGatewayBridge bridge =
+                (agentId, sessionId, agent, replyTo) -> {
+                    String subagentId = gw.exposeSubagent(agentId, sessionId, agent, replyTo);
+                    return new SubagentGatewayBridge.ExposeResult(subagentId);
+                };
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            sm.setGatewayBridge(bridge);
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            dm.setGatewayBridge(bridge);
+        }
+
+        this.internalGateway = gw;
     }
 
     @Override
@@ -1771,6 +1839,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(
                         new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
             }
+            Object capturedSubagentMw = null;
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {
                     DynamicSubagentsMiddleware dynMw =
@@ -1781,6 +1850,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         for (Object t : dynMw.getTools()) {
                             agentToolkit.registerTool(t);
                         }
+                        capturedSubagentMw = dynMw;
                     }
                 } else {
                     SubagentsMiddleware subagentsMw =
@@ -1791,6 +1861,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         for (Object t : subagentsMw.getTools()) {
                             agentToolkit.registerTool(t);
                         }
+                        capturedSubagentMw = subagentsMw;
                     }
                 }
             }
@@ -2020,7 +2091,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pendingSkillUsageStore,
                     pendingSkillCurator,
                     pendingSkillAuditLog,
-                    memoryConfig);
+                    memoryConfig,
+                    capturedSubagentMw);
         }
     }
 }

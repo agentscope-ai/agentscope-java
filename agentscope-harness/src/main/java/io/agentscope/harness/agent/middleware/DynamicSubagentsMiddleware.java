@@ -77,7 +77,7 @@ public class DynamicSubagentsMiddleware implements MiddlewareBase {
     private final Path mainWorkspace;
     private final Function<SubagentDeclaration, SubagentFactory> factoryBuilder;
     private final DefaultAgentManager agentManager;
-    private final Object subagentTool;
+    private volatile Object subagentTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
 
@@ -99,6 +99,20 @@ public class DynamicSubagentsMiddleware implements MiddlewareBase {
         this.subagentTool =
                 subagentTool != null ? subagentTool : new AgentSpawnTool(agentManager, repo, 0);
         this.taskTool = new TaskTool(repo);
+    }
+
+    /**
+     * Wires a gateway bridge into the internal {@link AgentSpawnTool}, enabling spawned subagents
+     * to be exposed as user-addressable threads. Only effective when the middleware owns a
+     * {@link DefaultAgentManager}.
+     */
+    public DynamicSubagentsMiddleware setGatewayBridge(
+            io.agentscope.harness.agent.gateway.SubagentGatewayBridge bridge) {
+        if (agentManager == null) {
+            return this;
+        }
+        this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+        return this;
     }
 
     /**

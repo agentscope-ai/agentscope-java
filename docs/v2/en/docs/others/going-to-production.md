@@ -324,7 +324,7 @@ Pulling the single-component picks above into one table:
 
 ## 7. A complete production builder template
 
-The agent is stateless between calls — a singleton handles concurrent requests. Each `call()` locates state via `RuntimeContext`'s `(userId, sessionId)`, fully isolated. Here is a production-grade agent configuration template:
+The agent is stateless between calls — a singleton handles concurrent requests. Each `call()` locates state via `RuntimeContext`'s `(userId, sessionId)`, fully isolated.
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -332,12 +332,9 @@ import io.agentscope.core.state.redis.RedisAgentStateStore;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.RedisSandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec;
-import io.agentscope.harness.agent.store.RedisStore;
-import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.core.memory.compaction.CompactionConfig;
 import io.agentscope.core.memory.compaction.ToolResultEvictionConfig;
 import java.nio.file.Path;
@@ -346,60 +343,46 @@ import java.time.Duration;
 import java.util.List;
 import redis.clients.jedis.JedisPooled;
 
-public class ProductionAgentFactory {
+// --- Dependencies (create once at startup) ---
+Path workspace = Paths.get("/var/agentscope/workspace");
+JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
+RedisAgentStateStore stateStore = RedisAgentStateStore.builder().jedisClient(jedis).build();
+OssSnapshotSpec oss = new OssSnapshotSpec(
+        "oss-cn-hangzhou.aliyuncs.com",
+        System.getenv("OSS_AK"), System.getenv("OSS_SK"),
+        "agentscope-sandbox-snapshots", "prod/");
+DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec()
+        .image("python:3.12-slim")
+        .isolationScope(IsolationScope.USER)
+        .snapshotSpec(oss)
+        .executionGuard(new RedisSandboxExecutionGuard(
+                jedis, "agentscope:guard:", Duration.ofSeconds(30)));
 
-    // --- Shared dependencies (create once at startup) ---
-    private final Path workspace = Paths.get("/var/agentscope/workspace");
-    private final JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
-    private final RedisAgentStateStore stateStore = RedisAgentStateStore.builder().jedisClient(jedis).build();
-    private final OssSnapshotSpec oss = new OssSnapshotSpec(
-            "oss-cn-hangzhou.aliyuncs.com",
-            System.getenv("OSS_AK"), System.getenv("OSS_SK"),
-            "agentscope-sandbox-snapshots", "prod/");
-    private final DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec()
-            .image("python:3.12-slim")
-            .isolationScope(IsolationScope.USER)
-            .snapshotSpec(oss)
-            .executionGuard(new RedisSandboxExecutionGuard(
-                    jedis, "agentscope:guard:", Duration.ofSeconds(30)));
-
-    /** Creates an independent agent for each incoming request. Safe to call concurrently. */
-    public HarnessAgent create() {
-        return HarnessAgent.builder()
-                .name("coding-assistant")
-                .model("dashscope:qwen-plus")
-                .workspace(workspace)
-
-                // State store + filesystem must be swapped together for distributed
-                .stateStore(stateStore)
-                .filesystem(sandboxSpec)
-
-                // Memory compaction + large-result offload (mandatory for long-running sessions)
-                .compaction(CompactionConfig.builder()
-                        .triggerMessages(50)
-                        .keepMessages(20)
-                        .build())
-                .toolResultEviction(ToolResultEvictionConfig.defaults())
-
-                // Centrally-governed skill repository (read-only distribution)
-                .skillRepository(io.agentscope.core.skill.repository.mysql.MysqlSkillRepository
-                        .builder(skillsDataSource())
-                        .createIfNotExist(false)
-                        .writeable(false)
-                        .build())
-
-                // Tracing
-                .middlewares(List.of(new OtelTracingMiddleware()))
-                .build();
-    }
-}
+// --- Singleton agent (created once at startup) ---
+HarnessAgent agent = HarnessAgent.builder()
+        .name("coding-assistant")
+        .model("dashscope:qwen-plus")
+        .workspace(workspace)
+        .stateStore(stateStore)
+        .filesystem(sandboxSpec)
+        .compaction(CompactionConfig.builder()
+                .triggerMessages(50)
+                .keepMessages(20)
+                .build())
+        .toolResultEviction(ToolResultEvictionConfig.defaults())
+        .skillRepository(io.agentscope.core.skill.repository.mysql.MysqlSkillRepository
+                .builder(skillsDataSource())
+                .createIfNotExist(false)
+                .writeable(false)
+                .build())
+        .middlewares(List.of(new OtelTracingMiddleware()))
+        .build();
 ```
 
-At call time, populate `RuntimeContext` so every "bucket-by-user/session" subsystem sees the key:
+At call time, pass `RuntimeContext` to identify the user/session. Different sessions run concurrently on the same agent instance:
 
 ```java
-// In your HTTP handler — one agent per request
-HarnessAgent agent = factory.create();
+// In your HTTP handler
 agent.call(msg, RuntimeContext.builder()
         .userId(httpRequest.tenantUserId())
         .sessionId(httpRequest.sessionId())

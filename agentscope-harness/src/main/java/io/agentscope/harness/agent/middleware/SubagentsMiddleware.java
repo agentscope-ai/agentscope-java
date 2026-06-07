@@ -165,7 +165,7 @@ public class SubagentsMiddleware implements MiddlewareBase {
 
     private final List<SubagentEntry> baseEntries;
     private volatile List<SubagentEntry> entries;
-    private final Object subagentTool;
+    private volatile Object subagentTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
     private final boolean isSessionMode;
@@ -258,6 +258,24 @@ public class SubagentsMiddleware implements MiddlewareBase {
             return this;
         }
         this.agentGenerateTool = new AgentGenerateTool(generator, agentManager, filesystem);
+        return this;
+    }
+
+    /**
+     * Wires a gateway bridge into the internal {@link AgentSpawnTool}, enabling spawned subagents
+     * to be exposed as user-addressable threads. Only effective in default (non-session) mode.
+     *
+     * @param bridge the bridge implementation (typically obtained from
+     *     {@link io.agentscope.harness.agent.gateway.GatewayBootstrap#gatewayBridge()})
+     * @return this middleware for chaining
+     */
+    public SubagentsMiddleware setGatewayBridge(
+            io.agentscope.harness.agent.gateway.SubagentGatewayBridge bridge) {
+        if (isSessionMode || agentManager == null) {
+            log.debug("setGatewayBridge ignored in session mode (no internal manager)");
+            return this;
+        }
+        this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
         return this;
     }
 

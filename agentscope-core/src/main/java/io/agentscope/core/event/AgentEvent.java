@@ -61,7 +61,8 @@ import java.util.UUID;
     @JsonSubTypes.Type(
             value = ExternalExecutionResultEvent.class,
             name = "EXTERNAL_EXECUTION_RESULT"),
-    @JsonSubTypes.Type(value = RequestStopEvent.class, name = "REQUEST_STOP")
+    @JsonSubTypes.Type(value = RequestStopEvent.class, name = "REQUEST_STOP"),
+    @JsonSubTypes.Type(value = SubagentExposedEvent.class, name = "SUBAGENT_EXPOSED")
 })
 public abstract class AgentEvent {
 

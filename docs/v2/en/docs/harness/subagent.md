@@ -123,17 +123,102 @@ Background tasks delivered:
 
 The parent naturally responds or continues. This means **you do not** write "remember to poll task_output" in your prompt — that was the old way.
 
-> `task_output` / `task_cancel` / `task_list` still exist as escape hatches and debugging aids. Production prompts should not contain polling logic.
+### Background task tools
+
+Behind the scenes, subagent lifecycle is split across two groups of tools:
+
+| Tool | Role |
+|------|------|
+| `agent_spawn` | Create a subagent and optionally run a task (sync or background) |
+| `agent_send` | Send a follow-up message to an existing subagent |
+| `agent_list` | List active subagent instances |
+| `task_output` | Retrieve the result of a background task by `task_id` (blocking or non-blocking) |
+| `task_cancel` | Cancel a running background task |
+| `task_list` | List all background tasks with their current statuses |
+
+`agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
+
+> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
 
 ## Send a follow-up to an existing subagent
 
-`agent_spawn` returns an `agent_key` (runtime instance handle). Use it (or your `label`) to send follow-up messages:
+`agent_spawn` returns an `agent_key` (runtime instance handle). Use it or a `label` to send follow-up messages:
 
 ```
 agent_send agent_key="agent:reviewer:abc-123" message="also check the schema changes"
 ```
 
+If you set a `label` at spawn time, you can use that instead of the `agent_key`:
+
+```
+agent_spawn agent_id="reviewer" task="review the PR" label="pr-reviewer"
+agent_send label="pr-reviewer" message="also check the schema changes"
+```
+
 To list active subagents: `agent_list`.
+
+## Persistent sessions
+
+By default every `agent_spawn` creates a fresh subagent with a new session — no memory of previous calls. Set `persistSession(true)` in the declaration to reuse the same subagent instance across multiple spawns:
+
+```java
+.subagent(SubagentDeclaration.builder()
+    .name("note-taker")
+    .description("Accumulates notes across the conversation")
+    .persistSession(true)
+    .build())
+```
+
+When `persistSession` is on, the framework derives a deterministic key from `(parentSessionId, agentId, label)`. If `agent_spawn` is called again with the same combination, the existing agent instance is reused — its conversation history and state are preserved.
+
+## Exposing subagents to the user
+
+Normally subagents are invisible to the user — they run behind the scenes as the parent's internal tools. With `expose_to_user=true`, the parent can make a subagent **directly addressable by the user** through the Channel:
+
+```
+agent_spawn agent_id="researcher" task="investigate AI trends" expose_to_user=true
+```
+
+This does two things:
+
+1. **Registers the subagent in the Gateway** as a user-addressable entry point
+2. **Emits a `SubagentExposedEvent`** into the streaming event flow, carrying a `subagentId` handle
+
+The user's client receives the `SubagentExposedEvent`, and can then send messages directly to the subagent — bypassing the parent agent entirely:
+
+```java
+// Client-side: listen for exposed subagents in the event stream
+chat.sendStream(SendOptions.userId("user-1"), "Spawn a researcher to investigate AI trends")
+    .doOnNext(event -> {
+        if (event instanceof SubagentExposedEvent se) {
+            // se.getSubagentId() → use this to talk directly to the subagent
+            // se.getAgentId()    → subagent type (e.g. "researcher")
+            // se.getLabel()      → optional human-readable name
+        }
+    })
+    .blockLast();
+
+// Send a message directly to the exposed subagent
+chat.sendToSubagent(subagentId, "Focus on LLM agents specifically").block();
+```
+
+This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](./channel#talking-to-exposed-subagents) for the full Channel-side API.
+
+### How to enable
+
+Use `agent.channel(...)` — the bridge is wired automatically, zero configuration:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("orchestrator")
+    .model("qwen-plus")
+    .build();
+
+// channel() creates the internal gateway and wires the bridge — expose_to_user just works.
+ChatUiChannel chat = agent.channel(ChatUiChannel.create());
+```
+
+Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](./channel#thread-exposure-with-gatewaybootstrap).
 
 ## Let the agent author new subagent specs
 
@@ -151,6 +236,7 @@ Useful when "halfway through, the agent realizes it needs a new kind of helper".
 - **Write `description` well**: it's the model's primary signal for delegating. "Code review" is far less useful than "Use when the user wants to review a PR or check code style".
 - **Recursion safety**: subagents cannot spawn further subagents (force-marked as leaves); plus a hard cap of 3 levels.
 - **userId is propagated**: parent's `RuntimeContext.userId` is forwarded to the child, so the multi-tenant isolation chain stays intact.
+- **Permission inheritance**: all DENY permission rules from the parent are automatically propagated to the child. If the parent is denied a tool, the child is also denied — the security boundary cannot be bypassed by delegation. Set `inheritParentPermissions(false)` in the declaration to opt out.
 - **Streaming forwarding**: during the parent's `stream()`, intermediate events from synchronous subagents are forwarded back into the parent's `Flux` live (with source tags); see [Subagent streaming](#subagent-streaming) below.
 
 ## Remote subagent
@@ -178,7 +264,7 @@ Background task state is written by default to `workspace/agents/<parentAgentId>
 
 ## Delegating during Plan Mode
 
-⚠ Current **known gap**: subagents spawned by a parent in Plan Mode **do not automatically inherit the read-only restriction**. To restrict the child: narrow `tools` in its declaration to a read-only set, or enable `enablePlanMode()` on the child's own builder.
+When the parent is in Plan Mode, spawned subagents **automatically inherit the read-only restriction**. The child enters Plan Mode at spawn time, so it cannot perform write operations — the safety boundary is maintained across the delegation chain.
 
 ## Subagent streaming
 
@@ -365,6 +451,7 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 
 ## Related pages
 
+- [Channel](./channel) — `expose_to_user`, `SendOptions`, direct user-to-subagent messaging
 - [Workspace](./workspace) — `subagents/` and `agents/<id>/tasks/` layout
 - [Plan Mode](./plan-mode) — restrictions on subagents during the plan phase
 - [Architecture](./architecture) — how parent and child cooperate

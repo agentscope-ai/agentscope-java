@@ -26,6 +26,7 @@ import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
@@ -776,6 +777,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // concurrent streamEvents calls never share an instance field.
                                     withRuntimeContext(call(input.msgs()), context)
                                             .contextWrite(c -> c.put(EVENT_SINK_KEY, sink))
+                                            .contextWrite(
+                                                    c ->
+                                                            c.put(
+                                                                    AgentEventEmitter.CONTEXT_KEY,
+                                                                    (AgentEventEmitter) sink::next))
                                             .doFinally(
                                                     signal -> {
                                                         sink.next(new AgentEndEvent(replyId));
