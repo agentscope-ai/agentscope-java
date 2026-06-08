@@ -61,17 +61,20 @@ import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.LongTermMemoryTools;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.memory.StaticLongTermMemoryHook;
+import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.SystemMessage;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -516,9 +519,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (prompt == null || prompt.isEmpty()) {
             return null;
         }
-        return Msg.builder()
+        return SystemMessage.builder()
                 .name("system")
-                .role(MsgRole.SYSTEM)
                 .content(TextBlock.builder().text(prompt).build())
                 .build();
     }
@@ -995,10 +997,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Map<String, Object> metadata =
                     new HashMap<>(result.getMetadata() != null ? result.getMetadata() : Map.of());
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, parsed);
-            return Msg.builder()
+            return Msg.builderForRole(result.getRole())
                     .id(result.getId())
                     .name(result.getName())
-                    .role(result.getRole())
                     .content(result.getContent())
                     .metadata(metadata)
                     .timestamp(result.getTimestamp())
@@ -1133,9 +1134,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             log.debug("Structured output generated: {}", contentText);
 
                             Msg responseMsg =
-                                    Msg.builder()
+                                    AssistantMessage.builder()
                                             .name(getName())
-                                            .role(MsgRole.ASSISTANT)
                                             .content(TextBlock.builder().text(contentText).build())
                                             .metadata(
                                                     responseData != null
@@ -1184,9 +1184,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Map<String, Object> metadata = new HashMap<>(responseMsg.getMetadata());
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, responseData);
             metadata.remove("response");
-            return Msg.builder()
+            return Msg.builderForRole(responseMsg.getRole())
                     .name(responseMsg.getName())
-                    .role(responseMsg.getRole())
                     .content(responseMsg.getContent())
                     .metadata(metadata)
                     .build();
@@ -1213,10 +1212,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             newContent = msg.getContent();
         }
 
-        return Msg.builder()
+        return Msg.builderForRole(msg.getRole())
                 .id(msg.getId())
                 .name(msg.getName())
-                .role(msg.getRole())
                 .content(newContent)
                 .metadata(metadata)
                 .timestamp(msg.getTimestamp())
@@ -1342,14 +1340,36 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             // Permission HITL: if any pending tool is ASKING, the caller MUST supply
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
-            if (hasAskingToolCalls()) {
+            List<ToolUseBlock> asking = askingToolCalls();
+            if (!asking.isEmpty()) {
                 List<ConfirmResult> confirmResults = extractConfirmResults(msgs);
                 if (confirmResults.isEmpty()) {
+                    String pendingSummary =
+                            asking.stream()
+                                    .map(t -> t.getName() + " (id=" + t.getId() + ")")
+                                    .collect(Collectors.joining(", "));
                     throw new IllegalStateException(
-                            "Agent is waiting for ConfirmResult(s) on ASKING tool calls but the"
-                                    + " incoming call did not supply any. Attach a"
-                                    + " List<ConfirmResult> under Msg metadata key "
-                                    + Msg.METADATA_CONFIRM_RESULTS);
+                            "Agent is paused for human-in-the-loop confirmation: the following"
+                                    + " tool call(s) are in ASKING state and need your approval"
+                                    + " before the agent can continue: ["
+                                    + pendingSummary
+                                    + "]. This call supplied no confirmation, so it cannot"
+                                    + " proceed.\n"
+                                    + "To resume, send a follow-up message that carries a"
+                                    + " List<ConfirmResult> under the metadata key \""
+                                    + Msg.METADATA_CONFIRM_RESULTS
+                                    + "\", e.g.:\n"
+                                    + "    UserMessage.builder()\n"
+                                    + "        .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS,\n"
+                                    + "            List.of(new ConfirmResult(true, toolCall))))\n"
+                                    + "        .build();\n"
+                                    + "Tip: capture the ToolUseBlocks from the"
+                                    + " RequireUserConfirmEvent emitted when the agent paused.\n"
+                                    + "If you did NOT expect a pending confirmation here, a"
+                                    + " previous run most likely paused on one of these tool calls"
+                                    + " and persisted that state under the same (agentId,"
+                                    + " sessionId); start a fresh session, clear the persisted"
+                                    + " state, or use an in-memory state store to begin clean.");
                 }
                 applyConfirmResults(confirmResults);
                 return resumeAgent();
@@ -2520,9 +2540,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 content.add(pair.getKey());
                 content.add(pair.getValue());
             }
-            return Msg.builder()
+            return AssistantMessage.builder()
                     .name(getName())
-                    .role(MsgRole.ASSISTANT)
                     .content(content)
                     .generateReason(GenerateReason.TOOL_SUSPENDED)
                     .build();
@@ -2541,9 +2560,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     content.add(pair.getValue());
                 }
             }
-            return Msg.builder()
+            return AssistantMessage.builder()
                     .name(getName())
-                    .role(MsgRole.ASSISTANT)
                     .content(content)
                     .generateReason(reason)
                     .build();
@@ -2887,9 +2905,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private List<Msg> prepareSummaryMessages() {
             List<Msg> messageList = new ArrayList<>(state.contextMutable());
             messageList.add(
-                    Msg.builder()
+                    UserMessage.builder()
                             .name("user")
-                            .role(MsgRole.USER)
                             .content(
                                     TextBlock.builder()
                                             .text(
@@ -2908,9 +2925,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             log.error("Error generating summary", error);
             Msg errorMsg =
-                    Msg.builder()
+                    AssistantMessage.builder()
                             .name(getName())
-                            .role(MsgRole.ASSISTANT)
                             .content(
                                     TextBlock.builder()
                                             .text(
@@ -3038,15 +3054,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Whether any ToolUseBlock in the last assistant Msg is in ASKING state. */
         private boolean hasAskingToolCalls() {
+            return !askingToolCalls().isEmpty();
+        }
+
+        /** The ToolUseBlocks in the last assistant Msg that are in ASKING state (HITL pending). */
+        private List<ToolUseBlock> askingToolCalls() {
             Msg last = findLastAssistantMsg();
             if (last == null) {
-                return false;
+                return List.of();
             }
             return last.getContent().stream()
-                    .anyMatch(
+                    .filter(
                             b ->
                                     b instanceof ToolUseBlock t
-                                            && t.getState() == ToolCallState.ASKING);
+                                            && t.getState() == ToolCallState.ASKING)
+                    .map(ToolUseBlock.class::cast)
+                    .toList();
         }
     }
 
@@ -3082,9 +3105,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     String recoveryText =
                             "I noticed that you have interrupted me. What can I do for you?";
                     Msg recoveryMsg =
-                            Msg.builder()
+                            AssistantMessage.builder()
                                     .name(getName())
-                                    .role(MsgRole.ASSISTANT)
                                     .content(TextBlock.builder().text(recoveryText).build())
                                     .build();
                     scope.state.contextMutable().add(recoveryMsg);

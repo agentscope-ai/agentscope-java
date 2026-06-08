@@ -17,12 +17,21 @@ package io.agentscope.examples.documentation2.harness.planmode;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * PlanModeAutoExample — Model-autonomous plan mode: the LLM decides on its own to call
@@ -39,7 +48,17 @@ import java.nio.file.Path;
  *       (execute the plan).</li>
  *   <li><b>plan_exit → build mode</b> — after approval, the agent is back in build mode with
  *       full write access and starts executing its plan.</li>
+ *   <li><b>HITL approval</b> — {@code plan_exit} always asks for confirmation. The example
+ *       listens for {@link RequireUserConfirmEvent}, auto-approves it, and resumes the agent by
+ *       sending a follow-up message carrying the {@link ConfirmResult}s. Without this step the
+ *       agent would pause forever at {@code plan_exit} and never reach build mode.</li>
  * </ol>
+ *
+ * <p><b>State isolation:</b> this demo uses an {@link InMemoryAgentStateStore} so every run starts
+ * from a clean slate. The default on-disk store is keyed by {@code (agentId, sessionId)} — not by
+ * the workspace — so a run that paused on an unconfirmed {@code plan_exit} would persist that
+ * dangling ASKING tool call and make the <em>next</em> run fail immediately when it reloads the
+ * stale state without supplying confirmation.
  *
  * <p><b>Run:</b>
  * <pre>
@@ -68,6 +87,9 @@ public class PlanModeAutoExample {
                                         + "build mode — start executing the plan step by step.")
                         .model("qwen-plus")
                         .workspace(workspace)
+                        // Keep runs independent: state lives only for this JVM, so a paused
+                        // plan_exit can never leak into the next run.
+                        .stateStore(new InMemoryAgentStateStore())
                         .enablePlanMode()
                         .enableTaskList()
                         .build();
@@ -81,15 +103,33 @@ public class PlanModeAutoExample {
 
         System.out.println("── Sending complex task ──\n");
 
-        agent.streamEvents(
-                        new UserMessage(
-                                "Refactor a monolithic e-commerce application into microservices. "
-                                        + "This is a complex task that requires careful planning. "
-                                        + "Plan the migration strategy first, get approval, then "
-                                        + "outline the implementation for the first service."),
-                        ctx)
-                .doOnNext(PlanModeAutoExample::handleEvent)
-                .blockLast();
+        Msg next =
+                new UserMessage(
+                        "Refactor a monolithic e-commerce application into microservices. "
+                                + "This is a complex task that requires careful planning. "
+                                + "Plan the migration strategy first, get approval, then "
+                                + "outline the implementation for the first service.");
+
+        // HITL loop: run the agent, and whenever it pauses for confirmation (plan_exit), approve
+        // and resume by sending the ConfirmResults back. The loop ends when a turn completes
+        // without requesting any confirmation. A turn cap guards against runaway loops.
+        int maxTurns = 8;
+        for (int turn = 0; turn < maxTurns && next != null; turn++) {
+            AtomicReference<RequireUserConfirmEvent> pending = new AtomicReference<>();
+
+            agent.streamEvents(next, ctx)
+                    .doOnNext(PlanModeAutoExample::handleEvent)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof RequireUserConfirmEvent confirm) {
+                                    pending.set(confirm);
+                                }
+                            })
+                    .blockLast();
+
+            RequireUserConfirmEvent confirm = pending.get();
+            next = (confirm == null) ? null : approveAll(confirm);
+        }
 
         // ── Show results ────────────────────────────────────────────────────
 
@@ -126,5 +166,27 @@ public class PlanModeAutoExample {
         } else if (event instanceof ToolCallStartEvent e) {
             System.out.printf("%n[TOOL] %s%n", e.getToolCallName());
         }
+    }
+
+    /**
+     * Auto-approve every tool call the agent is waiting on, and build the resume message. A real
+     * application would surface these to a human and let them approve / reject / edit; here we
+     * approve unconditionally so the demo runs end-to-end.
+     *
+     * <p>The {@link ConfirmResult}s are attached under {@link Msg#METADATA_CONFIRM_RESULTS} so the
+     * agent's next call can match them to the pending ASKING tool calls and proceed.
+     */
+    private static Msg approveAll(RequireUserConfirmEvent confirm) {
+        System.out.printf(
+                "%n[HITL] Approving %d tool call(s) awaiting confirmation:%n",
+                confirm.getToolCalls().size());
+        List<ConfirmResult> results = new ArrayList<>();
+        for (ToolUseBlock toolCall : confirm.getToolCalls()) {
+            System.out.println("       - " + toolCall.getName());
+            results.add(new ConfirmResult(/* confirmed= */ true, toolCall));
+        }
+        return UserMessage.builder()
+                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, results))
+                .build();
     }
 }
