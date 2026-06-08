@@ -30,7 +30,6 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
@@ -382,16 +381,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getDefaultSessionId();
     }
 
-    /** @see ReActAgent#getCurrentSessionId() */
-    public String getCurrentSessionId() {
-        return delegate.getCurrentSessionId();
-    }
-
-    /** @see ReActAgent#getCurrentUserId() */
-    public String getCurrentUserId() {
-        return delegate.getCurrentUserId();
-    }
-
     @Override
     public AgentState getAgentState() {
         return delegate.getAgentState();
@@ -639,11 +628,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * acquire/release semantics that the {@code call(...)} family uses, so streaming and
      * blocking callers behave consistently with respect to sandbox warm-up.
      *
-     * <p><b>Note on subagent events:</b> child-agent events spawned via {@code agent_spawn} /
-     * {@code agent_send} are currently forwarded only on the deprecated {@link #stream(List,
-     * StreamOptions, RuntimeContext)} path (typed as {@code io.agentscope.core.agent.Event} with
-     * {@code EventSource}). The equivalent {@code AgentEvent} source channel is on the v2 roadmap;
-     * until it lands, this method emits parent events only.
+     * <p>Synchronous subagent events spawned via {@code agent_spawn} / {@code agent_send} are
+     * forwarded into this stream in real time with a {@link AgentEvent#getSource() source} tag
+     * identifying the originating child agent.
      *
      * @param msgs input messages
      * @param ctx runtime context to propagate into the call
@@ -994,9 +981,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <tr><td rowspan="2">Execution</td>
          *       <td>{@code modelExecutionConfig}</td><td>{@code agent.getModelExecutionConfig()} if non-null</td></tr>
          *   <tr><td>{@code toolExecutionConfig}</td><td>{@code agent.getToolExecutionConfig()} if non-null</td></tr>
-         *   <tr><td rowspan="4">Behavior</td>
+         *   <tr><td rowspan="3">Behavior</td>
          *       <td>{@code toolExecutionContext}</td><td>{@code agent.getToolExecutionContext()} if non-null</td></tr>
-         *   <tr><td>{@code structuredOutputReminder}</td><td>{@code agent.getStructuredOutputReminder()}</td></tr>
          *   <tr><td>{@code enablePendingToolRecovery}</td><td>{@code agent.isPendingToolRecoveryEnabled()}</td></tr>
          *   <tr><td>{@code checkRunning}</td><td>{@code agent.isCheckRunning()}</td></tr>
          *   <tr><td>Permissions</td>
@@ -1107,7 +1093,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (srcToolCtx != null) {
                 b.toolExecutionContext(srcToolCtx);
             }
-            b.structuredOutputReminder(agent.getStructuredOutputReminder());
             b.enablePendingToolRecovery(agent.isPendingToolRecoveryEnabled());
             b.checkRunning(agent.isCheckRunning());
 
@@ -1197,11 +1182,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         public Builder generateOptions(GenerateOptions options) {
             this.generateOptions = options;
             inner.generateOptions(options);
-            return this;
-        }
-
-        public Builder structuredOutputReminder(StructuredOutputReminder reminder) {
-            inner.structuredOutputReminder(reminder);
             return this;
         }
 

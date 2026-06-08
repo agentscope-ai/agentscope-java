@@ -39,8 +39,7 @@ import java.util.Objects;
  *     routing
  * @param messages one or more messages to send
  */
-public record ChatUiRequest(
-        String peerId, String agentId, String subagentId, List<Msg> messages) {
+public record ChatUiRequest(String peerId, String agentId, String subagentId, List<Msg> messages) {
 
     public ChatUiRequest {
         Objects.requireNonNull(messages, "messages");

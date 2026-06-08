@@ -212,12 +212,7 @@ public final class ChatUiChannel implements Channel {
     public Mono<Msg> send(SendOptions options, String text) {
         Objects.requireNonNull(options, "options");
         Objects.requireNonNull(text, "text");
-        Msg msg =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .name(options.userId())
-                        .textContent(text)
-                        .build();
+        Msg msg = Msg.builder().role(MsgRole.USER).name(options.userId()).textContent(text).build();
         return dispatchWithOptions(options, List.of(msg));
     }
 
@@ -266,12 +261,7 @@ public final class ChatUiChannel implements Channel {
     public Flux<AgentEvent> sendStream(SendOptions options, String text) {
         Objects.requireNonNull(options, "options");
         Objects.requireNonNull(text, "text");
-        Msg msg =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .name(options.userId())
-                        .textContent(text)
-                        .build();
+        Msg msg = Msg.builder().role(MsgRole.USER).name(options.userId()).textContent(text).build();
         return dispatchStreamWithOptions(options, List.of(msg));
     }
 
@@ -314,8 +304,7 @@ public final class ChatUiChannel implements Channel {
         if (agentId == null) {
             agentId = config.defaultAgentId();
         }
-        Map<String, String> extra =
-                agentId != null ? Map.of("agentId", agentId) : Map.of();
+        Map<String, String> extra = agentId != null ? Map.of("agentId", agentId) : Map.of();
         return new MsgContext(CHANNEL_ID, null, room, null, null, extra)
                 .withUserId(options.userId());
     }

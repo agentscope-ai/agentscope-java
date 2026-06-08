@@ -830,14 +830,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return Mono.deferContextual(
                 cv -> {
                     CallExecution scope = scopeFrom(cv);
-                    // Bind this subscription's streamEvents sink (if any) onto the per-call scope
-                    // so
-                    // publishEvent emits to the correct caller; concurrent calls stay isolated.
-                    Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
-                    if (sink instanceof FluxSink) {
-                        @SuppressWarnings("unchecked")
-                        FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
-                        scope.eventSink = eventSink;
+                    // When a forwarding emitter is present, the parent's tool is routing child
+                    // events through a source-tagging wrapper. Skip the direct FluxSink so
+                    // publishEvent() uses the forwarding emitter instead.
+                    boolean hasForwardingEmitter =
+                            cv.hasKey(AgentEventEmitter.FORWARDING_CONTEXT_KEY);
+                    if (!hasForwardingEmitter) {
+                        Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
+                        if (sink instanceof FluxSink) {
+                            @SuppressWarnings("unchecked")
+                            FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
+                            scope.eventSink = eventSink;
+                        }
+                    }
+                    if (scope.eventSink == null) {
+                        AgentEventEmitter.fromForwardingContext(cv)
+                                .ifPresent(ae -> scope.externalEventEmitter = ae);
                     }
                     return scope.doCallInner(msgs)
                             .flatMap(result -> saveStateToSession(scope).thenReturn(result));
@@ -890,11 +898,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return Mono.deferContextual(
                 cv -> {
                     CallExecution scope = scopeFrom(cv);
-                    Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
-                    if (sink instanceof FluxSink) {
-                        @SuppressWarnings("unchecked")
-                        FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
-                        scope.eventSink = eventSink;
+                    boolean hasForwardingEmitter =
+                            cv.hasKey(AgentEventEmitter.FORWARDING_CONTEXT_KEY);
+                    if (!hasForwardingEmitter) {
+                        Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
+                        if (sink instanceof FluxSink) {
+                            @SuppressWarnings("unchecked")
+                            FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
+                            scope.eventSink = eventSink;
+                        }
+                    }
+                    if (scope.eventSink == null) {
+                        AgentEventEmitter.fromForwardingContext(cv)
+                                .ifPresent(ae -> scope.externalEventEmitter = ae);
                     }
 
                     scope.nativeResponseFormat =
@@ -923,11 +939,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return Mono.deferContextual(
                 cv -> {
                     CallExecution scope = scopeFrom(cv);
-                    Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
-                    if (sink instanceof FluxSink) {
-                        @SuppressWarnings("unchecked")
-                        FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
-                        scope.eventSink = eventSink;
+                    boolean hasForwardingEmitter =
+                            cv.hasKey(AgentEventEmitter.FORWARDING_CONTEXT_KEY);
+                    if (!hasForwardingEmitter) {
+                        Object sink = cv.getOrDefault(EVENT_SINK_KEY, null);
+                        if (sink instanceof FluxSink) {
+                            @SuppressWarnings("unchecked")
+                            FluxSink<AgentEvent> eventSink = (FluxSink<AgentEvent>) sink;
+                            scope.eventSink = eventSink;
+                        }
+                    }
+                    if (scope.eventSink == null) {
+                        AgentEventEmitter.fromForwardingContext(cv)
+                                .ifPresent(ae -> scope.externalEventEmitter = ae);
                     }
 
                     scope.soTool = createStructuredOutputTool(jsonSchema);
@@ -1235,6 +1259,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * {@link #publishEvent}.
          */
         FluxSink<AgentEvent> eventSink;
+
+        /**
+         * External event emitter for child-agent event forwarding. When a parent's tool (e.g.
+         * {@code agent_spawn}) injects a forwarding emitter via
+         * {@link AgentEventEmitter#FORWARDING_CONTEXT_KEY}, this child agent uses it to push
+         * events into the parent's {@code streamEvents()} stream with source tagging. Takes
+         * effect only when {@link #eventSink} is null.
+         */
+        AgentEventEmitter externalEventEmitter;
 
         /**
          * The call's {@link RuntimeContext} (caller-supplied metadata for hooks / tools). Set once
@@ -1547,6 +1580,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             FluxSink<AgentEvent> sink = eventSink;
             if (sink != null) {
                 sink.next(event);
+            } else if (externalEventEmitter != null) {
+                externalEventEmitter.emit(event);
             }
         }
 

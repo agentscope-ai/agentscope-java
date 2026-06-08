@@ -22,7 +22,10 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
+import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
@@ -562,13 +565,16 @@ public class AgentSpawnTool {
     /**
      * Returns a {@link Mono} that invokes the local subagent.
      *
-     * <p>When the parent is in {@code stream()} mode, a {@link SubagentEventBus} is present in
-     * the Reactor Context (propagated by {@code AgentBase.createEventStream}). In that case every
-     * child event is forwarded to the parent sink in real time via the bus, giving the upstream
-     * consumer a flat, ordered event stream across the full call hierarchy.
+     * <p>Three paths, checked in order:
      *
-     * <p>When no bus is present (plain {@code call()} path), execution falls back to the
-     * non-streaming {@code invokeAgent} call with no overhead.
+     * <ol>
+     *   <li><b>{@code streamEvents()} path</b> — an {@link AgentEventEmitter} is present in the
+     *       Reactor Context (set by {@code ReActAgent.streamEvents}). Child events are forwarded
+     *       into the parent's {@code Flux<AgentEvent>} via a source-tagging wrapper emitter.
+     *   <li><b>{@code stream()} path</b> (deprecated) — a {@link SubagentEventBus} is present.
+     *       Child events are forwarded via the bus with {@link EventSource} metadata.
+     *   <li><b>Non-streaming path</b> — plain {@code call()}, no event forwarding.
+     * </ol>
      *
      * <p><b>Context propagation note:</b> this method returns a {@code Mono} whose
      * {@code deferContextual} is subscribed by {@code ToolMethodInvoker}'s {@code flatMap}, which
@@ -585,49 +591,67 @@ public class AgentSpawnTool {
             RuntimeContext parentCtx) {
         return Mono.deferContextual(
                 ctxView -> {
-                    if (!ctxView.hasKey(SubagentEventBus.CONTEXT_KEY)) {
-                        // Non-streaming path — identical to previous behaviour.
-                        System.err.println(
-                                "[execLocalSync] NO BUS in context → non-streaming path"
-                                        + " agentId="
-                                        + spawned.agentId());
-                        return agentManager.invokeAgent(agent, sessionId, userId, prompt);
+                    // ── Path 1: streamEvents() — AgentEvent forwarding ──
+                    Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
+                    if (emitterOpt.isPresent()) {
+                        AgentEventEmitter parentEmitter = emitterOpt.get();
+                        String sourcePath = buildSourcePath(spawned, parentCtx);
+                        AgentEventEmitter taggedEmitter =
+                                event -> parentEmitter.emit(event.withSource(sourcePath));
+
+                        parentEmitter.emit(
+                                new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
+                                        .withSource(sourcePath));
+
+                        return agentManager
+                                .invokeAgent(agent, sessionId, userId, prompt)
+                                .contextWrite(
+                                        c ->
+                                                c.put(
+                                                        AgentEventEmitter.FORWARDING_CONTEXT_KEY,
+                                                        taggedEmitter))
+                                .doOnTerminate(
+                                        () ->
+                                                parentEmitter.emit(
+                                                        new AgentEndEvent(null)
+                                                                .withSource(sourcePath)));
                     }
 
-                    System.err.println(
-                            "[execLocalSync] BUS FOUND in context → streaming path agentId="
-                                    + spawned.agentId());
-                    SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
-                    EventSource childSource = buildChildSource(spawned, parentCtx);
+                    // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
+                    if (ctxView.hasKey(SubagentEventBus.CONTEXT_KEY)) {
+                        SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
+                        EventSource childSource = buildChildSource(spawned, parentCtx);
 
-                    return agentManager
-                            .invokeAgentStream(
-                                    agent,
-                                    sessionId,
-                                    userId,
-                                    prompt,
-                                    childSource,
-                                    StreamOptions.defaults())
-                            .doOnNext(
-                                    e -> {
-                                        log.debug(
-                                                "[execLocalSync] forwarding child event to bus:"
-                                                        + " type={} msgId={} isLast={}",
-                                                e.getType(),
-                                                e.getMessage().getId(),
-                                                e.isLast());
-                                        bus.emit(e);
-                                    })
-                            .filter(e -> e.isLast() && e.getType() == EventType.AGENT_RESULT)
-                            .last()
-                            .map(e -> e.getMessage())
-                            // If AGENT_RESULT was not included in StreamOptions, the filter above
-                            // yields empty; fall back to a plain invokeAgent to get the final Msg.
-                            .switchIfEmpty(
-                                    Mono.defer(
-                                            () ->
-                                                    agentManager.invokeAgent(
-                                                            agent, sessionId, userId, prompt)));
+                        return agentManager
+                                .invokeAgentStream(
+                                        agent,
+                                        sessionId,
+                                        userId,
+                                        prompt,
+                                        childSource,
+                                        StreamOptions.defaults())
+                                .doOnNext(
+                                        e -> {
+                                            log.debug(
+                                                    "[execLocalSync] forwarding child event to"
+                                                            + " bus: type={} msgId={} isLast={}",
+                                                    e.getType(),
+                                                    e.getMessage().getId(),
+                                                    e.isLast());
+                                            bus.emit(e);
+                                        })
+                                .filter(e -> e.isLast() && e.getType() == EventType.AGENT_RESULT)
+                                .last()
+                                .map(e -> e.getMessage())
+                                .switchIfEmpty(
+                                        Mono.defer(
+                                                () ->
+                                                        agentManager.invokeAgent(
+                                                                agent, sessionId, userId, prompt)));
+                    }
+
+                    // ── Path 3: non-streaming ──
+                    return agentManager.invokeAgent(agent, sessionId, userId, prompt);
                 });
     }
 
@@ -649,6 +673,18 @@ public class AgentSpawnTool {
                 .depth(spawned.depth())
                 .path(path)
                 .build();
+    }
+
+    /**
+     * Builds a source path string for the {@link AgentEvent#withSource} tag. Uses the same
+     * parent-session / child-agent-id convention as {@link #buildChildSource}.
+     */
+    private String buildSourcePath(SpawnedAgent spawned, RuntimeContext parentCtx) {
+        String parentName =
+                (parentCtx != null && parentCtx.getSessionId() != null)
+                        ? parentCtx.getSessionId()
+                        : "main";
+        return parentName + "/" + spawned.agentId();
     }
 
     /**

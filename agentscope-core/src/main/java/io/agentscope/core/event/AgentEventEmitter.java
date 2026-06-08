@@ -45,6 +45,19 @@ public interface AgentEventEmitter {
     String CONTEXT_KEY = "agentscope.agent.event.emitter";
 
     /**
+     * Reactor Context key for a forwarding emitter injected by a parent tool (e.g.
+     * {@code agent_spawn}) into a child agent's Reactor Context. When present, the child's
+     * {@code publishEvent()} uses this emitter instead of the direct {@code FluxSink}, so every
+     * child event is tagged with a source path before entering the parent's stream.
+     *
+     * <p>This is intentionally separate from {@link #CONTEXT_KEY}: the regular key carries the
+     * parent's own emitter (used by tools to emit custom events like
+     * {@link SubagentExposedEvent}), while this key carries a source-tagging wrapper for the
+     * child's internal events.
+     */
+    String FORWARDING_CONTEXT_KEY = "agentscope.agent.event.forwarding.emitter";
+
+    /**
      * Emits an {@link AgentEvent} into the parent's {@code streamEvents()} stream.
      *
      * <p>This method is safe to call from any thread; the underlying {@code FluxSink.next} is
@@ -66,5 +79,19 @@ public interface AgentEventEmitter {
             return Optional.empty();
         }
         return Optional.ofNullable(ctx.getOrDefault(CONTEXT_KEY, null));
+    }
+
+    /**
+     * Retrieves the forwarding {@link AgentEventEmitter} from the Reactor Context, if present.
+     *
+     * @param ctx the current Reactor subscriber context
+     * @return an {@link Optional} containing the forwarding emitter, or empty when not in a
+     *     child-agent forwarding context
+     */
+    static Optional<AgentEventEmitter> fromForwardingContext(ContextView ctx) {
+        if (ctx == null || !ctx.hasKey(FORWARDING_CONTEXT_KEY)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(ctx.getOrDefault(FORWARDING_CONTEXT_KEY, null));
     }
 }

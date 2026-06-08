@@ -230,8 +230,7 @@ public final class HarnessGateway implements Gateway {
         Objects.requireNonNull(agent, "agent");
         String subagentId = "sub-" + UUID.randomUUID().toString().substring(0, 8);
         exposedSessions.put(
-                subagentId,
-                new ExposedSession(subagentId, agentId, sessionId, agent, replyTo));
+                subagentId, new ExposedSession(subagentId, agentId, sessionId, agent, replyTo));
         log.debug(
                 "Exposed subagent agentId={} sessionId={} as subagentId={}",
                 agentId,
@@ -251,8 +250,7 @@ public final class HarnessGateway implements Gateway {
     public Mono<Msg> runSubagent(String subagentId, List<Msg> messages) {
         ExposedSession session = exposedSessions.get(subagentId);
         if (session == null) {
-            return Mono.error(
-                    new IllegalArgumentException("Unknown subagentId: " + subagentId));
+            return Mono.error(new IllegalArgumentException("Unknown subagentId: " + subagentId));
         }
 
         RuntimeContext rtc = RuntimeContext.builder().sessionId(session.sessionId()).build();
@@ -307,8 +305,7 @@ public final class HarnessGateway implements Gateway {
     public Flux<AgentEvent> runSubagentStream(String subagentId, List<Msg> messages) {
         ExposedSession session = exposedSessions.get(subagentId);
         if (session == null) {
-            return Flux.error(
-                    new IllegalArgumentException("Unknown subagentId: " + subagentId));
+            return Flux.error(new IllegalArgumentException("Unknown subagentId: " + subagentId));
         }
 
         RuntimeContext rtc = RuntimeContext.builder().sessionId(session.sessionId()).build();
