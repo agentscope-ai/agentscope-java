@@ -15,12 +15,13 @@
  */
 package io.agentscope.claw2.runtime.config;
 
-import io.agentscope.claw2.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.claw2.runtime.channel.dingtalk.DingTalkChannel;
-import io.agentscope.claw2.runtime.channel.feishu.FeishuChannel;
-import io.agentscope.claw2.runtime.channel.github.GitHubChannel;
-import io.agentscope.claw2.runtime.channel.gitlab.GitLabChannel;
-import io.agentscope.claw2.runtime.channel.wecom.WeComChannel;
+import io.agentscope.extensions.channel.dingtalk.DingTalkChannel;
+import io.agentscope.extensions.channel.feishu.FeishuChannel;
+import io.agentscope.extensions.channel.github.GitHubChannel;
+import io.agentscope.extensions.channel.gitlab.GitLabChannel;
+import io.agentscope.extensions.channel.wecom.WeComChannel;
+import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;

@@ -15,8 +15,8 @@
  */
 package io.agentscope.extensions.channel.gitlab;
 
-import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.core.message.Msg;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;

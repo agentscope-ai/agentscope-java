@@ -17,8 +17,6 @@ package io.agentscope.builder.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.builder.runtime.BuilderBootstrap;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.builder.runtime.gateway.MsgContext;
 import io.agentscope.builder.runtime.session.HistoryResult;
 import io.agentscope.builder.runtime.session.SessionAgentManager;
 import io.agentscope.builder.runtime.session.SessionEntry;
@@ -29,6 +27,8 @@ import io.agentscope.builder.web.session.SessionReadStateStore;
 import io.agentscope.builder.web.session.SessionTurnParser;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.Comparator;

@@ -16,9 +16,6 @@
 package io.agentscope.builder.web.config;
 
 import io.agentscope.builder.runtime.BuilderBootstrap;
-import io.agentscope.builder.runtime.channel.ChannelConfig;
-import io.agentscope.builder.runtime.channel.DmScope;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.builder.runtime.config.ChannelConfigEntry;
 import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
@@ -28,6 +25,9 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.store.BaseStore;
 import io.agentscope.harness.agent.store.jdbc.JdbcStore;
 import java.io.IOException;

@@ -249,7 +249,7 @@ public class SessionController {
 
     /**
      * Extracts the conversationId (the threadId portion of {@link
-     * io.agentscope.dataagent.runtime.gateway.MsgContext}) from a canonical gateKey segment of the
+     * io.agentscope.harness.agent.gateway.MsgContext}) from a canonical gateKey segment of the
      * form {@code |t:<value>}. Returns {@code null} when the gateKey is missing or has no thread
      * segment — pre-multi-session sessions live with a {@code null} conversationId and can still be
      * addressed by their storage key.

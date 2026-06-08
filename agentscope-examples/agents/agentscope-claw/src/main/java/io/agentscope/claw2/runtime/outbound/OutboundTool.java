@@ -15,9 +15,9 @@
  */
 package io.agentscope.claw2.runtime.outbound;
 
-import io.agentscope.claw2.runtime.gateway.ChannelManager;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.harness.agent.gateway.ChannelManager;
 import java.util.Objects;
 
 /**

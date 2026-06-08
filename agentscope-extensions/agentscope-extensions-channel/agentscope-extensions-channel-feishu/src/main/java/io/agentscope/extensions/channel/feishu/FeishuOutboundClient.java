@@ -17,9 +17,9 @@ package io.agentscope.extensions.channel.feishu;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.gateway.channel.PeerKind;
-import io.agentscope.core.message.Msg;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;

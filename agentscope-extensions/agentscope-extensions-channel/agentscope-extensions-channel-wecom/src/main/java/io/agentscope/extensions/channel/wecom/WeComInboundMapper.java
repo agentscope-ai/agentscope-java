@@ -15,11 +15,11 @@
  */
 package io.agentscope.extensions.channel.wecom;
 
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.gateway.channel.InboundMessage;
 import io.agentscope.harness.agent.gateway.channel.Peer;
 import io.agentscope.harness.agent.gateway.channel.PeerKind;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import java.io.StringReader;
 import java.util.List;
 import java.util.Optional;

@@ -15,8 +15,8 @@
  */
 package io.agentscope.extensions.channel.github;
 
-import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.core.message.Msg;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;

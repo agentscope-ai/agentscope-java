@@ -17,8 +17,6 @@ package io.agentscope.claw2.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.claw2.runtime.ClawBootstrap;
-import io.agentscope.claw2.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.claw2.runtime.gateway.MsgContext;
 import io.agentscope.claw2.runtime.session.HistoryResult;
 import io.agentscope.claw2.runtime.session.SessionAgentManager;
 import io.agentscope.claw2.runtime.session.SessionEntry;
@@ -28,6 +26,8 @@ import io.agentscope.claw2.web.session.SessionReadStateStore;
 import io.agentscope.claw2.web.session.SessionTurnParser;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

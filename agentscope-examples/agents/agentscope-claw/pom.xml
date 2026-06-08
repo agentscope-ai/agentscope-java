@@ -51,6 +51,28 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
+        <!-- IM channel implementations -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-channel-dingtalk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-channel-feishu</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-channel-wecom</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-channel-github</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-channel-gitlab</artifactId>
+        </dependency>
+
         <!-- Git skill repository: claw delegates to GitSkillRepository for marketplace listing/fetch -->
         <dependency>
             <groupId>io.agentscope</groupId>

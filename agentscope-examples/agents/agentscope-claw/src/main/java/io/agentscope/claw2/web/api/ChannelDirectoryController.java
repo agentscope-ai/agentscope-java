@@ -17,11 +17,11 @@ package io.agentscope.claw2.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.claw2.runtime.ClawBootstrap;
-import io.agentscope.claw2.runtime.channel.Channel;
-import io.agentscope.claw2.runtime.channel.ChannelConfig;
 import io.agentscope.claw2.runtime.config.ChannelConfigEntry;
 import io.agentscope.claw2.runtime.config.ChannelTypeRegistry;
-import io.agentscope.claw2.runtime.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

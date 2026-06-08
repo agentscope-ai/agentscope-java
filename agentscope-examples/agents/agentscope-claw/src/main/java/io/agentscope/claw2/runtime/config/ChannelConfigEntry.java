@@ -19,9 +19,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.claw2.runtime.ClawBootstrap;
-import io.agentscope.claw2.runtime.channel.ChannelBinding;
-import io.agentscope.claw2.runtime.channel.ChannelConfig;
-import io.agentscope.claw2.runtime.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.ChannelBinding;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +31,7 @@ import java.util.Map;
  *
  * <p>Defines routing configuration for a channel adapter. The built-in {@code chatui} channel is
  * automatically created from this entry if no programmatic {@link
- * ClawBootstrap.Builder#channel(io.agentscope.claw2.runtime.channel.Channel...)} registration exists for
+ * ClawBootstrap.Builder#channel(io.agentscope.harness.agent.gateway.channel.Channel...)} registration exists for
  * it. For other channel types, this entry provides the {@link ChannelConfig} routing rules that are
  * applied at bootstrap time.
  *
@@ -96,8 +96,8 @@ public class ChannelConfigEntry {
     private Boolean disabled;
 
     /**
-     * Ordered list of {@link io.agentscope.claw2.runtime.channel.ChannelBinding} routing rules,
-     * evaluated by {@link io.agentscope.claw2.runtime.channel.ChannelRouter} in priority tiers.
+     * Ordered list of {@link io.agentscope.harness.agent.gateway.channel.ChannelBinding} routing rules,
+     * evaluated by {@link io.agentscope.harness.agent.gateway.channel.ChannelRouter} in priority tiers.
      * First matching binding within the highest-priority tier wins.
      */
     @JsonProperty("bindings")

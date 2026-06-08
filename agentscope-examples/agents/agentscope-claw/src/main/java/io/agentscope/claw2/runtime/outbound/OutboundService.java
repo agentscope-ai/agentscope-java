@@ -15,16 +15,16 @@
  */
 package io.agentscope.claw2.runtime.outbound;
 
-import io.agentscope.claw2.runtime.channel.Channel;
-import io.agentscope.claw2.runtime.channel.ChannelRouter;
-import io.agentscope.claw2.runtime.channel.InboundMessage;
-import io.agentscope.claw2.runtime.channel.OutboundAddress;
-import io.agentscope.claw2.runtime.channel.Peer;
-import io.agentscope.claw2.runtime.channel.PeerKind;
-import io.agentscope.claw2.runtime.channel.RouteResult;
-import io.agentscope.claw2.runtime.gateway.ChannelManager;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelRouter;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
+import io.agentscope.harness.agent.gateway.channel.Peer;
+import io.agentscope.harness.agent.gateway.channel.PeerKind;
+import io.agentscope.harness.agent.gateway.channel.RouteResult;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -123,7 +123,7 @@ public final class OutboundService {
                                                 .build()))
                         .senderId(peer.id())
                         .accountId(emptyToNull(request.accountId()))
-                        .requestedAgentId(wanted)
+                        .preferredAgentId(wanted)
                         .build();
         RouteResult route = router.resolveRoute(channel.config(), probe);
         String resolved = route.agentId();

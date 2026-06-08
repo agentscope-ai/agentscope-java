@@ -18,14 +18,7 @@ package io.agentscope.claw2.web.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.claw2.runtime.ClawBootstrap;
-import io.agentscope.claw2.runtime.channel.Channel;
-import io.agentscope.claw2.runtime.channel.ChannelRouter;
-import io.agentscope.claw2.runtime.channel.InboundMessage;
-import io.agentscope.claw2.runtime.channel.RouteResult;
-import io.agentscope.claw2.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.claw2.runtime.gateway.ChannelManager;
 import io.agentscope.claw2.runtime.gateway.HarnessGateway;
-import io.agentscope.claw2.runtime.gateway.MsgContext;
 import io.agentscope.claw2.runtime.session.SessionAgentManager;
 import io.agentscope.claw2.runtime.session.SessionEntry;
 import io.agentscope.claw2.runtime.session.SessionKind;
@@ -33,6 +26,13 @@ import io.agentscope.claw2.web.catalog.AgentCatalogService;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelRouter;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.RouteResult;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -251,14 +251,15 @@ public class ChatController {
         InboundMessage inbound =
                 InboundMessage.builder(
                                 ChatUiChannel.CHANNEL_ID,
-                                io.agentscope.claw2.runtime.channel.Peer.direct("__anonymous__"),
+                                io.agentscope.harness.agent.gateway.channel.Peer.direct(
+                                        "__anonymous__"),
                                 List.of(
                                         Msg.builder()
                                                 .role(MsgRole.USER)
                                                 .textContent(probeText)
                                                 .build()))
                         .senderId("__anonymous__")
-                        .requestedAgentId(gatewayAgentId)
+                        .preferredAgentId(gatewayAgentId)
                         .build();
         return router.resolveRoute(chatui.config(), inbound);
     }

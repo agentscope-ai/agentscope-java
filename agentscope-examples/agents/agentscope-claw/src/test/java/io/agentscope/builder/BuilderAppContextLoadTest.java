@@ -19,10 +19,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.agentscope.claw2.Claw2App;
 import io.agentscope.claw2.runtime.ClawBootstrap;
-import io.agentscope.claw2.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

@@ -18,8 +18,8 @@ package io.agentscope.claw2.runtime.config;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.agentscope.claw2.runtime.channel.ChannelBinding;
-import io.agentscope.claw2.runtime.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.ChannelBinding;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -28,7 +28,7 @@ import java.util.Set;
  * JSON-serializable counterpart of {@link ChannelBinding}.
  *
  * <p>Field order corresponds to the routing priority tiers evaluated by {@link
- * io.agentscope.claw2.runtime.channel.ChannelRouter}:
+ * io.agentscope.harness.agent.gateway.channel.ChannelRouter}:
  *
  * <ol>
  *   <li>{@link #peer}

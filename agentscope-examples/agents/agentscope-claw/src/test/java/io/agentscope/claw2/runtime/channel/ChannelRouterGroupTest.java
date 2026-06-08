@@ -21,6 +21,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.harness.agent.gateway.channel.ChannelBinding;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.ChannelRouter;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
+import io.agentscope.harness.agent.gateway.channel.Peer;
+import io.agentscope.harness.agent.gateway.channel.PeerKind;
+import io.agentscope.harness.agent.gateway.channel.RouteResult;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -54,7 +62,7 @@ class ChannelRouterGroupTest {
         assertEquals("peer", route.matchedBy());
         // Outbound address must encode the kind so e.g. WeComOutboundClient routes to
         // /cgi-bin/appchat/send instead of /cgi-bin/message/send.
-        assertEquals("wecom-prod:group:gid_123", route.outboundAddress().to());
+        assertEquals("wecom-prod:gid_123", route.outboundAddress().to());
         assertEquals("corp-1", route.outboundAddress().accountId());
         assertNull(route.outboundAddress().threadId());
     }
@@ -71,7 +79,7 @@ class ChannelRouterGroupTest {
 
         assertEquals("main", route.agentId());
         assertEquals("channel-default", route.matchedBy());
-        assertEquals("wecom-prod:direct:u9", route.outboundAddress().to());
+        assertEquals("wecom-prod:u9", route.outboundAddress().to());
     }
 
     @Test
@@ -86,6 +94,6 @@ class ChannelRouterGroupTest {
 
         assertEquals("fallback-agent", route.agentId());
         assertEquals("global-default", route.matchedBy());
-        assertTrue(route.outboundAddress().to().startsWith("wecom-prod:direct:"));
+        assertTrue(route.outboundAddress().to().startsWith("wecom-prod:"));
     }
 }

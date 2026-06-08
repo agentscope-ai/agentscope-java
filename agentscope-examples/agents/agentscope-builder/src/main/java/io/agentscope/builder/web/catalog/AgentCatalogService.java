@@ -136,7 +136,7 @@ public class AgentCatalogService {
      * </ul>
      *
      * <p>AgentStateStore routing keys are unaffected (the gateway still derives them from {@link
-     * io.agentscope.builder.runtime.gateway.MsgContext#userId()}), so each caller retains an
+     * io.agentscope.harness.agent.gateway.MsgContext#userId()}), so each caller retains an
      * independent conversation thread on a shared agent.
      */
     public String resolveFilesystemUserId(String callerUserId, String agentId) {

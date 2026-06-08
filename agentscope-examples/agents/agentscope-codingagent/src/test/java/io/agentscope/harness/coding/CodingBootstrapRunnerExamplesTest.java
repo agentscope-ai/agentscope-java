@@ -25,9 +25,9 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.coding.channel.ChannelConfig;
-import io.agentscope.harness.coding.channel.DmScope;
-import io.agentscope.harness.coding.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +40,7 @@ import reactor.core.publisher.Flux;
  *
  * <p>The internal {@link io.agentscope.harness.coding.gateway.HarnessGateway} is created automatically by
  * the bootstrap. Users interact exclusively through {@link CodingBootstrap#chatUiChannel()}
- * and {@link CodingBootstrap#start(io.agentscope.harness.coding.channel.Channel...)}.
+ * and {@link CodingBootstrap#start(io.agentscope.harness.agent.gateway.channel.Channel...)}.
  */
 class AgentBootstrapGatewayExamplesTest {
 
@@ -126,7 +126,7 @@ class AgentBootstrapGatewayExamplesTest {
     }
 
     /**
-     * Demonstrates the ad-hoc {@link CodingBootstrap#start(io.agentscope.harness.coding.channel.Channel...)}
+     * Demonstrates the ad-hoc {@link CodingBootstrap#start(io.agentscope.harness.agent.gateway.channel.Channel...)}
      * overload: construct a {@link ChatUiChannel} outside the builder, pass it to {@code start()}
      * which injects the auto-wired gateway and calls {@link ChatUiChannel#start()}.
      */

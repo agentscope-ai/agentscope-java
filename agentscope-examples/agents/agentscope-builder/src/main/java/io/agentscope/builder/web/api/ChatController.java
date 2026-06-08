@@ -18,9 +18,6 @@ package io.agentscope.builder.web.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.runtime.BuilderBootstrap;
-import io.agentscope.builder.runtime.channel.InboundMessage;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
-import io.agentscope.builder.runtime.gateway.MsgContext;
 import io.agentscope.builder.runtime.session.SessionAgentManager;
 import io.agentscope.builder.runtime.session.SessionEntry;
 import io.agentscope.builder.runtime.session.SessionKind;
@@ -35,6 +32,9 @@ import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.usage.UsageStore;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.harness.agent.gateway.MsgContext;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -419,7 +419,7 @@ public class ChatController {
 
     /**
      * Core dispatch logic. Always routes through {@link ChatUiChannel#dispatch} so that the
-     * {@link io.agentscope.builder.runtime.channel.ChannelRouter} runs uniformly — including for
+     * {@link io.agentscope.harness.agent.gateway.channel.ChannelRouter} runs uniformly — including for
      * the path-mapped Web UI calls. The URL-supplied {@code agentId} is passed as
      * {@link InboundMessage#preferredAgentId()} so it short-circuits the binding-tier evaluation
      * (the user explicitly picked this agent) while still letting the router derive sessionScope

@@ -16,15 +16,15 @@
 package io.agentscope.claw2.web.config;
 
 import io.agentscope.claw2.runtime.ClawBootstrap;
-import io.agentscope.claw2.runtime.channel.ChannelConfig;
-import io.agentscope.claw2.runtime.channel.DmScope;
-import io.agentscope.claw2.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.claw2.runtime.config.ChannelConfigEntry;
 import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -149,7 +149,8 @@ public class BuilderConfig {
 
         // Pre-register file-resolved channels (dingtalk, wecom, …) into the channel manager so
         // bootstrap.start(webChannel) starts them alongside the always-on chatui channel.
-        for (io.agentscope.claw2.runtime.channel.Channel ch : bootstrap.registeredChannels()) {
+        for (io.agentscope.harness.agent.gateway.channel.Channel ch :
+                bootstrap.registeredChannels()) {
             if (ch != null && !ChatUiChannel.CHANNEL_ID.equals(ch.channelId())) {
                 bootstrap.channelManager().register(ch);
             }

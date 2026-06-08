@@ -15,14 +15,12 @@
  */
 package io.agentscope.builder.web.toolbus;
 
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
-import io.agentscope.harness.agent.HarnessAgent;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;

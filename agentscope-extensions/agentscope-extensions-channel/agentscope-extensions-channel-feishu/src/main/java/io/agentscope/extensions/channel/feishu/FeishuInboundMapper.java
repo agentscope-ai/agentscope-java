@@ -17,11 +17,11 @@ package io.agentscope.extensions.channel.feishu;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.gateway.channel.InboundMessage;
 import io.agentscope.harness.agent.gateway.channel.Peer;
 import io.agentscope.harness.agent.gateway.channel.PeerKind;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import java.util.List;
 import java.util.Optional;
 

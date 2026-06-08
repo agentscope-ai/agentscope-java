@@ -214,7 +214,7 @@ public class AgentBindingController {
 
     /**
      * Derives the matching tier label for the frontend, using the same priority order as
-     * {@link io.agentscope.claw2.runtime.channel.ChannelRouter}.
+     * {@link io.agentscope.harness.agent.gateway.channel.ChannelRouter}.
      */
     static String deriveTier(BindingConfigEntry b) {
         if (notBlank(b.getPeer())) return "peer";
