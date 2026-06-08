@@ -1779,7 +1779,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableAtPathExpansion) {
                 inner.middleware(new AtPathExpansionMiddleware(wsManager));
             }
-            if (model != null && !disableMemoryHooks) {
+            Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
+            if (memoryModel != null && !disableMemoryHooks) {
                 String effectiveFlushPrompt =
                         memoryConfig.flushPrompt() != null
                                 ? memoryConfig.flushPrompt()
@@ -1787,7 +1788,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(
                         new MemoryFlushMiddleware(
                                 wsManager,
-                                model,
+                                memoryModel,
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger()));
 
@@ -1798,7 +1799,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 MemoryConsolidator consolidator =
                         new MemoryConsolidator(
                                 wsManager,
-                                model,
+                                memoryModel,
                                 effectiveConsolidationPrompt,
                                 memoryConfig.consolidationMaxTokens());
                 inner.middleware(
@@ -1810,9 +1811,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 memoryConfig.consolidationMinGap()));
             }
             CompactionMiddleware compactionHook = null;
-            if (compactionConfig != null && model != null) {
-                compactionHook = new CompactionMiddleware(wsManager, model, compactionConfig);
-                inner.middleware(compactionHook);
+            if (compactionConfig != null) {
+                Model compactionModel =
+                        compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
+                if (compactionModel != null) {
+                    compactionHook =
+                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                    inner.middleware(compactionHook);
+                }
             }
             if (toolResultEvictionConfig != null) {
                 inner.middleware(

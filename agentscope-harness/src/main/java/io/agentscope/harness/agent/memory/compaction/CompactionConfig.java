@@ -15,6 +15,9 @@
  */
 package io.agentscope.harness.agent.memory.compaction;
 
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
+
 /**
  * Configuration for conversation compaction (summarization).
  *
@@ -108,6 +111,7 @@ public class CompactionConfig {
     private final boolean flushBeforeCompact;
     private final boolean offloadBeforeCompact;
     private final TruncateArgsConfig truncateArgsConfig;
+    private final Model model;
 
     private CompactionConfig(Builder b) {
         this.triggerMessages = b.triggerMessages;
@@ -118,6 +122,7 @@ public class CompactionConfig {
         this.flushBeforeCompact = b.flushBeforeCompact;
         this.offloadBeforeCompact = b.offloadBeforeCompact;
         this.truncateArgsConfig = b.truncateArgsConfig;
+        this.model = b.model;
     }
 
     /** Message count above which compaction is triggered (0 = disabled). */
@@ -175,6 +180,14 @@ public class CompactionConfig {
         return truncateArgsConfig;
     }
 
+    /**
+     * Optional model override for compaction (summarization). {@code null} means use
+     * the agent's primary model.
+     */
+    public Model getModel() {
+        return model;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -189,6 +202,7 @@ public class CompactionConfig {
         private boolean flushBeforeCompact = true;
         private boolean offloadBeforeCompact = true;
         private TruncateArgsConfig truncateArgsConfig = null;
+        private Model model = null;
 
         /** Trigger compaction when conversation has at least this many messages (0 = disabled). */
         public Builder triggerMessages(int triggerMessages) {
@@ -244,6 +258,27 @@ public class CompactionConfig {
          */
         public Builder truncateArgs(TruncateArgsConfig config) {
             this.truncateArgsConfig = config;
+            return this;
+        }
+
+        /**
+         * Sets a dedicated model for compaction (summarization), allowing a
+         * lighter/cheaper model than the agent's primary reasoning model.
+         * When not set, the agent's primary model is used.
+         */
+        public Builder model(Model model) {
+            this.model = model;
+            return this;
+        }
+
+        /**
+         * Sets a dedicated model for compaction by model id string
+         * (e.g. {@code "openai:gpt-4.1-mini"}).
+         *
+         * @see ModelRegistry#resolve(String)
+         */
+        public Builder model(String modelId) {
+            this.model = ModelRegistry.resolve(modelId);
             return this;
         }
 

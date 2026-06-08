@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.memory;
 
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.time.Duration;
 import java.util.Objects;
@@ -137,6 +139,7 @@ public final class MemoryConfig {
         }
     }
 
+    private final Model model;
     private final String flushPrompt;
     private final String consolidationPrompt;
     private final int consolidationMaxTokens;
@@ -146,6 +149,7 @@ public final class MemoryConfig {
     private final FlushTrigger flushTrigger;
 
     private MemoryConfig(Builder b) {
+        this.model = b.model;
         this.flushPrompt = b.flushPrompt;
         this.consolidationPrompt = b.consolidationPrompt;
         this.consolidationMaxTokens = b.consolidationMaxTokens;
@@ -153,6 +157,14 @@ public final class MemoryConfig {
         this.dailyFileRetentionDays = b.dailyFileRetentionDays;
         this.sessionRetentionDays = b.sessionRetentionDays;
         this.flushTrigger = b.flushTrigger;
+    }
+
+    /**
+     * Optional model override for memory operations (flush + consolidation).
+     * {@code null} means use the agent's primary model.
+     */
+    public Model model() {
+        return model;
     }
 
     /**
@@ -205,6 +217,7 @@ public final class MemoryConfig {
 
     public static final class Builder {
 
+        private Model model = null;
         private String flushPrompt = null;
         private String consolidationPrompt = null;
         private int consolidationMaxTokens = DEFAULT_CONSOLIDATION_MAX_TOKENS;
@@ -212,6 +225,27 @@ public final class MemoryConfig {
         private int dailyFileRetentionDays = DEFAULT_DAILY_FILE_RETENTION_DAYS;
         private int sessionRetentionDays = DEFAULT_SESSION_RETENTION_DAYS;
         private FlushTrigger flushTrigger = FlushTrigger.always();
+
+        /**
+         * Sets a dedicated model for memory operations (flush + consolidation),
+         * allowing a lighter/cheaper model than the agent's primary reasoning model.
+         * When not set, the agent's primary model is used.
+         */
+        public Builder model(Model model) {
+            this.model = model;
+            return this;
+        }
+
+        /**
+         * Sets a dedicated model for memory operations by model id string
+         * (e.g. {@code "openai:gpt-4.1-mini"}).
+         *
+         * @see ModelRegistry#resolve(String)
+         */
+        public Builder model(String modelId) {
+            this.model = ModelRegistry.resolve(modelId);
+            return this;
+        }
 
         /**
          * Overrides the prompt used by {@link MemoryFlushManager#flushMemories}.
