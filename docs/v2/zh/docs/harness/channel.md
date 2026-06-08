@@ -8,7 +8,7 @@ description: "通过 Channel 路由消息、管理会话、流式传输事件"
 **Gateway** 位于你的应用代码和 agent 之间，负责：
 
 - **会话管理** — 把每个用户对话映射到稳定的 session id。agent 在跨轮次时看到一致的记忆。
-- **轮次串行化** — 同一 session 的并发消息会公平排队，agent 不会和自己竞争。
+- **Per-session 并发控制** — 同一 session 的并发消息会公平排队，agent 不会和自己竞争。
 - **Agent 路由** — 在多 agent 场景下，把每条消息路由到正确的 agent。
 
 **Channel** 把消息平台（HTTP、WebSocket、Slack 等）适配成 Gateway 的路由模型。它负责解析消息来源、选定目标 agent、以及把回复投递回去。

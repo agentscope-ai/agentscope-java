@@ -8,7 +8,7 @@ description: "Route messages, manage sessions, and stream events through Channel
 **Gateway** sits between your application code and the agent. It handles:
 
 - **Session management** — maps each user conversation to a stable session id. The agent sees consistent memory across turns.
-- **Turn serialization** — concurrent messages to the same session are queued fairly so the agent never races itself.
+- **Per-session concurrency control** — concurrent messages to the same session are queued fairly so the agent never races itself.
 - **Agent routing** — in multi-agent setups, routes each message to the right agent.
 
 **Channel** adapts a messaging platform (HTTP, WebSocket, Slack, etc.) into the Gateway's routing model. It resolves who sent the message, which agent should handle it, and where to deliver the reply.
