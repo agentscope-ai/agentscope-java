@@ -530,6 +530,7 @@ public abstract class AgentBase implements Agent {
      * Current per-call {@link RuntimeContext} when bound (e.g. by {@code ReActAgent} during a
      * {@code call}).
      */
+    @Override
     public RuntimeContext getRuntimeContext() {
         return currentRuntimeContext.get();
     }

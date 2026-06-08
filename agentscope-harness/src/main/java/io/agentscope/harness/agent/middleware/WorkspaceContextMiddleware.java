@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -119,10 +118,10 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
-        RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+        RuntimeContext rc = agent != null ? agent.getRuntimeContext() : null;
+        if (rc == null) {
+            rc = RuntimeContext.empty();
+        }
         String section = buildWorkspaceSection(rc);
         if (section.isEmpty()) {
             return Mono.just(currentPrompt);

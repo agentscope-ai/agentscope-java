@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.AgentSkill;
@@ -193,10 +192,8 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
     // ---------------------------------------------------------------------
 
     private RuntimeContext resolveContext(Agent agent) {
-        if (agent instanceof AgentBase ab && ab.getRuntimeContext() != null) {
-            return ab.getRuntimeContext();
-        }
-        return RuntimeContext.empty();
+        RuntimeContext rc = agent != null ? agent.getRuntimeContext() : null;
+        return rc != null ? rc : RuntimeContext.empty();
     }
 
     /**

@@ -354,6 +354,12 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
     // ==================== RuntimeContext ====================
 
     @Override
+    public RuntimeContext getRuntimeContext() {
+        RuntimeContext current = super.getRuntimeContext();
+        return current != null ? current : pendingRuntimeContext;
+    }
+
+    @Override
     protected void beforeAgentExecution(List<Msg> msgs) {
         RuntimeContext ctx = this.pendingRuntimeContext;
         this.pendingRuntimeContext = null;
@@ -506,32 +512,42 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * @return event stream covering the full agent invocation lifecycle
      */
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
-        String replyId = UUID.randomUUID().toString().replace("-", "");
-        Function<AgentInput, Flux<AgentEvent>> core =
-                input ->
-                        Flux.<AgentEvent>create(
-                                        sink -> {
-                                            activeEventSink.set(sink);
-                                            sink.next(
-                                                    new AgentStartEvent(null, replyId, getName()));
-                                            reactor.util.context.Context subscriberCtx =
-                                                    reactor.util.context.Context.of(
-                                                            sink.contextView());
-                                            call(input.msgs())
-                                                    .doFinally(
-                                                            signal -> {
-                                                                sink.next(
-                                                                        new AgentEndEvent(replyId));
-                                                                activeEventSink.set(null);
-                                                                sink.complete();
-                                                            })
-                                                    .contextWrite(subscriberCtx)
-                                                    .subscribe(finalMsg -> {}, sink::error);
-                                        },
-                                        FluxSink.OverflowStrategy.BUFFER)
-                                .doOnError(e -> activeEventSink.set(null));
-        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
-                .apply(new AgentInput(msgs == null ? List.of() : msgs));
+        return Flux.defer(
+                () -> {
+                    RuntimeContext outerContext = ensurePendingRuntimeContext();
+                    String replyId = UUID.randomUUID().toString().replace("-", "");
+                    Function<AgentInput, Flux<AgentEvent>> core =
+                            input ->
+                                    Flux.<AgentEvent>create(
+                                                    sink -> {
+                                                        activeEventSink.set(sink);
+                                                        sink.next(
+                                                                new AgentStartEvent(
+                                                                        null, replyId, getName()));
+                                                        reactor.util.context.Context subscriberCtx =
+                                                                reactor.util.context.Context.of(
+                                                                        sink.contextView());
+                                                        call(input.msgs())
+                                                                .doFinally(
+                                                                        signal -> {
+                                                                            sink.next(
+                                                                                    new AgentEndEvent(
+                                                                                            replyId));
+                                                                            activeEventSink.set(
+                                                                                    null);
+                                                                            sink.complete();
+                                                                        })
+                                                                .contextWrite(subscriberCtx)
+                                                                .subscribe(
+                                                                        finalMsg -> {},
+                                                                        sink::error);
+                                                    },
+                                                    FluxSink.OverflowStrategy.BUFFER)
+                                            .doOnError(e -> activeEventSink.set(null));
+                    return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+                            .apply(new AgentInput(msgs == null ? List.of() : msgs))
+                            .doFinally(signal -> clearPendingRuntimeContextIfUnbound(outerContext));
+                });
     }
 
     /**
@@ -810,31 +826,56 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
      * @return event stream covering the full agent invocation lifecycle
      */
     Flux<AgentEvent> agentImpl(List<Msg> msgs) {
-        String replyId = UUID.randomUUID().toString().replace("-", "");
+        return Flux.defer(
+                () -> {
+                    RuntimeContext outerContext = ensurePendingRuntimeContext();
+                    String replyId = UUID.randomUUID().toString().replace("-", "");
 
-        Function<AgentInput, Flux<AgentEvent>> core =
-                input ->
-                        Flux.<AgentEvent>create(
-                                        sink -> {
-                                            activeEventSink.set(sink);
-                                            sink.next(
-                                                    new AgentStartEvent(null, replyId, getName()));
+                    Function<AgentInput, Flux<AgentEvent>> core =
+                            input ->
+                                    Flux.<AgentEvent>create(
+                                                    sink -> {
+                                                        activeEventSink.set(sink);
+                                                        sink.next(
+                                                                new AgentStartEvent(
+                                                                        null, replyId, getName()));
 
-                                            doCall(input.msgs())
-                                                    .doFinally(
-                                                            signal -> {
-                                                                sink.next(
-                                                                        new AgentEndEvent(replyId));
-                                                                activeEventSink.set(null);
-                                                                sink.complete();
-                                                            })
-                                                    .subscribe(finalMsg -> {}, sink::error);
-                                        },
-                                        FluxSink.OverflowStrategy.BUFFER)
-                                .doOnError(e -> activeEventSink.set(null));
+                                                        doCall(input.msgs())
+                                                                .doFinally(
+                                                                        signal -> {
+                                                                            sink.next(
+                                                                                    new AgentEndEvent(
+                                                                                            replyId));
+                                                                            activeEventSink.set(
+                                                                                    null);
+                                                                            sink.complete();
+                                                                        })
+                                                                .subscribe(
+                                                                        finalMsg -> {},
+                                                                        sink::error);
+                                                    },
+                                                    FluxSink.OverflowStrategy.BUFFER)
+                                            .doOnError(e -> activeEventSink.set(null));
 
-        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
-                .apply(new AgentInput(msgs));
+                    return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+                            .apply(new AgentInput(msgs))
+                            .doFinally(signal -> clearPendingRuntimeContextIfUnbound(outerContext));
+                });
+    }
+
+    private RuntimeContext ensurePendingRuntimeContext() {
+        RuntimeContext ctx = pendingRuntimeContext;
+        if (ctx == null) {
+            ctx = RuntimeContext.empty();
+            pendingRuntimeContext = ctx;
+        }
+        return ctx;
+    }
+
+    private void clearPendingRuntimeContextIfUnbound(RuntimeContext expected) {
+        if (super.getRuntimeContext() == null && pendingRuntimeContext == expected) {
+            pendingRuntimeContext = null;
+        }
     }
 
     private void publishEvent(AgentEvent event) {

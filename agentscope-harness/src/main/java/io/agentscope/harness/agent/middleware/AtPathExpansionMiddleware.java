@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
@@ -101,10 +100,10 @@ public class AtPathExpansionMiddleware implements MiddlewareBase {
             return next.apply(input);
         }
 
-        RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+        RuntimeContext rc = agent != null ? agent.getRuntimeContext() : null;
+        if (rc == null) {
+            rc = RuntimeContext.empty();
+        }
 
         List<Msg> rewritten = new ArrayList<>(input.msgs().size());
         boolean changed = false;

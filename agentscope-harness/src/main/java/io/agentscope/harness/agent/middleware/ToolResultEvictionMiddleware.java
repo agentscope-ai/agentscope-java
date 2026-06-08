@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -72,10 +71,8 @@ public class ToolResultEvictionMiddleware implements MiddlewareBase {
     @Override
     public Flux<AgentEvent> onActing(
             Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
-        final RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+        RuntimeContext runtimeContext = agent != null ? agent.getRuntimeContext() : null;
+        final RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
         AgentState state = agent.getAgentState();
         final int sizeBefore = state != null ? state.contextMutable().size() : -1;
         return next.apply(input).doOnComplete(() -> evictAddedToolResults(agent, rc, sizeBefore));

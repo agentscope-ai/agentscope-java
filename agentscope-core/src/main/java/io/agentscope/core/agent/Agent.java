@@ -96,4 +96,12 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
     default io.agentscope.core.state.AgentState getAgentState() {
         return null;
     }
+
+    /**
+     * Returns the current per-call {@link RuntimeContext} when the agent is executing, or
+     * {@code null} if this agent type does not expose one or no invocation is active.
+     */
+    default RuntimeContext getRuntimeContext() {
+        return null;
+    }
 }
