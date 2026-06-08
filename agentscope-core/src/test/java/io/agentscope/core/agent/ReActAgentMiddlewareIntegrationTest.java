@@ -238,4 +238,17 @@ class ReActAgentMiddlewareIntegrationTest {
         assertNotNull(middleware.seenContext());
         assertNull(agent.getRuntimeContext());
     }
+
+    @Test
+    void onAgentHookSeesCallerSuppliedRuntimeContext() {
+        RuntimeContextMiddleware middleware = new RuntimeContextMiddleware();
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(middleware));
+        RuntimeContext supplied = RuntimeContext.builder().sessionId("supplied-session").build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of(), supplied).collectList().block();
+
+        assertNotNull(events);
+        assertSame(supplied, middleware.seenContext());
+        assertNull(agent.getRuntimeContext());
+    }
 }

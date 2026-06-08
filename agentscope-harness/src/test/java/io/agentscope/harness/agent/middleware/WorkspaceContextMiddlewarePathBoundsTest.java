@@ -18,7 +18,11 @@ package io.agentscope.harness.agent.middleware;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
@@ -109,5 +113,22 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         assertNotNull(prompt);
         assertTrue(
                 prompt.contains("UNRESTRICTED"), () -> "UNRESTRICTED mode not surfaced: " + prompt);
+    }
+
+    @Test
+    void localOverlay_withAgentRuntimeContext_stillBuildsPrompt(
+            @TempDir Path project, @TempDir Path workspace) {
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec().project(project).toFilesystem(workspace, null);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
+        WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
+        Agent agent = mock(Agent.class);
+        when(agent.getRuntimeContext())
+                .thenReturn(RuntimeContext.builder().sessionId("workspace-session").build());
+
+        String prompt = mw.onSystemPrompt(agent, "BASE\n").block();
+
+        assertNotNull(prompt);
+        assertTrue(prompt.contains("Project (the user's source tree"));
     }
 }
