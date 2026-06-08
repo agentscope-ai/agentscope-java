@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <!--
   ~ Copyright 2024-2026 the original author or authors.
   ~
@@ -14,15 +15,10 @@
   ~ limitations under the License.
 -->
 
-
-
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
-
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-extensions</artifactId>
@@ -30,37 +26,30 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-kotlin</artifactId>
-    <name>AgentScope Kotlin Coroutine Extensions</name>
-    <packaging>jar</packaging>
+    <name>AgentScope Java - Extensions - OSS</name>
+    <description>AgentScope Extensions - Alibaba Cloud OSS backed AgentStateStore and BaseStore</description>
+    <artifactId>agentscope-extensions-oss</artifactId>
 
     <dependencies>
-        <!-- AgentScope core -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
+            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- Kotlin coroutines -->
         <dependency>
-            <groupId>org.jetbrains.kotlinx</groupId>
-            <artifactId>kotlinx-coroutines-core</artifactId>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- Reactor <-> Coroutine bridge -->
+        <!-- Alibaba Cloud OSS SDK -->
         <dependency>
-            <groupId>org.jetbrains.kotlinx</groupId>
-            <artifactId>kotlinx-coroutines-reactor</artifactId>
+            <groupId>com.aliyun.oss</groupId>
+            <artifactId>aliyun-sdk-oss</artifactId>
+            <version>3.18.5</version>
         </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-
 </project>

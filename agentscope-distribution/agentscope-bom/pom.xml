@@ -225,6 +225,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions OSS (AgentStateStore + BaseStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-oss</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Studio -->
             <dependency>
                 <groupId>io.agentscope</groupId>

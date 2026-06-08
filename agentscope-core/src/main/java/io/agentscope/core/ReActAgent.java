@@ -2096,7 +2096,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             String replyId = UUID.randomUUID().toString().replace("-", "");
             AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
-                    new AtomicReference<>();
+                    new AtomicReference<>(List.of());
 
             AtomicReference<RequestStopEvent> actingStopRequested = new AtomicReference<>();
             return hookDispatcher
