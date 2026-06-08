@@ -493,6 +493,31 @@ class NacosSkillRepositoryTest {
     }
 
     @Test
+    @DisplayName("Should load skill when array items use single-quoted values including escaped apostrophe")
+    void testGetSkillWithSingleQuotedArrayItems() throws NacosException, IOException {
+        // YAML single-quoted style: '' is the escape sequence for a literal apostrophe.
+        String skillMd =
+                "---\n"
+                        + "name: single-quote-skill\n"
+                        + "description: Single quote skill\n"
+                        + "tags:\n"
+                        + "  - 'simple'\n"
+                        + "  - 'value with ''apostrophe'''\n"
+                        + "---\n"
+                        + "# Content\n";
+        when(aiService.downloadSkillZip("single-quote-skill"))
+                .thenReturn(createSkillZipWithRawMd(skillMd));
+
+        AgentSkill skill = repository.getSkill("single-quote-skill");
+
+        assertNotNull(skill);
+        assertEquals("single-quote-skill", skill.getName());
+        // Single-quoted items must be unquoted; '' inside single quotes must unescape to '.
+        List<?> tags = assertInstanceOf(List.class, skill.getMetadataValue("tags"));
+        assertEquals(List.of("simple", "value with 'apostrophe'"), tags);
+    }
+
+    @Test
     @DisplayName("Should still load skill when frontmatter has both scalar and array fields")
     void testGetSkillWithMixedFrontmatterFields() throws NacosException, IOException {
         String skillMd =

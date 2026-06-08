@@ -496,9 +496,13 @@ public class NacosSkillRepository implements AgentSkillRepository {
      *
      * <p>Handles the two YAML scalar quoting styles that Nacos exports use:
      * <ul>
-     *   <li>Double-quoted: {@code "value"} → {@code value} (also unescapes {@code \"} → {@code "}
-     *       and {@code \\} → {@code \})</li>
-     *   <li>Single-quoted: {@code 'value'} → {@code value} (also unescapes {@code ''} → {@code '})</li>
+     *   <li>Double-quoted: {@code "value"} becomes {@code value} (also unescapes {@code \"} to
+     *       {@code "} and {@code \\} to {@code \}). Only {@code \"} and {@code \\} are unescaped;
+     *       other YAML double-quoted escape sequences (e.g. \n, \t, unicode escapes) are passed
+     *       through as literal characters. This is an intentional subset that covers the Nacos
+     *       export format.</li>
+     *   <li>Single-quoted: {@code 'value'} becomes {@code value} (also unescapes {@code ''} to
+     *       a single apostrophe)</li>
      * </ul>
      * If the value is not quoted, it is returned unchanged.
      */
