@@ -108,6 +108,44 @@ Plan Mode 与 `todo_write`（core 提供）是两个**独立但常常一起用**
 
 ⚠ 不要和子 agent 的**后台任务**（`task_output` / `task_cancel` / `task_list`）混淆——那是另一回事，详见 [子 Agent](./subagent)。
 
+## 查看任务列表
+
+任务列表保存在 `AgentState.tasksContext` 中，每次 `call()` 后自动持久化。在业务代码中读取：
+
+```java
+List<Task> tasks = agent.getAgentState(userId, sessionId)
+        .getTasksContext()
+        .getTasks();
+
+for (Task t : tasks) {
+    System.out.printf("[%s] %s%n", t.getState(), t.getSubject());
+    // state: PENDING / IN_PROGRESS / COMPLETED
+}
+```
+
+如果用了 `agentscope-admin-spring-boot-starter`，可以直接调 admin REST 接口：
+
+```
+GET /v1/admin/sessions/{sessionId}/tasks
+```
+
+返回每个任务的 subject、state、owner 和依赖关系（`blocks` / `blockedBy`）。
+
+如果需要通过事件流实时感知任务变更，可以在 `streamEvents()` 中监听 `todo_write` 工具调用：
+
+```java
+agent.streamEvents(message)
+    .filter(e -> e.getType() == AgentEventType.TOOL_RESULT_END)
+    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolName()))
+    .doOnNext(e -> {
+        // 从 state 中读取最新任务列表
+        var tasks = agent.getAgentState(userId, sessionId)
+                .getTasksContext().getTasks();
+        updateUI(tasks);
+    })
+    .subscribe();
+```
+
 ## 相关文档
 
 - [工作区](./workspace) — `plans/` 目录的位置

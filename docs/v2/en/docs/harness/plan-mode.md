@@ -108,6 +108,44 @@ Typical workflow: write `PLAN.md` during the plan phase → `plan_exit` → in e
 
 ⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](./subagent).
 
+## Viewing the task list
+
+The task list lives in `AgentState.tasksContext` and is persisted automatically with every `call()`. To read it from application code:
+
+```java
+List<Task> tasks = agent.getAgentState(userId, sessionId)
+        .getTasksContext()
+        .getTasks();
+
+for (Task t : tasks) {
+    System.out.printf("[%s] %s%n", t.getState(), t.getSubject());
+    // state: PENDING / IN_PROGRESS / COMPLETED
+}
+```
+
+If you use `agentscope-admin-spring-boot-starter`, the admin REST API provides a ready-made endpoint:
+
+```
+GET /v1/admin/sessions/{sessionId}/tasks
+```
+
+It returns each task's subject, state, owner, and dependency info (`blocks` / `blockedBy`).
+
+To observe task changes in real time through the event stream, listen for `todo_write` tool calls in `streamEvents()`:
+
+```java
+agent.streamEvents(message)
+    .filter(e -> e.getType() == AgentEventType.TOOL_RESULT_END)
+    .filter(e -> "todo_write".equals(((ToolResultEndEvent) e).getToolName()))
+    .doOnNext(e -> {
+        // Re-read the latest task list from state
+        var tasks = agent.getAgentState(userId, sessionId)
+                .getTasksContext().getTasks();
+        updateUI(tasks);
+    })
+    .subscribe();
+```
+
 ## Related Pages
 
 - [Workspace](./workspace) — `plans/` directory location
