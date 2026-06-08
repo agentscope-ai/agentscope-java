@@ -183,11 +183,24 @@ agent.streamEvents(new UserMessage("Hello"))
 - Builder：`.longTermMemory(...)` / `.longTermMemoryMode(...)` / `.longTermMemoryAsyncRecord(...)` 同步弃用
 - 同样在 v2 架构下重写中；新代码先不要依赖
 
-#### B.7 core 内置 Shell / File 工具：迁到 Harness
+#### B.7 core 内置 Shell / File 工具：不再 deprecated
 
-- `io.agentscope.core.tool.coding.*`（`ShellCommandTool`、`CommandValidator`、`UnixCommandValidator`、`WindowsCommandValidator`）与 `io.agentscope.core.tool.file.*`（`ReadFileTool`、`WriteFileTool`、`FileToolUtils`）全部 `@Deprecated(forRemoval = true, since = "2.0.0")`
-- 这些工具直接在宿主机进程上执行命令和读写文件，不带 workspace / 权限隔离，因此从 core 内置工具集中移出
-- 推荐方案：使用 `agentscope-harness` 模块在 workspace 上下文里运行等价工具 —— 享受统一的本地 / Docker / 云沙箱后端、文件 IO 权限、读写缓存、HITL 审批等能力
+- `io.agentscope.core.tool.coding.*`（`ShellCommandTool`、`CommandValidator`、`UnixCommandValidator`、`WindowsCommandValidator`）与 `io.agentscope.core.tool.file.*`（`ReadFileTool`、`WriteFileTool`、`FileToolUtils`）自 2.0.0-RC1 起**不再标 `@Deprecated`**
+- 这些工具直接在宿主机进程上执行命令和读写文件。对于不需要 workspace / 沙箱隔离的 `ReActAgent` 用户，它们是给 agent 添加 shell 和文件访问能力的推荐方式：
+
+```java
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
+toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
+toolkit.registerTool(new ShellCommandTool());
+
+ReActAgent agent = ReActAgent.builder()
+    .toolkit(toolkit)
+    /* ... */
+    .build();
+```
+
+- 对于 `HarnessAgent` 用户，harness 模块自带 workspace 感知的文件和 shell 工具（`read_file`、`write_file`、`execute` 等），提供统一的本地 / Docker / 云沙箱后端、权限隔离、读写缓存、HITL 审批，推荐在需要 workspace 集成的场景下使用 harness 内置工具
 
 详见 → [Harness 文件系统](harness/filesystem.md)
 

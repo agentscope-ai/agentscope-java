@@ -22,11 +22,10 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,15 +33,6 @@ import java.nio.file.Paths;
 
 /**
  * AgentSkillExample - Demonstrates loading skills from a file-system skill repository.
- *
- * <p>Migration notes (from documentation/quickstart):
- * <ul>
- *   <li>{@code legacy.skill.SkillBox} + {@code .skillBox(skillBox)} replaced by
- *       {@code FileSystemSkillRepository} + {@code .skillRepository(repo)} on the builder.</li>
- *   <li>{@code SkillBox.codeExecution().withShell(...).withRead().withWrite().enable()} removed;
- *       individual tools registered manually in the toolkit instead.</li>
- *   <li>Removed {@code .memory(new InMemoryMemory())}.</li>
- * </ul>
  *
  * <p><b>Note:</b> This example requires a {@code SKILLS_DIR} directory containing a
  * {@code skill-creator/SKILL.md} file. Adjust the {@code SKILLS_DIR} constant to match your
@@ -100,7 +90,8 @@ public class AgentSkillExample {
         FileSystemSkillRepository skillRepo = new FileSystemSkillRepository(skillsDir, false);
 
         Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(new FileTools(outputDir));
+        toolkit.registerTool(new ReadFileTool(outputDir.toString()));
+        toolkit.registerTool(new WriteFileTool(outputDir.toString()));
 
         ReActAgent agent =
                 ReActAgent.builder()
@@ -152,68 +143,9 @@ public class AgentSkillExample {
         %s
 
         Use write_text_file to create SKILL.md files with valid YAML frontmatter (name
-        and description fields). Keep SKILL.md content concise.
+        and description fields). Use view_text_file to read existing files. Keep SKILL.md
+        content concise.
         """
                 .formatted(outputDir.toString());
-    }
-
-    /** Simple file read/write tools for skill creation. */
-    public static class FileTools {
-
-        private final Path workDir;
-
-        FileTools(Path workDir) {
-            this.workDir = workDir;
-        }
-
-        /**
-         * Writes text content to a file under the working directory.
-         *
-         * @param relativePath relative path of the file within the working directory
-         * @param content      text content to write
-         * @return result message
-         */
-        @Tool(name = "write_text_file", description = "Write text content to a file")
-        public String writeTextFile(
-                @ToolParam(name = "path", description = "Relative file path") String relativePath,
-                @ToolParam(name = "content", description = "Text content to write")
-                        String content) {
-            try {
-                Path target = workDir.resolve(relativePath).normalize();
-                if (!target.startsWith(workDir)) {
-                    return "Error: Path traversal not allowed";
-                }
-                Files.createDirectories(target.getParent());
-                Files.writeString(target, content);
-                System.out.println("[write_text_file] Wrote " + target);
-                return "File written: " + target;
-            } catch (IOException e) {
-                return "Error writing file: " + e.getMessage();
-            }
-        }
-
-        /**
-         * Reads text content from a file under the working directory.
-         *
-         * @param relativePath relative path of the file within the working directory
-         * @return the file content or an error message
-         */
-        @Tool(name = "read_text_file", description = "Read text content from a file")
-        public String readTextFile(
-                @ToolParam(name = "path", description = "Relative file path") String relativePath) {
-            try {
-                Path target = workDir.resolve(relativePath).normalize();
-                if (!target.startsWith(workDir)) {
-                    return "Error: Path traversal not allowed";
-                }
-                if (!Files.exists(target)) {
-                    return "Error: File not found: " + relativePath;
-                }
-                System.out.println("[read_text_file] Read " + target);
-                return Files.readString(target);
-            } catch (IOException e) {
-                return "Error reading file: " + e.getMessage();
-            }
-        }
     }
 }

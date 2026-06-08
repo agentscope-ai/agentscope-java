@@ -183,11 +183,24 @@ agent.streamEvents(new UserMessage("Hello"))
 - The builder methods `.longTermMemory(...)` / `.longTermMemoryMode(...)` / `.longTermMemoryAsyncRecord(...)` are deprecated in parallel.
 - Same status — being rewritten on the v2 architecture. New code should not depend on the current API.
 
-#### B.7 Core shell / file tools — move to Harness
+#### B.7 Core shell / file tools — no longer deprecated
 
-- `io.agentscope.core.tool.coding.*` (`ShellCommandTool`, `CommandValidator`, `UnixCommandValidator`, `WindowsCommandValidator`) and `io.agentscope.core.tool.file.*` (`ReadFileTool`, `WriteFileTool`, `FileToolUtils`) are all `@Deprecated(forRemoval = true, since = "2.0.0")`.
-- These tools run commands and read/write files directly against the host process — no workspace or permission isolation — so they are being moved out of the core built-in toolset.
-- Recommended path: use the `agentscope-harness` module to run equivalent tools inside a workspace context. You get unified local / Docker / cloud-sandbox backends, file-IO permissions, a read/write cache, and HITL approval for free.
+- `io.agentscope.core.tool.coding.*` (`ShellCommandTool`, `CommandValidator`, `UnixCommandValidator`, `WindowsCommandValidator`) and `io.agentscope.core.tool.file.*` (`ReadFileTool`, `WriteFileTool`, `FileToolUtils`) are **no longer `@Deprecated`** as of 2.0.0-RC1.
+- These tools run commands and read/write files directly against the host process. For `ReActAgent` users who don't need workspace / sandbox isolation, they are the recommended way to give the agent shell and file access:
+
+```java
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
+toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
+toolkit.registerTool(new ShellCommandTool());
+
+ReActAgent agent = ReActAgent.builder()
+    .toolkit(toolkit)
+    /* ... */
+    .build();
+```
+
+- For `HarnessAgent` users, the harness module provides its own workspace-aware file and shell tools (`read_file`, `write_file`, `execute`, etc.) with unified local / Docker / cloud-sandbox backends, permission isolation, read/write cache, and HITL approval. It is recommended to use the built-in harness tools for workspace-integrated scenarios.
 
 Detail → [Harness filesystem](harness/filesystem.md)
 
