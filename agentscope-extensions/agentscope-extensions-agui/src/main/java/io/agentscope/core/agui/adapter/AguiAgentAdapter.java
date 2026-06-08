@@ -102,6 +102,7 @@ public class AguiAgentAdapter {
                             StreamOptions.builder()
                                     .eventTypes(EventType.ALL)
                                     .incremental(true)
+                                    .includeActingChunk(config.isEnableActingChunk())
                                     .build();
 
                     // Track state for event conversion
