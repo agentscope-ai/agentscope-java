@@ -161,12 +161,9 @@ class ToolCallParamTest {
             assertEquals(original.getInput(), copy.getInput());
             assertEquals(original.getAgent(), copy.getAgent());
             assertSame(original.getRuntimeContext(), copy.getRuntimeContext());
-<<<<<<< fix/pr1480-harness-offload
             assertNotNull(copy.getContext());
             assertEquals(
                     original.getContext().get(String.class), copy.getContext().get(String.class));
-=======
->>>>>>> main
             assertSame(original.getEmitter(), copy.getEmitter());
         }
 
@@ -294,12 +291,9 @@ class ToolCallParamTest {
             assertSame(original.getToolUseBlock(), copy.getToolUseBlock());
             assertSame(original.getAgent(), copy.getAgent());
             assertSame(original.getRuntimeContext(), copy.getRuntimeContext());
-<<<<<<< fix/pr1480-harness-offload
             assertNotNull(copy.getContext());
             assertEquals(
                     original.getContext().get(String.class), copy.getContext().get(String.class));
-=======
->>>>>>> main
         }
 
         @Test
