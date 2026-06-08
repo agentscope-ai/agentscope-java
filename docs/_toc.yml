@@ -295,6 +295,8 @@ parts:
     title: Permission System
   - file: v2/en/docs/building-blocks/tool
     title: Tool
+  - file: v2/en/docs/building-blocks/context
+    title: Context & AgentState
 
 # 与中文「v2 · Harness」区分标题，否则顶栏 tabs 的 sections_v2_* 会同时匹配两段 caption，侧栏出现两个 Harness。
 # tabs.js 在渲染时会剥离 " (English)" 后缀，所以前端实际显示的是 "v2 · Harness"。
@@ -302,8 +304,8 @@ parts:
   chapters:
   - file: v2/en/docs/harness/architecture
     title: Architecture
-  - file: v2/en/docs/harness/context
-    title: Context
+  - file: v2/en/docs/harness/compaction
+    title: Compaction
   - file: v2/en/docs/harness/workspace
     title: Workspace
   - file: v2/en/docs/harness/memory
@@ -437,13 +439,15 @@ parts:
     title: 权限系统
   - file: v2/zh/docs/building-blocks/tool
     title: 工具
+  - file: v2/zh/docs/building-blocks/context
+    title: 上下文与 AgentState
 
 - caption: v2 · Harness
   chapters:
   - file: v2/zh/docs/harness/architecture
     title: 架构
-  - file: v2/zh/docs/harness/context
-    title: 上下文
+  - file: v2/zh/docs/harness/compaction
+    title: 上下文压缩
   - file: v2/zh/docs/harness/workspace
     title: 工作区
   - file: v2/zh/docs/harness/memory

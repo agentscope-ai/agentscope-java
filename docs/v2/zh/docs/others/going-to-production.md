@@ -65,7 +65,7 @@ agent.call(msg, RuntimeContext.builder()
         .build()).block();
 ```
 
-完整细节见 [Harness — Context](../harness/context.md)。
+完整细节见[上下文与 AgentState](../building-blocks/context.md)。
 
 ## 2. Filesystem 模式 & IsolationScope：决定"谁和谁共享文件"
 
@@ -404,7 +404,8 @@ agent.call(msg, RuntimeContext.builder()
 
 - [Quickstart](../quickstart.md) —— 端到端跑通第一个 `HarnessAgent`
 - [Harness 架构](../harness/architecture.md) —— 各能力如何协作
-- [Context](../harness/context.md) —— `AgentState` / `AgentStateStore` / 跨节点恢复
+- [上下文与 AgentState](../building-blocks/context.md) —— `AgentState` / `AgentStateStore` / 跨节点恢复
+- [上下文压缩](../harness/compaction.md) —— 对话摘要、工具结果卸载、溢出恢复
 - [Workspace](../harness/workspace.md) —— 目录布局、两层读、`tools.json`
 - [Filesystem](../harness/filesystem.md) —— 三种部署模式、`IsolationScope`
 - [Sandbox](../harness/sandbox.md) —— 沙箱细节、五种后端、快照机制

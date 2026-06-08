@@ -376,7 +376,7 @@ agent.streamEvents(new UserMessage("user", "Help me fix this bug"))
 How agents emit events and messages in the ReAct loop
 :::
   :::{grid-item-card} Context
-:link: ../harness/context.html
+:link: context.html
 
 How messages are stored and persisted
 :::

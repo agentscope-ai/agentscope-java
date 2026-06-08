@@ -27,14 +27,6 @@ If you only need a bare `ReActAgent` (no workspace / persistence / subagents / s
 
 The DashScope / OpenAI / Anthropic / Gemini / Ollama formatters and chat models all live inside `agentscope-core`. MCP integration requires the official MCP SDK — see `agentscope-examples/documentation/pom.xml` for a working example.
 
-### Build from source
-
-```bash
-git clone -b main https://github.com/agentscope-ai/agentscope-java
-cd agentscope-java
-./mvnw -DskipTests install
-```
-
 ## Your first agent
 
 The example below uses `HarnessAgent` to demonstrate three things at once: **workspace-driven persona** (`AGENTS.md`), **automatic session persistence** (the second turn with the same `sessionId` remembers the first), and **conversation compaction** (over-threshold compaction + long-term facts distilled into `MEMORY.md`). The model id is passed as a string to `.model(...)` — `ModelRegistry` resolves it and reads the matching API-key env var automatically.
@@ -76,17 +68,26 @@ public class FirstAgent {
 }
 ```
 
-After this run the workspace directory has grown:
+After this run you get two directory trees — the **workspace** and the **state store**:
 
 ```
-.agentscope/workspace/
-├── AGENTS.md                    ← write one to give the agent its persona (optional)
+.agentscope/workspace/                          ← workspace (agent content)
+├── AGENTS.md                                   ← write one to give the agent its persona (optional)
 └── agents/note-taker/
-    ├── context/demo-session/    ← AgentState auto-saved / auto-loaded
-    └── sessions/                ← never-compacted raw conversation log
+    └── sessions/                               ← never-compacted raw conversation log
+
+~/.agentscope/state/note-taker/                 ← state store (outside workspace)
+└── alice/demo-session/                         ← AgentState auto-saved / auto-loaded
+    └── agent_state.json
 ```
 
-Restart the process with the same `sessionId` and the second turn still remembers the first — because `AgentState` lives under `agents/note-taker/context/demo-session/`. After enough turns trip compaction, distilled facts first land in `workspace/memory/YYYY-MM-DD.md`, then a throttled background job merges them into `MEMORY.md`, which is injected into the system prompt on the next reasoning step.
+`AgentState` lives **outside the workspace** at `~/.agentscope/state/<agentId>/` by default — because state is a prerequisite for restoring the workspace itself (e.g. after a sandbox wipe), so it must not be entangled with workspace data. Restart the process with the same `sessionId` and the second turn still remembers the first.
+
+:::{warning}
+The default `JsonFileAgentStateStore` is a local-file backend suitable for development and single-node deployment. For production clusters, use a distributed implementation such as `RedisAgentStateStore` (provided by `agentscope-extensions-redis`) or implement your own `AgentStateStore`. See [Going to Production](./others/going-to-production.md).
+:::
+
+After enough turns trip compaction, distilled facts first land in `workspace/memory/YYYY-MM-DD.md`, then a throttled background job merges them into `MEMORY.md`, which is injected into the system prompt on the next reasoning step.
 
 ### Streaming reasoning and tool calls
 

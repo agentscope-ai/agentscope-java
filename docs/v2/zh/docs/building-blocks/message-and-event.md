@@ -376,7 +376,7 @@ agent.streamEvents(new UserMessage("user", "帮我修复这个 bug"))
 智能体如何在 ReAct 循环中产出事件和消息
 :::
   :::{grid-item-card} 上下文
-:link: ../harness/context.html
+:link: context.html
 
 消息如何存储与持久化
 :::

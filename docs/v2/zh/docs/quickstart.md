@@ -27,14 +27,6 @@ AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 
 DashScope / OpenAI / Anthropic / Gemini / Ollama 的 formatter 与 chat model 都在 `agentscope-core` 里；MCP 集成需要官方 MCP SDK，参考 `agentscope-examples/documentation/pom.xml`。
 
-### 源码构建
-
-```bash
-git clone -b main https://github.com/agentscope-ai/agentscope-java
-cd agentscope-java
-./mvnw -DskipTests install
-```
-
 ## 第一个智能体
 
 下面的例子用 `HarnessAgent` 跑通三件事：**工作区驱动的人格**（`AGENTS.md`）、**会话自动持久化**（相同 `sessionId` 的第二轮记得第一轮）、**对话压缩**（超阈值后自动压缩 + 长期事实落到 `MEMORY.md`）。模型 id 直接以字符串形式传给 `.model(...)`，由 `ModelRegistry` 解析并自动读取对应环境变量。
@@ -76,17 +68,26 @@ public class FirstAgent {
 }
 ```
 
-跑完之后你会看到工作区目录已经长出来了：
+跑完之后你会看到两棵目录树——**工作区**和**状态存储**：
 
 ```
-.agentscope/workspace/
-├── AGENTS.md                    ← 写一份就是 agent 的人格（不写也能跑）
+.agentscope/workspace/                          ← 工作区（agent 内容）
+├── AGENTS.md                                   ← 写一份就是 agent 的人格（不写也能跑）
 └── agents/note-taker/
-    ├── context/demo-session/    ← AgentState 自动写回 / 加载
-    └── sessions/                ← 永不压缩的原始对话日志
+    └── sessions/                               ← 永不压缩的原始对话日志
+
+~/.agentscope/state/note-taker/                 ← 状态存储（在工作区外面）
+└── alice/demo-session/                         ← AgentState 自动写回 / 加载
+    └── agent_state.json
 ```
 
-进程重启、`sessionId` 不变，第二段对话依然记得第一段——因为 `AgentState` 已经落在了 `agents/note-taker/context/demo-session/` 下。多聊几轮触发压缩后，提炼出来的事实会先落到 `workspace/memory/YYYY-MM-DD.md`，再被周期性合并到 `MEMORY.md`，并在下一轮推理时自动注入 system prompt。
+`AgentState` 默认存储在**工作区之外**的 `~/.agentscope/state/<agentId>/` 下——因为状态是恢复工作区本身的前提条件（例如沙箱清空后需要先有状态才能重建工作区），不能和工作区数据耦合。进程重启、`sessionId` 不变，第二段对话依然记得第一段。
+
+:::{warning}
+默认的 `JsonFileAgentStateStore` 是基于本地文件的实现，适用于开发和单机部署。生产集群环境请使用分布式实现，如 `RedisAgentStateStore`（由 `agentscope-extensions-redis` 提供），或自行实现 `AgentStateStore` 接口。详见[上线指南](./others/going-to-production.md)。
+:::
+
+多聊几轮触发压缩后，提炼出来的事实会先落到 `workspace/memory/YYYY-MM-DD.md`，再被周期性合并到 `MEMORY.md`，并在下一轮推理时自动注入 system prompt。
 
 ### 流式查看推理与工具调用
 

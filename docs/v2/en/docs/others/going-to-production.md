@@ -65,7 +65,7 @@ agent.call(msg, RuntimeContext.builder()
         .build()).block();
 ```
 
-Full mechanics in [Harness — Context](../harness/context.md).
+Full mechanics in [Context & AgentState](../building-blocks/context.md).
 
 ## 2. Filesystem mode & `IsolationScope`: deciding "who shares files with whom"
 
@@ -404,7 +404,8 @@ agent.call(msg, RuntimeContext.builder()
 
 - [Quickstart](../quickstart.md) — end-to-end first `HarnessAgent`
 - [Harness Architecture](../harness/architecture.md) — how capabilities cooperate
-- [Context](../harness/context.md) — `AgentState` / `AgentStateStore` / cross-node recovery
+- [Context & AgentState](../building-blocks/context.md) — `AgentState` / `AgentStateStore` / cross-node recovery
+- [Compaction](../harness/compaction.md) — conversation summarization, tool-result eviction, overflow recovery
 - [Workspace](../harness/workspace.md) — directory layout, two-layer reads, `tools.json`
 - [Filesystem](../harness/filesystem.md) — three deployment modes, `IsolationScope`
 - [Sandbox](../harness/sandbox.md) — sandbox details, five backends, snapshot mechanics

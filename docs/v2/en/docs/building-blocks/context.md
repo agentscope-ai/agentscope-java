@@ -1,15 +1,6 @@
 ---
-title: "Context & State Persistence"
-description: "Persist agent runtime state across machines, and keep conversation context within the model's token budget"
----
-
-`HarnessAgent` manages working memory along two cooperating tracks:
-
-1. **State persistence — persist agent runtime state** via an `AgentStateStore`, so the same `(userId, sessionId)` can resume in another process or on another machine.
-2. **Context compaction — keep the conversation within the model's token budget**, without losing the information the agent still needs.
-
-Both tracks share one data structure: `AgentState`. Compaction mutates it in memory; the state store writes it out at end of call. The two sections below cover each track in turn.
-
+title: "Context & AgentState"
+description: "Stateless agent engine, AgentState lifecycle, state persistence, and RuntimeContext"
 ---
 
 ## Stateless Agent Engine
@@ -39,9 +30,7 @@ Both tracks share one data structure: `AgentState`. Compaction mutates it in mem
 
 ---
 
-## Part 1: State persistence of agent runtime state
-
-### What the state store persists — `AgentState`
+## AgentState
 
 An [`AgentStateStore`](../../integration/session/index.md) persists an **`AgentState`** (`io.agentscope.core.state.AgentState`) — a complete snapshot of everything that makes the agent restartable:
 
@@ -51,7 +40,7 @@ An [`AgentStateStore`](../../integration/session/index.md) persists an **`AgentS
 | `getUserId()` | The user identifier (nullable for anonymous sessions) |
 | `getContext()` / `contextMutable()` | Current conversation history (user / assistant / tool calls / tool results) |
 | `getSummary()` | Compacted summary (when compaction is enabled) |
-| `getPermissionContext()` | Tool permission rules — see [Permissions](../building-blocks/permission-system.md) |
+| `getPermissionContext()` | Tool permission rules — see [Permissions](./permission-system.md) |
 | `getPlanModeContext()` | Whether Plan Mode is active, current plan file path |
 | `getTasksContext()` | The `todo_write` task list |
 | `getToolContext()` | Active toolkit groups (`activatedGroups`) |
@@ -162,7 +151,7 @@ The `(userId, sessionId)` pair defines the namespacing: `sessionId` alone is eno
 `sessionId` and `userId` solve different problems:
 
 - **`sessionId`** — which conversation this is; independent `AgentState` snapshot.
-- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](./filesystem).
+- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem).
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -198,16 +187,6 @@ AgentState restored = AgentState.fromJsonString(json);
 :::{note}
 The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Deprecated(forRemoval = true)` in 2.0. New code should use `AgentState.getContext()` + an `AgentStateStore`; `Memory` remains only as a source-compat shim.
 :::
-
-### Letting the agent inspect its own history
-
-When session capability is on (the default), three query tools are registered automatically:
-
-- `session_list agentId="..."` — list an agent's historical sessions.
-- `session_history agentId="..." sessionId="..." lastN=20` — recent N messages of a session.
-- `session_search query="..." agentId="..."` — keyword search across history.
-
-These tools read the **uncompressed conversation log** (`<workspace>/agents/<agentId>/sessions/<sessionId>.log.jsonl`), so even when the in-context conversation has been summarized, the agent can still pull up the original messages.
 
 ### Per-session interrupt
 
@@ -270,96 +249,7 @@ The in-memory state cache grows with the number of distinct sessions a single ag
 
 ---
 
-## Part 2: Context compaction strategies
-
-The model's token budget is finite. A long-running conversation either compacts proactively or eventually crashes into the model's hard limit. `HarnessAgent` ships a full compaction stack — opt-in via `.compaction(...)` / `.toolResultEviction(...)`.
-
-**Core invariant**: **compaction mutates `AgentState` in memory; the state store writes the updated `AgentState` at end of call**. Compaction and persistence are independent paths that always run in that order — the state store sees the post-compaction state.
-
-### What `HarnessAgent` ships
-
-| Strategy | What it solves | When it fires | Middleware |
-|------|----------|----------|--------|
-| **Conversation summarization** | Context too *deep* — message count / token total piles up | Before each model reasoning call | `CompactionMiddleware` |
-| **Large tool-result eviction** | Context too *wide* — a single tool result is huge | After tool execution | `ToolResultEvictionMiddleware` |
-| **Overflow safety net** | Model actually returned `context_length_exceeded` | When `call()` throws | `HarnessAgent.recoverFromOverflow` |
-| **Pre-summary argument truncation** | Tool-call args (e.g. `write_file` body) are big but nobody reads them later | Lightweight pre-pass before summarization | `CompactionConfig.TruncateArgsConfig` |
-
-The four are **orthogonal — combine them freely**. All four are off by default.
-
-### 1. Conversation summarization (`CompactionMiddleware`)
-
-Triggers on message count or estimated token count. Distills the conversation **prefix** into a structured summary via one LLM call, **keeps the last N messages verbatim**, and writes `[summary] + [recent tail]` back into `AgentState.contextMutable()`.
-
-```java
-HarnessAgent.builder()
-    .compaction(CompactionConfig.builder()
-        .triggerMessages(30)     // fire at 30 messages
-        .keepMessages(10)        // keep last 10 verbatim
-        .build())
-    .build();
-```
-
-The default summary prompt organizes content into `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` — works well for engineering/orchestration agents. The full configuration surface (`triggerTokens`, `keepTokens`, `flushBeforeCompact`, `offloadBeforeCompact`, `TruncateArgsConfig`) and the summary prompt template are in [Memory — Enable compaction](./memory#enable-compaction); not duplicated here.
-
-### 2. Large tool-result eviction (`ToolResultEvictionMiddleware`)
-
-Independent of summarization. When a tool result exceeds the threshold (default 80K chars ≈ 20K tokens), the full output is written to a workspace directory and **the in-context message is replaced with a head + tail preview (~2K chars each) plus a `read_file` pointer**. The agent reads the full version on demand.
-
-```java
-HarnessAgent.builder()
-    .toolResultEviction(ToolResultEvictionConfig.defaults())
-    .build();
-```
-
-`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files` / `memory_*` / `session_search` are excluded by default — they either self-paginate or return tiny payloads. **Shell `execute` is deliberately NOT excluded** because command output can be arbitrarily large.
-
-Details in [Memory — Large tool-result offloading](./memory#large-tool-result-offloading).
-
-### 3. Overflow safety net
-
-If the model returns `context_length_exceeded` / `maximum context` / `token limit` errors, `HarnessAgent.recoverFromOverflow()` runs a forced `triggerMessages=1` extreme compaction and **automatically retries once**. Requires `.compaction(...)` to be configured at build time — otherwise the error propagates.
-
-No extra configuration: turn on compaction, and overflow recovery comes along.
-
-### 4. Pre-summary argument truncation (optional)
-
-Before the LLM summary pass, a **non-LLM** string-truncation pass clips oversized tool-call args (`write_file`, `edit_file` bodies):
-
-```java
-CompactionConfig.builder()
-    .triggerMessages(80)
-    .truncateArgs(CompactionConfig.TruncateArgsConfig.builder()
-        .maxArgLength(2000)
-        .truncationText("... [truncated] ...")
-        .build())
-    .build();
-```
-
-In many workloads this single step delays the summarization trigger considerably at near-zero cost.
-
-### Coordination with Memory
-
-`CompactionConfig.flushBeforeCompact` (default `true`) decides **whether to extract facts from the conversation prefix into long-term memory before summarizing** — handled by `MemoryFlushMiddleware` + `MemoryFlushManager`, which read `<workspace>/MEMORY.md` and `memory/*.md` and incrementally append new facts. Once summarization drops the prefix messages, the information persists: the agent can pull it back via `memory_search` / `memory_get`.
-
-Similarly, `offloadBeforeCompact` (default `true`) writes the **raw messages** to the uncompressed `*.log.jsonl` before summarization, so `session_search` can still reach them.
-
-> The full Memory subsystem — two-tier structure, background maintenance (archive, merge), memory tools — is in [Memory](./memory). Compaction and memory are commonly used together but have independent switches.
-
-### What compaction does *not* touch
-
-`ConversationCompactor` only operates on the **conversation message list** in `AgentState.contextMutable()`. The following live in other `AgentState` fields and **stay untouched by summarization**:
-
-- **Plan Mode state** (`AgentState.getPlanModeContext()`): whether plan mode is active, current plan file path. The plan file itself lives under `plans/` in the workspace and is managed by Plan Mode's own lifecycle. See [Plan Mode](./plan-mode).
-- **Subagent background tasks** (`task_id`, status, result): stored at `<workspace>/agents/<parentAgentId>/tasks/<sessionId>.json`, managed by `TaskRepository`; completed results are injected back into the parent via a system reminder on the next reasoning turn — they **do not enter the conversation message stream**, so summarization can't touch them. See [Subagent — Background task storage](./subagent#background-task-storage).
-- **`todo_write` task list** (`AgentState.getTasksContext()`): independent field, persisted with `AgentState` but not in the compaction path. See [Plan Mode — Interaction with `todo_write`](./plan-mode#interaction-with-todo_write).
-- **Permission rules** (`getPermissionContext()`): independent field, self-persisting.
-
-Each of these owns its own state machine and recovery path; the compaction track is transparent to them — you can enable `.compaction(...)` without worrying about losing a plan or an in-flight background task.
-
----
-
-## Appendix: `RuntimeContext` — per-call metadata
+## `RuntimeContext` — per-call metadata
 
 `RuntimeContext` (in `io.agentscope.core.agent`) is a lightweight per-call carrier passed to `agent.call(msgs, ctx)`; hooks and tools share it for the duration of one call. Its free-form / typed attributes are **not persisted**; its `sessionId` / `userId` fields select which `AgentState` slot the state store loads and saves for this call. At call entry, the framework injects the call-scoped `AgentState` onto the `RuntimeContext` so that middleware, tools, and hooks can access the correct per-call state via `ctx.getAgentState()`.
 
@@ -400,9 +290,7 @@ Available accessors:
 
 ## Related pages
 
-- [Architecture](./architecture) — how Context, state persistence, and workspace cooperate inside one call
-- [Memory](./memory) — long-term memory, full compaction configuration, large tool-result offloading, background maintenance
-- [Plan Mode](./plan-mode) — independent persistence and recovery of plan state
-- [Subagent](./subagent) — where background tasks live and how they survive node migration
-- [Filesystem](./filesystem) — `userId`-based multi-tenant path isolation
-- [Permissions](../building-blocks/permission-system.md) — persistence of permission rules
+- [Agent](./agent) — full `ReActAgent` API and builder fields
+- [Context Compaction](../harness/compaction) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
+- [Memory](../harness/memory) — long-term memory, background maintenance
+- [Permissions](./permission-system) — persistence of permission rules

@@ -486,7 +486,7 @@ state.getContext().size();                  // 当前对话消息数
 String json = state.toJson();               // 序列化为 JSON
 ```
 
-完整字段、跨节点接续、与压缩 / Plan Mode / 子 agent 的协作细节见 [Harness — Context](../harness/context.md)。
+完整字段、跨节点接续见[上下文与 AgentState](context.md)；压缩 / Plan Mode / 子 agent 的协作细节见[上下文压缩](../harness/compaction.md)。
 
 ## 结构化输出
 

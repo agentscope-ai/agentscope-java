@@ -28,7 +28,7 @@ Items in this section are removed, renamed, or have their semantics tightened. C
 | `.statePersistence(StatePersistence)` | Same — `AgentStateStore` subsumes persistence |
 | `.structuredOutputReminder(StructuredOutputReminder)` | No longer needed — structured output is now handled natively at the model layer (`Model.supportsNativeStructuredOutput()`); the framework automatically selects native JSON schema or falls back to tool-choice |
 
-Detail → [Context](harness/context.md)
+Detail → [Context](building-blocks/context.md)
 
 #### A.2 Removed packages and classes
 
@@ -52,7 +52,7 @@ Detail → [Context](harness/context.md)
 | `ToolkitState` | Moved to `io.agentscope.core.state.legacy.ToolkitState` (kept for compatibility only — do not reference in new code) |
 | (new) | `Task`, `TaskContextState`, `ToolContextState`, `PlanModeContextState`, `ReadCacheEntry` |
 
-Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `ToolkitState` from `io.agentscope.core.state` will fail to compile. Detail → [Context](harness/context.md)
+Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `ToolkitState` from `io.agentscope.core.state` will fail to compile. Detail → [Context](building-blocks/context.md)
 
 #### A.4 `PlanNotebook` removed — use `HarnessAgent.enablePlanMode()`
 
@@ -129,7 +129,7 @@ Detail → [Middleware](building-blocks/middleware.md)
   - **Persistence** uses the `AgentStateStore` abstraction (built-in: `InMemoryAgentStateStore`, `JsonFileAgentStateStore`), partitioned by the `(userId, sessionId)` pair.
   - Builder chain: `.stateStore(AgentStateStore)` — `AgentState` is saved/loaded automatically on every `call()`, keyed by the `(userId, sessionId)` carried on the call's `RuntimeContext`.
 
-Detail → [Context](harness/context.md)
+Detail → [Context](building-blocks/context.md)
 
 #### B.4 Event subscription: hooks + chunk events → `streamEvents()`
 

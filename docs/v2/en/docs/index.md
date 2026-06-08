@@ -34,7 +34,7 @@ Declare child agents in Markdown specs; the parent spawns them synchronously or 
 :::
 
 :::{grid-item-card} Auto context management
-:link: harness/context.html
+:link: harness/compaction.html
 
 Structured compaction preserves goals / state / key findings / next steps; oversized tool results offload to disk with a placeholder; context-overflow retry as last-resort safety net.
 :::
@@ -60,7 +60,7 @@ Production agents must serve many tenants, run untrusted tool code safely, and s
 ::::{grid} 2
 
 :::{grid-item-card} Multi-tenant isolation
-:link: harness/context.html
+:link: building-blocks/context.html
 
 Isolate state across `session` / `user` / `agent` / `org` dimensions. `RuntimeContext` keys flow uniformly through workspace paths, KV namespaces, and sandbox state slots.
 :::
@@ -78,7 +78,7 @@ Three-state permission engine (allow / approve / deny) combines static rules, to
 :::
 
 :::{grid-item-card} Graceful start / stop & session recovery
-:link: harness/context.html
+:link: building-blocks/context.html
 
 Same `(userId, sessionId)` across processes resumes the full conversation. The `AgentStateStore` abstraction (`InMemoryAgentStateStore` / `JsonFileAgentStateStore` / MySQL / Redis) backs zero-downtime rolling deploy and crash recovery.
 :::

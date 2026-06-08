@@ -486,7 +486,7 @@ state.getContext().size();                  // current message count
 String json = state.toJson();               // serialize to JSON
 ```
 
-For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Harness — Context](../harness/context.md).
+For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Context & AgentState](context.md) and [Compaction](../harness/compaction.md).
 
 ## Structured Output
 
