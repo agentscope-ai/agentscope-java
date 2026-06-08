@@ -195,6 +195,26 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
+        @DisplayName("Should read user and session IDs from top-level request metadata")
+        void testExecuteAgentReadsTopLevelRequestMetadata() throws JSONRPCError {
+            Map<String, Object> metadata = Map.of("userId", "user-001", "sessionId", "sess-001");
+
+            doMockForContext(false, false, true, metadata);
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.empty());
+
+            ArgumentCaptor<AgentRequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(AgentRequestOptions.class);
+            executor.execute(mockContext, mockEventQueue);
+
+            verify(mockAgentRunner).stream(anyList(), optionsCaptor.capture());
+            AgentRequestOptions requestOptions = optionsCaptor.getValue();
+            assertEquals(mockContext.getTaskId(), requestOptions.getTaskId());
+            assertEquals("user-001", requestOptions.getUserId());
+            assertEquals("sess-001", requestOptions.getSessionId());
+        }
+
+        @Test
         @DisplayName("Should read user and session IDs from nested request metadata")
         void testExecuteAgentReadsNestedRequestMetadata() throws JSONRPCError {
             Map<String, Object> msgMetadata = Map.of("userId", "user-001", "sessionId", "sess-001");

@@ -144,21 +144,21 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         return getMessageMetadataValue(message, SESSION_ID_METADATA_KEY);
     }
 
-    @SuppressWarnings("unchecked")
     private String getMessageMetadataValue(Message message, String key) {
         if (null == message || null == message.getMetadata() || message.getMetadata().isEmpty()) {
             return "";
         }
-        if (message.getMetadata().containsKey(key)) {
-            return String.valueOf(message.getMetadata().get(key));
+        Object value = message.getMetadata().get(key);
+        if (null != value && !(value instanceof Map<?, ?>)) {
+            return String.valueOf(value);
         }
-        for (Object metadata : message.getMetadata().values()) {
-            if (!(metadata instanceof Map<?, ?> metadataMap)) {
+        for (Object metadataEntry : message.getMetadata().values()) {
+            if (!(metadataEntry instanceof Map<?, ?> metadataMap)) {
                 continue;
             }
-            Object value = ((Map<String, Object>) metadataMap).get(key);
-            if (null != value) {
-                return String.valueOf(value);
+            Object nestedValue = metadataMap.get(key);
+            if (null != nestedValue && !(nestedValue instanceof Map<?, ?>)) {
+                return String.valueOf(nestedValue);
             }
         }
         return "";
