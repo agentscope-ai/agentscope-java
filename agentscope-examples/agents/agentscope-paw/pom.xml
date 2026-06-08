@@ -27,10 +27,10 @@
     </parent>
 
     <groupId>io.agentscope.examples</groupId>
-    <artifactId>agentscope-claw</artifactId>
+    <artifactId>agentscope-paw</artifactId>
     <packaging>jar</packaging>
 
-    <name>AgentScope Java - Claw</name>
+    <name>AgentScope Java - Paw</name>
     <description>Local-only AgentScope assistant: Spring Boot backend + React SPA, runs on a single user's personal computer</description>
 
     <dependencyManagement>
@@ -73,7 +73,7 @@
             <artifactId>agentscope-extensions-channel-gitlab</artifactId>
         </dependency>
 
-        <!-- Git skill repository: claw delegates to GitSkillRepository for marketplace listing/fetch -->
+        <!-- Git skill repository: paw delegates to GitSkillRepository for marketplace listing/fetch -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-skill-git-repository</artifactId>

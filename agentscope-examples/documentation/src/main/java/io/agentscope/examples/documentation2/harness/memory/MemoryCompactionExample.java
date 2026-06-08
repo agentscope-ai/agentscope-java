@@ -33,9 +33,9 @@ import java.time.format.DateTimeFormatter;
  *
  * <p>What this example shows:
  * <ol>
- *   <li><b>Conversation compaction</b> — {@link CompactionConfig} with low thresholds
+ *   <li><b>Conversation compaction</b> — {@code CompactionConfig} with low thresholds
  *       ({@code triggerMessages=6, keepMessages=2}) so compaction fires after a few turns.</li>
- *   <li><b>Long-term memory flush</b> — {@link MemoryConfig} with {@code flushTrigger=ALWAYS}
+ *   <li><b>Long-term memory flush</b> — {@code MemoryConfig} with {@code flushTrigger=ALWAYS}
  *       so facts are extracted to {@code memory/YYYY-MM-DD.md} after each call.</li>
  *   <li><b>Observable state changes</b> — prints context size before and after compaction
  *       to show the summarization effect.</li>

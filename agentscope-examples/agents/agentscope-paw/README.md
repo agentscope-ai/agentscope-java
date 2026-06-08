@@ -1,10 +1,10 @@
-# agentscope-claw
+# agentscope-paw
 
 > 🇨🇳 中文版：[README_zh.md](README_zh.md)
 
 ## Overview
 
-claw is the Java port of [OpenClaw] — a personal assistant you install on your
+paw is the Java port of [OpenPaw] — a personal assistant you install on your
 own machine. It runs as you, on your filesystem and your shell, and it gets
 better over time: the skills it learns, the sub-agents it spawns, and the
 memory it keeps are all just files in a workspace it edits for itself.
@@ -14,15 +14,15 @@ box it talks to DingTalk, WeCom, Feishu/Lark, GitHub and GitLab, so you can
 ping it from a DM or @-mention it on an issue instead of opening yet another
 browser tab.
 
-claw deliberately doesn't try to be more than that. There's no login, no
+paw deliberately doesn't try to be more than that. There's no login, no
 multi-tenant isolation, no Docker sandbox, no horizontal scaling. If you need
-any of those — host claw-style agents for a team, or run untrusted code in
+any of those — host paw-style agents for a team, or run untrusted code in
 isolation — the sister projects [agentscope-builder](../agentscope-builder/)
 and [agentscope-dataagent](../agentscope-dataagent/) cover those use cases.
 
 ### At a glance
 
-| | claw |
+| | paw |
 |---|---|
 | **Use it when** | You want a personal assistant on your own laptop / workstation |
 | **Users** | One — the operator of the machine |
@@ -34,7 +34,7 @@ and [agentscope-dataagent](../agentscope-dataagent/) cover those use cases.
 
 ### Architecture
 
-claw is a thin Spring Boot shell around a **HarnessAgent** wired onto a
+paw is a thin Spring Boot shell around a **HarnessAgent** wired onto a
 `LocalFilesystemWithShell`. There is no auth layer, no sandbox, no remote
 store: every read, write, and shell command goes straight to the host OS.
 
@@ -56,7 +56,7 @@ store: every read, write, and shell command goes straight to the host OS.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-[OpenClaw]: https://github.com/agentscope-ai/openclaw
+[OpenPaw]: https://github.com/agentscope-ai/openpaw
 
 ---
 
@@ -66,22 +66,22 @@ Prerequisites:
 
 - JDK 17+
 - A model API key (DashScope by default). Set `DASHSCOPE_API_KEY` in your
-  environment, or pass it as `--claw.dashscope.api-key=…`.
+  environment, or pass it as `--paw.dashscope.api-key=…`.
 
 Build and run from the repo root:
 
 ```bash
-mvn -pl agentscope-examples/agents/agentscope-claw -am clean package -DskipTests
-java -jar agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar
+mvn -pl agentscope-examples/agents/agentscope-paw -am clean package -DskipTests
+java -jar agentscope-examples/agents/agentscope-paw/target/agentscope-paw-*.jar
 ```
 
 Then open <http://localhost:8080/>. The default home is `~/.agentscope`; set
-`CLAW_HOME` (or `--claw.home=…`) to override it. The first run auto-creates a
+`PAW_HOME` (or `--paw.home=…`) to override it. The first run auto-creates a
 `default` built-in agent if `agentscope.json` is missing.
 
 ## Directory layout
 
-All persistent state lives under `${claw.home}` (default `~/.agentscope`):
+All persistent state lives under `${paw.home}` (default `~/.agentscope`):
 
 ```
 ~/.agentscope/
@@ -148,7 +148,7 @@ Every channel entry under `channels` shares the same skeleton:
 > **not** expanded. Either paste the literal values, or render the file with
 > `envsubst < agentscope.json.template > agentscope.json` before launch.
 
-### Run agentscope-claw locally with DingTalk
+### Run agentscope-paw locally with DingTalk
 
 DingTalk Stream mode keeps the WebSocket open to the DingTalk gateway from your
 laptop — no public callback, no tunnel needed. This is the simplest setup for
@@ -175,7 +175,7 @@ local testing.
      "main": "default",
      "agents": {
        "default": {
-         "name": "claw",
+         "name": "paw",
          "sysPrompt": "You are a helpful local assistant."
        }
      },
@@ -198,14 +198,14 @@ local testing.
 
    ```bash
    export DASHSCOPE_API_KEY=sk-...
-   mvn -pl agentscope-examples/agents/agentscope-claw -am clean package -DskipTests
-   java -jar agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar
+   mvn -pl agentscope-examples/agents/agentscope-paw -am clean package -DskipTests
+   java -jar agentscope-examples/agents/agentscope-paw/target/agentscope-paw-*.jar
    ```
 
    Watch the startup log for:
 
    ```
-   ClawBootstrap initialized: ..., channels=[chatui, dingtalk-dev]
+   PawBootstrap initialized: ..., channels=[chatui, dingtalk-dev]
    DingTalk channel 'dingtalk-dev' started: appKey=..., robotCode=...
    DingTalk Stream connected: endpoint=wss://...
    ```
@@ -227,7 +227,7 @@ local testing.
        "channelId": "dingtalk-dev",
        "peerKind": "DIRECT",
        "peerId": "<staffId-or-unionId>",
-       "text": "hello from claw"
+       "text": "hello from paw"
      }'
 
    # Group message
@@ -247,7 +247,7 @@ local testing.
    'hello'"_ — the LLM will invoke the tool and the message will pop in
    DingTalk.
 
-### Run agentscope-claw locally with WeCom
+### Run agentscope-paw locally with WeCom
 
 WeCom uses an HTTP callback, so your laptop needs to be reachable from the
 public internet. Use a tunnel like ngrok or frpc.
@@ -291,7 +291,7 @@ public internet. Use a tunnel like ngrok or frpc.
    }
    ```
 
-4. **Launch claw**, then in the WeCom console click **保存** on the callback
+4. **Launch paw**, then in the WeCom console click **保存** on the callback
    page — WeCom hits `GET /api/channels/wecom/wecom-dev/callback?echostr=…` to
    verify; you should see a `WeCom URL verification ok` log line.
 
@@ -301,7 +301,7 @@ public internet. Use a tunnel like ngrok or frpc.
 6. **Test outbound**: same `POST /api/outbound/send` shape as DingTalk;
    `peerId` is a WeCom userid for DMs or a chatId for groups.
 
-### Run agentscope-claw locally with Feishu (Lark)
+### Run agentscope-paw locally with Feishu (Lark)
 
 Feishu uses HTTP event subscription, so your laptop needs a public HTTPS URL.
 Use a tunnel like ngrok or frpc.
@@ -348,7 +348,7 @@ Use a tunnel like ngrok or frpc.
 
    For Lark (international), use `"apiBase": "https://open.larksuite.com"`.
 
-4. **Launch claw**, then in the Feishu console click **保存并发布** on the
+4. **Launch paw**, then in the Feishu console click **保存并发布** on the
    event-callback page. Feishu posts a one-time `url_verification` challenge to
    your URL — you should see a `Feishu URL verification ok` log line.
 
@@ -367,14 +367,14 @@ Use a tunnel like ngrok or frpc.
        "channelId": "feishu-dev",
        "peerKind": "GROUP",
        "peerId": "<chat_id>",
-       "text": "hello from claw"
+       "text": "hello from paw"
      }'
    ```
 
    Feishu addresses both DMs and groups by `chat_id`; the inbound mapper
    captures it so replies land back on the same chat without any extra config.
 
-### Run agentscope-claw locally with GitHub
+### Run agentscope-paw locally with GitHub
 
 GitHub uses a webhook. The bot reacts to `issue_comment` and
 `pull_request_review_comment` events and replies as a new comment on the same
@@ -422,7 +422,7 @@ issue/PR.
    For GitHub Enterprise Server, set `apiBase` to your install (e.g.
    `https://github.acme.com/api/v3`).
 
-5. **Launch claw**. On startup the log prints the resolved bot login from
+5. **Launch paw**. On startup the log prints the resolved bot login from
    `GET /user`, which is used to filter self-authored comments (bot-loop
    protection).
 
@@ -445,7 +445,7 @@ issue/PR.
    GitHub addresses issues and PRs uniformly through the issues comments
    endpoint, so the same `peerId` shape works for both.
 
-### Run agentscope-claw locally with GitLab
+### Run agentscope-paw locally with GitLab
 
 GitLab uses a webhook. The bot reacts to **Note Hook** events on Issues and
 Merge Requests, and replies as a new note on the same thread. Self-hosted
@@ -492,7 +492,7 @@ GitLab works the same as gitlab.com.
    `https://gitlab.internal`). The adapter appends `/api/v4` automatically
    if it's not already in the URL.
 
-5. **Launch claw**. On startup the log prints the resolved bot username from
+5. **Launch paw**. On startup the log prints the resolved bot username from
    `GET /api/v4/user`, used to filter self-authored notes.
 
 6. **Test inbound**: leave a comment on an issue or MR → reply is posted as a
@@ -541,7 +541,7 @@ with no extra wiring.
 ### Troubleshooting
 
 - **No DingTalk/WeCom channels at startup** — confirm the log line
-  `ClawBootstrap initialized: ..., channels=[chatui, ...]` lists your
+  `PawBootstrap initialized: ..., channels=[chatui, ...]` lists your
   channelId. If only `chatui` shows, the entry was either skipped (missing
   `type`, unknown `type`, or `disabled: true`) or rejected by the factory
   (look for the `Failed to instantiate channel` error above it).
@@ -562,16 +562,16 @@ with no extra wiring.
 
 ## Configuration
 
-Recognised properties (all under `claw.*`, with matching `CLAW_*` env vars):
+Recognised properties (all under `paw.*`, with matching `PAW_*` env vars):
 
 | Property | Default | Description |
 | --- | --- | --- |
-| `claw.home` | `~/.agentscope` | Root directory for built-ins, custom catalog, agent workspaces. |
-| `claw.dashscope.api-key` | _empty_ | DashScope API key. When set, a `DashScopeChatModel` bean is created automatically. |
-| `claw.dashscope.model-name` | `qwen-max` | Model name passed to DashScope. |
-| `claw.dashscope.stream` | `true` | Whether to stream responses. |
-| `claw.agent.name` | `claw` | Display name for the auto-generated `default` agent. |
-| `claw.agent.sys-prompt` | `You are a helpful local assistant. …` | System prompt for the auto-generated `default` agent. |
+| `paw.home` | `~/.agentscope` | Root directory for built-ins, custom catalog, agent workspaces. |
+| `paw.dashscope.api-key` | _empty_ | DashScope API key. When set, a `DashScopeChatModel` bean is created automatically. |
+| `paw.dashscope.model-name` | `qwen-max` | Model name passed to DashScope. |
+| `paw.dashscope.stream` | `true` | Whether to stream responses. |
+| `paw.agent.name` | `paw` | Display name for the auto-generated `default` agent. |
+| `paw.agent.sys-prompt` | `You are a helpful local assistant. …` | System prompt for the auto-generated `default` agent. |
 | `server.port` | `8080` | HTTP port. |
 
 If you provide your own `Model` Spring bean (for example by importing another
@@ -579,7 +579,7 @@ If you provide your own `Model` Spring bean (for example by importing another
 
 ## What this fork is _not_
 
-agentscope-claw used to support multi-tenant deployment, JWT login, per-user
+agentscope-paw used to support multi-tenant deployment, JWT login, per-user
 workspace namespacing, Docker-sandbox isolation, and agent sharing. All of
 that has been removed. See [`builder.md`](builder.md) for the list of removed
 modules and the recommended way to recover any of it from git history.

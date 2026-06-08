@@ -1,8 +1,8 @@
-# agentscope-claw — local layout
+# agentscope-paw — local layout
 
-agentscope-claw is a single-user local assistant. Everything that used to be
+agentscope-paw is a single-user local assistant. Everything that used to be
 scoped per-user / per-tenant is now scoped to the machine that runs the JVM.
-All persistent state lives under `${claw.home}` (default `~/.agentscope`):
+All persistent state lives under `${paw.home}` (default `~/.agentscope`):
 
 ```
 ~/.agentscope/
