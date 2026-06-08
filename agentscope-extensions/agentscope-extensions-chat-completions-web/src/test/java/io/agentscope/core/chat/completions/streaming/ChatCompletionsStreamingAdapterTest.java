@@ -23,6 +23,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.chat.completions.model.ChatCompletionsChunk;
+import io.agentscope.core.chat.completions.model.ToolCall;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -496,6 +497,197 @@ class ChatCompletionsStreamingAdapterTest {
                                 // For streaming, empty arguments should be empty string, not "{}"
                                 // This allows clients to accumulate subsequent chunks correctly
                                 assertEquals("", args);
+                            })
+                    .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("Streaming Tool Call Deduplication Tests")
+    class StreamingToolCallDeduplicationTests {
+
+        /**
+         * Regression test for: stream=true mode sends partial tool call argument JSON fragments to
+         * external clients, causing OpenAI-compatible clients to accumulate invalid JSON (e.g.
+         * {@code {"url": "htt} concatenated with {@code {"url":"https://complete"}} = invalid).
+         *
+         * <p>The fix: when the agent streams LLM output, intermediate REASONING events
+         * (isLast=false) must NOT produce tool call chunks. Tool calls are emitted exactly once,
+         * with complete arguments, via the final REASONING event (isLast=true, from
+         * PostReasoningEvent).
+         *
+         * <p>We simulate this by giving {@link ChatCompletionsStreamingAdapter#stream} a mock model
+         * that:
+         *
+         * <ul>
+         *   <li>On the first call: returns two incremental chunks whose argument strings together
+         *       form a valid JSON object.
+         *   <li>On the second call: returns a plain text "Done" response so the agent stops
+         *       looping.
+         * </ul>
+         *
+         * <p>The streaming output must contain the tool call exactly once (from the first
+         * iteration's final REASONING event) with the fully assembled arguments.
+         */
+        @Test
+        @DisplayName(
+                "stream() must emit tool call exactly once with complete JSON arguments,"
+                        + " not duplicated or fragmented")
+        void streamShouldEmitToolCallOnceWithCompleteArguments() {
+            io.agentscope.core.model.ChatUsage usage =
+                    io.agentscope.core.model.ChatUsage.builder()
+                            .inputTokens(5)
+                            .outputTokens(10)
+                            .build();
+
+            // chunk-1: first LLM streaming delta – partial tool call arguments (not valid JSON
+            // alone)
+            ChatResponse chunk1 =
+                    ChatResponse.builder()
+                            .content(
+                                    List.of(
+                                            ToolUseBlock.builder()
+                                                    .id("call-stream-1")
+                                                    .name("get_feishu_doc")
+                                                    .content("{\"url\": \"https://example.com")
+                                                    .input(Map.of())
+                                                    .build()))
+                            .build();
+
+            // chunk-2: second LLM streaming delta – completes the argument JSON via a fragment
+            ChatResponse chunk2 =
+                    ChatResponse.builder()
+                            .content(
+                                    List.of(
+                                            ToolUseBlock.builder()
+                                                    .id("")
+                                                    .name("__fragment__")
+                                                    .content("/doc\"}")
+                                                    .input(Map.of())
+                                                    .build()))
+                            .usage(usage)
+                            .build();
+
+            // Second LLM call (after tool result): plain text, so agent stops
+            ChatResponse textResponse =
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("Done.").build()))
+                            .usage(usage)
+                            .build();
+
+            // Stateful mock: first invocation returns tool call chunks; subsequent calls return
+            // text
+            java.util.concurrent.atomic.AtomicInteger callCount =
+                    new java.util.concurrent.atomic.AtomicInteger(0);
+            Model mockModel =
+                    new Model() {
+                        @Override
+                        public Flux<ChatResponse> stream(
+                                List<Msg> messages,
+                                List<io.agentscope.core.model.ToolSchema> tools,
+                                io.agentscope.core.model.GenerateOptions options) {
+                            if (callCount.getAndIncrement() == 0) {
+                                return Flux.just(chunk1, chunk2);
+                            }
+                            return Flux.just(textResponse);
+                        }
+
+                        @Override
+                        public String getModelName() {
+                            return "test-model";
+                        }
+                    };
+
+            ReActAgent agent =
+                    ReActAgent.builder().name("test").sysPrompt("Test").model(mockModel).build();
+
+            Msg userMsg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("read the doc").build())
+                            .build();
+
+            List<ChatCompletionsChunk> allChunks =
+                    adapter.stream(agent, List.of(userMsg), "req-dup", "test-model")
+                            .collectList()
+                            .block(java.time.Duration.ofSeconds(5));
+
+            assertNotNull(allChunks);
+
+            // Collect all chunks that carry tool_calls
+            List<ChatCompletionsChunk> toolCallChunks =
+                    allChunks.stream()
+                            .filter(
+                                    c ->
+                                            c.getChoices() != null
+                                                    && !c.getChoices().isEmpty()
+                                                    && c.getChoices().get(0).getDelta() != null
+                                                    && c.getChoices()
+                                                                    .get(0)
+                                                                    .getDelta()
+                                                                    .getToolCalls()
+                                                            != null
+                                                    && !c.getChoices()
+                                                            .get(0)
+                                                            .getDelta()
+                                                            .getToolCalls()
+                                                            .isEmpty())
+                            .toList();
+
+            // Tool call must appear exactly ONCE (not duplicated from intermediate events)
+            assertEquals(
+                    1,
+                    toolCallChunks.size(),
+                    "Tool call should be emitted exactly once, not duplicated from intermediate"
+                            + " events. Got "
+                            + toolCallChunks.size()
+                            + " tool call chunks.");
+
+            // The single tool call chunk must carry complete, valid JSON arguments
+            ToolCall tc =
+                    toolCallChunks.get(0).getChoices().get(0).getDelta().getToolCalls().get(0);
+            assertEquals("call-stream-1", tc.getId());
+            assertEquals("get_feishu_doc", tc.getFunction().getName());
+            String args = tc.getFunction().getArguments();
+            assertNotNull(args);
+            // The accumulated JSON must be complete and include the full URL
+            assertTrue(
+                    args.contains("https://example.com/doc"),
+                    "Arguments should contain the complete URL, got: " + args);
+        }
+
+        @Test
+        @DisplayName("convertEventToChunks() on non-last event still emits tool calls (public API)")
+        void convertEventToChunksShouldEmitToolCallsRegardlessOfIsLast() {
+            ToolUseBlock toolUseBlock =
+                    ToolUseBlock.builder()
+                            .id("call-abc")
+                            .name("search")
+                            .content("{\"query\":\"test\"}")
+                            .input(Map.of("query", "test"))
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(toolUseBlock).build();
+            // Public convertEventToChunks() called directly (not via stream()) should still emit
+            // tool calls even for isLast=false events.
+            Event nonLastEvent = new Event(EventType.REASONING, msg, false);
+
+            Flux<ChatCompletionsChunk> result =
+                    adapter.convertEventToChunks(nonLastEvent, "req-2", "gpt-4");
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            chunk -> {
+                                assertNotNull(chunk.getChoices().get(0).getDelta().getToolCalls());
+                                assertEquals(
+                                        "search",
+                                        chunk.getChoices()
+                                                .get(0)
+                                                .getDelta()
+                                                .getToolCalls()
+                                                .get(0)
+                                                .getFunction()
+                                                .getName());
                             })
                     .verifyComplete();
         }
