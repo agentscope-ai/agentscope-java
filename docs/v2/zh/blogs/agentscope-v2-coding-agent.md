@@ -640,12 +640,13 @@ codingagent 自己埋了一组关键指标（前缀 `coding_agent.*`）：
 
 **5. 把 `description` 写好。** skill / subagent 的 description 决定模型用不用它。"代码评审"远不如"当用户要 review PR、找代码风格问题时使用"有效。
 
-**6. Plan Mode 不是必装，但大改之前应该手动 `enterPlanMode()`。** 程序化进出 plan：
+**6. Plan Mode 不是必装，但大改之前应该手动 `enterPlanMode(ctx)`。** 程序化进出 plan：
 
 ```java
-agent.enterPlanMode();
-agent.exitPlanMode();
-agent.isPlanModeActive();
+RuntimeContext ctx = RuntimeContext.builder().sessionId("my-session").build();
+agent.enterPlanMode(ctx);
+agent.exitPlanMode(ctx);
+agent.isPlanModeActive(ctx);
 ```
 
 **7. 一开始就规划好 `sessionId` 命名。** Coding Agent 的 `sessionId` 通常等于"对话所属的资源"——issue 号、PR 号、IM chat ID。codingagent 用 `ThreadIdFactory` 把这些异构 ID 通过 SHA-256 收敛成 UUID，既稳定又易于排查。这种确定性映射不要等系统跑起来才补。

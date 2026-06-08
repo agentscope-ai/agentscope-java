@@ -81,9 +81,10 @@ Plan Mode is **runtime state** and is auto-persisted along with `AgentState` —
 When app code drives Plan Mode (e.g. an admin console button):
 
 ```java
-agent.enterPlanMode();    // equivalent to the LLM calling plan_enter
-agent.exitPlanMode();     // equivalent to plan_exit; programmatic entry does NOT trigger HITL
-agent.isPlanModeActive();
+RuntimeContext ctx = RuntimeContext.builder().sessionId("my-session").build();
+agent.enterPlanMode(ctx);    // equivalent to the LLM calling plan_enter
+agent.exitPlanMode(ctx);     // equivalent to plan_exit; programmatic entry does NOT trigger HITL
+agent.isPlanModeActive(ctx);
 ```
 
 If you use `agentscope-admin-spring-boot-starter`, the admin HTTP API also exposes Plan Mode controls (`POST /v1/admin/sessions/{id}:enter-plan-mode` / `:exit-plan-mode` / `GET /v1/admin/sessions/{id}/plan`).
