@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Process-wide lookup table from {@code channelId} to {@link FeishuChannel}. Used by
  * {@link FeishuCallbackController} to dispatch URL-routed requests onto the correct channel,
  * mirroring the pattern in
- * {@link io.agentscope.extensions.channel.wecom.WeComChannelRegistry}.
+ * {@code WeComChannelRegistry}.
  */
 public final class FeishuChannelRegistry {
 

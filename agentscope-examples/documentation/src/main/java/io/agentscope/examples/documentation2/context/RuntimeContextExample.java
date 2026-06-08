@@ -35,7 +35,7 @@ import java.util.List;
  *
  * <p>{@link RuntimeContext} is a transient, per-call metadata bag — useful for
  * passing tenant ids, request ids, or anything else hooks and tools should see
- * during a single {@code call}. {@link AgentStateStore} + {@link io.agentscope.core.state.SessionKey}
+ * during a single {@code call}. {@link AgentStateStore}
  * configured on the builder turn the same agent into one that loads and saves
  * conversation context to disk automatically.
  */

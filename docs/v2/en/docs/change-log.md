@@ -54,7 +54,24 @@ Detail → [Context](harness/context.md)
 
 Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `ToolkitState` from `io.agentscope.core.state` will fail to compile. Detail → [Context](harness/context.md)
 
-#### A.4 `Msg` content validation is stricter (runtime exception)
+#### A.4 `PlanNotebook` removed — use `HarnessAgent.enablePlanMode()`
+
+The entire `io.agentscope.core.plan` package (`PlanNotebook`, `Plan`, `SubTask`, `PlanStorage`, `PlanToHint`, and related classes) has been removed with no deprecated bridge.
+
+**What changed**: `PlanNotebook` modeled plans as structured `Plan` + `SubTask` objects with a state machine (todo → in_progress → done → abandoned) and 8 tool functions. The v2 replacement is a fundamentally different design — plan mode is now a **read-only investigation phase** where the agent designs an approach in a plain markdown file before gaining write access.
+
+| v1 `PlanNotebook` | v2 Plan Mode |
+|---|---|
+| `ReActAgent.builder().planNotebook(PlanNotebook.builder().build())` | `HarnessAgent.builder().enablePlanMode()` |
+| Structured `Plan` + `SubTask` objects with state machine | Plain markdown file (`plans/PLAN.md`) |
+| 8 tools: `createPlan`, `reviseCurrentPlan`, `updateSubtaskState`, `finishSubtask`, `finishPlan`, `viewSubtasks`, `viewHistoricalPlans`, `recoverHistoricalPlan` | 3 tools: `plan_enter`, `plan_write`, `plan_exit` |
+| Plan and execution intermixed — no read-only restriction | Plan mode is read-only; `plan_exit` triggers HITL gate before the agent regains write access |
+| `PlanToHint` injected contextual hints per reasoning step | `PlanModeMiddleware` blocks mutating tools while in plan mode |
+| `PlanStorage` (in-memory) + `StateModule` persistence | Plan file written via `WorkspaceManager`; state in `AgentState.planModeContext` |
+
+**Subtask tracking**: if your v1 code relied on `PlanNotebook`'s subtask state tracking (breaking work into subtasks and checking them off during execution), the v2 equivalent is the **task list** — enable it with `.enableTaskList(true)` on the builder, which registers `TodoTools` and `TaskReminderMiddleware`.
+
+#### A.5 `Msg` content validation is stricter (runtime exception)
 
 `Msg` now validates `content` against `role` at construction time:
 
@@ -64,7 +81,7 @@ Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `T
 
 Combinations that v1 tolerated (for example, a `USER` message carrying a `ToolUseBlock`) now throw at construction. Use the role-pinned subclasses `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage` to make role/content compatibility obvious at the call site. Detail → [Message & Event](building-blocks/message-and-event.md)
 
-#### A.5 Agent is fully stateless (architecture change)
+#### A.6 Agent is fully stateless (architecture change)
 
 `ReActAgent` is now **fully stateless** — the instance itself holds no mutable "current session" state. All per-call mutable state (`AgentState`, `PermissionEngine`, event sink) is encapsulated in an internal `CallExecution` object and propagated through the call chain via Reactor Context. A single Agent instance can safely serve multiple `(userId, sessionId)` combinations concurrently without cross-session interference.
 

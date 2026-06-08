@@ -193,7 +193,7 @@ public abstract class AgentBase implements Agent {
 
     /**
      * Reactor Context key carrying the per-call scope object returned by {@link
-     * #currentCallScope()}. Agents that maintain per-call state (e.g. {@code ReActAgent}'s
+     * #beforeAgentExecution(List, RuntimeContext)}. Agents that maintain per-call state (e.g. {@code ReActAgent}'s
      * {@code CallExecution}) read it back from the Context in {@link #doCall} / {@link
      * #handleInterrupt} so concurrent calls on one instance never share mutable per-call state.
      */
@@ -689,7 +689,7 @@ public abstract class AgentBase implements Agent {
      * available to subsequent events ({@code PreReasoningEvent}, {@code PreSummaryEvent}).
      *
      * @param systemMsg the system message produced by all PreCall hooks (may be null)
-     * @param callScope the per-call scope captured at call entry (see {@link #currentCallScope()});
+     * @param callScope the per-call scope captured at call entry (see {@link #beforeAgentExecution(List, RuntimeContext)});
      *     may be {@code null}
      */
     protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {}

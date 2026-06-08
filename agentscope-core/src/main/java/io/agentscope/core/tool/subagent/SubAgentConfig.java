@@ -222,7 +222,7 @@ public class SubAgentConfig {
          * <p>To enable persistent conversations across process restarts, use a persistent session
          * implementation like {@link JsonFileAgentStateStore}.
          *
-         * @param session The session instance
+         * @param stateStore The state store instance
          * @return This builder
          */
         public Builder stateStore(AgentStateStore stateStore) {

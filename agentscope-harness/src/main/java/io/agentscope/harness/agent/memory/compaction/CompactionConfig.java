@@ -30,7 +30,7 @@ package io.agentscope.harness.agent.memory.compaction;
  *   <li>Summarization is enabled; memory flush and offload are both enabled before summary</li>
  * </ul>
  *
- * <h3>Memory prompt landscape</h3>
+ * <h2>Memory prompt landscape</h2>
  *
  * The harness has three LLM-driven memory operations, each with its own prompt; they live
  * in two complementary config classes:

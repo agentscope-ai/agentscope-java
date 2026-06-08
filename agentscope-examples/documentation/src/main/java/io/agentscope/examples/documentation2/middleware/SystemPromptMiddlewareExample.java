@@ -31,7 +31,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * SystemPromptMiddlewareExample - Demonstrates injecting dynamic content into the system prompt
- * by overriding {@link MiddlewareBase#onSystemPrompt(Agent, String)}.
+ * by overriding {@link MiddlewareBase#onSystemPrompt(Agent, RuntimeContext, String)}.
  *
  * <p>{@code onSystemPrompt} is called once per {@code agent.call()} before any messages are
  * sent to the model. Each middleware in the chain receives the output of the previous one, so

@@ -55,8 +55,9 @@ public class InMemoryMemory implements Memory {
      * The AgentStateStore implementation is responsible for incremental storage (e.g., JsonFileAgentStateStore appends
      * only new items based on file line count).
      *
-     * @param session the session to save state to
-     * @param sessionKey the session identifier
+     * @param stateStore the state store to save to
+     * @param userId the user identifier
+     * @param sessionId the session identifier
      */
     @Override
     public void saveTo(AgentStateStore stateStore, String userId, String sessionId) {

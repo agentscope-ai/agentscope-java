@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
  * <p>AgentStateStore IDs are ignored — all tasks share a single flat map. Only supports
  * {@link TaskRunSpec.LocalTaskRunSpec}; remote-protocol tasks throw {@code UnsupportedOperationException}.
  *
- * <p><b>Deprecated for production use.</b> {@link HarnessAgent} always constructs a workspace
+ * <p><b>Deprecated for production use.</b> {@link io.agentscope.harness.agent.HarnessAgent HarnessAgent} always constructs a workspace
  * (defaulting to {@code ${cwd}/.agentscope/workspace}) and now resolves the default task
  * repository to {@link WorkspaceTaskRepository}, which is a behavioral superset (handles both
  * local and remote specs, persists state across restarts, and supports cross-node visibility

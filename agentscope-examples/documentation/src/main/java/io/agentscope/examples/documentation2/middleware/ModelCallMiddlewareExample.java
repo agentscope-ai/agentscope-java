@@ -34,7 +34,7 @@ import reactor.core.publisher.Flux;
 
 /**
  * ModelCallMiddlewareExample - Demonstrates intercepting the model API call via
- * {@link MiddlewareBase#onModelCall(Agent, ModelCallInput, Function)}.
+ * {@link MiddlewareBase#onModelCall(Agent, RuntimeContext, ModelCallInput, Function)}.
  *
  * <p>{@code onModelCall} wraps every call to the underlying model (LLM), giving you access to
  * the raw request before it is sent and the raw event stream as it arrives. This is useful for:

@@ -111,7 +111,8 @@ public class JedisAgentStateStore implements AgentStateStore {
      *   <li>If nothing changes, the operation is skipped
      * </ul>
      *
-     * @param sessionKey the session identifier
+     * @param userId the user identifier
+     * @param sessionId the session identifier
      * @param key the state key (e.g., "memory_messages")
      * @param values the list of state values to save
      */

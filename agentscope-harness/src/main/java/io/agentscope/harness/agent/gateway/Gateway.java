@@ -82,7 +82,7 @@ public interface Gateway {
      * bypassing normal binding-based routing. Returns the subagent's reply.
      *
      * @param subagentId the handle returned by
-     *     {@link SubagentGatewayBridge.ExposeResult#threadId()}
+     *     {@link SubagentGatewayBridge.ExposeResult#subagentId()}
      * @param messages the messages to send to the subagent
      */
     default Mono<Msg> runSubagent(String subagentId, List<Msg> messages) {

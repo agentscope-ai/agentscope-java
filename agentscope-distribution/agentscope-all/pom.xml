@@ -378,6 +378,13 @@
                     <dependencySourceIncludes>
                         <dependencySourceInclude>io.agentscope:agentscope-*</dependencySourceInclude>
                     </dependencySourceIncludes>
+                    <additionalDependencies>
+                        <additionalDependency>
+                            <groupId>org.springframework</groupId>
+                            <artifactId>spring-webflux</artifactId>
+                            <version>7.0.7</version>
+                        </additionalDependency>
+                    </additionalDependencies>
                     <show>public</show>
                     <charset>UTF-8</charset>
                     <encoding>UTF-8</encoding>
