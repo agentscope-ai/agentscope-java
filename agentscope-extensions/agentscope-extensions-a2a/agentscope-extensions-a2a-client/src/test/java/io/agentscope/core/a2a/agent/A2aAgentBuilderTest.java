@@ -137,24 +137,6 @@ class A2aAgentBuilderTest {
     }
 
     @Test
-    @DisplayName("Should set checkRunning flag")
-    void testCheckRunning() throws Exception {
-        A2aAgent.Builder builder = A2aAgent.builder();
-        A2aAgent.Builder result = builder.checkRunning(false);
-
-        assertSame(builder, result);
-
-        // Build the agent and verify checkRunning field using reflection
-        A2aAgent agent =
-                builder.name("test-agent")
-                        .agentCardResolver(agentCardResolver)
-                        .a2aAgentConfig(a2aAgentConfig)
-                        .build();
-
-        assertEquals(false, getFieldValue(agent, "checkRunning", Boolean.class));
-    }
-
-    @Test
     @DisplayName("Should add hook")
     void testHook() throws Exception {
         A2aAgent.Builder builder = A2aAgent.builder();
@@ -213,7 +195,6 @@ class A2aAgentBuilderTest {
                         .agentCardResolver(agentCardResolver)
                         .a2aAgentConfig(a2aAgentConfig)
                         .memory(new InMemoryMemory())
-                        .checkRunning(true)
                         .hook(hook)
                         .hooks(inputHooks);
 
@@ -229,7 +210,6 @@ class A2aAgentBuilderTest {
                 getFieldValue(agent, "agentCardResolver", AgentCardResolver.class));
         assertEquals(a2aAgentConfig, getFieldValue(agent, "a2aAgentConfig", A2aAgentConfig.class));
         assertNotNull(getFieldValue(agent, "memory", Memory.class));
-        assertEquals(true, getFieldValue(agent, "checkRunning", Boolean.class));
 
         @SuppressWarnings("unchecked")
         List<Hook> hooks = getFieldValue(agent, "hooks", List.class);
