@@ -21,28 +21,36 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <artifactId>agentscope-extensions-state</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions</name>
-    <artifactId>agentscope-extensions</artifactId>
-    <packaging>pom</packaging>
+    <name>AgentScope Java - Extensions - Session MySQL</name>
+    <description>AgentScope Extensions - MySQL Session Storage</description>
+    <artifactId>agentscope-extensions-session-mysql</artifactId>
 
-    <modules>
-        <module>agentscope-spring-boot-starters</module>
-        <module>agentscope-extensions-protocol</module>
-        <module>agentscope-extensions-mem</module>
-        <module>agentscope-extensions-state</module>
-        <module>agentscope-extensions-oss</module>
-        <module>agentscope-extensions-rag</module>
-        <module>agentscope-extensions-higress</module>
-        <module>agentscope-extensions-nacos</module>
-        <module>agentscope-extensions-skills</module>
-        <module>agentscope-extensions-studio</module>
-        <module>agentscope-extensions-scheduler</module>
-        <module>agentscope-extensions-training</module>
-        <module>agentscope-extensions-channel</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <optional>true</optional>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- MySQL JDBC Driver -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+        </dependency>
+
+        <!-- In-memory database for E2E tests (run without a real MySQL instance in CI) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.4.240</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
+

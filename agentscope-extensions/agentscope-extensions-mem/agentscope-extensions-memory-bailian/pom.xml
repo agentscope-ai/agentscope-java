@@ -21,28 +21,28 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <artifactId>agentscope-extensions-mem</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions</name>
-    <artifactId>agentscope-extensions</artifactId>
-    <packaging>pom</packaging>
+    <name>AgentScope Java - Extensions - Bailian Long Term Memory</name>
+    <description>AgentScope Extensions - Bailian Long Term Memory</description>
+    <artifactId>agentscope-extensions-memory-bailian</artifactId>
 
-    <modules>
-        <module>agentscope-spring-boot-starters</module>
-        <module>agentscope-extensions-protocol</module>
-        <module>agentscope-extensions-mem</module>
-        <module>agentscope-extensions-state</module>
-        <module>agentscope-extensions-oss</module>
-        <module>agentscope-extensions-rag</module>
-        <module>agentscope-extensions-higress</module>
-        <module>agentscope-extensions-nacos</module>
-        <module>agentscope-extensions-skills</module>
-        <module>agentscope-extensions-studio</module>
-        <module>agentscope-extensions-scheduler</module>
-        <module>agentscope-extensions-training</module>
-        <module>agentscope-extensions-channel</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <optional>true</optional>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Mock Web Server -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver3</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
