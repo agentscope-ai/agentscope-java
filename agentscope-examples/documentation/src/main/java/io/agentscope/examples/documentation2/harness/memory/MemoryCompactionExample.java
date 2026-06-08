@@ -91,13 +91,13 @@ public class MemoryCompactionExample {
             System.out.printf("── Turn %d ──%n", i + 1);
             System.out.println("User: " + questions[i]);
 
-            AgentState stateBefore = agent.getAgentState();
+            AgentState stateBefore = agent.getDelegate().getAgentState(ctx);
             int sizeBefore = (stateBefore != null) ? stateBefore.getContext().size() : 0;
 
             Msg reply = agent.call(new UserMessage(questions[i]), ctx).block();
             System.out.println("Agent: " + (reply != null ? reply.getTextContent() : "(null)"));
 
-            AgentState stateAfter = agent.getAgentState();
+            AgentState stateAfter = agent.getDelegate().getAgentState(ctx);
             int sizeAfter = (stateAfter != null) ? stateAfter.getContext().size() : 0;
 
             System.out.printf("  context: %d → %d messages", sizeBefore, sizeAfter);

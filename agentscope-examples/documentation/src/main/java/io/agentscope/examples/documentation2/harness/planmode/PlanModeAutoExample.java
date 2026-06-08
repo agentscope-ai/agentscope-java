@@ -31,7 +31,7 @@ import java.nio.file.Path;
  *
  * <p>What this example shows:
  * <ol>
- *   <li><b>No programmatic entry</b> — the application does not call {@code enterPlanMode()}.
+ *   <li><b>No programmatic entry</b> — the application does not call {@code enterPlanMode(ctx)}.
  *       The agent sees {@code plan_enter} in its tool list and decides autonomously whether
  *       the task warrants planning.</li>
  *   <li><b>Full lifecycle</b> — the agent goes through: {@code plan_enter} (read-only) →
@@ -74,8 +74,8 @@ public class PlanModeAutoExample {
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("auto-plan").build();
 
-        System.out.println("Plan mode active before call: " + agent.isPlanModeActive());
-        System.out.println("No programmatic enterPlanMode() — the model decides on its own.\n");
+        System.out.println("Plan mode active before call: " + agent.isPlanModeActive(ctx));
+        System.out.println("No programmatic enterPlanMode(ctx) — the model decides on its own.\n");
 
         // ── Send a complex task — expect: plan_enter → plan_write → plan_exit → build ──
 
@@ -112,7 +112,7 @@ public class PlanModeAutoExample {
             }
         }
 
-        System.out.println("\nPlan mode active after run: " + agent.isPlanModeActive());
+        System.out.println("\nPlan mode active after run: " + agent.isPlanModeActive(ctx));
         System.out.println(
                 "(Expected: false — agent should have exited plan mode and entered build mode)");
 

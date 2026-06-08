@@ -4,7 +4,7 @@
 
 ## Overview
 
-paw is the Java port of [OpenPaw] — a personal assistant you install on your
+paw is the Java port of [QwenPaw] — a personal assistant you install on your
 own machine. It runs as you, on your filesystem and your shell, and it gets
 better over time: the skills it learns, the sub-agents it spawns, and the
 memory it keeps are all just files in a workspace it edits for itself.
@@ -56,7 +56,7 @@ store: every read, write, and shell command goes straight to the host OS.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-[OpenPaw]: https://github.com/agentscope-ai/openpaw
+[QwenPaw]: https://github.com/agentscope-ai/openpaw
 
 ---
 

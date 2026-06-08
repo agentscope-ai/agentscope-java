@@ -264,7 +264,7 @@ public class AgentSpawnTool {
         if (parentState != null
                 && parentState.getPlanModeContext().isPlanActive()
                 && agent instanceof HarnessAgent ha) {
-            ha.enterPlanMode();
+            ha.enterPlanMode(currentUserId, sessionId);
         }
 
         // Propagate DENY permission rules from parent to child (security boundary inheritance).

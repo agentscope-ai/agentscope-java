@@ -74,8 +74,7 @@ public class WorkspaceSharedStoreExample {
         System.out.println("Filesystem Mode 1 — Shared Store (multi-replica, multi-user)");
         System.out.println("=".repeat(60) + "\n");
 
-        String redisUrl =
-                System.getenv().getOrDefault("REDIS_URL", DEFAULT_REDIS_URL);
+        String redisUrl = System.getenv().getOrDefault("REDIS_URL", DEFAULT_REDIS_URL);
         System.out.println("Connecting to Redis: " + redisUrl + "\n");
 
         // Shared infrastructure backed by Redis.

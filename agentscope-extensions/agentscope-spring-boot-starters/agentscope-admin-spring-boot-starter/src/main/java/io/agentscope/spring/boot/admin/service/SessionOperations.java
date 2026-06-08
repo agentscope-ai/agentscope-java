@@ -305,11 +305,11 @@ public final class SessionOperations {
                             if (!(agent instanceof HarnessAgent harness)) {
                                 return Mono.error(planModeUnsupported(agent));
                             }
-                            AgentState state = harness.getAgentState();
+                            ReActAgent delegate = harness.getDelegate();
+                            AgentState state = delegate.getAgentState();
                             // Snapshot for undo BEFORE flipping the flag.
                             snapshots.push(state.getSessionId(), state.toJson());
-                            harness.enterPlanMode();
-                            ReActAgent delegate = harness.getDelegate();
+                            harness.enterPlanMode(null, state.getSessionId());
                             return persist(delegate, state)
                                     .thenReturn(
                                             PlanModeView.of(
@@ -327,10 +327,10 @@ public final class SessionOperations {
                             if (!(agent instanceof HarnessAgent harness)) {
                                 return Mono.error(planModeUnsupported(agent));
                             }
-                            AgentState state = harness.getAgentState();
-                            snapshots.push(state.getSessionId(), state.toJson());
-                            harness.exitPlanMode();
                             ReActAgent delegate = harness.getDelegate();
+                            AgentState state = delegate.getAgentState();
+                            snapshots.push(state.getSessionId(), state.toJson());
+                            harness.exitPlanMode(null, state.getSessionId());
                             return persist(delegate, state)
                                     .thenReturn(
                                             PlanModeView.of(

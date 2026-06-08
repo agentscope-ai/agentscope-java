@@ -26,19 +26,19 @@ import java.nio.file.Path;
 
 /**
  * PlanModeManualExample — Application-driven plan mode: the code calls
- * {@code agent.enterPlanMode()} to force the agent into the read-only plan phase before sending
+ * {@code agent.enterPlanMode(ctx)} to force the agent into the read-only plan phase before sending
  * the user message.
  *
  * <p>What this example shows:
  * <ol>
- *   <li><b>Programmatic entry</b> — {@code agent.enterPlanMode()} puts the agent into read-only
+ *   <li><b>Programmatic entry</b> — {@code agent.enterPlanMode(ctx)} puts the agent into read-only
  *       mode before it sees the task.</li>
  *   <li><b>Read-only restriction</b> — while in plan mode, only read-only tools and the plan
  *       tools ({@code plan_write}, {@code plan_exit}) are allowed.</li>
  *   <li><b>Plan file</b> — the agent writes its plan to {@code plans/PLAN.md}.</li>
  *   <li><b>HITL exit gate</b> — {@code plan_exit} triggers a permission ASK; the user confirms
  *       before the agent enters build mode.</li>
- *   <li><b>Programmatic exit</b> — {@code agent.exitPlanMode()} can also be used to
+ *   <li><b>Programmatic exit</b> — {@code agent.exitPlanMode(ctx)} can also be used to
  *       programmatically leave plan mode without HITL.</li>
  * </ol>
  *
@@ -75,8 +75,8 @@ public class PlanModeManualExample {
 
         // ── Force agent into plan mode before sending the task ──────────────
 
-        agent.enterPlanMode();
-        System.out.println("enterPlanMode() → active: " + agent.isPlanModeActive());
+        agent.enterPlanMode(ctx);
+        System.out.println("enterPlanMode(ctx) → active: " + agent.isPlanModeActive(ctx));
         System.out.println("Agent is now read-only before it sees the task.\n");
 
         // ── Send the task — agent plans in read-only mode ───────────────────
@@ -95,11 +95,11 @@ public class PlanModeManualExample {
 
         System.out.println("\n\n── Result ──\n");
         showPlanFile(workspace);
-        System.out.println("Plan mode active after run: " + agent.isPlanModeActive());
+        System.out.println("Plan mode active after run: " + agent.isPlanModeActive(ctx));
 
-        if (agent.isPlanModeActive()) {
-            agent.exitPlanMode();
-            System.out.println("exitPlanMode() called → active: " + agent.isPlanModeActive());
+        if (agent.isPlanModeActive(ctx)) {
+            agent.exitPlanMode(ctx);
+            System.out.println("exitPlanMode(ctx) called → active: " + agent.isPlanModeActive(ctx));
         }
 
         System.out.println("\nWorkspace: " + workspace);

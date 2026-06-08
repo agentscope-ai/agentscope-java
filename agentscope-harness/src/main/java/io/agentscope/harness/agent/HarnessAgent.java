@@ -276,38 +276,21 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
-     * Programmatically enters plan mode (read-only design phase). Persisted in {@link AgentState}
-     * so it survives restarts / hand-offs.
+     * Enters plan mode for the session identified by the given {@link RuntimeContext}.
+     * The change is persisted so the next {@code call} on that session sees it.
      */
-    public void enterPlanMode() {
-        AgentState s = getAgentState();
-        if (s == null) {
-            return;
-        }
-        if (planModeManager != null) {
-            planModeManager.enter(s);
-        } else {
-            s.getPlanModeContext().setPlanActive(true);
-        }
+    public void enterPlanMode(RuntimeContext ctx) {
+        enterPlanMode(ctx.getUserId(), ctx.getSessionId());
     }
 
-    /** Programmatically exits plan mode (back to BUILD). Persisted in {@link AgentState}. */
-    public void exitPlanMode() {
-        AgentState s = getAgentState();
-        if (s == null) {
-            return;
-        }
-        if (planModeManager != null) {
-            planModeManager.exit(s);
-        } else {
-            s.getPlanModeContext().setPlanActive(false);
-        }
+    /** Exits plan mode for the session identified by the given {@link RuntimeContext}. */
+    public void exitPlanMode(RuntimeContext ctx) {
+        exitPlanMode(ctx.getUserId(), ctx.getSessionId());
     }
 
-    /** @return whether plan mode is currently active for this agent. */
-    public boolean isPlanModeActive() {
-        AgentState s = getAgentState();
-        return s != null && s.getPlanModeContext().isPlanActive();
+    /** @return whether plan mode is active for the session identified by the given {@link RuntimeContext}. */
+    public boolean isPlanModeActive(RuntimeContext ctx) {
+        return isPlanModeActive(ctx.getUserId(), ctx.getSessionId());
     }
 
     /**
@@ -381,6 +364,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getDefaultSessionId();
     }
 
+    /**
+     * @deprecated Use {@link #getDelegate()}{@code .getAgentState(RuntimeContext)} or
+     *     {@code .getAgentState(String, String)} with explicit session identity.
+     */
+    @Deprecated
     @Override
     public AgentState getAgentState() {
         return delegate.getAgentState();
