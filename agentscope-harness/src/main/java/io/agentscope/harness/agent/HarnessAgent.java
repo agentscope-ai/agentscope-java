@@ -82,7 +82,7 @@ import io.agentscope.harness.agent.skill.curator.SkillPromoter;
 import io.agentscope.harness.agent.skill.curator.SkillPromotionGate;
 import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
-import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.FilesystemTool;

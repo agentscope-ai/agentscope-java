@@ -13,38 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.store.jdbc;
+package io.agentscope.harness.agent.filesystem.remote.store.jdbc;
 
-/**
- * H2 dialect for {@link JdbcStore}.
- *
- * <p>Uses the PostgreSQL-compatible {@code ON CONFLICT ... DO UPDATE} syntax, supported by H2
- * 2.x. Earlier H2 versions require the legacy {@code MERGE INTO} syntax and are not supported.
- */
-public class H2JdbcStoreDialect implements JdbcStoreDialect {
+/** MySQL / MariaDB dialect for {@link JdbcStore}. */
+public class MysqlJdbcStoreDialect implements JdbcStoreDialect {
 
     @Override
     public String getCreateTableSql() {
         return "CREATE TABLE IF NOT EXISTS %s ("
-                + "  namespace_path VARCHAR(2048) NOT NULL,"
-                + "  item_key       VARCHAR(255)  NOT NULL,"
-                + "  value_json     CLOB          NOT NULL,"
+                + "  namespace_path VARCHAR(768)  NOT NULL,"
+                + "  item_key       VARCHAR(190)  NOT NULL,"
+                + "  value_json     LONGTEXT      NOT NULL,"
                 + "  version        BIGINT        NOT NULL,"
                 + "  updated_at     BIGINT        NOT NULL,"
                 + "  PRIMARY KEY (namespace_path, item_key)"
-                + ")";
+                + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
     }
 
     @Override
     public String getUpsertSql() {
-        return "MERGE INTO %s AS t USING (VALUES (?, ?, ?, ?)) AS s(np, ik, vj, ts)"
-                + " ON t.namespace_path = s.np AND t.item_key = s.ik"
-                + " WHEN MATCHED THEN UPDATE SET"
-                + "   value_json = s.vj,"
-                + "   version    = t.version + 1,"
-                + "   updated_at = s.ts"
-                + " WHEN NOT MATCHED THEN INSERT (namespace_path, item_key, value_json, version,"
-                + " updated_at) VALUES (s.np, s.ik, s.vj, 1, s.ts)";
+        return "INSERT INTO %s (namespace_path, item_key, value_json, version, updated_at)"
+                + " VALUES (?, ?, ?, 1, ?)"
+                + " ON DUPLICATE KEY UPDATE"
+                + "   value_json = VALUES(value_json),"
+                + "   version    = version + 1,"
+                + "   updated_at = VALUES(updated_at)";
     }
 
     @Override

@@ -33,6 +33,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -50,7 +52,7 @@ import org.springframework.stereotype.Service;
  * <p>All paths live under the {@code activity/} prefix because the harness composite filesystem
  * (see {@link io.agentscope.builder.web.config.BuilderConfig}) registers {@code activity/} as an
  * additional shared prefix via {@code RemoteFilesystemSpec.addSharedPrefix("activity/")}. Writes
- * therefore land on the shared {@link io.agentscope.harness.agent.store.BaseStore} (visible across
+ * therefore land on the shared {@link BaseStore} (visible across
  * pods) rather than on per-pod local disk — critical for a multi-tenant deployment.
  *
  * <p>Writes go through the per-agent {@link HarnessAgent#workspaceFor(String, String)} view, which

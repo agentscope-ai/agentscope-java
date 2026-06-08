@@ -30,7 +30,7 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
-import io.agentscope.harness.agent.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;

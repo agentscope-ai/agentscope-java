@@ -13,31 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.store.jdbc;
+package io.agentscope.harness.agent.filesystem.remote.store.jdbc;
 
-/** MySQL / MariaDB dialect for {@link JdbcStore}. */
-public class MysqlJdbcStoreDialect implements JdbcStoreDialect {
+/** PostgreSQL dialect for {@link JdbcStore}. */
+public class PostgresJdbcStoreDialect implements JdbcStoreDialect {
 
     @Override
     public String getCreateTableSql() {
         return "CREATE TABLE IF NOT EXISTS %s ("
-                + "  namespace_path VARCHAR(768)  NOT NULL,"
-                + "  item_key       VARCHAR(190)  NOT NULL,"
-                + "  value_json     LONGTEXT      NOT NULL,"
+                + "  namespace_path VARCHAR(2048) NOT NULL,"
+                + "  item_key       VARCHAR(255)  NOT NULL,"
+                + "  value_json     TEXT          NOT NULL,"
                 + "  version        BIGINT        NOT NULL,"
                 + "  updated_at     BIGINT        NOT NULL,"
                 + "  PRIMARY KEY (namespace_path, item_key)"
-                + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+                + ")";
     }
 
     @Override
     public String getUpsertSql() {
         return "INSERT INTO %s (namespace_path, item_key, value_json, version, updated_at)"
                 + " VALUES (?, ?, ?, 1, ?)"
-                + " ON DUPLICATE KEY UPDATE"
-                + "   value_json = VALUES(value_json),"
-                + "   version    = version + 1,"
-                + "   updated_at = VALUES(updated_at)";
+                + " ON CONFLICT (namespace_path, item_key) DO UPDATE SET"
+                + "   value_json = EXCLUDED.value_json,"
+                + "   version    = %1$s.version + 1,"
+                + "   updated_at = EXCLUDED.updated_at";
     }
 
     @Override

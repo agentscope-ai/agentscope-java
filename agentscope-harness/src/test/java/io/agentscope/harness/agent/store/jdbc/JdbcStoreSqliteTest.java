@@ -23,13 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.harness.agent.store.StoreItem;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
+
+import io.agentscope.harness.agent.filesystem.remote.store.jdbc.JdbcStore;
+import io.agentscope.harness.agent.filesystem.remote.store.jdbc.JdbcStoreDialect;
+import io.agentscope.harness.agent.filesystem.remote.store.jdbc.SqliteJdbcStoreDialect;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

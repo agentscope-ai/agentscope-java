@@ -21,8 +21,10 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.RedisStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -33,7 +35,7 @@ import java.nio.file.Path;
  * <p>What this example shows:
  * <ol>
  *   <li><b>{@link RemoteFilesystemSpec}</b> — routes memory, sessions, skills, and subagent
- *       data through a shared {@link io.agentscope.harness.agent.store.BaseStore}.</li>
+ *       data through a shared {@link BaseStore}.</li>
  *   <li><b>{@link IsolationScope}</b> — {@code USER} scope means each user's memory and
  *       sessions live in an isolated namespace; {@code AGENT} scope shares everything.</li>
  *   <li><b>Multi-replica simulation</b> — two agent instances backed by the same store
@@ -42,7 +44,7 @@ import java.nio.file.Path;
  *
  * <p><b>Prerequisites:</b> Only a DashScope API key. This example uses
  * {@link InMemoryStore} to simulate the shared store without external services. In production,
- * replace with {@link io.agentscope.harness.agent.store.RedisStore} for real cross-node sharing.
+ * replace with {@link RedisStore} for real cross-node sharing.
  *
  * <p><b>Production deployment (Redis):</b>
  * <pre>

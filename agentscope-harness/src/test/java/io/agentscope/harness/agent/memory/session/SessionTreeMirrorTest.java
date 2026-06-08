@@ -22,7 +22,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

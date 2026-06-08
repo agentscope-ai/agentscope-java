@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.store.jdbc;
+package io.agentscope.harness.agent.filesystem.remote.store.jdbc;
 
 /**
  * SQLite dialect for {@link JdbcStore}. Requires SQLite 3.24 or newer for {@code ON CONFLICT

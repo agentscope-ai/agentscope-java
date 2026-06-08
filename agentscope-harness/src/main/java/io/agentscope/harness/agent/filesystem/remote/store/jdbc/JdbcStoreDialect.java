@@ -13,11 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.store.jdbc;
+package io.agentscope.harness.agent.filesystem.remote.store.jdbc;
 
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
 import javax.sql.DataSource;
+
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,10 +34,10 @@ import org.slf4j.LoggerFactory;
  *       {@code JdbcStore.Builder#initializeSchema(true)} is set.
  *   <li>{@link #getUpsertSql} — unconditional write that increments {@code version} on update.
  *   <li>{@link #getInsertSql} — create-only insert, used by the
- *       {@link io.agentscope.harness.agent.store.BaseStore#putIfVersion} CAS path when
+ *       {@link BaseStore#putIfVersion} CAS path when
  *       {@code expectedVersion == 0}; primary-key conflicts indicate the row already exists.
  *   <li>{@link #getCasUpdateSql} — conditional update used by the
- *       {@link io.agentscope.harness.agent.store.BaseStore#putIfVersion} CAS path when
+ *       {@link BaseStore#putIfVersion} CAS path when
  *       {@code expectedVersion > 0}; relies on {@code WHERE version = ?} returning zero rows on
  *       mismatch.
  * </ul>
@@ -121,7 +124,7 @@ public interface JdbcStoreDialect {
      *
      * <p>The default uses {@code ESCAPE '!'} (universal across MySQL, PostgreSQL, SQLite, H2 and
      * avoids the backslash-vs-{@code standard_conforming_strings} pitfalls) and
-     * {@code ORDER BY item_key} to match {@link io.agentscope.harness.agent.store.InMemoryStore}'s
+     * {@code ORDER BY item_key} to match {@link InMemoryStore}'s
      * sort behavior. The {@code item_key} sort approximates the in-memory implementation's
      * compound-key sort closely enough for paging.
      */

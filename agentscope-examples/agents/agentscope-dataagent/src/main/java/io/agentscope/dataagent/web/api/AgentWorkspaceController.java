@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -771,7 +772,7 @@ public class AgentWorkspaceController {
     /**
      * Computes the summary via the composite filesystem so that user-isolated routed content
      * (MEMORY.md, memory/, sessions/, skills/, subagents/) is correctly reflected — disk-only
-     * probes would miss everything stored in the {@link io.agentscope.harness.agent.store.BaseStore}.
+     * probes would miss everything stored in the {@link BaseStore}.
      */
     private WorkspaceSummary summarize(String agentId, WorkspaceContext ctx) {
         AbstractFilesystem fs = ctx.manager().getFilesystem();

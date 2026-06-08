@@ -20,7 +20,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.MsgContext;
-import io.agentscope.harness.agent.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.coding.middleware.MessageQueueMiddleware;
 import io.agentscope.harness.coding.observability.CodingAgentMetrics;
 import io.micrometer.core.instrument.Timer;

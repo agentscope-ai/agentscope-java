@@ -28,6 +28,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import org.junit.jupiter.api.Test;
 
 /**

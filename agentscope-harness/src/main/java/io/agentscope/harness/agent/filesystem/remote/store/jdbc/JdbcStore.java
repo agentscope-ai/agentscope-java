@@ -13,12 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.store.jdbc;
+package io.agentscope.harness.agent.filesystem.remote.store.jdbc;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.agent.store.StoreItem;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -56,7 +57,7 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Namespace encoding</h2>
  *
- * <p>To preserve the prefix-search behaviour of {@link io.agentscope.harness.agent.store.InMemoryStore},
+ * <p>To preserve the prefix-search behaviour of {@link InMemoryStore},
  * the namespace components are joined with the ASCII unit-separator {@code 0x1F} and stored with a
  * trailing separator. Searching by namespace {@code [a, b]} translates into
  * {@code WHERE namespace_path LIKE 'ab%' ESCAPE '!'}, which matches both that exact

@@ -26,6 +26,7 @@ import io.agentscope.dataagent.web.catalog.AgentCatalogService;
 import io.agentscope.dataagent.web.session.SessionReadStateStore;
 import io.agentscope.dataagent.web.session.SessionTurnParser;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -294,7 +295,7 @@ public class SessionController {
      *
      * <p>Reads go through the per-agent {@link WorkspaceManager}'s composite filesystem (which is
      * what the harness writes through), so multi-tenant deployments backed by the shared
-     * {@link io.agentscope.harness.agent.store.BaseStore} stay correct. Falls back to
+     * {@link BaseStore} stay correct. Falls back to
      * {@link SessionAgentManager#history} only if the WorkspaceManager cannot be resolved
      * (e.g. the agent has been unloaded).
      */
