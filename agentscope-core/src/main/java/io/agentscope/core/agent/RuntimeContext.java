@@ -219,6 +219,7 @@ public class RuntimeContext {
             return cached;
         }
 
+        // Benign race: rebuilding the same live-view wrapper is idempotent, so first-writer wins.
         ToolExecutionContext.Builder b = ToolExecutionContext.builder();
         b.addStore(new DefaultMutableContextStore(this));
         if (toolExecutionContext != null) {
