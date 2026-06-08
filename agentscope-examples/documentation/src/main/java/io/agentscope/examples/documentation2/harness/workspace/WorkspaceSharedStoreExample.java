@@ -18,45 +18,44 @@ package io.agentscope.examples.documentation2.harness.workspace;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.redis.RedisAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.RedisStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import redis.clients.jedis.JedisPooled;
 
 /**
  * WorkspaceSharedStoreExample — Filesystem mode 1 (shared store): multiple replicas share the
- * same long-term memory via a KV store. No shell available in this mode.
+ * same long-term memory via a KV store backed by Redis.
  *
  * <p>What this example shows:
  * <ol>
  *   <li><b>{@link RemoteFilesystemSpec}</b> — routes memory, sessions, skills, and subagent
- *       data through a shared {@link BaseStore}.</li>
+ *       data through a shared {@link BaseStore} (Redis-backed).</li>
  *   <li><b>{@link IsolationScope}</b> — {@code USER} scope means each user's memory and
  *       sessions live in an isolated namespace; {@code AGENT} scope shares everything.</li>
- *   <li><b>Multi-replica simulation</b> — two agent instances backed by the same store
+ *   <li><b>Multi-replica simulation</b> — two agent instances backed by the same Redis store
  *       demonstrate cross-replica memory continuity.</li>
  * </ol>
  *
- * <p><b>Prerequisites:</b> Only a DashScope API key. This example uses
- * {@link InMemoryStore} to simulate the shared store without external services. In production,
- * replace with {@link RedisStore} for real cross-node sharing.
+ * <p><b>Prerequisites:</b>
+ * <ul>
+ *   <li>A running Redis instance (default: {@code localhost:6379}).</li>
+ *   <li>DashScope API key set as {@code DASHSCOPE_API_KEY}.</li>
+ * </ul>
  *
- * <p><b>Production deployment (Redis):</b>
+ * <p>To start Redis quickly with Docker:
  * <pre>
- *   // 1. Add dependency: agentscope-extensions-session-redis
- *   // 2. Replace InMemoryStore with RedisStore:
- *   RedisStore redisStore = RedisStore.builder()
- *       .jedisPool(new JedisPool("redis://redis.prod:6379"))
- *       .build();
- *   // 3. Replace InMemoryAgentStateStore with RedisAgentStateStore:
- *   RedisAgentStateStore stateStore = RedisAgentStateStore.builder()
- *       .jedisClient(new JedisPool("redis://redis.prod:6379"))
- *       .build();
+ *   docker run -d --name redis -p 6379:6379 redis:7
+ * </pre>
+ *
+ * <p>To override the Redis URL, set the {@code REDIS_URL} environment variable:
+ * <pre>
+ *   export REDIS_URL=redis://your-redis-host:6379
  * </pre>
  *
  * <p><b>Run:</b>
@@ -68,14 +67,28 @@ import java.nio.file.Path;
  */
 public class WorkspaceSharedStoreExample {
 
+    private static final String DEFAULT_REDIS_URL = "redis://localhost:6379";
+
     public static void main(String[] args) throws Exception {
         System.out.println("\n" + "=".repeat(60));
         System.out.println("Filesystem Mode 1 — Shared Store (multi-replica, multi-user)");
         System.out.println("=".repeat(60) + "\n");
 
-        // Shared infrastructure — in production, these would be Redis-backed.
-        InMemoryStore sharedStore = new InMemoryStore();
-        InMemoryAgentStateStore sharedStateStore = new InMemoryAgentStateStore();
+        String redisUrl =
+                System.getenv().getOrDefault("REDIS_URL", DEFAULT_REDIS_URL);
+        System.out.println("Connecting to Redis: " + redisUrl + "\n");
+
+        // Shared infrastructure backed by Redis.
+        // Both RedisStore (file store) and RedisAgentStateStore (agent state) share the
+        // same Jedis connection, using different key prefixes to avoid collisions.
+        JedisPooled jedis = new JedisPooled(java.net.URI.create(redisUrl));
+
+        RedisStore sharedStore = new RedisStore(jedis, "agentscope:example:store:");
+        RedisAgentStateStore sharedStateStore =
+                RedisAgentStateStore.builder()
+                        .jedisClient(jedis)
+                        .keyPrefix("agentscope:example:session:")
+                        .build();
 
         Path workspace = Files.createTempDirectory("agentscope-shared-store-example");
 
@@ -127,7 +140,7 @@ public class WorkspaceSharedStoreExample {
                         .block();
         System.out.println("Replica-1 reply: " + (r2 != null ? r2.getTextContent() : "(null)"));
 
-        // ── Build "replica 2" — same store, same state store ────────────────
+        // ── Build "replica 2" — same Redis store, same state store ──────────
 
         HarnessAgent replica2 =
                 HarnessAgent.builder()

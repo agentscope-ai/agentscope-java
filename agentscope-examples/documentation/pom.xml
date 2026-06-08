@@ -128,6 +128,12 @@
             <artifactId>agentscope-extensions-studio</artifactId>
         </dependency>
 
+        <!-- Redis State Store (for distributed shared-store examples) -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-session-redis</artifactId>
+        </dependency>
+
         <!-- PostgreSQL Driver for PgVectorStore -->
         <dependency>
             <groupId>org.postgresql</groupId>
