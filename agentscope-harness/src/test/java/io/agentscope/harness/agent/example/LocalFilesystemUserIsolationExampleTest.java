@@ -338,7 +338,7 @@ class LocalFilesystemUserIsolationExampleTest {
     /**
      * Verifies that no un-namespaced duplicate user data appears at workspace root.
      *
-     * <p>Phase 0 cleanup: the default {@code AgentStateStore} is now {@code JsonFileAgentStateStore} rooted at
+     * <p>The default {@code AgentStateStore} is now {@code JsonFileAgentStateStore} rooted at
      * {@code ~/.agentscope/state/<agentId>/}, so {@code agent_state.json} no longer lives inside
      * the workspace. The only legitimate file under {@code workspace/agents/} is:
      *
@@ -395,7 +395,7 @@ class LocalFilesystemUserIsolationExampleTest {
         }
 
         // If agents/ exists at the root, it must only contain the orphan-sweep marker.
-        // Phase 0: agent_state.json no longer lives inside the workspace (moved to
+        // agent_state.json no longer lives inside the workspace (moved to
         // ~/.agentscope/state/<agentId>/), so any other file under agents/ is a regression.
         Path rootAgents = workspace.resolve("agents");
         if (Files.isDirectory(rootAgents)) {

@@ -129,7 +129,7 @@ import reactor.core.publisher.Mono;
  *   <li>Workspace-based context loading (AGENTS.md, MEMORY.md, KNOWLEDGE.md)</li>
  *   <li>Pluggable file-system backend (local, sandbox, remote/composite)</li>
  *   <li>Subagent orchestration via {@code task} / {@code task_output} tools (sync + background)</li>
- *   <li>Skill loading via {@link AgentSkillRepository}, including the M1–M7 self-learning loop</li>
+ *   <li>Skill loading via {@link AgentSkillRepository}, including the self-learning loop</li>
  *   <li>Memory flush + message offload before context compression</li>
  *   <li>Workspace-managed {@code tools.json} (MCP servers + allow/deny filter)</li>
  *   <li>Plan mode (read-only design phase) with {@code plan_enter}/{@code plan_write}/{@code plan_exit} tools</li>
@@ -154,7 +154,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SandboxLifecycleMiddleware sandboxLifecycleMw;
     private final List<AgentSkillRepository> skillRepositories;
     private final PlanModeManager planModeManager;
-    // Skill self-learning (M4/M5/M7) — null unless enableSkillManageTool / enableSkillCurator.
+    // Skill self-learning — null unless enableSkillManageTool / enableSkillCurator.
     private final SkillPromoter skillPromoter;
     private final SkillUsageStore skillUsageStore;
     private final SkillCurator skillCurator;
@@ -232,7 +232,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return skillRepositories;
     }
 
-    /** Access to the sidecar telemetry store (M2/M4). Null when {@code enableSkillManageTool}
+    /** Access to the sidecar telemetry store. Null when {@code enableSkillManageTool}
      * was not configured. */
     public SkillUsageStore getSkillUsageStore() {
         return skillUsageStore;
@@ -1520,8 +1520,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
-         * Configures the runtime promotion gate + visibility filter chain (M4 of skill
-         * self-learning loop).
+         * Configures the runtime promotion gate + visibility filter chain.
          */
         public Builder enableSkillPromotionGate(
                 SkillPromotionGate gate, SkillVisibilityFilter visibilityFilter) {
@@ -1536,7 +1535,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Enables the background skill curator (M5). Requires {@link #enableSkillManageTool}. */
+        /** Enables the background skill curator. Requires {@link #enableSkillManageTool}. */
         public Builder enableSkillCurator(SkillCuratorConfig config) {
             this.skillCuratorEnabled = true;
             this.skillCuratorConfig = config != null ? config : SkillCuratorConfig.defaults();
@@ -1901,7 +1900,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     HarnessAgentBuilderSupport.composeSkillRepositories(
                             this, wsManager, filesystem, currentRcSupplier);
 
-            // ---- Skill self-learning M1: writable workspace skills + skill_manage tool ----
+            // ---- Skill self-learning: writable workspace skills + skill_manage tool ----
             SkillPromoter pendingSkillPromoter = null;
             SkillUsageStore pendingSkillUsageStore = null;
             SkillCurator pendingSkillCurator = null;

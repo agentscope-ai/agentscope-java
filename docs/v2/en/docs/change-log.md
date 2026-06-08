@@ -26,6 +26,7 @@ Items in this section are removed, renamed, or have their semantics tightened. C
 |---|---|
 | `.memory(Memory)` | `.stateStore(AgentStateStore)` — `AgentState.getContext()` holds the conversation; the configured `AgentStateStore` saves/loads automatically on every `call()`, keyed by the call's `(userId, sessionId)` from `RuntimeContext` |
 | `.statePersistence(StatePersistence)` | Same — `AgentStateStore` subsumes persistence |
+| `.structuredOutputReminder(StructuredOutputReminder)` | No longer needed — structured output is now handled natively at the model layer (`Model.supportsNativeStructuredOutput()`); the framework automatically selects native JSON schema or falls back to tool-choice |
 
 Detail → [Context](harness/context.md)
 
@@ -36,6 +37,8 @@ Detail → [Context](harness/context.md)
 | `io.agentscope.core.session.SessionManager` | Configure `.stateStore(AgentStateStore)` on the agent builder; persistence happens automatically per `(userId, sessionId)` |
 | `io.agentscope.core.pipeline.*` — `Pipeline`, `Pipelines`, `SequentialPipeline`, `FanoutPipeline`, `MsgHub` | Compose middleware + sub-agents + the event stream for multi-agent orchestration. See the subagent guide → [Subagent](harness/subagent.md) |
 | `io.agentscope.core.model.tts.*` (14 files, DashScope TTS / Realtime TTS / `AudioPlayer`, etc.) | Core no longer ships TTS. Integrate the upstream provider SDK directly if you need TTS |
+| `io.agentscope.core.model.StructuredOutputReminder` | No longer needed — structured output is handled natively at the model layer |
+| `io.agentscope.core.agent.StructuredOutputCapableAgent` | Removed — structured output capability is inlined into `ReActAgent` with native model-layer support |
 | `io.agentscope.core.hook.PendingToolRecoveryHook` | Use `Builder.enablePendingToolRecovery(boolean)` |
 | `io.agentscope.core.hook.TTSHook` | Removed alongside the TTS module |
 
@@ -60,6 +63,21 @@ Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `T
 - `ASSISTANT` — unrestricted
 
 Combinations that v1 tolerated (for example, a `USER` message carrying a `ToolUseBlock`) now throw at construction. Use the role-pinned subclasses `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage` to make role/content compatibility obvious at the call site. Detail → [Message & Event](building-blocks/message-and-event.md)
+
+#### A.5 Agent is fully stateless (architecture change)
+
+`ReActAgent` is now **fully stateless** — the instance itself holds no mutable "current session" state. All per-call mutable state (`AgentState`, `PermissionEngine`, event sink) is encapsulated in an internal `CallExecution` object and propagated through the call chain via Reactor Context. A single Agent instance can safely serve multiple `(userId, sessionId)` combinations concurrently without cross-session interference.
+
+**v1 → v2 impact**:
+
+| Removed | Replacement |
+|---|---|
+| `ReActAgent.getCurrentSessionId()` | Supplied via `RuntimeContext.getSessionId()` at `call()` time |
+| `ReActAgent.getCurrentUserId()` | Supplied via `RuntimeContext.getUserId()` at `call()` time |
+| `AgentBase(name, desc, checkRunning, hooks)` constructor | Use `AgentBase(name, desc, hooks)` — `checkRunning` is no longer needed; concurrency is guaranteed by per-session serialization |
+| `ReActAgent.getState()` | `ReActAgent.getAgentState()` or `getAgentState(userId, sessionId)` |
+
+`isCheckRunning()` is still callable (returns `false`) and `Builder.checkRunning(boolean)` is still callable (ignored) — both are `@Deprecated`.
 
 ---
 
@@ -197,7 +215,7 @@ Detail → [Workspace](harness/workspace.md)
 - `.enableTaskList(...)` / `.enableTaskList(boolean)` — enable the built-in `TodoTools`
 - `.permissionContext(PermissionContextState)` — preload permission rules
 - `ReActAgent.Builder.fromAgent(ReActAgent)` — derive a new builder from an existing agent's observable configuration (name, description, system prompt, model, maxIters, generateOptions, toolkit)
-- `HarnessAgent.Builder.fromAgent(ReActAgent)` — ReActAgent → HarnessAgent migration helper. Inherits the same 7 fields as `ReActAgent.Builder.fromAgent` plus **every other observable configuration on ReActAgent**: `session` / `sessionKey`, `ModelConfig` (`maxRetries` / `fallbackModel`), `ReactConfig.stopOnReject`, `modelExecutionConfig` / `toolExecutionConfig` / `toolExecutionContext`, `structuredOutputReminder`, `enablePendingToolRecovery`, `checkRunning`, `permissionContext`, `middlewares`, and `hooks`. The only flags not copied are `enableMetaTool` / `enableTaskList` — these are builder-time toolkit-mutation flags, and the toolkit copy already carries the tools they registered. Harness-only config (workspace / filesystem / subagents / skills / plan mode / `disable*` toggles) still has to be set explicitly. See javadoc for the full table.
-- **6 new getters on ReActAgent / parents to support the above migration**: `getModelExecutionConfig()` / `getToolExecutionConfig()` / `getToolExecutionContext()` / `isPendingToolRecoveryEnabled()` / `getPermissionContext()` (on `ReActAgent`); `getStructuredOutputReminder()` (on `StructuredOutputCapableAgent`); `isCheckRunning()` (on `AgentBase`).
+- `HarnessAgent.Builder.fromAgent(ReActAgent)` — ReActAgent → HarnessAgent migration helper. Inherits the same 7 fields as `ReActAgent.Builder.fromAgent` plus **every other observable configuration on ReActAgent**: `stateStore` / `defaultSessionId`, `ModelConfig` (`maxRetries` / `fallbackModel`), `ReactConfig.stopOnReject`, `modelExecutionConfig` / `toolExecutionConfig` / `toolExecutionContext`, `enablePendingToolRecovery`, `checkRunning`, `permissionContext`, `middlewares`, and `hooks`. The only flags not copied are `enableMetaTool` / `enableTaskList` — these are builder-time toolkit-mutation flags, and the toolkit copy already carries the tools they registered. Harness-only config (workspace / filesystem / subagents / skills / plan mode / `disable*` toggles) still has to be set explicitly. See javadoc for the full table.
+- **New getters on ReActAgent / parents to support the above migration**: `getModelExecutionConfig()` / `getToolExecutionConfig()` / `getToolExecutionContext()` / `isPendingToolRecoveryEnabled()` / `getPermissionContext()` (on `ReActAgent`); `isCheckRunning()` (on `AgentBase`, deprecated, always returns `false`).
 
 Detail → [Agent](building-blocks/agent.md)

@@ -152,8 +152,8 @@ class BailianKnowledgeE2ETest {
         assertNotNull(toolkit);
         assertTrue(toolkit.getToolNames().size() > 0);
 
-        // Call the tool directly (pass null for agent since we're calling directly)
-        String result = tools.retrieveKnowledge("测试查询", 3, null);
+        // Call the tool directly (pass null for agent/ctx since we're calling directly)
+        String result = tools.retrieveKnowledge("测试查询", 3, null, null);
 
         assertNotNull(result);
         log.info("Tool result: {}", result);

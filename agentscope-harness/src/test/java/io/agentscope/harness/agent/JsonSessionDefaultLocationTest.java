@@ -42,7 +42,7 @@ import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 /**
- * Phase 0 regression: the default {@code HarnessAgent} {@code AgentStateStore} is now {@link
+ * Regression test: the default {@code HarnessAgent} {@code AgentStateStore} is now {@link
  * io.agentscope.core.state.JsonFileAgentStateStore} rooted at {@code ~/.agentscope/state/<agentId>/}, NOT
  * a workspace-scoped session.
  *
@@ -159,7 +159,7 @@ class JsonSessionDefaultLocationTest {
 
     @Test
     void defaultSession_independentOfWorkspaceLifecycle() throws Exception {
-        // The motivation for Phase 0: state is a PREREQUISITE for restoring the workspace,
+        // State is a PREREQUISITE for restoring the workspace,
         // so it must outlive a workspace wipe. Simulate by writing state, then deleting the
         // workspace directory, and verifying state files survive.
         Files.createDirectories(workspace);

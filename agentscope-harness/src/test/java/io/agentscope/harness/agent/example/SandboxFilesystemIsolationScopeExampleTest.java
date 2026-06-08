@@ -69,7 +69,7 @@ class SandboxFilesystemIsolationScopeExampleTest {
 
     @TempDir Path workspace;
 
-    // Phase 0 isolation: each @Test gets a fresh JsonFileAgentStateStore root, preventing
+    // Each @Test gets a fresh JsonFileAgentStateStore root, preventing
     // sandbox state for shared agent names ("assistant") from leaking between cases via the
     // surefire-shared target/test-state-home directory.
     @TempDir Path stateHome;

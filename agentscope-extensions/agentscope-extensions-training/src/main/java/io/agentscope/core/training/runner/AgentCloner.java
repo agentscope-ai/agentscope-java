@@ -20,7 +20,6 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.Field;
@@ -74,8 +73,6 @@ public class AgentCloner {
             Integer maxIters = extractField(original, "maxIters");
             ExecutionConfig modelExecutionConfig = extractField(original, "modelExecutionConfig");
             ExecutionConfig toolExecutionConfig = extractField(original, "toolExecutionConfig");
-            StructuredOutputReminder structuredOutputReminder =
-                    extractField(original, "structuredOutputReminder");
             ToolExecutionContext toolExecutionContext =
                     extractField(original, "toolExecutionContext");
 
@@ -99,9 +96,6 @@ public class AgentCloner {
             }
             if (toolExecutionConfig != null) {
                 builder.toolExecutionConfig(toolExecutionConfig);
-            }
-            if (structuredOutputReminder != null) {
-                builder.structuredOutputReminder(structuredOutputReminder);
             }
             if (toolExecutionContext != null) {
                 builder.toolExecutionContext(toolExecutionContext);

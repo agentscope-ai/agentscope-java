@@ -46,7 +46,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-/** Phase 1: per-(userId, sessionId) state access / persistence API on {@link ReActAgent}. */
+/** Per-(userId, sessionId) state access / persistence API on {@link ReActAgent}. */
 @DisplayName("ReActAgent per-session state API")
 class ReActAgentPerSessionStateTest {
 
