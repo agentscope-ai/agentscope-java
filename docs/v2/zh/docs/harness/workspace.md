@@ -17,7 +17,7 @@ description: "HarnessAgent 的设计基石：目录布局、加载机制、跨 f
 |------|------|------|------|
 | **静态资产**（工程师编辑） | 你 / 团队 | 框架每轮注入 system prompt 或调用时按需读 | `AGENTS.md`、`knowledge/`、`skills/`、`subagents/`、`tools.json` |
 | **运行时状态**（每次 call 写回） | 框架 / agent | 框架下次 call 时还原 | `agents/<agentId>/sessions/`、`agents/<agentId>/tasks/`、`plans/`（序列化的 `AgentState` 本身存在 `AgentStateStore`，默认 `~/.agentscope/state/<agentId>/`，在工作区之外） |
-| **长期记忆**（跨 session 累积） | agent + 后台任务 | 框架每轮注入 system prompt + agent 用工具查询 | `MEMORY.md`、`memory/YYYY-MM-DD.md` |
+| **长期记忆**（跨会话累积） | agent + 后台任务 | 框架每轮注入 system prompt + agent 用工具查询 | `MEMORY.md`、`memory/YYYY-MM-DD.md` |
 
 混在一棵树里只是为了部署方便（一个目录拷贝走就是完整 agent），框架内部走不同的读写路径。
 
@@ -92,7 +92,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
-| `disableSessionPersistence()` | Session 自动持久化 |
+| `disableSessionPersistence()` | AgentState 自动持久化 |
 
 ## 工作区内容如何被加载
 

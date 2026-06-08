@@ -268,122 +268,66 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());
 
 ## 子 Agent 流式
 
-> 新代码请优先用 `streamEvents()`（返回 `Flux<io.agentscope.core.event.AgentEvent>`，与 Python 2.0 的 `agent.reply_stream()` 对齐的细粒度事件体系）。返回 `Flux<Event>` 的旧 `stream()` 系列在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](../building-blocks/message-and-event.md) 与 [Changelog B.4](../change-log.md)。本节讲 `HarnessAgent` 在两套 API 下的子 agent 事件转发行为。
+> 新代码请用 `streamEvents()`（返回 `Flux<AgentEvent>`）。旧 `stream()` 系列（`Flux<Event>`）在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](../building-blocks/message-and-event.md) 与 [Changelog B.4](../change-log.md)。
 
-### 怎么选
+父 agent 通过 `agent_spawn` / `agent_send` 同步调用子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段（`/` 分隔的路径，如 `"main/researcher"`），父事件的 `source` 为 `null`。
 
-| 场景 | 推荐 |
-|------|------|
-| 只关心父 agent 自身事件（文本增量、工具调用、生命周期） | **`streamEvents()`**（`Flux<AgentEvent>`） |
-| **需要实时拿到子 agent 事件**（带 `EventSource` 的子流转发） | `stream()`（`Flux<Event>`）—— 目前唯一通道 |
+```
+caller
+  └─ parent.streamEvents(msg, ctx)
+        │
+        ├─ AGENT_START                            ← 父 agent 启动
+        ├─ TEXT_BLOCK_DELTA …                     ← 父推理
+        ├─ TOOL_CALL_START "agent_spawn"
+        │
+        │  [子 agent 创建]
+        ├─ AGENT_START          (source="main/researcher")  ← 子启动
+        ├─ TEXT_BLOCK_DELTA …   (source="main/researcher")  ← 子推理
+        ├─ TOOL_CALL_START …    (source="main/researcher")
+        ├─ TOOL_RESULT_END …   (source="main/researcher")
+        ├─ AGENT_END            (source="main/researcher")  ← 子结束
+        │  [agent_spawn 返回，子结果作为 TOOL_RESULT 传给父]
+        │
+        ├─ TOOL_RESULT_END                        ← 父收到工具结果
+        ├─ TEXT_BLOCK_DELTA …                     ← 父第二轮推理
+        └─ AGENT_END                              ← 父结束
+```
 
-`AgentEvent` 体系尚未提供与 `EventSource` 等价的子 agent 来源通道（在 v2 roadmap 上）。在通道落地前，需要实时子 agent 事件的调用方必须沿用已弃用的 `stream()`；只关心父事件的调用方今天就应该切到 `streamEvents()`。
-
-### 父 agent 事件 —— `streamEvents()`（推荐）
+### 使用 `streamEvents()`（推荐）
 
 ```java
-import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.AgentEventType;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-
 parent.streamEvents(new UserMessage(message), ctx)
     .doOnNext(event -> {
-        // event 是 io.agentscope.core.event.AgentEvent 的具体子类
+        String src = event.getSource();
+        String prefix = (src != null) ? "[" + src + "] " : "";
+
         if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
-            System.out.print(((TextBlockDeltaEvent) event).getDelta());
+            System.out.print(prefix + ((TextBlockDeltaEvent) event).getDelta());
         } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-            ToolCallStartEvent start = (ToolCallStartEvent) event;
-            System.out.println("\n[tool] " + start.getToolName());
+            System.out.println(prefix + "[tool] " + ((ToolCallStartEvent) event).getToolName());
+        } else if (event.getType() == AgentEventType.AGENT_START) {
+            if (src != null) System.out.println("── 子 agent 启动: " + src);
+        } else if (event.getType() == AgentEventType.AGENT_END) {
+            if (src != null) System.out.println("── 子 agent 结束: " + src);
         }
-        // 其他生命周期事件：AgentStartEvent / AgentEndEvent,
-        // ModelCallStart/End、ToolResultStart/End、RequireUserConfirmEvent 等
     })
     .blockLast();
 ```
 
-这条路径**不会**转发子 agent 事件 —— 通过 `agent_spawn` / `agent_send` spawn 出的子 agent 会静默运行完，最终结果以 `TOOL_RESULT` 块的形式回给父 agent。
-
-### 子 agent 转发 —— `stream()`（已弃用，但目前唯一通道）
-
-当你用 `parent.stream()` 调用主 agent，主 agent 在推理过程中又通过 `agent_spawn` / `agent_send` 调用子 agent，**子 agent 产生的所有中间事件会被实时注入到父的事件流里**。每个事件带一个 `EventSource` 字段，告诉你这个事件来自父还是哪个子 agent。
-
-```
-caller
-  └─ parent.stream()                          ← @Deprecated(forRemoval=true)，但目前唯一
-        │                                       能实时拿到子 agent 事件的入口
-        ├─ parent 的 REASONING 块...          ← 父推理第一轮（含工具调用）
-        │
-        │  [agent_spawn "researcher" 开始]
-        ├─ child 的 REASONING 块...           ← 子推理（实时转发，带 EventSource）
-        ├─ child 的 TOOL_RESULT...
-        ├─ child 的 AGENT_RESULT (last)       ← 子最终回复（实时转发）
-        │  [agent_spawn 返回，子结果作为 TOOL_RESULT 传给父]
-        │
-        ├─ parent 的 TOOL_RESULT...
-        ├─ parent 的 REASONING 块...          ← 父第二轮
-        └─ parent 的 AGENT_RESULT (last)       ← 父最终回复
-```
-
-父 agent 自身事件 `source == null`；子 agent 事件 `source != null`。
-
-#### 区分事件来源
+区分父子事件：
 
 ```java
-// 注意：stream(...) 已经是 @Deprecated(forRemoval=true)。这里保留只是因为它目前是
-// 唯一能实时拿到子 agent 事件的 API。等 AgentEvent 上的子 agent 来源通道落地后，
-// 请迁到 streamEvents(...)。
-Flux<Event> events = parent.stream(msgs, StreamOptions.defaults(), ctx);
+// 只看父事件
+events.filter(e -> e.getSource() == null).subscribe(…);
 
-events.subscribe(event -> {
-    EventSource src = event.getSource();
-    if (src == null) {
-        // 父 agent 自身
-        System.out.printf("[parent][%s] %s%n",
-                event.getType(), event.getMessage().getTextContent());
-    } else {
-        // 子（或孙）agent
-        System.out.printf("[%s|depth=%d|path=%s][%s] %s%n",
-                src.getAgentId(), src.getDepth(), src.getPath(),
-                event.getType(), event.getMessage().getTextContent());
-    }
-});
-```
+// 只看子事件
+events.filter(e -> e.getSource() != null).subscribe(…);
 
-`EventSource` 里常用的字段：
-
-| 字段 | 含义 |
-|------|------|
-| `agentId` | 子 agent 的类型 id（`subagents/<id>.md` 的文件名） |
-| `agentKey` | 运行时实例句柄，可以传给 `agent_send` |
-| `agentName` | 显示名（可空） |
-| `sessionId` | 子 agent 当次调用的会话 id |
-| `parentSessionId` | 父 agent 的会话 id |
-| `depth` | 嵌套深度（父直接子 = 1，孙 = 2，依此类推） |
-| `path` | `/` 分隔的调用路径，多级嵌套自动叠加，如 `sess-001/planner/executor` |
-
-### 多级嵌套（孙 agent）
-
-子 agent 自己也可以 spawn 孙 agent（受 3 层硬上限保护）。孙 agent 的事件会逐级冒泡到父；按 `depth` 或 `path` 过滤即可定位任意层级：
-
-```java
-// 只取第一层子 agent 的 REASONING
-events.filter(e -> e.getSource() != null
-               && e.getSource().getDepth() == 1
-               && e.getType() == EventType.REASONING)
-      .subscribe(...);
-
-// 只取路径包含 "executor" 的事件（任意深度）
-events.filter(e -> e.getSource() != null
-               && e.getSource().getPath().contains("executor"))
-      .subscribe(...);
+// 只看特定子 agent 的事件
+events.filter(e -> e.getSource() != null && e.getSource().contains("researcher")).subscribe(…);
 ```
 
 ### SSE 转发
-
-按客户端的需求挑 API：
-
-**只转父 agent 事件**（大多数对话 UI 推荐这条）：
 
 ```java
 @GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -395,6 +339,9 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
                 Map<String, Object> payload = new LinkedHashMap<>();
                 payload.put("type", event.getType().name());
                 payload.put("id",   event.getId());
+                if (event.getSource() != null) {
+                    payload.put("source", event.getSource());
+                }
                 if (event instanceof TextBlockDeltaEvent delta) {
                     payload.put("delta", delta.getDelta());
                 } else if (event instanceof ToolCallStartEvent start) {
@@ -407,43 +354,14 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 }
 ```
 
-**需要把子 agent 事件也转给前端**（只能用已弃用的 `stream()`，直到 `AgentEvent` 子来源通道落地）：
-
-```java
-@GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
-                                          @RequestParam String sessionId) {
-    RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
-    return agent.stream( // @Deprecated(forRemoval=true)，见上文说明
-                    List.of(new UserMessage(message)),
-                    StreamOptions.defaults(), ctx)
-            .map(event -> {
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("type", event.getType());
-                payload.put("text", event.getMessage().getTextContent());
-                payload.put("last", event.isLast());
-                if (event.getSource() != null) {
-                    payload.put("agentId", event.getSource().getAgentId());
-                    payload.put("depth",   event.getSource().getDepth());
-                    payload.put("path",    event.getSource().getPath());
-                }
-                return ServerSentEvent.<String>builder()
-                        .data(objectMapper.writeValueAsString(payload))
-                        .build();
-            });
-}
-```
-
 ### 行为边界
 
 | 场景 | 是否实时流转发？ |
 |------|-----------------|
-| `stream()`（已弃用） + 同步本地子 agent（`timeout_seconds > 0`） | ✔ |
-| `streamEvents()`（推荐）—— 任意子 agent | ✗（仅父 agent 事件；`AgentEvent` 子来源通道是 roadmap 项） |
+| `streamEvents()` + 同步本地子 agent（`timeout_seconds > 0`） | ✔ |
 | `call()` 模式（非流式） | ✗（子结果以 `tool_result` 字符串返回） |
 | `timeout_seconds = 0` 后台任务 | ✗（终态会通过反向通知给父 agent 下一轮） |
 | 远程子 agent（Agent Protocol） | ✗ |
-| 多级嵌套（孙 agent），`stream()` 路径 | ✔（自动叠 `path` / `depth`） |
 
 ### 错误处理
 

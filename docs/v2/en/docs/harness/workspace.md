@@ -92,7 +92,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
-| `disableSessionPersistence()` | session auto-persistence |
+| `disableSessionPersistence()` | AgentState auto-persistence |
 
 ## How workspace content gets loaded
 
@@ -136,7 +136,7 @@ This pattern earns its keep in **shared-store mode**: the first replica starts w
 
 `RuntimeContext.userId` is the multi-user key — it lets one agent instance serve many users without crosstalk.
 
-For **runtime data** (sessions / tasks / memory), the framework prefixes paths via the configured `NamespaceFactory` (local-mode → path prefix, remote-mode → KV namespace, sandbox-mode → state slot). Details in the next section, "How session and memory are stored".
+For **runtime data** (sessions / tasks / memory), the framework prefixes paths via the configured `NamespaceFactory` (local-mode → path prefix, remote-mode → KV namespace, sandbox-mode → state slot). Details in the next section, "How state and memory are stored".
 
 For **static assets** (notably `skills/` and `subagents/`), a per-user directory **overrides** the workspace-shared version:
 
@@ -207,7 +207,7 @@ HarnessAgent agent = HarnessAgent.builder()
 - **Path safety**: default `ROOTED` mode — absolute paths are only allowed under the `workspace` and `project` (shell `cwd`) roots; `..` traversal is rejected by the path policy.
 - **Best practice**: single process / local dev / unit tests / trusted env. Do **not** run untrusted code here in production — `execute` is host `sh -c`.
 
-## How session and memory are stored
+## How state and memory are stored
 
 Both of these are "runtime / long-term" content — you don't hand-edit them. Their physical location is tied to the filesystem mode.
 
