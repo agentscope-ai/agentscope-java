@@ -25,6 +25,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -139,6 +140,31 @@ class DataPartParserTest {
         assertEquals("calculator", toolResultBlock.getName());
         assertEquals("123", toolResultBlock.getId());
         assertEquals(outputList, toolResultBlock.getOutput());
+    }
+
+    @Test
+    @DisplayName("Should parse ToolResultBlock with deserialized map list output")
+    void testParseToolResultBlockWithDeserializedMapListOutput() {
+        Map<String, Object> serializedTextBlock = new LinkedHashMap<>();
+        serializedTextBlock.put("type", "text");
+        serializedTextBlock.put("text", "test output");
+
+        Map<String, Object> metadata =
+                Map.of(
+                        "_agentscope_block_type", "tool_result",
+                        "_agentscope_tool_name", "calculator",
+                        "_agentscope_tool_call_id", "123");
+        Map<String, Object> data = Map.of("_agentscope_tool_output", List.of(serializedTextBlock));
+        DataPart part = new DataPart(data, metadata);
+
+        ContentBlock result = parser.parse(part);
+
+        assertNotNull(result);
+        assertEquals(ToolResultBlock.class, result.getClass());
+        ToolResultBlock toolResultBlock = (ToolResultBlock) result;
+        ContentBlock outputBlock = toolResultBlock.getOutput().get(0);
+        assertEquals(TextBlock.class, outputBlock.getClass());
+        assertEquals("test output", ((TextBlock) outputBlock).getText());
     }
 
     @Test

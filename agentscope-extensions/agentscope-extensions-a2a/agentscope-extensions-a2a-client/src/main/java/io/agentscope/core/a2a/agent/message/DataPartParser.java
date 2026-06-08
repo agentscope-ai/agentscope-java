@@ -22,6 +22,8 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -86,14 +88,23 @@ public class DataPartParser implements PartParser<DataPart> {
             // Adapter Python Agentscope ToolResultBlock define, python tool result output spec is
             // `str | List[TextBlock | ImageBlock | AudioBlock | VideoBlock]`
             builder.output(TextBlock.builder().text(output.toString()).build());
-        } else if (output instanceof List) {
-            @SuppressWarnings("unchecked")
-            List<ContentBlock> outputList = (List<ContentBlock>) output;
-            builder.output(outputList);
+        } else if (output instanceof List<?> outputList) {
+            List<ContentBlock> contentBlocks = new ArrayList<>(outputList.size());
+            for (Object outputItem : outputList) {
+                contentBlocks.add(parseToContentBlock(outputItem));
+            }
+            builder.output(contentBlocks);
         } else {
             builder.output(List.of());
         }
         return builder.build();
+    }
+
+    private ContentBlock parseToContentBlock(Object output) {
+        if (output instanceof ContentBlock contentBlock) {
+            return contentBlock;
+        }
+        return JsonUtils.getJsonCodec().convertValue(output, ContentBlock.class);
     }
 
     private String getToolCallId(DataPart part) {
