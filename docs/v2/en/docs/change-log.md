@@ -236,3 +236,19 @@ Detail → [Workspace](harness/workspace.md)
 - **New getters on ReActAgent / parents to support the above migration**: `getModelExecutionConfig()` / `getToolExecutionConfig()` / `getToolExecutionContext()` / `isPendingToolRecoveryEnabled()` / `getPermissionContext()` (on `ReActAgent`); `isCheckRunning()` (on `AgentBase`, deprecated, always returns `false`).
 
 Detail → [Agent](building-blocks/agent.md)
+
+### Dedicated model for Memory / Compaction
+
+`MemoryConfig` and `CompactionConfig` gain `.model(Model)` / `.model(String)` builder methods, allowing a dedicated (typically lighter/cheaper) model for memory flush, consolidation, and context compaction operations independent of the agent's primary reasoning model. When not set, the agent's primary model is used (preserving existing behavior).
+
+```java
+HarnessAgent.builder()
+    .model("openai:o3")
+    .memory(MemoryConfig.builder()
+        .model("openai:gpt-4.1-mini")
+        .build())
+    .compaction(CompactionConfig.builder()
+        .model("openai:gpt-4.1-mini")
+        .build())
+    .build();
+```

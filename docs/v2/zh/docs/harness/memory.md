@@ -26,7 +26,7 @@ description: "双层长期记忆、对话压缩、大工具结果卸载，prompt
 | 2 | **Consolidation** —— 把每日流水账合并到 `MEMORY.md` | `MEMORY.md`（整体重写） | `MemoryConsolidator.DEFAULT_CONSOLIDATION_PROMPT` | `MemoryConfig.builder().consolidationPrompt(...)` |
 | 3 | **Compaction summary** —— 把对话前缀蒸馏成一条摘要消息 | 注入到当前上下文 | `CompactionConfig.DEFAULT_SUMMARY_PROMPT` | `CompactionConfig.builder().summaryPrompt(...)` |
 
-前两个是"沉淀长期记忆"，由 `MemoryConfig` 管；第三个是"压缩当下上下文"，由 `CompactionConfig` 管。
+前两个是"沉淀长期记忆"，由 `MemoryConfig` 管；第三个是"压缩当下上下文"，由 `CompactionConfig` 管。三处 LLM 调用默认共享 agent 主模型，但 `MemoryConfig` 和 `CompactionConfig` 各自支持 `.model(...)` 覆盖，允许用更轻量的模型执行这些辅助操作。
 
 ## 两层记忆是怎么工作的
 
@@ -85,6 +85,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
 | `offloadBeforeCompact` | `true` | 压缩前先把原始消息存一份永不压缩的日志 |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
+| `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
 
 **上下文溢出自动恢复**：模型真的返回 `context_length_exceeded` 等错误时，框架会强制做一轮压缩然后重试一次——前提是你配了 `compaction(...)`，否则错误直接抛回上层。
 
@@ -174,10 +175,29 @@ HarnessAgent.builder()
     .build())
 ```
 
+### 例 6：用小模型跑记忆操作
+
+flush 和 consolidation 不需要主推理模型那么强，用更便宜的模型省成本：
+
+```java
+HarnessAgent.builder()
+    .model("openai:o3")                   // 主推理模型
+    .memory(MemoryConfig.builder()
+        .model("openai:gpt-4.1-mini")     // 记忆操作用小模型
+        .build())
+    .compaction(CompactionConfig.builder()
+        .model("openai:gpt-4.1-mini")     // 压缩摘要也用小模型
+        .build())
+    .build();
+```
+
+`model(String)` 走 `ModelRegistry.resolve()`，也可以传 `Model` 实例。不设则 fallback 到 agent 主模型。
+
 ### `MemoryConfig` 字段速查
 
 | 字段 | 默认 | 作用 |
 |------|------|------|
+| `model` | `null`（使用 agent 主模型） | flush / consolidation 使用的独立模型；支持 `Model` 实例或 `"provider:model"` 字符串 |
 | `flushPrompt` | `null`（使用 `DEFAULT_FLUSH_PROMPT`） | 路径 1 的 SYSTEM prompt |
 | `consolidationPrompt` | `null`（使用 `DEFAULT_CONSOLIDATION_PROMPT`） | 路径 2 的 prompt 模板（必须含两个 `%d`） |
 | `consolidationMaxTokens` | `4_000` | `MEMORY.md` token 上限 |

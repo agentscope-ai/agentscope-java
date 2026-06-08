@@ -236,3 +236,19 @@ agent.streamEvents(new UserMessage("Hello"))
 - **ReActAgent 新增 getter 以支撑上述迁移**：`getModelExecutionConfig()` / `getToolExecutionConfig()` / `getToolExecutionContext()` / `isPendingToolRecoveryEnabled()` / `getPermissionContext()`（位于 `ReActAgent`）；`isCheckRunning()`（位于 `AgentBase`，已弃用，始终返回 `false`）
 
 详见 → [智能体](building-blocks/agent.md)
+
+### Memory / Compaction 独立模型
+
+`MemoryConfig` 和 `CompactionConfig` 新增 `.model(Model)` / `.model(String)` builder 方法，允许为记忆提取（flush）、记忆整理（consolidation）和上下文压缩（compaction）指定独立于 agent 主模型的轻量模型。不设则 fallback 到 agent 主模型（保持原行为）。
+
+```java
+HarnessAgent.builder()
+    .model("openai:o3")
+    .memory(MemoryConfig.builder()
+        .model("openai:gpt-4.1-mini")
+        .build())
+    .compaction(CompactionConfig.builder()
+        .model("openai:gpt-4.1-mini")
+        .build())
+    .build();
+```

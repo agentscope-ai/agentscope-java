@@ -35,7 +35,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-默认摘要 prompt 会把内容组织成 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四个小节,适合工程/编排类 agent。完整字段表(`triggerTokens`、`keepTokens`、`flushBeforeCompact`、`offloadBeforeCompact`、`TruncateArgsConfig`)与摘要 prompt 模板在[记忆](./memory#开启压缩)文档里有详细列表,这里不重复。
+默认摘要 prompt 会把内容组织成 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四个小节,适合工程/编排类 agent。`CompactionConfig` 还支持 `.model(...)` 为压缩摘要指定独立模型（不设则用 agent 主模型）。完整字段表(`triggerTokens`、`keepTokens`、`flushBeforeCompact`、`offloadBeforeCompact`、`model`、`TruncateArgsConfig`)与摘要 prompt 模板在[记忆](./memory#开启压缩)文档里有详细列表,这里不重复。
 
 ### 2. 大工具结果卸载 (`ToolResultEvictionMiddleware`)
 

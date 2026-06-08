@@ -26,7 +26,7 @@ The memory pipeline runs **three independent LLM calls**, each with its own prom
 | 2 | **Consolidation** — merges daily ledgers into `MEMORY.md` | `MEMORY.md` (full rewrite) | `MemoryConsolidator.DEFAULT_CONSOLIDATION_PROMPT` | `MemoryConfig.builder().consolidationPrompt(...)` |
 | 3 | **Compaction summary** — distills the conversation prefix into one summary message | Injected into the current context | `CompactionConfig.DEFAULT_SUMMARY_PROMPT` | `CompactionConfig.builder().summaryPrompt(...)` |
 
-The first two are "long-term memory settling" and live on `MemoryConfig`; the third is "in-context compression" and lives on `CompactionConfig`.
+The first two are "long-term memory settling" and live on `MemoryConfig`; the third is "in-context compression" and lives on `CompactionConfig`. All three LLM calls share the agent's primary model by default, but `MemoryConfig` and `CompactionConfig` each support a `.model(...)` override so you can use a lighter model for these auxiliary operations.
 
 ## How the two layers work
 
@@ -85,6 +85,7 @@ Common options:
 | `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
 | `offloadBeforeCompact` | `true` | Append raw messages to the never-compacted log before compacting |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
+| `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
 
 **Auto-recovery on overflow**: when the model returns `context_length_exceeded` (or similar), the framework forces one compaction and retries — but only when `compaction(...)` is configured; otherwise the error propagates.
 
@@ -174,10 +175,29 @@ Now flush only happens when compaction does (same cost as raw compaction).
     .build())
 ```
 
+### Example 6: use a smaller model for memory operations
+
+Flush and consolidation don't need the full power of the primary reasoning model — use a cheaper one to save cost:
+
+```java
+HarnessAgent.builder()
+    .model("openai:o3")                   // primary reasoning model
+    .memory(MemoryConfig.builder()
+        .model("openai:gpt-4.1-mini")     // lighter model for memory ops
+        .build())
+    .compaction(CompactionConfig.builder()
+        .model("openai:gpt-4.1-mini")     // lighter model for compaction
+        .build())
+    .build();
+```
+
+`model(String)` resolves via `ModelRegistry.resolve()`; you can also pass a `Model` instance. When not set, falls back to the agent's primary model.
+
 ### `MemoryConfig` field reference
 
 | Field | Default | Purpose |
 |------|------|------|
+| `model` | `null` (uses the agent's primary model) | Dedicated model for flush / consolidation; accepts a `Model` instance or a `"provider:model"` string |
 | `flushPrompt` | `null` (uses `DEFAULT_FLUSH_PROMPT`) | SYSTEM prompt for path 1 |
 | `consolidationPrompt` | `null` (uses `DEFAULT_CONSOLIDATION_PROMPT`) | Template for path 2 (must contain two `%d`) |
 | `consolidationMaxTokens` | `4_000` | Token cap for `MEMORY.md` |
