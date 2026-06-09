@@ -637,7 +637,7 @@ public class WorkspaceSkillRepository implements AgentSkillRepository, LazyResou
 
         /**
          * Strips {@code skillDir} prefix from {@code path}, handling absolute / virtual /
-         * namespaced backends uniformly by matching the last occurrence of the directory
+         * namespaced stores uniformly by matching the last occurrence of the directory
          * marker.
          */
         private static String relativeTo(String path, String skillDir) {

@@ -19,7 +19,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -246,7 +246,7 @@ public class AgentscopeAdminAutoConfiguration {
         @ConditionalOnMissingBean
         public SessionAdminController agentscopeSessionAdminController(
                 SessionOperations ops,
-                ObjectProvider<Session> sessions,
+                ObjectProvider<AgentStateStore> sessions,
                 AdminAuditLogger audit,
                 AdminProperties properties) {
             return new SessionAdminController(ops, sessions, audit, properties);
@@ -307,7 +307,7 @@ public class AgentscopeAdminAutoConfiguration {
         public AgentscopeDoctorEndpoint agentscopeDoctorEndpoint(
                 AdminProperties properties,
                 AgentInventory inventory,
-                ObjectProvider<Session> sessions) {
+                ObjectProvider<AgentStateStore> sessions) {
             return new AgentscopeDoctorEndpoint(properties, inventory, sessions);
         }
 

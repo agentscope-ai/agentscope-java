@@ -36,7 +36,7 @@ hide-toc: true
       </div>
       <div class="hs-code-panel" id="zh-harness"><pre><span class="kw">var</span> agent = <span class="ty">HarnessAgent</span>.builder()
     .name(<span class="str">"coder"</span>)
-    .model(<span class="str">"qwen-max"</span>)                                <span class="cm">// ModelRegistry 解析，读取 DASHSCOPE_API_KEY</span>
+    .model(<span class="str">"dashscope:qwen-max"</span>)                                <span class="cm">// ModelRegistry 解析，读取 DASHSCOPE_API_KEY</span>
     .workspace(<span class="ty">Paths</span>.get(<span class="str">".agentscope/workspace"</span>))   <span class="cm">// AGENTS.md · MEMORY.md · skills · subagents</span>
     .filesystem(<span class="kw">new</span> <span class="ty">DockerFilesystemSpec</span>()           <span class="cm">// 沙箱执行：本地 · Docker · 远端 KV 一行切换</span>
         .isolationScope(<span class="ty">IsolationScope</span>.USER))           <span class="cm">// 同一 user 跨 session 共享</span>
@@ -207,7 +207,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </details>
   <details class="hs-faq-item">
     <summary>2.0 兼容 1.0 吗？</summary>
-    <p>AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部分用户的平滑升级；但同时 2.0 也带来了 API 层面的不兼容变更（新增类型化事件、权限系统、Middleware 栈与 Workspace 抽象等），详情可参考 <a href="docs/change-log.html">Changelog</a>。</p>
+    <p>AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部分用户的平滑升级；但同时 2.0 也带来了 API 层面的不兼容变更（新增类型化事件、权限系统、Middleware 栈与 Workspace 抽象等），详情可参考 <a href="docs/change-log.html">V1 迁移指南</a>。</p>
   </details>
   <details class="hs-faq-item">
     <summary>能搭配 Spring Boot 或 Quarkus 使用吗？</summary>
@@ -215,7 +215,7 @@ agent.call(msg, <span class="ty">RuntimeContext</span>.builder()
   </details>
   <details class="hs-faq-item">
     <summary>如何在生产环境中水平扩展？</summary>
-    <p>AgentScope Java 天然支持无状态水平扩展：会话状态由 <code>Session</code> 自动持久化（默认 <code>WorkspaceSession</code>），工作区可挂到远端 KV / 对象存储，沙箱模式下连可执行环境本身都能跨调用 resume。配合 Kubernetes 与 HPA，任意副本均可恢复同一用户的完整上下文。</p>
+    <p>AgentScope Java 天然支持无状态水平扩展：Agent 状态由 <code>AgentStateStore</code> 自动持久化（默认本地 <code>JsonFileAgentStateStore</code>，多副本换成 <code>RedisAgentStateStore</code>），按 <code>(userId, sessionId)</code> 寻址，工作区可挂到远端 KV / 对象存储，沙箱模式下连可执行环境本身都能跨调用 resume。配合 Kubernetes 与 HPA，任意副本均可恢复同一用户的完整上下文。</p>
   </details>
 </div>
 

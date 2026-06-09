@@ -45,7 +45,6 @@ import reactor.core.publisher.Mono;
  * <p>Security: When baseDir is specified, all file operations are restricted to that directory
  * to prevent unauthorized file access.
  */
-@Deprecated(forRemoval = true, since = "2.0.0")
 public class ReadFileTool {
 
     private static final Logger logger = LoggerFactory.getLogger(ReadFileTool.class);

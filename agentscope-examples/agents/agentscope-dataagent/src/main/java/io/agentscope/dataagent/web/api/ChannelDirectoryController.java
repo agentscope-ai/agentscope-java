@@ -17,11 +17,11 @@ package io.agentscope.dataagent.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
-import io.agentscope.dataagent.runtime.channel.Channel;
-import io.agentscope.dataagent.runtime.channel.ChannelConfig;
 import io.agentscope.dataagent.runtime.config.ChannelConfigEntry;
 import io.agentscope.dataagent.runtime.config.ChannelTypeRegistry;
-import io.agentscope.dataagent.runtime.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -105,7 +105,7 @@ public class ChannelDirectoryController {
     /**
      * Returns the channel types the runtime knows how to instantiate (chatui, dingtalk, wecom,
      * feishu, github, gitlab, plus any types registered via
-     * {@link ChannelTypeRegistry#register(String, io.agentscope.dataagent.runtime.config.ChannelFactory)}).
+     * {@link ChannelTypeRegistry#register(String, io.agentscope.harness.agent.gateway.channel.ChannelFactory)}).
      * Used by the binding form's type-select dropdown.
      */
     @GetMapping("/api/channels/types")

@@ -74,14 +74,30 @@ public final class SkillFileSystemHelper {
     }
 
     /**
+     * Loads a skill from a specific directory, eagerly reading every non-hidden file in the
+     * skill tree into memory. Equivalent to {@link #loadSkillFromDirectory(Path, String, boolean)
+     * loadSkillFromDirectory(skillDir, source, true)}.
+     */
+    public static AgentSkill loadSkillFromDirectory(Path skillDir, String source) {
+        return loadSkillFromDirectory(skillDir, source, true);
+    }
+
+    /**
      * Loads a skill from a specific directory.
+     *
+     * <p>The returned skill always carries an absolute {@code originDir} matching {@code skillDir},
+     * so callers (prompt provider, load tool) can address files on disk without a second copy.
      *
      * @param skillDir The directory containing SKILL.md
      * @param source The source identifier for the created skill
-     * @return The loaded AgentSkill
+     * @param includeResources when {@code true}, all non-hidden files under {@code skillDir} are
+     *     pre-loaded into the skill's in-memory resource map (legacy behavior). When {@code false},
+     *     only SKILL.md is read; callers fall back to disk through {@code originDir} on demand.
+     * @return The loaded AgentSkill (with {@code originDir} populated)
      * @throws IllegalArgumentException if SKILL.md is missing or invalid
      */
-    public static AgentSkill loadSkillFromDirectory(Path skillDir, String source) {
+    public static AgentSkill loadSkillFromDirectory(
+            Path skillDir, String source, boolean includeResources) {
         if (!Files.exists(skillDir)) {
             throw new IllegalArgumentException("Skill directory does not exist: " + skillDir);
         }
@@ -98,8 +114,10 @@ public final class SkillFileSystemHelper {
 
         try {
             String skillMdContent = Files.readString(skillFile, StandardCharsets.UTF_8);
-            Map<String, String> resources = loadResources(skillDir, skillFile);
-            return SkillUtil.createFrom(skillMdContent, resources, source);
+            Map<String, String> resources =
+                    includeResources ? loadResources(skillDir, skillFile) : null;
+            AgentSkill base = SkillUtil.createFrom(skillMdContent, resources, source);
+            return base.toBuilder().originDir(skillDir.toAbsolutePath().normalize()).build();
         } catch (IOException e) {
             throw new RuntimeException("Failed to load skill from: " + skillDir, e);
         }
@@ -131,13 +149,25 @@ public final class SkillFileSystemHelper {
     }
 
     /**
+     * Retrieves all skills from the base directory with resources pre-loaded into memory.
+     * Equivalent to {@link #getAllSkills(Path, String, boolean) getAllSkills(baseDir, source,
+     * true)}.
+     */
+    public static List<AgentSkill> getAllSkills(Path baseDir, String source) {
+        return getAllSkills(baseDir, source, true);
+    }
+
+    /**
      * Retrieves all skills from the base directory.
      *
      * @param baseDir The base directory containing skill folders
      * @param source The source identifier for created skills
+     * @param includeResources when {@code false}, each skill's resource map is left empty and
+     *     callers must rely on the skill's {@code originDir} for disk-side reads
      * @return A list of skills
      */
-    public static List<AgentSkill> getAllSkills(Path baseDir, String source) {
+    public static List<AgentSkill> getAllSkills(
+            Path baseDir, String source, boolean includeResources) {
         List<AgentSkill> skills = new ArrayList<>();
 
         try (Stream<Path> subdirs = Files.list(baseDir)) {
@@ -146,7 +176,9 @@ public final class SkillFileSystemHelper {
                             dir -> {
                                 if (hasSkillFile(dir)) {
                                     try {
-                                        skills.add(loadSkillFromDirectory(dir, source));
+                                        skills.add(
+                                                loadSkillFromDirectory(
+                                                        dir, source, includeResources));
                                     } catch (Exception e) {
                                         logger.warn(
                                                 "Failed to load skill from '{}': {}",

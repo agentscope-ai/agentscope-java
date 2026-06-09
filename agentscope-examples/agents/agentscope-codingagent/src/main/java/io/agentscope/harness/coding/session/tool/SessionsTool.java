@@ -266,7 +266,7 @@ public class SessionsTool {
                             name = "session_key",
                             description =
                                     """
-                                    Session key returned by sessions_spawn. Mutually exclusive \
+                                    AgentStateStore key returned by sessions_spawn. Mutually exclusive \
                                     with label.\
                                     """,
                             required = false)
@@ -275,7 +275,7 @@ public class SessionsTool {
                             name = "label",
                             description =
                                     """
-                                    Session label assigned at spawn time. Mutually exclusive with \
+                                    AgentStateStore label assigned at spawn time. Mutually exclusive with \
                                     session_key.\
                                     """,
                             required = false)
@@ -436,7 +436,7 @@ public class SessionsTool {
     public String sessionsHistory(
             @ToolParam(
                             name = "session_key",
-                            description = "Session key or label of the target session")
+                            description = "AgentStateStore key or label of the target session")
                     String sessionKey,
             @ToolParam(
                             name = "limit",
@@ -480,7 +480,7 @@ public class SessionsTool {
                             name = "requester_session_key",
                             description =
                                     """
-                                    Session key of the requester that spawned subagents. Omit to \
+                                    AgentStateStore key of the requester that spawned subagents. Omit to \
                                     use the default root requester (main harness).\
                                     """,
                             required = false)

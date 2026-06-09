@@ -27,7 +27,7 @@ import java.util.Objects;
  * <p>This resolver supports two modes:
  * <ul>
  *   <li><b>Simple mode</b>: Directly looks up agents from the registry</li>
- *   <li><b>Session mode</b>: Uses {@link ThreadSessionManager} for server-side memory</li>
+ *   <li><b>AgentStateStore mode</b>: Uses {@link ThreadSessionManager} for server-side memory</li>
  * </ul>
  */
 public class DefaultAgentResolver implements AgentResolver {
