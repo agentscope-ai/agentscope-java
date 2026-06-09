@@ -140,7 +140,7 @@ class DashScopeDtoSerializationTest {
 
         DashScopeRequest request =
                 DashScopeRequest.builder()
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .input(DashScopeInput.of(List.of(msg)))
                         .parameters(params)
                         .build();
@@ -183,7 +183,7 @@ class DashScopeDtoSerializationTest {
 
         DashScopeRequest request =
                 DashScopeRequest.builder()
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .input(DashScopeInput.of(List.of()))
                         .parameters(params)
                         .build();

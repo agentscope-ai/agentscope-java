@@ -1,10 +1,10 @@
 ---
-title: "Changelog"
-description: "AgentScope Java 2.0 与 1.0 的核心区别"
+title: "V1 迁移指南"
+description: "从 AgentScope Java 1.x 升级到 2.0 的完整迁移指南"
 ---
 
-:::{note}
-**当前最新版本：`2.0.0-RC1`**。完整的版本说明与上游变更列表请见 [GitHub Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC1)。
+:::{tip}
+如果你在找各版本的具体变更记录（2.0.0-RC1、2.0.0-RC2 等），请见 [Release Notes](others/release-notes.md)。
 :::
 
 AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部分用户的平滑升级，但同时 2.0 版本也带来了 API 层面的不兼容变更。本页分为两部分：

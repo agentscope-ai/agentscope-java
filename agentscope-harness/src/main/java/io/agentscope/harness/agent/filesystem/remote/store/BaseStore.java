@@ -61,7 +61,7 @@ public interface BaseStore {
      * <p>A special value of {@code 0} for {@code expectedVersion} means "write only if the key
      * does not yet exist" (i.e. create-if-absent).
      *
-     * <p>The default implementation always returns {@code false} so that existing backend
+     * <p>The default implementation always returns {@code false} so that existing store
      * implementations compile without changes. Backends that support distributed deployments
      * should override this method with a proper server-side atomic check.
      *

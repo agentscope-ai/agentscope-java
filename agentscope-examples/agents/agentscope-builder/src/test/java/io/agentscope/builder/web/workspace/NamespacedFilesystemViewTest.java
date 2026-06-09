@@ -46,7 +46,7 @@ class NamespacedFilesystemViewTest {
 
     @Test
     void prefixesReadsAndWritesIntoNamespacedSubtree() {
-        LocalFilesystem backend = new LocalFilesystem(tmp, true, 10, null);
+        LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         AbstractFilesystem alice =
                 new NamespacedFilesystemView(backend, namespaceOf("alice", "research-bot"));
 
@@ -65,7 +65,7 @@ class NamespacedFilesystemViewTest {
 
     @Test
     void differentNamespacesAreIsolated() {
-        LocalFilesystem backend = new LocalFilesystem(tmp, true, 10, null);
+        LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         AbstractFilesystem alice =
                 new NamespacedFilesystemView(backend, namespaceOf("alice", "bot"));
         AbstractFilesystem bob = new NamespacedFilesystemView(backend, namespaceOf("bob", "bot"));
@@ -78,7 +78,7 @@ class NamespacedFilesystemViewTest {
 
     @Test
     void rejectsPathTraversalAttempts() {
-        LocalFilesystem backend = new LocalFilesystem(tmp, true, 10, null);
+        LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         AbstractFilesystem alice =
                 new NamespacedFilesystemView(backend, namespaceOf("alice", "bot"));
 
@@ -89,7 +89,7 @@ class NamespacedFilesystemViewTest {
 
     @Test
     void factoryIsInvokedPerCallSoNamespaceCanVary() {
-        LocalFilesystem backend = new LocalFilesystem(tmp, true, 10, null);
+        LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         String[] currentAgent = {"a"};
         NamespaceFactory dynamic = rc -> List.of("users", "alice", "agents", currentAgent[0]);
         AbstractFilesystem view = new NamespacedFilesystemView(backend, dynamic);
@@ -104,7 +104,7 @@ class NamespacedFilesystemViewTest {
 
     @Test
     void lsScopedRootReturnsNamespaceContents() throws Exception {
-        LocalFilesystem backend = new LocalFilesystem(tmp, true, 10, null);
+        LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         AbstractFilesystem alice =
                 new NamespacedFilesystemView(backend, namespaceOf("alice", "bot"));
 
@@ -118,7 +118,7 @@ class NamespacedFilesystemViewTest {
 
     @Test
     void rejectsBlankNamespaceSegment() {
-        LocalFilesystem backend = new LocalFilesystem(tmp, true, 10, null);
+        LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         AbstractFilesystem bad =
                 new NamespacedFilesystemView(backend, rc -> List.of("users", "", "agents", "x"));
 

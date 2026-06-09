@@ -201,7 +201,7 @@ public class MemoryConsolidator {
      * If watermark is {@link Instant#EPOCH}, all daily files are returned (first run).
      *
      * <p>All I/O is done through the {@link AbstractFilesystem} so this works equally well
-     * with Local, Sandbox, and Store backends.
+     * with Local, Sandbox, and Store stores.
      */
     private String readDailyEntries(RuntimeContext rc, Instant watermark) {
         AbstractFilesystem fs = workspaceManager.getFilesystem();

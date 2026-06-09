@@ -116,7 +116,7 @@ class FileSystemSkillRepositoryLazyTest {
         AgentSkill alphaFirst = pick(repo.getAllSkills(), "alpha");
 
         // Bump mtime by 5 seconds to guarantee the filesystem reports a change even on
-        // coarse-grained mtime backends; also tweak content so size changes too.
+        // coarse-grained mtime stores; also tweak content so size changes too.
         Path skillFile = baseDir.resolve("alpha/SKILL.md");
         Files.writeString(
                 skillFile,

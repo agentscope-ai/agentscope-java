@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
- * Long-term memory implementation using Mem0 as the backend.
+ * Long-term memory implementation using Mem0 as the store.
  *
  * <p>This implementation integrates with Mem0, a memory layer for AI applications that
  * provides persistent, searchable memory storage using vector embeddings and LLM-powered

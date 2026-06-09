@@ -35,7 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
  * parent {@link RuntimeContext}s and verify each child {@link ReActAgent} ends up with a
  * distinct session ID. Because {@code AgentStateStore.save}/{@code get} already partition by
  * (userId, sessionId), distinct IDs are sufficient to guarantee state isolation across all
- * configured AgentStateStore backends.
+ * configured AgentStateStore stores.
  */
 class SubagentIsolationIntegrationTest {
 

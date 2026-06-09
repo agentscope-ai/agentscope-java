@@ -1,10 +1,10 @@
 ---
-title: "Changelog"
-description: "Core differences between AgentScope Java 2.0 and 1.0"
+title: "V1 Migration Guide"
+description: "Complete migration guide from AgentScope Java 1.x to 2.0"
 ---
 
-:::{note}
-**Current latest version: `2.0.0-RC1`**. See the [GitHub release notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC1) for the full release-by-release change list.
+:::{tip}
+Looking for per-version change records (2.0.0-RC1, 2.0.0-RC2, etc.)? See [Release Notes](others/release-notes.md).
 :::
 
 AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level changes. This page splits those changes into two sections:
@@ -200,7 +200,7 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-- For `HarnessAgent` users, the harness module provides its own workspace-aware file and shell tools (`read_file`, `write_file`, `execute`, etc.) with unified local / Docker / cloud-sandbox backends, permission isolation, read/write cache, and HITL approval. It is recommended to use the built-in harness tools for workspace-integrated scenarios.
+- For `HarnessAgent` users, the harness module provides its own workspace-aware file and shell tools (`read_file`, `write_file`, `execute`, etc.) with unified local / Docker / cloud-sandbox stores, permission isolation, read/write cache, and HITL approval. It is recommended to use the built-in harness tools for workspace-integrated scenarios.
 
 Detail → [Harness filesystem](harness/filesystem.md)
 

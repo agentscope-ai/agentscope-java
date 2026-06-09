@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Unit tests for {@link ClawMarketplaceRegistry}. Bypasses the real Git/Nacos backends by
+ * Unit tests for {@link ClawMarketplaceRegistry}. Bypasses the real Git/Nacos stores by
  * subclassing {@link ClawMarketplaceRegistry} to return in-memory fakes from {@code build(...)} —
  * the registry contract (reload-replaces-and-closes, unregister-closes, type-driven dispatch)
  * is type-agnostic, so the fakes are a faithful stand-in.

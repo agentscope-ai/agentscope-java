@@ -77,7 +77,7 @@ public class AguiProperties {
     private String defaultAgentId = "default";
 
     /**
-     * Whether to manage conversation memory on the backend by threadId. When enabled, the backend
+     * Whether to manage conversation memory on the backend by threadId. When enabled, the store
      * maintains agent instances per threadId, preserving conversation history across requests.
      */
     private boolean serverSideMemory = false;

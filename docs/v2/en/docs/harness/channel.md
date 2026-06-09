@@ -21,7 +21,7 @@ For most use cases you don't interact with Gateway or Channel directly — `agen
 HarnessAgent agent = HarnessAgent.builder()
     .name("assistant")
     .sysPrompt("You are a helpful assistant.")
-    .model("qwen-plus")
+    .model("dashscope:qwen-plus")
     .build();
 
 // Bind a ChatUI channel.
@@ -179,11 +179,11 @@ For scenarios with multiple `HarnessAgent` instances, use `GatewayBootstrap`:
 ```java
 HarnessAgent salesAgent = HarnessAgent.builder()
     .name("sales").sysPrompt("You are a sales assistant.")
-    .model("qwen-plus").build();
+    .model("dashscope:qwen-plus").build();
 
 HarnessAgent supportAgent = HarnessAgent.builder()
     .name("support").sysPrompt("You are a support agent.")
-    .model("qwen-plus").build();
+    .model("dashscope:qwen-plus").build();
 
 GatewayBootstrap gw = GatewayBootstrap.builder()
     .agent("sales", salesAgent)

@@ -4,6 +4,25 @@
 
 按主题分为以下几组：
 
+## 分布式存储（Distributed Store）
+
+生产多副本部署所需的全链路分布式存储组件。通过 `DistributedStore` 一键配置 Agent 状态、工作区文件系统、沙箱快照与并发锁。
+
+- [分布式存储总览](distributed/index.md) — `DistributedStore` API、能力矩阵、混合后端
+- [Redis](distributed/redis.md) — `AgentStateStore` + `BaseStore` + `SandboxSnapshotSpec` + `SandboxExecutionGuard`
+- [MySQL / JDBC](distributed/mysql.md) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
+- [阿里云 OSS](distributed/oss.md) — `AgentStateStore` + `OssBaseStore` + `OssSnapshotSpec`
+
+## 沙箱执行环境（Sandbox）
+
+隔离的代码执行环境，所有 `SandboxFilesystemSpec` 实现。Docker 内置在 harness 中，其余为独立扩展模块。
+
+- Docker — 内置默认，无需额外依赖
+- [Kubernetes](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-kubernetes`
+- [AgentRun（阿里云）](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-agentrun`
+- [Daytona](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-daytona`
+- [E2B](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-e2b`
+
 ## 记忆（Memory）
 
 跨会话持久化用户偏好与事实，所有实现都符合 `LongTermMemory` 接口。
@@ -11,13 +30,6 @@
 - [Mem0](memory/mem0.md)
 - [百炼记忆](memory/bailian.md)
 - [ReMe](memory/reme.md)
-
-## Agent 状态存储（AgentStateStore）
-
-把对话上下文 / Workspace / Plan 等 Agent 运行时状态持久化到数据库或缓存，统一通过 [`AgentStateStore`](session/index.md)。
-
-- [MySQL 状态存储](session/mysql.md)
-- [Redis 状态存储](session/redis.md)
 
 ## RAG 知识库
 

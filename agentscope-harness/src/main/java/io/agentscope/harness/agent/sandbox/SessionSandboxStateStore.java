@@ -67,7 +67,7 @@ public final class SessionSandboxStateStore {
     public void delete(SandboxIsolationKey key) throws IOException {
         try {
             // Not all AgentStateStore implementations support per-key delete; tombstone keeps
-            // behavior consistent across backends.
+            // behavior consistent across stores.
             stateStore.save(
                     null, slotSessionId(key), SANDBOX_STATE_KEY, SandboxStateSlot.tombstone());
         } catch (Exception e) {

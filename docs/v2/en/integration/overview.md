@@ -4,6 +4,25 @@ This section collects the AgentScope Java extensions that connect to third-party
 
 The extensions are grouped by topic:
 
+## Distributed Storage (Distributed Store)
+
+Full-stack distributed storage components for multi-replica production deployments. Configure agent state, workspace filesystem, sandbox snapshots, and concurrency locks with a single `DistributedStore`.
+
+- [Distributed Storage Overview](distributed/index.md) — `DistributedStore` API, capability matrix, mixed stores
+- [Redis](distributed/redis.md) — `AgentStateStore` + `BaseStore` + `SandboxSnapshotSpec` + `SandboxExecutionGuard`
+- [MySQL / JDBC](distributed/mysql.md) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
+- [Alibaba Cloud OSS](distributed/oss.md) — `AgentStateStore` + `OssBaseStore` + `OssSnapshotSpec`
+
+## Sandbox Execution Environments
+
+Isolated code execution stores. Docker is built-in; the rest are standalone extension modules.
+
+- Docker — built-in default, no extra dependency
+- [Kubernetes](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-kubernetes`
+- [AgentRun (Alibaba Cloud)](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-agentrun`
+- [Daytona](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-daytona`
+- [E2B](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-e2b`
+
 ## Memory
 
 Persist user preferences and facts across sessions. All implementations satisfy the `LongTermMemory` interface.
@@ -12,16 +31,9 @@ Persist user preferences and facts across sessions. All implementations satisfy 
 - [Bailian Memory](memory/bailian.md)
 - [ReMe](memory/reme.md)
 
-## Agent State Store
-
-Persist agent runtime state (conversation context, Workspace, Plan, ...) into a database or cache via [`AgentStateStore`](session/index.md).
-
-- [MySQL State Store](session/mysql.md)
-- [Redis State Store](session/redis.md)
-
 ## RAG Knowledge Base
 
-Plug different retrieval backends behind the unified `Knowledge` interface.
+Plug different retrieval stores behind the unified `Knowledge` interface.
 
 - [Simple (DIY embedding + vector store)](rag/simple.md)
 - [Bailian Knowledge](rag/bailian.md)
@@ -41,11 +53,11 @@ Multiple storage implementations of `AgentSkillRepository`.
 
 Connect your Agent to messaging platforms through the Harness Channel interface.
 
-- [DingTalk (钉钉)](channel/dingtalk.md)
-- [Feishu / Lark (飞书)](channel/feishu.md)
+- [DingTalk](channel/dingtalk.md)
+- [Feishu / Lark](channel/feishu.md)
 - [GitHub](channel/github.md)
 - [GitLab](channel/gitlab.md)
-- [WeCom (企业微信)](channel/wecom.md)
+- [WeCom](channel/wecom.md)
 
 ## Agent Protocols
 

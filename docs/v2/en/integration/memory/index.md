@@ -1,6 +1,6 @@
 # Memory
 
-`LongTermMemory` is the AgentScope interface for persisting user preferences, facts, and key takeaways across multiple turns and sessions. The `agentscope-extensions-*` repository ships ready-to-use implementations for the major memory backends:
+`LongTermMemory` is the AgentScope interface for persisting user preferences, facts, and key takeaways across multiple turns and sessions. The `agentscope-extensions-*` repository ships ready-to-use implementations for the major memory stores:
 
 | Extension | Backend | Best for |
 | --- | --- | --- |

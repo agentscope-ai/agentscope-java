@@ -680,7 +680,7 @@ public class AgentWorkspaceController {
      *
      * <p>Entries are de-duplicated by relative path: the composite root listing may surface both
      * a routed virtual directory ({@code /memory/}) and a same-named entry from the default
-     * backend, in which case the routed entry wins.
+     * store, in which case the routed entry wins.
      */
     private static List<FileNode> collectChildrenFs(
             AbstractFilesystem fs, String absPath, int depth) {

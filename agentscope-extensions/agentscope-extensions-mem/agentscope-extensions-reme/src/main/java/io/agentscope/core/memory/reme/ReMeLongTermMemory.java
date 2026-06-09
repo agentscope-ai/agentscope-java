@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
- * Long-term memory implementation using ReMe as the backend.
+ * Long-term memory implementation using ReMe as the store.
  *
  * <p>This implementation integrates with ReMe, a memory layer for AI applications that
  * provides persistent, searchable memory storage using LLM-powered memory extraction.

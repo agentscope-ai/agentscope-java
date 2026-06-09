@@ -740,7 +740,7 @@ public class WorkspaceManager implements AutoCloseable {
      * Detection helper for the heuristic used by {@link #writeDraftSkillFile} and
      * {@link #moveSkill}: returns {@code true} when the lower layer of an overlay is a
      * non-local KV / remote backend (e.g. {@code RemoteFilesystem}). Drafts on such
-     * backends should be stored on the lower layer so external approval systems can read
+     * stores should be stored on the lower layer so external approval systems can read
      * them across replicas.
      */
     private static boolean isRemoteLowerLayer(AbstractFilesystem fs) {

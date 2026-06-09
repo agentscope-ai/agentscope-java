@@ -1,20 +1,27 @@
-# Agent State Store
+# Agent State Store (AgentStateStore)
 
-`io.agentscope.core.state.AgentStateStore` is the AgentScope interface used to persist agent state — things like Memory, Workspace, and Plan are serialized to `State` objects and persisted through an `AgentStateStore` so that the agent can resume after restart and share state across nodes.
+```{note}
+**Recommended: use [DistributedStore](../distributed/index.md) for one-line setup** — it covers AgentStateStore, BaseStore, SandboxSnapshotSpec, and SandboxExecutionGuard together. Read on if you only need to configure AgentStateStore individually.
+```
 
-State is addressed by a `(userId, sessionId)` pair rather than a wrapper key object:
+`io.agentscope.core.state.AgentStateStore` is the interface AgentScope uses to persist agent state — Memory, Workspace, Plan, and other components are serialized as `State` objects and stored via `AgentStateStore`, enabling restart recovery and cross-node sharing.
 
-- `sessionId` — non-null, non-blank; identifies a conversation / session.
-- `userId` — nullable. `null` represents an anonymous / single-tenant caller (CLI usage, tests). Implementations group all anonymous sessions under one namespace.
+State is addressed by `(userId, sessionId)`:
 
-The `agentscope-extensions-*` repository ships two production-ready implementations:
+- `sessionId` — required, non-blank, identifies a session.
+- `userId` — optional. `null` means anonymous / single-tenant (CLI, tests, etc.).
 
-| Extension | Backend | Best for |
+## Available Implementations
+
+| Implementation | Module | When to use |
 | --- | --- | --- |
-| [MySQL State Store](mysql.md) | MySQL or compatible | Existing database-backed apps; need transactions / audit / SQL queries |
-| [Redis State Store](redis.md) | Jedis / Lettuce / Redisson | High concurrency, low latency, multi-node shared state |
+| `InMemoryAgentStateStore` | `agentscope-core` | Unit tests |
+| `JsonFileAgentStateStore` | `agentscope-core` | Single-node dev (**HarnessAgent default**) |
+| `RedisAgentStateStore` | `agentscope-extensions-redis` | [Multi-replica production default](../distributed/redis.md) |
+| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [Existing database infrastructure](../distributed/mysql.md) |
+| `OssAgentStateStore` | `agentscope-extensions-oss` | [Alibaba Cloud ecosystem](../distributed/oss.md) |
 
-Both implement the same `AgentStateStore` interface and plug into the agent at build time:
+## Standalone Configuration
 
 ```java
 ReActAgent agent = ReActAgent.builder()
@@ -24,28 +31,8 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-The agent instance itself is stateless with respect to sessions. Which `(userId, sessionId)` slot a call reads / writes is decided per-call via the `RuntimeContext`:
+For detailed usage and code examples, see each store's documentation:
 
-```java
-RuntimeContext rc = RuntimeContext.builder()
-    .userId("alice")          // optional; null = anonymous
-    .sessionId("session-1")   // required
-    .build();
-
-agent.call(msg, rc).block();  // loads/saves state for (alice, session-1)
-```
-
-## Common features
-
-- **Mixed single + list storage**: `save(userId, sessionId, key, State)` for single values, `save(userId, sessionId, key, List<State>)` for lists.
-- **Incremental list writes**: lists use a hash digest + length comparison so append-only growth becomes a pure append; full rewrite happens only when the list is mutated or shrinks.
-- **JSON serialization**: `JsonUtils.getJsonCodec()` is used uniformly for `State` ↔ JSON conversion — readable across language and version boundaries.
-
-## Choosing one
-
-| Scenario | Recommendation |
-| --- | --- |
-| Single node or want minimal infrastructure | MySQL (or even H2/SQLite as drop-in) |
-| Existing Redis cluster, latency-sensitive | Redis |
-| Need SQL reports / audit trail / transactional consistency | MySQL |
-| Same session must be shared across services | Redis (Redisson supports distributed locks) |
+- [Redis](../distributed/redis.md#1-redisagentstatestore)
+- [MySQL](../distributed/mysql.md#1-mysqlagentstatestore)
+- [OSS](../distributed/oss.md#1-ossagentstatestore)

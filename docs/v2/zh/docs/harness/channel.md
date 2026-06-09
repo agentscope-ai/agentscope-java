@@ -21,7 +21,7 @@ description: "通过 Channel 路由消息、管理会话、流式传输事件"
 HarnessAgent agent = HarnessAgent.builder()
     .name("assistant")
     .sysPrompt("你是一个有用的助手。")
-    .model("qwen-plus")
+    .model("dashscope:qwen-plus")
     .build();
 
 // 绑定一个 ChatUI channel。
@@ -179,11 +179,11 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String userId,
 ```java
 HarnessAgent salesAgent = HarnessAgent.builder()
     .name("sales").sysPrompt("你是一个销售助手。")
-    .model("qwen-plus").build();
+    .model("dashscope:qwen-plus").build();
 
 HarnessAgent supportAgent = HarnessAgent.builder()
     .name("support").sysPrompt("你是一个客服 agent。")
-    .model("qwen-plus").build();
+    .model("dashscope:qwen-plus").build();
 
 GatewayBootstrap gw = GatewayBootstrap.builder()
     .agent("sales", salesAgent)
