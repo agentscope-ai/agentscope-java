@@ -19,7 +19,6 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ModelRegistry;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 
 /**
  * ModelRegistryExample - Demonstrates how the framework's built-in model providers let you
@@ -54,10 +53,13 @@ public class ModelRegistryExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) {
-        ExampleUtils.printWelcome(
-                "ModelRegistry Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("ModelRegistry Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Shows how to specify a model with a plain string — no manual construction"
                         + " needed.");
+        System.out.println("=".repeat(60) + "\n");
 
         // ── 1. Check which providers are available ────────────────────────────────────
         //
@@ -92,7 +94,8 @@ public class ModelRegistryExample {
                 ReActAgent.builder()
                         .name("ModelStringDemo")
                         .sysPrompt("You are a concise assistant. Reply in one sentence.")
-                        .model("qwen-plus") // ← the only thing needed to configure the model
+                        .model("dashscope:qwen-plus") // ← the only thing needed to configure the
+                        // model
                         .build();
 
         Msg response = agent.call(new UserMessage("user", "What is 2 + 2?")).block();

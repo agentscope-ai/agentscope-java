@@ -196,7 +196,9 @@ class ReActAgentNewLoopReplyTest {
         List<TextBlock> texts = result.getContentBlocks(TextBlock.class);
         assertEquals(1, texts.size());
         assertEquals("answer", texts.get(0).getText());
-        assertTrue(agent.getState().getContext().size() >= 2, "user + assistant expected in state");
+        assertTrue(
+                agent.getAgentState().getContext().size() >= 2,
+                "user + assistant expected in state");
     }
 
     @Test

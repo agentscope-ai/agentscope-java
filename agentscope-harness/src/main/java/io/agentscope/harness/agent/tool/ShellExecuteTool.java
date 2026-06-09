@@ -26,6 +26,9 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
  */
 public class ShellExecuteTool {
 
+    /** Registered tool name (derived from the {@link #execute} method name). */
+    public static final String NAME = "execute";
+
     private final AbstractSandboxFilesystem sandbox;
 
     public ShellExecuteTool(AbstractSandboxFilesystem sandbox) {

@@ -61,7 +61,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, "BASE\n").block();
+        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
         assertNotNull(prompt);
         // Project + Workspace lines
         assertTrue(prompt.contains("Project (the user's source tree"));
@@ -89,7 +89,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, "BASE\n").block();
+        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
         assertNotNull(prompt);
         assertTrue(prompt.contains("Additional roots: " + shared.toAbsolutePath()));
     }
@@ -105,7 +105,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, "BASE\n").block();
+        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
         assertNotNull(prompt);
         assertTrue(
                 prompt.contains("UNRESTRICTED"), () -> "UNRESTRICTED mode not surfaced: " + prompt);

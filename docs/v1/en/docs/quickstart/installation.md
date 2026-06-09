@@ -1,6 +1,6 @@
 # Installation
 
-AgentScope Java supports multiple models, RAG backends, and extensions, each requiring different third-party SDKs. Bundling everything together would bloat your project, so we offer two ways to add dependencies:
+AgentScope Java supports multiple models, RAG stores, and extensions, each requiring different third-party SDKs. Bundling everything together would bloat your project, so we offer two ways to add dependencies:
 
 - **All-in-one**: Single dependency with DashScope SDK and MCP SDK included, get started quickly
 - **Core + extensions**: Minimal core package, add extension modules as needed, for strict dependency control

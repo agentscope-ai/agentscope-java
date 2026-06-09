@@ -71,7 +71,7 @@ toolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
 ```
 
 :::{note}
-The `Toolkit` automatically registers a `reset_tools` meta tool and a `Skill` viewer when extra tool groups or skills are present — you don't need to instantiate them manually. See [self-managed tools](#self-managed-tools) and [Skill](#skill).
+The `Toolkit` automatically registers the `reset_tools` meta tool and the `load_skill_through_path` skill viewer tool when extra tool groups or skills are present — you don't need to instantiate them manually. See [self-managed tools](#self-managed-tools) and [Skill](#skill).
 :::
 
 ### Custom tools (annotation-based)
@@ -227,7 +227,7 @@ Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as fr
 |----------------|--------|
 | `ToolEmitter` | Streaming emitter (no-op when none configured) |
 | `Agent` | The current agent instance |
-| `AgentState` | `agent.getAgentState()` (also the target of `@Tool(stateInjected = true)`) |
+| `AgentState` | The per-session state for the current call (via `RuntimeContext.getAgentState()`) |
 | `RuntimeContext` | The current per-call context |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
 | Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |
@@ -371,7 +371,7 @@ Runnable examples: `agentscope-examples/documentation/.../mcp/McpStdioExample.ja
 
 Skills are markdown-based instruction sets that extend an agent's capabilities without writing new tool code. Each skill is a directory containing a `SKILL.md` file with frontmatter metadata and detailed instructions.
 
-Unlike tools, skills are not directly callable. The agent reads skill instructions through an auto-registered `Skill` viewer, then carries them out using whatever tools it already has.
+Unlike tools, skills are not directly callable. The agent reads skill instructions through an auto-registered viewer tool named `load_skill_through_path`, then carries them out using whatever tools it already has.
 
 ### Registering skills
 
@@ -402,18 +402,101 @@ When skills are present, the `Toolkit` performs a two-phase setup.
 Initialisation:
 
 - The toolkit scans every registered skill source and collects each skill's name, description, and directory.
-- It auto-registers the built-in `Skill` viewer.
-- It assembles a system-prompt fragment listing the available skills (names + descriptions) and instructing the agent to read full content via the `Skill` viewer.
+- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) into the `skill-build-in-tools` group.
+- It assembles a system-prompt fragment listing the available skills (names + descriptions) and instructing the agent to read full content via `load_skill_through_path`.
 
-At runtime:
+At runtime, the agent invokes the viewer with two required arguments:
 
-- The agent picks a skill by name and calls the `Skill` viewer.
-- The viewer reads the matching `SKILL.md` and returns the full markdown.
-- The agent follows the instructions using its existing tools.
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `skillId` | `string` (enum of registered skill IDs) | The skill to load. |
+| `path` | `string` | Use `"SKILL.md"` to fetch the skill's markdown instructions, or an exact resource path declared by the skill such as `"references/guide.md"` or `"scripts/run.py"`. Do not pass `"."`, `"./"`, a directory, or an absolute path. |
+
+Example tool call payload:
+
+```json
+{
+  "name": "load_skill_through_path",
+  "input": { "skillId": "pdf-extractor", "path": "SKILL.md" }
+}
+```
+
+Each successful call has two effects:
+
+1. Returns the requested content (the `SKILL.md` markdown, or the named resource file).
+2. **Activates the skill** — its associated tool group is enabled in the `Toolkit`, so any tools bundled with the skill become callable for the rest of the turn. If the requested `path` does not exist, the viewer returns an error that lists the available resource paths (with `SKILL.md` first) so the agent can retry.
 
 :::{note}
-A skill is not a tool — the agent cannot call it directly. The agent must read the instructions via the `Skill` viewer first, then act on them with other tools.
+A skill is not a tool — the agent cannot call it directly. The agent must read the instructions via `load_skill_through_path` first, then act on them with other tools.
 :::
+
+### Skill script execution: configuring shell tools
+
+Skills only provide instructions — actual execution relies on the tools the agent already has. If a skill's instructions involve running scripts (e.g. `scripts/run.py`), the agent needs shell access:
+
+- **`ReActAgent`** — register `ShellCommandTool` in the toolkit:
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.ShellCommandTool;
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new ShellCommandTool());
+toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
+toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("SkillAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .skillRepository(skillRepo)
+                .build();
+```
+
+- **`HarnessAgent`** — the harness module ships workspace-aware shell and file tools (`execute`, `read_file`, `write_file`, etc.) out of the box; no extra registration needed.
+
+### Skill + ToolGroup: on-demand tool disclosure
+
+`SkillToolGroup` binds a group of tools to a skill name — the group activates automatically when the agent loads that skill, and stays hidden from the model's schema otherwise, reducing context noise.
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tool.Toolkit;
+
+Toolkit toolkit = new Toolkit();
+
+// 1. Create a tool group bound to a skill (initially inactive)
+toolkit.createSkillToolGroup(
+        "analysis-tools",                // group name
+        "Data analysis tools",           // description
+        false,                           // initially inactive
+        "data-analysis");                // bound skill name
+
+// 2. Register tools into that group
+toolkit.registration()
+        .tool(new AnalysisTools())
+        .group("analysis-tools")
+        .apply();
+
+// 3. Build the agent with meta tool for model-driven group switching
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("AnalysisAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .skillRepository(skillRepo)
+                .enableMetaTool(true)
+                .build();
+```
+
+When the agent loads the `data-analysis` skill via `load_skill_through_path`, the `analysis-tools` group activates and its tools become immediately available. With `enableMetaTool(true)`, the model can also manage group activation via `reset_tools`.
+
+Reference implementation: `agentscope-examples/documentation/.../skill/SkillWithToolGroupExample.java`.
 
 ## Self-managed tools
 
