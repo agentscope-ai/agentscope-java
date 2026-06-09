@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -50,11 +51,13 @@ import org.springframework.context.annotation.Configuration;
  *
  * <ol>
  *   <li>If a {@link Model} Spring Bean is already present (provided by another
- *       {@code @Configuration}), it is used as-is.
- *   <li>Otherwise, if {@code claw.dashscope.api-key} is set, a {@link DashScopeChatModel} is
- *       created automatically.
- *   <li>If neither is available, the app starts without a model (agent calls will fail until one
- *       is configured).
+ *       {@code @Configuration}), it is used as-is.</li>
+ *   <li>Otherwise, if {@code claw.local-openai.enabled=true}, the local OpenAI-compatible
+ *       model configuration provides the {@link Model} bean.</li>
+ *   <li>Otherwise, if {@code claw.dashscope.api-key} is set and local OpenAI is not enabled, a
+ *       {@link DashScopeChatModel} is created automatically.</li>
+ *   <li>If none of the above is available, the app starts without a model; agent calls will fail
+ *       until one is configured.</li>
  * </ol>
  */
 @Configuration
@@ -90,6 +93,11 @@ public class BuilderConfig {
     @Bean
     @ConditionalOnMissingBean(Model.class)
     @ConditionalOnExpression("'${claw.dashscope.api-key:}' != ''")
+    @ConditionalOnProperty(
+            prefix = "claw.local-openai",
+            name = "enabled",
+            havingValue = "false",
+            matchIfMissing = true)
     public Model dashscopeModel() {
         log.info("Building DashScopeChatModel: model={}", dashscopeModelName);
         return DashScopeChatModel.builder()

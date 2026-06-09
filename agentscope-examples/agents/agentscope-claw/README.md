@@ -585,3 +585,32 @@ that has been removed. See [`builder.md`](builder.md) for the list of removed
 modules and the recommended way to recover any of it from git history.
 
 [AgentScope Java]: https://github.com/agentscope-ai/agentscope-java
+
+### Run with a local OpenAI-compatible model
+
+The CLAW example can also run with a local or private OpenAI-compatible model
+service by enabling the `local-openai` profile.
+
+This profile is useful for local model servers such as LM Studio, vLLM, Ollama,
+Xinference, or other services exposing an OpenAI-compatible chat completions
+API.
+
+Set the model endpoint and model name before starting the example:
+
+export LOCAL_OPENAI_BASE_URL=http://127.0.0.1:1234
+export LOCAL_OPENAI_ENDPOINT_PATH=/v1/chat/completions
+export LOCAL_OPENAI_API_KEY=local
+export LOCAL_OPENAI_MODEL=qwen/qwen3.5-9b
+`LOCAL_OPENAI_MAX_ATTEMPTS` defaults to `1`, so local model requests are not retried unless explicitly configured.
+export LOCAL_OPENAI_MAX_ATTEMPTS=1
+
+export LOCAL_OPENAI_STREAM=false
+export LOCAL_OPENAI_MAX_TOKENS=4096
+export LOCAL_OPENAI_TEMPERATURE=0.2
+export LOCAL_OPENAI_READ_TIMEOUT=120s
+export LOCAL_OPENAI_CONNECT_TIMEOUT=10s
+
+mvn -pl agentscope-examples/agents/agentscope-claw -am clean package -DskipTests
+java -jar agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar \
+  --spring.profiles.active=local-openai
+
