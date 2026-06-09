@@ -38,14 +38,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Routes file operations to different {@link AbstractFilesystem} backends by path prefix.
+ * Routes file operations to different {@link AbstractFilesystem} stores by path prefix.
  *
  * <p>Paths are matched against route prefixes (longest first). Unmatched paths fall through to the
- * default backend.
+ * default store.
  *
  * <p>Composite deliberately implements only {@link AbstractFilesystem} — it is the unified,
  * non-sandbox view that blends a local workspace with remote-store-backed paths. Shell execution
- * is intentionally not supported in this mode: routing shell commands across backends is
+ * is intentionally not supported in this mode: routing shell commands across stores is
  * ambiguous, and the primary use case (distributed memory with per-user/session isolation) does
  * not need it. If you need shell execution, use a sandbox-backed filesystem
  * ({@link AbstractSandboxFilesystem}) or {@link LocalFilesystemWithShell} directly instead.
@@ -70,7 +70,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
      * Creates a composite filesystem with a default backend and prefix-based routes.
      *
      * @param defaultBackend backend for paths that don't match any route
-     * @param routes map of path prefixes to backends; prefixes must start with {@code "/"}
+     * @param routes map of path prefixes to stores; prefixes must start with {@code "/"}
      *     and should end with {@code "/"} (e.g. {@code "/memories/"})
      */
     public CompositeFilesystem(
@@ -101,7 +101,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
         // Canonicalize both sides by stripping any leading slash before matching so callers can
         // pass either "/skills/foo" (the {@link AbstractFilesystem} contract) or "skills/foo"
         // (the convention used by {@code WorkspaceManager.writeUtf8WorkspaceRelative}) and route
-        // to the same backend. The original {@code entry.prefix()} is preserved in the
+        // to the same store. The original {@code entry.prefix()} is preserved in the
         // {@link RouteResult} so path remapping output stays in the prefix's stored form.
         String matchPath = stripLeadingSlash(path);
         for (RouteEntry entry : sortedRoutes) {
@@ -508,7 +508,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
         return route.backend().exists(runtimeContext, route.backendPath());
     }
 
-    /** Returns the default backend. */
+    /** Returns the default store. */
     public AbstractFilesystem getDefaultBackend() {
         return defaultBackend;
     }

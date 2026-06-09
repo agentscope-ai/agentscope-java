@@ -15,9 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.harness.agent.IsolationScope;
 import java.io.IOException;
@@ -25,30 +23,29 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * {@link SandboxStateStore} backed by the generic AgentScope {@link Session} abstraction.
+ * Sandbox state store backed by the generic AgentScope {@link AgentStateStore} abstraction.
  *
  * <p>This store keeps sandbox lifecycle state in the same state backend as ReActAgent runtime
- * state. As a result, providing a distributed {@link Session} implementation (for example Redis)
+ * state. As a result, providing a distributed {@link AgentStateStore} implementation (for example Redis)
  * automatically enables distributed sandbox resume state.
  */
-public final class SessionSandboxStateStore implements SandboxStateStore {
+public final class SessionSandboxStateStore {
 
     private static final String SANDBOX_STATE_KEY = "_sandbox_state";
 
-    private final Session session;
+    private final AgentStateStore stateStore;
     private final String agentId;
 
-    public SessionSandboxStateStore(Session session, String agentId) {
-        this.session = Objects.requireNonNull(session, "session must not be null");
+    public SessionSandboxStateStore(AgentStateStore stateStore, String agentId) {
+        this.stateStore = Objects.requireNonNull(stateStore, "stateStore must not be null");
         this.agentId = Objects.requireNonNull(agentId, "agentId must not be null");
     }
 
-    @Override
     public Optional<String> load(SandboxIsolationKey key) throws IOException {
         try {
-            SessionKey slot = slotKey(key);
+            String slotSid = slotSessionId(key);
             Optional<SandboxStateSlot> state =
-                    session.get(slot, SANDBOX_STATE_KEY, SandboxStateSlot.class);
+                    stateStore.get(null, slotSid, SANDBOX_STATE_KEY, SandboxStateSlot.class);
             if (state.isEmpty() || state.get().deleted() || state.get().json() == null) {
                 return Optional.empty();
             }
@@ -58,33 +55,39 @@ public final class SessionSandboxStateStore implements SandboxStateStore {
         }
     }
 
-    @Override
     public void save(SandboxIsolationKey key, String json) throws IOException {
         try {
-            session.save(slotKey(key), SANDBOX_STATE_KEY, new SandboxStateSlot(json, false));
+            stateStore.save(
+                    null, slotSessionId(key), SANDBOX_STATE_KEY, new SandboxStateSlot(json, false));
         } catch (Exception e) {
             throw asIo("save", key, e);
         }
     }
 
-    @Override
     public void delete(SandboxIsolationKey key) throws IOException {
         try {
-            // Not all Session implementations support per-key delete. Tombstone keeps behavior
-            // consistent across backends.
-            session.save(slotKey(key), SANDBOX_STATE_KEY, SandboxStateSlot.tombstone());
+            // Not all AgentStateStore implementations support per-key delete; tombstone keeps
+            // behavior consistent across stores.
+            stateStore.save(
+                    null, slotSessionId(key), SANDBOX_STATE_KEY, SandboxStateSlot.tombstone());
         } catch (Exception e) {
             throw asIo("delete", key, e);
         }
     }
 
-    private SessionKey slotKey(SandboxIsolationKey key) {
+    /**
+     * Pack the sandbox isolation key into a single sessionId string that fits the
+     * {@link AgentStateStore} 2-arg slot model. The userId column is always {@code null} because
+     * sandbox state is conceptually agent-scoped, not user-scoped: USER/AGENT/GLOBAL scopes are
+     * encoded into the sessionId prefix rather than the userId slot.
+     */
+    private String slotSessionId(SandboxIsolationKey key) {
         IsolationScope scope = key.getScope();
         return switch (scope) {
-            case SESSION -> SimpleSessionKey.of("sandbox/session/" + key.getValue());
-            case USER -> SimpleSessionKey.of("sandbox/user/" + agentId + "/" + key.getValue());
-            case AGENT -> SimpleSessionKey.of("sandbox/agent/" + agentId);
-            case GLOBAL -> SimpleSessionKey.of("sandbox/global");
+            case SESSION -> "sandbox/session/" + key.getValue();
+            case USER -> "sandbox/user/" + agentId + "/" + key.getValue();
+            case AGENT -> "sandbox/agent/" + agentId;
+            case GLOBAL -> "sandbox/global";
         };
     }
 

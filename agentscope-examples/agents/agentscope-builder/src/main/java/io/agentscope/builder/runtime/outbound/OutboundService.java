@@ -15,16 +15,16 @@
  */
 package io.agentscope.builder.runtime.outbound;
 
-import io.agentscope.builder.runtime.channel.Channel;
-import io.agentscope.builder.runtime.channel.ChannelRouter;
-import io.agentscope.builder.runtime.channel.InboundMessage;
-import io.agentscope.builder.runtime.channel.OutboundAddress;
-import io.agentscope.builder.runtime.channel.Peer;
-import io.agentscope.builder.runtime.channel.PeerKind;
-import io.agentscope.builder.runtime.channel.RouteResult;
-import io.agentscope.builder.runtime.gateway.ChannelManager;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelRouter;
+import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
+import io.agentscope.harness.agent.gateway.channel.Peer;
+import io.agentscope.harness.agent.gateway.channel.PeerKind;
+import io.agentscope.harness.agent.gateway.channel.RouteResult;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;

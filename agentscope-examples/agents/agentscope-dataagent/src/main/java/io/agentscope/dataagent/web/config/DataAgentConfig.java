@@ -17,12 +17,9 @@ package io.agentscope.dataagent.web.config;
 
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
-import io.agentscope.dataagent.runtime.channel.ChannelConfig;
-import io.agentscope.dataagent.runtime.channel.DmScope;
-import io.agentscope.dataagent.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.dataagent.runtime.config.ChannelConfigEntry;
 import io.agentscope.dataagent.runtime.marketplace.GitDataAgentMarketplace;
 import io.agentscope.dataagent.runtime.marketplace.LocalApprovalMarketplace;
@@ -32,8 +29,11 @@ import io.agentscope.dataagent.web.toolbus.ToolEventBus;
 import io.agentscope.dataagent.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.dataagent.web.workspace.UserSandboxRegistry;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClientOptions;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -163,7 +163,7 @@ public class DataAgentConfig {
      * @param toolEventBus the shared tool-event bus for real-time SSE streaming of tool calls
      * @param sandboxClient client used by every {@link DockerFilesystemSpec} (same instance the
      *     {@link UserSandboxRegistry} uses, so spec-defaults and registry-managed sandboxes share
-     *     one Docker backend)
+     *     one Docker store)
      * @param userSandboxRegistry registry attached to the gateway after bootstrap so per-call
      *     turns receive the right per-user sandbox
      */
@@ -173,7 +173,7 @@ public class DataAgentConfig {
             ToolEventBus toolEventBus,
             SandboxClient<DockerSandboxClientOptions> sandboxClient,
             UserSandboxRegistry userSandboxRegistry,
-            Optional<Session> sessionOpt)
+            Optional<AgentStateStore> sessionOpt)
             throws IOException {
         Path cwd = resolveCwd();
         ensureAgentscopeConfig();
@@ -189,22 +189,26 @@ public class DataAgentConfig {
                             + " available.");
         }
 
-        // Session backend selection is independent of the workspace filesystem now that workspaces
+        // AgentStateStore backend selection is independent of the workspace filesystem now that
+        // workspaces
         // are sandbox-backed: each user's sandbox is reached through the in-memory
         // UserSandboxRegistry under sticky load-balancing. Operators should still provide a
-        // distributed Session bean for production so conversation state survives pod restarts.
-        Session session = sessionOpt.orElseGet(InMemorySession::new);
+        // distributed AgentStateStore bean for production so conversation state survives pod
+        // restarts.
+        AgentStateStore stateStore = sessionOpt.orElseGet(InMemoryAgentStateStore::new);
         if (sessionOpt.isEmpty()) {
             log.warn(
-                    "No distributed Session bean configured ({}); using InMemorySession. Provide a"
-                            + " RedisSession / MysqlSession bean for multi-replica deployments.",
-                    Session.class.getName());
+                    "No distributed AgentStateStore bean configured ({}); using"
+                            + " InMemoryAgentStateStore. For multi-replica deployments, provide"
+                            + " a DistributedStore or a distributed AgentStateStore bean"
+                            + " (e.g. from agentscope-extensions-redis).",
+                    AgentStateStore.class.getName());
         }
 
         builder.configureAllAgents(
                 b -> {
                     b.middleware(new ToolNotificationMiddleware(toolEventBus));
-                    b.session(session);
+                    b.stateStore(stateStore);
                     b.filesystem(
                             new DockerFilesystemSpec()
                                     .client(sandboxClient)

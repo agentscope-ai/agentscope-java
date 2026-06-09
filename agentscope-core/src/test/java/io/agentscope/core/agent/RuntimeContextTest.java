@@ -16,11 +16,9 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -52,7 +50,6 @@ class RuntimeContextTest {
         RuntimeContext ctx = RuntimeContext.empty();
         assertNull(ctx.getSessionId());
         assertNull(ctx.getUserId());
-        assertNull(ctx.getSessionKey());
         ctx.put("k", "v");
         assertEquals("v", ctx.get("k"));
     }
@@ -61,15 +58,9 @@ class RuntimeContextTest {
     @DisplayName("builder sets session fields and string extras")
     void builderSessionAndStringExtras() {
         RuntimeContext ctx =
-                RuntimeContext.builder()
-                        .sessionId("sid-1")
-                        .userId("u-1")
-                        .sessionKey(SimpleSessionKey.of("sk"))
-                        .put("extra", 42)
-                        .build();
+                RuntimeContext.builder().sessionId("sid-1").userId("u-1").put("extra", 42).build();
         assertEquals("sid-1", ctx.getSessionId());
         assertEquals("u-1", ctx.getUserId());
-        assertNotNull(ctx.getSessionKey());
         assertEquals(Integer.valueOf(42), ctx.get("extra"));
     }
 
