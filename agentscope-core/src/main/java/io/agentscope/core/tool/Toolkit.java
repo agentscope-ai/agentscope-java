@@ -335,6 +335,22 @@ public class Toolkit {
     }
 
     /**
+     * Get tool schemas filtered by an explicitly supplied set of active group names, independent
+     * of this toolkit's shared per-group activation flags.
+     *
+     * <p>Per-call / stateless variant of {@link #getToolSchemas()}: callers that track activated
+     * groups in their own per-{@code (userId, sessionId)} state (e.g. {@code ReActAgent}) use this
+     * so the model's tool surface is resolved from the call's own slot rather than from the shared,
+     * concurrently-mutated toolkit activation flags.
+     *
+     * @param activeGroups the group names to treat as active for this resolution
+     * @return List of ToolSchema objects visible for the supplied groups (plus all ungrouped tools)
+     */
+    public List<ToolSchema> getToolSchemas(java.util.Collection<String> activeGroups) {
+        return schemaProvider.getToolSchemas(activeGroups);
+    }
+
+    /**
      * Register a tool method with group, extended model, and preset parameters.
      *
      * <p>Builds a {@link ReflectiveFunctionTool} (a {@link ToolBase} subclass) so the registered
@@ -875,7 +891,7 @@ public class Toolkit {
          *     .subAgent(
          *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
          *         SubAgentConfig.builder()
-         *             .session(new JsonSession(Path.of("sessions")))
+         *             .stateStore(new JsonFileAgentStateStore(Path.of("sessions")))
          *             .forwardEvents(true)
          *             .build())
          *     .apply();
@@ -883,7 +899,7 @@ public class Toolkit {
          *
          * @param provider Factory for creating agent instances (called for each session)
          * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
-         *     derived from agent name, InMemorySession for state, events forwarded)
+         *     derived from agent name, InMemoryAgentStateStore for state, events forwarded)
          * @return This builder for chaining
          * @see SubAgentConfig
          * @see SubAgentConfig#defaults()

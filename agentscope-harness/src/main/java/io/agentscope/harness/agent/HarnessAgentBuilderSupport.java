@@ -27,10 +27,9 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -38,16 +37,11 @@ import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
-import io.agentscope.harness.agent.sandbox.SandboxContext;
-import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
-import io.agentscope.harness.agent.session.WorkspaceSession;
-import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
@@ -57,6 +51,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -157,34 +152,6 @@ final class HarnessAgentBuilderSupport {
         // Default: route through LocalFilesystemSpec so the default project (= ${user.dir})
         // is overlaid below the agent workspace, matching the Claude-Code-style two-layer model.
         return new LocalFilesystemSpec().toFilesystem(workspace, nsFactory);
-    }
-
-    static void validateDistributedSandboxConfig(
-            HarnessAgent.Builder b,
-            io.agentscope.core.session.Session effectiveSession,
-            SandboxContext sandboxContext) {
-        if (b.sandboxFilesystemSpec.getSandboxStateStore() == null
-                && effectiveSession instanceof WorkspaceSession) {
-            throw new IllegalStateException(
-                    "filesystem(SandboxFilesystemSpec) requires a distributed Session backend"
-                            + " (for example RedisSession) to persist and restore sandbox"
-                            + " state across distributed instances."
-                            + " Configure one via .session(...)."
-                            + " For single-node use, opt out via"
-                            + " .sandboxDistributed(SandboxDistributedOptions.builder()"
-                            + ".requireDistributed(false).build()).");
-        }
-        if (sandboxContext == null
-                || sandboxContext.getSnapshotSpec() == null
-                || sandboxContext.getSnapshotSpec() instanceof NoopSnapshotSpec) {
-            throw new IllegalStateException(
-                    "filesystem(SandboxFilesystemSpec) requires a non-noop snapshotSpec to"
-                            + " restore workspace archives across distributed instances."
-                            + " Configure one via SandboxFilesystemSpec.snapshotSpec(...)."
-                            + " For single-node use, opt out via"
-                            + " .sandboxDistributed(SandboxDistributedOptions.builder()"
-                            + ".requireDistributed(false).build()).");
-        }
     }
 
     /**
@@ -334,6 +301,11 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedAgentTracingLogEnabled = b.agentTracingLogEnabled;
         final List<String> capturedAdditionalContextFiles = List.copyOf(b.additionalContextFiles);
         final int capturedMaxContextTokens = b.maxContextTokens;
+        // Propagate the parent's (distributed) state store so an exposed subagent can be
+        // re-materialized on another node / after a restart and still load its conversation
+        // history by sessionId. Null in purely local default deployments — children then keep
+        // their own local store, preserving legacy behaviour.
+        final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
 
         return (RuntimeContext parentRc) -> {
             // general-purpose subagent shares the parent's workspace and is short-lived per spawn;
@@ -368,6 +340,7 @@ final class HarnessAgentBuilderSupport {
                 sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
             }
             if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
+            if (capturedStateStore != null) sub.stateStore(capturedStateStore);
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
             if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
@@ -407,6 +380,9 @@ final class HarnessAgentBuilderSupport {
         // lose any --add-dir style allow-list configured at the main level.
         final io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
                 capturedLocalFilesystemSpec = b.localFilesystemSpec;
+        // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
+        // subagent's conversation survives cross-node re-materialization. Null in local defaults.
+        final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
 
         return (RuntimeContext parentRc) -> {
             if (decl.isRemote()) {
@@ -423,10 +399,10 @@ final class HarnessAgentBuilderSupport {
             Model effectiveModel =
                     resolveModel(decl.getModel(), capturedModel, capturedResolver, decl.getName());
 
-            // ---- Derive child SessionKey: bucket persisted AgentState by parent identity ----
+            // ---- Derive child session ID: bucket persisted AgentState by parent identity ----
             // (Phase B-0) Without this every (user, parent-session) shares the same bucket and
-            // can read each other's subagent conversations through Session.get(...).
-            SessionKey childSessionKey = deriveChildSessionKey(decl, parentRc);
+            // can read each other's subagent conversations through AgentStateStore.get(...).
+            String childSessionId = deriveChildSessionId(decl, parentRc);
 
             // ---- Build child agent ----
             HarnessAgent.Builder sub =
@@ -438,7 +414,7 @@ final class HarnessAgentBuilderSupport {
                                     allowlistedInheritedToolkit(
                                             capturedParentToolkit, decl.getTools()))
                             .workspace(runtimeWorkspace)
-                            .sessionKey(childSessionKey)
+                            .defaultSessionId(childSessionId)
                             .maxIters(decl.getSteps())
                             .asLeafSubagent()
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
@@ -466,6 +442,10 @@ final class HarnessAgentBuilderSupport {
             } else if (decl.getWorkspaceMode() != WorkspaceMode.SHARED
                     && capturedLocalFilesystemSpec != null) {
                 sub.filesystem(cloneLocalSpecForSubagent(capturedLocalFilesystemSpec));
+            }
+
+            if (capturedStateStore != null) {
+                sub.stateStore(capturedStateStore);
             }
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
@@ -516,8 +496,8 @@ final class HarnessAgentBuilderSupport {
     }
 
     /**
-     * Composes the child agent's persisted {@link SessionKey}, bucketing by declaration name and
-     * the spawn-time parent identity:
+     * Composes the child agent's persisted session ID, bucketing by declaration name and the
+     * spawn-time parent identity:
      *
      * <pre>
      * {declarationName}[@{parentSessionId}][#{userId}]
@@ -528,29 +508,29 @@ final class HarnessAgentBuilderSupport {
      * back to the legacy single-bucket form: they're sharing the parent's full state tree by
      * design.
      *
-     * <p>This works uniformly across {@link io.agentscope.core.session.Session} backends —
+     * <p>This works uniformly across {@link io.agentscope.core.state.AgentStateStore} stores —
      * Workspace, Redis, InMemory, or custom — because all of them bucket {@code save}/{@code get}
-     * by {@code SessionKey}. (Phase B-0)
+     * by session ID. (Phase B-0)
      */
-    static SessionKey deriveChildSessionKey(SubagentDeclaration decl, RuntimeContext parentRc) {
+    static String deriveChildSessionId(SubagentDeclaration decl, RuntimeContext parentRc) {
         String declName = decl.getName();
         if (decl.getWorkspaceMode() == WorkspaceMode.SHARED || parentRc == null) {
-            return SimpleSessionKey.of(declName);
+            return declName;
         }
         String sid = sanitizeIdentifier(parentRc.getSessionId());
         String uid = sanitizeIdentifier(parentRc.getUserId());
         if (sid == null && uid == null) {
-            return SimpleSessionKey.of(declName);
+            return declName;
         }
         StringBuilder sb = new StringBuilder(declName);
         if (sid != null) sb.append('@').append(sid);
         if (uid != null) sb.append('#').append(uid);
-        return SimpleSessionKey.of(sb.toString());
+        return sb.toString();
     }
 
     /**
      * Returns {@code null} when the input is null or blank; otherwise replaces characters that
-     * confuse path-based Session backends (slashes, backslashes, whitespace, controls) with
+     * confuse path-based AgentStateStore stores (slashes, backslashes, whitespace, controls) with
      * underscores. Keeps Redis/InMemory/SQL keys unaffected since their stored form is opaque.
      */
     static String sanitizeIdentifier(String s) {
@@ -686,14 +666,16 @@ final class HarnessAgentBuilderSupport {
         if (b.taskRepository != null) {
             return b.taskRepository;
         }
-        if (wsManager != null) {
-            String taskAgentId =
-                    b.agentId != null && !b.agentId.isBlank()
-                            ? b.agentId
-                            : (b.name != null && !b.name.isBlank() ? b.name : "ReActAgent");
-            return new WorkspaceTaskRepository(wsManager, taskAgentId);
-        }
-        return new DefaultTaskRepository();
+        Objects.requireNonNull(
+                wsManager,
+                "WorkspaceManager must be non-null when resolving the default TaskRepository;"
+                    + " HarnessAgent.build() always constructs one. Pass an explicit"
+                    + " .taskRepository(...) if you need a non-workspace-backed implementation.");
+        String taskAgentId =
+                b.agentId != null && !b.agentId.isBlank()
+                        ? b.agentId
+                        : (b.name != null && !b.name.isBlank() ? b.name : "ReActAgent");
+        return new WorkspaceTaskRepository(wsManager, taskAgentId);
     }
 
     // -----------------------------------------------------------------

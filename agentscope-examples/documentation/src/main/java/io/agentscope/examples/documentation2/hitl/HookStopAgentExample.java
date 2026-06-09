@@ -17,6 +17,7 @@ package io.agentscope.examples.documentation2.hitl;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
@@ -30,7 +31,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.function.Function;
@@ -62,13 +62,16 @@ public class HookStopAgentExample {
      * @throws Exception if an I/O error occurs
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "Middleware Stop-Agent Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Middleware Stop-Agent Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates human-in-the-loop tool confirmation.\n"
                         + "Sensitive tools (delete_file, send_email) require explicit approval\n"
                         + "before execution. Safe tools (search_web) run without interruption.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new SensitiveTools());
@@ -175,7 +178,10 @@ public class HookStopAgentExample {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             boolean hasDangerousTool =
                     input.toolCalls().stream()
                             .map(ToolUseBlock::getName)

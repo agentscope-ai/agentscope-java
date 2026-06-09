@@ -44,6 +44,7 @@ public class FilesystemTool {
 
     @Tool(
             name = "read_file",
+            readOnly = true,
             description =
                     "Read file content with line numbers. Supports pagination via offset and"
                             + " limit.")
@@ -98,7 +99,10 @@ public class FilesystemTool {
                 : "Error: " + r.error();
     }
 
-    @Tool(name = "grep_files", description = "Search file contents for a literal text pattern.")
+    @Tool(
+            name = "grep_files",
+            readOnly = true,
+            description = "Search file contents for a literal text pattern.")
     public String grepFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")
@@ -119,7 +123,7 @@ public class FilesystemTool {
                 .collect(Collectors.joining("\n"));
     }
 
-    @Tool(name = "glob_files", description = "Find files matching a glob pattern.")
+    @Tool(name = "glob_files", readOnly = true, description = "Find files matching a glob pattern.")
     public String globFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")
@@ -138,7 +142,10 @@ public class FilesystemTool {
                 .collect(Collectors.joining("\n"));
     }
 
-    @Tool(name = "list_files", description = "List files and directories at the given path.")
+    @Tool(
+            name = "list_files",
+            readOnly = true,
+            description = "List files and directories at the given path.")
     public String listFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Directory path to list") String path) {

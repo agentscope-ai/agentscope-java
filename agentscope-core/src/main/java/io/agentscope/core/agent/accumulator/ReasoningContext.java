@@ -15,10 +15,10 @@
  */
 package io.agentscope.core.agent.accumulator;
 
+import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -177,10 +177,9 @@ public class ReasoningContext {
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
         }
 
-        return Msg.builder()
+        return AssistantMessage.builder()
                 .id(messageId)
                 .name(agentName)
-                .role(MsgRole.ASSISTANT)
                 .content(blocks)
                 .metadata(metadata)
                 .usage(chatUsage)
@@ -192,12 +191,7 @@ public class ReasoningContext {
      * @hidden
      */
     private Msg buildChunkMsg(ContentBlock block) {
-        return Msg.builder()
-                .id(messageId)
-                .name(agentName)
-                .role(MsgRole.ASSISTANT)
-                .content(block)
-                .build();
+        return AssistantMessage.builder().id(messageId).name(agentName).content(block).build();
     }
 
     /**
