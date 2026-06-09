@@ -77,8 +77,7 @@ public class WorkspaceSharedStoreExample {
         System.out.println("Connecting to Redis: " + redisUrl + "\n");
 
         JedisPooled jedis = new JedisPooled(java.net.URI.create(redisUrl));
-        DistributedStore store =
-                RedisDistributedStore.fromJedis(jedis, "agentscope:example:");
+        DistributedStore store = RedisDistributedStore.fromJedis(jedis, "agentscope:example:");
 
         Path workspace = Files.createTempDirectory("agentscope-shared-store-example");
 
