@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
@@ -30,6 +32,7 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -164,6 +167,33 @@ class ReActAgentNewLoopReplyTest {
     }
 
     @Test
+    void thinkingBlockEndsBeforeTextBlockStarts() {
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(MockModel.withThinking("I am thinking.", "Final answer"))
+                        .toolkit(new Toolkit())
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        assertEquals(
+                List.of(
+                        AgentEventType.AGENT_START,
+                        AgentEventType.MODEL_CALL_START,
+                        AgentEventType.THINKING_BLOCK_START,
+                        AgentEventType.THINKING_BLOCK_DELTA,
+                        AgentEventType.THINKING_BLOCK_END,
+                        AgentEventType.TEXT_BLOCK_START,
+                        AgentEventType.TEXT_BLOCK_DELTA,
+                        AgentEventType.TEXT_BLOCK_END,
+                        AgentEventType.MODEL_CALL_END,
+                        AgentEventType.AGENT_END),
+                events.stream().map(AgentEvent::getType).toList());
+    }
+
+    @Test
     void callResolvesToFinalAssistantMsg() {
         ChatModelBase model = new ScriptedModel(List.of(() -> Flux.just(textResponse("answer"))));
         ReActAgent agent =
@@ -204,6 +234,7 @@ class ReActAgentNewLoopReplyTest {
         int iToolCallEnd = indexOf(events, ToolCallEndEvent.class);
         int iModelCallEnd1 = indexOf(events, ModelCallEndEvent.class);
         int iToolResultStart = indexOf(events, ToolResultStartEvent.class);
+        int iToolResultDelta = indexOf(events, ToolResultTextDeltaEvent.class);
         int iToolResultEnd = indexOf(events, ToolResultEndEvent.class);
         int iReplyEnd = indexOf(events, AgentEndEvent.class);
 
@@ -212,7 +243,12 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(iToolCallEnd > iToolCallStart);
         assertTrue(iModelCallEnd1 > iToolCallEnd);
         assertTrue(iToolResultStart > iModelCallEnd1);
+        assertTrue(iToolResultDelta > iToolResultStart);
         assertTrue(iToolResultEnd > iToolResultStart);
+        assertEquals(
+                1L, events.stream().filter(e -> e instanceof ToolResultTextDeltaEvent).count());
+        assertEquals(
+                "echo:ping", ((ToolResultTextDeltaEvent) events.get(iToolResultDelta)).getDelta());
         assertTrue(iReplyEnd > iToolResultEnd);
 
         int firstModelStart = indexOf(events, ModelCallStartEvent.class);
