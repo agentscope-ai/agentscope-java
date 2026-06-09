@@ -42,17 +42,18 @@ public class SandboxManager {
     private static final Logger log = LoggerFactory.getLogger(SandboxManager.class);
 
     private final SandboxClient<?> client;
-    private final SandboxStateStore stateStore;
+    private final SessionSandboxStateStore stateStore;
     private final String agentId;
     private final SandboxExecutionGuard executionGuard;
 
-    public SandboxManager(SandboxClient<?> client, SandboxStateStore stateStore, String agentId) {
+    public SandboxManager(
+            SandboxClient<?> client, SessionSandboxStateStore stateStore, String agentId) {
         this(client, stateStore, agentId, SandboxExecutionGuard.noop());
     }
 
     public SandboxManager(
             SandboxClient<?> client,
-            SandboxStateStore stateStore,
+            SessionSandboxStateStore stateStore,
             String agentId,
             SandboxExecutionGuard executionGuard) {
         this.client = Objects.requireNonNull(client, "client must not be null");

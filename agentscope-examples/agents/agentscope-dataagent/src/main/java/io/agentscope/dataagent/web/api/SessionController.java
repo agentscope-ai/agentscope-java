@@ -16,15 +16,18 @@
 package io.agentscope.dataagent.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
+import io.agentscope.dataagent.runtime.session.HistoryResult;
 import io.agentscope.dataagent.runtime.session.SessionAgentManager;
 import io.agentscope.dataagent.runtime.session.SessionEntry;
 import io.agentscope.dataagent.runtime.session.SessionKind;
 import io.agentscope.dataagent.web.catalog.AgentCatalogService;
 import io.agentscope.dataagent.web.session.SessionReadStateStore;
-import io.agentscope.dataagent.web.session.SessionTranscriptReader;
 import io.agentscope.dataagent.web.session.SessionTurnParser;
-import io.agentscope.dataagent.web.workspace.WorkspaceManagerFactory;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -44,7 +47,7 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 /**
- * Session management endpoints, scoped to a specific agent.
+ * AgentStateStore management endpoints, scoped to a specific agent.
  *
  * <ul>
  *   <li>{@code GET /api/agents/{agentId}/sessions/inbox} — paginated session list with previews
@@ -62,22 +65,19 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/api/agents/{agentId}/sessions")
 public class SessionController {
 
+    private final DataAgentBootstrap bootstrap;
     private final SessionAgentManager sessionAgentManager;
     private final SessionReadStateStore readStateStore;
     private final AgentCatalogService catalogService;
-    private final SessionTranscriptReader transcriptReader;
 
     public SessionController(
             DataAgentBootstrap builderBootstrap,
             SessionReadStateStore readStateStore,
-            AgentCatalogService catalogService,
-            WorkspaceManagerFactory workspaceManagerFactory) {
+            AgentCatalogService catalogService) {
+        this.bootstrap = builderBootstrap;
         this.sessionAgentManager = builderBootstrap.gateway().sessionAgentManager();
         this.readStateStore = readStateStore;
         this.catalogService = catalogService;
-        this.transcriptReader =
-                new SessionTranscriptReader(
-                        sessionAgentManager, catalogService, workspaceManagerFactory::forAgent);
     }
 
     @GetMapping("/inbox")
@@ -185,7 +185,8 @@ public class SessionController {
                         .getSession(key)
                         .orElseGet(() -> findSessionByConversationId(agentId, key, userId));
         if (entry == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found: " + key);
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "AgentStateStore not found: " + key);
         }
         String gatewayAgentId = catalogService.peekGatewayAgentId(userId, agentId);
         if (!Objects.equals(entry.userId(), userId)
@@ -249,7 +250,7 @@ public class SessionController {
 
     /**
      * Extracts the conversationId (the threadId portion of {@link
-     * io.agentscope.dataagent.runtime.gateway.MsgContext}) from a canonical gateKey segment of the
+     * io.agentscope.harness.agent.gateway.MsgContext}) from a canonical gateKey segment of the
      * form {@code |t:<value>}. Returns {@code null} when the gateKey is missing or has no thread
      * segment — pre-multi-session sessions live with a {@code null} conversationId and can still be
      * addressed by their storage key.
@@ -287,13 +288,44 @@ public class SessionController {
 
     /**
      * Reads the chat content for a session. The actual transcript lives at the per-agent workspace
-     * under {@code agents/<runtimeAgentId>/sessions/<sessionId>.log.jsonl}. Reads borrow a live
-     * workspace view through {@link WorkspaceManagerFactory} so they work out of band from agent
-     * call contexts. Falls back to {@link SessionAgentManager#history} only if the live workspace
-     * cannot be resolved or does not yet contain the JSONL transcript.
+     * under {@code agents/<innerAgentId>/sessions/<sessionId>.log.jsonl}, written by the harness
+     * memory hooks. The {@link SessionAgentManager} registry stores a stale legacy path
+     * ({@code .json}) keyed by the harness UUID rooted at the main-agent workspace, so its
+     * {@code history(...)} cannot be used here.
+     *
+     * <p>Reads go through the per-agent {@link WorkspaceManager}'s composite filesystem (which is
+     * what the harness writes through), so multi-tenant deployments backed by the shared
+     * {@link BaseStore} stay correct. Falls back to
+     * {@link SessionAgentManager#history} only if the WorkspaceManager cannot be resolved
+     * (e.g. the agent has been unloaded).
      */
     private String readSessionLogContent(String urlAgentId, SessionEntry entry) {
-        return transcriptReader.readSessionLogContent(urlAgentId, entry);
+        String gatewayAgentId = catalogService.peekGatewayAgentId(entry.userId(), urlAgentId);
+        HarnessAgent ha =
+                gatewayAgentId != null ? bootstrap.gateway().findAgent(gatewayAgentId) : null;
+        if (ha != null) {
+            WorkspaceManager wm = ha.getWorkspaceManager();
+            String innerAgentId = ha.getName();
+            if (wm != null && innerAgentId != null && !innerAgentId.isBlank()) {
+                String relLog =
+                        "agents/" + innerAgentId + "/sessions/" + entry.sessionId() + ".log.jsonl";
+                String fromLog = wm.readManagedWorkspaceFileUtf8(RuntimeContext.empty(), relLog);
+                if (fromLog != null && !fromLog.isEmpty()) {
+                    return fromLog;
+                }
+                String relCtx =
+                        "agents/" + innerAgentId + "/sessions/" + entry.sessionId() + ".jsonl";
+                String fromCtx = wm.readManagedWorkspaceFileUtf8(RuntimeContext.empty(), relCtx);
+                if (fromCtx != null && !fromCtx.isEmpty()) {
+                    return fromCtx;
+                }
+            }
+        }
+        HistoryResult raw = sessionAgentManager.history(entry.sessionKey(), 0);
+        if (raw == null || raw.error() != null) {
+            return "";
+        }
+        return raw.content() != null ? raw.content() : "";
     }
 
     // -----------------------------------------------------------------

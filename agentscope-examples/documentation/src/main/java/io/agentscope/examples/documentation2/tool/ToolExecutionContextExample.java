@@ -24,7 +24,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.util.List;
 
 /**
@@ -62,13 +61,16 @@ public class ToolExecutionContextExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) {
-        ExampleUtils.printWelcome(
-                "RuntimeContext (Tool Execution Context) Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("RuntimeContext (Tool Execution Context) Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates per-call context injection via RuntimeContext.\n"
                         + "The UserContext POJO is injected automatically into @Tool methods\n"
                         + "without the model supplying it as a parameter.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new PersonalizedTools());

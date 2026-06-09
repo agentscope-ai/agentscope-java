@@ -28,7 +28,6 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 
 /**
  * PermissionContextExample - Demonstrates the {@link PermissionContextState} permission engine.
@@ -66,13 +65,16 @@ public class PermissionContextExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) {
-        ExampleUtils.printWelcome(
-                "Permission Context Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Permission Context Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates how PermissionContextState controls tool access.\n"
                         + "read_file is explicitly allowed; write_file requires confirmation;\n"
                         + "delete_file is permanently denied.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new FileTools());
 

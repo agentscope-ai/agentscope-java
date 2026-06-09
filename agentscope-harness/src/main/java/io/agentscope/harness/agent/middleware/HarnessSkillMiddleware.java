@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.AgentSkill;
@@ -138,8 +137,10 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
-        RuntimeContext ctx = resolveContext(agent);
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        if (ctx == null) {
+            ctx = RuntimeContext.empty();
+        }
 
         Map<String, RepoBound> merged = mergeRepositories(ctx);
         if (merged.isEmpty()) {
@@ -191,13 +192,6 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
     // ---------------------------------------------------------------------
     //  Internals
     // ---------------------------------------------------------------------
-
-    private RuntimeContext resolveContext(Agent agent) {
-        if (agent instanceof AgentBase ab && ab.getRuntimeContext() != null) {
-            return ab.getRuntimeContext();
-        }
-        return RuntimeContext.empty();
-    }
 
     /**
      * Merge skills from every repository, in compose order. Later entries with the same

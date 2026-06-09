@@ -23,10 +23,10 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * <p>A request describes <em>where</em> the message should be delivered (channel + peer kind +
  * peer id, plus optional account/thread context) and <em>what</em> the message says (text or
  * markdown). The {@link OutboundService} translates this into a {@link
- * io.agentscope.builder.runtime.channel.OutboundAddress} and delegates to the matching channel.
+ * io.agentscope.harness.agent.gateway.channel.OutboundAddress} and delegates to the matching channel.
  *
  * @param channelId target channel id (must match a registered {@link
- *     io.agentscope.builder.runtime.channel.Channel}); required
+ *     io.agentscope.harness.agent.gateway.channel.Channel}); required
  * @param peerKind one of {@code DIRECT}, {@code CHANNEL}, {@code GROUP}, {@code THREAD}; required
  * @param peerId provider-specific peer id (user id, group/conversation id, ...); required
  * @param accountId optional multi-account dimension (corp id, app instance); nullable
