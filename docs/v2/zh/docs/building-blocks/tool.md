@@ -430,6 +430,74 @@ ReActAgent agent =
 Skill 不是 tool —— agent 不能直接调用 skill。它必须先用 `load_skill_through_path` 读取指令，再用其他 tool 按描述的步骤执行。
 :::
 
+### Skill 执行脚本：配置 Shell 工具
+
+Skill 只提供指令，真正的执行依赖 agent 已有的 tool。如果 skill 指令涉及脚本执行（例如 `scripts/run.py`），agent 需要拥有 shell 执行能力：
+
+- **`ReActAgent`** —— 注册 `ShellCommandTool` 到 toolkit：
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.ShellCommandTool;
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new ShellCommandTool());
+toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
+toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("SkillAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .skillRepository(skillRepo)
+                .build();
+```
+
+- **`HarnessAgent`** —— harness 模块自带 workspace 感知的 shell 与文件工具（`execute`、`read_file`、`write_file` 等），无需额外注册。
+
+### Skill + ToolGroup：按需披露工具
+
+`SkillToolGroup` 把一组 tool 绑定到某个 skill name —— agent 加载该 skill 时 tool group 自动激活，未加载时 tool 不出现在模型 schema 中，减少上下文噪音。
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tool.Toolkit;
+
+Toolkit toolkit = new Toolkit();
+
+// 1. 创建与 skill 绑定的 tool group（初始不激活）
+toolkit.createSkillToolGroup(
+        "analysis-tools",                // group 名
+        "Data analysis tools",           // 描述
+        false,                           // 初始不激活
+        "data-analysis");                // 绑定的 skill name
+
+// 2. 把 tool 注册到该 group
+toolkit.registration()
+        .tool(new AnalysisTools())
+        .group("analysis-tools")
+        .apply();
+
+// 3. 构建 agent，启用 meta tool 支持模型主动切换 group
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("AnalysisAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .skillRepository(skillRepo)
+                .enableMetaTool(true)
+                .build();
+```
+
+当 agent 通过 `load_skill_through_path` 加载名为 `data-analysis` 的 skill 时，`analysis-tools` group 自动激活，其中的 tool 立即可用。配合 `enableMetaTool(true)`，模型还可以通过 `reset_tools` 主动管理 tool group 的激活状态。
+
+参考实现：`agentscope-examples/documentation/.../skill/SkillWithToolGroupExample.java`。
+
 ## 自我管理 Tool
 
 内置 **meta tool**（`reset_tools`）让 agent 在运行时自我管理哪些 tool group 处于激活状态，从而保持上下文聚焦 —— 只有与当前任务相关的 tool 暴露给模型。

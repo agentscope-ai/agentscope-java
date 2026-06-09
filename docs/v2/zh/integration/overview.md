@@ -47,6 +47,7 @@
 
 - [Git 技能仓库](skill/git-repository.md)
 - [MySQL 技能仓库](skill/mysql-repository.md)
+- [PostgreSQL 技能仓库](skill/postgresql-repository.md)
 - 也可以使用 [Nacos 技能仓库](infrastructure/nacos.md#skill-仓库)
 
 ## Channel 适配器
@@ -73,7 +74,6 @@
 
 - [Higress AI 网关](infrastructure/higress.md)
 - [Nacos](infrastructure/nacos.md)
-- [RocketMQ](infrastructure/rocketmq.md)
 - [Scheduler（Quartz / XXL-Job）](infrastructure/scheduler.md)
 
 ## 生态扩展
@@ -81,7 +81,6 @@
 运行环境、语言生态、调试与训练流水线。
 
 - [Chat Completions Web](ecosystem/chat-completions-web.md)
-- [Kotlin 扩展](ecosystem/kotlin.md)
 - [AgentScope Studio](ecosystem/studio.md)
 - [在线训练（Training）](ecosystem/training.md)
 

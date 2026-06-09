@@ -47,6 +47,7 @@ Multiple storage implementations of `AgentSkillRepository`.
 
 - [Git Skill Repository](skill/git-repository.md)
 - [MySQL Skill Repository](skill/mysql-repository.md)
+- [PostgreSQL Skill Repository](skill/postgresql-repository.md)
 - See also [Nacos Skill Repository](infrastructure/nacos.md#skill-repository)
 
 ## Channel Adapters
@@ -73,7 +74,6 @@ Plug Agents into your enterprise infrastructure.
 
 - [Higress AI Gateway](infrastructure/higress.md)
 - [Nacos](infrastructure/nacos.md)
-- [RocketMQ](infrastructure/rocketmq.md)
 - [Scheduler (Quartz / XXL-Job)](infrastructure/scheduler.md)
 
 ## Ecosystem
@@ -81,7 +81,6 @@ Plug Agents into your enterprise infrastructure.
 Runtime, language, debugging, and training extensions.
 
 - [Chat Completions Web](ecosystem/chat-completions-web.md)
-- [Kotlin Extensions](ecosystem/kotlin.md)
 - [AgentScope Studio](ecosystem/studio.md)
 - [Online Training](ecosystem/training.md)
 

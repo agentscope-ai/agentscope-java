@@ -430,6 +430,74 @@ Each successful call has two effects:
 A skill is not a tool — the agent cannot call it directly. The agent must read the instructions via `load_skill_through_path` first, then act on them with other tools.
 :::
 
+### Skill script execution: configuring shell tools
+
+Skills only provide instructions — actual execution relies on the tools the agent already has. If a skill's instructions involve running scripts (e.g. `scripts/run.py`), the agent needs shell access:
+
+- **`ReActAgent`** — register `ShellCommandTool` in the toolkit:
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.ShellCommandTool;
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new ShellCommandTool());
+toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
+toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("SkillAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .skillRepository(skillRepo)
+                .build();
+```
+
+- **`HarnessAgent`** — the harness module ships workspace-aware shell and file tools (`execute`, `read_file`, `write_file`, etc.) out of the box; no extra registration needed.
+
+### Skill + ToolGroup: on-demand tool disclosure
+
+`SkillToolGroup` binds a group of tools to a skill name — the group activates automatically when the agent loads that skill, and stays hidden from the model's schema otherwise, reducing context noise.
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tool.Toolkit;
+
+Toolkit toolkit = new Toolkit();
+
+// 1. Create a tool group bound to a skill (initially inactive)
+toolkit.createSkillToolGroup(
+        "analysis-tools",                // group name
+        "Data analysis tools",           // description
+        false,                           // initially inactive
+        "data-analysis");                // bound skill name
+
+// 2. Register tools into that group
+toolkit.registration()
+        .tool(new AnalysisTools())
+        .group("analysis-tools")
+        .apply();
+
+// 3. Build the agent with meta tool for model-driven group switching
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("AnalysisAgent")
+                .sysPrompt("...")
+                .model(model)
+                .toolkit(toolkit)
+                .skillRepository(skillRepo)
+                .enableMetaTool(true)
+                .build();
+```
+
+When the agent loads the `data-analysis` skill via `load_skill_through_path`, the `analysis-tools` group activates and its tools become immediately available. With `enableMetaTool(true)`, the model can also manage group activation via `reset_tools`.
+
+Reference implementation: `agentscope-examples/documentation/.../skill/SkillWithToolGroupExample.java`.
+
 ## Self-managed tools
 
 The built-in **meta tool** (`reset_tools`) lets the agent self-manage which tool groups are active at runtime, keeping the context focused — only the tools relevant to the current task are exposed to the model.
