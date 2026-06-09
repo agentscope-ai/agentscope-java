@@ -195,22 +195,6 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         }
     }
 
-    /**
-     * Creates a new MilvusStore with minimal configuration.
-     *
-     * @param uri the Milvus server URI (e.g., "http://localhost:19530")
-     * @param collectionName the name of the collection to use
-     * @param dimensions the dimension of vectors that will be stored
-     * @return a new MilvusStore instance
-     * @throws VectorStoreException if initialization fails
-     * @deprecated Use {@link MilvusStore#builder()} instead
-     */
-    @Deprecated(since = "1.0.11", forRemoval = true)
-    public static MilvusStore create(String uri, String collectionName, int dimensions)
-            throws VectorStoreException {
-        return builder().uri(uri).collectionName(collectionName).dimensions(dimensions).build();
-    }
-
     @Override
     public Mono<Void> add(List<Document> documents) {
         if (documents == null) {

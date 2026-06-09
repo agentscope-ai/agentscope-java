@@ -59,6 +59,7 @@ public class DashScopeChatModel extends ChatModelBase {
     private final String modelName;
     private final boolean stream;
     private final Boolean enableThinking; // nullable
+    private final Boolean preserveThinking; // nullable
     private final Boolean enableSearch; // nullable
     private final EndpointType endpointType;
     private final GenerateOptions defaultOptions;
@@ -84,7 +85,9 @@ public class DashScopeChatModel extends ChatModelBase {
      * @param httpTransport custom HTTP transport (null for default from factory)
      * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
      * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @deprecated Use {@link #builder()} instead.
      */
+    @Deprecated(since = "1.1.0", forRemoval = true)
     public DashScopeChatModel(
             String apiKey,
             String modelName,
@@ -127,12 +130,61 @@ public class DashScopeChatModel extends ChatModelBase {
      * @param httpTransport custom HTTP transport (null for default from factory)
      * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
      * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @deprecated Use {@link #builder()} instead.
      */
+    @Deprecated(since = "1.1.0", forRemoval = true)
     public DashScopeChatModel(
             String apiKey,
             String modelName,
             boolean stream,
             Boolean enableThinking,
+            Boolean enableSearch,
+            EndpointType endpointType,
+            GenerateOptions defaultOptions,
+            String baseUrl,
+            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey) {
+        this(
+                apiKey,
+                modelName,
+                stream,
+                enableThinking,
+                null,
+                enableSearch,
+                null,
+                defaultOptions,
+                baseUrl,
+                formatter,
+                httpTransport,
+                publicKeyId,
+                publicKey);
+    }
+
+    /**
+     * Creates a new DashScope chat model instance with explicit API type.
+     *
+     * @param apiKey the API key for DashScope authentication
+     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param enableThinking whether thinking mode should be enabled (null for disabled)
+     * @param preserveThinking whether to append reasoning_content (null for disabled)
+     * @param enableSearch whether search enhancement should be enabled (null for disabled)
+     * @param endpointType the endpoint type to use (null for AUTO detection)
+     * @param defaultOptions default generation options (null for defaults)
+     * @param baseUrl custom base URL for DashScope API (null for default)
+     * @param formatter the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     */
+    protected DashScopeChatModel(
+            String apiKey,
+            String modelName,
+            boolean stream,
+            Boolean enableThinking,
+            Boolean preserveThinking,
             Boolean enableSearch,
             EndpointType endpointType,
             GenerateOptions defaultOptions,
@@ -150,6 +202,7 @@ public class DashScopeChatModel extends ChatModelBase {
         }
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
+        this.preserveThinking = preserveThinking;
         this.enableSearch = enableSearch;
         this.endpointType = endpointType != null ? endpointType : EndpointType.AUTO;
         this.defaultOptions =
@@ -340,6 +393,10 @@ public class DashScopeChatModel extends ChatModelBase {
             request.getParameters().setThinkingBudget(options.getThinkingBudget());
         }
 
+        if (Boolean.TRUE.equals(enableThinking) && preserveThinking != null) {
+            request.getParameters().setPreserveThinking(preserveThinking);
+        }
+
         // Model-specific settings for search mode
         if (enableSearch != null) {
             // Explicitly assign value for search mode
@@ -362,6 +419,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private String modelName;
         private boolean stream = true;
         private Boolean enableThinking;
+        private Boolean preserveThinking;
         private Boolean enableSearch;
         private EndpointType endpointType;
         private GenerateOptions defaultOptions = null;
@@ -421,6 +479,19 @@ public class DashScopeChatModel extends ChatModelBase {
          */
         public Builder enableThinking(Boolean enableThinking) {
             this.enableThinking = enableThinking;
+            return this;
+        }
+
+        /**
+         * Sets whether to append the reasoning_content of the assistant message in the conversation history to the model input.
+         *
+         * <p>When enabled, this reasoning_content will be appended to the model input.
+         *
+         * @param preserveThinking true to append reasoning_content, false to disable, null for default (disabled)
+         * @return this builder instance
+         */
+        public Builder preserveThinking(Boolean preserveThinking) {
+            this.preserveThinking = preserveThinking;
             return this;
         }
 
@@ -629,6 +700,7 @@ public class DashScopeChatModel extends ChatModelBase {
                     modelName,
                     stream,
                     enableThinking,
+                    preserveThinking,
                     enableSearch,
                     endpointType,
                     effectiveOptions,

@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
@@ -68,10 +70,13 @@ class DashScopeChatModelTest {
 
     private DashScopeChatModel model;
     private String mockApiKey;
+    private ObjectMapper objectMapper;
     private MockWebServer mockServer;
 
     @BeforeEach
     void setUp() throws IOException {
+        objectMapper = new ObjectMapper();
+
         mockApiKey = ModelTestUtils.createMockApiKey();
 
         mockServer = new MockWebServer();
@@ -244,6 +249,8 @@ class DashScopeChatModelTest {
                         null,
                         null,
                         null,
+                        null,
+                        null,
                         null);
 
         assertNotNull(model, "Model from overloaded constructor should be created");
@@ -258,6 +265,7 @@ class DashScopeChatModelTest {
                         mockApiKey,
                         "qwen3.5-plus",
                         true,
+                        null,
                         null,
                         null,
                         EndpointType.MULTIMODAL,
@@ -1025,6 +1033,194 @@ class DashScopeChatModelTest {
                         .build();
 
         assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName(
+            "Should set preserve_thinking to true in the request when preserveThinking option is"
+                    + " enabled")
+    void testPreserveThinkingEnabled() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .preserveThinking(true)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+        JsonNode jsonNode = objectMapper.readTree(body).get("parameters");
+        assertTrue(
+                jsonNode.get("enable_thinking").asBoolean(),
+                "Request body should set enable_thinking to true: " + body);
+        assertTrue(
+                jsonNode.get("preserve_thinking").asBoolean(),
+                "Request body should set preserve_thinking to true: " + body);
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName(
+            "Should set preserve_thinking to false in the request when preserveThinking option is"
+                    + " disabled")
+    void testPreserveThinkingDisabled() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .preserveThinking(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+        JsonNode jsonNode = objectMapper.readTree(body).get("parameters");
+        assertTrue(
+                jsonNode.get("enable_thinking").asBoolean(),
+                "Request body should set enable_thinking to true: " + body);
+        assertFalse(
+                jsonNode.get("preserve_thinking").asBoolean(),
+                "Request body should set preserve_thinking to false: " + body);
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName(
+            "Should not apply preserve_thinking to request when enableThinking option is disabled")
+    void testPreserveThinkingWhenEnableThinkingDisabled() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(false)
+                        .preserveThinking(true)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+        JsonNode jsonNode = objectMapper.readTree(body).get("parameters");
+        assertFalse(
+                jsonNode.get("enable_thinking").asBoolean(),
+                "Request body should set enable_thinking to false: " + body);
+        assertNull(
+                jsonNode.get("preserve_thinking"),
+                "Request body should not apply preserve_thinking: " + body);
+
+        mockServer.shutdown();
     }
 
     @Test
