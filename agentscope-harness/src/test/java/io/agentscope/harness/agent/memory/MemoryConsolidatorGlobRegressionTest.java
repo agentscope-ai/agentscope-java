@@ -56,6 +56,24 @@ class MemoryConsolidatorGlobRegressionTest {
         }
     }
 
+    @Test
+    void consolidate_readsSandboxDailyLedgerFromVirtualGlobPath(@TempDir Path tmp)
+            throws Exception {
+        LocalFilesystem fs = new LocalFilesystem(tmp, true, 10);
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            Path memoryDir = Files.createDirectories(tmp.resolve("memory"));
+            Files.writeString(memoryDir.resolve("2026-05-20.md"), "sandbox daily entry");
+
+            MemoryConsolidator consolidator =
+                    new MemoryConsolidator(wsm, stubModel("updated sandbox memory"));
+
+            consolidator.consolidate(RuntimeContext.empty()).block();
+
+            assertEquals("updated sandbox memory", wsm.readMemoryMd(RuntimeContext.empty()));
+            assertTrue(consolidator.readWatermark(RuntimeContext.empty()).isAfter(Instant.EPOCH));
+        }
+    }
+
     private static Model stubModel(String assistantText) {
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub-model");

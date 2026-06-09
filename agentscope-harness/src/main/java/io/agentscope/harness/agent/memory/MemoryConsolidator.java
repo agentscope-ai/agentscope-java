@@ -24,6 +24,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -284,7 +285,7 @@ public class MemoryConsolidator {
         }
 
         try {
-            Path candidate = Path.of(path);
+            Path candidate = Path.of(normalized);
             if (candidate.isAbsolute()) {
                 Path workspace = workspaceManager.getWorkspace().toAbsolutePath().normalize();
                 Path absolute = candidate.toAbsolutePath().normalize();
@@ -292,8 +293,8 @@ public class MemoryConsolidator {
                     return workspace.relativize(absolute).toString().replace('\\', '/');
                 }
             }
-        } catch (Exception ignored) {
-            // Fall through to virtual-path handling below.
+        } catch (InvalidPathException | SecurityException e) {
+            log.debug("Failed to normalize glob path '{}': {}", path, e.getMessage());
         }
 
         while (normalized.startsWith("/")) {
