@@ -110,7 +110,7 @@ public class OverlayFilesystem implements AbstractFilesystem {
 
     /**
      * Overlay subtype that delegates shell {@link #execute} and {@link #id} to a shell-capable
-     * upper backend. Filesystem operations inherit the standard overlay semantics from
+     * upper store. Filesystem operations inherit the standard overlay semantics from
      * {@link OverlayFilesystem}.
      */
     private static final class ShellAwareOverlay extends OverlayFilesystem

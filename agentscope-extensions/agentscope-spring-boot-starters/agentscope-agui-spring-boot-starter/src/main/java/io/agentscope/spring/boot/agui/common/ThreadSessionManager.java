@@ -60,7 +60,7 @@ public class ThreadSessionManager {
      * Creates a new ThreadSessionManager.
      *
      * @param maxSessions Maximum number of sessions to maintain
-     * @param sessionTimeoutMinutes Session timeout in minutes (0 = no timeout)
+     * @param sessionTimeoutMinutes AgentStateStore timeout in minutes (0 = no timeout)
      */
     public ThreadSessionManager(int maxSessions, int sessionTimeoutMinutes) {
         this.maxSessions = maxSessions;

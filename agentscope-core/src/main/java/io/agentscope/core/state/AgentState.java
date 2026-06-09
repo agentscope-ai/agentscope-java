@@ -16,8 +16,10 @@
 package io.agentscope.core.state;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import io.agentscope.core.interruption.InterruptControl;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
 import java.util.ArrayList;
@@ -43,6 +45,7 @@ import java.util.UUID;
  */
 @JsonPropertyOrder({
     "session_id",
+    "user_id",
     "summary",
     "context",
     "reply_id",
@@ -56,18 +59,28 @@ import java.util.UUID;
 public final class AgentState implements State {
 
     private final String sessionId;
+    private final String userId;
     private String summary;
     private final List<Msg> context;
     private String replyId;
     private int curIter;
     private boolean shutdownInterrupted;
-    private final PermissionContextState permissionContext;
+    private PermissionContextState permissionContext;
     private final ToolContextState toolContext;
     private final TaskContextState tasksContext;
     private final PlanModeContextState planModeContext;
 
+    /**
+     * Per-session interrupt signal. Runtime-only (never serialized): a stateless agent engine
+     * attaches one of these per {@code (userId, sessionId)} slot so a targeted {@code interrupt}
+     * signals exactly one session's in-flight call. Lazily created and {@code transient} so it is
+     * not part of {@code equals}/{@code hashCode} or JSON.
+     */
+    private transient volatile InterruptControl interruptControl;
+
     private AgentState(Builder builder) {
         this.sessionId = builder.sessionId == null ? newHex() : builder.sessionId;
+        this.userId = builder.userId;
         this.summary = builder.summary == null ? "" : builder.summary;
         this.context = new ArrayList<>(builder.context);
         this.replyId = builder.replyId == null ? newHex() : builder.replyId;
@@ -92,6 +105,7 @@ public final class AgentState implements State {
     @JsonCreator
     static AgentState fromJson(
             @JsonProperty("session_id") String sessionId,
+            @JsonProperty("user_id") String userId,
             @JsonProperty("summary") String summary,
             @JsonProperty("context") List<Msg> context,
             @JsonProperty("reply_id") String replyId,
@@ -104,6 +118,9 @@ public final class AgentState implements State {
         Builder b = builder();
         if (sessionId != null) {
             b.sessionId(sessionId);
+        }
+        if (userId != null) {
+            b.userId(userId);
         }
         if (summary != null) {
             b.summary(summary);
@@ -142,6 +159,12 @@ public final class AgentState implements State {
     @JsonProperty("session_id")
     public String getSessionId() {
         return sessionId;
+    }
+
+    /** Nullable; {@code null} = anonymous / single-tenant context. */
+    @JsonProperty("user_id")
+    public String getUserId() {
+        return userId;
     }
 
     @JsonProperty("summary")
@@ -196,6 +219,19 @@ public final class AgentState implements State {
         return permissionContext;
     }
 
+    /**
+     * Replaces the permission context for this session. Used to change the evaluation mode at
+     * runtime (e.g. switching into {@link io.agentscope.core.permission.PermissionMode#BYPASS}).
+     * Callers that cache a {@code PermissionEngine} per session must rebuild it after this call.
+     *
+     * @param permissionContext the new (non-null) permission context
+     */
+    public void setPermissionContext(PermissionContextState permissionContext) {
+        this.permissionContext =
+                java.util.Objects.requireNonNull(
+                        permissionContext, "permissionContext must not be null");
+    }
+
     @JsonProperty("tool_context")
     public ToolContextState getToolContext() {
         return toolContext;
@@ -211,6 +247,25 @@ public final class AgentState implements State {
         return planModeContext;
     }
 
+    /**
+     * The per-session interrupt signal for this state, created on first access. Runtime-only and not
+     * serialized.
+     */
+    @JsonIgnore
+    public InterruptControl interruptControl() {
+        InterruptControl local = interruptControl;
+        if (local == null) {
+            synchronized (this) {
+                local = interruptControl;
+                if (local == null) {
+                    local = new InterruptControl();
+                    interruptControl = local;
+                }
+            }
+        }
+        return local;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -218,7 +273,7 @@ public final class AgentState implements State {
     /**
      * Serialize this state to a pretty-printed JSON string.
      *
-     * <p>Intended for external storage backends to persist the entire agent state as a single
+     * <p>Intended for external storage stores to persist the entire agent state as a single
      * JSON document (e.g., {@code agent_state.json}).
      */
     public String toJson() {
@@ -243,6 +298,7 @@ public final class AgentState implements State {
         return curIter == other.curIter
                 && shutdownInterrupted == other.shutdownInterrupted
                 && Objects.equals(sessionId, other.sessionId)
+                && Objects.equals(userId, other.userId)
                 && Objects.equals(summary, other.summary)
                 && Objects.equals(context, other.context)
                 && Objects.equals(replyId, other.replyId)
@@ -256,6 +312,7 @@ public final class AgentState implements State {
     public int hashCode() {
         return Objects.hash(
                 sessionId,
+                userId,
                 summary,
                 context,
                 replyId,
@@ -284,6 +341,7 @@ public final class AgentState implements State {
 
     public static final class Builder {
         private String sessionId;
+        private String userId;
         private String summary;
         private List<Msg> context = new ArrayList<>();
         private String replyId;
@@ -298,6 +356,12 @@ public final class AgentState implements State {
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
+            return this;
+        }
+
+        /** Nullable; {@code null} = anonymous / single-tenant context. */
+        public Builder userId(String userId) {
+            this.userId = userId;
             return this;
         }
 

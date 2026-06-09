@@ -35,21 +35,19 @@ The `/tasks` REST endpoints (per the Agent Protocol spec) are then registered au
 
 ## Concurrent execution
 
-The default `HarnessAgent` is a singleton, but Agent Protocol may run tasks concurrently. Two approaches:
+The agent is stateless between calls — a singleton handles multiple concurrent tasks. Each task carries its own `(userId, sessionId)` via `RuntimeContext`, so state is fully isolated:
 
 ```java
-// Option 1: register HarnessAgent as prototype scope — one fresh instance per task
 @Bean
-@Scope("prototype")
 public HarnessAgent harnessAgent() {
-    return HarnessAgent.builder().build();
+    return HarnessAgent.builder()
+            .name("protocol-agent")
+            .model("dashscope:qwen-plus")
+            .build();
 }
-
-// Option 2: singleton + disable running check (only if concurrent access is genuinely safe)
-HarnessAgent.builder()
-    .checkRunning(false)
-    .build();
 ```
+
+Concurrent requests for the same session are automatically serialized; different sessions run in parallel.
 
 ## Configuration
 

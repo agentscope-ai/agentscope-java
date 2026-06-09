@@ -1,5 +1,5 @@
 {% if docs_top_tabs is defined and docs_top_tabs %}
-  {% set current_lang = "zh" if pagename.startswith("zh/") else "en" %}
+  {% set current_lang = "zh" if "/zh/" in pagename else "en" %}
   {# pagename for v1 pages starts with "v1/", for v2 with "v2/"; default to v1. #}
   {% set current_version = "v2" if pagename.startswith("v2/") else "v1" %}
   <nav
