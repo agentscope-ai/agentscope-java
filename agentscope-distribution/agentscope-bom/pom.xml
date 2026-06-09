@@ -211,17 +211,46 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions Session MySQL -->
+            <!-- AgentScope Extensions Redis (AgentStateStore + BaseStore + Sandbox) -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-session-mysql</artifactId>
+                <artifactId>agentscope-extensions-redis</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions Session Redis -->
+            <!-- AgentScope Extensions MySQL (AgentStateStore + JdbcStore) -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-session-redis</artifactId>
+                <artifactId>agentscope-extensions-mysql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions OSS (AgentStateStore + BaseStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-oss</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions Sandbox -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-kubernetes</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-agentrun</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-daytona</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-e2b</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -229,13 +258,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-studio</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope Extensions Kotlin -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-kotlin</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -250,6 +272,38 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-skill-git-repository</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Channel Extensions -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-dingtalk</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-feishu</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-wecom</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-github</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-gitlab</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -278,13 +332,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-quarkus-extension-deployment</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope RocketMQ Extension -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rocketmq</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -352,6 +399,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-skill-mysql-repository</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Skill PostgreSQL Storage -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-skill-postgresql-repository</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

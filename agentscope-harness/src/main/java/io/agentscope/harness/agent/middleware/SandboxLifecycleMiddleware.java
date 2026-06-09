@@ -40,7 +40,7 @@ import org.slf4j.LoggerFactory;
  * <h2>doFinally</h2>
  * <ol>
  *   <li>Persist sandbox session state via {@link SandboxManager} and
- *       {@link io.agentscope.harness.agent.sandbox.SandboxStateStore}</li>
+ *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
  *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
  *   <li>Clear the session reference from the filesystem proxy</li>
  * </ol>

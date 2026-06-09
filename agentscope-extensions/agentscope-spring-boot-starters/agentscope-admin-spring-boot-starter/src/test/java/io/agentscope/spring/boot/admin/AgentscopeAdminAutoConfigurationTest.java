@@ -86,7 +86,7 @@ class AgentscopeAdminAutoConfigurationTest {
                 .run(
                         ctx -> {
                             AdminCommandRegistry registry = ctx.getBean(AdminCommandRegistry.class);
-                            // 26 built-ins after Phase 3 (15 data plane + 11 control plane)
+                            // 26 built-ins (15 data plane + 11 control plane)
                             assertThat(registry.list()).hasSizeGreaterThanOrEqualTo(26);
                             assertThat(registry.find("session.compact")).isPresent();
                             assertThat(registry.find("session.undo")).isPresent();

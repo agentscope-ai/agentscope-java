@@ -16,9 +16,8 @@
 package io.agentscope.core.memory;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.Session;
 import io.agentscope.core.state.AgentState;
-import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.AgentStateStore;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -66,13 +65,14 @@ public class StateBackedMemory implements Memory {
     }
 
     @Override
-    public void saveTo(Session session, SessionKey sessionKey) {
-        session.save(sessionKey, "memory_messages", new ArrayList<>(state.contextMutable()));
+    public void saveTo(AgentStateStore stateStore, String userId, String sessionId) {
+        stateStore.save(
+                userId, sessionId, "memory_messages", new ArrayList<>(state.contextMutable()));
     }
 
     @Override
-    public void loadFrom(Session session, SessionKey sessionKey) {
-        List<Msg> loaded = session.getList(sessionKey, "memory_messages", Msg.class);
+    public void loadFrom(AgentStateStore stateStore, String userId, String sessionId) {
+        List<Msg> loaded = stateStore.getList(userId, sessionId, "memory_messages", Msg.class);
         state.contextMutable().clear();
         state.contextMutable().addAll(loaded);
     }
