@@ -81,7 +81,7 @@ class CompositeFilesystemTest {
     @Test
     void uploadFiles_propagatesBackendSuccess() {
         AbstractFilesystem store = mock(AbstractFilesystem.class);
-        when(backend.uploadFiles(any(), anyList()))
+        when(store.uploadFiles(any(), anyList()))
                 .thenReturn(List.of(FileUploadResponse.success("/notes.md")));
 
         AbstractFilesystem defaultBackend = mock(AbstractFilesystem.class);

@@ -38,6 +38,7 @@ import io.agentscope.core.state.InMemoryAgentStateStore;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -53,6 +54,11 @@ class GracefulShutdownTest {
     @BeforeEach
     void setUp() {
         manager = GracefulShutdownManager.getInstance();
+        manager.resetForTesting();
+    }
+
+    @AfterEach
+    void tearDown() {
         manager.resetForTesting();
     }
 

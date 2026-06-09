@@ -48,7 +48,7 @@ class NamespacedFilesystemViewTest {
     void prefixesReadsAndWritesIntoNamespacedSubtree() {
         LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         AbstractFilesystem alice =
-                new NamespacedFilesystemView(backend, namespaceOf("alice", "research-bot"));
+                new NamespacedFilesystemView(store, namespaceOf("alice", "research-bot"));
 
         WriteResult write = alice.write(RuntimeContext.empty(), "/AGENTS.md", "hello-from-alice");
         assertThat(write.isSuccess()).isTrue();
@@ -66,9 +66,8 @@ class NamespacedFilesystemViewTest {
     @Test
     void differentNamespacesAreIsolated() {
         LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
-        AbstractFilesystem alice =
-                new NamespacedFilesystemView(backend, namespaceOf("alice", "bot"));
-        AbstractFilesystem bob = new NamespacedFilesystemView(backend, namespaceOf("bob", "bot"));
+        AbstractFilesystem alice = new NamespacedFilesystemView(store, namespaceOf("alice", "bot"));
+        AbstractFilesystem bob = new NamespacedFilesystemView(store, namespaceOf("bob", "bot"));
 
         alice.write(RuntimeContext.empty(), "/secret.txt", "alice-only");
         ReadResult bobRead = bob.read(RuntimeContext.empty(), "/secret.txt", 0, 100);
@@ -79,8 +78,7 @@ class NamespacedFilesystemViewTest {
     @Test
     void rejectsPathTraversalAttempts() {
         LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
-        AbstractFilesystem alice =
-                new NamespacedFilesystemView(backend, namespaceOf("alice", "bot"));
+        AbstractFilesystem alice = new NamespacedFilesystemView(store, namespaceOf("alice", "bot"));
 
         assertThatThrownBy(() -> alice.write(RuntimeContext.empty(), "/../../etc/passwd", "pwned"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -92,7 +90,7 @@ class NamespacedFilesystemViewTest {
         LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         String[] currentAgent = {"a"};
         NamespaceFactory dynamic = rc -> List.of("users", "alice", "agents", currentAgent[0]);
-        AbstractFilesystem view = new NamespacedFilesystemView(backend, dynamic);
+        AbstractFilesystem view = new NamespacedFilesystemView(store, dynamic);
 
         view.write(RuntimeContext.empty(), "/AGENTS.md", "for-a");
         currentAgent[0] = "b";
@@ -105,8 +103,7 @@ class NamespacedFilesystemViewTest {
     @Test
     void lsScopedRootReturnsNamespaceContents() throws Exception {
         LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
-        AbstractFilesystem alice =
-                new NamespacedFilesystemView(backend, namespaceOf("alice", "bot"));
+        AbstractFilesystem alice = new NamespacedFilesystemView(store, namespaceOf("alice", "bot"));
 
         alice.write(RuntimeContext.empty(), "/notes.md", "n");
         alice.write(RuntimeContext.empty(), "/skills/k.md", "k");
@@ -120,7 +117,7 @@ class NamespacedFilesystemViewTest {
     void rejectsBlankNamespaceSegment() {
         LocalFilesystem store = new LocalFilesystem(tmp, true, 10, null);
         AbstractFilesystem bad =
-                new NamespacedFilesystemView(backend, rc -> List.of("users", "", "agents", "x"));
+                new NamespacedFilesystemView(store, rc -> List.of("users", "", "agents", "x"));
 
         assertThatThrownBy(() -> bad.write(RuntimeContext.empty(), "/AGENTS.md", "x"))
                 .isInstanceOf(IllegalStateException.class)
