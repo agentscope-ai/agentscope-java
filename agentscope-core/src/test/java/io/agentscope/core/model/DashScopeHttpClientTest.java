@@ -262,7 +262,7 @@ class DashScopeHttpClientTest {
         DashScopeMessage userMsg = DashScopeMessage.builder().role("user").content("Hello").build();
         DashScopeRequest request =
                 DashScopeRequest.builder()
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .input(new DashScopeInput(List.of(userMsg)))
                         .parameters(new DashScopeParameters())
                         .endpointType(EndpointType.MULTIMODAL)
@@ -289,7 +289,7 @@ class DashScopeHttpClientTest {
                 new DashScopeRequest("qwen-plus", new DashScopeInput(List.of()), null);
         assertEquals(EndpointType.AUTO, request2.getEndpointType());
 
-        DashScopeRequest request3 = DashScopeRequest.builder().model("qwen-plus").build();
+        DashScopeRequest request3 = DashScopeRequest.builder().model("dashscope:qwen-plus").build();
         assertEquals(EndpointType.AUTO, request3.getEndpointType());
     }
 
@@ -1495,7 +1495,7 @@ class DashScopeHttpClientTest {
         // Build a request with no input -> request JSON will not contain "input"
         DashScopeRequest request =
                 DashScopeRequest.builder()
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .parameters(
                                 DashScopeParameters.builder()
                                         .resultFormat("message")
@@ -1547,7 +1547,7 @@ class DashScopeHttpClientTest {
 
         DashScopeRequest request =
                 DashScopeRequest.builder()
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .parameters(
                                 DashScopeParameters.builder()
                                         .resultFormat("message")

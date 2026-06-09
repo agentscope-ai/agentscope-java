@@ -16,6 +16,7 @@
 package io.agentscope.core.tracing;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
@@ -76,7 +77,10 @@ public class OtelTracingMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            AgentInput input,
+            Function<AgentInput, Flux<AgentEvent>> next) {
         return Flux.defer(
                 () -> {
                     Tracer tracer = getTracer();
@@ -125,7 +129,10 @@ public class OtelTracingMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onModelCall(
-            Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ModelCallInput input,
+            Function<ModelCallInput, Flux<AgentEvent>> next) {
         return Flux.defer(
                 () -> {
                     Tracer tracer = getTracer();
@@ -175,7 +182,10 @@ public class OtelTracingMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
         return Flux.defer(
                 () -> {
                     Tracer tracer = getTracer();

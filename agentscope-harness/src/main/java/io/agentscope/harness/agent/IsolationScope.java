@@ -37,8 +37,9 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
  *
  * <p>Scope selection:
  * <ul>
- *   <li>{@link #SESSION} – isolated per session; the default.</li>
- *   <li>{@link #USER} – shared across all sessions of the same user.</li>
+ *   <li>{@link #USER} – shared across all sessions of the same user; the default. When
+ *       {@code userId} is absent, falls back to {@link #SESSION}.</li>
+ *   <li>{@link #SESSION} – isolated per session.</li>
  *   <li>{@link #AGENT} – shared across all users and sessions of the same agent.</li>
  *   <li>{@link #GLOBAL} – globally shared within the same workspace/store instance.</li>
  * </ul>
@@ -52,10 +53,9 @@ public enum IsolationScope {
     /**
      * Isolate by session identifier.
      *
-     * <p>This is the default behavior. Each distinct session gets its own sandbox state /
-     * store namespace.  If no session key is present in the
-     * {@link io.agentscope.core.agent.RuntimeContext}, state lookup is skipped and a fresh
-     * sandbox is created (or a default store namespace is used).
+     * <p>Each distinct session gets its own sandbox state / store namespace. If no session key
+     * is present in the {@link io.agentscope.core.agent.RuntimeContext}, state lookup is
+     * skipped and a fresh sandbox is created (or a default store namespace is used).
      */
     SESSION,
 
@@ -63,8 +63,8 @@ public enum IsolationScope {
      * Share across all sessions belonging to the same
      * {@link io.agentscope.core.agent.RuntimeContext#getUserId() userId}.
      *
-     * <p>If {@code userId} is blank, a warning is logged and state lookup / namespace resolution
-     * degrades to the default (fresh sandbox create, or an anonymous-user namespace).
+     * <p>This is the default scope. If {@code userId} is absent, resolution falls back to
+     * {@link #SESSION} using the session identifier instead.
      */
     USER,
 
