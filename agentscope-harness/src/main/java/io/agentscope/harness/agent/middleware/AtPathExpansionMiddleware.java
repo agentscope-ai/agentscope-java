@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
@@ -101,10 +100,7 @@ public class AtPathExpansionMiddleware implements MiddlewareBase {
             return next.apply(input);
         }
 
-        RuntimeContext rc =
-                agent instanceof AgentBase ab && ab.getRuntimeContext() != null
-                        ? ab.getRuntimeContext()
-                        : RuntimeContext.empty();
+        RuntimeContext rc = input.runtimeContext();
 
         List<Msg> rewritten = new ArrayList<>(input.msgs().size());
         boolean changed = false;
@@ -119,7 +115,7 @@ public class AtPathExpansionMiddleware implements MiddlewareBase {
             }
             rewritten.add(expanded);
         }
-        return next.apply(changed ? new AgentInput(rewritten) : input);
+        return next.apply(changed ? new AgentInput(rewritten, input.runtimeContext()) : input);
     }
 
     private boolean supportsExpansion(AbstractFilesystem fs) {
