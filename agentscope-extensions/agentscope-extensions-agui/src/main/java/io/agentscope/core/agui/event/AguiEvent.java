@@ -20,6 +20,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import io.agentscope.core.agui.model.AguiMessage;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -49,6 +50,7 @@ import java.util.Objects;
     @JsonSubTypes.Type(value = AguiEvent.ToolCallResult.class, name = "TOOL_CALL_RESULT"),
     @JsonSubTypes.Type(value = AguiEvent.StateSnapshot.class, name = "STATE_SNAPSHOT"),
     @JsonSubTypes.Type(value = AguiEvent.StateDelta.class, name = "STATE_DELTA"),
+    @JsonSubTypes.Type(value = AguiEvent.MessagesSnapshot.class, name = "MESSAGES_SNAPSHOT"),
     @JsonSubTypes.Type(value = AguiEvent.Raw.class, name = "RAW"),
     @JsonSubTypes.Type(value = AguiEvent.Custom.class, name = "CUSTOM"),
     @JsonSubTypes.Type(value = AguiEvent.ReasoningStart.class, name = "REASONING_START"),
@@ -76,6 +78,7 @@ public sealed interface AguiEvent
                 AguiEvent.ToolCallResult,
                 AguiEvent.StateSnapshot,
                 AguiEvent.StateDelta,
+                AguiEvent.MessagesSnapshot,
                 AguiEvent.Raw,
                 AguiEvent.Custom,
                 AguiEvent.ReasoningStart,
@@ -488,6 +491,44 @@ public sealed interface AguiEvent
         @Override
         public AguiEventType getType() {
             return AguiEventType.STATE_DELTA;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event containing the full message history snapshot.
+     *
+     * <p>This event replaces the client-side message list with the provided
+     * messages.
+     */
+    record MessagesSnapshot(String threadId, String runId, List<AguiMessage> messages)
+            implements AguiEvent {
+
+        @JsonCreator
+        public MessagesSnapshot(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messages") List<AguiMessage> messages) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messages =
+                    messages != null
+                            ? Collections.unmodifiableList(messages)
+                            : Collections.emptyList();
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.MESSAGES_SNAPSHOT;
         }
 
         @Override

@@ -103,7 +103,9 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
      *
      * <ul>
      *   <li>{@code POST /agui/run} - Agent ID from header or forwardedProps
+     *   <li>{@code POST /agui/messages} - Message history snapshot
      *   <li>{@code POST /agui/run/{agentId}} - Agent ID from path variable (if enabled)
+     *   <li>{@code POST /agui/messages/{agentId}} - Message history snapshot for a path agent
      * </ul>
      *
      * @param handler The AG-UI handler
@@ -114,12 +116,17 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
     public RouterFunction<ServerResponse> aguiRoutes(
             AguiWebFluxHandler handler, AguiProperties props) {
         RouterFunctions.Builder routerBuilder =
-                RouterFunctions.route().POST(props.getPathPrefix() + "/run", handler::handle);
+                RouterFunctions.route()
+                        .POST(props.getPathPrefix() + "/run", handler::handle)
+                        .POST(props.getPathPrefix() + "/messages", handler::handleMessagesSnapshot);
 
         // Add path variable route if enabled
         if (props.isEnablePathRouting()) {
             routerBuilder.POST(
                     props.getPathPrefix() + "/run/{agentId}", handler::handleWithAgentId);
+            routerBuilder.POST(
+                    props.getPathPrefix() + "/messages/{agentId}",
+                    handler::handleMessagesSnapshotWithAgentId);
         }
 
         return routerBuilder.build();

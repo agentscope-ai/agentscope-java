@@ -23,6 +23,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonException;
@@ -39,6 +40,7 @@ import java.util.stream.Collectors;
  * message format and AgentScope's internal message format.
  */
 public class AguiMessageConverter {
+
     /**
      * Creates a new AguiMessageConverter
      */
@@ -63,6 +65,8 @@ public class AguiMessageConverter {
                                 aguiMessage.getToolCallId(),
                                 null,
                                 TextBlock.builder().text(aguiMessage.getContent()).build()));
+            } else if (aguiMessage.isReasoningMessage()) {
+                blocks.add(ThinkingBlock.builder().thinking(aguiMessage.getContent()).build());
             } else {
                 blocks.add(TextBlock.builder().text(aguiMessage.getContent()).build());
             }
@@ -79,45 +83,83 @@ public class AguiMessageConverter {
     }
 
     /**
-     * Convert an AgentScope message to an AG-UI message.
+     * Convert an AgentScope message to one or more AG-UI messages.
      *
      * @param msg The AgentScope message to convert
-     * @return The converted AG-UI message
+     * @return The converted AG-UI messages
      */
-    public AguiMessage toAguiMessage(Msg msg) {
-        String role = convertRole(msg.getRole());
-        StringBuilder content = new StringBuilder();
+    public List<AguiMessage> toAguiMessages(Msg msg) {
+        return toAguiMessages(msg, true);
+    }
+
+    /**
+     * Convert an AgentScope message to one or more AG-UI messages.
+     *
+     * <p>When reasoning output is disabled, {@link ThinkingBlock} content is skipped to match the
+     * streaming adapter's REASONING_MESSAGE_* behavior.
+     *
+     * <p>This method splits a single AgentScope message that may contain mixed content blocks
+     * (text, thinking, tool calls, tool results) into separate AG-UI messages, each assigned the
+     * appropriate role (assistant, reasoning, or tool).
+     *
+     * @param msg The AgentScope message to convert
+     * @param includeReasoning Whether ThinkingBlock content should be emitted as reasoning messages
+     * @return The converted AG-UI messages
+     */
+    public List<AguiMessage> toAguiMessages(Msg msg, boolean includeReasoning) {
+        List<AguiMessage> messages = new ArrayList<>();
+        StringBuilder textContent = new StringBuilder();
+        StringBuilder reasoningContent = new StringBuilder();
         List<AguiToolCall> toolCalls = new ArrayList<>();
-        String toolCallId = null;
+        List<ToolResultBlock> toolResults = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock tb) {
-                if (content.length() > 0) {
-                    content.append("\n");
+                appendContent(textContent, tb.getText());
+            } else if (block instanceof ThinkingBlock tb) {
+                if (includeReasoning) {
+                    appendContent(reasoningContent, tb.getThinking());
                 }
-                content.append(tb.getText());
             } else if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
-                toolCallId = trb.getId();
-                // Extract text content from tool result
-                for (ContentBlock output : trb.getOutput()) {
-                    if (output instanceof TextBlock tb) {
-                        if (content.length() > 0) {
-                            content.append("\n");
-                        }
-                        content.append(tb.getText());
-                    }
-                }
+                toolResults.add(trb);
             }
         }
 
-        return new AguiMessage(
-                msg.getId(),
-                role,
-                content.length() > 0 ? content.toString() : null,
-                toolCalls.isEmpty() ? null : toolCalls,
-                toolCallId);
+        if (reasoningContent.length() > 0) {
+            messages.add(
+                    new AguiMessage(
+                            msg.getId(), "reasoning", reasoningContent.toString(), null, null));
+        }
+
+        if (textContent.length() > 0) {
+            messages.add(
+                    new AguiMessage(
+                            msg.getId(),
+                            convertRole(msg.getRole()),
+                            textContent.toString(),
+                            null,
+                            null));
+        }
+
+        if (!toolCalls.isEmpty()) {
+            messages.add(new AguiMessage(msg.getId(), "assistant", null, toolCalls, null));
+        }
+
+        if (!toolResults.isEmpty()) {
+            for (ToolResultBlock toolResult : toolResults) {
+                messages.add(
+                        new AguiMessage(
+                                msg.getId(),
+                                "tool",
+                                extractToolResultText(toolResult),
+                                null,
+                                toolResult.getId()));
+            }
+        }
+
+        return messages;
     }
 
     /**
@@ -137,7 +179,20 @@ public class AguiMessageConverter {
      * @return The converted AG-UI messages
      */
     public List<AguiMessage> toAguiMessageList(List<Msg> msgs) {
-        return msgs.stream().map(this::toAguiMessage).collect(Collectors.toList());
+        return toAguiMessageList(msgs, true);
+    }
+
+    /**
+     * Convert a list of AgentScope messages to AG-UI messages.
+     *
+     * @param msgs The AgentScope messages to convert
+     * @param includeReasoning Whether ThinkingBlock content should be emitted as reasoning messages
+     * @return The converted AG-UI messages
+     */
+    public List<AguiMessage> toAguiMessageList(List<Msg> msgs, boolean includeReasoning) {
+        return msgs.stream()
+                .flatMap(msg -> toAguiMessages(msg, includeReasoning).stream())
+                .collect(Collectors.toList());
     }
 
     /**
@@ -152,6 +207,7 @@ public class AguiMessageConverter {
             case "assistant" -> MsgRole.ASSISTANT;
             case "system" -> MsgRole.SYSTEM;
             case "tool" -> MsgRole.TOOL;
+            case "reasoning" -> MsgRole.ASSISTANT;
             default -> MsgRole.USER;
         };
     }
@@ -169,6 +225,26 @@ public class AguiMessageConverter {
             case SYSTEM -> "system";
             case TOOL -> "tool";
         };
+    }
+
+    private void appendContent(StringBuilder builder, String content) {
+        if (content == null || content.isEmpty()) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append("\n");
+        }
+        builder.append(content);
+    }
+
+    private String extractToolResultText(ToolResultBlock toolResult) {
+        StringBuilder content = new StringBuilder();
+        for (ContentBlock output : toolResult.getOutput()) {
+            if (output instanceof TextBlock tb) {
+                appendContent(content, tb.getText());
+            }
+        }
+        return content.length() > 0 ? content.toString() : null;
     }
 
     /**

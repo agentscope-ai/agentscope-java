@@ -58,11 +58,16 @@ public class AguiRequestProcessor {
     private static final Logger logger = LoggerFactory.getLogger(AguiRequestProcessor.class);
 
     private final AgentResolver agentResolver;
+    private final AguiSnapshotProvider snapshotProvider;
     private final AguiAdapterConfig config;
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
                 Objects.requireNonNull(builder.agentResolver, "agentResolver cannot be null");
+        this.snapshotProvider =
+                builder.snapshotProvider != null
+                        ? builder.snapshotProvider
+                        : AguiSnapshotProvider.EMPTY;
         this.config = builder.config != null ? builder.config : AguiAdapterConfig.defaultConfig();
     }
 
@@ -107,6 +112,29 @@ public class AguiRequestProcessor {
         Flux<AguiEvent> events = adapter.run(effectiveInput);
 
         return new ProcessResult(agent, events);
+    }
+
+    /**
+     * Create an AG-UI message history snapshot stream for the given request.
+     *
+     * @param input The run agent input containing thread/run identifiers
+     * @param headerAgentId The agent ID from HTTP header (may be null)
+     * @param pathAgentId The agent ID from URL path variable (may be null)
+     * @return A stream containing run start, messages snapshot, and run finished events
+     */
+    public Flux<AguiEvent> messagesSnapshot(
+            RunAgentInput input, String headerAgentId, String pathAgentId) {
+        String threadId = input.getThreadId();
+        String runId = input.getRunId();
+        String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
+        List<AguiMessage> messages =
+                snapshotProvider.messagesSnapshot(
+                        new AguiSnapshotRequest(agentId, threadId, runId, input));
+
+        return Flux.just(
+                new AguiEvent.RunStarted(threadId, runId),
+                new AguiEvent.MessagesSnapshot(threadId, runId, messages),
+                new AguiEvent.RunFinished(threadId, runId));
     }
 
     /**
@@ -211,6 +239,7 @@ public class AguiRequestProcessor {
     public static class Builder {
 
         private AgentResolver agentResolver;
+        private AguiSnapshotProvider snapshotProvider;
         private AguiAdapterConfig config;
 
         /**
@@ -221,6 +250,17 @@ public class AguiRequestProcessor {
          */
         public Builder agentResolver(AgentResolver agentResolver) {
             this.agentResolver = agentResolver;
+            return this;
+        }
+
+        /**
+         * Set the snapshot provider.
+         *
+         * @param snapshotProvider The snapshot provider
+         * @return This builder
+         */
+        public Builder snapshotProvider(AguiSnapshotProvider snapshotProvider) {
+            this.snapshotProvider = snapshotProvider;
             return this;
         }
 

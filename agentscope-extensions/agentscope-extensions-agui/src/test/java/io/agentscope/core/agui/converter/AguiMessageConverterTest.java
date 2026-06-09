@@ -27,6 +27,7 @@ import io.agentscope.core.agui.model.AguiToolCall;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Collections;
@@ -70,6 +71,19 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertReasoningMessageToMsg() {
+        AguiMessage aguiMsg = AguiMessage.reasoningMessage("msg-r1", "Think step by step");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals("msg-r1", msg.getId());
+        assertEquals(MsgRole.ASSISTANT, msg.getRole());
+        assertTrue(msg.hasContentBlocks(ThinkingBlock.class));
+        assertEquals(
+                "Think step by step", msg.getFirstContentBlock(ThinkingBlock.class).getThinking());
+    }
+
+    @Test
     void testConvertSystemMessageToMsg() {
         AguiMessage aguiMsg = AguiMessage.systemMessage("msg-3", "You are a helpful assistant.");
 
@@ -102,7 +116,7 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertMsgToAguiMessage() {
+    void testConvertMsgToAguiMessages() {
         Msg msg =
                 Msg.builder()
                         .id("msg-5")
@@ -110,40 +124,13 @@ class AguiMessageConverterTest {
                         .content(TextBlock.builder().text("Test message").build())
                         .build();
 
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+        List<AguiMessage> aguiMsgs = converter.toAguiMessages(msg);
 
+        assertEquals(1, aguiMsgs.size());
+        AguiMessage aguiMsg = aguiMsgs.get(0);
         assertEquals("msg-5", aguiMsg.getId());
         assertEquals("user", aguiMsg.getRole());
         assertEquals("Test message", aguiMsg.getContent());
-    }
-
-    @Test
-    void testConvertMsgWithToolUseToAguiMessage() {
-        Msg msg =
-                Msg.builder()
-                        .id("msg-6")
-                        .role(MsgRole.ASSISTANT)
-                        .content(
-                                List.of(
-                                        TextBlock.builder().text("Calling tool...").build(),
-                                        ToolUseBlock.builder()
-                                                .id("tc-2")
-                                                .name("calculate")
-                                                .input(Map.of("expression", "2+2"))
-                                                .build()))
-                        .build();
-
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
-
-        assertEquals("msg-6", aguiMsg.getId());
-        assertEquals("assistant", aguiMsg.getRole());
-        assertEquals("Calling tool...", aguiMsg.getContent());
-        assertTrue(aguiMsg.hasToolCalls());
-        assertEquals(1, aguiMsg.getToolCalls().size());
-
-        AguiToolCall tc = aguiMsg.getToolCalls().get(0);
-        assertEquals("tc-2", tc.getId());
-        assertEquals("calculate", tc.getFunction().getName());
     }
 
     @Test
@@ -167,7 +154,7 @@ class AguiMessageConverterTest {
         AguiMessage original = AguiMessage.userMessage("msg-rt", "Round trip test");
 
         Msg msg = converter.toMsg(original);
-        AguiMessage converted = converter.toAguiMessage(msg);
+        AguiMessage converted = converter.toAguiMessages(msg).get(0);
 
         assertEquals(original.getId(), converted.getId());
         assertEquals(original.getRole(), converted.getRole());
@@ -219,8 +206,10 @@ class AguiMessageConverterTest {
                                         .build())
                         .build();
 
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+        List<AguiMessage> aguiMsgs = converter.toAguiMessages(msg);
 
+        assertEquals(1, aguiMsgs.size());
+        AguiMessage aguiMsg = aguiMsgs.get(0);
         assertEquals("msg-tr1", aguiMsg.getId());
         assertEquals("tool", aguiMsg.getRole());
         assertEquals("tc-1", aguiMsg.getToolCallId());
@@ -239,9 +228,190 @@ class AguiMessageConverterTest {
                                         TextBlock.builder().text("Second part").build()))
                         .build();
 
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+        List<AguiMessage> aguiMsgs = converter.toAguiMessages(msg);
 
-        assertEquals("First part\nSecond part", aguiMsg.getContent());
+        assertEquals(1, aguiMsgs.size());
+        assertEquals("First part\nSecond part", aguiMsgs.get(0).getContent());
+    }
+
+    @Test
+    void testConvertThinkingBlockToReasoningAguiMessage() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ThinkingBlock.builder().thinking("Need to inspect weather").build())
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(1, messages.size());
+        assertEquals("msg-thinking", messages.get(0).getId());
+        assertEquals("reasoning", messages.get(0).getRole());
+        assertEquals("Need to inspect weather", messages.get(0).getContent());
+        assertTrue(messages.get(0).isReasoningMessage());
+    }
+
+    @Test
+    void testConvertThinkingBlockCanSkipReasoningAguiMessage() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Hidden thought").build(),
+                                        TextBlock.builder().text("Visible answer").build()))
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg, false);
+
+        assertEquals(1, messages.size());
+        assertEquals("msg-thinking", messages.get(0).getId());
+        assertEquals("assistant", messages.get(0).getRole());
+        assertEquals("Visible answer", messages.get(0).getContent());
+    }
+
+    @Test
+    void testSplitMessagesPreserveOriginalMsgId() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-preserve-id")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Thinking").build(),
+                                        TextBlock.builder().text("Answer").build()))
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(2, messages.size());
+        assertEquals("msg-preserve-id", messages.get(0).getId());
+        assertEquals("msg-preserve-id", messages.get(1).getId());
+    }
+
+    @Test
+    void testConvertReActAssistantTurnToReasoningAndAssistantMessages() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-mixed")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Need a tool").build(),
+                                        TextBlock.builder().text("Let me check").build(),
+                                        ToolUseBlock.builder()
+                                                .id("tc-weather")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(3, messages.size());
+        assertEquals("msg-mixed", messages.get(0).getId());
+        assertEquals("reasoning", messages.get(0).getRole());
+        assertEquals("Need a tool", messages.get(0).getContent());
+
+        assertEquals("msg-mixed", messages.get(1).getId());
+        assertEquals("assistant", messages.get(1).getRole());
+        assertEquals("Let me check", messages.get(1).getContent());
+
+        assertEquals("msg-mixed", messages.get(2).getId());
+        assertEquals("assistant", messages.get(2).getRole());
+        assertEquals("tc-weather", messages.get(2).getToolCalls().get(0).getId());
+    }
+
+    @Test
+    void testConvertReActAssistantTurnAggregatesTextAndToolCalls() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-aggregate")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Need tools").build(),
+                                        TextBlock.builder().text("First line").build(),
+                                        TextBlock.builder().text("Second line").build(),
+                                        ToolUseBlock.builder()
+                                                .id("tc-weather")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("tc-calc")
+                                                .name("calculate")
+                                                .input(Map.of("expression", "1+1"))
+                                                .build()))
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(3, messages.size());
+        assertEquals("msg-aggregate", messages.get(0).getId());
+        assertEquals("reasoning", messages.get(0).getRole());
+        assertEquals("Need tools", messages.get(0).getContent());
+
+        assertEquals("msg-aggregate", messages.get(1).getId());
+        assertEquals("assistant", messages.get(1).getRole());
+        assertEquals("First line\nSecond line", messages.get(1).getContent());
+
+        assertEquals(2, messages.get(2).getToolCalls().size());
+        assertEquals("tc-weather", messages.get(2).getToolCalls().get(0).getId());
+        assertEquals("tc-calc", messages.get(2).getToolCalls().get(1).getId());
+    }
+
+    @Test
+    void testConvertToolResultMsgToToolAguiMessage() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-tool-result")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-weather")
+                                        .output(TextBlock.builder().text("Rainy").build())
+                                        .build())
+                        .build();
+
+        List<AguiMessage> messages = converter.toAguiMessages(msg);
+
+        assertEquals(1, messages.size());
+        assertEquals("msg-tool-result", messages.get(0).getId());
+        assertEquals("tool", messages.get(0).getRole());
+        assertEquals("Rainy", messages.get(0).getContent());
+        assertEquals("tc-weather", messages.get(0).getToolCallId());
+    }
+
+    @Test
+    void testToAguiMessageListFlattensSplitMessages() {
+        List<Msg> msgs =
+                List.of(
+                        Msg.builder()
+                                .id("msg-user")
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("Hello").build())
+                                .build(),
+                        Msg.builder()
+                                .id("msg-assistant")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        List.of(
+                                                ThinkingBlock.builder()
+                                                        .thinking("Thinking")
+                                                        .build(),
+                                                TextBlock.builder().text("Hi").build()))
+                                .build());
+
+        List<AguiMessage> messages = converter.toAguiMessageList(msgs);
+
+        assertEquals(3, messages.size());
+        assertEquals("user", messages.get(0).getRole());
+        assertEquals("reasoning", messages.get(1).getRole());
+        assertEquals("assistant", messages.get(2).getRole());
     }
 
     @Test
@@ -313,8 +483,10 @@ class AguiMessageConverterTest {
                                         .build())
                         .build();
 
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+        List<AguiMessage> aguiMsgs = converter.toAguiMessages(msg);
 
+        assertEquals(1, aguiMsgs.size());
+        AguiMessage aguiMsg = aguiMsgs.get(0);
         assertTrue(aguiMsg.hasToolCalls());
         assertEquals("{}", aguiMsg.getToolCalls().get(0).getFunction().getArguments());
     }
@@ -350,8 +522,10 @@ class AguiMessageConverterTest {
                         .content(ToolResultBlock.builder().id("tc-1").build())
                         .build();
 
-        AguiMessage aguiMsg = converter.toAguiMessage(msg);
+        List<AguiMessage> aguiMsgs = converter.toAguiMessages(msg);
 
+        assertEquals(1, aguiMsgs.size());
+        AguiMessage aguiMsg = aguiMsgs.get(0);
         assertEquals("tc-1", aguiMsg.getToolCallId());
         assertNull(aguiMsg.getContent());
     }
