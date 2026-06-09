@@ -58,6 +58,7 @@ temperature: 0.2              # optional; overrides parent GenerateOptions
 top_p: 0.95                   # optional
 hidden: false                 # true = not listed to the model (still callable programmatically)
 mode: subagent                # primary / subagent / all (default all); primary can't be spawned
+expose_to_user: true          # optional tri-state; force/forbid user exposure (omit = no opinion)
 tools: [read_file, grep_files]   # optional; allowlist over inherited tools
 ---
 
@@ -123,17 +124,158 @@ Background tasks delivered:
 
 The parent naturally responds or continues. This means **you do not** write "remember to poll task_output" in your prompt — that was the old way.
 
-> `task_output` / `task_cancel` / `task_list` still exist as escape hatches and debugging aids. Production prompts should not contain polling logic.
+### Background task tools
+
+Behind the scenes, subagent lifecycle is split across two groups of tools:
+
+| Tool | Role |
+|------|------|
+| `agent_spawn` | Create a subagent and optionally run a task (sync or background) |
+| `agent_send` | Send a follow-up message to an existing subagent |
+| `agent_list` | List active subagent instances |
+| `task_output` | Retrieve the result of a background task by `task_id` (blocking or non-blocking) |
+| `task_cancel` | Cancel a running background task |
+| `task_list` | List all background tasks with their current statuses |
+
+`agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
+
+> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
 
 ## Send a follow-up to an existing subagent
 
-`agent_spawn` returns an `agent_key` (runtime instance handle). Use it (or your `label`) to send follow-up messages:
+`agent_spawn` returns an `agent_key` (runtime instance handle). Use it or a `label` to send follow-up messages:
 
 ```
 agent_send agent_key="agent:reviewer:abc-123" message="also check the schema changes"
 ```
 
+If you set a `label` at spawn time, you can use that instead of the `agent_key`:
+
+```
+agent_spawn agent_id="reviewer" task="review the PR" label="pr-reviewer"
+agent_send label="pr-reviewer" message="also check the schema changes"
+```
+
 To list active subagents: `agent_list`.
+
+## Persistent sessions
+
+By default every `agent_spawn` creates a fresh subagent with a new session — no memory of previous calls. Set `persistSession(true)` in the declaration to reuse the same subagent instance across multiple spawns:
+
+```java
+.subagent(SubagentDeclaration.builder()
+    .name("note-taker")
+    .description("Accumulates notes across the conversation")
+    .persistSession(true)
+    .build())
+```
+
+When `persistSession` is on, the framework derives a deterministic key from `(parentSessionId, agentId, label)`. If `agent_spawn` is called again with the same combination, the existing agent instance is reused — its conversation history and state are preserved.
+
+## Exposing subagents to the user
+
+Normally subagents are invisible to the user — they run behind the scenes as the parent's internal tools. With `expose_to_user=true`, the parent can make a subagent **directly addressable by the user** through the Channel:
+
+```
+agent_spawn agent_id="researcher" task="investigate AI trends" expose_to_user=true
+```
+
+This does two things:
+
+1. **Registers the subagent in the Gateway** as a user-addressable entry point
+2. **Emits a `SubagentExposedEvent`** into the streaming event flow, carrying a `subagentId` handle
+
+The user's client receives the `SubagentExposedEvent`, and can then send messages directly to the subagent — bypassing the parent agent entirely:
+
+```java
+// Client-side: listen for exposed subagents in the event stream
+chat.sendStream(SendOptions.userId("user-1"), "Spawn a researcher to investigate AI trends")
+    .doOnNext(event -> {
+        if (event instanceof SubagentExposedEvent se) {
+            // se.getSubagentId() → use this to talk directly to the subagent
+            // se.getAgentId()    → subagent type (e.g. "researcher")
+            // se.getLabel()      → optional human-readable name
+        }
+    })
+    .blockLast();
+
+// Send a message directly to the exposed subagent
+chat.sendToSubagent(subagentId, "Focus on LLM agents specifically").block();
+```
+
+This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](./channel#talking-to-exposed-subagents) for the full Channel-side API.
+
+### How to enable
+
+Use `agent.channel(...)` — the bridge is wired automatically, zero configuration:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("orchestrator")
+    .model("dashscope:qwen-plus")
+    .build();
+
+// channel() creates the internal gateway and wires the bridge — expose_to_user just works.
+ChatUiChannel chat = agent.channel(ChatUiChannel.create());
+```
+
+Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](./channel#thread-exposure-with-gatewaybootstrap).
+
+### Controlling exposure from code
+
+Relying on the LLM to pass `expose_to_user=true` is not always flexible enough. You can override the decision from application code in two ways, and the effective value is resolved with this precedence (highest first):
+
+1. **`RuntimeContext` per-call override** — applies to every `agent_spawn` in the current call
+2. **`SubagentDeclaration` per-type policy** — a static default for that subagent type
+3. **The LLM's `expose_to_user` tool argument**
+4. **`false`** when none of the above expresses an opinion
+
+**Per-call override via `RuntimeContext`.** Put a `Boolean` (or its string form) under the `AgentSpawnTool.CTX_EXPOSE_TO_USER` key:
+
+```java
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("user-1")
+    .put(AgentSpawnTool.CTX_EXPOSE_TO_USER, true)   // force on; false forbids exposure
+    .build();
+```
+
+**Per-type policy on the declaration.** Use the tri-state `exposeToUser` — `TRUE` always exposes, `FALSE` never exposes (overriding an LLM `expose_to_user=true`), and `null` (default) defers to the context override and then the LLM argument:
+
+```java
+SubagentDeclaration decl = SubagentDeclaration.builder()
+    .name("researcher")
+    .description("Investigates topics and returns a synthesized report.")
+    .exposeToUser(true)   // this subagent type is always user-addressable
+    .build();
+```
+
+Or in a Markdown subagent spec's front matter (also tri-state — omit the key for "no opinion"):
+
+```markdown
+---
+name: researcher
+description: Investigates topics and returns a synthesized report.
+expose_to_user: true
+---
+```
+
+This lets you force or forbid exposure regardless of what the model decides, while still allowing the LLM to choose when neither code source expresses an opinion.
+
+### Across restarts and multiple replicas
+
+By default the exposure is in-process: the `subagentId` is only valid on the node that created it and is lost on restart. To make an exposed subagent resolvable on **any replica** and **across restarts**, build the agent with a `distributedStore(...)` — the same one-liner used for state and filesystem:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("orchestrator")
+    .model("dashscope:qwen-plus")
+    .distributedStore(RedisDistributedStore.fromJedis(jedis))
+    .build();
+
+ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // recovery wired automatically
+```
+
+The `subagentId` is persisted in the store, and the subagent's own conversation is reloaded from the distributed `AgentStateStore` by session — so the user keeps talking to the *same* subagent even if a later message lands on a different node. For multi-agent `GatewayBootstrap`, pass `.distributedStore(...)` (otherwise it inherits the main agent's). Deployment guidance — including routing a `subagentId` back to its live node (sticky routing) — is in [Going to Production](../others/going-to-production.md).
 
 ## Let the agent author new subagent specs
 
@@ -151,6 +293,7 @@ Useful when "halfway through, the agent realizes it needs a new kind of helper".
 - **Write `description` well**: it's the model's primary signal for delegating. "Code review" is far less useful than "Use when the user wants to review a PR or check code style".
 - **Recursion safety**: subagents cannot spawn further subagents (force-marked as leaves); plus a hard cap of 3 levels.
 - **userId is propagated**: parent's `RuntimeContext.userId` is forwarded to the child, so the multi-tenant isolation chain stays intact.
+- **Permission inheritance**: all DENY permission rules from the parent are automatically propagated to the child. If the parent is denied a tool, the child is also denied — the security boundary cannot be bypassed by delegation. Set `inheritParentPermissions(false)` in the declaration to opt out.
 - **Streaming forwarding**: during the parent's `stream()`, intermediate events from synchronous subagents are forwarded back into the parent's `Flux` live (with source tags); see [Subagent streaming](#subagent-streaming) below.
 
 ## Remote subagent
@@ -178,126 +321,70 @@ Background task state is written by default to `workspace/agents/<parentAgentId>
 
 ## Delegating during Plan Mode
 
-⚠ Current **known gap**: subagents spawned by a parent in Plan Mode **do not automatically inherit the read-only restriction**. To restrict the child: narrow `tools` in its declaration to a read-only set, or enable `enablePlanMode()` on the child's own builder.
+When the parent is in Plan Mode, spawned subagents **automatically inherit the read-only restriction**. The child enters Plan Mode at spawn time, so it cannot perform write operations — the safety boundary is maintained across the delegation chain.
 
 ## Subagent streaming
 
-> Streaming basics: new code should prefer `streamEvents()` (returns `Flux<io.agentscope.core.event.AgentEvent>` — the v2 fine-grained event hierarchy that aligns with Python 2.0's `agent.reply_stream()`). The legacy `stream()` family that returns `Flux<Event>` is `@Deprecated(forRemoval = true)` as of 2.0.0 — see [Message & Event](../building-blocks/message-and-event.md) and [Changelog B.4](../change-log.md). This section covers `HarnessAgent`'s child-agent event forwarding behavior on both APIs.
+> New code should use `streamEvents()` (returns `Flux<AgentEvent>`). The legacy `stream()` family (`Flux<Event>`) is `@Deprecated(forRemoval = true)` since 2.0.0 — see [Message & Event](../building-blocks/message-and-event.md) and [V1 Migration Guide B.4](../change-log.md).
 
-### Picking your streaming API
+When the parent calls a synchronous subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field (a `/`-separated path like `"main/researcher"`) so you can tell parent events (`source == null`) from child events.
 
-| Use case | Recommended |
-|----------|-------------|
-| Parent-agent events only — text deltas, tool calls, lifecycle | **`streamEvents()`** (`Flux<AgentEvent>`) |
-| **Live child-agent events** (subagent forwarding with `EventSource`) | `stream()` (`Flux<Event>`) — currently the only path |
+```
+caller
+  └─ parent.streamEvents(msg, ctx)
+        │
+        ├─ AGENT_START                            ← parent starts
+        ├─ TEXT_BLOCK_DELTA …                     ← parent reasoning
+        ├─ TOOL_CALL_START "agent_spawn"
+        │
+        │  [child spawned]
+        ├─ AGENT_START          (source="main/researcher")  ← child starts
+        ├─ TEXT_BLOCK_DELTA …   (source="main/researcher")  ← child reasoning
+        ├─ TOOL_CALL_START …    (source="main/researcher")
+        ├─ TOOL_RESULT_END …   (source="main/researcher")
+        ├─ AGENT_END            (source="main/researcher")  ← child done
+        │  [agent_spawn returns; child result → parent TOOL_RESULT]
+        │
+        ├─ TOOL_RESULT_END                        ← parent receives tool result
+        ├─ TEXT_BLOCK_DELTA …                     ← parent second round
+        └─ AGENT_END                              ← parent done
+```
 
-The `AgentEvent` hierarchy does not yet expose an `EventSource`-equivalent channel for spawned subagents — that's on the v2 roadmap. Until it lands, callers that need live child-agent events must stay on the deprecated `stream()` API; parent-only consumers should switch to `streamEvents()` today.
-
-### Parent events via `streamEvents()` (recommended)
+### Using `streamEvents()` (recommended)
 
 ```java
-import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.AgentEventType;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-
 parent.streamEvents(new UserMessage(message), ctx)
     .doOnNext(event -> {
-        // event is a typed io.agentscope.core.event.AgentEvent subclass
+        String src = event.getSource();
+        String prefix = (src != null) ? "[" + src + "] " : "";
+
         if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
-            System.out.print(((TextBlockDeltaEvent) event).getDelta());
+            System.out.print(prefix + ((TextBlockDeltaEvent) event).getDelta());
         } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
-            ToolCallStartEvent start = (ToolCallStartEvent) event;
-            System.out.println("\n[tool] " + start.getToolName());
+            System.out.println(prefix + "[tool] " + ((ToolCallStartEvent) event).getToolName());
+        } else if (event.getType() == AgentEventType.AGENT_START) {
+            if (src != null) System.out.println("── child started: " + src);
+        } else if (event.getType() == AgentEventType.AGENT_END) {
+            if (src != null) System.out.println("── child finished: " + src);
         }
-        // Other lifecycle events: AgentStartEvent / AgentEndEvent,
-        // ModelCallStart/End, ToolResultStart/End, RequireUserConfirmEvent, etc.
     })
     .blockLast();
 ```
 
-Child-agent events are **not** forwarded on this path today — anything spawned via `agent_spawn` / `agent_send` finishes silently and its final result arrives back to the parent as a `TOOL_RESULT` block.
-
-### Child-agent forwarding via `stream()` (deprecated, only path today)
-
-When you call the parent with `parent.stream()` and the parent invokes a child via `agent_spawn` / `agent_send` during reasoning, **every intermediate event the child produces is injected live into the parent's event stream**. Each event carries an `EventSource` field telling you whether it's from the parent or which subagent.
-
-```
-caller
-  └─ parent.stream()                          ← @Deprecated(forRemoval=true), but the only API
-        │                                       that forwards subagent events today
-        ├─ parent REASONING chunks…           ← parent's first round (incl. tool call)
-        │
-        │  [agent_spawn "researcher" starts]
-        ├─ child REASONING chunks…            ← child reasoning (live forwarded with EventSource)
-        ├─ child TOOL_RESULT…
-        ├─ child AGENT_RESULT (last)          ← child's final reply (live forwarded)
-        │  [agent_spawn returns; result given to parent as TOOL_RESULT]
-        │
-        ├─ parent TOOL_RESULT…
-        ├─ parent REASONING chunks…           ← parent's second round
-        └─ parent AGENT_RESULT (last)         ← parent's final reply
-```
-
-Parent self-events: `source == null`. Child events: `source != null`.
-
-#### Distinguishing by source
+Distinguish parent vs child events:
 
 ```java
-// NOTE: stream(...) is @Deprecated(forRemoval=true). Kept here because it is currently
-// the only API that forwards live subagent events. Migrate to streamEvents(...) once the
-// AgentEvent subagent-source channel lands.
-Flux<Event> events = parent.stream(msgs, StreamOptions.defaults(), ctx);
+// parent events only
+events.filter(e -> e.getSource() == null).subscribe(…);
 
-events.subscribe(event -> {
-    EventSource src = event.getSource();
-    if (src == null) {
-        // parent self
-        System.out.printf("[parent][%s] %s%n",
-                event.getType(), event.getMessage().getTextContent());
-    } else {
-        // child (or grandchild)
-        System.out.printf("[%s|depth=%d|path=%s][%s] %s%n",
-                src.getAgentId(), src.getDepth(), src.getPath(),
-                event.getType(), event.getMessage().getTextContent());
-    }
-});
-```
+// child events only
+events.filter(e -> e.getSource() != null).subscribe(…);
 
-Useful `EventSource` fields:
-
-| Field | Meaning |
-|-------|---------|
-| `agentId` | Subagent type id (filename of `subagents/<id>.md`) |
-| `agentKey` | Runtime instance handle; pass to `agent_send` |
-| `agentName` | Display name (nullable) |
-| `sessionId` | Subagent's call session id |
-| `parentSessionId` | Parent agent's session id |
-| `depth` | Nesting depth (parent's direct child = 1, grandchild = 2, etc.) |
-| `path` | `/`-joined call path; stacks automatically for nesting, e.g. `sess-001/planner/executor` |
-
-### Multi-level nesting (grandchildren)
-
-A child can spawn a grandchild (subject to the 3-level hard cap). Grandchild events bubble up to the root parent; filter by `depth` or `path`:
-
-```java
-// Only first-level child REASONING events
-events.filter(e -> e.getSource() != null
-               && e.getSource().getDepth() == 1
-               && e.getType() == EventType.REASONING)
-      .subscribe(...);
-
-// Events on a path containing "executor" at any depth
-events.filter(e -> e.getSource() != null
-               && e.getSource().getPath().contains("executor"))
-      .subscribe(...);
+// events from a specific child
+events.filter(e -> e.getSource() != null && e.getSource().contains("researcher")).subscribe(…);
 ```
 
 ### SSE forwarding
-
-Pick the API that matches what your client needs:
-
-**Parent-only events (recommended for most chat UIs):**
 
 ```java
 @GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -309,6 +396,9 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
                 Map<String, Object> payload = new LinkedHashMap<>();
                 payload.put("type", event.getType().name());
                 payload.put("id",   event.getId());
+                if (event.getSource() != null) {
+                    payload.put("source", event.getSource());
+                }
                 if (event instanceof TextBlockDeltaEvent delta) {
                     payload.put("delta", delta.getDelta());
                 } else if (event instanceof ToolCallStartEvent start) {
@@ -321,43 +411,14 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 }
 ```
 
-**Include child-agent events** (uses the deprecated `stream()` path — only option until the `AgentEvent` subagent-source channel lands):
-
-```java
-@GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
-                                          @RequestParam String sessionId) {
-    RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
-    return agent.stream( // @Deprecated(forRemoval=true) — see note above
-                    List.of(new UserMessage(message)),
-                    StreamOptions.defaults(), ctx)
-            .map(event -> {
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("type", event.getType());
-                payload.put("text", event.getMessage().getTextContent());
-                payload.put("last", event.isLast());
-                if (event.getSource() != null) {
-                    payload.put("agentId", event.getSource().getAgentId());
-                    payload.put("depth",   event.getSource().getDepth());
-                    payload.put("path",    event.getSource().getPath());
-                }
-                return ServerSentEvent.<String>builder()
-                        .data(objectMapper.writeValueAsString(payload))
-                        .build();
-            });
-}
-```
-
 ### Behavior boundaries
 
 | Scenario | Live forwarding? |
 |----------|------------------|
-| `stream()` (deprecated) + synchronous local child (`timeout_seconds > 0`) | ✔ |
-| `streamEvents()` (recommended) — any subagent | ✗ (parent events only; subagent channel on `AgentEvent` is a roadmap item) |
-| `call()` mode (non-streaming) | ✗ (child result returns as a `tool_result` string) |
-| `timeout_seconds = 0` background task | ✗ (terminal state is pushed back to the parent's next round) |
+| `streamEvents()` + synchronous local child (`timeout_seconds > 0`) | ✔ |
+| `call()` mode (non-streaming) | ✗ (child result returns as `tool_result` string) |
+| `timeout_seconds = 0` background task | ✗ (result pushed via reverse notification to parent's next round) |
 | Remote subagent (Agent Protocol) | ✗ |
-| Multi-level nesting (grandchildren), `stream()` path | ✔ (`path` / `depth` stack automatically) |
 
 ### Error handling
 
@@ -365,8 +426,9 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 
 ## Related pages
 
+- [Channel](./channel) — `expose_to_user`, `SendOptions`, direct user-to-subagent messaging
 - [Workspace](./workspace) — `subagents/` and `agents/<id>/tasks/` layout
 - [Plan Mode](./plan-mode) — restrictions on subagents during the plan phase
 - [Architecture](./architecture) — how parent and child cooperate
 - [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
-- [Changelog B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline
+- [V1 Migration Guide B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline

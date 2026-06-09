@@ -64,6 +64,14 @@ sphinx:
     # label and don't trigger "doesn't have a title" warnings.
     myst_title_to_header: true
 
+    # MyST: generate GitHub-style heading anchors so in-page and cross-page
+    # ``[text](page#中文标题)`` links resolve. Without this, heading ids fall back
+    # to docutils ``make_id`` which strips all non-ASCII characters (e.g.
+    # ``同一套 agent 逻辑`` collapses to ``agent``), breaking every CJK anchor.
+    # MyST's slugify keeps CJK and matches how existing links are authored:
+    # lower-case, drop punctuation, spaces -> ``-``. Depth 4 covers ``#``..``####``.
+    myst_heading_anchors: 4
+
     # Sitemap Configuration
     html_baseurl: "https://java.agentscope.io/"
     sitemap_url_scheme: "{link}"

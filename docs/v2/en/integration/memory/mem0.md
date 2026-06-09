@@ -1,6 +1,6 @@
 # Mem0
 
-`agentscope-extensions-mem0` integrates [Mem0](https://mem0.ai/) as the long-term memory backend, combining vector search with LLM-based memory extraction. It supports the Mem0 SaaS platform, self-hosted deployments, and local stand-alone setups.
+`agentscope-extensions-mem0` integrates [Mem0](https://mem0.ai/) as the long-term memory store, combining vector search with LLM-based memory extraction. It supports the Mem0 SaaS platform, self-hosted deployments, and local stand-alone setups.
 
 ## When to use
 

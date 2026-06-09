@@ -56,7 +56,12 @@ public class MemoryFlushManager {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushManager.class);
 
-    private static final String FLUSH_SYSTEM_PROMPT =
+    /**
+     * Default prompt for the memory extraction step. Exposed publicly so callers can extend
+     * (e.g. append project-specific guidelines) when constructing
+     * {@link io.agentscope.harness.agent.memory.MemoryConfig}.
+     */
+    public static final String DEFAULT_FLUSH_PROMPT =
             """
             You are a memory extraction assistant. Analyze the conversation below and extract \
             important facts, decisions, preferences, and contextual information that should be \
@@ -87,10 +92,20 @@ public class MemoryFlushManager {
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
+    private final String flushPrompt;
 
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model) {
+        this(workspaceManager, model, DEFAULT_FLUSH_PROMPT);
+    }
+
+    /**
+     * @param flushPrompt SYSTEM prompt for the extraction LLM call. {@code null} falls back to
+     *     {@link #DEFAULT_FLUSH_PROMPT}.
+     */
+    public MemoryFlushManager(WorkspaceManager workspaceManager, Model model, String flushPrompt) {
         this.workspaceManager = workspaceManager;
         this.model = model;
+        this.flushPrompt = flushPrompt != null ? flushPrompt : DEFAULT_FLUSH_PROMPT;
     }
 
     /**
@@ -165,7 +180,7 @@ public class MemoryFlushManager {
         flushInput.add(
                 Msg.builder()
                         .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text(FLUSH_SYSTEM_PROMPT).build())
+                        .content(TextBlock.builder().text(flushPrompt).build())
                         .build());
         flushInput.add(
                 Msg.builder()

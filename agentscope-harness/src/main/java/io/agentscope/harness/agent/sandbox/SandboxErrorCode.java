@@ -26,10 +26,10 @@ public enum SandboxErrorCode {
     /** Command execution timed out. */
     EXEC_TIMEOUT,
 
-    /** Failed to start the workspace backend. */
+    /** Failed to start the workspace store. */
     WORKSPACE_START_ERROR,
 
-    /** Failed to stop/persist the workspace backend. */
+    /** Failed to stop/persist the workspace store. */
     WORKSPACE_STOP_ERROR,
 
     /** Failed to read or parse a workspace archive (tar). */

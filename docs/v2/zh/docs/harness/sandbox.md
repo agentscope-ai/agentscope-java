@@ -15,7 +15,7 @@ description: "隔离执行 + 跨调用恢复 + 多副本部署"
 
 ## 一个最小例子
 
-最简：本地 Docker，按对话隔离。
+最简：本地 Docker，按用户隔离。
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -27,30 +27,34 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 
 agent.call(msg, RuntimeContext.builder()
-    .sessionId("user-1-conv-1")
+    .userId("alice")
+    .sessionId("conv-1")
     .build()).block();
 ```
 
-`sessionId` 不同 → 沙箱不同；`call()` 之间相同 sessionId → 自动复用同一沙箱（或从快照恢复）。
+同一 `userId` 的多次 `call()` → 自动复用同一沙箱（或从快照恢复）；不同 `userId` → 各自独立。如果 `userId` 缺失，自动降级为按 `sessionId` 隔离。
 
 ## IsolationScope —— 谁和谁共享同一沙箱
 
-最常调的参数是 `IsolationScope`：
+所有沙箱配置都集中在 `SandboxFilesystemSpec`（如 `DockerFilesystemSpec`）上。核心参数是 `isolationScope`：
 
 | Scope | 谁共享 | 典型场景 |
 |-------|--------|---------|
-| `SESSION`（默认） | 每个 sessionId 独立 | 多用户 SaaS，每段对话各跑各的 |
-| `USER` | 同 `userId` 的多个 session 共享 | 同一用户跨会话共享工作区（含分布式部署） |
-| `AGENT` | 这个 agent 的所有用户 / 会话共享 | 公共工具型 agent |
+| `USER`（默认） | 同 `userId` 的多个 session 共享；userId 缺失时自动降级为 `SESSION` | 多用户 SaaS，同一用户跨会话保持工作区 |
+| `SESSION` | 每个 sessionId 独立 | 严格按对话隔离 |
+| `AGENT` | 这个 agent 的所有用户 / 会话共享 | 公共工具型 agent、共享知识库 |
 | `GLOBAL` | 一个 store 内全局共享 | 谨慎使用 |
 
 ```java
+// 显式指定 SESSION（覆盖默认的 USER）
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
-    .isolationScope(IsolationScope.USER))
+    .isolationScope(IsolationScope.SESSION))
 ```
 
 `SESSION` 是天然并发安全（每个 session 自己一份）；`USER` / `AGENT` / `GLOBAL` 多副本部署时建议配并发互斥（见下面的"并发控制"）。
+
+**USER 降级逻辑：** 当 `IsolationScope.USER` 生效（不管是默认还是显式设置），但 `RuntimeContext.userId` 缺失时，框架自动降级为按 `sessionId` 隔离。不需要额外处理 userId 为空的情况——沙箱会优雅降级。
 
 ## 跨调用恢复 = 快照
 
@@ -68,6 +72,7 @@ agent.call(msg, RuntimeContext.builder()
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
 | `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -81,43 +86,57 @@ agent.call(msg, RuntimeContext.builder()
 
 多副本部署同一个 agent，要让任意副本都能接住同一用户的对话，需要：
 
-1. 一个分布式 `Session`（例如基于 Redis 的实现）
-2. 一个非 `NoopSnapshotSpec` 的快照（OSS / Redis 等远端存储）
-3. `IsolationScope` 选 `USER` / `AGENT` / `GLOBAL` 中合适的
+1. 一个分布式 `AgentStateStore`（例如基于 Redis 的实现）—— 通过 builder 的 `.stateStore(...)` 传入
+2. 一个非 `NoopSnapshotSpec` 的快照（OSS / Redis 等远端存储）—— 直接配在 filesystem spec 上的 `.snapshotSpec(...)`
+3. `IsolationScope` 选合适的（默认 `USER` 通常就够用）
 
-为了把这些一起声明，用 `sandboxDistributed(...)`：
+所有配置集中在一处：
 
 ```java
 HarnessAgent.builder()
     .name("assistant")
     .model(model)
+    .workspace(workspace)
+    .stateStore(redisStateStore)                    // 分布式状态
     .filesystem(new DockerFilesystemSpec()
         .image("ubuntu:24.04")
-        .isolationScope(IsolationScope.USER))
-    .sandboxDistributed(SandboxDistributedOptions.oss(redisSession, ossSnapshotSpec))
+        .snapshotSpec(ossSnapshotSpec)              // 跨副本快照
+        .isolationScope(IsolationScope.USER))       // 默认值，可省略
     .build();
 ```
 
-`requireDistributed=true` 时如果实际 Session / snapshot 不满足条件，构建期会直接报错，避免上线后才发现。
+框架把沙箱元数据（容器 ID、快照指针、workspace-ready 标记）和 agent 的运行时状态存在同一个 `AgentStateStore` 里。只要你配了分布式 store，沙箱跨副本 resume 就自动可用——不需要额外声明。
+
+如果你使用的是本地 `AgentStateStore`（默认的 `JsonFileAgentStateStore`），开启沙箱模式时框架会在构建阶段打一条 warn 日志提醒你：沙箱状态不能跨 JVM 恢复、也不能跨实例共享。
 
 ## 并发控制（多副本场景）
 
-`USER` / `AGENT` / `GLOBAL` 模式在多副本下，两个副本同时处理同一个用户的请求会都把状态写到同一个 slot，最后写入的为准。如果你不想这样，加一把分布式锁——内置一个基于 Redis 的实现：
+`USER` / `AGENT` / `GLOBAL` 模式在多副本下，两个副本同时处理同一个用户的请求会都把状态写到同一个 slot，最后写入的为准。如果你不想这样，需要一把分布式锁。
+
+**推荐方式**：使用 `distributedStore(...)`，快照和执行锁都会自动注入：
 
 ```java
-SandboxExecutionGuard guard = RedisSandboxExecutionGuard.builder(jedis)
-    .leaseTtl(Duration.ofMinutes(30))        // 比最坏情况 call 时长稍长
-    .retryInterval(Duration.ofMillis(500))
-    .build();
+DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 
+HarnessAgent.builder()
+    .distributedStore(store)    // 自动注入 stateStore + snapshotSpec + executionGuard
+    .filesystem(new DockerFilesystemSpec()
+        .image("ubuntu:24.04")
+        .isolationScope(IsolationScope.USER))
+    .build();
+```
+
+如需自定义锁参数，可在 `SandboxFilesystemSpec` 上显式设置来覆盖 store 的默认值：
+
+```java
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
     .isolationScope(IsolationScope.USER)
-    .snapshotSpec(redisSnapshotSpec)
-    .executionGuard(guard))
+    .executionGuard(RedisSandboxExecutionGuard.builder(jedis)
+        .leaseTtl(Duration.ofMinutes(30)).build()))
 ```
 
-锁的 key 会按 scope 自动分桶（`USER` → 按 userId，`AGENT` → 按 agent 名）。也可以实现 `SandboxExecutionGuard` 接口接其他锁后端（DB / Zookeeper / etcd 等）。
+内置实现：`RedisSandboxExecutionGuard`（Redis `SET NX PX`）、`JdbcSandboxExecutionGuard`（MySQL `GET_LOCK()`）。也可以实现 `SandboxExecutionGuard` 接口接其他锁后端（Zookeeper / etcd 等）。
 
 ## 自管沙箱实例（高级）
 

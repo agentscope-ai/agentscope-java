@@ -28,7 +28,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * {@link SandboxClient} implementation for the Docker sandbox backend.
+ * {@link SandboxClient} implementation for the Docker sandbox store.
  *
  * <p>Creates and manages Docker containers via the {@code docker} CLI. The Docker daemon must
  * be accessible from the host's {@code PATH}.
