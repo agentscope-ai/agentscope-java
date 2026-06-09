@@ -16,6 +16,7 @@
 package io.agentscope.core.session;
 
 import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 
 /**
@@ -65,7 +66,7 @@ public final class ListHashUtil {
      *
      * <ul>
      *   <li>List size
-     *   <li>Hash codes of sampled elements
+     *   <li>Content hashes of sampled elements
      * </ul>
      *
      * <p>This method is designed to be lightweight and fast, using sampling for large lists to
@@ -88,11 +89,20 @@ public final class ListHashUtil {
 
         for (int idx : sampleIndices) {
             State item = values.get(idx);
-            int itemHash = item != null ? item.hashCode() : 0;
+            int itemHash = computeItemHash(item);
             sb.append(idx).append(":").append(itemHash).append(",");
         }
 
         return Integer.toHexString(sb.toString().hashCode());
+    }
+
+    private static int computeItemHash(State item) {
+        if (item == null) {
+            return 0;
+        }
+
+        String serialized = JsonUtils.getJsonCodec().toJson(item);
+        return serialized.hashCode();
     }
 
     /**
