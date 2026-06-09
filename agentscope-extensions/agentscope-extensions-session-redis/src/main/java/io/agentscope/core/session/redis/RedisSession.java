@@ -175,6 +175,20 @@ import redis.clients.jedis.UnifiedJedis;
  *     .keyPrefix("myapp:session:")
  *     .build();
  * }</pre>
+ *
+ * <p><strong>Session TTL (Auto-Expiry) Example:</strong></p>
+ *
+ * <pre>{@code
+ * // Create Redis client
+ * RedisClient redisClient = RedisClient.create("redis://localhost:6379");
+ *
+ * // Build RedisSession with 30-minute TTL — keys auto-expire after inactivity
+ * Session session = RedisSession.builder()
+ *     .jedisClient(redisClient)
+ *     .keyPrefix("myapp:session:")
+ *     .ttlSeconds(1800)
+ *     .build();
+ * }</pre>
  */
 public class RedisSession implements Session {
 
@@ -190,6 +204,8 @@ public class RedisSession implements Session {
 
     private final String keyPrefix;
 
+    private final long ttlSeconds;
+
     private RedisSession(Builder builder) {
         if (builder.client == null) {
             throw new IllegalArgumentException("Redis client cannot be null");
@@ -199,6 +215,7 @@ public class RedisSession implements Session {
         }
         this.client = builder.client;
         this.keyPrefix = builder.keyPrefix;
+        this.ttlSeconds = builder.ttlSeconds;
     }
 
     /**
@@ -220,6 +237,8 @@ public class RedisSession implements Session {
             client.set(redisKey, json);
             // Track this key in the session's key set
             client.addToSet(keysKey, key);
+            // Refresh TTL on affected keys
+            expireIfEnabled(redisKey, keysKey);
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
         }
@@ -261,6 +280,8 @@ public class RedisSession implements Session {
             client.set(hashKey, currentHash);
             // Track this key in the session's key set
             client.addToSet(keysKey, key + LIST_SUFFIX);
+            // Refresh TTL on affected keys
+            expireIfEnabled(listKey, hashKey, keysKey);
         } catch (Exception e) {
             throw new RuntimeException("Failed to save list: " + key, e);
         }
@@ -427,6 +448,23 @@ public class RedisSession implements Session {
     }
 
     /**
+     * Refresh TTL on the given Redis keys if TTL is configured.
+     *
+     * <p>When TTL is set (greater than 0), each call refreshes the expiry on the affected keys,
+     * so that the session data lives as long as it is being actively used.
+     *
+     * @param keys the Redis keys to set expiry on
+     */
+    private void expireIfEnabled(String... keys) {
+        if (ttlSeconds <= 0) {
+            return;
+        }
+        for (String key : keys) {
+            client.expire(key, ttlSeconds);
+        }
+    }
+
+    /**
      * Builder for {@link RedisSession}.
      *
      * <p>The builder supports multiple Redis client types. Only one client type should be set.
@@ -446,8 +484,27 @@ public class RedisSession implements Session {
 
         private RedisClientAdapter client;
 
+        private long ttlSeconds = 0;
+
         public Builder keyPrefix(String keyPrefix) {
             this.keyPrefix = keyPrefix;
+            return this;
+        }
+
+        /**
+         * Sets the TTL (time-to-live) in seconds for all keys written by this session.
+         *
+         * <p>When set to a value greater than 0, each {@code save()} call will refresh the
+         * expiry on the affected Redis keys. This means session data will automatically be
+         * deleted after the configured duration of inactivity.
+         *
+         * <p>When set to 0 (default), keys are persisted indefinitely.
+         *
+         * @param ttlSeconds the TTL in seconds, 0 to disable expiry
+         * @return This builder instance for method chaining
+         */
+        public Builder ttlSeconds(long ttlSeconds) {
+            this.ttlSeconds = ttlSeconds;
             return this;
         }
 

@@ -169,6 +169,11 @@ public class JedisClientAdapter implements RedisClientAdapter {
     }
 
     @Override
+    public void expire(String key, long seconds) {
+        unifiedJedis.expire(key, seconds);
+    }
+
+    @Override
     public void close() {
         unifiedJedis.close();
     }

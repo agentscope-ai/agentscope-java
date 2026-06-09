@@ -21,9 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -276,6 +278,44 @@ class JedisSessionTest {
                         .build();
         session.close();
         verify(unifiedJedis).close();
+    }
+
+    @Test
+    @DisplayName("Should set TTL on keys when ttlSeconds is configured")
+    void testSaveWithTtl() {
+        RedisSession session =
+                RedisSession.builder()
+                        .jedisClient(unifiedJedis)
+                        .keyPrefix("agentscope:session:")
+                        .ttlSeconds(1800)
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        TestState state = new TestState("test_value", 42);
+
+        session.save(sessionKey, "testModule", state);
+
+        // Verify expire was called with correct TTL on both the state key and the _keys set
+        verify(unifiedJedis).expire("agentscope:session:session1:testModule", 1800);
+        verify(unifiedJedis).expire("agentscope:session:session1:_keys", 1800);
+    }
+
+    @Test
+    @DisplayName("Should not set TTL when ttlSeconds is not configured")
+    void testSaveWithoutTtl() {
+        RedisSession session =
+                RedisSession.builder()
+                        .jedisClient(unifiedJedis)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        TestState state = new TestState("test_value", 42);
+
+        session.save(sessionKey, "testModule", state);
+
+        // Verify expire was never called
+        verify(unifiedJedis, never()).expire(anyString(), anyLong());
     }
 
     /** Simple test state record for testing. */
