@@ -141,6 +141,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * ReAct (Reasoning and Acting) Agent implementation.
@@ -338,7 +339,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
     private record SlotRef(String userId, String sessionId) {
         static SlotRef parse(String slotKey) {
-            int slash = slotKey.indexOf('/');
+            int slash = slotKey.lastIndexOf('/');
             String u = slotKey.substring(0, slash);
             String s = slotKey.substring(slash + 1);
             return new SlotRef("__anon__".equals(u) ? null : u, s);
@@ -413,8 +414,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         syncToolkitToState(scope.state);
         SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
-        return Mono.fromRunnable(
-                () -> stateStore.save(ref.userId, ref.sessionId, "agent_state", toSave));
+        return Mono.<Void>fromRunnable(
+                        () -> stateStore.save(ref.userId, ref.sessionId, "agent_state", toSave))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**

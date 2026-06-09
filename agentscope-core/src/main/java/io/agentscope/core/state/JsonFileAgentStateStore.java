@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -100,7 +101,7 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         ensureDirectoryExists(file.getParent());
         try {
             String json = JsonUtils.getJsonCodec().toPrettyJson(value);
-            Files.writeString(file, json, StandardCharsets.UTF_8);
+            atomicWriteString(file, json);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save state: " + key, e);
         }
@@ -132,18 +133,20 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private void rewriteEntireList(Path file, List<? extends State> values) throws IOException {
-        Files.deleteIfExists(file);
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         try (BufferedWriter writer =
                 Files.newBufferedWriter(
-                        file,
+                        tmp,
                         StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
                         StandardOpenOption.WRITE)) {
             for (State item : values) {
                 writer.write(JsonUtils.getJsonCodec().toJson(item));
                 writer.newLine();
             }
         }
+        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private void appendToList(Path file, List<? extends State> items) throws IOException {
@@ -310,7 +313,13 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private void writeHashFile(Path hashFile, String hash) throws IOException {
-        Files.writeString(hashFile, hash, StandardCharsets.UTF_8);
+        atomicWriteString(hashFile, hash);
+    }
+
+    private static void atomicWriteString(Path file, String content) throws IOException {
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tmp, content, StandardCharsets.UTF_8);
+        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private long countLines(Path file) {
