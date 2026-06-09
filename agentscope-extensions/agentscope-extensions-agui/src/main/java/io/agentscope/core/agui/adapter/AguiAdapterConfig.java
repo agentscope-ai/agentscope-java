@@ -15,8 +15,12 @@
  */
 package io.agentscope.core.agui.adapter;
 
+import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
 import io.agentscope.core.agui.model.ToolMergeMode;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Configuration for the AG-UI agent adapter.
@@ -30,16 +34,23 @@ public class AguiAdapterConfig {
     private final boolean emitStateEvents;
     private final boolean emitToolCallArgs;
     private final boolean enableReasoning;
+    private final boolean enableActingChunk;
     private final Duration runTimeout;
     private final String defaultAgentId;
+    private final Map<Class<?>, BlockEventConverter<?>> customConverters;
 
     private AguiAdapterConfig(Builder builder) {
         this.toolMergeMode = builder.toolMergeMode;
         this.emitStateEvents = builder.emitStateEvents;
         this.emitToolCallArgs = builder.emitToolCallArgs;
         this.enableReasoning = builder.enableReasoning;
+        this.enableActingChunk = builder.enableActingChunk;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
+        this.customConverters =
+                builder.customConverters != null
+                        ? Map.copyOf(builder.customConverters)
+                        : Collections.emptyMap();
     }
 
     /**
@@ -83,6 +94,18 @@ public class AguiAdapterConfig {
     }
 
     /**
+     * Check if intermediate acting chunk emissions should be included.
+     *
+     * <p>When enabled, intermediate tool execution outputs (such as progress)
+     * will be streamed to the frontend.
+     *
+     * @return true if acting chunks should be included
+     */
+    public boolean isEnableActingChunk() {
+        return enableActingChunk;
+    }
+
+    /**
      * Get the run timeout duration.
      *
      * @return The run timeout
@@ -98,6 +121,15 @@ public class AguiAdapterConfig {
      */
     public String getDefaultAgentId() {
         return defaultAgentId;
+    }
+
+    /**
+     * Get the custom block event converters.
+     *
+     * @return Immutable map of custom converters
+     */
+    public Map<Class<?>, BlockEventConverter<?>> getCustomConverters() {
+        return customConverters;
     }
 
     /**
@@ -127,8 +159,10 @@ public class AguiAdapterConfig {
         private boolean emitStateEvents = true;
         private boolean emitToolCallArgs = true;
         private boolean enableReasoning = false;
+        private boolean enableActingChunk = true;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
+        private final Map<Class<?>, BlockEventConverter<?>> customConverters = new HashMap<>();
 
         /**
          * Set the tool merge mode.
@@ -179,6 +213,20 @@ public class AguiAdapterConfig {
         }
 
         /**
+         * Set whether to enable acting chunk emissions.
+         *
+         * <p>When enabled, tools can emit intermediate chunks (e.g., Custom events for progress
+         * or real-time logs) during execution. Default is true.
+         *
+         * @param enableActingChunk true to enable acting chunks
+         * @return This builder
+         */
+        public Builder enableActingChunk(boolean enableActingChunk) {
+            this.enableActingChunk = enableActingChunk;
+            return this;
+        }
+
+        /**
          * Set the run timeout duration.
          *
          * @param runTimeout The timeout duration
@@ -197,6 +245,22 @@ public class AguiAdapterConfig {
          */
         public Builder defaultAgentId(String defaultAgentId) {
             this.defaultAgentId = defaultAgentId;
+            return this;
+        }
+
+        /**
+         * Register a custom block event converter.
+         *
+         * <p>This allows users to override the default conversion strategies for specific
+         * ContentBlock types, enabling deep customization of AG-UI event generation.
+         *
+         * @param converter The custom converter strategy
+         * @return This builder
+         */
+        public Builder registerConverter(BlockEventConverter<?> converter) {
+            if (converter != null && converter.supportedBlockType() != null) {
+                this.customConverters.put(converter.supportedBlockType(), converter);
+            }
             return this;
         }
 

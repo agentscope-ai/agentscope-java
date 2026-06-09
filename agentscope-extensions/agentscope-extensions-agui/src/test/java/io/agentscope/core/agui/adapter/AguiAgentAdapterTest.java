@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +29,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agui.adapter.strategy.BlockEventConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -654,9 +656,10 @@ class AguiAgentAdapterTest {
     }
 
     @Test
-    void testTextMessageEndNotDuplicatedWhenLastEventAfterToolCall() {
-        // Test that when a text message is interrupted by a tool call and then the last event
-        // contains text blocks with the same message ID, only one TextMessageEnd is emitted
+    void testTextMessageIgnoredAfterToolCallInterruption() {
+        // Test that when a text message is interrupted by a tool call,
+        // the active text message is closed immediately and marked as finished.
+        // Subsequent text blocks with the same message ID should be ignored.
         String msgId = "msg-text";
         Msg firstMsg =
                 Msg.builder()
@@ -686,6 +689,7 @@ class AguiAgentAdapterTest {
         Event firstEvent = new Event(EventType.REASONING, firstMsg, false);
         Event toolCallEvent = new Event(EventType.REASONING, toolCall1, false);
         Event lastEvent = new Event(EventType.REASONING, lastMsg, true);
+
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(firstEvent, toolCallEvent, lastEvent));
 
@@ -700,7 +704,21 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Should have exactly one TextMessageEnd for the same message ID
+        long textStartCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .filter(
+                                e -> {
+                                    AguiEvent.TextMessageStart start =
+                                            (AguiEvent.TextMessageStart) e;
+                                    return msgId.equals(start.messageId());
+                                })
+                        .count();
+        assertEquals(
+                1,
+                textStartCount,
+                "Should emit exactly 1 TextMessageStart. The subsequent block should be ignored");
+
         long textEndCount =
                 events.stream()
                         .filter(e -> e instanceof AguiEvent.TextMessageEnd)
@@ -710,7 +728,11 @@ class AguiAgentAdapterTest {
                                     return msgId.equals(end.messageId());
                                 })
                         .count();
-        assertEquals(1, textEndCount, "Should have exactly 1 TextMessageEnd per message ID");
+        assertEquals(
+                1,
+                textEndCount,
+                "Should emit exactly 1 TextMessageEnd: the one triggered by the tool"
+                        + " interruption.");
     }
 
     @Test
@@ -1695,5 +1717,203 @@ class AguiAgentAdapterTest {
         assertTrue(
                 !hasReasoningMessageStart,
                 "Should NOT have ReasoningMessageStart for null thinking");
+    }
+
+    @Test
+    void testAggregateLastEventBlockedWhenFinished() {
+        // Test that when a text or reasoning event is interrupted end(e.g., interrupted by a tool
+        // call),
+        // the final event (isLast=true) containing the aggregated content is strictly blocked and
+        // ignored.
+        // This prevents the UI from repeating the entire accumulated message at the end of a
+        // stream.
+
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        String targetMsgId = "msg-target";
+
+        // 1. Initial chunk (isLast = false)
+        Msg firstMsg =
+                Msg.builder()
+                        .id(targetMsgId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Initial reasoning.")
+                                                .build(),
+                                        TextBlock.builder().text("Initial text.").build()))
+                        .build();
+        Event firstEvent = new Event(EventType.REASONING, firstMsg, false);
+
+        // 2. Tool call chunk (forces closure, making targetMsgId "finished")
+        Msg toolMsg =
+                Msg.builder()
+                        .id("msg-tc")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("tc-1")
+                                        .name("get_weather")
+                                        .input(Map.of())
+                                        .build())
+                        .build();
+        Event toolEvent = new Event(EventType.REASONING, toolMsg, false);
+
+        // 3. Final aggregate chunk (isLast = true) - This MUST be blocked!
+        Msg lastMsg =
+                Msg.builder()
+                        .id(targetMsgId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking(
+                                                        "Initial reasoning. Plus all aggregate"
+                                                                + " chunk.")
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("Initial text. Plus all aggregate chunk.")
+                                                .build()))
+                        .build();
+        Event lastEvent = new Event(EventType.REASONING, lastMsg, true);
+
+        // Mock the stream to return the sequence
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(firstEvent, toolEvent, lastEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage(
+                                                "msg-1", "Test aggregate blocking")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Verify Start events (should only be 1 of each, not restarted by the last aggregate event)
+        long textStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageStart).count();
+        long reasoningStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageStart).count();
+
+        assertEquals(1, textStartCount, "Should emit exactly 1 TextMessageStart");
+        assertEquals(1, reasoningStartCount, "Should emit exactly 1 ReasoningMessageStart");
+
+        // Verify End events (should only be 1 of each, triggered strictly by the tool interruption)
+        long textEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageEnd).count();
+        long reasoningEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageEnd).count();
+
+        assertEquals(
+                1, textEndCount, "Should emit exactly 1 TextMessageEnd due to tool interruption");
+        assertEquals(
+                1,
+                reasoningEndCount,
+                "Should emit exactly 1 ReasoningMessageEnd due to tool interruption");
+
+        // Verify that the aggregate content was strictly blocked and never emitted
+        boolean hasAggregateText =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .anyMatch(e -> e.delta().contains("aggregate chunk"));
+
+        assertTrue(!hasAggregateText, "The aggregated text block MUST be ignored and not emitted");
+
+        boolean hasAggregateReasoning =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageContent)
+                        .map(e -> (AguiEvent.ReasoningMessageContent) e)
+                        .anyMatch(e -> e.delta().contains("aggregate chunk"));
+
+        assertTrue(
+                !hasAggregateReasoning,
+                "The aggregated reasoning block MUST be ignored and not emitted");
+    }
+
+    @Test
+    void testCustomConverterOverridesDefaultStrategy() {
+        // Create a custom strategy that overrides the default ToolResultBlock behavior
+        BlockEventConverter<ToolResultBlock> customConverter =
+                new BlockEventConverter<>() {
+                    @Override
+                    public Class<ToolResultBlock> supportedBlockType() {
+                        return ToolResultBlock.class;
+                    }
+
+                    @Override
+                    public boolean isApplicable(Event event) {
+                        return event.getType() == EventType.TOOL_RESULT;
+                    }
+
+                    @Override
+                    public void convert(ToolResultBlock block, Event event, StreamContext ctx) {
+                        // Instead of normal ToolCallResult, emit a special CUSTOM event
+                        ctx.emit(
+                                new AguiEvent.Custom(
+                                        ctx.getThreadId(),
+                                        ctx.getRunId(),
+                                        "overridden_tool_result",
+                                        "Intercepted: " + block.getId()));
+                    }
+                };
+
+        // Inject the custom strategy via config
+        AguiAdapterConfig customConfig =
+                AguiAdapterConfig.builder().registerConverter(customConverter).build();
+        AguiAgentAdapter customAdapter = new AguiAgentAdapter(mockAgent, customConfig);
+
+        // Simulate a ToolResult event
+        Msg toolResultMsg =
+                Msg.builder()
+                        .id("msg-tr1")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-custom-1")
+                                        .output(TextBlock.builder().text("4").build())
+                                        .build())
+                        .build();
+
+        Event toolResultEvent = new Event(EventType.TOOL_RESULT, toolResultMsg, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolResultEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Calculate")))
+                        .build();
+
+        List<AguiEvent> events = customAdapter.run(input).collectList().block();
+        assertNotNull(events);
+
+        // Verify that the CUSTOM event emitted by our overridden strategy exists
+        boolean hasCustomEvent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.Custom)
+                        .map(e -> (AguiEvent.Custom) e)
+                        .anyMatch(
+                                e ->
+                                        "overridden_tool_result".equals(e.name())
+                                                && "Intercepted: tc-custom-1".equals(e.value()));
+        assertTrue(hasCustomEvent, "Should emit the Custom event from the overridden strategy");
+
+        // Verify that the default ToolCallResult event was NOT emitted (perfect override)
+        boolean hasDefaultToolResult =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallResult);
+        assertFalse(
+                hasDefaultToolResult,
+                "Should NOT emit the default ToolCallResult because the strategy was overridden");
     }
 }
