@@ -19,12 +19,18 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiToolCall;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
@@ -37,6 +43,17 @@ import java.util.stream.Collectors;
  *
  * <p>This class handles the bidirectional conversion between the AG-UI protocol's
  * message format and AgentScope's internal message format.
+ *
+ * <p>Supports multimodal input per AG-UI protocol:
+ * <ul>
+ *   <li>{@code text} → {@link TextBlock}</li>
+ *   <li>{@code image} → {@link ImageBlock}</li>
+ *   <li>{@code video} → {@link VideoBlock}</li>
+ *   <li>{@code audio} → {@link AudioBlock}</li>
+ *   <li>{@code document} → {@link TextBlock} (with description)</li>
+ * </ul>
+ *
+ * <p>See https://docs.ag-ui.com/concepts/messages.md for AG-UI InputContent spec.
  */
 public class AguiMessageConverter {
     /**
@@ -54,8 +71,20 @@ public class AguiMessageConverter {
         MsgRole role = convertRole(aguiMessage.getRole());
         List<ContentBlock> blocks = new ArrayList<>();
 
-        // Add text content if present
-        if (aguiMessage.getContent() != null && !aguiMessage.getContent().isEmpty()) {
+        // Handle multimodal content (InputContent array per AG-UI protocol)
+        if (aguiMessage.isMultimodalContent()) {
+            List<Map<String, Object>> parts = aguiMessage.getMultimodalContent();
+            if (parts != null) {
+                for (Map<String, Object> part : parts) {
+                    ContentBlock block = convertInputContent(part);
+                    if (block != null) {
+                        blocks.add(block);
+                    }
+                }
+            }
+        }
+        // Handle simple text content (backward compatible)
+        else if (aguiMessage.getContent() != null && !aguiMessage.getContent().isEmpty()) {
             if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
                 // For tool messages, wrap content in ToolResultBlock
                 blocks.add(
@@ -76,6 +105,91 @@ public class AguiMessageConverter {
         }
 
         return Msg.builder().id(aguiMessage.getId()).role(role).content(blocks).build();
+    }
+
+    /**
+     * Convert a single AG-UI InputContent part to an AgentScope ContentBlock.
+     *
+     * @param part The InputContent map from AG-UI protocol
+     * @return The converted ContentBlock, or null if type is unrecognized
+     */
+    @SuppressWarnings("unchecked")
+    private ContentBlock convertInputContent(Map<String, Object> part) {
+        String type = (String) part.get("type");
+        if (type == null) {
+            return null;
+        }
+
+        switch (type) {
+            case "text":
+                String text = (String) part.get("text");
+                return text != null ? TextBlock.builder().text(text).build() : null;
+
+            case "image":
+                Source source = extractSource(part);
+                return source != null ? ImageBlock.builder().source(source).build() : null;
+
+            case "video":
+                Source videoSource = extractSource(part);
+                return videoSource != null
+                        ? VideoBlock.builder().source(videoSource).build()
+                        : null;
+
+            case "audio":
+                Source audioSource = extractSource(part);
+                return audioSource != null
+                        ? AudioBlock.builder().source(audioSource).build()
+                        : null;
+
+            case "document":
+                // Convert document to TextBlock with description
+                Source docSource = extractSource(part);
+                if (docSource != null) {
+                    String docDesc = "[Document: " + extractMimeType(part) + "]";
+                    return TextBlock.builder().text(docDesc).build();
+                }
+                return null;
+
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Extract Source from an InputContent part.
+     * Supports both 'url' and 'data' (base64) source types.
+     */
+    @SuppressWarnings("unchecked")
+    private Source extractSource(Map<String, Object> part) {
+        Map<String, Object> sourceMap = (Map<String, Object>) part.get("source");
+        if (sourceMap == null) {
+            return null;
+        }
+
+        String sourceType = (String) sourceMap.get("type");
+        if ("url".equals(sourceType)) {
+            String url = (String) sourceMap.get("value");
+            return url != null ? new URLSource(url) : null;
+        } else if ("data".equals(sourceType)) {
+            String data = (String) sourceMap.get("value");
+            String mimeType = (String) sourceMap.get("mimeType");
+            if (data != null && mimeType != null) {
+                return new Base64Source(data, mimeType);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extract mimeType from an InputContent part (for document type).
+     */
+    private String extractMimeType(Map<String, Object> part) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sourceMap = (Map<String, Object>) part.get("source");
+        if (sourceMap != null) {
+            return (String) sourceMap.get("mimeType");
+        }
+        return null;
     }
 
     /**

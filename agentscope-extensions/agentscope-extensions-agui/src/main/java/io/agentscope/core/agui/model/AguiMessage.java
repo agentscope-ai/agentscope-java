@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -34,12 +35,24 @@ import java.util.Objects;
  *   <li>system - System instructions</li>
  *   <li>tool - Tool execution results</li>
  * </ul>
+ *
+ * <p>Content can be a simple string or a multimodal array of
+ * {@code InputContent} objects (per AG-UI protocol).
+ * See https://docs.ag-ui.com/concepts/messages.md for details.
+ *
+ * <p>InputContent array element structure:
+ * <pre>{@code
+ * { "type": "text", "text": "Hello" }
+ * { "type": "image", "source": { "type": "url", "value": "https://...", "mimeType": "image/png" } }
+ * { "type": "video", "source": { "type": "url", "value": "https://...", "mimeType": "video/mp4" } }
+ * { "type": "audio", "source": { "type": "url", "value": "https://...", "mimeType": "audio/wav" } }
+ * }</pre>
  */
 public class AguiMessage {
 
     private final String id;
     private final String role;
-    private final String content;
+    private final Object content; // String or List<map<string,object>> for multimodal
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
 
@@ -48,7 +61,8 @@ public class AguiMessage {
      *
      * @param id The unique message ID
      * @param role The message role (user, assistant, system, tool)
-     * @param content The message content
+     * @param content The message content - may be a String or a List of InputContent objects
+     *                (multimodal input per AG-UI protocol)
      * @param toolCalls Tool calls for assistant messages (optional)
      * @param toolCallId Tool call ID for tool messages (optional)
      */
@@ -56,7 +70,7 @@ public class AguiMessage {
     public AguiMessage(
             @JsonProperty("id") String id,
             @JsonProperty("role") String role,
-            @JsonProperty("content") String content,
+            @JsonProperty("content") Object content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
             @JsonProperty("toolCallId") String toolCallId) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
@@ -135,10 +149,42 @@ public class AguiMessage {
     /**
      * Get the message content.
      *
-     * @return The content, may be null
+     * @return The content as a String if it is a simple text message, or null if
+     *         the content is multimodal (InputContent array). Use {@link #getContentObject()}
+     *         for full multimodal support.
      */
     public String getContent() {
+        return content instanceof String ? (String) content : null;
+    }
+
+    /**
+     * Get the raw content object.
+     *
+     * @return The content as an Object - either a String for simple text messages
+     *         or a List of InputContent maps for multimodal messages.
+     */
+    public Object getContentObject() {
         return content;
+    }
+
+    /**
+     * Check if this message contains multimodal content (InputContent array).
+     *
+     * @return true if content is a List (multimodal), false if it's a String or null
+     */
+    public boolean isMultimodalContent() {
+        return content instanceof List;
+    }
+
+    /**
+     * Get the multimodal content as a list of InputContent objects.
+     * Each item is a Map with keys: type, text/source/etc.
+     *
+     * @return The content as a List if it is multimodal, or null if it's a simple String
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getMultimodalContent() {
+        return content instanceof List ? (List<Map<String, Object>>) content : null;
     }
 
     /**
