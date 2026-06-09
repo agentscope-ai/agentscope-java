@@ -62,11 +62,7 @@ public final class SessionTranscriptReader {
                     return fromLog;
                 }
                 String relCtx =
-                        "agents/"
-                                + runtimeAgentId
-                                + "/sessions/"
-                                + entry.sessionId()
-                                + ".jsonl";
+                        "agents/" + runtimeAgentId + "/sessions/" + entry.sessionId() + ".jsonl";
                 String fromCtx =
                         workspaceManager.readManagedWorkspaceFileUtf8(
                                 RuntimeContext.empty(), relCtx);
@@ -100,8 +96,7 @@ public final class SessionTranscriptReader {
         if (runtimeAgentId == null || runtimeAgentId.isBlank()) {
             return null;
         }
-        return workspaceProvider.forAgent(
-                entry.userId(), runtimeAgentId, def.workspacePath());
+        return workspaceProvider.forAgent(entry.userId(), runtimeAgentId, def.workspacePath());
     }
 
     @FunctionalInterface

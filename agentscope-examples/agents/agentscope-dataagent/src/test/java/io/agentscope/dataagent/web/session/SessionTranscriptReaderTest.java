@@ -34,8 +34,8 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -71,7 +71,8 @@ class SessionTranscriptReaderTest {
                         userId);
 
         AgentDefinition definition = agentDefinition(logicalAgentId, "custom-root", userId);
-        when(catalogService.findVisible(userId, logicalAgentId)).thenReturn(Optional.of(definition));
+        when(catalogService.findVisible(userId, logicalAgentId))
+                .thenReturn(Optional.of(definition));
 
         AtomicReference<String> ownerRef = new AtomicReference<>();
         AtomicReference<String> agentRef = new AtomicReference<>();
@@ -127,7 +128,8 @@ class SessionTranscriptReaderTest {
                         userId);
 
         AgentDefinition definition = agentDefinition(logicalAgentId, null, userId);
-        when(catalogService.findVisible(userId, logicalAgentId)).thenReturn(Optional.of(definition));
+        when(catalogService.findVisible(userId, logicalAgentId))
+                .thenReturn(Optional.of(definition));
         when(sessionAgentManager.history(entry.sessionKey(), 0))
                 .thenReturn(
                         new HistoryResult(
