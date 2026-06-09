@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Going to Production" href="../others/going-to-production.html"><link rel="prev" title="Skill" href="skill.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Channel" href="channel.html"><link rel="prev" title="Skill" href="skill.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/plan-mode.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="skill.html">Skill</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -889,7 +909,7 @@
 <h2>Role<a class="headerlink" href="#role" title="Link to this heading">¶</a></h2>
 <p>Plan Mode lets the agent “figure out and write down intent” before executing. While active, the agent is in a <strong>read-only phase</strong>:</p>
 <ul class="simple">
-<li><p>Only <strong>read-only tools</strong> plus 4 whitelisted tools work: <code class="docutils literal notranslate"><span class="pre">plan_enter</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_write</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code> / <code class="docutils literal notranslate"><span class="pre">todo_write</span></code>.</p></li>
+<li><p>Only <strong>read-only tools</strong> plus 4 whitelisted tools work: <code class="docutils literal notranslate"><span class="pre">plan_enter</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_write</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code> / <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> (the shell can be opted in — see <a class="reference internal" href="#allowing-the-shell-during-the-plan-phase-opt-in">below</a>).</p></li>
 <li><p>Any other tool call is rejected immediately (the agent sees a “plan-mode denied” note).</p></li>
 <li><p>Exiting Plan Mode requires HITL confirmation (reusing the permission system’s ASK), so the model can’t unilaterally jump into execution.</p></li>
 </ul>
@@ -923,6 +943,10 @@
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">planFileDirectory(String)</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">&quot;plans&quot;</span></code></p></td>
 <td><p>plan-file root (workspace-relative)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">allowShellInPlanMode()</span></code> / <code class="docutils literal notranslate"><span class="pre">allowShellInPlanMode(boolean)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p>opt in to running the shell (<code class="docutils literal notranslate"><span class="pre">execute</span></code>) during the plan phase — see <a class="reference internal" href="#allowing-the-shell-during-the-plan-phase-opt-in">Allowing the shell during the plan phase</a></p></td>
 </tr>
 </tbody>
 </table>
@@ -974,12 +998,76 @@
     A-&gt;&gt;H: plan_exit → HITL confirmation
     H--&gt;&gt;A: ConfirmResult(true)
     A-&gt;&gt;A: enter execution phase; all tools allowed
-    </pre><p>Any non-whitelisted tool call (e.g. <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">execute</span></code>) during the plan phase is rejected immediately with something like:</p>
+    </pre><p>Any non-whitelisted tool call (e.g. <code class="docutils literal notranslate"><span class="pre">write_file</span></code>, or <code class="docutils literal notranslate"><span class="pre">execute</span></code> unless you <a class="reference internal" href="#allowing-the-shell-during-the-plan-phase-opt-in">opt in</a>) during the plan phase is rejected immediately with something like:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[Tool denied — plan mode is active]
 Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are allowed.
 </pre></div>
 </div>
 <p>Seeing the denial, the model naturally switches back to “write the plan first”.</p>
+</section>
+<section id="reading-the-outcome">
+<h2>Reading the outcome<a class="headerlink" href="#reading-the-outcome" title="Link to this heading">¶</a></h2>
+<p>Plan-mode entry is autonomous, so a run can end in four states. <code class="docutils literal notranslate"><span class="pre">isPlanModeActive()</span> <span class="pre">==</span> <span class="pre">false</span></code> alone is ambiguous — don’t treat it as success without checking whether planning actually happened:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Terminal state</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Never entered plan mode</p></td>
+<td><p>Model chose to work directly in build mode — a valid decision, often because the task doesn’t match the workspace.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Entered → <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code></p></td>
+<td><p>Success: planned, got approval, now in build mode.</p></td>
+</tr>
+<tr class="row-even"><td><p>Still in plan mode + <code class="docutils literal notranslate"><span class="pre">PLAN.md</span></code> exists</p></td>
+<td><p>Drafted a plan but didn’t exit; resume the session to approve.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Still in plan mode + no <code class="docutils literal notranslate"><span class="pre">PLAN.md</span></code></p></td>
+<td><p>“Narrate but don’t act”: the final message may <em>read</em> like a plan but none was written — give more specific input or a matching codebase.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>To tell these apart programmatically, track whether <code class="docutils literal notranslate"><span class="pre">plan_enter</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_write</span></code> were called (e.g. from <code class="docutils literal notranslate"><span class="pre">ToolCallStartEvent</span></code>) alongside the final <code class="docutils literal notranslate"><span class="pre">isPlanModeActive()</span></code> and the plan file’s existence.</p>
+</section>
+<section id="allowing-the-shell-during-the-plan-phase-opt-in">
+<h2>Allowing the shell during the plan phase (opt-in)<a class="headerlink" href="#allowing-the-shell-during-the-plan-phase-opt-in" title="Link to this heading">¶</a></h2>
+<p>By default the shell tool (<code class="docutils literal notranslate"><span class="pre">execute</span></code>) is <strong>denied</strong> during the plan phase. The shell is <em>dual-use</em>: a single tool call can read (<code class="docutils literal notranslate"><span class="pre">cat</span></code> / <code class="docutils literal notranslate"><span class="pre">ls</span></code> / <code class="docutils literal notranslate"><span class="pre">grep</span></code> / <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">log</span></code>) or mutate (<code class="docutils literal notranslate"><span class="pre">rm</span></code> / <code class="docutils literal notranslate"><span class="pre">&gt;</span></code> / <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">commit</span></code> / <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">install</span></code>), and Plan Mode decides what to permit purely by <strong>tool name</strong> — so it cannot tell a read invocation from a write one. Denying the shell keeps the read-only guarantee intact.</p>
+<p>But shell access is often the most flexible way to investigate a codebase and produce a <em>realistic</em> plan. When you accept that trade-off, opt in:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;planner&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enablePlanMode</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">allowShellInPlanMode</span><span class="p">()</span><span class="w">   </span><span class="c1">// let the model run the shell read-only during plan</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>With the opt-in enabled:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">execute</span></code> is added to the plan-phase allow-list, so the model can investigate via the shell.</p></li>
+<li><p>The plan banner gains an extra instruction telling the model to keep shell usage <strong>read-only</strong> (<code class="docutils literal notranslate"><span class="pre">cat</span></code> / <code class="docutils literal notranslate"><span class="pre">ls</span></code> / <code class="docutils literal notranslate"><span class="pre">grep</span></code> / <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">log/diff/show/status</span></code>) and <strong>not</strong> to run mutating commands until the plan is approved.</p></li>
+<li><p>The dedicated file-editing tools (<code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code>) <strong>remain denied</strong> — they are the primary mutation path, so the read-only intent is still enforced for file writes.</p></li>
+</ul>
+<p>This mirrors how OpenCode handles its plan agent: it allows the shell for investigation, hard-blocks the edit/write tools, and relies on the prompt to keep the shell read-only. The guarantee is therefore <em>softer</em> than the default (the model could still mutate via the shell), so prefer enabling this together with a <strong>sandboxed filesystem</strong> to contain the blast radius.</p>
+</section>
+<section id="runtime-permission-switching-the-bypass-escape-hatch">
+<h2>Runtime permission switching (the “bypass” escape hatch)<a class="headerlink" href="#runtime-permission-switching-the-bypass-escape-hatch" title="Link to this heading">¶</a></h2>
+<p>Plan Mode is one specific phase switch. Underneath it, every session carries a <a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">PermissionMode</span></code></span></a> that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated “skip all permission prompts” toggle (similar to a YOLO / dangerous-skip switch in other coding tools):</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;my-session&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">agent</span><span class="p">.</span><span class="na">setPermissionMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">BYPASS</span><span class="p">);</span><span class="w">    </span><span class="c1">// allow everything, no prompts</span>
+<span class="c1">// ... run the operations that need full access ...</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">setPermissionMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">DEFAULT</span><span class="p">);</span><span class="w">   </span><span class="c1">// restore normal enforcement</span>
+
+<span class="n">PermissionMode</span><span class="w"> </span><span class="n">current</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getPermissionMode</span><span class="p">(</span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">setPermissionMode(...)</span></code> preserves the session’s configured allow/deny/ask rules and working directories — only the mode changes — and rebuilds that session’s cached permission engine so the switch takes effect on the <strong>next</strong> call. An in-flight call keeps the engine it started with.</p>
+<p>⚠ <code class="docutils literal notranslate"><span class="pre">BYPASS</span></code> disables all rule evaluation, so treat it as an explicit, per-session, opt-in action and prefer pairing it with a sandbox. To run unattended without prompts but <em>with</em> enforcement, use <code class="docutils literal notranslate"><span class="pre">PermissionMode.DONT_ASK</span></code> instead (ASK decisions become DENY rather than being auto-allowed).</p>
 </section>
 <section id="plan-state-is-persisted">
 <h2>Plan state is persisted<a class="headerlink" href="#plan-state-is-persisted" title="Link to this heading">¶</a></h2>
@@ -988,9 +1076,10 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 <section id="programmatic-enter-exit">
 <h2>Programmatic enter/exit<a class="headerlink" href="#programmatic-enter-exit" title="Link to this heading">¶</a></h2>
 <p>When app code drives Plan Mode (e.g. an admin console button):</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">enterPlanMode</span><span class="p">();</span><span class="w">    </span><span class="c1">// equivalent to the LLM calling plan_enter</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">exitPlanMode</span><span class="p">();</span><span class="w">     </span><span class="c1">// equivalent to plan_exit; programmatic entry does NOT trigger HITL</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">isPlanModeActive</span><span class="p">();</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;my-session&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">enterPlanMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">);</span><span class="w">    </span><span class="c1">// equivalent to the LLM calling plan_enter</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">exitPlanMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">);</span><span class="w">     </span><span class="c1">// equivalent to plan_exit; programmatic entry does NOT trigger HITL</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">isPlanModeActive</span><span class="p">(</span><span class="n">ctx</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>If you use <code class="docutils literal notranslate"><span class="pre">agentscope-admin-spring-boot-starter</span></code>, the admin HTTP API also exposes Plan Mode controls (<code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/v1/admin/sessions/{id}:enter-plan-mode</span></code> / <code class="docutils literal notranslate"><span class="pre">:exit-plan-mode</span></code> / <code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/v1/admin/sessions/{id}/plan</span></code>).</p>
@@ -1013,6 +1102,38 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 </ul>
 <p>Typical workflow: write <code class="docutils literal notranslate"><span class="pre">PLAN.md</span></code> during the plan phase → <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code> → in execution use <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> to slice the PLAN into 5–8 todos → progress one at a time. Each reasoning step shows the agent a todos reminder to stay focused.</p>
 <p>⚠ Don’t confuse with subagent <strong>background tasks</strong> (<code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code>) — that’s a different concept; see <a class="reference internal" href="subagent.html"><span class="doc std std-doc">Subagent</span></a>.</p>
+</section>
+<section id="viewing-the-task-list">
+<h2>Viewing the task list<a class="headerlink" href="#viewing-the-task-list" title="Link to this heading">¶</a></h2>
+<p>The task list lives in <code class="docutils literal notranslate"><span class="pre">AgentState.tasksContext</span></code> and is persisted automatically with every <code class="docutils literal notranslate"><span class="pre">call()</span></code>. To read it from application code:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">List</span><span class="o">&lt;</span><span class="n">Task</span><span class="o">&gt;</span><span class="w"> </span><span class="n">tasks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getAgentState</span><span class="p">(</span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">getTasksContext</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">getTasks</span><span class="p">();</span>
+
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Task</span><span class="w"> </span><span class="n">t</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">tasks</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">printf</span><span class="p">(</span><span class="s">&quot;[%s] %s%n&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getState</span><span class="p">(),</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getSubject</span><span class="p">());</span>
+<span class="w">    </span><span class="c1">// state: PENDING / IN_PROGRESS / COMPLETED</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>If you use <code class="docutils literal notranslate"><span class="pre">agentscope-admin-spring-boot-starter</span></code>, the admin REST API provides a ready-made endpoint:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">GET</span> <span class="o">/</span><span class="n">v1</span><span class="o">/</span><span class="n">admin</span><span class="o">/</span><span class="n">sessions</span><span class="o">/</span><span class="p">{</span><span class="n">sessionId</span><span class="p">}</span><span class="o">/</span><span class="n">tasks</span>
+</pre></div>
+</div>
+<p>It returns each task’s subject, state, owner, and dependency info (<code class="docutils literal notranslate"><span class="pre">blocks</span></code> / <code class="docutils literal notranslate"><span class="pre">blockedBy</span></code>).</p>
+<p>To observe task changes in real time through the event stream, listen for <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> tool calls in <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">TOOL_RESULT_END</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="s">&quot;todo_write&quot;</span><span class="p">.</span><span class="na">equals</span><span class="p">(((</span><span class="n">ToolResultEndEvent</span><span class="p">)</span><span class="w"> </span><span class="n">e</span><span class="p">).</span><span class="na">getToolName</span><span class="p">()))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Re-read the latest task list from state</span>
+<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">tasks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getAgentState</span><span class="p">(</span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">getTasksContext</span><span class="p">().</span><span class="na">getTasks</span><span class="p">();</span>
+<span class="w">        </span><span class="n">updateUI</span><span class="p">(</span><span class="n">tasks</span><span class="p">);</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="na">subscribe</span><span class="p">();</span>
+</pre></div>
+</div>
 </section>
 <section id="related-pages">
 <h2>Related Pages<a class="headerlink" href="#related-pages" title="Link to this heading">¶</a></h2>
@@ -1048,12 +1169,12 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="../others/going-to-production.html">
+          <a class="next-page" href="channel.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Going to Production</div>
+                <div class="title">Channel</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -1077,7 +1198,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1117,10 +1238,14 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 <li><a class="reference internal" href="#opt-in">Opt-in</a></li>
 <li><a class="reference internal" href="#the-three-tools">The three tools</a></li>
 <li><a class="reference internal" href="#workflow">Workflow</a></li>
+<li><a class="reference internal" href="#reading-the-outcome">Reading the outcome</a></li>
+<li><a class="reference internal" href="#allowing-the-shell-during-the-plan-phase-opt-in">Allowing the shell during the plan phase (opt-in)</a></li>
+<li><a class="reference internal" href="#runtime-permission-switching-the-bypass-escape-hatch">Runtime permission switching (the “bypass” escape hatch)</a></li>
 <li><a class="reference internal" href="#plan-state-is-persisted">Plan state is persisted</a></li>
 <li><a class="reference internal" href="#programmatic-enter-exit">Programmatic enter/exit</a></li>
 <li><a class="reference internal" href="#interaction-with-subagents">Interaction with subagents</a></li>
 <li><a class="reference internal" href="#interaction-with-todo-write">Interaction with <code class="docutils literal notranslate"><span class="pre">todo_write</span></code></a></li>
+<li><a class="reference internal" href="#viewing-the-task-list">Viewing the task list</a></li>
 <li><a class="reference internal" href="#related-pages">Related Pages</a></li>
 </ul>
 </li>

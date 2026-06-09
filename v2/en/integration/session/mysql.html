@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Redis Session" href="redis.html"><link rel="prev" title="Session" href="index.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Redis State Store" href="redis.html"><link rel="prev" title="Agent State Store (AgentStateStore)" href="overview.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/integration/session/mysql.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>MySQL Session - AgentScope Java</title>
+        <title>MySQL State Store - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/togglebutton.css?v=9c3e77be" />
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../docs/change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">Session</a><input aria-label="Toggle navigation of Session" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
-<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="redis.html">Redis Session</a></li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -883,14 +903,18 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="mysql-session">
-<h1>MySQL Session<a class="headerlink" href="#mysql-session" title="Link to this heading">¶</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-session-mysql</span></code> persists AgentScope session state into MySQL. A good fit when you already have a MySQL infrastructure or need transactional / SQL-based access to session data.</p>
+          <div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This page has been superseded by <span class="xref myst">Distributed Storage — MySQL</span>. Content below is kept for reference.</p>
+</div>
+<section id="mysql-state-store">
+<h1>MySQL State Store<a class="headerlink" href="#mysql-state-store" title="Link to this heading">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code> persists AgentScope agent state into MySQL. A good fit when you already have a MySQL infrastructure or need transactional / SQL-based access to state data.</p>
 <section id="add-the-dependency">
 <h2>Add the dependency<a class="headerlink" href="#add-the-dependency" title="Link to this heading">¶</a></h2>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-session-mysql<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-mysql<span class="nt">&lt;/artifactId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
@@ -900,8 +924,8 @@
 <section id="quickstart">
 <h2>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.zaxxer.hikari.HikariDataSource</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.Session</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.mysql.MysqlSession</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.AgentStateStore</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.mysql.state.MysqlAgentStateStore</span><span class="p">;</span>
 
 <span class="n">HikariDataSource</span><span class="w"> </span><span class="n">ds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">HikariDataSource</span><span class="p">();</span>
 <span class="n">ds</span><span class="p">.</span><span class="na">setJdbcUrl</span><span class="p">(</span><span class="s">&quot;jdbc:mysql://localhost:3306/agentscope?serverTimezone=UTC&quot;</span><span class="p">);</span>
@@ -909,20 +933,24 @@
 <span class="n">ds</span><span class="p">.</span><span class="na">setPassword</span><span class="p">(</span><span class="s">&quot;***&quot;</span><span class="p">);</span>
 
 <span class="c1">// Second arg createIfNotExist=true: auto-create database and table</span>
-<span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSession</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+<span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlAgentStateStore</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
-<span class="n">SessionManager</span><span class="w"> </span><span class="n">manager</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">session</span><span class="p">(</span><span class="n">session</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="n">stateStore</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 <p>If the database and table are pre-created, use the safer form:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSession</span><span class="p">(</span><span class="n">ds</span><span class="p">);</span><span class="w">          </span><span class="c1">// throws IllegalStateException if missing</span>
-<span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSession</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span><span class="w">   </span><span class="c1">// explicit</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlAgentStateStore</span><span class="p">(</span><span class="n">ds</span><span class="p">);</span><span class="w">          </span><span class="c1">// throws IllegalStateException if missing</span>
+<span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlAgentStateStore</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span><span class="w">   </span><span class="c1">// explicit</span>
 </pre></div>
 </div>
 </section>
 <section id="custom-database-table-names">
 <h2>Custom database / table names<a class="headerlink" href="#custom-database-table-names" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSession</span><span class="p">(</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlAgentStateStore</span><span class="p">(</span>
 <span class="w">    </span><span class="n">ds</span><span class="p">,</span>
 <span class="w">    </span><span class="s">&quot;agentscope_prod&quot;</span><span class="p">,</span><span class="w">        </span><span class="c1">// database name</span>
 <span class="w">    </span><span class="s">&quot;session_state&quot;</span><span class="p">,</span><span class="w">          </span><span class="c1">// table name</span>
@@ -947,30 +975,29 @@
 </pre></div>
 </div>
 <ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> pair is packed into the <code class="docutils literal notranslate"><span class="pre">session_id</span></code> column as <code class="docutils literal notranslate"><span class="pre">{userSegment}:{sessionId}</span></code> (<code class="docutils literal notranslate"><span class="pre">userSegment</span></code> = <code class="docutils literal notranslate"><span class="pre">userId</span></code>, or <code class="docutils literal notranslate"><span class="pre">__anon__</span></code> for anonymous sessions).</p></li>
 <li><p>Single value: <code class="docutils literal notranslate"><span class="pre">item_index</span> <span class="pre">=</span> <span class="pre">0</span></code></p></li>
 <li><p>List: <code class="docutils literal notranslate"><span class="pre">item_index</span> <span class="pre">=</span> <span class="pre">0,</span> <span class="pre">1,</span> <span class="pre">2,</span> <span class="pre">...</span></code> — one row per item; an extra row with <code class="docutils literal notranslate"><span class="pre">state_key='xxx:_hash'</span></code> is used for change detection.</p></li>
 </ul>
 </section>
 <section id="direct-api-usage">
 <h2>Direct API usage<a class="headerlink" href="#direct-api-usage" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code> implements the <code class="docutils literal notranslate"><span class="pre">Session</span></code> interface:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SessionKey</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleSessionKey</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">);</span>
-
-<span class="c1">// Single value</span>
-<span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;memory&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">state</span><span class="p">);</span>
-<span class="n">Optional</span><span class="o">&lt;</span><span class="n">MyState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">got</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;memory&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<p><code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> implements the <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> interface:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Single value (userId may be null for anonymous sessions)</span>
+<span class="n">stateStore</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agent_state&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">state</span><span class="p">);</span>
+<span class="n">Optional</span><span class="o">&lt;</span><span class="n">MyState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">got</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateStore</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agent_state&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="c1">// List (append-only growth; full rewrite on change)</span>
-<span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;messages&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">listOfMessages</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">MyState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">getList</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;messages&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="n">stateStore</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;messages&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">listOfMessages</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">MyState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateStore</span><span class="p">.</span><span class="na">getList</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;messages&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="c1">// Maintenance</span>
-<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
-<span class="n">session</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
-<span class="n">Set</span><span class="o">&lt;</span><span class="n">SessionKey</span><span class="o">&gt;</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">listSessionKeys</span><span class="p">();</span>
+<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateStore</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">);</span>
+<span class="n">stateStore</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">);</span>
+<span class="n">Set</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">sessions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateStore</span><span class="p">.</span><span class="na">listSessionIds</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">);</span><span class="w">   </span><span class="c1">// null lists anonymous sessions</span>
 
 <span class="c1">// Cleanup (use with care, test/ops only)</span>
-<span class="n">session</span><span class="p">.</span><span class="na">truncateAllSessions</span><span class="p">();</span>
+<span class="n">stateStore</span><span class="p">.</span><span class="na">truncateAllSessions</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1034,18 +1061,18 @@
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Redis Session</div>
+                <div class="title">Redis State Store</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="index.html">
+          <a class="prev-page" href="overview.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Session</div>
+                <div class="title">Agent State Store (AgentStateStore)</div>
                 
               </div>
             </a>
@@ -1058,7 +1085,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1093,7 +1120,7 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">MySQL Session</a><ul>
+<li><a class="reference internal" href="#">MySQL State Store</a><ul>
 <li><a class="reference internal" href="#add-the-dependency">Add the dependency</a></li>
 <li><a class="reference internal" href="#quickstart">Quickstart</a></li>
 <li><a class="reference internal" href="#custom-database-table-names">Custom database / table names</a></li>

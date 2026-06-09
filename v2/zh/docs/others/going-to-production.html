@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="FAQ" href="faq.html"><link rel="prev" title="计划模式（Plan Mode）" href="../harness/plan-mode.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="FAQ" href="faq.html"><link rel="prev" title="Release Notes" href="release-notes.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/others/going-to-production.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -89,7 +89,7 @@
     class="docs-top-tabs"
     aria-label="Documentation sections"
     data-current-page="v2/zh/docs/others/going-to-production"
-    data-current-lang="en"
+    data-current-lang="zh"
     data-current-version="v2"
   >
     <div class="docs-top-tabs__list">
@@ -105,7 +105,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/intro.html"
+              href="../../intro.html"
               data-tab-id="home"
               data-mirror-paths="true"
               data-href-en="v1/en/intro"
@@ -125,7 +125,7 @@
               data-sections-v2-en=""
               data-sections-v2-zh=""
             >
-              Home
+              首页
             </a>
           
         
@@ -141,7 +141,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/docs/index.html"
+              href="../index.html"
               data-tab-id="docs"
               data-mirror-paths="true"
               data-href-en="v1/en/docs/quickstart/installation"
@@ -161,7 +161,7 @@
               data-sections-v2-en="v2 · Quick Start|v2 · Building Blocks|v2 · Harness (English)|v2 · Reference"
               data-sections-v2-zh="v2 · 快速开始|v2 · 核心组件|v2 · Harness|v2 · 参考"
             >
-              Docs
+              文档
             </a>
           
         
@@ -177,7 +177,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/integration/overview.html"
+              href="../../integration/overview.html"
               data-tab-id="integration"
               data-mirror-paths="true"
               data-href-en="v1/en/integration/overview"
@@ -197,7 +197,7 @@
               data-sections-v2-en="v2 · Integration"
               data-sections-v2-zh="v2 · 集成"
             >
-              Integration
+              集成
             </a>
           
         
@@ -213,7 +213,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/blogs/agentscope-v2-release.html"
+              href="../../blogs/agentscope-v2-release.html"
               data-tab-id="blogs"
               data-mirror-paths="true"
               data-href-en="v1/en/blogs/index"
@@ -233,7 +233,7 @@
               data-sections-v2-en="v2 · Blogs"
               data-sections-v2-zh="v2 · 博客"
             >
-              Blogs
+              博客
             </a>
           
         
@@ -249,7 +249,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/community/contributors.html"
+              href="../../community/contributors.html"
               data-tab-id="community"
               data-mirror-paths="true"
               data-href-en="v1/en/community/overview"
@@ -269,7 +269,7 @@
               data-sections-v2-en="v2 · Community"
               data-sections-v2-zh="v2 · 社区"
             >
-              Community
+              社区
             </a>
           
         
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -888,7 +908,26 @@
 <blockquote>
 <div><p>把 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 在你笔记本上跑起来很容易，搬到生产环境是另一回事——多副本要共享会话、要隔离用户、要支持不可信代码执行、要在 pod 重启后接着上次跑。本页<strong>只讲单机 → 分布式生产的差异</strong>：哪些组件必须换、换成什么、为什么 builder 会在你漏配时直接抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>。</p>
 </div></blockquote>
-<p>源码层面，凡是文档里出现”distributed-friendly”、”cross-replica”、”shared store”字样的组件——<code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>、<code class="docutils literal notranslate"><span class="pre">SandboxDistributedOptions</span></code>、<code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code>、<code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code>、<code class="docutils literal notranslate"><span class="pre">RedisStore</span></code> / <code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code> 等——都是专门为这一页所述场景设计的。</p>
+<p><strong>最快上手方式</strong>：用 <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code> 一键配置所有分布式组件：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
+<span class="c1">// 或 MysqlDistributedStore.create(dataSource);</span>
+<span class="c1">// 或 OssDistributedStore.create(ossClient, bucket, prefix);</span>
+
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(...)</span><span class="w">  </span><span class="c1">// 选择你的 workspace 模式</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>混合 store（如 MySQL 管状态 + Redis 管 sandbox）也行：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DistributedStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">(</span><span class="n">MysqlDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="n">ds</span><span class="p">).</span><span class="na">agentStateStore</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseStore</span><span class="p">(</span><span class="n">MysqlDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="n">ds</span><span class="p">).</span><span class="na">baseStore</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sandboxSnapshotSpec</span><span class="p">(</span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">sandboxSnapshotSpec</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sandboxExecutionGuard</span><span class="p">(</span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">sandboxExecutionGuard</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
 <section id="vs">
 <h2>一图速览：单机默认 vs 分布式生产<a class="headerlink" href="#vs" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -900,57 +939,95 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Session</span></code>（<code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 持久化）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code>（本地 JSON）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code>（或 <code class="docutils literal notranslate"><span class="pre">RedissonSession</span></code>）</p></td>
+<tr class="row-even"><td><p><strong>一键配置</strong></p></td>
+<td><p>不需要</p></td>
+<td><p><strong><code class="docutils literal notranslate"><span class="pre">.distributedStore(RedisDistributedStore.fromJedis(jedis))</span></code></strong></p></td>
 </tr>
-<tr class="row-odd"><td><p>Filesystem</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code>（本地 JSON）</p></td>
+<td><p>自动由 <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code> 注入</p></td>
+</tr>
+<tr class="row-even"><td><p>Filesystem</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code>（不配 = 此项）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec(BaseStore)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> 或 <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>（<code class="docutils literal notranslate"><span class="pre">baseStore</span></code> 自动由 store 注入）</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">BaseStore</span></code>（Remote 后端）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">InMemoryStore</span></code>（测试）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RedisStore</span></code> / <code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code>（MySQL / PG / SQLite / H2）</p></td>
+<tr class="row-odd"><td><p>Sandbox 快照</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code> / <code class="docutils literal notranslate"><span class="pre">LocalSnapshotSpec</span></code></p></td>
+<td><p>自动由 <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code> 注入</p></td>
+</tr>
+<tr class="row-even"><td><p>沙箱执行串行化</p></td>
+<td><p>单进程内即可</p></td>
+<td><p>自动由 <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code> 注入</p></td>
 </tr>
 <tr class="row-odd"><td><p>Skill 来源</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">GitSkillRepository</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlSkillRepository</span></code> / <code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p>Sandbox 状态</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> 写本地</p></td>
-<td><p>分布式 Session 写后端 KV</p></td>
-</tr>
-<tr class="row-odd"><td><p>Sandbox 快照</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code> / <code class="docutils literal notranslate"><span class="pre">LocalSnapshotSpec</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code> / <code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec</span></code> / 自定义 <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotSpec</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p>沙箱执行串行化</p></td>
-<td><p>单进程内即可</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code>（AGENT/GLOBAL scope 多副本必备）</p></td>
-</tr>
-<tr class="row-odd"><td><p>观测</p></td>
+<tr class="row-even"><td><p>观测</p></td>
 <td><p>默认无 tracing</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> + OpenTelemetry SDK</p></td>
-</tr>
-<tr class="row-even"><td><p>优雅停机</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">GracefulShutdownManager</span></code> 自动注册 JVM hook</p></td>
-<td><p>同上 + <code class="docutils literal notranslate"><span class="pre">setConfig(...)</span></code> 调节 inflight 等待</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<section id="distributedstore">
+<h3>DistributedStore 能力矩阵<a class="headerlink" href="#distributedstore" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>能力</p></th>
+<th class="head text-center"><p>Redis (<code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code>)</p></th>
+<th class="head text-center"><p>OSS (<code class="docutils literal notranslate"><span class="pre">agentscope-extensions-oss</span></code>)</p></th>
+<th class="head text-center"><p>MySQL (<code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code>)</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">OssAgentStateStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">BaseStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">RedisStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">OssBaseStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">JdbcSnapshotSpec</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code></p></td>
+<td class="text-center"><p>— (对象存储不适合做锁)</p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">JdbcSandboxExecutionGuard</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>这些组件分别解决不同的生产问题：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>：保存 Agent 的运行时会话状态，包括对话历史、压缩摘要、权限规则、Plan Mode 状态和 tool state。它决定一个请求落到另一台机器、或进程重启后，Agent 能不能继续同一个 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">BaseStore</span></code>：给 <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> 提供共享 KV 文件存储，用来承载 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>、<code class="docutils literal notranslate"><span class="pre">memory/</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/</span></code>、<code class="docutils literal notranslate"><span class="pre">sessions/</span></code> 等 workspace 路径。多副本部署时，它让不同 pod 看到同一份长期记忆和共享文件。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code>：保存沙箱 workspace 快照。沙箱容器销毁、pod 重启、下一次请求落到新节点时，它负责把上一次的工作区恢复回来，避免 <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code>、生成文件、临时项目状态全部丢失。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code>：对同一个 sandbox slot 的命令执行做跨节点串行化。<code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> 等共享 scope 下，多个副本可能同时对同一个沙箱执行命令；guard 用 Redis/MySQL 锁避免并发写 workspace、并发启动/停止 sandbox 等竞态。</p></li>
+</ul>
+<blockquote>
+<div><p>OSS 不提供 <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code>——对象存储不适合做分布式锁。需要 sandbox 并发控制的 OSS 用户，用 <code class="docutils literal notranslate"><span class="pre">DistributedStore.builder()</span></code> 混入 Redis 的 guard 即可。</p>
+</div></blockquote>
 <p><strong>核心校验链路：</strong></p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> + 没换 <code class="docutils literal notranslate"><span class="pre">session(...)</span></code> → <code class="docutils literal notranslate"><span class="pre">build()</span></code> 抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>，告诉你换 <code class="docutils literal notranslate"><span class="pre">RedisSession</span></code>。</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> + 没换 <code class="docutils literal notranslate"><span class="pre">session(...)</span></code> → 同上。</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> + <code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code> → 抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>，要求你显式配快照。</p></li>
-<li><p>单节点测试想绕过：<code class="docutils literal notranslate"><span class="pre">.sandboxDistributed(SandboxDistributedOptions.builder().requireDistributed(false).build())</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> + 没换 <code class="docutils literal notranslate"><span class="pre">stateStore(...)</span></code> 也没配 <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> → <code class="docutils literal notranslate"><span class="pre">build()</span></code> 抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> + 本地 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> → <code class="docutils literal notranslate"><span class="pre">build()</span></code> 正常通过但打一条 <strong>warning</strong> 日志，提醒你沙箱状态不能跨 JVM 恢复；生产环境务必配 <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code>。</p></li>
 </ul>
-<p>这套校验来自 <code class="docutils literal notranslate"><span class="pre">HarnessAgentBuilderSupport#validateDistributedSandboxConfig</span></code>——刻意 fail-fast，避免”测试环境跑得好、上线后状态丢失”。</p>
 </section>
-<section id="session-agentstate">
-<h2>1. Session 后端：先把 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 放对地方<a class="headerlink" href="#session-agentstate" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code>（对话上下文、压缩摘要、权限规则、Plan Mode 状态、tool state）跨进程恢复的唯一通路就是 <code class="docutils literal notranslate"><span class="pre">Session</span></code>。</p>
+</section>
+<section id="agentstate">
+<h2>1. 状态存储：先把 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 放对地方<a class="headerlink" href="#agentstate" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p><strong>推荐</strong>：直接用 <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> 一键配置，不需要手动设置 <code class="docutils literal notranslate"><span class="pre">stateStore</span></code>。下面的详细表格供需要单独控制 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 的高级用户参考。</p>
+</div></blockquote>
+<p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code>（对话上下文、压缩摘要、权限规则、Plan Mode 状态、tool state）跨进程恢复的唯一通路就是 <a class="reference internal" href="../../integration/session/index.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></span></a>。</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -960,35 +1037,32 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">InMemorySession</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">InMemoryAgentStateStore</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code></p></td>
 <td><p>单元测试；进程退出全部丢</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">JsonSession</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code></p></td>
-<td><p>单机开发；按 <code class="docutils literal notranslate"><span class="pre">SessionKey</span></code> 在文件系统分目录</p></td>
+<td><p>单机开发；按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 在文件系统分目录。<strong>HarnessAgent 默认</strong>，根目录 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>；<strong>单机</strong></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code></p></td>
-<td><p><strong>HarnessAgent 默认</strong>；落到 <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/agents/&lt;agentId&gt;/context/&lt;sessionId&gt;/</span></code>；<strong>单机单租户</strong></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSession</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-session-redis</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code></p></td>
 <td><p><strong>多副本生产首选</strong>；支持 Jedis / Lettuce / Redisson（Standalone / Cluster / Sentinel）</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-session-mysql</span></code></p></td>
-<td><p>需要把会话沉淀进关系型库（审计 / 报表 / 联表查询）</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code></p></td>
+<td><p>需要把状态沉淀进关系型库（审计 / 报表 / 联表查询）</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p><strong>Redis 三种 client adapter</strong> 都通过 <code class="docutils literal notranslate"><span class="pre">RedisSession.builder()</span></code> 切换：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.redis.RedisSession</span><span class="p">;</span>
+<p><strong>Redis 三种 client adapter</strong> 都通过 <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore.builder()</span></code> 切换：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.AgentStateStore</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.redis.state.RedisAgentStateStore</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">redis.clients.jedis.JedisPooled</span><span class="p">;</span>
 
 <span class="c1">// Jedis Standalone</span>
-<span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisSession</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">jedisClient</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://localhost:6379&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">keyPrefix</span><span class="p">(</span><span class="s">&quot;myapp:session:&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1000,16 +1074,14 @@
 <span class="c1">// .redissonClient(redisson)</span>
 </pre></div>
 </div>
-<p><strong><code class="docutils literal notranslate"><span class="pre">SessionKey</span></code> 的设计要点。</strong> <code class="docutils literal notranslate"><span class="pre">SimpleSessionKey.of(sessionId)</span></code> 只够单租户。生产应自定义实现，把租户 / 用户 / agent id 编进 key 防止跨用户串读——<code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> 把它作为 Redis key 的一部分，<code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code> 用作主键：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">class</span> <span class="nc">TenantSessionKey</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">tenantId</span><span class="p">,</span><span class="w"> </span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">agentId</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">;</span>
-<span class="w">    </span><span class="nd">@Override</span><span class="w"> </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">toIdentifier</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">tenantId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">userId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">agentId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<p><strong>按租户隔离。</strong> 单用 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 只够单租户。生产应在每次调用的 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 上同时设置 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 与 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code>，防止跨用户串读——存储按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 二元组寻址每个槽位（<code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> 把 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 折进 Redis key，<code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> 折进主键）。其他维度（租户、agent）自行拼进 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 字符串：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="n">tenantId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">userId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="n">agentId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>完整细节见 <a class="reference internal" href="../harness/context.html"><span class="std std-doc">Harness — Context</span></a>。</p>
+<p>完整细节见<a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">上下文与 AgentState</span></a>。</p>
 </section>
 <section id="filesystem-isolationscope">
 <h2>2. Filesystem 模式 &amp; IsolationScope：决定”谁和谁共享文件”<a class="headerlink" href="#filesystem-isolationscope" title="Link to this heading">¶</a></h2>
@@ -1071,15 +1143,21 @@
 </tbody>
 </table>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">(</span><span class="n">redisStore</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">&quot;_default&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 未传 userId 时的 fallback</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// distributedStore 自动注入 baseStore 到 RemoteFilesystemSpec</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
+
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">&quot;_default&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 未传 userId 时的 fallback</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">anonymousUserId</span></code> 是个生产细节——很多场景下 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> 可能为 null（系统任务、调度器触发、admin 操作），fallback 别用空字符串，否则所有匿名调用会聚到一个共享桶。</p>
 </section>
 <section id="remote-basestore-kv-oss-kv">
-<h2>3. Remote 模式的 BaseStore 后端：KV 选型与”不要把 OSS 当 KV 用”<a class="headerlink" href="#remote-basestore-kv-oss-kv" title="Link to this heading">¶</a></h2>
+<h2>3. Remote 模式的 BaseStore：KV 选型与”不要把 OSS 当 KV 用”<a class="headerlink" href="#remote-basestore-kv-oss-kv" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> 建在一个 <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> 接口之上。内置实现两种：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -1092,12 +1170,12 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RedisStore</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code>（自带 jedis）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code></p></td>
 <td><p>Lua 实现 CAS putIfVersion，<code class="docutils literal notranslate"><span class="pre">ZRANGEBYLEX</span></code> 做 prefix search</p></td>
 <td><p>主推；多副本共享</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code>；MySQL / PostgreSQL / SQLite / H2 dialect 自动判别</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code>；MySQL / PostgreSQL / SQLite / H2 dialect 自动判别</p></td>
 <td><p>单语句 CAS UPDATE</p></td>
 <td><p>已有关系型基础设施 / 需要联表</p></td>
 </tr>
@@ -1109,23 +1187,22 @@
 </tbody>
 </table>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Redis</span>
-<span class="n">BaseStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">RedisStore</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://prod-redis:6379&quot;</span><span class="p">));</span>
-
-<span class="c1">// MySQL（同一张 agentscope_store 表，schema 自动建）</span>
-<span class="n">BaseStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">JdbcStore</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">dataSource</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">initializeSchema</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 推荐：DistributedStore 一键配置</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span>
+<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://prod-redis:6379&quot;</span><span class="p">));</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;multi-tenant-agent&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="n">RedisSession</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">jedisClient</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">           </span><span class="c1">// 自动注入 stateStore + baseStore</span>
+<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span><span class="w"> </span><span class="c1">// baseStore 由 store 自动注入</span>
 <span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">workspaceIndex</span><span class="p">(</span><span class="n">WorkspaceIndex</span><span class="p">.</span><span class="na">open</span><span class="p">(</span><span class="n">workspace</span><span class="p">)))</span><span class="w">  </span><span class="c1">// 加速 ls/glob</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 或者用 MySQL store：</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">mysqlStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MysqlDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="n">dataSource</span><span class="p">);</span>
 </pre></div>
 </div>
 <section id="oss-nas-s3">
@@ -1135,7 +1212,7 @@
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>数据形态</p></th>
-<th class="head"><p>后端</p></th>
+<th class="head"><p>Store</p></th>
 <th class="head"><p>谁来管</p></th>
 </tr>
 </thead>
@@ -1150,7 +1227,7 @@
 </tr>
 <tr class="row-even"><td><p>跨节点共享卷（多个沙箱实例挂同一份目录）</p></td>
 <td><p>NAS / EFS</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec.nasConfig(...)</span></code>（仅 AgentRun 后端原生支持）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec.nasConfig(...)</span></code>（仅 AgentRun 原生支持）</p></td>
 </tr>
 </tbody>
 </table>
@@ -1246,7 +1323,7 @@
 </table>
 </div>
 <section id="marketplace">
-<h3>Marketplace 后端选型<a class="headerlink" href="#marketplace" title="Link to this heading">¶</a></h3>
+<h3>Marketplace 存储源选型<a class="headerlink" href="#marketplace" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1313,7 +1390,7 @@
 <li><p>多用户硬隔离（不能让一个用户的进程看到另一个用户的）</p></li>
 </ul>
 <section id="id1">
-<h3>五种沙箱后端<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<h3>五种沙箱实现<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1354,70 +1431,126 @@
 </section>
 <section id="snapshot">
 <h3>Snapshot 是沙箱的”分布式生命线”<a class="headerlink" href="#snapshot" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><p><strong>推荐</strong>：使用 <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> 后，<code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code> 和 <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> 都会自动注入到 <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>，不需要手动配置。下面的表格供需要单独控制快照实现或使用 <code class="docutils literal notranslate"><span class="pre">LocalSnapshotSpec</span></code> 的场景参考。</p>
+</div></blockquote>
 <p>沙箱默认是”瞬时”的——下一次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 可能起在另一个节点的新容器里，之前 <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> / 写入的所有产物全丢。<code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code> 把工作区打成 tar 持久化，下次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 自动 hydrate 回新容器。</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Spec</p></th>
-<th class="head"><p>后端</p></th>
+<th class="head"><p>Store</p></th>
+<th class="head"><p>模块</p></th>
 <th class="head"><p>何时用</p></th>
 </tr>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code></p></td>
 <td><p>—</p></td>
-<td><p>不要在生产用；builder 会拦你（除非显式 <code class="docutils literal notranslate"><span class="pre">requireDistributed(false)</span></code>）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code></p></td>
+<td><p>不要在生产用；容器丢了就走冷启动</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">LocalSnapshotSpec(Path)</span></code></p></td>
 <td><p>本地目录 <code class="docutils literal notranslate"><span class="pre">tar</span></code> 文件</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code></p></td>
 <td><p>单机调试</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec(endpoint,</span> <span class="pre">AK,</span> <span class="pre">SK,</span> <span class="pre">bucket,</span> <span class="pre">prefix)</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code></p></td>
 <td><p>阿里云 OSS</p></td>
-<td><p><strong>多副本生产首选</strong>；大对象天然适合对象存储</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-oss</span></code></p></td>
+<td><p><strong>大对象首选</strong>；天然适合对象存储</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec(jedis,</span> <span class="pre">prefix,</span> <span class="pre">ttlSeconds)</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec</span></code></p></td>
 <td><p>Redis</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code></p></td>
 <td><p>小工作区 + 短 TTL（注意 Redis 内存代价）</p></td>
 </tr>
-<tr class="row-even"><td><p>自实现 <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotClient</span></code> → <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotSpec</span></code></p></td>
-<td><p>S3 / GCS / MinIO / 自有对象存储</p></td>
-<td><p>不在内置后端列表里</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">JdbcSnapshotSpec</span></code></p></td>
+<td><p>MySQL / JDBC BLOB</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code></p></td>
+<td><p>已有关系型数据库、不想引入额外中间件</p></td>
+</tr>
+<tr class="row-odd"><td><p>自实现 <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotClient</span></code> → <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotSpec</span></code></p></td>
+<td><p>S3 / GCS / MinIO</p></td>
+<td><p>—</p></td>
+<td><p>不在内置列表里</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SandboxSnapshotSpec</span><span class="w"> </span><span class="n">ossSnap</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(</span>
-<span class="w">        </span><span class="s">&quot;oss-cn-hangzhou.aliyuncs.com&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OSS_AK&quot;</span><span class="p">),</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OSS_SK&quot;</span><span class="p">),</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">redisStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">ossStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OssDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span>
+<span class="w">        </span><span class="n">ossClient</span><span class="p">,</span>
 <span class="w">        </span><span class="s">&quot;agentscope-sandbox-snapshots&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="s">&quot;prod/&quot;</span><span class="p">);</span><span class="w">                         </span><span class="c1">// key 前缀，多环境隔离</span>
+
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DistributedStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">(</span><span class="n">redisStore</span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseStore</span><span class="p">(</span><span class="n">redisStore</span><span class="p">.</span><span class="na">baseStore</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sandboxSnapshotSpec</span><span class="p">(</span><span class="n">ossStore</span><span class="p">.</span><span class="na">sandboxSnapshotSpec</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sandboxExecutionGuard</span><span class="p">(</span><span class="n">redisStore</span><span class="p">.</span><span class="na">sandboxExecutionGuard</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coding-agent&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="n">RedisSession</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">jedisClient</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12-slim&quot;</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sandboxDistributed</span><span class="p">(</span><span class="n">SandboxDistributedOptions</span><span class="p">.</span><span class="na">oss</span><span class="p">(</span><span class="n">redisSession</span><span class="p">,</span><span class="w"> </span><span class="n">ossSnap</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">SandboxDistributedOptions.oss(session,</span> <span class="pre">ossSpec)</span></code> / <code class="docutils literal notranslate"><span class="pre">.redis(session,</span> <span class="pre">redisSpec)</span></code> 是常用快捷工厂。注意：snapshot 自带 <code class="docutils literal notranslate"><span class="pre">snapshotId</span></code>（默认就是 sessionId），所以同一 user 跨多设备访问只要 sessionId 一致就能拉到同一份 archive。</p>
+<p>使用 <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> 后，快照和执行锁都会自动注入，不需要在 <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> 上手动配置。如果只是要改 OSS bucket / prefix，优先在创建 <code class="docutils literal notranslate"><span class="pre">OssDistributedStore</span></code> 时配置；只有需要完全自定义 <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code> 时，才在 <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> 上显式覆盖。</p>
 </section>
-<section id="redissandboxexecutionguard">
-<h3>沙箱执行节点串行化：<code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code><a class="headerlink" href="#redissandboxexecutionguard" title="Link to this heading">¶</a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">SESSION</span></code> / <code class="docutils literal notranslate"><span class="pre">USER</span></code> scope 下天然按 session/user 分桶，并发不会撞。但 <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> scope 多副本部署时，可能同时有 N 个节点要在同一个 sandbox slot 上 <code class="docutils literal notranslate"><span class="pre">exec</span></code>——会撞。这时上 <code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code>（基于 Redis 的分布式锁）：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">GLOBAL</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RedisSandboxExecutionGuard</span><span class="p">(</span><span class="n">jedis</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agentscope:guard:&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))))</span>
+<section id="sandboxexecutionguard">
+<h3>沙箱执行节点串行化：<code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code><a class="headerlink" href="#sandboxexecutionguard" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">SESSION</span></code> / <code class="docutils literal notranslate"><span class="pre">USER</span></code> scope 下天然按 session/user 分桶，并发不会撞。但 <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> scope 多副本部署时，可能同时有 N 个节点要在同一个 sandbox slot 上 <code class="docutils literal notranslate"><span class="pre">exec</span></code>——会撞。<code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> 会自动注入对应 store 的执行锁：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>实现</p></th>
+<th class="head"><p>模块</p></th>
+<th class="head"><p>机制</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code></p></td>
+<td><p>Redis <code class="docutils literal notranslate"><span class="pre">SET</span> <span class="pre">NX</span> <span class="pre">PX</span></code> 租约</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">JdbcSandboxExecutionGuard</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code></p></td>
+<td><p>MySQL <code class="docutils literal notranslate"><span class="pre">GET_LOCK()</span></code> / <code class="docutils literal notranslate"><span class="pre">RELEASE_LOCK()</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>推荐仍然通过 <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code> 注入执行锁：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
+
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">GLOBAL</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code> 是 <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> 接口的参考实现；你也可以接 Zookeeper、etcd 等其他锁实现。</p>
+<p>只有需要自定义锁参数（如租约 TTL）时，才在 <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> 上显式覆盖：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">GLOBAL</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="n">RedisSandboxExecutionGuard</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">jedis</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">leaseTtl</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>也可以实现 <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> 接口接入 Zookeeper、etcd 等其他锁。</p>
 </section>
 <section id="workspace-projection">
 <h3>Workspace projection：把工作区里的种子投到沙箱<a class="headerlink" href="#workspace-projection" title="Link to this heading">¶</a></h3>
@@ -1432,7 +1565,7 @@
 </section>
 <section id="agentrun-nas-oss-mount">
 <h3>AgentRun 特有：NAS / OSS mount<a class="headerlink" href="#agentrun-nas-oss-mount" title="Link to this heading">¶</a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec</span></code> 是唯一原生支持<strong>多 sandbox 实例共享同一个目录</strong>的后端（通过 NAS mount）；如果业务是”一个用户在不同 session 里看到同一份 workspace”，用 AgentRun 比每次 hydrate snapshot 更高效：</p>
+<p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec</span></code> 是唯一原生支持<strong>多 sandbox 实例共享同一个目录</strong>的实现（通过 NAS mount）；如果业务是”一个用户在不同 session 里看到同一份 workspace”，用 AgentRun 比每次 hydrate snapshot 更高效：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AGENTRUN_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">accountId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALI_ACCOUNT_ID&quot;</span><span class="p">))</span>
@@ -1457,16 +1590,16 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>会话 / <code class="docutils literal notranslate"><span class="pre">AgentState</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RedisSession</span></code>（Lettuce Cluster 或 Sentinel）+ 自定义多维 <code class="docutils literal notranslate"><span class="pre">SessionKey</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RedisDistributedStore</span></code> 或混合 <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code> 注入 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>；<code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 承载租户/用户/agent 维度</p></td>
 </tr>
 <tr class="row-odd"><td><p>工作区文件</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec(RedisStore</span> <span class="pre">or</span> <span class="pre">JdbcStore)</span></code> + <code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> + <code class="docutils literal notranslate"><span class="pre">IsolationScope.USER</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> 注入 <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> + <code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> + <code class="docutils literal notranslate"><span class="pre">IsolationScope.USER</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p>大对象 / 快照</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code>（不要写 Redis）</p></td>
+<td><p>混合 <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code> 中使用 <code class="docutils literal notranslate"><span class="pre">OssDistributedStore.sandboxSnapshotSpec()</span></code>（不要把大快照写 Redis）</p></td>
 </tr>
 <tr class="row-odd"><td><p>跨节点 sandbox 共享</p></td>
-<td><p>AgentRun + NAS mount，或自管 K8s + RedisSandboxExecutionGuard</p></td>
+<td><p>AgentRun + NAS mount，或自管 K8s + <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> 注入的 <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p>Skill 治理</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">MysqlSkillRepository(writeable=false)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code>；agent 端禁用 autoPromote</p></td>
@@ -1474,14 +1607,17 @@
 <tr class="row-odd"><td><p>子 agent 任务记录</p></td>
 <td><p>自动用 <code class="docutils literal notranslate"><span class="pre">WorkspaceTaskRepository</span></code>，落 Remote / Sandbox；不需要额外配</p></td>
 </tr>
-<tr class="row-even"><td><p>优雅停机</p></td>
+<tr class="row-even"><td><p>暴露的子 agent（用户直接和子 agent 对话）</p></td>
+<td><p>注册表由 <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code> 自动接好——<code class="docutils literal notranslate"><span class="pre">subagentId</span></code> 在任意副本/重启后都能解析并恢复子 agent；把某个 <code class="docutils literal notranslate"><span class="pre">subagentId</span></code> 的消息路由回同一节点（粘性）即可让恢复只作为故障切换兜底。多 agent 的 <code class="docutils literal notranslate"><span class="pre">GatewayBootstrap</span></code> 传 <code class="docutils literal notranslate"><span class="pre">.distributedStore(...)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>优雅停机</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">GracefulShutdownManager</span></code>（默认注册 JVM hook）；接好 SIGTERM；视需要 <code class="docutils literal notranslate"><span class="pre">setConfig(...)</span></code> 调 inflight 等待时间</p></td>
 </tr>
-<tr class="row-odd"><td><p>可观测</p></td>
+<tr class="row-even"><td><p>可观测</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> + OpenTelemetry SDK + OTLP exporter</p></td>
 </tr>
-<tr class="row-even"><td><p>限流</p></td>
-<td><p>自写 <code class="docutils literal notranslate"><span class="pre">MiddlewareBase</span></code>（onModelCall）；参考 <a class="reference internal" href="../building-blocks/middleware.html#限速-middleware"><span class="std std-ref">Middleware — 限速 middleware</span></a></p></td>
+<tr class="row-odd"><td><p>限流</p></td>
+<td><p>自写 <code class="docutils literal notranslate"><span class="pre">MiddlewareBase</span></code>（onModelCall）；参考 <a class="reference internal" href="../building-blocks/middleware.html#id8"><span class="std std-ref">Middleware — 限速 middleware</span></a></p></td>
 </tr>
 </tbody>
 </table>
@@ -1489,79 +1625,52 @@
 </section>
 <section id="builder">
 <h2>7. 一个完整的生产 builder 模板<a class="headerlink" href="#builder" title="Link to this heading">¶</a></h2>
-<p>把上面所有要点拼到一起：</p>
+<p>Agent 在调用之间是无状态的——单例即可服务并发请求。每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 通过 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 的 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 定位状态，互不干扰。</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.RuntimeContext</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.redis.RedisSession</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.redis.RedisDistributedStore</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tracing.OtelTracingMiddleware</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.DistributedStore</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.HarnessAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.IsolationScope</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.RedisSandboxExecutionGuard</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.SandboxDistributedOptions</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.store.RedisStore</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.workspace.WorkspaceIndex</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.compaction.CompactionConfig</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.compaction.ToolResultEvictionConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Paths</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">redis.clients.jedis.JedisPooled</span><span class="p">;</span>
 
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ProductionAgentFactory</span><span class="w"> </span><span class="p">{</span>
+<span class="c1">// --- 依赖（应用启动时创建一次） ---</span>
+<span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/var/agentscope/workspace&quot;</span><span class="p">);</span>
+<span class="n">JedisPooled</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;REDIS_URI&quot;</span><span class="p">));</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
 
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="w"> </span><span class="nf">build</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/var/agentscope/workspace&quot;</span><span class="p">);</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;REDIS_URI&quot;</span><span class="p">));</span>
-
-<span class="w">        </span><span class="c1">// 1. 分布式 Session</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisSession</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">jedisClient</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// 2. 选 sandbox + OSS snapshot（要 shell）</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">sandboxSpec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<span class="c1">// --- 单例 agent（应用启动时创建一次） ---</span>
+<span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coding-assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自动注入 stateStore + snapshotSpec + executionGuard</span>
+<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12-slim&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RedisSandboxExecutionGuard</span><span class="p">(</span>
-<span class="w">                        </span><span class="n">jedis</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agentscope:guard:&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">)));</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">oss</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(</span>
-<span class="w">                </span><span class="s">&quot;oss-cn-hangzhou.aliyuncs.com&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OSS_AK&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OSS_SK&quot;</span><span class="p">),</span>
-<span class="w">                </span><span class="s">&quot;agentscope-sandbox-snapshots&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;prod/&quot;</span><span class="p">);</span>
-
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coding-assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-
-<span class="w">                </span><span class="c1">// session + filesystem 必须一起换</span>
-<span class="w">                </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="n">sandboxSpec</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sandboxDistributed</span><span class="p">(</span><span class="n">SandboxDistributedOptions</span><span class="p">.</span><span class="na">oss</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">oss</span><span class="p">))</span>
-
-<span class="w">                </span><span class="c1">// 记忆压缩 + 大结果卸载（生产长会话必备）</span>
-<span class="w">                </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">toolResultEviction</span><span class="p">(</span><span class="n">ToolResultEvictionConfig</span><span class="p">.</span><span class="na">defaults</span><span class="p">())</span>
-
-<span class="w">                </span><span class="c1">// 集中治理的 skill 仓库（只读分发）</span>
-<span class="w">                </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="na">agentscope</span><span class="p">.</span><span class="na">core</span><span class="p">.</span><span class="na">skill</span><span class="p">.</span><span class="na">repository</span><span class="p">.</span><span class="na">mysql</span><span class="p">.</span><span class="na">MysqlSkillRepository</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">skillsDataSource</span><span class="p">())</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-
-<span class="w">                </span><span class="c1">// tracing</span>
-<span class="w">                </span><span class="p">.</span><span class="na">middlewares</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OtelTracingMiddleware</span><span class="p">()))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolResultEviction</span><span class="p">(</span><span class="n">ToolResultEvictionConfig</span><span class="p">.</span><span class="na">defaults</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="na">agentscope</span><span class="p">.</span><span class="na">core</span><span class="p">.</span><span class="na">skill</span><span class="p">.</span><span class="na">repository</span><span class="p">.</span><span class="na">mysql</span><span class="p">.</span><span class="na">MysqlSkillRepository</span>
+<span class="w">                </span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">skillsDataSource</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">middlewares</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OtelTracingMiddleware</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>调用时填好 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 让所有”按用户/会话分桶”的子系统拿到 key：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<p>调用时传入 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 标识用户和会话。不同 session 在同一个 agent 实例上自动并行：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 在 HTTP handler 中</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="n">httpRequest</span><span class="p">.</span><span class="na">tenantUserId</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="n">httpRequest</span><span class="p">.</span><span class="na">sessionId</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
@@ -1571,13 +1680,14 @@
 <section id="id3">
 <h2>8. 常见坑位<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <ul class="simple">
+<li><p><strong>忘记传 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></strong>——不传 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 时所有请求共享 <code class="docutils literal notranslate"><span class="pre">defaultSessionId</span></code> 的状态，造成串台。在多用户场景下，<strong>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 都应通过 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.builder().userId(...).sessionId(...).build()</span></code> 传入</strong>，确保各会话状态隔离。参见 <a class="reference internal" href="../building-blocks/agent.html#id7"><span class="std std-ref">Agent — 多用户并发</span></a>。</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">java.nio.Files</span></code> 写工作区</strong>——在沙箱 / Remote 模式下落到错的位置。永远走 <code class="docutils literal notranslate"><span class="pre">agent.getWorkspaceManager()</span></code>。<strong>例外</strong>：builder 装配时的种子文件（<code class="docutils literal notranslate"><span class="pre">initWorkspaceIfAbsent</span></code> 之类）那时还没有运行时上下文，用 <code class="docutils literal notranslate"><span class="pre">java.nio.Files</span></code> 是 OK 的。</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">tools.json</span></code> 的 <code class="docutils literal notranslate"><span class="pre">allow</span></code> 会过滤内置工具</strong>——用白名单时务必把 <code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> 这些保留下来，否则整套内置工具一起被砍。</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> 改了，旧数据不会自动迁移</strong>——上线前定下来，别上线后改。改了等同于”换了一个命名空间”。</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> 单机限制</strong>：K8s 多副本部署里第一次 build 就抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>，<strong>这是设计如此</strong>——告诉你别把会话状态留在某个 pod 的本地磁盘上。</p></li>
+<li><p><strong>本地 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 单机限制</strong>：K8s 多副本部署里如果把分布式文件系统和本地 <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code> 搭配，第一次 build 就抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>，<strong>这是设计如此</strong>——告诉你别把 agent 状态留在某个 pod 的本地磁盘上。</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code> 不关闭</strong>——会泄露订阅，集群规模大了 Nacos 会喊。Spring 注入用 <code class="docutils literal notranslate"><span class="pre">&#64;PreDestroy</span></code> 或 <code class="docutils literal notranslate"><span class="pre">destroyMethod=&quot;close&quot;</span></code>。</p></li>
 <li><p><strong>OSS / NAS 走完 IAM 再上线</strong>——<code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code> 的 AK/SK 是平台凭证；用 RAM Role + STS 临时凭证更稳。</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">SandboxDistributedOptions.requireDistributed(false)</span></code> 是个调试开关</strong>——上线前确认它没漏在生产配置里。</p></li>
+<li><p><strong>本地 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> + 沙箱模式仅用于开发</strong>——构建时的 warning 日志是故意的，生产环境别忽略。</p></li>
 </ul>
 </section>
 <section id="id4">
@@ -1585,11 +1695,12 @@
 <ul class="simple">
 <li><p><a class="reference internal" href="../quickstart.html"><span class="std std-doc">Quickstart</span></a> —— 端到端跑通第一个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code></p></li>
 <li><p><a class="reference internal" href="../harness/architecture.html"><span class="std std-doc">Harness 架构</span></a> —— 各能力如何协作</p></li>
-<li><p><a class="reference internal" href="../harness/context.html"><span class="std std-doc">Context</span></a> —— <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> / <code class="docutils literal notranslate"><span class="pre">Session</span></code> / 跨节点恢复</p></li>
+<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">上下文与 AgentState</span></a> —— <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> / 跨节点恢复</p></li>
+<li><p><a class="reference internal" href="../harness/compaction.html"><span class="std std-doc">上下文压缩</span></a> —— 对话摘要、工具结果卸载、溢出恢复</p></li>
 <li><p><a class="reference internal" href="../harness/workspace.html"><span class="std std-doc">Workspace</span></a> —— 目录布局、两层读、<code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></li>
 <li><p><a class="reference internal" href="../harness/filesystem.html"><span class="std std-doc">Filesystem</span></a> —— 三种部署模式、<code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code></p></li>
-<li><p><a class="reference internal" href="../harness/sandbox.html"><span class="std std-doc">Sandbox</span></a> —— 沙箱细节、五种后端、快照机制</p></li>
-<li><p><a class="reference internal" href="../harness/skill.html"><span class="std std-doc">技能</span></a> —— 四层合成、市场后端、自学习闭环</p></li>
+<li><p><a class="reference internal" href="../harness/sandbox.html"><span class="std std-doc">Sandbox</span></a> —— 沙箱细节、五种实现、快照机制</p></li>
+<li><p><a class="reference internal" href="../harness/skill.html"><span class="std std-doc">技能</span></a> —— 四层合成、市场存储源、自学习闭环</p></li>
 <li><p><a class="reference internal" href="../building-blocks/middleware.html"><span class="std std-doc">Middleware</span></a> —— 自定义观测 / 限流 / fallback 中间件</p></li>
 </ul>
 </section>
@@ -1628,14 +1739,14 @@
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="../harness/plan-mode.html">
+          <a class="prev-page" href="release-notes.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">计划模式（Plan Mode）</div>
+                <div class="title">Release Notes</div>
                 
               </div>
             </a>
@@ -1648,7 +1759,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1684,10 +1795,13 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">上生产（Going to Production）</a><ul>
-<li><a class="reference internal" href="#vs">一图速览：单机默认 vs 分布式生产</a></li>
-<li><a class="reference internal" href="#session-agentstate">1. Session 后端：先把 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 放对地方</a></li>
+<li><a class="reference internal" href="#vs">一图速览：单机默认 vs 分布式生产</a><ul>
+<li><a class="reference internal" href="#distributedstore">DistributedStore 能力矩阵</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#agentstate">1. 状态存储：先把 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 放对地方</a></li>
 <li><a class="reference internal" href="#filesystem-isolationscope">2. Filesystem 模式 &amp; IsolationScope：决定”谁和谁共享文件”</a></li>
-<li><a class="reference internal" href="#remote-basestore-kv-oss-kv">3. Remote 模式的 BaseStore 后端：KV 选型与”不要把 OSS 当 KV 用”</a><ul>
+<li><a class="reference internal" href="#remote-basestore-kv-oss-kv">3. Remote 模式的 BaseStore：KV 选型与”不要把 OSS 当 KV 用”</a><ul>
 <li><a class="reference internal" href="#oss-nas-s3">那 OSS / NAS / S3 怎么放进来？</a></li>
 <li><a class="reference internal" href="#remotefilesystemspec"><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> 的路由表</a></li>
 <li><a class="reference internal" href="#compositefilesystem"><code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code>：两层读+写穿透</a></li>
@@ -1695,14 +1809,14 @@
 </ul>
 </li>
 <li><a class="reference internal" href="#skill-skillrepository">4. Skill 集中管理：选哪种 SkillRepository</a><ul>
-<li><a class="reference internal" href="#marketplace">Marketplace 后端选型</a></li>
+<li><a class="reference internal" href="#marketplace">Marketplace 存储源选型</a></li>
 <li><a class="reference internal" href="#checklist">生产 checklist</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#shell-sandbox-snapshot">5. 需要 shell：选 Sandbox + 必配 Snapshot</a><ul>
-<li><a class="reference internal" href="#id1">五种沙箱后端</a></li>
+<li><a class="reference internal" href="#id1">五种沙箱实现</a></li>
 <li><a class="reference internal" href="#snapshot">Snapshot 是沙箱的”分布式生命线”</a></li>
-<li><a class="reference internal" href="#redissandboxexecutionguard">沙箱执行节点串行化：<code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code></a></li>
+<li><a class="reference internal" href="#sandboxexecutionguard">沙箱执行节点串行化：<code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code></a></li>
 <li><a class="reference internal" href="#workspace-projection">Workspace projection：把工作区里的种子投到沙箱</a></li>
 <li><a class="reference internal" href="#agentrun-nas-oss-mount">AgentRun 特有：NAS / OSS mount</a></li>
 </ul>

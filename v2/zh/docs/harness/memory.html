@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="文件系统（Filesystem）" href="filesystem.html"><link rel="prev" title="工作区（Workspace）" href="workspace.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="文件系统（Filesystem）" href="filesystem.html"><link rel="prev" title="工作区（Workspace）" href="workspace.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/memory.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -89,7 +89,7 @@
     class="docs-top-tabs"
     aria-label="Documentation sections"
     data-current-page="v2/zh/docs/harness/memory"
-    data-current-lang="en"
+    data-current-lang="zh"
     data-current-version="v2"
   >
     <div class="docs-top-tabs__list">
@@ -105,7 +105,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/intro.html"
+              href="../../intro.html"
               data-tab-id="home"
               data-mirror-paths="true"
               data-href-en="v1/en/intro"
@@ -125,7 +125,7 @@
               data-sections-v2-en=""
               data-sections-v2-zh=""
             >
-              Home
+              首页
             </a>
           
         
@@ -141,7 +141,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/docs/index.html"
+              href="../index.html"
               data-tab-id="docs"
               data-mirror-paths="true"
               data-href-en="v1/en/docs/quickstart/installation"
@@ -161,7 +161,7 @@
               data-sections-v2-en="v2 · Quick Start|v2 · Building Blocks|v2 · Harness (English)|v2 · Reference"
               data-sections-v2-zh="v2 · 快速开始|v2 · 核心组件|v2 · Harness|v2 · 参考"
             >
-              Docs
+              文档
             </a>
           
         
@@ -177,7 +177,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/integration/overview.html"
+              href="../../integration/overview.html"
               data-tab-id="integration"
               data-mirror-paths="true"
               data-href-en="v1/en/integration/overview"
@@ -197,7 +197,7 @@
               data-sections-v2-en="v2 · Integration"
               data-sections-v2-zh="v2 · 集成"
             >
-              Integration
+              集成
             </a>
           
         
@@ -213,7 +213,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/blogs/agentscope-v2-release.html"
+              href="../../blogs/agentscope-v2-release.html"
               data-tab-id="blogs"
               data-mirror-paths="true"
               data-href-en="v1/en/blogs/index"
@@ -233,7 +233,7 @@
               data-sections-v2-en="v2 · Blogs"
               data-sections-v2-zh="v2 · 博客"
             >
-              Blogs
+              博客
             </a>
           
         
@@ -249,7 +249,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/community/contributors.html"
+              href="../../community/contributors.html"
               data-tab-id="community"
               data-mirror-paths="true"
               data-href-en="v1/en/community/overview"
@@ -269,7 +269,7 @@
               data-sections-v2-en="v2 · Community"
               data-sections-v2-zh="v2 · 社区"
             >
-              Community
+              社区
             </a>
           
         
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="workspace.html">工作区</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -899,14 +919,54 @@
 <li><p><strong>大工具结果卸载</strong> —— 单次工具返回过大时落盘 + 占位符。</p></li>
 </ul>
 </section>
+<section id="llm">
+<h2>三处 LLM 调用的全景<a class="headerlink" href="#llm" title="Link to this heading">¶</a></h2>
+<p>记忆管线里有 <strong>三处独立的 LLM 调用</strong>，每一处都有自己的 prompt 和触发时机。这是定制时最容易混淆的地方：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>#</p></th>
+<th class="head"><p>操作</p></th>
+<th class="head"><p>写入目标</p></th>
+<th class="head"><p>Prompt 默认值</p></th>
+<th class="head"><p>定制入口</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p><strong>Flush</strong> —— 从对话窗口抽取长期事实</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code>（追加）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MemoryFlushManager.DEFAULT_FLUSH_PROMPT</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MemoryConfig.builder().flushPrompt(...)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p><strong>Consolidation</strong> —— 把每日流水账合并到 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>（整体重写）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MemoryConsolidator.DEFAULT_CONSOLIDATION_PROMPT</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MemoryConfig.builder().consolidationPrompt(...)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p><strong>Compaction summary</strong> —— 把对话前缀蒸馏成一条摘要消息</p></td>
+<td><p>注入到当前上下文</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CompactionConfig.DEFAULT_SUMMARY_PROMPT</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CompactionConfig.builder().summaryPrompt(...)</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>前两个是”沉淀长期记忆”，由 <code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> 管；第三个是”压缩当下上下文”，由 <code class="docutils literal notranslate"><span class="pre">CompactionConfig</span></code> 管。三处 LLM 调用默认共享 agent 主模型，但 <code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> 和 <code class="docutils literal notranslate"><span class="pre">CompactionConfig</span></code> 各自支持 <code class="docutils literal notranslate"><span class="pre">.model(...)</span></code> 覆盖，允许用更轻量的模型执行这些辅助操作。</p>
+</section>
 <section id="id2">
 <h2>两层记忆是怎么工作的<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <pre  class="mermaid">
         graph LR
-    Conv[&quot;对话 messages&quot;] --&gt;|超阈值| Compactor[&quot;对话压缩&quot;]
-    Compactor --&gt;|offload| Sess[&quot;sessions/&amp;lt;id&amp;gt;.log.jsonl&quot;]
-    Compactor --&gt;|提炼新事实| Daily[&quot;memory/YYYY-MM-DD.md&quot;]
-    Daily -. 后台周期合并 .-&gt; MEM[&quot;MEMORY.md&quot;]
+    Conv[&quot;对话 messages&quot;]
+    Conv --&gt;|每次调用结束 / 可节流| Flush[&quot;Flush LLM 调用&quot;]
+    Flush --&gt;|提炼新事实| Daily[&quot;memory/YYYY-MM-DD.md&quot;]
+    Conv --&gt;|超阈值| Compactor[&quot;对话压缩&quot;]
+    Compactor --&gt;|offload 原文| Sess[&quot;sessions/&amp;lt;id&amp;gt;.log.jsonl&quot;]
+    Compactor --&gt;|压缩前再 flush 一次| Flush
+    Daily -. 节流后台 Consolidation .-&gt; MEM[&quot;MEMORY.md&quot;]
     MEM --&gt;|每轮推理注入| SYS[&quot;system prompt&quot;]
     </pre><p>要点：</p>
 <ul class="simple">
@@ -914,6 +974,17 @@
 <li><p>第二层永远是 LLM 注入提示的来源；第一层等待被合并。</p></li>
 <li><p>对话被压缩前的原始消息会另存一份永不压缩的日志（<code class="docutils literal notranslate"><span class="pre">*.log.jsonl</span></code>），供事后审计或 <code class="docutils literal notranslate"><span class="pre">session_search</span></code>。</p></li>
 </ul>
+</section>
+<section id="flush">
+<h2>Flush 的三个触发点<a class="headerlink" href="#flush" title="Link to this heading">¶</a></h2>
+<p>Flush（路径 1）会在以下三个时机被触发：</p>
+<ol class="arabic simple">
+<li><p><strong>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 结束</strong> —— <code class="docutils literal notranslate"><span class="pre">MemoryFlushMiddleware</span></code> 的默认行为。可以用 <code class="docutils literal notranslate"><span class="pre">flushTrigger</span></code> 改成 <code class="docutils literal notranslate"><span class="pre">NEVER</span></code> 或 <code class="docutils literal notranslate"><span class="pre">THROTTLED(Duration)</span></code>。</p></li>
+<li><p><strong>压缩前的预提取</strong> —— <code class="docutils literal notranslate"><span class="pre">CompactionConfig.flushBeforeCompact</span> <span class="pre">=</span> <span class="pre">true</span></code>（默认）时，压缩对话前缀前先 flush 一次。</p></li>
+<li><p><strong>上下文溢出兜底</strong> —— 模型真的报 <code class="docutils literal notranslate"><span class="pre">context_length_exceeded</span></code> 时，框架做一次紧急压缩，连带 flush。</p></li>
+</ol>
+<p>这三处用的是 <strong>同一份</strong> <code class="docutils literal notranslate"><span class="pre">flushPrompt</span></code>，定制后三处行为一致。</p>
+<p>Flush 和 offload 都是<strong>异步执行</strong>的：它们在响应流结束后通过 <code class="docutils literal notranslate"><span class="pre">doOnComplete</span></code> 以 fire-and-forget 方式启动，不会阻塞当前 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 的返回。换句话说，调用方拿到完整响应之后，flush LLM 调用和 JSONL offload 才在后台开始。</p>
 </section>
 <section id="id3">
 <h2>开启压缩<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
@@ -956,11 +1027,19 @@
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">flushBeforeCompact</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
-<td><p>压缩前先把新事实写入日流水账</p></td>
+<td><p>压缩前先把新事实写入日流水账（路径 2）</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">offloadBeforeCompact</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
 <td><p>压缩前先把原始消息存一份永不压缩的日志</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">summaryPrompt</span></code></p></td>
+<td><p>见 <code class="docutils literal notranslate"><span class="pre">DEFAULT_SUMMARY_PROMPT</span></code></p></td>
+<td><p>路径 3 的摘要 prompt（必须含 <code class="docutils literal notranslate"><span class="pre">{messages}</span></code> 占位符）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">model</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">null</span></code>（使用 agent 主模型）</p></td>
+<td><p>压缩摘要使用的独立模型</p></td>
 </tr>
 </tbody>
 </table>
@@ -980,8 +1059,143 @@
 </div>
 </section>
 </section>
+<section id="memory-pipeline-memoryconfig">
+<h2>定制 Memory pipeline：<code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code><a class="headerlink" href="#memory-pipeline-memoryconfig" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值，不调 <code class="docutils literal notranslate"><span class="pre">.memory(...)</span></code> 时与历史行为完全一致。</p>
+<section id="per-call-flush-token">
+<h3>例 1：节流 per-call flush，省 token<a class="headerlink" href="#per-call-flush-token" title="Link to this heading">¶</a></h3>
+<p>每次 agent 调用结束都做一次 flush LLM 调用，对长会话来说成本不低。把它节流到「最多每 10 分钟一次」：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">...</span>
+<span class="w">    </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">flushTrigger</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">FlushTrigger</span><span class="p">.</span><span class="na">throttled</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">10</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>注意：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">THROTTLED</span></code> 只影响<strong>路径 1</strong>（per-call flush）。压缩内嵌的 flush（路径 2）和兜底 flush（路径 3）按各自的触发条件照常跑——压缩很少发生，那两条本来就不频繁。</p></li>
+<li><p><strong>Offload 不受影响</strong>，session JSONL 仍然每次写完整。<code class="docutils literal notranslate"><span class="pre">session_search</span></code> 和会话恢复正常工作。</p></li>
+</ul>
+</section>
+<section id="per-call-flush">
+<h3>例 2：完全关掉 per-call flush<a class="headerlink" href="#per-call-flush" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">flushTrigger</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">FlushTrigger</span><span class="p">.</span><span class="na">never</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+</pre></div>
+</div>
+<p>这样只有压缩发生时才会 flush（成本和原始压缩成本一致）。</p>
+<blockquote>
+<div><p>想把 flush + 后台维护<strong>全部</strong>关掉用 <code class="docutils literal notranslate"><span class="pre">.disableMemoryHooks()</span></code>；<code class="docutils literal notranslate"><span class="pre">flushTrigger(NEVER)</span></code> 只关 per-call flush，后台 consolidation 仍跑。</p>
+</div></blockquote>
+</section>
+<section id="prompt">
+<h3>例 3：在默认 prompt 上追加项目规则<a class="headerlink" href="#prompt" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">flushPrompt</span><span class="p">(</span><span class="n">MemoryFlushManager</span><span class="p">.</span><span class="na">DEFAULT_FLUSH_PROMPT</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+
+<span class="s">        Additional project rules:</span>
+<span class="s">        - Never record customer PII (names, emails, phone numbers).</span>
+<span class="s">        - Always use Chinese for project-internal vocabulary.</span>
+<span class="s">        &quot;&quot;&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+</pre></div>
+</div>
+</section>
+<section id="consolidation-prompt">
+<h3>例 4：完全自定义 consolidation prompt<a class="headerlink" href="#consolidation-prompt" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">consolidationPrompt</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">        You are merging daily memory ledgers into MEMORY.md.</span>
+<span class="s">        Keep within %d tokens (~%d chars). Output the complete file in markdown.</span>
+<span class="s">        ... your custom rules ...</span>
+<span class="s">        &quot;&quot;&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>重要</strong>：自定义 consolidation prompt <strong>必须</strong> 包含恰好两个 <code class="docutils literal notranslate"><span class="pre">%d</span></code> 占位符（依次是 max-tokens 和 max-chars），否则 Builder 构造时就会拒绝。这是为了让错误尽早暴露，而不是等到运行时才抛 <code class="docutils literal notranslate"><span class="pre">MissingFormatArgumentException</span></code>。</p>
+</div></blockquote>
+</section>
 <section id="id5">
-<h2>大工具结果卸载<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<h3>例 5：调整后台维护节奏<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">consolidationMinGap</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofHours</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">   </span><span class="c1">// 后台合并最少 2 小时一次</span>
+<span class="w">    </span><span class="p">.</span><span class="na">dailyFileRetentionDays</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span><span class="w">                 </span><span class="c1">// 30 天就归档</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionRetentionDays</span><span class="p">(</span><span class="mi">60</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 60 天后删 session JSONL</span>
+<span class="w">    </span><span class="p">.</span><span class="na">consolidationMaxTokens</span><span class="p">(</span><span class="mi">8_000</span><span class="p">)</span><span class="w">              </span><span class="c1">// MEMORY.md 上限放宽到 8K tokens</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+</pre></div>
+</div>
+</section>
+<section id="id6">
+<h3>例 6：用小模型跑记忆操作<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<p>flush 和 consolidation 不需要主推理模型那么强，用更便宜的模型省成本：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;openai:o3&quot;</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 主推理模型</span>
+<span class="w">    </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">MemoryConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;openai:gpt-4.1-mini&quot;</span><span class="p">)</span><span class="w">     </span><span class="c1">// 记忆操作用小模型</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;openai:gpt-4.1-mini&quot;</span><span class="p">)</span><span class="w">     </span><span class="c1">// 压缩摘要也用小模型</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">model(String)</span></code> 走 <code class="docutils literal notranslate"><span class="pre">ModelRegistry.resolve()</span></code>，也可以传 <code class="docutils literal notranslate"><span class="pre">Model</span></code> 实例。不设则 fallback 到 agent 主模型。</p>
+</section>
+<section id="memoryconfig">
+<h3><code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> 字段速查<a class="headerlink" href="#memoryconfig" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>字段</p></th>
+<th class="head"><p>默认</p></th>
+<th class="head"><p>作用</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">model</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">null</span></code>（使用 agent 主模型）</p></td>
+<td><p>flush / consolidation 使用的独立模型；支持 <code class="docutils literal notranslate"><span class="pre">Model</span></code> 实例或 <code class="docutils literal notranslate"><span class="pre">&quot;provider:model&quot;</span></code> 字符串</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">flushPrompt</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">null</span></code>（使用 <code class="docutils literal notranslate"><span class="pre">DEFAULT_FLUSH_PROMPT</span></code>）</p></td>
+<td><p>路径 1 的 SYSTEM prompt</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">consolidationPrompt</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">null</span></code>（使用 <code class="docutils literal notranslate"><span class="pre">DEFAULT_CONSOLIDATION_PROMPT</span></code>）</p></td>
+<td><p>路径 2 的 prompt 模板（必须含两个 <code class="docutils literal notranslate"><span class="pre">%d</span></code>）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">consolidationMaxTokens</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">4_000</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> token 上限</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">consolidationMinGap</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">30</span> <span class="pre">min</span></code></p></td>
+<td><p>后台维护节流间隔</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dailyFileRetentionDays</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">90</span></code></p></td>
+<td><p>多少天后把日流水账归档到 <code class="docutils literal notranslate"><span class="pre">memory/archive/</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sessionRetentionDays</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">180</span></code></p></td>
+<td><p>多少天后清掉 <code class="docutils literal notranslate"><span class="pre">*.log.jsonl</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">flushTrigger</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">FlushTrigger.always()</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ALWAYS</span></code> / <code class="docutils literal notranslate"><span class="pre">NEVER</span></code> / <code class="docutils literal notranslate"><span class="pre">THROTTLED(Duration)</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="id7">
+<h2>大工具结果卸载<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <p>跟压缩独立。某次工具返回超过阈值时，全文写到一个目录、上下文里只留首尾预览 + 占位符——agent 想要全文就 <code class="docutils literal notranslate"><span class="pre">read_file</span></code>：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">...</span>
@@ -1006,18 +1220,18 @@
 </ul>
 <p>模型在看到 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> 已被截断的提示时通常会自己调 <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> 找老内容。</p>
 </section>
-<section id="id6">
-<h2>后台维护<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<section id="id8">
+<h2>后台维护<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
 <p>启用记忆能力时还会跑一个后台节流任务（每个 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 结束时按最小间隔触发，默认 30 分钟一次最多）：</p>
 <ul class="simple">
-<li><p>把超过 90 天的日流水账归档到 <code class="docutils literal notranslate"><span class="pre">memory/archive/</span></code></p></li>
-<li><p>跑一次 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> 合并</p></li>
-<li><p>清理超过 180 天的会话日志</p></li>
+<li><p>把超过 <code class="docutils literal notranslate"><span class="pre">dailyFileRetentionDays</span></code>（默认 90 天）的日流水账归档到 <code class="docutils literal notranslate"><span class="pre">memory/archive/</span></code></p></li>
+<li><p>跑一次 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> 合并（consolidation）</p></li>
+<li><p>清理超过 <code class="docutils literal notranslate"><span class="pre">sessionRetentionDays</span></code>（默认 180 天）的会话日志</p></li>
 </ul>
-<p>这些数字都可以调，但绝大多数项目不需要。</p>
+<p>所有阈值都可以通过 <code class="docutils literal notranslate"><span class="pre">.memory(MemoryConfig.builder()...)</span></code> 调，绝大多数项目不需要碰。</p>
 </section>
-<section id="id7">
-<h2>完全关掉<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<section id="id9">
+<h2>完全关掉<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <p>如果你想自己接管记忆 / 自己写工具：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">...</span>
@@ -1026,12 +1240,13 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">disableMemoryHooks()</span></code> 是核选项；只想节流不想关，用 <code class="docutils literal notranslate"><span class="pre">.memory(MemoryConfig.builder().flushTrigger(...).build())</span></code>。</p>
 </section>
-<section id="id8">
-<h2>相关文档<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="id10">
+<h2>相关文档<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">memory/</span></code> 在工作区的位置</p></li>
-<li><p><a class="reference internal" href="context.html"><span class="doc std std-doc">Context</span></a> — 永不压缩的对话日志 <code class="docutils literal notranslate"><span class="pre">*.log.jsonl</span></code></p></li>
+<li><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> — 永不压缩的对话日志 <code class="docutils literal notranslate"><span class="pre">*.log.jsonl</span></code></p></li>
 <li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">架构</span></a> — 长会话事实如何沉淀进 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></p></li>
 </ul>
 </section>
@@ -1090,7 +1305,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1127,16 +1342,28 @@
             <ul>
 <li><a class="reference internal" href="#">记忆（Memory）</a><ul>
 <li><a class="reference internal" href="#id1">作用</a></li>
+<li><a class="reference internal" href="#llm">三处 LLM 调用的全景</a></li>
 <li><a class="reference internal" href="#id2">两层记忆是怎么工作的</a></li>
+<li><a class="reference internal" href="#flush">Flush 的三个触发点</a></li>
 <li><a class="reference internal" href="#id3">开启压缩</a><ul>
 <li><a class="reference internal" href="#id4">想再轻一些？预处理参数截断</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id5">大工具结果卸载</a></li>
+<li><a class="reference internal" href="#memory-pipeline-memoryconfig">定制 Memory pipeline：<code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code></a><ul>
+<li><a class="reference internal" href="#per-call-flush-token">例 1：节流 per-call flush，省 token</a></li>
+<li><a class="reference internal" href="#per-call-flush">例 2：完全关掉 per-call flush</a></li>
+<li><a class="reference internal" href="#prompt">例 3：在默认 prompt 上追加项目规则</a></li>
+<li><a class="reference internal" href="#consolidation-prompt">例 4：完全自定义 consolidation prompt</a></li>
+<li><a class="reference internal" href="#id5">例 5：调整后台维护节奏</a></li>
+<li><a class="reference internal" href="#id6">例 6：用小模型跑记忆操作</a></li>
+<li><a class="reference internal" href="#memoryconfig"><code class="docutils literal notranslate"><span class="pre">MemoryConfig</span></code> 字段速查</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id7">大工具结果卸载</a></li>
 <li><a class="reference internal" href="#agent">给 agent 自己用的记忆工具</a></li>
-<li><a class="reference internal" href="#id6">后台维护</a></li>
-<li><a class="reference internal" href="#id7">完全关掉</a></li>
-<li><a class="reference internal" href="#id8">相关文档</a></li>
+<li><a class="reference internal" href="#id8">后台维护</a></li>
+<li><a class="reference internal" href="#id9">完全关掉</a></li>
+<li><a class="reference internal" href="#id10">相关文档</a></li>
 </ul>
 </li>
 </ul>

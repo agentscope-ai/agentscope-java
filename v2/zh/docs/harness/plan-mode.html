@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="上生产（Going to Production）" href="../others/going-to-production.html"><link rel="prev" title="技能（Skill）" href="skill.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Channel" href="channel.html"><link rel="prev" title="技能（Skill）" href="skill.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/plan-mode.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -89,7 +89,7 @@
     class="docs-top-tabs"
     aria-label="Documentation sections"
     data-current-page="v2/zh/docs/harness/plan-mode"
-    data-current-lang="en"
+    data-current-lang="zh"
     data-current-version="v2"
   >
     <div class="docs-top-tabs__list">
@@ -105,7 +105,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/intro.html"
+              href="../../intro.html"
               data-tab-id="home"
               data-mirror-paths="true"
               data-href-en="v1/en/intro"
@@ -125,7 +125,7 @@
               data-sections-v2-en=""
               data-sections-v2-zh=""
             >
-              Home
+              首页
             </a>
           
         
@@ -141,7 +141,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/docs/index.html"
+              href="../index.html"
               data-tab-id="docs"
               data-mirror-paths="true"
               data-href-en="v1/en/docs/quickstart/installation"
@@ -161,7 +161,7 @@
               data-sections-v2-en="v2 · Quick Start|v2 · Building Blocks|v2 · Harness (English)|v2 · Reference"
               data-sections-v2-zh="v2 · 快速开始|v2 · 核心组件|v2 · Harness|v2 · 参考"
             >
-              Docs
+              文档
             </a>
           
         
@@ -177,7 +177,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/integration/overview.html"
+              href="../../integration/overview.html"
               data-tab-id="integration"
               data-mirror-paths="true"
               data-href-en="v1/en/integration/overview"
@@ -197,7 +197,7 @@
               data-sections-v2-en="v2 · Integration"
               data-sections-v2-zh="v2 · 集成"
             >
-              Integration
+              集成
             </a>
           
         
@@ -213,7 +213,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/blogs/agentscope-v2-release.html"
+              href="../../blogs/agentscope-v2-release.html"
               data-tab-id="blogs"
               data-mirror-paths="true"
               data-href-en="v1/en/blogs/index"
@@ -233,7 +233,7 @@
               data-sections-v2-en="v2 · Blogs"
               data-sections-v2-zh="v2 · 博客"
             >
-              Blogs
+              博客
             </a>
           
         
@@ -249,7 +249,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/community/contributors.html"
+              href="../../community/contributors.html"
               data-tab-id="community"
               data-mirror-paths="true"
               data-href-en="v1/en/community/overview"
@@ -269,7 +269,7 @@
               data-sections-v2-en="v2 · Community"
               data-sections-v2-zh="v2 · 社区"
             >
-              Community
+              社区
             </a>
           
         
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="skill.html">技能</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -889,7 +909,7 @@
 <h2>作用<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <p>Plan Mode 让 agent 在动手前先”把意图想清楚 + 写下来”再执行。开启后 agent 进入一个<strong>只读阶段</strong>：</p>
 <ul class="simple">
-<li><p>只能调用<strong>只读工具</strong>和 4 个白名单工具：<code class="docutils literal notranslate"><span class="pre">plan_enter</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_write</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code> / <code class="docutils literal notranslate"><span class="pre">todo_write</span></code>；</p></li>
+<li><p>只能调用<strong>只读工具</strong>和 4 个白名单工具：<code class="docutils literal notranslate"><span class="pre">plan_enter</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_write</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code> / <code class="docutils literal notranslate"><span class="pre">todo_write</span></code>（shell 可按需放开，见<a class="reference internal" href="#plan-shell">下文</a>）；</p></li>
 <li><p>其它工具调用一律被拒绝（agent 看到一条”plan 阶段拒绝”提示）；</p></li>
 <li><p>退出 Plan Mode 走 HITL 确认（复用权限系统的 ASK），避免模型一意孤行直接进入执行。</p></li>
 </ul>
@@ -923,6 +943,10 @@
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">planFileDirectory(String)</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">&quot;plans&quot;</span></code></p></td>
 <td><p>计划文件根目录（workspace 相对）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">allowShellInPlanMode()</span></code> / <code class="docutils literal notranslate"><span class="pre">allowShellInPlanMode(boolean)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p>按需放开 plan 阶段的 shell（<code class="docutils literal notranslate"><span class="pre">execute</span></code>）——见<a class="reference internal" href="#plan-shell">在 plan 阶段放开 shell</a></p></td>
 </tr>
 </tbody>
 </table>
@@ -974,23 +998,88 @@
     A-&gt;&gt;H: plan_exit → 弹 HITL 确认
     H--&gt;&gt;A: ConfirmResult(true)
     A-&gt;&gt;A: 进入执行阶段，所有工具解禁
-    </pre><p>中间任意时刻调用非白名单工具（比如 <code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">execute</span></code>）都会被即时拒绝并返回类似这样的结果给模型：</p>
+    </pre><p>中间任意时刻调用非白名单工具（比如 <code class="docutils literal notranslate"><span class="pre">write_file</span></code>；<code class="docutils literal notranslate"><span class="pre">execute</span></code> 默认也被拒，除非你<a class="reference internal" href="#plan-shell">按需放开</a>）都会被即时拒绝并返回类似这样的结果给模型：</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[Tool denied — plan mode is active]
 Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are allowed.
 </pre></div>
 </div>
 <p>模型看到拒绝信息会自然地切回”先写计划”。</p>
 </section>
+<section id="id5">
+<h2>如何判断运行结果<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<p>是否进入 plan mode 由模型自主决定，所以一次运行可能落到四种终态。<strong>只看 <code class="docutils literal notranslate"><span class="pre">isPlanModeActive()</span> <span class="pre">==</span> <span class="pre">false</span></code> 是有歧义的</strong>——别在没确认”是否真的规划过”之前就当成成功：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>终态</p></th>
+<th class="head"><p>含义</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>从未进入 plan mode</p></td>
+<td><p>模型选择直接在 build 模式工作——合法决定，常因任务与 workspace 不匹配</p></td>
+</tr>
+<tr class="row-odd"><td><p>进入 → <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code></p></td>
+<td><p>成功：规划完、获批，已进入 build 模式</p></td>
+</tr>
+<tr class="row-even"><td><p>仍在 plan mode + 有 <code class="docutils literal notranslate"><span class="pre">PLAN.md</span></code></p></td>
+<td><p>起草了计划但没退出；在同一 session 发后续消息批准继续</p></td>
+</tr>
+<tr class="row-odd"><td><p>仍在 plan mode + 无 <code class="docutils literal notranslate"><span class="pre">PLAN.md</span></code></p></td>
+<td><p>“只说不做”：最终文本看着像计划但没真正写出——补更具体的输入或换匹配的 codebase</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>要在代码里区分这几种，可在监听最终 <code class="docutils literal notranslate"><span class="pre">isPlanModeActive()</span></code> 和计划文件是否存在的同时，记录是否调用过 <code class="docutils literal notranslate"><span class="pre">plan_enter</span></code> / <code class="docutils literal notranslate"><span class="pre">plan_write</span></code>（例如从 <code class="docutils literal notranslate"><span class="pre">ToolCallStartEvent</span></code> 捕获）。</p>
+</section>
+<section id="plan-shell">
+<h2>在 plan 阶段放开 shell（可选）<a class="headerlink" href="#plan-shell" title="Link to this heading">¶</a></h2>
+<p>默认情况下，shell 工具（<code class="docutils literal notranslate"><span class="pre">execute</span></code>）在 plan 阶段是<strong>被拒绝</strong>的。shell 是<em>双用途</em>工具：同一次调用既可能是读（<code class="docutils literal notranslate"><span class="pre">cat</span></code> / <code class="docutils literal notranslate"><span class="pre">ls</span></code> / <code class="docutils literal notranslate"><span class="pre">grep</span></code> / <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">log</span></code>），也可能是写（<code class="docutils literal notranslate"><span class="pre">rm</span></code> / <code class="docutils literal notranslate"><span class="pre">&gt;</span></code> / <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">commit</span></code> / <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">install</span></code>），而 Plan Mode 完全靠<strong>工具名</strong>判定是否放行——无法区分这一次是读还是写。默认禁掉 shell，是为了保住”只读”这条保证。</p>
+<p>但通过 shell 读取各种内容，往往是调查代码库、产出一个<em>切实可行</em>计划的最灵活方式。如果你愿意承担这个取舍，可以按需放开：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;planner&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enablePlanMode</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">allowShellInPlanMode</span><span class="p">()</span><span class="w">   </span><span class="c1">// 让模型在 plan 阶段以只读方式跑 shell</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>开启后：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">execute</span></code> 被加入 plan 阶段放行名单，模型可以用 shell 做调查；</p></li>
+<li><p>plan banner 会追加一条提示，要求模型把 shell 用法限制在<strong>只读</strong>（<code class="docutils literal notranslate"><span class="pre">cat</span></code> / <code class="docutils literal notranslate"><span class="pre">ls</span></code> / <code class="docutils literal notranslate"><span class="pre">grep</span></code> / <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">log/diff/show/status</span></code>），在计划获批前<strong>不要</strong>跑 mutating 命令；</p></li>
+<li><p>专用的文件编辑工具（<code class="docutils literal notranslate"><span class="pre">write_file</span></code> / <code class="docutils literal notranslate"><span class="pre">edit_file</span></code>）<strong>仍然被拒</strong>——它们是主要的改动入口，所以对文件写入的只读意图依然被强制保证。</p></li>
+</ul>
+<p>这与 OpenCode 处理其 plan agent 的方式一致：放开 shell 用于调查、硬禁 edit/write 工具、靠提示词把 shell 约束为只读。因此这条保证比默认情况<strong>更弱</strong>（模型仍可能通过 shell 改东西），建议配合<strong>沙箱文件系统</strong>一起开，把爆炸半径关进沙箱。</p>
+</section>
+<section id="id6">
+<h2>运行期切换权限模式（”危险开关”逃生口）<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<p>Plan Mode 只是一个具体的阶段开关。在它之下，每个 session 都带着一个 <a class="reference internal" href="../building-blocks/context.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">PermissionMode</span></code></span></a>，由权限引擎在评估时使用。你可以在运行期翻转这个 mode——比如提供一个由用户显式触发的”跳过所有权限确认”开关（类似其它编码工具里的 YOLO / dangerous-skip 开关）：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;my-session&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">agent</span><span class="p">.</span><span class="na">setPermissionMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">BYPASS</span><span class="p">);</span><span class="w">    </span><span class="c1">// 全部放开、不再弹确认</span>
+<span class="c1">// ... 跑需要完整权限的操作 ...</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">setPermissionMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="n">PermissionMode</span><span class="p">.</span><span class="na">DEFAULT</span><span class="p">);</span><span class="w">   </span><span class="c1">// 恢复正常管控</span>
+
+<span class="n">PermissionMode</span><span class="w"> </span><span class="n">current</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getPermissionMode</span><span class="p">(</span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">setPermissionMode(...)</span></code> 会保留该 session 已配置的 allow/deny/ask 规则与工作目录——只改 mode——并重建该 session 缓存的权限引擎，使切换在<strong>下一次</strong> call 生效；正在进行中的 call 仍沿用它启动时的引擎。</p>
+<p>⚠ <code class="docutils literal notranslate"><span class="pre">BYPASS</span></code> 会关闭所有规则评估，因此应当作为显式的、按 session 的主动操作，并建议配合沙箱使用。如果想要<strong>无人值守且不弹确认、但仍保留管控</strong>，请改用 <code class="docutils literal notranslate"><span class="pre">PermissionMode.DONT_ASK</span></code>（ASK 决策会变成 DENY，而不是被自动放行）。</p>
+</section>
 <section id="plan">
 <h2>Plan 阶段的状态会被持久化<a class="headerlink" href="#plan" title="Link to this heading">¶</a></h2>
 <p>Plan Mode 是<strong>运行时状态</strong>，会随 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 自动持久化——进程重启、节点切换、跨副本恢复后，<strong>plan 阶段会一起恢复</strong>。计划文件本身写到工作区的 <code class="docutils literal notranslate"><span class="pre">plans/</span></code> 下，跟着你选的文件系统模式（本机 / 沙箱 / 远端 KV）走，分布式可用。</p>
 </section>
-<section id="id5">
-<h2>程序化进出 Plan Mode<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="id7">
+<h2>程序化进出 Plan Mode<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <p>需要在业务代码里主动控制（例如管理台按钮）：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">enterPlanMode</span><span class="p">();</span><span class="w">    </span><span class="c1">// 等价于 LLM 调 plan_enter</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">exitPlanMode</span><span class="p">();</span><span class="w">     </span><span class="c1">// 等价于 plan_exit；程序入口不会触发 HITL</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">isPlanModeActive</span><span class="p">();</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;my-session&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">enterPlanMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">);</span><span class="w">    </span><span class="c1">// 等价于 LLM 调 plan_enter</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">exitPlanMode</span><span class="p">(</span><span class="n">ctx</span><span class="p">);</span><span class="w">     </span><span class="c1">// 等价于 plan_exit；程序入口不会触发 HITL</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">isPlanModeActive</span><span class="p">(</span><span class="n">ctx</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>如果用了 <code class="docutils literal notranslate"><span class="pre">agentscope-admin-spring-boot-starter</span></code>，还可以通过 admin HTTP 接口操作（<code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/v1/admin/sessions/{id}:enter-plan-mode</span></code> / <code class="docutils literal notranslate"><span class="pre">:exit-plan-mode</span></code> / <code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/v1/admin/sessions/{id}/plan</span></code>）。</p>
@@ -1014,8 +1103,40 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 <p>典型工作流：plan 阶段写完 <code class="docutils literal notranslate"><span class="pre">PLAN.md</span></code> → <code class="docutils literal notranslate"><span class="pre">plan_exit</span></code> → 执行阶段用 <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> 把 PLAN 拆成 5–8 条 todo → 逐条推进。Agent 每轮推理前能看到 todos 的小提示，帮助保持聚焦。</p>
 <p>⚠ 不要和子 agent 的<strong>后台任务</strong>（<code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code>）混淆——那是另一回事，详见 <a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a>。</p>
 </section>
-<section id="id6">
-<h2>相关文档<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<section id="id8">
+<h2>查看任务列表<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<p>任务列表保存在 <code class="docutils literal notranslate"><span class="pre">AgentState.tasksContext</span></code> 中，每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 后自动持久化。在业务代码中读取：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">List</span><span class="o">&lt;</span><span class="n">Task</span><span class="o">&gt;</span><span class="w"> </span><span class="n">tasks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getAgentState</span><span class="p">(</span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">getTasksContext</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">getTasks</span><span class="p">();</span>
+
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Task</span><span class="w"> </span><span class="n">t</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">tasks</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">printf</span><span class="p">(</span><span class="s">&quot;[%s] %s%n&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getState</span><span class="p">(),</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getSubject</span><span class="p">());</span>
+<span class="w">    </span><span class="c1">// state: PENDING / IN_PROGRESS / COMPLETED</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>如果用了 <code class="docutils literal notranslate"><span class="pre">agentscope-admin-spring-boot-starter</span></code>，可以直接调 admin REST 接口：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">GET</span> <span class="o">/</span><span class="n">v1</span><span class="o">/</span><span class="n">admin</span><span class="o">/</span><span class="n">sessions</span><span class="o">/</span><span class="p">{</span><span class="n">sessionId</span><span class="p">}</span><span class="o">/</span><span class="n">tasks</span>
+</pre></div>
+</div>
+<p>返回每个任务的 subject、state、owner 和依赖关系（<code class="docutils literal notranslate"><span class="pre">blocks</span></code> / <code class="docutils literal notranslate"><span class="pre">blockedBy</span></code>）。</p>
+<p>如果需要通过事件流实时感知任务变更，可以在 <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> 中监听 <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> 工具调用：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">TOOL_RESULT_END</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="s">&quot;todo_write&quot;</span><span class="p">.</span><span class="na">equals</span><span class="p">(((</span><span class="n">ToolResultEndEvent</span><span class="p">)</span><span class="w"> </span><span class="n">e</span><span class="p">).</span><span class="na">getToolName</span><span class="p">()))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// 从 state 中读取最新任务列表</span>
+<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">tasks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getAgentState</span><span class="p">(</span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">getTasksContext</span><span class="p">().</span><span class="na">getTasks</span><span class="p">();</span>
+<span class="w">        </span><span class="n">updateUI</span><span class="p">(</span><span class="n">tasks</span><span class="p">);</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="na">subscribe</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id9">
+<h2>相关文档<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">工作区</span></a> — <code class="docutils literal notranslate"><span class="pre">plans/</span></code> 目录的位置</p></li>
 <li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a> — <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> ≠ subagent task，不要混淆</p></li>
@@ -1048,12 +1169,12 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="../others/going-to-production.html">
+          <a class="next-page" href="channel.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">上生产（Going to Production）</div>
+                <div class="title">Channel</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -1077,7 +1198,7 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1117,11 +1238,15 @@ Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are al
 <li><a class="reference internal" href="#id2">开启</a></li>
 <li><a class="reference internal" href="#id3">三个工具</a></li>
 <li><a class="reference internal" href="#id4">工作流</a></li>
+<li><a class="reference internal" href="#id5">如何判断运行结果</a></li>
+<li><a class="reference internal" href="#plan-shell">在 plan 阶段放开 shell（可选）</a></li>
+<li><a class="reference internal" href="#id6">运行期切换权限模式（”危险开关”逃生口）</a></li>
 <li><a class="reference internal" href="#plan">Plan 阶段的状态会被持久化</a></li>
-<li><a class="reference internal" href="#id5">程序化进出 Plan Mode</a></li>
+<li><a class="reference internal" href="#id7">程序化进出 Plan Mode</a></li>
 <li><a class="reference internal" href="#agent">与子 agent 的关系</a></li>
 <li><a class="reference internal" href="#todo-write">与 <code class="docutils literal notranslate"><span class="pre">todo_write</span></code> 的协作</a></li>
-<li><a class="reference internal" href="#id6">相关文档</a></li>
+<li><a class="reference internal" href="#id8">查看任务列表</a></li>
+<li><a class="reference internal" href="#id9">相关文档</a></li>
 </ul>
 </li>
 </ul>

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="FAQ" href="faq.html"><link rel="prev" title="Plan Mode" href="../harness/plan-mode.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="FAQ" href="faq.html"><link rel="prev" title="Release Notes" href="release-notes.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/others/going-to-production.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../harness/architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../harness/context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../harness/plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -888,7 +908,26 @@
 <blockquote>
 <div><p>Running a <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> on your laptop is easy. Shipping it to production is another story — replicas must share sessions, users must stay isolated, untrusted code must be sandboxed, and pods must be able to resume mid-conversation after a restart. This page only covers what <strong>changes between single-node and distributed production</strong>: which components must be swapped, what to swap them with, and why the builder throws <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code> when you miss something.</p>
 </div></blockquote>
-<p>In the source, any component documented as “distributed-friendly”, “cross-replica”, or “shared store” — <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>, <code class="docutils literal notranslate"><span class="pre">SandboxDistributedOptions</span></code>, <code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code>, <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code>, <code class="docutils literal notranslate"><span class="pre">RedisStore</span></code> / <code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code>, and so on — is purpose-built for the scenarios on this page.</p>
+<p><strong>Fastest path to production</strong>: use <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code> to configure all distributed components at once:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
+<span class="c1">// or MysqlDistributedStore.create(dataSource);</span>
+<span class="c1">// or OssDistributedStore.create(ossClient, bucket, prefix);</span>
+
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(...)</span><span class="w">  </span><span class="c1">// choose your workspace mode</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Mixed stores (e.g. MySQL for state + Redis for sandbox locks) are also supported:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DistributedStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">(</span><span class="n">MysqlDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="n">ds</span><span class="p">).</span><span class="na">agentStateStore</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseStore</span><span class="p">(</span><span class="n">MysqlDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="n">ds</span><span class="p">).</span><span class="na">baseStore</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sandboxSnapshotSpec</span><span class="p">(</span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">sandboxSnapshotSpec</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sandboxExecutionGuard</span><span class="p">(</span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">sandboxExecutionGuard</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
 <section id="at-a-glance-single-node-defaults-vs-distributed-production">
 <h2>At a glance: single-node defaults vs. distributed production<a class="headerlink" href="#at-a-glance-single-node-defaults-vs-distributed-production" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -900,57 +939,95 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Session</span></code> (<code class="docutils literal notranslate"><span class="pre">AgentState</span></code> persistence)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> (local JSON)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code> (or <code class="docutils literal notranslate"><span class="pre">RedissonSession</span></code>)</p></td>
+<tr class="row-even"><td><p><strong>One-line config</strong></p></td>
+<td><p>not needed</p></td>
+<td><p><strong><code class="docutils literal notranslate"><span class="pre">.distributedStore(RedisDistributedStore.fromJedis(jedis))</span></code></strong></p></td>
 </tr>
-<tr class="row-odd"><td><p>Filesystem</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code> (no <code class="docutils literal notranslate"><span class="pre">filesystem(...)</span></code> call)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec(BaseStore)</span></code> or <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code> (local JSON)</p></td>
+<td><p>auto-wired by <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> (Remote backend)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">InMemoryStore</span></code> (tests)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RedisStore</span></code> / <code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code> (MySQL / PG / SQLite / H2)</p></td>
+<tr class="row-even"><td><p>Filesystem</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code> (no call)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> or <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> (<code class="docutils literal notranslate"><span class="pre">baseStore</span></code> auto-injected from store)</p></td>
+</tr>
+<tr class="row-odd"><td><p>Sandbox snapshots</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code> / <code class="docutils literal notranslate"><span class="pre">LocalSnapshotSpec</span></code></p></td>
+<td><p>auto-wired by <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Sandbox exec serialization</p></td>
+<td><p>none needed in-process</p></td>
+<td><p>auto-wired by <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code></p></td>
 </tr>
 <tr class="row-odd"><td><p>Skill source</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">GitSkillRepository</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlSkillRepository</span></code> / <code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p>Sandbox state</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> on local disk</p></td>
-<td><p>distributed Session-backed store</p></td>
-</tr>
-<tr class="row-odd"><td><p>Sandbox snapshots</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code> / <code class="docutils literal notranslate"><span class="pre">LocalSnapshotSpec</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code> / <code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec</span></code> / custom <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotSpec</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p>Sandbox exec serialization</p></td>
-<td><p>none needed in-process</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code> (required for AGENT/GLOBAL scope across replicas)</p></td>
-</tr>
-<tr class="row-odd"><td><p>Observability</p></td>
+<tr class="row-even"><td><p>Observability</p></td>
 <td><p>no tracing by default</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> + OpenTelemetry SDK</p></td>
-</tr>
-<tr class="row-even"><td><p>Graceful shutdown</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">GracefulShutdownManager</span></code> auto-registers a JVM hook</p></td>
-<td><p>same + <code class="docutils literal notranslate"><span class="pre">setConfig(...)</span></code> to tune the in-flight wait</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<section id="distributedstore-capability-matrix">
+<h3>DistributedStore capability matrix<a class="headerlink" href="#distributedstore-capability-matrix" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Capability</p></th>
+<th class="head text-center"><p>Redis (<code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code>)</p></th>
+<th class="head text-center"><p>OSS (<code class="docutils literal notranslate"><span class="pre">agentscope-extensions-oss</span></code>)</p></th>
+<th class="head text-center"><p>MySQL (<code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code>)</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">OssAgentStateStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">BaseStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">RedisStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">OssBaseStore</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">JdbcSnapshotSpec</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code></p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code></p></td>
+<td class="text-center"><p>— (object storage can’t do locks)</p></td>
+<td class="text-center"><p><code class="docutils literal notranslate"><span class="pre">JdbcSandboxExecutionGuard</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Each component solves a different production problem:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>: persists the agent’s runtime session state, including conversation history, compaction summaries, permission rules, Plan Mode state, and tool state. This is what lets another replica, or a restarted process, continue the same <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">BaseStore</span></code>: provides shared KV-backed workspace storage for <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>, carrying paths such as <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, <code class="docutils literal notranslate"><span class="pre">memory/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/</span></code>, and <code class="docutils literal notranslate"><span class="pre">sessions/</span></code>. In multi-replica deployments, it lets different pods see the same long-term memory and shared files.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code>: persists sandbox workspace snapshots. When a sandbox container is destroyed, a pod restarts, or the next request lands on a new node, it restores the previous workspace instead of losing <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> output, generated files, or temporary project state.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code>: serializes command execution for the same sandbox slot across nodes. With shared scopes such as <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> or <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code>, multiple replicas may try to execute against the same sandbox at once; the guard uses Redis/MySQL locking to avoid concurrent workspace writes and sandbox start/stop races.</p></li>
+</ul>
+<blockquote>
+<div><p>OSS does not provide a <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> — object storage is unsuitable for distributed locking. OSS users who need sandbox concurrency control can mix in a Redis guard via <code class="docutils literal notranslate"><span class="pre">DistributedStore.builder()</span></code>.</p>
+</div></blockquote>
 <p><strong>The key validation chain:</strong></p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> without swapping <code class="docutils literal notranslate"><span class="pre">session(...)</span></code> → <code class="docutils literal notranslate"><span class="pre">build()</span></code> throws <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code> telling you to swap in <code class="docutils literal notranslate"><span class="pre">RedisSession</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> without swapping <code class="docutils literal notranslate"><span class="pre">session(...)</span></code> → same.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> with <code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code> → throws, demands an explicit snapshot.</p></li>
-<li><p>Want to bypass for single-node tests: <code class="docutils literal notranslate"><span class="pre">.sandboxDistributed(SandboxDistributedOptions.builder().requireDistributed(false).build())</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> without <code class="docutils literal notranslate"><span class="pre">stateStore(...)</span></code> or <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> → <code class="docutils literal notranslate"><span class="pre">build()</span></code> throws <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> with a local <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> → <code class="docutils literal notranslate"><span class="pre">build()</span></code> logs a <strong>warning</strong>; in production always supply a <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code>.</p></li>
 </ul>
-<p>The checks live in <code class="docutils literal notranslate"><span class="pre">HarnessAgentBuilderSupport#validateDistributedSandboxConfig</span></code> — deliberately fail-fast so “works in dev, loses state in prod” cannot happen.</p>
 </section>
-<section id="session-backend-put-agentstate-somewhere-durable-first">
-<h2>1. Session backend: put <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> somewhere durable first<a class="headerlink" href="#session-backend-put-agentstate-somewhere-durable-first" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through <code class="docutils literal notranslate"><span class="pre">Session</span></code>.</p>
+</section>
+<section id="state-store-put-agentstate-somewhere-durable-first">
+<h2>1. State store: put <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> somewhere durable first<a class="headerlink" href="#state-store-put-agentstate-somewhere-durable-first" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p><strong>Recommended</strong>: use <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> for one-line setup. The detailed table below is for advanced users who need individual control over <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>.</p>
+</div></blockquote>
+<p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through an <a class="reference internal" href="../../integration/session/index.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></span></a>.</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -960,35 +1037,32 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">InMemorySession</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">InMemoryAgentStateStore</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code></p></td>
 <td><p>unit tests; everything dies on process exit</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">JsonSession</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code></p></td>
-<td><p>single-machine dev; one directory per <code class="docutils literal notranslate"><span class="pre">SessionKey</span></code></p></td>
+<td><p>single-machine dev; one directory per <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code>. <strong>HarnessAgent default</strong>, rooted at <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>; <strong>single-machine</strong></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code></p></td>
-<td><p><strong>HarnessAgent default</strong>; writes to <code class="docutils literal notranslate"><span class="pre">&lt;workspace&gt;/agents/&lt;agentId&gt;/context/&lt;sessionId&gt;/</span></code>; <strong>single-machine, single-tenant</strong></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSession</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-session-redis</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code></p></td>
 <td><p><strong>multi-replica production default</strong>; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel)</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-session-mysql</span></code></p></td>
-<td><p>when sessions must live in a relational store (audit / reporting / joins)</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code></p></td>
+<td><p>when state must live in a relational store (audit / reporting / joins)</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p><strong>Redis with any of the three client adapters</strong> through <code class="docutils literal notranslate"><span class="pre">RedisSession.builder()</span></code>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.redis.RedisSession</span><span class="p">;</span>
+<p><strong>Redis with any of the three client adapters</strong> through <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore.builder()</span></code>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.AgentStateStore</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.redis.state.RedisAgentStateStore</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">redis.clients.jedis.JedisPooled</span><span class="p">;</span>
 
 <span class="c1">// Jedis Standalone</span>
-<span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisSession</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisAgentStateStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">jedisClient</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://localhost:6379&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">keyPrefix</span><span class="p">(</span><span class="s">&quot;myapp:session:&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
@@ -1000,16 +1074,14 @@
 <span class="c1">// .redissonClient(redisson)</span>
 </pre></div>
 </div>
-<p><strong><code class="docutils literal notranslate"><span class="pre">SessionKey</span></code> design.</strong> <code class="docutils literal notranslate"><span class="pre">SimpleSessionKey.of(sessionId)</span></code> only covers single-tenant. In production, implement <code class="docutils literal notranslate"><span class="pre">SessionKey</span></code> and encode tenant / user / agent into the identifier so multi-tenant calls can’t cross-read — <code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> uses it as part of the Redis key, <code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code> uses it as the primary key:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">class</span> <span class="nc">TenantSessionKey</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">tenantId</span><span class="p">,</span><span class="w"> </span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">agentId</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span><span class="p">;</span>
-<span class="w">    </span><span class="nd">@Override</span><span class="w"> </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">toIdentifier</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">tenantId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">userId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">agentId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<p><strong>Per-tenant isolation.</strong> A bare <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> only covers single-tenant. In production, set both <code class="docutils literal notranslate"><span class="pre">userId</span></code> and <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> on each call’s <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> so multi-tenant calls can’t cross-read — the store addresses each slot by the <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> pair (<code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> folds <code class="docutils literal notranslate"><span class="pre">userId</span></code> into the Redis key; <code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> folds it into the primary key). Compose any other dimensions (tenant, agent) into the <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> string yourself:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="n">tenantId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">userId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="n">agentId</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>Full mechanics in <a class="reference internal" href="../harness/context.html"><span class="std std-doc">Harness — Context</span></a>.</p>
+<p>Full mechanics in <a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context &amp; AgentState</span></a>.</p>
 </section>
 <section id="filesystem-mode-isolationscope-deciding-who-shares-files-with-whom">
 <h2>2. Filesystem mode &amp; <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>: deciding “who shares files with whom”<a class="headerlink" href="#filesystem-mode-isolationscope-deciding-who-shares-files-with-whom" title="Link to this heading">¶</a></h2>
@@ -1071,15 +1143,21 @@
 </tbody>
 </table>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">(</span><span class="n">redisStore</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">&quot;_default&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// fallback when userId is absent</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// distributedStore auto-injects baseStore into RemoteFilesystemSpec</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
+
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">anonymousUserId</span><span class="p">(</span><span class="s">&quot;_default&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// fallback when userId is absent</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">anonymousUserId</span></code> is a production detail — <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> is often null (system tasks, scheduler triggers, admin operations). Don’t fall back to the empty string, or every anonymous caller ends up in one shared bucket.</p>
 </section>
-<section id="remote-mode-basestore-backends-kv-choice-and-why-oss-is-the-wrong-fit">
-<h2>3. Remote-mode <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> backends: KV choice — and why OSS is the wrong fit<a class="headerlink" href="#remote-mode-basestore-backends-kv-choice-and-why-oss-is-the-wrong-fit" title="Link to this heading">¶</a></h2>
+<section id="remote-mode-basestore-stores-kv-choice-and-why-oss-is-the-wrong-fit">
+<h2>3. Remote-mode <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> stores: KV choice — and why OSS is the wrong fit<a class="headerlink" href="#remote-mode-basestore-stores-kv-choice-and-why-oss-is-the-wrong-fit" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> sits on top of a <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> interface. Two built-in implementations:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -1092,12 +1170,12 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RedisStore</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code> (ships jedis)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code></p></td>
 <td><p>Lua-based CAS <code class="docutils literal notranslate"><span class="pre">putIfVersion</span></code>, <code class="docutils literal notranslate"><span class="pre">ZRANGEBYLEX</span></code> for prefix search</p></td>
 <td><p>the default; multi-replica sharing</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">JdbcStore</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code>; auto-detects MySQL / PostgreSQL / SQLite / H2 dialect</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code>; auto-detects MySQL / PostgreSQL / SQLite / H2 dialect</p></td>
 <td><p>single-statement CAS UPDATE</p></td>
 <td><p>existing relational infra / need joins</p></td>
 </tr>
@@ -1109,23 +1187,22 @@
 </tbody>
 </table>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Redis</span>
-<span class="n">BaseStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">RedisStore</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://prod-redis:6379&quot;</span><span class="p">));</span>
-
-<span class="c1">// MySQL (same agentscope_store table; schema bootstrapped automatically)</span>
-<span class="n">BaseStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">JdbcStore</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">dataSource</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">initializeSchema</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Recommended: one-line configuration via DistributedStore</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span>
+<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="s">&quot;redis://prod-redis:6379&quot;</span><span class="p">));</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;multi-tenant-agent&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="n">RedisSession</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">jedisClient</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">           </span><span class="c1">// auto-wires stateStore + baseStore</span>
+<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span><span class="w"> </span><span class="c1">// baseStore injected from store</span>
 <span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">workspaceIndex</span><span class="p">(</span><span class="n">WorkspaceIndex</span><span class="p">.</span><span class="na">open</span><span class="p">(</span><span class="n">workspace</span><span class="p">)))</span><span class="w">  </span><span class="c1">// speeds up ls/glob</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Or with MySQL:</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">mysqlStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MysqlDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="n">dataSource</span><span class="p">);</span>
 </pre></div>
 </div>
 <section id="what-about-oss-nas-s3">
@@ -1135,7 +1212,7 @@
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Data shape</p></th>
-<th class="head"><p>Backend</p></th>
+<th class="head"><p>Store</p></th>
 <th class="head"><p>Owner</p></th>
 </tr>
 </thead>
@@ -1150,7 +1227,7 @@
 </tr>
 <tr class="row-even"><td><p>Cross-node shared volume (multiple sandbox instances mounting the same dir)</p></td>
 <td><p>NAS / EFS</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec.nasConfig(...)</span></code> (only the AgentRun backend natively supports this)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec.nasConfig(...)</span></code> (only AgentRun natively supports this)</p></td>
 </tr>
 </tbody>
 </table>
@@ -1245,8 +1322,8 @@
 </tbody>
 </table>
 </div>
-<section id="marketplace-backends">
-<h3>Marketplace backends<a class="headerlink" href="#marketplace-backends" title="Link to this heading">¶</a></h3>
+<section id="marketplace-stores">
+<h3>Marketplace stores<a class="headerlink" href="#marketplace-stores" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1312,8 +1389,8 @@
 <li><p>you need to recover the <strong>entire working directory</strong> across calls (<code class="docutils literal notranslate"><span class="pre">node_modules</span></code>, generated files, post-<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> environment)</p></li>
 <li><p>you need hard user isolation (no peeking into another user’s processes)</p></li>
 </ul>
-<section id="five-sandbox-backends">
-<h3>Five sandbox backends<a class="headerlink" href="#five-sandbox-backends" title="Link to this heading">¶</a></h3>
+<section id="five-sandbox-stores">
+<h3>Five sandbox stores<a class="headerlink" href="#five-sandbox-stores" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1359,65 +1436,118 @@
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Spec</p></th>
-<th class="head"><p>Backend</p></th>
+<th class="head"><p>Store</p></th>
+<th class="head"><p>Module</p></th>
 <th class="head"><p>When to use</p></th>
 </tr>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NoopSnapshotSpec</span></code></p></td>
 <td><p>—</p></td>
-<td><p>not for production; the builder will refuse unless you <code class="docutils literal notranslate"><span class="pre">requireDistributed(false)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code></p></td>
+<td><p>not for production; sandbox cold-starts every time the container is lost</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">LocalSnapshotSpec(Path)</span></code></p></td>
 <td><p>local directory <code class="docutils literal notranslate"><span class="pre">tar</span></code> files</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code></p></td>
 <td><p>single-node debugging</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec(endpoint,</span> <span class="pre">AK,</span> <span class="pre">SK,</span> <span class="pre">bucket,</span> <span class="pre">prefix)</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code></p></td>
 <td><p>Alibaba Cloud OSS</p></td>
-<td><p><strong>default for multi-replica production</strong>; large objects belong in object storage</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-oss</span></code></p></td>
+<td><p><strong>large objects first choice</strong>; natural fit for object storage</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec(jedis,</span> <span class="pre">prefix,</span> <span class="pre">ttlSeconds)</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec</span></code></p></td>
 <td><p>Redis</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code></p></td>
 <td><p>small workspaces + short TTL (watch Redis memory cost)</p></td>
 </tr>
-<tr class="row-even"><td><p>Custom <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotClient</span></code> → <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotSpec</span></code></p></td>
-<td><p>S3 / GCS / MinIO / your own object store</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">JdbcSnapshotSpec</span></code></p></td>
+<td><p>MySQL / JDBC BLOB</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code></p></td>
+<td><p>existing relational DB, no extra middleware</p></td>
+</tr>
+<tr class="row-odd"><td><p>Custom <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotClient</span></code> → <code class="docutils literal notranslate"><span class="pre">RemoteSnapshotSpec</span></code></p></td>
+<td><p>S3 / GCS / MinIO</p></td>
+<td><p>—</p></td>
 <td><p>anything not in the built-in list</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SandboxSnapshotSpec</span><span class="w"> </span><span class="n">ossSnap</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(</span>
-<span class="w">        </span><span class="s">&quot;oss-cn-hangzhou.aliyuncs.com&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OSS_AK&quot;</span><span class="p">),</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OSS_SK&quot;</span><span class="p">),</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">redisStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">ossStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OssDistributedStore</span><span class="p">.</span><span class="na">create</span><span class="p">(</span>
+<span class="w">        </span><span class="n">ossClient</span><span class="p">,</span>
 <span class="w">        </span><span class="s">&quot;agentscope-sandbox-snapshots&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s">&quot;prod/&quot;</span><span class="p">);</span><span class="w">                         </span><span class="c1">// key prefix for multi-env isolation</span>
+<span class="w">        </span><span class="s">&quot;prod/&quot;</span><span class="p">);</span><span class="w">                         </span><span class="c1">// key prefix for environment isolation</span>
+
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DistributedStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">(</span><span class="n">redisStore</span><span class="p">.</span><span class="na">agentStateStore</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseStore</span><span class="p">(</span><span class="n">redisStore</span><span class="p">.</span><span class="na">baseStore</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sandboxSnapshotSpec</span><span class="p">(</span><span class="n">ossStore</span><span class="p">.</span><span class="na">sandboxSnapshotSpec</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">sandboxExecutionGuard</span><span class="p">(</span><span class="n">redisStore</span><span class="p">.</span><span class="na">sandboxExecutionGuard</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coding-agent&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="n">RedisSession</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">jedisClient</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12-slim&quot;</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sandboxDistributed</span><span class="p">(</span><span class="n">SandboxDistributedOptions</span><span class="p">.</span><span class="na">oss</span><span class="p">(</span><span class="n">redisSession</span><span class="p">,</span><span class="w"> </span><span class="n">ossSnap</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">SandboxDistributedOptions.oss(session,</span> <span class="pre">ossSpec)</span></code> / <code class="docutils literal notranslate"><span class="pre">.redis(session,</span> <span class="pre">redisSpec)</span></code> are common shortcut factories. Snapshots carry a <code class="docutils literal notranslate"><span class="pre">snapshotId</span></code> (defaults to sessionId), so the same user across multiple devices fetches the same archive as long as the <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> matches.</p>
+<p>With <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code>, the snapshot spec and execution guard are auto-injected — no manual configuration needed. To customize the OSS bucket or prefix, prefer configuring <code class="docutils literal notranslate"><span class="pre">OssDistributedStore</span></code> when you create it; only set <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code> explicitly on <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> when you need a fully custom snapshot implementation.</p>
 </section>
-<section id="sandbox-exec-serialization-redissandboxexecutionguard">
-<h3>Sandbox exec serialization: <code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code><a class="headerlink" href="#sandbox-exec-serialization-redissandboxexecutionguard" title="Link to this heading">¶</a></h3>
-<p>Under <code class="docutils literal notranslate"><span class="pre">SESSION</span></code> / <code class="docutils literal notranslate"><span class="pre">USER</span></code> scope, buckets are already partitioned by session/user and concurrent <code class="docutils literal notranslate"><span class="pre">exec</span></code>s don’t collide. Under <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> scope with multiple replicas, N nodes can race to <code class="docutils literal notranslate"><span class="pre">exec</span></code> on the same sandbox slot. Add <code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code> (a Redis-based distributed lock) in that case:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">GLOBAL</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RedisSandboxExecutionGuard</span><span class="p">(</span><span class="n">jedis</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agentscope:guard:&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))))</span>
+<section id="sandbox-exec-serialization-sandboxexecutionguard">
+<h3>Sandbox exec serialization: <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code><a class="headerlink" href="#sandbox-exec-serialization-sandboxexecutionguard" title="Link to this heading">¶</a></h3>
+<p>Under <code class="docutils literal notranslate"><span class="pre">SESSION</span></code> / <code class="docutils literal notranslate"><span class="pre">USER</span></code> scope, buckets are already partitioned by session/user and concurrent <code class="docutils literal notranslate"><span class="pre">exec</span></code>s don’t collide. Under <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> scope with multiple replicas, N nodes can race to <code class="docutils literal notranslate"><span class="pre">exec</span></code> on the same sandbox slot. <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> auto-injects the appropriate execution guard:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Implementation</p></th>
+<th class="head"><p>Module</p></th>
+<th class="head"><p>Mechanism</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-redis</span></code></p></td>
+<td><p>Redis <code class="docutils literal notranslate"><span class="pre">SET</span> <span class="pre">NX</span> <span class="pre">PX</span></code> lease</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">JdbcSandboxExecutionGuard</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code></p></td>
+<td><p>MySQL <code class="docutils literal notranslate"><span class="pre">GET_LOCK()</span></code> / <code class="docutils literal notranslate"><span class="pre">RELEASE_LOCK()</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The recommended path is still to inject the guard through <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
+
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">GLOBAL</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code> is the reference implementation of the <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> interface; you can plug in Zookeeper, etcd, or any other lock mechanism.</p>
+<p>Only override the guard explicitly when you need custom lock parameters, such as a lease TTL:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">GLOBAL</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="n">RedisSandboxExecutionGuard</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">jedis</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">leaseTtl</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>You can also implement <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> yourself to plug in Zookeeper, etcd, or any other lock mechanism.</p>
 </section>
 <section id="workspace-projection-pushing-seed-files-into-the-sandbox">
 <h3>Workspace projection: pushing seed files into the sandbox<a class="headerlink" href="#workspace-projection-pushing-seed-files-into-the-sandbox" title="Link to this heading">¶</a></h3>
@@ -1432,7 +1562,7 @@
 </section>
 <section id="agentrun-specific-nas-oss-mounts">
 <h3>AgentRun-specific: NAS / OSS mounts<a class="headerlink" href="#agentrun-specific-nas-oss-mounts" title="Link to this heading">¶</a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec</span></code> is the only backend that natively supports <strong>multiple sandbox instances mounting the same directory</strong> (via NAS). When the business case is “one user sees the same workspace across different sessions”, AgentRun + NAS is more efficient than re-hydrating snapshots every time:</p>
+<p><code class="docutils literal notranslate"><span class="pre">AgentRunFilesystemSpec</span></code> is the only sandbox filesystem that natively supports <strong>multiple sandbox instances mounting the same directory</strong> (via NAS). When the business case is “one user sees the same workspace across different sessions”, AgentRun + NAS is more efficient than re-hydrating snapshots every time:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AgentRunFilesystemSpec</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AGENTRUN_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">accountId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALI_ACCOUNT_ID&quot;</span><span class="p">))</span>
@@ -1457,16 +1587,16 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Sessions / <code class="docutils literal notranslate"><span class="pre">AgentState</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> (Lettuce Cluster or Sentinel) + custom multi-dimensional <code class="docutils literal notranslate"><span class="pre">SessionKey</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RedisDistributedStore</span></code> or a mixed <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code> injecting <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>; <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> carries tenant/user/agent dimensions</p></td>
 </tr>
 <tr class="row-odd"><td><p>Workspace files</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec(RedisStore</span> <span class="pre">or</span> <span class="pre">JdbcStore)</span></code> + <code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> + <code class="docutils literal notranslate"><span class="pre">IsolationScope.USER</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> injected by <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> + <code class="docutils literal notranslate"><span class="pre">WorkspaceIndex</span></code> + <code class="docutils literal notranslate"><span class="pre">IsolationScope.USER</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p>Large objects / snapshots</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code> (do not write to Redis)</p></td>
+<td><p>Use <code class="docutils literal notranslate"><span class="pre">OssDistributedStore.sandboxSnapshotSpec()</span></code> in a mixed <code class="docutils literal notranslate"><span class="pre">DistributedStore</span></code> (do not write large snapshots to Redis)</p></td>
 </tr>
 <tr class="row-odd"><td><p>Cross-node sandbox sharing</p></td>
-<td><p>AgentRun + NAS mount, or self-managed K8s + <code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code></p></td>
+<td><p>AgentRun + NAS mount, or self-managed K8s + <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> injected by <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p>Skill governance</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">MysqlSkillRepository(writeable=false)</span></code> or <code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code>; disable agent-side autoPromote</p></td>
@@ -1474,13 +1604,16 @@
 <tr class="row-odd"><td><p>Subagent task records</p></td>
 <td><p>automatic via <code class="docutils literal notranslate"><span class="pre">WorkspaceTaskRepository</span></code> over Remote / Sandbox; no extra config</p></td>
 </tr>
-<tr class="row-even"><td><p>Graceful shutdown</p></td>
+<tr class="row-even"><td><p>Exposed subagents (user talks to a subagent directly)</p></td>
+<td><p>registry auto-wired by <code class="docutils literal notranslate"><span class="pre">distributedStore</span></code> — the <code class="docutils literal notranslate"><span class="pre">subagentId</span></code> resolves and the subagent recovers on any replica / after restart; route a <code class="docutils literal notranslate"><span class="pre">subagentId</span></code>’s messages back to the same node (sticky) so recovery is only the failover path. For <code class="docutils literal notranslate"><span class="pre">GatewayBootstrap</span></code>, pass <code class="docutils literal notranslate"><span class="pre">.distributedStore(...)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Graceful shutdown</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">GracefulShutdownManager</span></code> (auto-registers JVM hook); handle SIGTERM; tune in-flight wait via <code class="docutils literal notranslate"><span class="pre">setConfig(...)</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p>Observability</p></td>
+<tr class="row-even"><td><p>Observability</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">OtelTracingMiddleware</span></code> + OpenTelemetry SDK + OTLP exporter</p></td>
 </tr>
-<tr class="row-even"><td><p>Rate limiting</p></td>
+<tr class="row-odd"><td><p>Rate limiting</p></td>
 <td><p>custom <code class="docutils literal notranslate"><span class="pre">MiddlewareBase</span></code> (onModelCall); see <a class="reference internal" href="../building-blocks/middleware.html#rate-limit-middleware"><span class="std std-ref">Middleware — Rate-limit middleware</span></a></p></td>
 </tr>
 </tbody>
@@ -1489,79 +1622,52 @@
 </section>
 <section id="a-complete-production-builder-template">
 <h2>7. A complete production builder template<a class="headerlink" href="#a-complete-production-builder-template" title="Link to this heading">¶</a></h2>
-<p>Wiring everything together:</p>
+<p>The agent is stateless between calls — a singleton handles concurrent requests. Each <code class="docutils literal notranslate"><span class="pre">call()</span></code> locates state via <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>’s <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code>, fully isolated.</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.RuntimeContext</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.redis.RedisSession</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.redis.RedisDistributedStore</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tracing.OtelTracingMiddleware</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.DistributedStore</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.HarnessAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.IsolationScope</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.RedisSandboxExecutionGuard</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.SandboxDistributedOptions</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.sandbox.snapshot.OssSnapshotSpec</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.store.RedisStore</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.harness.agent.workspace.WorkspaceIndex</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.compaction.CompactionConfig</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.compaction.ToolResultEvictionConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Paths</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">redis.clients.jedis.JedisPooled</span><span class="p">;</span>
 
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ProductionAgentFactory</span><span class="w"> </span><span class="p">{</span>
+<span class="c1">// --- Dependencies (create once at startup) ---</span>
+<span class="n">Path</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/var/agentscope/workspace&quot;</span><span class="p">);</span>
+<span class="n">JedisPooled</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;REDIS_URI&quot;</span><span class="p">));</span>
+<span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
 
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="w"> </span><span class="nf">build</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;/var/agentscope/workspace&quot;</span><span class="p">);</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">jedis</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JedisPooled</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;REDIS_URI&quot;</span><span class="p">));</span>
-
-<span class="w">        </span><span class="c1">// 1. Distributed Session</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisSession</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">jedisClient</span><span class="p">(</span><span class="n">jedis</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// 2. Pick sandbox + OSS snapshot (we need shell)</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">sandboxSpec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<span class="c1">// --- Singleton agent (created once at startup) ---</span>
+<span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coding-assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">  </span><span class="c1">// auto-wires stateStore + snapshotSpec + executionGuard</span>
+<span class="w">        </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;python:3.12-slim&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RedisSandboxExecutionGuard</span><span class="p">(</span>
-<span class="w">                        </span><span class="n">jedis</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agentscope:guard:&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">)));</span>
-<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="n">oss</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">OssSnapshotSpec</span><span class="p">(</span>
-<span class="w">                </span><span class="s">&quot;oss-cn-hangzhou.aliyuncs.com&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OSS_AK&quot;</span><span class="p">),</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OSS_SK&quot;</span><span class="p">),</span>
-<span class="w">                </span><span class="s">&quot;agentscope-sandbox-snapshots&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;prod/&quot;</span><span class="p">);</span>
-
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;coding-assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-
-<span class="w">                </span><span class="c1">// Session + filesystem must be swapped together</span>
-<span class="w">                </span><span class="p">.</span><span class="na">session</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="n">sandboxSpec</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sandboxDistributed</span><span class="p">(</span><span class="n">SandboxDistributedOptions</span><span class="p">.</span><span class="na">oss</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">oss</span><span class="p">))</span>
-
-<span class="w">                </span><span class="c1">// Memory compaction + large-result offload (mandatory for long-running sessions)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">toolResultEviction</span><span class="p">(</span><span class="n">ToolResultEvictionConfig</span><span class="p">.</span><span class="na">defaults</span><span class="p">())</span>
-
-<span class="w">                </span><span class="c1">// Centrally-governed skill repository (read-only distribution)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="na">agentscope</span><span class="p">.</span><span class="na">core</span><span class="p">.</span><span class="na">skill</span><span class="p">.</span><span class="na">repository</span><span class="p">.</span><span class="na">mysql</span><span class="p">.</span><span class="na">MysqlSkillRepository</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">skillsDataSource</span><span class="p">())</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-
-<span class="w">                </span><span class="c1">// Tracing</span>
-<span class="w">                </span><span class="p">.</span><span class="na">middlewares</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OtelTracingMiddleware</span><span class="p">()))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<span class="w">                </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">compaction</span><span class="p">(</span><span class="n">CompactionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">triggerMessages</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">keepMessages</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolResultEviction</span><span class="p">(</span><span class="n">ToolResultEvictionConfig</span><span class="p">.</span><span class="na">defaults</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">io</span><span class="p">.</span><span class="na">agentscope</span><span class="p">.</span><span class="na">core</span><span class="p">.</span><span class="na">skill</span><span class="p">.</span><span class="na">repository</span><span class="p">.</span><span class="na">mysql</span><span class="p">.</span><span class="na">MysqlSkillRepository</span>
+<span class="w">                </span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">skillsDataSource</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">createIfNotExist</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">writeable</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">middlewares</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OtelTracingMiddleware</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>At call time, populate <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> so every “bucket-by-user/session” subsystem sees the key:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<p>At call time, pass <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> to identify the user/session. Different sessions run concurrently on the same agent instance:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// In your HTTP handler</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="n">httpRequest</span><span class="p">.</span><span class="na">tenantUserId</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="n">httpRequest</span><span class="p">.</span><span class="na">sessionId</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
@@ -1571,13 +1677,14 @@
 <section id="common-pitfalls">
 <h2>8. Common pitfalls<a class="headerlink" href="#common-pitfalls" title="Link to this heading">¶</a></h2>
 <ul class="simple">
+<li><p><strong>Forgetting to pass <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code></strong> — without a <code class="docutils literal notranslate"><span class="pre">sessionId</span></code>, all requests share the <code class="docutils literal notranslate"><span class="pre">defaultSessionId</span></code> state, causing cross-talk. In multi-user scenarios, <strong>always pass <code class="docutils literal notranslate"><span class="pre">RuntimeContext.builder().userId(...).sessionId(...).build()</span></code> to every <code class="docutils literal notranslate"><span class="pre">call()</span></code></strong> to ensure state isolation. See <a class="reference internal" href="../building-blocks/agent.html#multi-user-multi-session-concurrency"><span class="std std-ref">Agent — Multi-user Concurrency</span></a>.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">java.nio.Files</span></code> for workspace writes</strong> — under sandbox / Remote mode this lands in the wrong place. Always go through <code class="docutils literal notranslate"><span class="pre">agent.getWorkspaceManager()</span></code>. <strong>Exception</strong>: builder-time seed files (<code class="docutils literal notranslate"><span class="pre">initWorkspaceIfAbsent</span></code>-style code) — no runtime context yet, <code class="docutils literal notranslate"><span class="pre">java.nio.Files</span></code> is correct because you’re seeding the local template.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">tools.json</span></code>’s <code class="docutils literal notranslate"><span class="pre">allow</span></code> filters built-in tools too</strong> — when whitelisting, keep <code class="docutils literal notranslate"><span class="pre">read_file</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> and friends in the list, or every built-in gets stripped.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> changes do not migrate existing data</strong> — pin it before launch. Changing it post-launch is equivalent to switching to a new namespace.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> single-machine constraint</strong>: a K8s multi-replica build throws <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code> on the very first <code class="docutils literal notranslate"><span class="pre">build()</span></code>. <strong>This is intentional</strong> — you can’t park session state on one pod’s local disk.</p></li>
+<li><p><strong>Local <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> single-machine constraint</strong>: a K8s multi-replica build that pairs a distributed filesystem with a local <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code> throws <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code> on the very first <code class="docutils literal notranslate"><span class="pre">build()</span></code>. <strong>This is intentional</strong> — you can’t park agent state on one pod’s local disk.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">NacosSkillRepository</span></code> not closed</strong> — subscriptions leak; at fleet scale Nacos complains. Use Spring <code class="docutils literal notranslate"><span class="pre">&#64;PreDestroy</span></code> or <code class="docutils literal notranslate"><span class="pre">destroyMethod=&quot;close&quot;</span></code>.</p></li>
 <li><p><strong>OSS / NAS without IAM</strong> — <code class="docutils literal notranslate"><span class="pre">OssSnapshotSpec</span></code> takes platform AK/SK; RAM Role + STS temporary credentials is more robust.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">SandboxDistributedOptions.requireDistributed(false)</span></code> is a debug switch</strong> — make sure it doesn’t ship to production config.</p></li>
+<li><p><strong>Local <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> with sandbox mode is dev-only</strong> — the build-time warning is intentional; don’t ignore it in production.</p></li>
 </ul>
 </section>
 <section id="related-pages">
@@ -1585,11 +1692,12 @@
 <ul class="simple">
 <li><p><a class="reference internal" href="../quickstart.html"><span class="std std-doc">Quickstart</span></a> — end-to-end first <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code></p></li>
 <li><p><a class="reference internal" href="../harness/architecture.html"><span class="std std-doc">Harness Architecture</span></a> — how capabilities cooperate</p></li>
-<li><p><a class="reference internal" href="../harness/context.html"><span class="std std-doc">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> / <code class="docutils literal notranslate"><span class="pre">Session</span></code> / cross-node recovery</p></li>
+<li><p><a class="reference internal" href="../building-blocks/context.html"><span class="std std-doc">Context &amp; AgentState</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> / <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> / cross-node recovery</p></li>
+<li><p><a class="reference internal" href="../harness/compaction.html"><span class="std std-doc">Compaction</span></a> — conversation summarization, tool-result eviction, overflow recovery</p></li>
 <li><p><a class="reference internal" href="../harness/workspace.html"><span class="std std-doc">Workspace</span></a> — directory layout, two-layer reads, <code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></li>
 <li><p><a class="reference internal" href="../harness/filesystem.html"><span class="std std-doc">Filesystem</span></a> — three deployment modes, <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code></p></li>
-<li><p><a class="reference internal" href="../harness/sandbox.html"><span class="std std-doc">Sandbox</span></a> — sandbox details, five backends, snapshot mechanics</p></li>
-<li><p><a class="reference internal" href="../harness/skill.html"><span class="std std-doc">Skill</span></a> — four-layer composition, marketplace backends, self-learning loop</p></li>
+<li><p><a class="reference internal" href="../harness/sandbox.html"><span class="std std-doc">Sandbox</span></a> — sandbox details, five implementations, snapshot mechanics</p></li>
+<li><p><a class="reference internal" href="../harness/skill.html"><span class="std std-doc">Skill</span></a> — four-layer composition, marketplace stores, self-learning loop</p></li>
 <li><p><a class="reference internal" href="../building-blocks/middleware.html"><span class="std std-doc">Middleware</span></a> — custom observability / rate-limit / fallback middleware</p></li>
 </ul>
 </section>
@@ -1628,14 +1736,14 @@
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="../harness/plan-mode.html">
+          <a class="prev-page" href="release-notes.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Plan Mode</div>
+                <div class="title">Release Notes</div>
                 
               </div>
             </a>
@@ -1648,7 +1756,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1684,10 +1792,13 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Going to Production</a><ul>
-<li><a class="reference internal" href="#at-a-glance-single-node-defaults-vs-distributed-production">At a glance: single-node defaults vs. distributed production</a></li>
-<li><a class="reference internal" href="#session-backend-put-agentstate-somewhere-durable-first">1. Session backend: put <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> somewhere durable first</a></li>
+<li><a class="reference internal" href="#at-a-glance-single-node-defaults-vs-distributed-production">At a glance: single-node defaults vs. distributed production</a><ul>
+<li><a class="reference internal" href="#distributedstore-capability-matrix">DistributedStore capability matrix</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#state-store-put-agentstate-somewhere-durable-first">1. State store: put <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> somewhere durable first</a></li>
 <li><a class="reference internal" href="#filesystem-mode-isolationscope-deciding-who-shares-files-with-whom">2. Filesystem mode &amp; <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>: deciding “who shares files with whom”</a></li>
-<li><a class="reference internal" href="#remote-mode-basestore-backends-kv-choice-and-why-oss-is-the-wrong-fit">3. Remote-mode <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> backends: KV choice — and why OSS is the wrong fit</a><ul>
+<li><a class="reference internal" href="#remote-mode-basestore-stores-kv-choice-and-why-oss-is-the-wrong-fit">3. Remote-mode <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code> stores: KV choice — and why OSS is the wrong fit</a><ul>
 <li><a class="reference internal" href="#what-about-oss-nas-s3">What about OSS / NAS / S3?</a></li>
 <li><a class="reference internal" href="#remotefilesystemspec-routing-table"><code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code> routing table</a></li>
 <li><a class="reference internal" href="#compositefilesystem-two-layer-reads-write-through"><code class="docutils literal notranslate"><span class="pre">CompositeFilesystem</span></code>: two-layer reads + write-through</a></li>
@@ -1695,14 +1806,14 @@
 </ul>
 </li>
 <li><a class="reference internal" href="#skill-marketplaces-which-skillrepository-to-pick">4. Skill marketplaces: which <code class="docutils literal notranslate"><span class="pre">SkillRepository</span></code> to pick</a><ul>
-<li><a class="reference internal" href="#marketplace-backends">Marketplace backends</a></li>
+<li><a class="reference internal" href="#marketplace-stores">Marketplace stores</a></li>
 <li><a class="reference internal" href="#production-checklist">Production checklist</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#when-you-need-shell-pick-a-sandbox-mandatory-snapshot">5. When you need shell: pick a Sandbox + mandatory Snapshot</a><ul>
-<li><a class="reference internal" href="#five-sandbox-backends">Five sandbox backends</a></li>
+<li><a class="reference internal" href="#five-sandbox-stores">Five sandbox stores</a></li>
 <li><a class="reference internal" href="#snapshots-are-the-sandbox-s-distributed-lifeline">Snapshots are the sandbox’s distributed lifeline</a></li>
-<li><a class="reference internal" href="#sandbox-exec-serialization-redissandboxexecutionguard">Sandbox exec serialization: <code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code></a></li>
+<li><a class="reference internal" href="#sandbox-exec-serialization-sandboxexecutionguard">Sandbox exec serialization: <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code></a></li>
 <li><a class="reference internal" href="#workspace-projection-pushing-seed-files-into-the-sandbox">Workspace projection: pushing seed files into the sandbox</a></li>
 <li><a class="reference internal" href="#agentrun-specific-nas-oss-mounts">AgentRun-specific: NAS / OSS mounts</a></li>
 </ul>

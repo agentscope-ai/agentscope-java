@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="记忆（Memory）" href="memory.html"><link rel="prev" title="上下文与会话" href="context.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="记忆（Memory）" href="memory.html"><link rel="prev" title="上下文压缩" href="compaction.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/workspace.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -89,7 +89,7 @@
     class="docs-top-tabs"
     aria-label="Documentation sections"
     data-current-page="v2/zh/docs/harness/workspace"
-    data-current-lang="en"
+    data-current-lang="zh"
     data-current-version="v2"
   >
     <div class="docs-top-tabs__list">
@@ -105,7 +105,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/intro.html"
+              href="../../intro.html"
               data-tab-id="home"
               data-mirror-paths="true"
               data-href-en="v1/en/intro"
@@ -125,7 +125,7 @@
               data-sections-v2-en=""
               data-sections-v2-zh=""
             >
-              Home
+              首页
             </a>
           
         
@@ -141,7 +141,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/docs/index.html"
+              href="../index.html"
               data-tab-id="docs"
               data-mirror-paths="true"
               data-href-en="v1/en/docs/quickstart/installation"
@@ -161,7 +161,7 @@
               data-sections-v2-en="v2 · Quick Start|v2 · Building Blocks|v2 · Harness (English)|v2 · Reference"
               data-sections-v2-zh="v2 · 快速开始|v2 · 核心组件|v2 · Harness|v2 · 参考"
             >
-              Docs
+              文档
             </a>
           
         
@@ -177,7 +177,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/integration/overview.html"
+              href="../../integration/overview.html"
               data-tab-id="integration"
               data-mirror-paths="true"
               data-href-en="v1/en/integration/overview"
@@ -197,7 +197,7 @@
               data-sections-v2-en="v2 · Integration"
               data-sections-v2-zh="v2 · 集成"
             >
-              Integration
+              集成
             </a>
           
         
@@ -213,7 +213,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/blogs/agentscope-v2-release.html"
+              href="../../blogs/agentscope-v2-release.html"
               data-tab-id="blogs"
               data-mirror-paths="true"
               data-href-en="v1/en/blogs/index"
@@ -233,7 +233,7 @@
               data-sections-v2-en="v2 · Blogs"
               data-sections-v2-zh="v2 · 博客"
             >
-              Blogs
+              博客
             </a>
           
         
@@ -249,7 +249,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/community/contributors.html"
+              href="../../community/contributors.html"
               data-tab-id="community"
               data-mirror-paths="true"
               data-href-en="v1/en/community/overview"
@@ -269,7 +269,7 @@
               data-sections-v2-en="v2 · Community"
               data-sections-v2-zh="v2 · 社区"
             >
-              Community
+              社区
             </a>
           
         
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compaction.html">上下文压缩</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -887,9 +907,50 @@
 <h1>工作区（Workspace）<a class="headerlink" href="#workspace" title="Link to this heading">¶</a></h1>
 <section id="id1">
 <h2>设计理念<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<p>工作区（workspace）是 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 的”地基”。<strong>所有跨调用、跨重启需要保留的东西，全部以一个目录 + 普通 Markdown / JSON 文件来组织</strong>，而不是散落在代码里、绑死在某个数据库表上。</p>
-<p>它的设计有三条线索：</p>
-<p><strong>1. 一切以目录与文件为准。</strong> 人格（<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>）、长期记忆（<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/</span></code>）、领域知识（<code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>）、子 agent 声明（<code class="docutils literal notranslate"><span class="pre">subagents/</span></code>）、技能（<code class="docutils literal notranslate"><span class="pre">skills/</span></code>）、计划文件（<code class="docutils literal notranslate"><span class="pre">plans/</span></code>）、工具白名单与 MCP（<code class="docutils literal notranslate"><span class="pre">tools.json</span></code>）—— 都是文件。能用 <code class="docutils literal notranslate"><span class="pre">cat</span></code> 读，能 <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">diff</span></code> 比对，能让人工 review，能被另一个进程读取。</p>
+<p>工作区（workspace）是 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> <strong>智能体定义与进化的 source of truth</strong>。智能体”是什么”以及”在运行中学到了什么”，全部以一个目录 + 普通 Markdown / JSON 文件来组织——不散落在代码里，不绑死在某个数据库表上。</p>
+<p>它的设计有四条线索：</p>
+<p><strong>1. 智能体定义与进化的 source of truth。</strong></p>
+<p>智能体的<em>定义</em>（它是谁、怎么行事）可以完全在工作区中声明：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>要定义的内容</p></th>
+<th class="head"><p>文件</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>人格、行为约定、系统指令</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>领域知识</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">knowledge/KNOWLEDGE.md</span></code> + 参考文件</p></td>
+</tr>
+<tr class="row-even"><td><p>技能（可复用能力包）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">skills/&lt;skill-name&gt;/SKILL.md</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>子 agent 声明</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">subagents/&lt;agent-id&gt;.md</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>工具白名单 + MCP server</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<div><p><strong>以上全部可选。</strong> 每个工作区文件都有完全对等的 API 配置方式：你可以通过 builder 方法（<code class="docutils literal notranslate"><span class="pre">.systemPrompt(...)</span></code>、<code class="docutils literal notranslate"><span class="pre">.skill(SkillDeclaration...)</span></code>、<code class="docutils literal notranslate"><span class="pre">.subagent(SubagentDeclaration...)</span></code>、<code class="docutils literal notranslate"><span class="pre">.toolsConfig(...)</span></code> 等）传入同等配置。工作区与 API 始终等价——用哪种完全取决于你。</p>
+<p><strong>那为什么还要用工作区？</strong> 因为把”定义”表达成文件（而不是代码），正是让一个 agent 天然多租户的关键：<em>同一套</em> agent 逻辑，可以为<em>不同用户</em>携带不同的人格、知识库、技能集——只需放一个用户级覆盖目录，无需代码分支、无需多套部署。详见下文 <a class="reference internal" href="#agent">同一套 agent 逻辑，按用户定制</a>。</p>
+</div></blockquote>
+<p>智能体的<em>进化</em>（跨会话累积学到的一切）由框架自动写入工作区，无需手动管理生命周期：</p>
+<ul class="simple">
+<li><p><strong>长期记忆</strong>（<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/</span></code>）—— 从对话中提取的事实，由后台任务维护与压缩，每轮注入 system prompt。</p></li>
+<li><p><strong>自学习技能</strong>（<code class="docutils literal notranslate"><span class="pre">skills/</span></code>）—— agent 从成功模式中起草新技能；经过可选的审批闸门后成为可复用能力，再由后台 curator 把长期未用的老化、归档。</p></li>
+<li><p><strong>计划文件</strong>（<code class="docutils literal notranslate"><span class="pre">plans/</span></code>）—— Plan Mode 中写下的计划会持久化、跨调用保留，让”想清楚”与”做出来”解耦。</p></li>
+<li><p><strong>工具结果落盘</strong>（compaction）—— 超大工具输出写到磁盘，上下文里只留 head/tail 预览 + <code class="docutils literal notranslate"><span class="pre">read_file</span></code> 指针，agent 之后可按需重读而不撑爆 prompt。</p></li>
+<li><p><strong>会话日志</strong>（<code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>）—— 永不压缩的完整对话日志，随时可查。</p></li>
+</ul>
+<p>这些进化数据默认长期有效：记忆无限累积，会话日志只追加不自动清除。每条通道如何产生与维护，详见下文 <a class="reference internal" href="#id9">智能体如何进化</a>。</p>
+<p>（每次调用的易失<em>运行期上下文</em> —— <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> —— 不在这张清单里：它是在途对话的恢复快照，单独存放在 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>，从不进工作区。详见下方第 2 条下的提示框。）</p>
 <p><strong>2. 内容按生命周期分三类，互不混淆。</strong></p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -906,12 +967,12 @@
 <td><p>框架每轮注入 system prompt 或调用时按需读</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>、<code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/</span></code>、<code class="docutils literal notranslate"><span class="pre">subagents/</span></code>、<code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>运行时状态</strong>（每次 call 写回）</p></td>
+<tr class="row-odd"><td><p><strong>运行时文件</strong>（每次 call 写回）</p></td>
 <td><p>框架 / agent</p></td>
 <td><p>框架下次 call 时还原</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/context/</span></code>、<code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>、<code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/tasks/</span></code>、<code class="docutils literal notranslate"><span class="pre">plans/</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>、<code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/tasks/</span></code>、<code class="docutils literal notranslate"><span class="pre">plans/</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>长期记忆</strong>（跨 session 累积）</p></td>
+<tr class="row-even"><td><p><strong>长期记忆</strong>（跨会话累积）</p></td>
 <td><p>agent + 后台任务</p></td>
 <td><p>框架每轮注入 system prompt + agent 用工具查询</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>、<code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code></p></td>
@@ -920,7 +981,44 @@
 </table>
 </div>
 <p>混在一棵树里只是为了部署方便（一个目录拷贝走就是完整 agent），框架内部走不同的读写路径。</p>
-<p><strong>3. 工作区与 filesystem 解耦。</strong> 同一份目录布局可以落在三种地方：本机磁盘、共享 KV 存储（Redis / JDBC）、沙箱容器。这是 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 能”代码不动、部署形态切换”的根因。详细见 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a> 的三种模式。</p>
+<blockquote>
+<div><p><strong><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 不是工作区内容——别把两者混为一谈。</strong> agent 中途恢复对话所需的在途上下文（对话缓冲、滚动摘要、权限 / 工具 / 任务 / Plan-Mode 子上下文，以及指向工作区产物的<em>元数据</em>，例如当前激活的计划文件）会被序列化成一份 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 文档，存进<strong>独立子系统 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong>（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>，完全在工作区树之外）。这是刻意的拆分：工作区保存持久的<em>文件产物</em>（永不压缩的会话日志、计划 markdown、任务记录、记忆），而 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 保存易失的<em>运行期上下文 + 工作区元数据</em>。两个存储、两套生命周期——详见 <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a>。</p>
+</div></blockquote>
+<p><strong>3. 原生多租户隔离。</strong> 工作区数据（记忆、会话、任务、技能、沙箱状态）由单一的 <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> 分桶——无需应用层手写任何分区逻辑。Scope 决定谁和谁共享一个桶：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code></p></th>
+<th class="head"><p>谁共享一个桶</p></th>
+<th class="head"><p>典型场景</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SESSION</span></code></p></td>
+<td><p>每个 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 完全隔离</p></td>
+<td><p>按会话隔离；一次性沙箱</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">USER</span></code>（默认）</p></td>
+<td><p>同一 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 的所有会话</p></td>
+<td><p>用户的多个会话共享长期记忆 / 技能（<code class="docutils literal notranslate"><span class="pre">userId</span></code> 缺失时降级为 <code class="docutils literal notranslate"><span class="pre">SESSION</span></code>）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AGENT</span></code></p></td>
+<td><p>该 agent 的所有用户与会话</p></td>
+<td><p>共享知识库型 agent</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code></p></td>
+<td><p>整个 store 实例共用一个桶</p></td>
+<td><p>慎用——所有 agent/用户争抢同一槽位</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>选定的 scope 在不同 filesystem 模式下落地方式不同（本机为路径前缀、共享存储为 KV 命名空间、沙箱为状态 slot）。完整语义、降级规则、并发说明见 <a class="reference internal" href="#./filesystem#isolationscope--%E5%A4%9A%E7%94%A8%E6%88%B7%E4%B8%8E%E5%A4%9A%E5%89%AF%E6%9C%AC%E6%80%8E%E4%B9%88%E5%88%86%E6%A1%B6"><span class="xref myst">filesystem — IsolationScope</span></a>。</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> 管的是上面<strong>工作区 / filesystem</strong> 的分桶。<code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 有自己正交的寻址方式：无论哪种 scope，它始终按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 存进 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>。</p>
+</div></blockquote>
+<p>单个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 实例可服务数千并发用户，用户间数据零泄漏。</p>
+<p><strong>4. 工作区与 filesystem 解耦。</strong> 同一份目录布局可以落在三种地方：本机磁盘、共享 KV 存储（Redis / JDBC）、沙箱容器。这是 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 能”代码不动、部署形态切换”的根因。详细见 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a> 的三种模式。</p>
 </section>
 <section id="id2">
 <h2>工作区目录布局<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
@@ -940,7 +1038,6 @@
 ├── plans/                       ← 运行时：Plan Mode 写下的计划文件
 │   └── PLAN.md
 └── agents/&lt;agentId&gt;/            ← 运行时：每个 agent 自己的运行时根
-    ├── context/&lt;sessionId&gt;/     ← 运行时：会话快照（AgentState 序列化）
     ├── sessions/                ← 运行时：会话索引 + 永不压缩对话日志
     │   ├── sessions.json
     │   └── &lt;sessionId&gt;.log.jsonl
@@ -948,6 +1045,9 @@
         └── &lt;sessionId&gt;.json
 </pre></div>
 </div>
+<blockquote>
+<div><p><strong>这棵树是<em>逻辑</em>布局，不是固定的磁盘路径。</strong> 它画成 <code class="docutils literal notranslate"><span class="pre">.agentscope/workspace/...</span></code>，但那只是默认的本机落点。同一份布局可以物理上落在<strong>本机磁盘</strong>、落在<strong>远端分布式存储</strong>（Redis / JDBC / OSS，通过 <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>），或<strong>映射进沙箱容器</strong>（<code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>）——下面这些相对路径在三种模式下完全一致，变的只是后端存储，你的 agent 代码不用动。用 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a> 选后端；本文其余内容都是按这套逻辑布局来写的。</p>
+</div></blockquote>
 <p><strong>唯一你真正需要写的是 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code></strong>（不写也能跑，只是少一段人格注入）。其他目录在你启用对应能力时自动出现：</p>
 <ul class="simple">
 <li><p>启用记忆压缩（<code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code>）→ <code class="docutils literal notranslate"><span class="pre">memory/</span></code> + <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></p></li>
@@ -1007,7 +1107,7 @@
 <td><p>不读 <code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">disableSessionPersistence()</span></code></p></td>
-<td><p>Session 自动持久化</p></td>
+<td><p>AgentState 自动持久化</p></td>
 </tr>
 </tbody>
 </table>
@@ -1015,6 +1115,7 @@
 </section>
 <section id="id3">
 <h2>工作区内容如何被加载<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<p>因为工作区是逻辑布局（见上方提示框），”加载”从不假设它是一个普通本机目录——每次读取都经过配置的 <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>，所以无论文件落在本机磁盘、远端存储还是沙箱里，同一套逻辑都成立。下面的<a class="reference internal" href="#filesystem-first">两层读</a>正是把这种”与后端无关”落到实处的机制；各模式如何在物理上解析路径，见 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a>。</p>
 <section id="system-prompt">
 <h3>一次推理的 system prompt 拼装<a class="headerlink" href="#system-prompt" title="Link to this heading">¶</a></h3>
 <p>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 进入 reasoning 阶段时，<code class="docutils literal notranslate"><span class="pre">WorkspaceContextMiddleware</span></code>（位于 <code class="docutils literal notranslate"><span class="pre">io.agentscope.harness.agent.middleware</span></code>）会按下表把工作区文件拼成一段文本，<strong>追加到</strong> builder 上配置的 <code class="docutils literal notranslate"><span class="pre">sysPrompt</span></code> 之后形成最终 system 消息：</p>
@@ -1084,7 +1185,7 @@
 <section id="id4">
 <h3>多用户同一工作区时的覆盖优先级<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> 是切多用户的钥匙——让同一个 agent 实例服务多个用户而互不串读。</p>
-<p>对<strong>运行时数据</strong>（sessions / tasks / memory），框架按 <code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> 配的命名空间给路径加前缀（本机模式是路径前缀、远端模式是 KV 命名空间、沙箱模式是状态 slot）。详见下一节”Session 与 Memory 怎么存”。</p>
+<p>对<strong>运行时数据</strong>（sessions / tasks / memory），框架按 <code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> 配的命名空间给路径加前缀（本机模式是路径前缀、远端模式是 KV 命名空间、沙箱模式是状态 slot）。详见下一节”运行时数据与 Memory 怎么存”。</p>
 <p>对<strong>静态资产</strong>（特别是 <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 和 <code class="docutils literal notranslate"><span class="pre">subagents/</span></code>），用户级目录可以<strong>覆盖</strong>工作区共用版：</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>workspace/
 ├── skills/code-reviewer/SKILL.md     ← 共用版（所有人可见）
@@ -1098,6 +1199,43 @@
 </pre></div>
 </div>
 <p>调用时只要 <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId=&quot;alice&quot;</span></code>，框架就会先看 <code class="docutils literal notranslate"><span class="pre">alice/skills/code-reviewer/</span></code>，没有再退到 <code class="docutils literal notranslate"><span class="pre">skills/code-reviewer/</span></code>。下层独有的 skill 仍然可见，只在重名时被上层挡住。完整优先级表参考 <a class="reference internal" href="#./skill#%E5%90%8C%E5%90%8D%E5%86%B2%E7%AA%81%E8%B0%81%E8%AF%B4%E4%BA%86%E7%AE%97"><span class="xref myst">技能 — 同名冲突谁说了算</span></a>。</p>
+<section id="agent">
+<h4>同一套 agent 逻辑，按用户定制<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h4>
+<p>这套覆盖机制正是让<strong>单个 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 实例对每个租户表现得像一个不同的 agent</strong> 的根本——不用 fork 代码、不用多套部署。你只交付一份二进制、一份 agent 定义；每个用户在共享底座之上拿到属于自己的那一层：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>用户级层</p></th>
+<th class="head"><p>定制什么</p></th>
+<th class="head"><p>解析方式</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/AGENTS.md</span></code>（通过覆盖）</p></td>
+<td><p>该用户的人格 / 行为</p></td>
+<td><p>两层读的上层（共享 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 作兜底）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/knowledge/</span></code></p></td>
+<td><p>该用户可见的领域知识</p></td>
+<td><p>用户级目录，共享 <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> 作基线</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code></p></td>
+<td><p>只对该用户解锁的能力</p></td>
+<td><p>覆盖同名共享技能，独有的叠加可见</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/subagents/</span></code></p></td>
+<td><p>只有该用户能 spawn 的子 agent</p></td>
+<td><p>覆盖同名共享声明</p></td>
+</tr>
+<tr class="row-even"><td><p>运行时数据（记忆 / 会话 / 任务）</p></td>
+<td><p>该用户累积的进化数据</p></td>
+<td><p>按 <code class="docutils literal notranslate"><span class="pre">userId</span></code> 进命名空间（路径前缀 / KV 命名空间 / 沙箱 slot）</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>效果是<strong>两层多租户同时生效</strong>：<em>定义</em>按用户不同（靠覆盖目录），<em>进化</em>按用户隔离（靠命名空间）。共享底座对所有人通用，而每个用户的定制与学到的状态都不会跨租户泄漏——全部出自同一个 agent 进程。这正是前面 <a class="reference internal" href="#id1">「以上全部可选」</a> 强调的、把定义当数据带来的红利：因为定义就是数据，按用户定制只是多一个文件，而不是多一条代码分支。</p>
+</section>
 </section>
 <section id="filesystem">
 <h3>三种 filesystem 模式下的加载行为<a class="headerlink" href="#filesystem" title="Link to this heading">¶</a></h3>
@@ -1107,7 +1245,8 @@
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;store&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">(</span><span class="n">redisStore</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span><span class="w">      </span><span class="c1">// 按 userId 分命名空间</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1150,28 +1289,49 @@
 </ul>
 </section>
 </section>
-<section id="session-memory">
-<h2>Session 与 Memory 怎么存<a class="headerlink" href="#session-memory" title="Link to this heading">¶</a></h2>
-<p>这两类内容都是”运行时 / 长期”，不会被你手写编辑。它们的存储位置直接和 filesystem 模式挂钩。</p>
-<section id="session">
-<h3>Session（运行时快照）<a class="headerlink" href="#session" title="Link to this heading">¶</a></h3>
-<p>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 结束，<code class="docutils literal notranslate"><span class="pre">AgentState</span></code>（对话历史、压缩摘要、权限规则、Plan Mode 状态、tool state）会被序列化成一份 JSON，写到：</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">&lt;</span><span class="n">workspace</span><span class="o">&gt;/</span><span class="p">[</span><span class="o">&lt;</span><span class="n">namespace</span><span class="o">&gt;/</span><span class="p">]</span><span class="n">agents</span><span class="o">/&lt;</span><span class="n">agentId</span><span class="o">&gt;/</span><span class="n">context</span><span class="o">/&lt;</span><span class="n">sessionId</span><span class="o">&gt;/</span><span class="n">agent_state</span><span class="o">.</span><span class="n">json</span>
-</pre></div>
+<section id="memory">
+<h2>运行时数据与 Memory 怎么存<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
+<p>框架会自动写两个数据面，而它们落在<strong>两个不同的地方</strong>。务必分清：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>数据面</p></th>
+<th class="head"><p>是什么</p></th>
+<th class="head"><p>落在哪</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong><code class="docutils literal notranslate"><span class="pre">AgentState</span></code></strong></p></td>
+<td><p>易失的运行期上下文：对话缓冲、压缩摘要、权限 / 工具 / 任务 / Plan-Mode 上下文，以及指向工作区产物的元数据</p></td>
+<td><p><strong><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong> —— 独立子系统，<strong>不在</strong>工作区（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>）</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>工作区运行时 / 长期文件</strong></p></td>
+<td><p>持久产物：会话日志、任务记录、<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/</span></code></p></td>
+<td><p>在工作区树内，物理位置随 filesystem 模式而定</p></td>
+</tr>
+</tbody>
+</table>
 </div>
-<p>下次同 <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> 的 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 自动加载回来。这是 <code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code>（<code class="docutils literal notranslate"><span class="pre">io.agentscope.harness.agent.session.WorkspaceSession</span></code>）—— <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 不配 <code class="docutils literal notranslate"><span class="pre">.session(...)</span></code> 时的默认实现，基于 <code class="docutils literal notranslate"><span class="pre">JsonSession</span></code>。</p>
-<p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code> 同时还放：</p>
+<p>两者都不需要你手写编辑。本节依次走一遍这两个数据面。</p>
+<section id="id5">
+<h3>Agent 状态 —— 独立存储，不在工作区<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 是按 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 维度的运行期上下文，被刻意放在<strong>工作区树之外</strong>。每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 结束，它会被序列化成 JSON，按该次调用的 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 通过 <a class="reference internal" href="../../integration/session/index.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></span></a> 持久化；下次同 <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 的 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 自动加载回来。</p>
+<p>默认情况下 <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> 使用 <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code>，根目录在工作区<strong>之外</strong>的 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>（可通过 <code class="docutils literal notranslate"><span class="pre">agentscope.state.home</span></code> 系统属性改根目录），让运行时状态与工作区数据解耦。可通过 <code class="docutils literal notranslate"><span class="pre">.stateStore(...)</span></code> 换成别的后端。</p>
+</section>
+<section id="id6">
+<h3>会话日志（这些<em>才是</em>工作区文件）<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<p>与 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 不同，工作区里保留 <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code> 下的<strong>对话日志</strong>：</p>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">sessions.json</span></code></strong> —— 该 agent 的会话索引（key 是 sessionId，value 是 summary + updatedAt）。</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">&lt;sessionId&gt;.log.jsonl</span></code></strong> —— <strong>永不压缩</strong>的原始对话日志，append-only。<code class="docutils literal notranslate"><span class="pre">session_search</span></code> / <code class="docutils literal notranslate"><span class="pre">session_history</span></code> 工具就是查它。</p></li>
 </ul>
 <blockquote>
-<div><p><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> 仅适合单机。生产多副本必须换成分布式后端（<code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code> ……）。如果你已经在用 <code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> 但没换 Session，<code class="docutils literal notranslate"><span class="pre">build()</span></code> 会直接抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>—— 强制提醒你别让运行时状态成为单点。</p>
+<div><p>默认的 <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code> 仅适合单机。生产多副本必须换成分布式后端（<code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> ……）。如果你已经在用 <code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> 但没换成分布式状态存储，<code class="docutils literal notranslate"><span class="pre">build()</span></code> 会直接抛 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code>—— 强制提醒你别让运行时状态成为单点。</p>
 </div></blockquote>
-<p>完整细节（恢复链路、跨节点接续、<code class="docutils literal notranslate"><span class="pre">SessionKey</span></code>）见 <a class="reference internal" href="context.html"><span class="doc std std-doc">Context</span></a>。</p>
+<p>完整细节（恢复链路、跨节点接续、<code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 寻址）见 <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a>。</p>
 </section>
-<section id="memory">
-<h3>Memory（长期记忆）<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h3>
+<section id="id7">
+<h3>Memory（长期记忆）<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
 <p>两层结构：</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>workspace/
 ├── MEMORY.md                  ← 策划后的长期记忆，每轮注入 system prompt
@@ -1191,8 +1351,8 @@
 <li><p>agent 可主动调 <code class="docutils literal notranslate"><span class="pre">memory_search</span></code> / <code class="docutils literal notranslate"><span class="pre">memory_get</span></code> 找老内容（详见 <a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a>）。</p></li>
 </ul>
 </section>
-<section id="id5">
-<h3>命名空间隔离怎么落到路径上<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<section id="id8">
+<h3>命名空间隔离怎么落到路径上<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">WorkspaceManager.resolveRuntimeDataPath()</span></code> 会问 <code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> 当前 <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> 应该走哪个命名空间。命名空间最终怎么变成”具体的存储位置”，按 filesystem 模式分：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -1224,8 +1384,57 @@
 </div></blockquote>
 </section>
 </section>
-<section id="id6">
-<h2>重点目录深入<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<section id="id9">
+<h2>智能体如何进化<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<p>除了静态定义，工作区还是智能体<em>累积经验</em>的落点。五条通道自动累积——打开对应能力，数据就开始在工作区里堆积，并和其它内容一样按租户隔离。每条都有自己的深入文档，这张表是索引：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>通道</p></th>
+<th class="head"><p>落在哪</p></th>
+<th class="head"><p>怎么开</p></th>
+<th class="head"><p>怎么累积</p></th>
+<th class="head"><p>深入文档</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>长期记忆</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code></p></td>
+<td><p>压缩前 <code class="docutils literal notranslate"><span class="pre">MemoryFlushMiddleware</span></code> 从对话前缀抽取事实；后台节流任务合并去重写回 <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>，每轮重新注入</p></td>
+<td><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>自学习技能</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">skills/</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/_drafts/</span></code>、<code class="docutils literal notranslate"><span class="pre">skills/.archive/</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.enableSkillManageTool(...)</span></code></p></td>
+<td><p>agent 调 <code class="docutils literal notranslate"><span class="pre">propose_skill</span></code> 从有效模式起草技能 → 可选审批闸门放行 → 后台 curator 把长期未用的标记为 stale（30 天）并归档（90 天）</p></td>
+<td><p><a class="reference internal" href="#./skill#%E8%87%AA%E5%AD%A6%E4%B9%A0%E9%97%AD%E7%8E%AF%E5%8F%AF%E9%80%89"><span class="xref myst">技能 — 自学习闭环</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>计划文件</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">plans/PLAN.md</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.enablePlanMode()</span></code></p></td>
+<td><p>只读规划阶段用 <code class="docutils literal notranslate"><span class="pre">plan_write</span></code> 写计划；跨调用保留并驱动执行阶段，让意图与动作解耦</p></td>
+<td><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>工具结果落盘</strong></p></td>
+<td><p>工作区下的 eviction 目录</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.toolResultEviction(...)</span></code></p></td>
+<td><p>单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + <code class="docutils literal notranslate"><span class="pre">read_file</span></code> 指针</p></td>
+<td><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">上下文压缩</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>会话日志</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>（工作区）</p></td>
+<td><p>默认开启</p></td>
+<td><p>每次 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 追加到永不压缩的 JSONL 日志；<code class="docutils literal notranslate"><span class="pre">session_search</span></code> / <code class="docutils literal notranslate"><span class="pre">session_history</span></code> 查它</p></td>
+<td><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>贯穿其中的理念：<strong>智能体在每次运行之间变强，而你不用搭任何存储。</strong> 记忆、技能、计划、会话日志、落盘结果都只是工作区里的文件——它们享受和本页其它内容一样的按租户隔离、两层读、以及跨 filesystem 模式的可移植性。（唯一的例外是易失的 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 运行期上下文——它存在独立的 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>，不在工作区；见 <a class="reference internal" href="#memory">运行时数据与 Memory 怎么存</a>。）</p>
+</section>
+<section id="id10">
+<h2>重点目录深入<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
 <section id="skills">
 <h3><code class="docutils literal notranslate"><span class="pre">skills/</span></code><a class="headerlink" href="#skills" title="Link to this heading">¶</a></h3>
 <p>技能是”写好的能力包”——一份目录里放 <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code>（说明 + 给 agent 看的指令），可以附带参考文档、脚本。</p>
@@ -1301,14 +1510,12 @@ model: qwen3-max         # 可选；默认继承父
 └── PLAN.md           ← plan_write 写入的当前计划
 </pre></div>
 </div>
-<p>注意：<code class="docutils literal notranslate"><span class="pre">PlanModeContext</span></code>（是否处于 plan 阶段、当前计划文件路径）跟着 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 走，是<strong>运行时状态</strong>，存在 <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/context/&lt;sessionId&gt;/</span></code>。<code class="docutils literal notranslate"><span class="pre">plans/</span></code> 下只是 markdown 内容本身。详见 <a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a>。</p>
+<p>注意：<code class="docutils literal notranslate"><span class="pre">PlanModeContext</span></code>（是否处于 plan 阶段、当前计划文件路径）跟着 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 走，是<strong>运行时状态</strong>，通过 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 持久化（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>，在工作区之外）。<code class="docutils literal notranslate"><span class="pre">plans/</span></code> 下只是 markdown 内容本身。详见 <a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a>。</p>
 </section>
 <section id="agents-agentid">
 <h3><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/</span></code><a class="headerlink" href="#agents-agentid" title="Link to this heading">¶</a></h3>
 <p>这是<strong>运行时根</strong>，框架自己写，你一般不动它：</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>agents/&lt;agentId&gt;/
-├── context/&lt;sessionId&gt;/
-│   └── agent_state.json      ← AgentState 序列化快照（每次 call 结束写）
 ├── sessions/
 │   ├── sessions.json          ← 该 agent 的会话索引
 │   └── &lt;sessionId&gt;.log.jsonl  ← 永不压缩的原始对话日志（append-only）
@@ -1316,7 +1523,10 @@ model: qwen3-max         # 可选；默认继承父
     └── &lt;sessionId&gt;.json       ← 子 agent 后台任务记录（taskId → TaskRecord）
 </pre></div>
 </div>
-<p>跨节点恢复 / 多副本部署时这些数据必须共享（要么走 <code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>，要么走沙箱+分布式状态）。详见 <a class="reference internal" href="context.html"><span class="doc std std-doc">Context</span></a> 与 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a>。</p>
+<blockquote>
+<div><p>序列化的 <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>（<code class="docutils literal notranslate"><span class="pre">agent_state</span></code>）默认<strong>不</strong>在工作区里——它存在配置的 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>（默认 <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>）。工作区里只保留上面的对话日志与任务记录。</p>
+</div></blockquote>
+<p>跨节点恢复 / 多副本部署时这些数据必须共享（要么走 <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>，要么走沙箱+分布式状态）。详见 <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> 与 <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem</span></a>。</p>
 </section>
 <section id="knowledge">
 <h3><code class="docutils literal notranslate"><span class="pre">knowledge/</span></code><a class="headerlink" href="#knowledge" title="Link to this heading">¶</a></h3>
@@ -1335,17 +1545,17 @@ model: qwen3-max         # 可选；默认继承父
 <p>这种”目录里全是细节，prompt 里只放索引”的模式，避免把整个知识库塞进 token 预算。</p>
 </section>
 </section>
-<section id="id7">
-<h2>写入工作区的安全规则<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<section id="id11">
+<h2>写入工作区的安全规则<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">additionalContextFile</span></code>、<code class="docutils literal notranslate"><span class="pre">writeUtf8WorkspaceRelative</span></code>、<code class="docutils literal notranslate"><span class="pre">memory_get</span></code> 这些接口接受<strong>工作区相对路径</strong>。框架做基本的 path-traversal 校验（拒绝 <code class="docutils literal notranslate"><span class="pre">../../etc/passwd</span></code> 这种逃出工作区的写法）。</p>
 <p>需要写文件时，<strong>通过 <code class="docutils literal notranslate"><span class="pre">HarnessAgent#getWorkspaceManager()</span></code> 而不是 <code class="docutils literal notranslate"><span class="pre">java.nio.Files</span></code></strong>——后者在沙箱或共享存储模式下会写到错的地方（写到了宿主磁盘而不是沙箱里 / KV 里）。例外：builder 装配时的初始化脚本（例如 <code class="docutils literal notranslate"><span class="pre">initWorkspaceIfAbsent</span></code> 这种生成 <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> 种子），那时还没有运行时上下文，用 <code class="docutils literal notranslate"><span class="pre">java.nio.Files</span></code> 是 OK 的——它本来就是要落本地模板。</p>
 </section>
-<section id="id8">
-<h2>相关文档<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="id12">
+<h2>相关文档<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">架构</span></a> — system prompt 是怎么拼出来的，能力之间如何协作</p></li>
 <li><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">文件系统</span></a> — 工作区在物理上落到哪里（本机 / 沙箱 / 共享存储）、<code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>、多用户隔离</p></li>
-<li><p><a class="reference internal" href="context.html"><span class="doc std std-doc">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 与 <code class="docutils literal notranslate"><span class="pre">Session</span></code> 的持久化、跨节点恢复</p></li>
+<li><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> 与 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 的持久化、跨节点恢复</p></li>
 <li><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">记忆</span></a> — <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">memory/</span></code> 的生成与维护、压缩、卸载</p></li>
 <li><p><a class="reference internal" href="skill.html"><span class="doc std std-doc">技能</span></a> — 四层合成、自学习闭环、<code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> 块</p></li>
 <li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">子 Agent</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> 声明文件、同步/后台、流式转发</p></li>
@@ -1387,14 +1597,14 @@ model: qwen3-max         # 可选；默认继承父
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="context.html">
+          <a class="prev-page" href="compaction.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">上下文与会话</div>
+                <div class="title">上下文压缩</div>
                 
               </div>
             </a>
@@ -1407,7 +1617,7 @@ model: qwen3-max         # 可选；默认继承父
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1449,17 +1659,22 @@ model: qwen3-max         # 可选；默认继承父
 <li><a class="reference internal" href="#id3">工作区内容如何被加载</a><ul>
 <li><a class="reference internal" href="#system-prompt">一次推理的 system prompt 拼装</a></li>
 <li><a class="reference internal" href="#filesystem-first">两层读架构（filesystem-first + 本地兜底）</a></li>
-<li><a class="reference internal" href="#id4">多用户同一工作区时的覆盖优先级</a></li>
+<li><a class="reference internal" href="#id4">多用户同一工作区时的覆盖优先级</a><ul>
+<li><a class="reference internal" href="#agent">同一套 agent 逻辑，按用户定制</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#filesystem">三种 filesystem 模式下的加载行为</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#session-memory">Session 与 Memory 怎么存</a><ul>
-<li><a class="reference internal" href="#session">Session（运行时快照）</a></li>
-<li><a class="reference internal" href="#memory">Memory（长期记忆）</a></li>
-<li><a class="reference internal" href="#id5">命名空间隔离怎么落到路径上</a></li>
+<li><a class="reference internal" href="#memory">运行时数据与 Memory 怎么存</a><ul>
+<li><a class="reference internal" href="#id5">Agent 状态 —— 独立存储，不在工作区</a></li>
+<li><a class="reference internal" href="#id6">会话日志（这些<em>才是</em>工作区文件）</a></li>
+<li><a class="reference internal" href="#id7">Memory（长期记忆）</a></li>
+<li><a class="reference internal" href="#id8">命名空间隔离怎么落到路径上</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id6">重点目录深入</a><ul>
+<li><a class="reference internal" href="#id9">智能体如何进化</a></li>
+<li><a class="reference internal" href="#id10">重点目录深入</a><ul>
 <li><a class="reference internal" href="#skills"><code class="docutils literal notranslate"><span class="pre">skills/</span></code></a></li>
 <li><a class="reference internal" href="#subagents"><code class="docutils literal notranslate"><span class="pre">subagents/</span></code></a></li>
 <li><a class="reference internal" href="#tools-json"><code class="docutils literal notranslate"><span class="pre">tools.json</span></code></a></li>
@@ -1468,8 +1683,8 @@ model: qwen3-max         # 可选；默认继承父
 <li><a class="reference internal" href="#knowledge"><code class="docutils literal notranslate"><span class="pre">knowledge/</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id7">写入工作区的安全规则</a></li>
-<li><a class="reference internal" href="#id8">相关文档</a></li>
+<li><a class="reference internal" href="#id11">写入工作区的安全规则</a></li>
+<li><a class="reference internal" href="#id12">相关文档</a></li>
 </ul>
 </li>
 </ul>

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Plan Mode" href="plan-mode.html"><link rel="prev" title="Subagent" href="subagent.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Plan Mode" href="plan-mode.html"><link rel="prev" title="Subagent" href="subagent.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/skill.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="subagent.html">Subagent</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -888,7 +908,7 @@
 <p>A skill is a packaged capability: a directory with a <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> (purpose + instructions the agent reads), optional reference docs, scripts, samples. Hand it to the agent and it will use it when relevant.</p>
 <p>Harness lets you install skills from two places:</p>
 <ul class="simple">
-<li><p><strong>Skill marketplaces</strong> — Git repo, Nacos, MySQL, classpath, custom backends</p></li>
+<li><p><strong>Skill marketplaces</strong> — Git repo, Nacos, MySQL, classpath, custom stores</p></li>
 <li><p><strong>Workspace</strong> — <code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> is shared by everyone; <code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code> isolates per user</p></li>
 </ul>
 <p>Both sources are active simultaneously — no need to choose one. On top of that you can enable a <strong>self-learning loop</strong>: the agent drafts skills → review gate → background curator tidies up.</p>
@@ -927,9 +947,9 @@ Steps:
 </div>
 <p>During reasoning, the agent sees skills from the repo and calls <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> for whichever one it needs.</p>
 </section>
-<section id="marketplace-backends">
-<h2>Marketplace backends<a class="headerlink" href="#marketplace-backends" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> is the unified entry point — pass any backend.</p>
+<section id="marketplace-stores">
+<h2>Marketplace stores<a class="headerlink" href="#marketplace-stores" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> is the unified entry point — pass any store.</p>
 <section id="git">
 <h3>Git<a class="headerlink" href="#git" title="Link to this heading">¶</a></h3>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
@@ -990,8 +1010,8 @@ Steps:
 </div>
 <p>Works with both standard JARs and Spring Boot fat JARs.</p>
 </section>
-<section id="multiple-backends">
-<h3>Multiple backends<a class="headerlink" href="#multiple-backends" title="Link to this heading">¶</a></h3>
+<section id="multiple-stores">
+<h3>Multiple stores<a class="headerlink" href="#multiple-stores" title="Link to this heading">¶</a></h3>
 <p>Call <code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> multiple times; later ones win:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">skillRepository</span><span class="p">(</span><span class="n">communityMarket</span><span class="p">)</span>
@@ -1030,6 +1050,13 @@ Steps:
 </pre></div>
 </div>
 <p>This requires the caller to pass <code class="docutils literal notranslate"><span class="pre">userId=&quot;alice&quot;</span></code> in <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">workspace/&lt;userId&gt;/skills/</span></code> is a <strong>logical path</strong>, not necessarily “a directory on the local disk.” Skill files are read and written through the <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code> abstraction, and where they physically land depends on the <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">filesystem mode</span></a> you configure — so per-user skill isolation is decoupled from the storage backend:</p>
+<ul class="simple">
+<li><p><strong>Local + shell</strong> — literally <code class="docutils literal notranslate"><span class="pre">workspace/alice/skills/...</span></code> on the host disk.</p></li>
+<li><p><strong>Shared store (remote filesystem)</strong> — the <code class="docutils literal notranslate"><span class="pre">skills/</span></code> prefix is routed to the KV store; per-user isolation shows up as the namespace key <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/users/alice/skills/...</span></code>, consistent across replicas, and edits from an admin console take effect on the next reasoning step.</p></li>
+<li><p><strong>Sandbox (sandbox filesystem)</strong> — the host-side user directory is hydrated into the container’s <code class="docutils literal notranslate"><span class="pre">/workspace</span></code> via workspace projection at sandbox start, so the agent reads the same copy inside the sandbox.</p></li>
+</ul>
+<p>Whichever mode you run, <code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code> overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of <code class="docutils literal notranslate"><span class="pre">userId</span></code>, see <a class="reference internal" href="#./filesystem#how-multi-user-isolation-works"><span class="xref myst">Filesystem</span></a>.</p>
 </section>
 </section>
 <section id="conflict-resolution">
@@ -1092,7 +1119,7 @@ Steps:
 </table>
 </div>
 <p>Subagents inherit the parent’s marketplaces and project-global dir automatically.</p>
-<p>When to use <code class="docutils literal notranslate"><span class="pre">disableDynamicSkills()</span></code>: one-shot tasks; or slow marketplace backends you don’t want to refetch per turn. Usually don’t touch it.</p>
+<p>When to use <code class="docutils literal notranslate"><span class="pre">disableDynamicSkills()</span></code>: one-shot tasks; or slow marketplace stores you don’t want to refetch per turn. Usually don’t touch it.</p>
 </section>
 <section id="self-learning-loop-optional">
 <h2>Self-learning loop (optional)<a class="headerlink" href="#self-learning-loop-optional" title="Link to this heading">¶</a></h2>
@@ -1244,6 +1271,107 @@ Steps:
 <p>If two repositories report the same <code class="docutils literal notranslate"><span class="pre">getSource()</span></code>, the second is auto-suffixed (<code class="docutils literal notranslate"><span class="pre">&lt;source&gt;_2</span></code>, <code class="docutils literal notranslate"><span class="pre">&lt;source&gt;_3</span></code>, …) with a warning log, so paths and skill-ids never collide.</p>
 </section>
 </section>
+<section id="running-skills-in-a-sandbox">
+<h2>Running skills in a sandbox<a class="headerlink" href="#running-skills-in-a-sandbox" title="Link to this heading">¶</a></h2>
+<p>In <a class="reference internal" href="#./filesystem#mode-2-sandbox-sandboxfilesystemspec-family"><span class="xref myst">sandbox mode</span></a> every file operation and shell command runs inside an isolated container — the host is untouched. That creates a problem: a skill’s scripts (<code class="docutils literal notranslate"><span class="pre">scripts/run-checks.sh</span></code>, <code class="docutils literal notranslate"><span class="pre">scripts/foo.py</span></code>, …) are authored on the host, yet the agent has to execute them inside the container. Harness makes this transparent with a three-step “materialize → project → execute-in-container” pipeline, broken down below.</p>
+<section id="which-skills-end-up-in-the-sandbox">
+<h3>Which skills end up in the sandbox<a class="headerlink" href="#which-skills-end-up-in-the-sandbox" title="Link to this heading">¶</a></h3>
+<p>Two classes of skills can run in the container, with different staging points:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Source</p></th>
+<th class="head"><p>Where it lives before the sandbox</p></th>
+<th class="head"><p>Path inside the sandbox</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Workspace skills (Layer 3 <code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code>, Layer 4 <code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code>)</p></td>
+<td><p>already in the workspace tree</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/workspace/skills/&lt;name&gt;</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Marketplace skills (Layer 1 project-global, Layer 2 Git / MySQL / Nacos / classpath)</p></td>
+<td><p>start as in-memory bytes</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/workspace/.skills-cache/&lt;source&gt;/&lt;name&gt;</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="step-1-materialize-marketplace-skills-to-the-host">
+<h3>Step 1: materialize marketplace skills to the host<a class="headerlink" href="#step-1-materialize-marketplace-skills-to-the-host" title="Link to this heading">¶</a></h3>
+<p>Marketplace skill resources arrive as in-memory bytes — shell can’t execute those directly. Before each reasoning step, <code class="docutils literal notranslate"><span class="pre">MarketplaceStager</span></code> writes them to the host at <code class="docutils literal notranslate"><span class="pre">&lt;wsRoot&gt;/.skills-cache/&lt;source&gt;/&lt;name&gt;/</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Per-file SHA-256 dedup</strong> — only changed files are rewritten; unchanged ones are skipped.</p></li>
+<li><p><strong>Orphan cleanup</strong> — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass.</p></li>
+<li><p><strong>Exec-bit recovery</strong> — ingestion turns resources into Strings and discards POSIX mode, so the stager re-derives <code class="docutils literal notranslate"><span class="pre">+x</span></code> heuristically: a shebang (<code class="docutils literal notranslate"><span class="pre">#!</span></code>) at byte 0, or a known script suffix (<code class="docutils literal notranslate"><span class="pre">.sh</span></code>/<code class="docutils literal notranslate"><span class="pre">.bash</span></code>/<code class="docutils literal notranslate"><span class="pre">.py</span></code>/<code class="docutils literal notranslate"><span class="pre">.rb</span></code>/<code class="docutils literal notranslate"><span class="pre">.pl</span></code>/<code class="docutils literal notranslate"><span class="pre">.js</span></code>/<code class="docutils literal notranslate"><span class="pre">.mjs</span></code>), adds the execute bit (following <code class="docutils literal notranslate"><span class="pre">chmod</span> <span class="pre">+x</span></code> semantics — only bits that already have read get execute). Pure static assets (<code class="docutils literal notranslate"><span class="pre">.json</span></code>/<code class="docutils literal notranslate"><span class="pre">.md</span></code>/<code class="docutils literal notranslate"><span class="pre">.txt</span></code>) stay 644.</p></li>
+</ul>
+<p>Workspace skills (Layer 3 / Layer 4) skip this step — they already live in the workspace tree.</p>
+</section>
+<section id="step-2-project-the-workspace-into-the-sandbox">
+<h3>Step 2: project the workspace into the sandbox<a class="headerlink" href="#step-2-project-the-workspace-into-the-sandbox" title="Link to this heading">¶</a></h3>
+<p>At sandbox <code class="docutils literal notranslate"><span class="pre">start()</span></code>, harness tars the workspace’s “static assets” and hydrates them into the container’s <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>. The default projection roots (<code class="docutils literal notranslate"><span class="pre">workspaceProjectionRoots</span></code>) cover exactly the two directories skills need:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">AGENTS</span><span class="o">.</span><span class="n">md</span>  <span class="n">skills</span><span class="o">/</span>  <span class="n">subagents</span><span class="o">/</span>  <span class="n">knowledge</span><span class="o">/</span>  <span class="o">.</span><span class="n">skills</span><span class="o">-</span><span class="n">cache</span><span class="o">/</span>
+</pre></div>
+</div>
+<p>So <code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> (including <code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code>) and the <code class="docutils literal notranslate"><span class="pre">.skills-cache/</span></code> produced by step 1 are hydrated together. The projection computes one overall SHA-256 over all included files; if it matches the previous run, hydration is skipped — so repeated <code class="docutils literal notranslate"><span class="pre">call()</span></code>s don’t re-transfer identical files, and content only re-enters on change.</p>
+<p>Tunables (on <code class="docutils literal notranslate"><span class="pre">DockerFilesystemSpec</span></code> / <code class="docutils literal notranslate"><span class="pre">KubernetesFilesystemSpec</span></code> / other sandbox specs):</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Method</p></th>
+<th class="head"><p>Effect</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">workspaceProjectionRoots(List)</span></code></p></td>
+<td><p>customize which roots are projected (default includes <code class="docutils literal notranslate"><span class="pre">skills</span></code>, <code class="docutils literal notranslate"><span class="pre">.skills-cache</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">workspaceProjectionEnabled(false)</span></code></p></td>
+<td><p>disable projection entirely — with it off there are no skill files in the sandbox, so scripts can’t run</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="step-3-execute-scripts-inside-the-container">
+<h3>Step 3: execute scripts inside the container<a class="headerlink" href="#step-3-execute-scripts-inside-the-container" title="Link to this heading">¶</a></h3>
+<p>In sandbox mode, each skill’s <code class="docutils literal notranslate"><span class="pre">&lt;files-root&gt;</span></code> in the <code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> block is rendered with the <strong>in-container</strong> prefix:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Skill type</p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">&lt;files-root&gt;</span></code></p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Workspace skill</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/workspace/skills/&lt;name&gt;</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Marketplace skill</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/workspace/.skills-cache/&lt;source&gt;/&lt;name&gt;</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>So the agent simply issues:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">execute_shell_command</span><span class="p">(</span><span class="s2">&quot;python3 /workspace/skills/code-reviewer/scripts/run-checks.sh &lt;target&gt;&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>That command runs in the container and reads exactly the file that was projected in. The agent doesn’t need to know which layer a skill came from — the framework computes the prefix.</p>
+<blockquote>
+<div><p>If a sandbox backend mounts the workspace at a non-default location (e.g. AgentRun uses <code class="docutils literal notranslate"><span class="pre">/home/agentscope/workspace</span></code>), the <code class="docutils literal notranslate"><span class="pre">&lt;files-root&gt;</span></code> prefix changes accordingly, and the agent still gets a correct absolute path.</p>
+</div></blockquote>
+</section>
+<section id="persisting-script-side-effects-across-calls">
+<h3>Persisting script side effects across calls<a class="headerlink" href="#persisting-script-side-effects-across-calls" title="Link to this heading">¶</a></h3>
+<p>If a script installs dependencies or generates artifacts (<code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">install</span></code>, <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code>, build output) and you want them on the next <code class="docutils literal notranslate"><span class="pre">call()</span></code>, give the sandbox a <a class="reference internal" href="#./filesystem#snapshot-strategies"><span class="xref myst">snapshot</span></a> (<code class="docutils literal notranslate"><span class="pre">snapshotSpec(...)</span></code>). A snapshot captures the whole <code class="docutils literal notranslate"><span class="pre">/workspace</span></code>; the next call on the same scope key restores the snapshot first and then layers projection on top, so installed dependencies don’t have to be reinstalled.</p>
+</section>
+<section id="note-reading-skill-md-doesn-t-need-the-sandbox">
+<h3>Note: reading SKILL.md doesn’t need the sandbox<a class="headerlink" href="#note-reading-skill-md-doesn-t-need-the-sandbox" title="Link to this heading">¶</a></h3>
+<p>A common point of confusion: <strong>reading</strong> a skill (<code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> fetching <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> / <code class="docutils literal notranslate"><span class="pre">references/</span></code>) goes through memory or the host filesystem and has nothing to do with the sandbox; only <strong>running scripts via shell</strong> requires the files to actually be inside the container. So even with projection disabled, or for a skill that ships no scripts at all, the agent can still read its instructions and reference material normally.</p>
+</section>
+</section>
 <section id="tips">
 <h2>Tips<a class="headerlink" href="#tips" title="Link to this heading">¶</a></h2>
 <p><strong><code class="docutils literal notranslate"><span class="pre">description</span></code> decides whether the agent uses your skill.</strong> The agent only sees name + description initially and decides whether to load details. “Data-analysis tool” is much less useful than “Use when the user asks for stats, reports, or trend charts”.</p>
@@ -1315,7 +1443,7 @@ Steps:
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1352,12 +1480,12 @@ Steps:
             <ul>
 <li><a class="reference internal" href="#">Skill</a><ul>
 <li><a class="reference internal" href="#a-quick-example">A quick example</a></li>
-<li><a class="reference internal" href="#marketplace-backends">Marketplace backends</a><ul>
+<li><a class="reference internal" href="#marketplace-stores">Marketplace stores</a><ul>
 <li><a class="reference internal" href="#git">Git</a></li>
 <li><a class="reference internal" href="#nacos">Nacos</a></li>
 <li><a class="reference internal" href="#mysql">MySQL</a></li>
 <li><a class="reference internal" href="#classpath">Classpath</a></li>
-<li><a class="reference internal" href="#multiple-backends">Multiple backends</a></li>
+<li><a class="reference internal" href="#multiple-stores">Multiple stores</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#workspace-skills">Workspace skills</a><ul>
@@ -1378,6 +1506,15 @@ Steps:
 <li><a class="reference internal" href="#reading-skill-md-and-resources">Reading SKILL.md and resources</a></li>
 <li><a class="reference internal" href="#files-root-and-shell-execution"><code class="docutils literal notranslate"><span class="pre">&lt;files-root&gt;</span></code> and shell execution</a></li>
 <li><a class="reference internal" href="#where-marketplace-files-actually-live">Where marketplace files actually live</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#running-skills-in-a-sandbox">Running skills in a sandbox</a><ul>
+<li><a class="reference internal" href="#which-skills-end-up-in-the-sandbox">Which skills end up in the sandbox</a></li>
+<li><a class="reference internal" href="#step-1-materialize-marketplace-skills-to-the-host">Step 1: materialize marketplace skills to the host</a></li>
+<li><a class="reference internal" href="#step-2-project-the-workspace-into-the-sandbox">Step 2: project the workspace into the sandbox</a></li>
+<li><a class="reference internal" href="#step-3-execute-scripts-inside-the-container">Step 3: execute scripts inside the container</a></li>
+<li><a class="reference internal" href="#persisting-script-side-effects-across-calls">Persisting script side effects across calls</a></li>
+<li><a class="reference internal" href="#note-reading-skill-md-doesn-t-need-the-sandbox">Note: reading SKILL.md doesn’t need the sandbox</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#tips">Tips</a></li>

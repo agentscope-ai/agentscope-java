@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -950,6 +970,7 @@ temperature: 0.2              # optional; overrides parent GenerateOptions
 top_p: 0.95                   # optional
 hidden: false                 # true = not listed to the model (still callable programmatically)
 mode: subagent                # primary / subagent / all (default all); primary can&#39;t be spawned
+expose_to_user: true          # optional tri-state; force/forbid user exposure (omit = no opinion)
 <span class="gu">tools: [read_file, grep_files]   # optional; allowlist over inherited tools</span>
 <span class="gu">---</span>
 
@@ -1014,18 +1035,160 @@ You are a subagent focused on code review.
 </pre></div>
 </div>
 <p>The parent naturally responds or continues. This means <strong>you do not</strong> write “remember to poll task_output” in your prompt — that was the old way.</p>
+</section>
+<section id="background-task-tools">
+<h3>Background task tools<a class="headerlink" href="#background-task-tools" title="Link to this heading">¶</a></h3>
+<p>Behind the scenes, subagent lifecycle is split across two groups of tools:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Tool</p></th>
+<th class="head"><p>Role</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code></p></td>
+<td><p>Create a subagent and optionally run a task (sync or background)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agent_send</span></code></p></td>
+<td><p>Send a follow-up message to an existing subagent</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agent_list</span></code></p></td>
+<td><p>List active subagent instances</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">task_output</span></code></p></td>
+<td><p>Retrieve the result of a background task by <code class="docutils literal notranslate"><span class="pre">task_id</span></code> (blocking or non-blocking)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">task_cancel</span></code></p></td>
+<td><p>Cancel a running background task</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">task_list</span></code></p></td>
+<td><p>List all background tasks with their current statuses</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> manage subagent <strong>instances</strong> (create, reuse, communicate); <code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code> manage background <strong>task results</strong> (check status, fetch output, cancel). The bridge between them is the <code class="docutils literal notranslate"><span class="pre">task_id</span></code> — returned by <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> or <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> when <code class="docutils literal notranslate"><span class="pre">timeout_seconds=0</span></code>.</p>
 <blockquote>
-<div><p><code class="docutils literal notranslate"><span class="pre">task_output</span></code> / <code class="docutils literal notranslate"><span class="pre">task_cancel</span></code> / <code class="docutils literal notranslate"><span class="pre">task_list</span></code> still exist as escape hatches and debugging aids. Production prompts should not contain polling logic.</p>
+<div><p>In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.</p>
 </div></blockquote>
 </section>
 </section>
 <section id="send-a-follow-up-to-an-existing-subagent">
 <h2>Send a follow-up to an existing subagent<a class="headerlink" href="#send-a-follow-up-to-an-existing-subagent" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> returns an <code class="docutils literal notranslate"><span class="pre">agent_key</span></code> (runtime instance handle). Use it (or your <code class="docutils literal notranslate"><span class="pre">label</span></code>) to send follow-up messages:</p>
+<p><code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> returns an <code class="docutils literal notranslate"><span class="pre">agent_key</span></code> (runtime instance handle). Use it or a <code class="docutils literal notranslate"><span class="pre">label</span></code> to send follow-up messages:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">agent_send</span> <span class="n">agent_key</span><span class="o">=</span><span class="s2">&quot;agent:reviewer:abc-123&quot;</span> <span class="n">message</span><span class="o">=</span><span class="s2">&quot;also check the schema changes&quot;</span>
 </pre></div>
 </div>
+<p>If you set a <code class="docutils literal notranslate"><span class="pre">label</span></code> at spawn time, you can use that instead of the <code class="docutils literal notranslate"><span class="pre">agent_key</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">&quot;reviewer&quot;</span> <span class="n">task</span><span class="o">=</span><span class="s2">&quot;review the PR&quot;</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;pr-reviewer&quot;</span>
+<span class="n">agent_send</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;pr-reviewer&quot;</span> <span class="n">message</span><span class="o">=</span><span class="s2">&quot;also check the schema changes&quot;</span>
+</pre></div>
+</div>
 <p>To list active subagents: <code class="docutils literal notranslate"><span class="pre">agent_list</span></code>.</p>
+</section>
+<section id="persistent-sessions">
+<h2>Persistent sessions<a class="headerlink" href="#persistent-sessions" title="Link to this heading">¶</a></h2>
+<p>By default every <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> creates a fresh subagent with a new session — no memory of previous calls. Set <code class="docutils literal notranslate"><span class="pre">persistSession(true)</span></code> in the declaration to reuse the same subagent instance across multiple spawns:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">subagent</span><span class="p">(</span><span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;note-taker&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Accumulates notes across the conversation&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">persistSession</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+</pre></div>
+</div>
+<p>When <code class="docutils literal notranslate"><span class="pre">persistSession</span></code> is on, the framework derives a deterministic key from <code class="docutils literal notranslate"><span class="pre">(parentSessionId,</span> <span class="pre">agentId,</span> <span class="pre">label)</span></code>. If <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> is called again with the same combination, the existing agent instance is reused — its conversation history and state are preserved.</p>
+</section>
+<section id="exposing-subagents-to-the-user">
+<h2>Exposing subagents to the user<a class="headerlink" href="#exposing-subagents-to-the-user" title="Link to this heading">¶</a></h2>
+<p>Normally subagents are invisible to the user — they run behind the scenes as the parent’s internal tools. With <code class="docutils literal notranslate"><span class="pre">expose_to_user=true</span></code>, the parent can make a subagent <strong>directly addressable by the user</strong> through the Channel:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">agent_spawn</span> <span class="n">agent_id</span><span class="o">=</span><span class="s2">&quot;researcher&quot;</span> <span class="n">task</span><span class="o">=</span><span class="s2">&quot;investigate AI trends&quot;</span> <span class="n">expose_to_user</span><span class="o">=</span><span class="n">true</span>
+</pre></div>
+</div>
+<p>This does two things:</p>
+<ol class="arabic simple">
+<li><p><strong>Registers the subagent in the Gateway</strong> as a user-addressable entry point</p></li>
+<li><p><strong>Emits a <code class="docutils literal notranslate"><span class="pre">SubagentExposedEvent</span></code></strong> into the streaming event flow, carrying a <code class="docutils literal notranslate"><span class="pre">subagentId</span></code> handle</p></li>
+</ol>
+<p>The user’s client receives the <code class="docutils literal notranslate"><span class="pre">SubagentExposedEvent</span></code>, and can then send messages directly to the subagent — bypassing the parent agent entirely:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Client-side: listen for exposed subagents in the event stream</span>
+<span class="n">chat</span><span class="p">.</span><span class="na">sendStream</span><span class="p">(</span><span class="n">SendOptions</span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-1&quot;</span><span class="p">),</span><span class="w"> </span><span class="s">&quot;Spawn a researcher to investigate AI trends&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">SubagentExposedEvent</span><span class="w"> </span><span class="n">se</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="c1">// se.getSubagentId() → use this to talk directly to the subagent</span>
+<span class="w">            </span><span class="c1">// se.getAgentId()    → subagent type (e.g. &quot;researcher&quot;)</span>
+<span class="w">            </span><span class="c1">// se.getLabel()      → optional human-readable name</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
+
+<span class="c1">// Send a message directly to the exposed subagent</span>
+<span class="n">chat</span><span class="p">.</span><span class="na">sendToSubagent</span><span class="p">(</span><span class="n">subagentId</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Focus on LLM agents specifically&quot;</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>This is useful for “branch-off” scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See <a class="reference internal" href="#./channel#talking-to-exposed-subagents"><span class="xref myst">Channel — Talking to exposed subagents</span></a> for the full Channel-side API.</p>
+<section id="how-to-enable">
+<h3>How to enable<a class="headerlink" href="#how-to-enable" title="Link to this heading">¶</a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">agent.channel(...)</span></code> — the bridge is wired automatically, zero configuration:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;orchestrator&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// channel() creates the internal gateway and wires the bridge — expose_to_user just works.</span>
+<span class="n">ChatUiChannel</span><span class="w"> </span><span class="n">chat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">channel</span><span class="p">(</span><span class="n">ChatUiChannel</span><span class="p">.</span><span class="na">create</span><span class="p">());</span>
+</pre></div>
+</div>
+<p>Without a Channel binding, <code class="docutils literal notranslate"><span class="pre">expose_to_user=true</span></code> in <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with <code class="docutils literal notranslate"><span class="pre">GatewayBootstrap</span></code>, see <a class="reference internal" href="#./channel#thread-exposure-with-gatewaybootstrap"><span class="xref myst">Channel — Thread exposure with GatewayBootstrap</span></a>.</p>
+</section>
+<section id="controlling-exposure-from-code">
+<h3>Controlling exposure from code<a class="headerlink" href="#controlling-exposure-from-code" title="Link to this heading">¶</a></h3>
+<p>Relying on the LLM to pass <code class="docutils literal notranslate"><span class="pre">expose_to_user=true</span></code> is not always flexible enough. You can override the decision from application code in two ways, and the effective value is resolved with this precedence (highest first):</p>
+<ol class="arabic simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> per-call override</strong> — applies to every <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> in the current call</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">SubagentDeclaration</span></code> per-type policy</strong> — a static default for that subagent type</p></li>
+<li><p><strong>The LLM’s <code class="docutils literal notranslate"><span class="pre">expose_to_user</span></code> tool argument</strong></p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">false</span></code></strong> when none of the above expresses an opinion</p></li>
+</ol>
+<p><strong>Per-call override via <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code>.</strong> Put a <code class="docutils literal notranslate"><span class="pre">Boolean</span></code> (or its string form) under the <code class="docutils literal notranslate"><span class="pre">AgentSpawnTool.CTX_EXPOSE_TO_USER</span></code> key:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">AgentSpawnTool</span><span class="p">.</span><span class="na">CTX_EXPOSE_TO_USER</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span><span class="w">   </span><span class="c1">// force on; false forbids exposure</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>Per-type policy on the declaration.</strong> Use the tri-state <code class="docutils literal notranslate"><span class="pre">exposeToUser</span></code> — <code class="docutils literal notranslate"><span class="pre">TRUE</span></code> always exposes, <code class="docutils literal notranslate"><span class="pre">FALSE</span></code> never exposes (overriding an LLM <code class="docutils literal notranslate"><span class="pre">expose_to_user=true</span></code>), and <code class="docutils literal notranslate"><span class="pre">null</span></code> (default) defers to the context override and then the LLM argument:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SubagentDeclaration</span><span class="w"> </span><span class="n">decl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SubagentDeclaration</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;researcher&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Investigates topics and returns a synthesized report.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">exposeToUser</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">   </span><span class="c1">// this subagent type is always user-addressable</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Or in a Markdown subagent spec’s front matter (also tri-state — omit the key for “no opinion”):</p>
+<div class="highlight-markdown notranslate"><div class="highlight"><pre><span></span>---
+name: researcher
+description: Investigates topics and returns a synthesized report.
+<span class="gu">expose_to_user: true</span>
+<span class="gu">---</span>
+</pre></div>
+</div>
+<p>This lets you force or forbid exposure regardless of what the model decides, while still allowing the LLM to choose when neither code source expresses an opinion.</p>
+</section>
+<section id="across-restarts-and-multiple-replicas">
+<h3>Across restarts and multiple replicas<a class="headerlink" href="#across-restarts-and-multiple-replicas" title="Link to this heading">¶</a></h3>
+<p>By default the exposure is in-process: the <code class="docutils literal notranslate"><span class="pre">subagentId</span></code> is only valid on the node that created it and is lost on restart. To make an exposed subagent resolvable on <strong>any replica</strong> and <strong>across restarts</strong>, build the agent with a <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> — the same one-liner used for state and filesystem:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;orchestrator&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="s">&quot;dashscope:qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">ChatUiChannel</span><span class="w"> </span><span class="n">chat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">channel</span><span class="p">(</span><span class="n">ChatUiChannel</span><span class="p">.</span><span class="na">create</span><span class="p">());</span><span class="w">  </span><span class="c1">// recovery wired automatically</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">subagentId</span></code> is persisted in the store, and the subagent’s own conversation is reloaded from the distributed <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> by session — so the user keeps talking to the <em>same</em> subagent even if a later message lands on a different node. For multi-agent <code class="docutils literal notranslate"><span class="pre">GatewayBootstrap</span></code>, pass <code class="docutils literal notranslate"><span class="pre">.distributedStore(...)</span></code> (otherwise it inherits the main agent’s). Deployment guidance — including routing a <code class="docutils literal notranslate"><span class="pre">subagentId</span></code> back to its live node (sticky routing) — is in <a class="reference internal" href="../others/going-to-production.html"><span class="std std-doc">Going to Production</span></a>.</p>
+</section>
 </section>
 <section id="let-the-agent-author-new-subagent-specs">
 <h2>Let the agent author new subagent specs<a class="headerlink" href="#let-the-agent-author-new-subagent-specs" title="Link to this heading">¶</a></h2>
@@ -1042,7 +1205,8 @@ You are a subagent focused on code review.
 <li><p><strong>Write <code class="docutils literal notranslate"><span class="pre">description</span></code> well</strong>: it’s the model’s primary signal for delegating. “Code review” is far less useful than “Use when the user wants to review a PR or check code style”.</p></li>
 <li><p><strong>Recursion safety</strong>: subagents cannot spawn further subagents (force-marked as leaves); plus a hard cap of 3 levels.</p></li>
 <li><p><strong>userId is propagated</strong>: parent’s <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> is forwarded to the child, so the multi-tenant isolation chain stays intact.</p></li>
-<li><p><strong>Streaming forwarding</strong>: during the parent’s <code class="docutils literal notranslate"><span class="pre">stream()</span></code>, intermediate events from synchronous subagents are forwarded back into the parent’s <code class="docutils literal notranslate"><span class="pre">Flux</span></code> live (with source tags); see <a class="reference internal" href="#subagent-streaming"><span class="xref myst">Subagent streaming</span></a> below.</p></li>
+<li><p><strong>Permission inheritance</strong>: all DENY permission rules from the parent are automatically propagated to the child. If the parent is denied a tool, the child is also denied — the security boundary cannot be bypassed by delegation. Set <code class="docutils literal notranslate"><span class="pre">inheritParentPermissions(false)</span></code> in the declaration to opt out.</p></li>
+<li><p><strong>Streaming forwarding</strong>: during the parent’s <code class="docutils literal notranslate"><span class="pre">stream()</span></code>, intermediate events from synchronous subagents are forwarded back into the parent’s <code class="docutils literal notranslate"><span class="pre">Flux</span></code> live (with source tags); see <a class="reference internal" href="#subagent-streaming">Subagent streaming</a> below.</p></li>
 </ul>
 </section>
 <section id="remote-subagent">
@@ -1069,155 +1233,68 @@ You are a subagent focused on code review.
 </section>
 <section id="delegating-during-plan-mode">
 <h2>Delegating during Plan Mode<a class="headerlink" href="#delegating-during-plan-mode" title="Link to this heading">¶</a></h2>
-<p>⚠ Current <strong>known gap</strong>: subagents spawned by a parent in Plan Mode <strong>do not automatically inherit the read-only restriction</strong>. To restrict the child: narrow <code class="docutils literal notranslate"><span class="pre">tools</span></code> in its declaration to a read-only set, or enable <code class="docutils literal notranslate"><span class="pre">enablePlanMode()</span></code> on the child’s own builder.</p>
+<p>When the parent is in Plan Mode, spawned subagents <strong>automatically inherit the read-only restriction</strong>. The child enters Plan Mode at spawn time, so it cannot perform write operations — the safety boundary is maintained across the delegation chain.</p>
 </section>
 <section id="subagent-streaming">
 <h2>Subagent streaming<a class="headerlink" href="#subagent-streaming" title="Link to this heading">¶</a></h2>
 <blockquote>
-<div><p>Streaming basics: new code should prefer <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> (returns <code class="docutils literal notranslate"><span class="pre">Flux&lt;io.agentscope.core.event.AgentEvent&gt;</span></code> — the v2 fine-grained event hierarchy that aligns with Python 2.0’s <code class="docutils literal notranslate"><span class="pre">agent.reply_stream()</span></code>). The legacy <code class="docutils literal notranslate"><span class="pre">stream()</span></code> family that returns <code class="docutils literal notranslate"><span class="pre">Flux&lt;Event&gt;</span></code> is <code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true)</span></code> as of 2.0.0 — see <a class="reference internal" href="../building-blocks/message-and-event.html"><span class="std std-doc">Message &amp; Event</span></a> and <a class="reference internal" href="../change-log.html"><span class="std std-doc">Changelog B.4</span></a>. This section covers <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>’s child-agent event forwarding behavior on both APIs.</p>
+<div><p>New code should use <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> (returns <code class="docutils literal notranslate"><span class="pre">Flux&lt;AgentEvent&gt;</span></code>). The legacy <code class="docutils literal notranslate"><span class="pre">stream()</span></code> family (<code class="docutils literal notranslate"><span class="pre">Flux&lt;Event&gt;</span></code>) is <code class="docutils literal notranslate"><span class="pre">&#64;Deprecated(forRemoval</span> <span class="pre">=</span> <span class="pre">true)</span></code> since 2.0.0 — see <a class="reference internal" href="../building-blocks/message-and-event.html"><span class="std std-doc">Message &amp; Event</span></a> and <a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 Migration Guide B.4</span></a>.</p>
 </div></blockquote>
-<section id="picking-your-streaming-api">
-<h3>Picking your streaming API<a class="headerlink" href="#picking-your-streaming-api" title="Link to this heading">¶</a></h3>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Use case</p></th>
-<th class="head"><p>Recommended</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>Parent-agent events only — text deltas, tool calls, lifecycle</p></td>
-<td><p><strong><code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">Flux&lt;AgentEvent&gt;</span></code>)</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>Live child-agent events</strong> (subagent forwarding with <code class="docutils literal notranslate"><span class="pre">EventSource</span></code>)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">stream()</span></code> (<code class="docutils literal notranslate"><span class="pre">Flux&lt;Event&gt;</span></code>) — currently the only path</p></td>
-</tr>
-</tbody>
-</table>
+<p>When the parent calls a synchronous subagent via <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code>, the child’s intermediate events are <strong>forwarded live</strong> into the parent’s <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> stream. Each child event carries a <code class="docutils literal notranslate"><span class="pre">source</span></code> field (a <code class="docutils literal notranslate"><span class="pre">/</span></code>-separated path like <code class="docutils literal notranslate"><span class="pre">&quot;main/researcher&quot;</span></code>) so you can tell parent events (<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">==</span> <span class="pre">null</span></code>) from child events.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>caller
+  └─ parent.streamEvents(msg, ctx)
+        │
+        ├─ AGENT_START                            ← parent starts
+        ├─ TEXT_BLOCK_DELTA …                     ← parent reasoning
+        ├─ TOOL_CALL_START &quot;agent_spawn&quot;
+        │
+        │  [child spawned]
+        ├─ AGENT_START          (source=&quot;main/researcher&quot;)  ← child starts
+        ├─ TEXT_BLOCK_DELTA …   (source=&quot;main/researcher&quot;)  ← child reasoning
+        ├─ TOOL_CALL_START …    (source=&quot;main/researcher&quot;)
+        ├─ TOOL_RESULT_END …   (source=&quot;main/researcher&quot;)
+        ├─ AGENT_END            (source=&quot;main/researcher&quot;)  ← child done
+        │  [agent_spawn returns; child result → parent TOOL_RESULT]
+        │
+        ├─ TOOL_RESULT_END                        ← parent receives tool result
+        ├─ TEXT_BLOCK_DELTA …                     ← parent second round
+        └─ AGENT_END                              ← parent done
+</pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> hierarchy does not yet expose an <code class="docutils literal notranslate"><span class="pre">EventSource</span></code>-equivalent channel for spawned subagents — that’s on the v2 roadmap. Until it lands, callers that need live child-agent events must stay on the deprecated <code class="docutils literal notranslate"><span class="pre">stream()</span></code> API; parent-only consumers should switch to <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> today.</p>
-</section>
-<section id="parent-events-via-streamevents-recommended">
-<h3>Parent events via <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> (recommended)<a class="headerlink" href="#parent-events-via-streamevents-recommended" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.AgentEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.AgentEventType</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.TextBlockDeltaEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.event.ToolCallStartEvent</span><span class="p">;</span>
-
-<span class="n">parent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="n">message</span><span class="p">),</span><span class="w"> </span><span class="n">ctx</span><span class="p">)</span>
+<section id="using-streamevents-recommended">
+<h3>Using <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> (recommended)<a class="headerlink" href="#using-streamevents-recommended" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">parent</span><span class="p">.</span><span class="na">streamEvents</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="n">message</span><span class="p">),</span><span class="w"> </span><span class="n">ctx</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// event is a typed io.agentscope.core.event.AgentEvent subclass</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">src</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getSource</span><span class="p">();</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">prefix</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">src</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">&quot;[&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">src</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] &quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">;</span>
+
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">TEXT_BLOCK_DELTA</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(((</span><span class="n">TextBlockDeltaEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getDelta</span><span class="p">());</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">prefix</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">((</span><span class="n">TextBlockDeltaEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getDelta</span><span class="p">());</span>
 <span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">TOOL_CALL_START</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">ToolCallStartEvent</span><span class="w"> </span><span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">ToolCallStartEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">;</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n[tool] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">start</span><span class="p">.</span><span class="na">getToolName</span><span class="p">());</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">prefix</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;[tool] &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">((</span><span class="n">ToolCallStartEvent</span><span class="p">)</span><span class="w"> </span><span class="n">event</span><span class="p">).</span><span class="na">getToolName</span><span class="p">());</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">AGENT_START</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">src</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;── child started: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">src</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AgentEventType</span><span class="p">.</span><span class="na">AGENT_END</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">src</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;── child finished: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">src</span><span class="p">);</span>
 <span class="w">        </span><span class="p">}</span>
-<span class="w">        </span><span class="c1">// Other lifecycle events: AgentStartEvent / AgentEndEvent,</span>
-<span class="w">        </span><span class="c1">// ModelCallStart/End, ToolResultStart/End, RequireUserConfirmEvent, etc.</span>
 <span class="w">    </span><span class="p">})</span>
 <span class="w">    </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>Child-agent events are <strong>not</strong> forwarded on this path today — anything spawned via <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> finishes silently and its final result arrives back to the parent as a <code class="docutils literal notranslate"><span class="pre">TOOL_RESULT</span></code> block.</p>
-</section>
-<section id="child-agent-forwarding-via-stream-deprecated-only-path-today">
-<h3>Child-agent forwarding via <code class="docutils literal notranslate"><span class="pre">stream()</span></code> (deprecated, only path today)<a class="headerlink" href="#child-agent-forwarding-via-stream-deprecated-only-path-today" title="Link to this heading">¶</a></h3>
-<p>When you call the parent with <code class="docutils literal notranslate"><span class="pre">parent.stream()</span></code> and the parent invokes a child via <code class="docutils literal notranslate"><span class="pre">agent_spawn</span></code> / <code class="docutils literal notranslate"><span class="pre">agent_send</span></code> during reasoning, <strong>every intermediate event the child produces is injected live into the parent’s event stream</strong>. Each event carries an <code class="docutils literal notranslate"><span class="pre">EventSource</span></code> field telling you whether it’s from the parent or which subagent.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>caller
-  └─ parent.stream()                          ← @Deprecated(forRemoval=true), but the only API
-        │                                       that forwards subagent events today
-        ├─ parent REASONING chunks…           ← parent&#39;s first round (incl. tool call)
-        │
-        │  [agent_spawn &quot;researcher&quot; starts]
-        ├─ child REASONING chunks…            ← child reasoning (live forwarded with EventSource)
-        ├─ child TOOL_RESULT…
-        ├─ child AGENT_RESULT (last)          ← child&#39;s final reply (live forwarded)
-        │  [agent_spawn returns; result given to parent as TOOL_RESULT]
-        │
-        ├─ parent TOOL_RESULT…
-        ├─ parent REASONING chunks…           ← parent&#39;s second round
-        └─ parent AGENT_RESULT (last)         ← parent&#39;s final reply
-</pre></div>
-</div>
-<p>Parent self-events: <code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">==</span> <span class="pre">null</span></code>. Child events: <code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">!=</span> <span class="pre">null</span></code>.</p>
-<section id="distinguishing-by-source">
-<h4>Distinguishing by source<a class="headerlink" href="#distinguishing-by-source" title="Link to this heading">¶</a></h4>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// NOTE: stream(...) is @Deprecated(forRemoval=true). Kept here because it is currently</span>
-<span class="c1">// the only API that forwards live subagent events. Migrate to streamEvents(...) once the</span>
-<span class="c1">// AgentEvent subagent-source channel lands.</span>
-<span class="n">Flux</span><span class="o">&lt;</span><span class="n">Event</span><span class="o">&gt;</span><span class="w"> </span><span class="n">events</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">parent</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">msgs</span><span class="p">,</span><span class="w"> </span><span class="n">StreamOptions</span><span class="p">.</span><span class="na">defaults</span><span class="p">(),</span><span class="w"> </span><span class="n">ctx</span><span class="p">);</span>
+<p>Distinguish parent vs child events:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// parent events only</span>
+<span class="n">events</span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getSource</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="p">).</span><span class="na">subscribe</span><span class="p">(</span><span class="err">…</span><span class="p">);</span>
 
-<span class="n">events</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">EventSource</span><span class="w"> </span><span class="n">src</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getSource</span><span class="p">();</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">src</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// parent self</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">printf</span><span class="p">(</span><span class="s">&quot;[parent][%s] %s%n&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">(),</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getMessage</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// child (or grandchild)</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">printf</span><span class="p">(</span><span class="s">&quot;[%s|depth=%d|path=%s][%s] %s%n&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="n">src</span><span class="p">.</span><span class="na">getAgentId</span><span class="p">(),</span><span class="w"> </span><span class="n">src</span><span class="p">.</span><span class="na">getDepth</span><span class="p">(),</span><span class="w"> </span><span class="n">src</span><span class="p">.</span><span class="na">getPath</span><span class="p">(),</span>
-<span class="w">                </span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">(),</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getMessage</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">});</span>
-</pre></div>
-</div>
-<p>Useful <code class="docutils literal notranslate"><span class="pre">EventSource</span></code> fields:</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Field</p></th>
-<th class="head"><p>Meaning</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentId</span></code></p></td>
-<td><p>Subagent type id (filename of <code class="docutils literal notranslate"><span class="pre">subagents/&lt;id&gt;.md</span></code>)</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentKey</span></code></p></td>
-<td><p>Runtime instance handle; pass to <code class="docutils literal notranslate"><span class="pre">agent_send</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentName</span></code></p></td>
-<td><p>Display name (nullable)</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sessionId</span></code></p></td>
-<td><p>Subagent’s call session id</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">parentSessionId</span></code></p></td>
-<td><p>Parent agent’s session id</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">depth</span></code></p></td>
-<td><p>Nesting depth (parent’s direct child = 1, grandchild = 2, etc.)</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">path</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">/</span></code>-joined call path; stacks automatically for nesting, e.g. <code class="docutils literal notranslate"><span class="pre">sess-001/planner/executor</span></code></p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
-</section>
-<section id="multi-level-nesting-grandchildren">
-<h3>Multi-level nesting (grandchildren)<a class="headerlink" href="#multi-level-nesting-grandchildren" title="Link to this heading">¶</a></h3>
-<p>A child can spawn a grandchild (subject to the 3-level hard cap). Grandchild events bubble up to the root parent; filter by <code class="docutils literal notranslate"><span class="pre">depth</span></code> or <code class="docutils literal notranslate"><span class="pre">path</span></code>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Only first-level child REASONING events</span>
-<span class="n">events</span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getSource</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span>
-<span class="w">               </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getSource</span><span class="p">().</span><span class="na">getDepth</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">1</span>
-<span class="w">               </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">EventType</span><span class="p">.</span><span class="na">REASONING</span><span class="p">)</span>
-<span class="w">      </span><span class="p">.</span><span class="na">subscribe</span><span class="p">(...);</span>
+<span class="c1">// child events only</span>
+<span class="n">events</span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getSource</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">).</span><span class="na">subscribe</span><span class="p">(</span><span class="err">…</span><span class="p">);</span>
 
-<span class="c1">// Events on a path containing &quot;executor&quot; at any depth</span>
-<span class="n">events</span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getSource</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span>
-<span class="w">               </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getSource</span><span class="p">().</span><span class="na">getPath</span><span class="p">().</span><span class="na">contains</span><span class="p">(</span><span class="s">&quot;executor&quot;</span><span class="p">))</span>
-<span class="w">      </span><span class="p">.</span><span class="na">subscribe</span><span class="p">(...);</span>
+<span class="c1">// events from a specific child</span>
+<span class="n">events</span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getSource</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getSource</span><span class="p">().</span><span class="na">contains</span><span class="p">(</span><span class="s">&quot;researcher&quot;</span><span class="p">)).</span><span class="na">subscribe</span><span class="p">(</span><span class="err">…</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
 <section id="sse-forwarding">
 <h3>SSE forwarding<a class="headerlink" href="#sse-forwarding" title="Link to this heading">¶</a></h3>
-<p>Pick the API that matches what your client needs:</p>
-<p><strong>Parent-only events (recommended for most chat UIs):</strong></p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@GetMapping</span><span class="p">(</span><span class="n">value</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/chat&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">produces</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MediaType</span><span class="p">.</span><span class="na">TEXT_EVENT_STREAM_VALUE</span><span class="p">)</span>
 <span class="kd">public</span><span class="w"> </span><span class="n">Flux</span><span class="o">&lt;</span><span class="n">ServerSentEvent</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="nf">chat</span><span class="p">(</span><span class="nd">@RequestParam</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">message</span><span class="p">,</span>
 <span class="w">                                          </span><span class="nd">@RequestParam</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -1227,35 +1304,13 @@ You are a subagent focused on code review.
 <span class="w">                </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">payload</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">LinkedHashMap</span><span class="o">&lt;&gt;</span><span class="p">();</span>
 <span class="w">                </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">().</span><span class="na">name</span><span class="p">());</span>
 <span class="w">                </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;id&quot;</span><span class="p">,</span><span class="w">   </span><span class="n">event</span><span class="p">.</span><span class="na">getId</span><span class="p">());</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getSource</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;source&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getSource</span><span class="p">());</span>
+<span class="w">                </span><span class="p">}</span>
 <span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlockDeltaEvent</span><span class="w"> </span><span class="n">delta</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                    </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;delta&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">delta</span><span class="p">.</span><span class="na">getDelta</span><span class="p">());</span>
 <span class="w">                </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ToolCallStartEvent</span><span class="w"> </span><span class="n">start</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                    </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;toolName&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">start</span><span class="p">.</span><span class="na">getToolName</span><span class="p">());</span>
-<span class="w">                </span><span class="p">}</span>
-<span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="n">ServerSentEvent</span><span class="p">.</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="n">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">objectMapper</span><span class="p">.</span><span class="na">writeValueAsString</span><span class="p">(</span><span class="n">payload</span><span class="p">))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="w">            </span><span class="p">});</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-<p><strong>Include child-agent events</strong> (uses the deprecated <code class="docutils literal notranslate"><span class="pre">stream()</span></code> path — only option until the <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> subagent-source channel lands):</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@GetMapping</span><span class="p">(</span><span class="n">value</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/chat&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">produces</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MediaType</span><span class="p">.</span><span class="na">TEXT_EVENT_STREAM_VALUE</span><span class="p">)</span>
-<span class="kd">public</span><span class="w"> </span><span class="n">Flux</span><span class="o">&lt;</span><span class="n">ServerSentEvent</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="nf">chat</span><span class="p">(</span><span class="nd">@RequestParam</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">message</span><span class="p">,</span>
-<span class="w">                                          </span><span class="nd">@RequestParam</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">RuntimeContext</span><span class="w"> </span><span class="n">ctx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">sessionId</span><span class="p">(</span><span class="n">sessionId</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="w"> </span><span class="c1">// @Deprecated(forRemoval=true) — see note above</span>
-<span class="w">                    </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserMessage</span><span class="p">(</span><span class="n">message</span><span class="p">)),</span>
-<span class="w">                    </span><span class="n">StreamOptions</span><span class="p">.</span><span class="na">defaults</span><span class="p">(),</span><span class="w"> </span><span class="n">ctx</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">payload</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">LinkedHashMap</span><span class="o">&lt;&gt;</span><span class="p">();</span>
-<span class="w">                </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">());</span>
-<span class="w">                </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;text&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getMessage</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">                </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;last&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">isLast</span><span class="p">());</span>
-<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getSource</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;agentId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getSource</span><span class="p">().</span><span class="na">getAgentId</span><span class="p">());</span>
-<span class="w">                    </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;depth&quot;</span><span class="p">,</span><span class="w">   </span><span class="n">event</span><span class="p">.</span><span class="na">getSource</span><span class="p">().</span><span class="na">getDepth</span><span class="p">());</span>
-<span class="w">                    </span><span class="n">payload</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="s">&quot;path&quot;</span><span class="p">,</span><span class="w">    </span><span class="n">event</span><span class="p">.</span><span class="na">getSource</span><span class="p">().</span><span class="na">getPath</span><span class="p">());</span>
 <span class="w">                </span><span class="p">}</span>
 <span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="n">ServerSentEvent</span><span class="p">.</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="n">builder</span><span class="p">()</span>
 <span class="w">                        </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">objectMapper</span><span class="p">.</span><span class="na">writeValueAsString</span><span class="p">(</span><span class="n">payload</span><span class="p">))</span>
@@ -1275,23 +1330,17 @@ You are a subagent focused on code review.
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">stream()</span></code> (deprecated) + synchronous local child (<code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>)</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> + synchronous local child (<code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>)</p></td>
 <td><p>✔</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> (recommended) — any subagent</p></td>
-<td><p>✗ (parent events only; subagent channel on <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> is a roadmap item)</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">call()</span></code> mode (non-streaming)</p></td>
+<td><p>✗ (child result returns as <code class="docutils literal notranslate"><span class="pre">tool_result</span></code> string)</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">call()</span></code> mode (non-streaming)</p></td>
-<td><p>✗ (child result returns as a <code class="docutils literal notranslate"><span class="pre">tool_result</span></code> string)</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">=</span> <span class="pre">0</span></code> background task</p></td>
+<td><p>✗ (result pushed via reverse notification to parent’s next round)</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timeout_seconds</span> <span class="pre">=</span> <span class="pre">0</span></code> background task</p></td>
-<td><p>✗ (terminal state is pushed back to the parent’s next round)</p></td>
-</tr>
-<tr class="row-even"><td><p>Remote subagent (Agent Protocol)</p></td>
+<tr class="row-odd"><td><p>Remote subagent (Agent Protocol)</p></td>
 <td><p>✗</p></td>
-</tr>
-<tr class="row-odd"><td><p>Multi-level nesting (grandchildren), <code class="docutils literal notranslate"><span class="pre">stream()</span></code> path</p></td>
-<td><p>✔ (<code class="docutils literal notranslate"><span class="pre">path</span></code> / <code class="docutils literal notranslate"><span class="pre">depth</span></code> stack automatically)</p></td>
 </tr>
 </tbody>
 </table>
@@ -1305,11 +1354,12 @@ You are a subagent focused on code review.
 <section id="related-pages">
 <h2>Related pages<a class="headerlink" href="#related-pages" title="Link to this heading">¶</a></h2>
 <ul class="simple">
+<li><p><a class="reference internal" href="channel.html"><span class="doc std std-doc">Channel</span></a> — <code class="docutils literal notranslate"><span class="pre">expose_to_user</span></code>, <code class="docutils literal notranslate"><span class="pre">SendOptions</span></code>, direct user-to-subagent messaging</p></li>
 <li><p><a class="reference internal" href="workspace.html"><span class="doc std std-doc">Workspace</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> and <code class="docutils literal notranslate"><span class="pre">agents/&lt;id&gt;/tasks/</span></code> layout</p></li>
 <li><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a> — restrictions on subagents during the plan phase</p></li>
 <li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">Architecture</span></a> — how parent and child cooperate</p></li>
 <li><p><a class="reference internal" href="../building-blocks/message-and-event.html"><span class="std std-doc">Message &amp; Event</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentEvent</span></code> hierarchy (recommended) and the deprecated <code class="docutils literal notranslate"><span class="pre">Event</span></code> / <code class="docutils literal notranslate"><span class="pre">EventType</span></code> / <code class="docutils literal notranslate"><span class="pre">StreamOptions</span></code> types</p></li>
-<li><p><a class="reference internal" href="../change-log.html"><span class="std std-doc">Changelog B.4</span></a> — <code class="docutils literal notranslate"><span class="pre">stream()</span></code> → <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> deprecation timeline</p></li>
+<li><p><a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 Migration Guide B.4</span></a> — <code class="docutils literal notranslate"><span class="pre">stream()</span></code> → <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> deprecation timeline</p></li>
 </ul>
 </section>
 </section>
@@ -1367,7 +1417,7 @@ You are a subagent focused on code review.
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1414,22 +1464,24 @@ You are a subagent focused on code review.
 <li><a class="reference internal" href="#isolated-vs-shared">ISOLATED vs SHARED</a></li>
 <li><a class="reference internal" href="#sync-or-background">Sync or background?</a><ul>
 <li><a class="reference internal" href="#background-tasks-push-back-automatically">Background tasks push back automatically</a></li>
+<li><a class="reference internal" href="#background-task-tools">Background task tools</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#send-a-follow-up-to-an-existing-subagent">Send a follow-up to an existing subagent</a></li>
+<li><a class="reference internal" href="#persistent-sessions">Persistent sessions</a></li>
+<li><a class="reference internal" href="#exposing-subagents-to-the-user">Exposing subagents to the user</a><ul>
+<li><a class="reference internal" href="#how-to-enable">How to enable</a></li>
+<li><a class="reference internal" href="#controlling-exposure-from-code">Controlling exposure from code</a></li>
+<li><a class="reference internal" href="#across-restarts-and-multiple-replicas">Across restarts and multiple replicas</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#let-the-agent-author-new-subagent-specs">Let the agent author new subagent specs</a></li>
 <li><a class="reference internal" href="#behavior-notes">Behavior notes</a></li>
 <li><a class="reference internal" href="#remote-subagent">Remote subagent</a></li>
 <li><a class="reference internal" href="#background-task-storage">Background task storage</a></li>
 <li><a class="reference internal" href="#delegating-during-plan-mode">Delegating during Plan Mode</a></li>
 <li><a class="reference internal" href="#subagent-streaming">Subagent streaming</a><ul>
-<li><a class="reference internal" href="#picking-your-streaming-api">Picking your streaming API</a></li>
-<li><a class="reference internal" href="#parent-events-via-streamevents-recommended">Parent events via <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> (recommended)</a></li>
-<li><a class="reference internal" href="#child-agent-forwarding-via-stream-deprecated-only-path-today">Child-agent forwarding via <code class="docutils literal notranslate"><span class="pre">stream()</span></code> (deprecated, only path today)</a><ul>
-<li><a class="reference internal" href="#distinguishing-by-source">Distinguishing by source</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#multi-level-nesting-grandchildren">Multi-level nesting (grandchildren)</a></li>
+<li><a class="reference internal" href="#using-streamevents-recommended">Using <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> (recommended)</a></li>
 <li><a class="reference internal" href="#sse-forwarding">SSE forwarding</a></li>
 <li><a class="reference internal" href="#behavior-boundaries">Behavior boundaries</a></li>
 <li><a class="reference internal" href="#error-handling">Error handling</a></li>

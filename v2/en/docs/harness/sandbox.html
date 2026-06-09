@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagent" href="subagent.html"><link rel="prev" title="Filesystem" href="filesystem.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Subagent" href="subagent.html"><link rel="prev" title="Filesystem" href="filesystem.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/sandbox.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -899,7 +919,7 @@
 </section>
 <section id="a-minimal-example">
 <h2>A minimal example<a class="headerlink" href="#a-minimal-example" title="Link to this heading">¶</a></h2>
-<p>Local Docker, isolated per conversation:</p>
+<p>Local Docker, isolated per user:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;code-agent&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
@@ -909,15 +929,16 @@
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">RuntimeContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;user-1-conv-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;alice&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sessionId</span><span class="p">(</span><span class="s">&quot;conv-1&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>Different <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> → different sandbox; same <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> across <code class="docutils literal notranslate"><span class="pre">call()</span></code> → automatically reuses the same sandbox (or restores from snapshot).</p>
+<p>Same <code class="docutils literal notranslate"><span class="pre">userId</span></code> across <code class="docutils literal notranslate"><span class="pre">call()</span></code> → automatically reuses the same sandbox (or restores from snapshot). Different <code class="docutils literal notranslate"><span class="pre">userId</span></code> → separate sandbox. When <code class="docutils literal notranslate"><span class="pre">userId</span></code> is absent, falls back to <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> as the isolation key.</p>
 </section>
 <section id="isolationscope-who-shares-a-sandbox">
 <h2>IsolationScope — who shares a sandbox<a class="headerlink" href="#isolationscope-who-shares-a-sandbox" title="Link to this heading">¶</a></h2>
-<p>The most-tuned setting:</p>
+<p>All sandbox configuration lives on the <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">DockerFilesystemSpec</span></code>). The key parameter is <code class="docutils literal notranslate"><span class="pre">isolationScope</span></code>:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -927,17 +948,17 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SESSION</span></code> (default)</p></td>
-<td><p>Each sessionId independent</p></td>
-<td><p>Multi-user SaaS, each conversation runs on its own</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">USER</span></code> (default)</p></td>
+<td><p>Same <code class="docutils literal notranslate"><span class="pre">userId</span></code>’s sessions share; falls back to <code class="docutils literal notranslate"><span class="pre">SESSION</span></code> when userId is absent</p></td>
+<td><p>Multi-user SaaS — each user keeps one workspace across conversations</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">USER</span></code></p></td>
-<td><p>Same <code class="docutils literal notranslate"><span class="pre">userId</span></code>’s sessions share</p></td>
-<td><p>Same user shares the workspace across conversations (including distributed)</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SESSION</span></code></p></td>
+<td><p>Each sessionId independent</p></td>
+<td><p>Strict per-conversation isolation</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AGENT</span></code></p></td>
 <td><p>All users / sessions of this agent share</p></td>
-<td><p>Public-tool-type agent</p></td>
+<td><p>Public-tool-type agent, shared knowledge base</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code></p></td>
 <td><p>One shared slot per store</p></td>
@@ -946,12 +967,14 @@
 </tbody>
 </table>
 </div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Explicit SESSION scope (overrides default USER)</span>
+<span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">SESSION</span><span class="p">))</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">SESSION</span></code> is naturally concurrency-safe (each session has its own slot). <code class="docutils literal notranslate"><span class="pre">USER</span></code> / <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> in multi-replica deployments should pair with a mutex (see “Concurrency control” below).</p>
+<p><strong>USER-scope fallback:</strong> when <code class="docutils literal notranslate"><span class="pre">IsolationScope.USER</span></code> is active (either explicitly or by default) but <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> is absent, the framework automatically falls back to <code class="docutils literal notranslate"><span class="pre">SESSION</span></code> scope using <code class="docutils literal notranslate"><span class="pre">sessionId</span></code>. This means you don’t need to guard against missing userId — the sandbox degrades gracefully.</p>
 </section>
 <section id="cross-call-recovery-snapshots">
 <h2>Cross-call recovery = snapshots<a class="headerlink" href="#cross-call-recovery-snapshots" title="Link to this heading">¶</a></h2>
@@ -982,6 +1005,9 @@
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RedisSnapshotSpec</span></code></p></td>
 <td><p>Redis (low latency, small workspaces)</p></td>
 </tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">JdbcSnapshotSpec</span></code></p></td>
+<td><p>MySQL / JDBC BLOB (existing relational DB)</p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -996,40 +1022,49 @@
 <h2>Distributed deployment<a class="headerlink" href="#distributed-deployment" title="Link to this heading">¶</a></h2>
 <p>When multiple replicas run the same agent and any replica must be able to pick up the same user’s conversation, you need:</p>
 <ol class="arabic simple">
-<li><p>A distributed <code class="docutils literal notranslate"><span class="pre">Session</span></code> (e.g. a Redis-backed implementation)</p></li>
-<li><p>A non-<code class="docutils literal notranslate"><span class="pre">Noop</span></code> snapshot (OSS / Redis / remote store)</p></li>
-<li><p>An appropriate <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> (<code class="docutils literal notranslate"><span class="pre">USER</span></code> / <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code>)</p></li>
+<li><p>A distributed <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (e.g. Redis-backed) — passed via <code class="docutils literal notranslate"><span class="pre">.stateStore(...)</span></code> on the builder</p></li>
+<li><p>A non-<code class="docutils literal notranslate"><span class="pre">Noop</span></code> snapshot (OSS / Redis / remote store) — configured directly on the filesystem spec via <code class="docutils literal notranslate"><span class="pre">.snapshotSpec(...)</span></code></p></li>
+<li><p>An appropriate <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> (default <code class="docutils literal notranslate"><span class="pre">USER</span></code> is usually correct)</p></li>
 </ol>
-<p>To declare these together, use <code class="docutils literal notranslate"><span class="pre">sandboxDistributed(...)</span></code>:</p>
+<p>Everything is configured in one place:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="n">redisStateStore</span><span class="p">)</span><span class="w">                    </span><span class="c1">// distributed state</span>
 <span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sandboxDistributed</span><span class="p">(</span><span class="n">SandboxDistributedOptions</span><span class="p">.</span><span class="na">oss</span><span class="p">(</span><span class="n">redisSession</span><span class="p">,</span><span class="w"> </span><span class="n">ossSnapshotSpec</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="n">ossSnapshotSpec</span><span class="p">)</span><span class="w">              </span><span class="c1">// cross-replica snapshot</span>
+<span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span><span class="w">       </span><span class="c1">// default, can omit</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>With <code class="docutils literal notranslate"><span class="pre">requireDistributed=true</span></code>, build fails fast if the actual Session / snapshot don’t qualify — catching misconfig before deployment.</p>
+<p>The framework stores sandbox metadata (container ID, snapshot pointers, workspace-ready flag) in the same <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> that holds agent runtime state. Providing a distributed store automatically enables cross-replica sandbox resume — no extra configuration needed.</p>
+<p>If you’re using a local <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (the default <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code>) with sandbox mode, the framework logs a warning at build time reminding you that sandbox state won’t survive JVM restarts and can’t be shared across instances.</p>
 </section>
 <section id="concurrency-control-multi-replica">
 <h2>Concurrency control (multi-replica)<a class="headerlink" href="#concurrency-control-multi-replica" title="Link to this heading">¶</a></h2>
-<p>In <code class="docutils literal notranslate"><span class="pre">USER</span></code> / <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that’s not OK, add a distributed lock. Redis-backed implementation built in:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SandboxExecutionGuard</span><span class="w"> </span><span class="n">guard</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisSandboxExecutionGuard</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">jedis</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">leaseTtl</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">        </span><span class="c1">// a bit larger than worst-case call duration</span>
-<span class="w">    </span><span class="p">.</span><span class="na">retryInterval</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMillis</span><span class="p">(</span><span class="mi">500</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<p>In <code class="docutils literal notranslate"><span class="pre">USER</span></code> / <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> / <code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code> modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that’s not OK, you need a distributed lock.</p>
+<p><strong>Recommended</strong>: use <code class="docutils literal notranslate"><span class="pre">distributedStore(...)</span></code> — snapshot and execution guard are auto-injected:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DistributedStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RedisDistributedStore</span><span class="p">.</span><span class="na">fromJedis</span><span class="p">(</span><span class="n">jedis</span><span class="p">);</span>
 
-<span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">snapshotSpec</span><span class="p">(</span><span class="n">redisSnapshotSpec</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="n">guard</span><span class="p">))</span>
+<span class="n">HarnessAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span><span class="w">    </span><span class="c1">// auto-wires stateStore + snapshotSpec + executionGuard</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>The lock key is bucketed by scope automatically (<code class="docutils literal notranslate"><span class="pre">USER</span></code> → by userId, <code class="docutils literal notranslate"><span class="pre">AGENT</span></code> → by agent name).</p>
-<p>You can also implement the <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> interface to plug in other lock backends (DB / Zookeeper / etcd).</p>
+<p>To customize lock parameters, set the guard explicitly on the <code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DockerFilesystemSpec</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">image</span><span class="p">(</span><span class="s">&quot;ubuntu:24.04&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">executionGuard</span><span class="p">(</span><span class="n">RedisSandboxExecutionGuard</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">jedis</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">leaseTtl</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">30</span><span class="p">)).</span><span class="na">build</span><span class="p">()))</span>
+</pre></div>
+</div>
+<p>Built-in implementations: <code class="docutils literal notranslate"><span class="pre">RedisSandboxExecutionGuard</span></code> (Redis <code class="docutils literal notranslate"><span class="pre">SET</span> <span class="pre">NX</span> <span class="pre">PX</span></code>), <code class="docutils literal notranslate"><span class="pre">JdbcSandboxExecutionGuard</span></code> (MySQL <code class="docutils literal notranslate"><span class="pre">GET_LOCK()</span></code>). You can also implement <code class="docutils literal notranslate"><span class="pre">SandboxExecutionGuard</span></code> to plug in Zookeeper, etcd, or other lock stores.</p>
 </section>
 <section id="self-managed-sandbox-instances-advanced">
 <h2>Self-managed sandbox instances (advanced)<a class="headerlink" href="#self-managed-sandbox-instances-advanced" title="Link to this heading">¶</a></h2>
@@ -1063,12 +1098,12 @@
 <p><strong>3. Multiple agents share one sandbox</strong></p>
 <p>Pass the same <code class="docutils literal notranslate"><span class="pre">externalSandbox</span></code> to each agent’s <code class="docutils literal notranslate"><span class="pre">call()</span></code>, then <code class="docutils literal notranslate"><span class="pre">shutdown()</span></code> it yourself when done.</p>
 </section>
-<section id="choosing-a-sandbox-backend">
-<h2>Choosing a sandbox backend<a class="headerlink" href="#choosing-a-sandbox-backend" title="Link to this heading">¶</a></h2>
+<section id="choosing-a-sandbox-store">
+<h2>Choosing a sandbox store<a class="headerlink" href="#choosing-a-sandbox-store" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>Backend</p></th>
+<tr class="row-odd"><th class="head"><p>Store</p></th>
 <th class="head"><p>Best for</p></th>
 </tr>
 </thead>
@@ -1091,7 +1126,7 @@
 </tbody>
 </table>
 </div>
-<p>All backends implement the same interface; agent code, toolkit, and <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> don’t change.</p>
+<p>All stores implement the same interface; agent code, toolkit, and <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> don’t change.</p>
 </section>
 <section id="how-the-workspace-maps-into-the-sandbox">
 <h2>How the workspace maps into the sandbox<a class="headerlink" href="#how-the-workspace-maps-into-the-sandbox" title="Link to this heading">¶</a></h2>
@@ -1099,8 +1134,8 @@
 <p>To bind a host directory into the sandbox (e.g. a code repo), use <code class="docutils literal notranslate"><span class="pre">BindMountEntry</span></code> (only Docker / K8s; managed sandboxes like Daytona / E2B run in the cloud and can’t mount your host paths).</p>
 <p>File changes inside the sandbox don’t sync back to the host — to retrieve sandbox-produced artifacts, have the agent <code class="docutils literal notranslate"><span class="pre">read_file</span></code> them.</p>
 </section>
-<section id="implementing-your-own-sandbox-backend">
-<h2>Implementing your own sandbox backend<a class="headerlink" href="#implementing-your-own-sandbox-backend" title="Link to this heading">¶</a></h2>
+<section id="implementing-your-own-sandbox-store">
+<h2>Implementing your own sandbox store<a class="headerlink" href="#implementing-your-own-sandbox-store" title="Link to this heading">¶</a></h2>
 <p>To integrate a non-Docker isolation environment (self-hosted remote executor, commercial sandbox API, local mock, etc.), no Harness source changes needed — implement a few contract interfaces and pass them to <code class="docutils literal notranslate"><span class="pre">filesystem(...)</span></code>. The <code class="docutils literal notranslate"><span class="pre">InMemorySandbox</span></code> family under <code class="docutils literal notranslate"><span class="pre">agentscope-harness</span></code> tests is the minimal skeleton to copy.</p>
 </section>
 <section id="related-pages">
@@ -1166,7 +1201,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1209,9 +1244,9 @@
 <li><a class="reference internal" href="#distributed-deployment">Distributed deployment</a></li>
 <li><a class="reference internal" href="#concurrency-control-multi-replica">Concurrency control (multi-replica)</a></li>
 <li><a class="reference internal" href="#self-managed-sandbox-instances-advanced">Self-managed sandbox instances (advanced)</a></li>
-<li><a class="reference internal" href="#choosing-a-sandbox-backend">Choosing a sandbox backend</a></li>
+<li><a class="reference internal" href="#choosing-a-sandbox-store">Choosing a sandbox store</a></li>
 <li><a class="reference internal" href="#how-the-workspace-maps-into-the-sandbox">How the workspace maps into the sandbox</a></li>
-<li><a class="reference internal" href="#implementing-your-own-sandbox-backend">Implementing your own sandbox backend</a></li>
+<li><a class="reference internal" href="#implementing-your-own-sandbox-store">Implementing your own sandbox store</a></li>
 <li><a class="reference internal" href="#related-pages">Related pages</a></li>
 </ul>
 </li>

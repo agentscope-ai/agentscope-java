@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Memory" href="memory.html"><link rel="prev" title="Context &amp; Session" href="context.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Memory" href="memory.html"><link rel="prev" title="Context Compaction" href="compaction.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/workspace.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compaction.html">Compaction</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/docs/others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../zh/integration/overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">会话</a><input aria-label="Toggle navigation of 会话" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/session/index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/overview.html">概览</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/mysql.html">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/session/oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../zh/integration/ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../zh/integration/ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -887,9 +907,50 @@
 <h1>Workspace<a class="headerlink" href="#workspace" title="Link to this heading">¶</a></h1>
 <section id="design-philosophy">
 <h2>Design philosophy<a class="headerlink" href="#design-philosophy" title="Link to this heading">¶</a></h2>
-<p>The workspace is <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>’s foundation. <strong>Everything that needs to survive a call or restart is expressed as a directory of plain Markdown / JSON files</strong>, not scattered in code, not pinned to a particular database table.</p>
-<p>Three guiding ideas:</p>
-<p><strong>1. Directories and files are the source of truth.</strong> Persona (<code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>), long-term memory (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/</span></code>), domain knowledge (<code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>), subagent declarations (<code class="docutils literal notranslate"><span class="pre">subagents/</span></code>), skills (<code class="docutils literal notranslate"><span class="pre">skills/</span></code>), plan files (<code class="docutils literal notranslate"><span class="pre">plans/</span></code>), tool allowlist + MCP (<code class="docutils literal notranslate"><span class="pre">tools.json</span></code>) — all files. You can <code class="docutils literal notranslate"><span class="pre">cat</span></code> them, <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">diff</span></code> them, send them to a human for review, have another process consume them.</p>
+<p>The workspace is <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code>’s <strong>source of truth for agent definition and evolution</strong>. Everything that defines what the agent is, and everything the agent learns over time, lives here as a directory of plain Markdown / JSON files — not scattered in code, not pinned to a particular database table.</p>
+<p>Four guiding ideas:</p>
+<p><strong>1. Source of truth for both agent definition and long-term evolution.</strong></p>
+<p>Agent <em>definition</em> — who the agent is and how it behaves — can be declared entirely in the workspace:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>What to define</p></th>
+<th class="head"><p>File</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Persona, behavior rules, system instructions</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Domain knowledge</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">knowledge/KNOWLEDGE.md</span></code> + reference files</p></td>
+</tr>
+<tr class="row-even"><td><p>Skills (reusable capability packages)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">skills/&lt;skill-name&gt;/SKILL.md</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Subagent declarations</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">subagents/&lt;agent-id&gt;.md</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Tool allowlist + MCP servers</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<div><p><strong>All workspace config files are optional.</strong> Every file has a fully equivalent API counterpart: you can pass the same configuration via builder methods (<code class="docutils literal notranslate"><span class="pre">.systemPrompt(...)</span></code>, <code class="docutils literal notranslate"><span class="pre">.skill(SkillDeclaration...)</span></code>, <code class="docutils literal notranslate"><span class="pre">.subagent(SubagentDeclaration...)</span></code>, <code class="docutils literal notranslate"><span class="pre">.toolsConfig(...)</span></code>, etc.). The workspace and the API are always in parity — which one you use is entirely your choice.</p>
+<p><strong>Why the workspace, then?</strong> Because expressing definition as files (rather than code) is what makes one agent natively multi-tenant: the <em>same</em> agent logic can carry a <em>different</em> persona, knowledge base, and skill set per user, just by dropping a per-user override directory — no code branches, no separate deployments. See <a class="reference internal" href="#one-agent-logic-customized-per-user">One agent logic, customized per user</a> below.</p>
+</div></blockquote>
+<p>Agent <em>evolution</em> — everything the agent learns or accumulates across sessions — is stored automatically in the workspace with no explicit lifecycle management required:</p>
+<ul class="simple">
+<li><p><strong>Long-term memory</strong> (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/</span></code>) — facts extracted from conversations, maintained and compacted by background tasks, injected each turn.</p></li>
+<li><p><strong>Self-learning skills</strong> (<code class="docutils literal notranslate"><span class="pre">skills/</span></code>) — the agent drafts new skills from successful patterns; after an optional review gate they become reusable capabilities, then a background curator ages out / archives the unused ones.</p></li>
+<li><p><strong>Plans</strong> (<code class="docutils literal notranslate"><span class="pre">plans/</span></code>) — plans written during Plan Mode persist and survive across calls, keeping “figure it out” decoupled from “do it”.</p></li>
+<li><p><strong>Offloaded tool results</strong> (compaction) — oversized tool outputs are written to disk and replaced in-context with a head/tail preview + a <code class="docutils literal notranslate"><span class="pre">read_file</span></code> pointer, so the agent can re-read them later without bloating the prompt.</p></li>
+<li><p><strong>Session logs</strong> (<code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>) — the full never-compacted conversation log, queryable at any time.</p></li>
+</ul>
+<p>Evolution data is long-lived by default: memory accumulates indefinitely, session logs are append-only and never purged automatically. How each channel is produced and maintained is detailed in <a class="reference internal" href="#how-the-agent-evolves">How the agent evolves</a> below.</p>
+<p>(The volatile per-call <em>runtime context</em> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> — is <strong>not</strong> part of this list: it is the resume snapshot for an in-flight conversation, persisted separately in the <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>, never in the workspace. See the callout under idea 2 below.)</p>
 <p><strong>2. Content splits into three lifecycles, kept distinct.</strong></p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -906,10 +967,10 @@
 <td><p>Framework injects into the system prompt each turn, or reads on demand at call time</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code>, <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/</span></code>, <code class="docutils literal notranslate"><span class="pre">subagents/</span></code>, <code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Runtime state</strong> (rewritten on every call)</p></td>
+<tr class="row-odd"><td><p><strong>Runtime files</strong> (rewritten on every call)</p></td>
 <td><p>Framework / agent</p></td>
-<td><p>Framework restores it on the next call</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/context/</span></code>, <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>, <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/tasks/</span></code>, <code class="docutils literal notranslate"><span class="pre">plans/</span></code></p></td>
+<td><p>Framework restores them on the next call</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>, <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/tasks/</span></code>, <code class="docutils literal notranslate"><span class="pre">plans/</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p><strong>Long-term memory</strong> (accumulated across sessions)</p></td>
 <td><p>Agent + background tasks</p></td>
@@ -920,7 +981,44 @@
 </table>
 </div>
 <p>They live in one tree purely for deployment convenience (copy a directory, get a complete agent). Inside the framework they travel different read/write paths.</p>
-<p><strong>3. Workspace decouples from filesystem.</strong> The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a> for the three modes.</p>
+<blockquote>
+<div><p><strong><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> is not workspace content — don’t conflate the two.</strong> The in-flight context an agent needs to resume mid-conversation (conversation buffer, rolling summary, permission / tool / task / Plan-Mode sub-contexts, plus the <em>metadata</em> pointing at workspace artifacts such as the active plan file) is serialized as a single <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> document into the <strong><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong>, a separate subsystem (default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>, fully outside the workspace tree). The split is deliberate: the workspace holds the durable <em>file artifacts</em> (the never-compacted session log, plan markdown, task records, memory), while <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> holds the volatile <em>runtime context + workspace metadata</em>. Two stores, two lifecycles — see <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a>.</p>
+</div></blockquote>
+<p><strong>3. Natively multi-tenant.</strong> Workspace data (memory, sessions, tasks, skills, sandbox state) is bucketed by a single <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> — no application-level partitioning code. The scope decides who shares one bucket:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code></p></th>
+<th class="head"><p>Who shares one bucket</p></th>
+<th class="head"><p>Typical use</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SESSION</span></code></p></td>
+<td><p>each <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> is fully isolated</p></td>
+<td><p>per-conversation isolation; disposable sandboxes</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">USER</span></code> (default)</p></td>
+<td><p>all sessions of the same <code class="docutils literal notranslate"><span class="pre">userId</span></code></p></td>
+<td><p>a user’s sessions share long-term memory / skills (falls back to <code class="docutils literal notranslate"><span class="pre">SESSION</span></code> when <code class="docutils literal notranslate"><span class="pre">userId</span></code> is absent)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AGENT</span></code></p></td>
+<td><p>all users &amp; sessions of this agent</p></td>
+<td><p>shared-knowledge-base agent</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">GLOBAL</span></code></p></td>
+<td><p>one bucket for the whole store instance</p></td>
+<td><p>use with care — every agent/user competes for the same slot</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The chosen scope materializes differently per filesystem mode (path prefix on local disk, KV namespace in a shared store, sandbox state slot in a sandbox). Full semantics, fallback rules, and concurrency notes in <a class="reference internal" href="#./filesystem#isolationscope--bucketing-across-users-and-replicas"><span class="xref myst">Filesystem — IsolationScope</span></a>.</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code> governs the <strong>workspace/filesystem</strong> buckets above. <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> has its own, orthogonal addressing: it is always keyed by <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> in the <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>, regardless of scope.</p>
+</div></blockquote>
+<p>A single <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> instance can serve thousands of concurrent users with zero cross-user data leakage.</p>
+<p><strong>4. Workspace decouples from filesystem.</strong> The same directory layout lands in one of three places: local disk, shared KV store (Redis / JDBC), or sandbox container. This decoupling is what lets you switch deployment shape without touching agent code. See <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a> for the three modes.</p>
 </section>
 <section id="workspace-directory-layout">
 <h2>Workspace directory layout<a class="headerlink" href="#workspace-directory-layout" title="Link to this heading">¶</a></h2>
@@ -940,7 +1038,6 @@
 ├── plans/                       ← runtime: plan files written in Plan Mode
 │   └── PLAN.md
 └── agents/&lt;agentId&gt;/            ← runtime: each agent&#39;s runtime root
-    ├── context/&lt;sessionId&gt;/     ← runtime: session snapshots (serialized AgentState)
     ├── sessions/                ← runtime: session index + never-compacted log
     │   ├── sessions.json
     │   └── &lt;sessionId&gt;.log.jsonl
@@ -948,6 +1045,9 @@
         └── &lt;sessionId&gt;.json
 </pre></div>
 </div>
+<blockquote>
+<div><p><strong>This tree is a <em>logical</em> layout, not a fixed on-disk path.</strong> It is drawn as <code class="docutils literal notranslate"><span class="pre">.agentscope/workspace/...</span></code>, but that is only the default local placement. The exact same layout can physically live on <strong>local disk</strong>, in a <strong>remote distributed store</strong> (Redis / JDBC / OSS, via <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>), or be <strong>projected into a sandbox container</strong> (<code class="docutils literal notranslate"><span class="pre">SandboxFilesystemSpec</span></code>) — the relative paths below are identical across all three, only the backing store changes, and your agent code does not. Pick the backing store with <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a>; everything in this document is written against the logical layout.</p>
+</div></blockquote>
 <p><strong>Only <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> is something you actually need to write</strong> (skip it and the agent still runs — you just lose the persona injection). Everything else appears as you turn on the matching capability:</p>
 <ul class="simple">
 <li><p>Enable memory compaction (<code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code>) → <code class="docutils literal notranslate"><span class="pre">memory/</span></code> + <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code></p></li>
@@ -1007,7 +1107,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <td><p>reading <code class="docutils literal notranslate"><span class="pre">tools.json</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">disableSessionPersistence()</span></code></p></td>
-<td><p>session auto-persistence</p></td>
+<td><p>AgentState auto-persistence</p></td>
 </tr>
 </tbody>
 </table>
@@ -1015,6 +1115,7 @@ You are an XX assistant. Follow these behavior guidelines.
 </section>
 <section id="how-workspace-content-gets-loaded">
 <h2>How workspace content gets loaded<a class="headerlink" href="#how-workspace-content-gets-loaded" title="Link to this heading">¶</a></h2>
+<p>Because the workspace is a logical layout (see the callout above), “loading” never assumes a plain local directory — every read goes through the configured <code class="docutils literal notranslate"><span class="pre">AbstractFilesystem</span></code>, so the same logic works whether files sit on local disk, in a remote store, or inside a sandbox. The <a class="reference internal" href="#two-layer-reads-filesystem-first-local-fallback">two-layer read</a> below is what makes that backing-store independence concrete; <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a> covers how each mode resolves paths physically.</p>
 <section id="system-prompt-assembly-per-turn">
 <h3>System-prompt assembly per turn<a class="headerlink" href="#system-prompt-assembly-per-turn" title="Link to this heading">¶</a></h3>
 <p>Before every reasoning step, <code class="docutils literal notranslate"><span class="pre">WorkspaceContextMiddleware</span></code> (<code class="docutils literal notranslate"><span class="pre">io.agentscope.harness.agent.middleware</span></code>) assembles the following sections and <strong>appends them to</strong> the <code class="docutils literal notranslate"><span class="pre">sysPrompt</span></code> you set on the builder to form the final system message:</p>
@@ -1078,13 +1179,13 @@ You are an XX assistant. Follow these behavior guidelines.
 2. Read local disk at workspace.resolve(relativePath)
 </pre></div>
 </div>
-<p>Writes always go through layer 1 (the filesystem backend), never directly to local disk.</p>
+<p>Writes always go through layer 1 (the filesystem store), never directly to local disk.</p>
 <p>This pattern earns its keep in <strong>shared-store mode</strong>: the first replica starts with the team-git-synced <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> template available on local disk, so it works immediately; later any override (e.g. from an admin console editor) lands in the shared KV, and every replica’s next <code class="docutils literal notranslate"><span class="pre">call()</span></code> reads the latest version. Template is fallback, remote override is truth.</p>
 </section>
 <section id="override-precedence-with-multiple-users-sharing-one-workspace">
 <h3>Override precedence with multiple users sharing one workspace<a class="headerlink" href="#override-precedence-with-multiple-users-sharing-one-workspace" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId</span></code> is the multi-user key — it lets one agent instance serve many users without crosstalk.</p>
-<p>For <strong>runtime data</strong> (sessions / tasks / memory), the framework prefixes paths via the configured <code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> (local-mode → path prefix, remote-mode → KV namespace, sandbox-mode → state slot). Details in the next section, “How session and memory are stored”.</p>
+<p>For <strong>runtime data</strong> (sessions / tasks / memory), the framework prefixes paths via the configured <code class="docutils literal notranslate"><span class="pre">NamespaceFactory</span></code> (local-mode → path prefix, remote-mode → KV namespace, sandbox-mode → state slot). Details in the next section, “How runtime data and memory are stored”.</p>
 <p>For <strong>static assets</strong> (notably <code class="docutils literal notranslate"><span class="pre">skills/</span></code> and <code class="docutils literal notranslate"><span class="pre">subagents/</span></code>), a per-user directory <strong>overrides</strong> the workspace-shared version:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>workspace/
 ├── skills/code-reviewer/SKILL.md     ← shared (visible to everyone)
@@ -1097,7 +1198,44 @@ You are an XX assistant. Follow these behavior guidelines.
         └── researcher.md             ← only visible to alice
 </pre></div>
 </div>
-<p>When called with <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId=&quot;alice&quot;</span></code>, the framework looks in <code class="docutils literal notranslate"><span class="pre">alice/skills/code-reviewer/</span></code> first and falls back to <code class="docutils literal notranslate"><span class="pre">skills/code-reviewer/</span></code>. Skills unique to a lower layer remain visible; only same-name conflicts are shadowed by the higher layer. Full precedence table in <a class="reference internal" href="#./skill#same-name-conflicts"><span class="xref myst">Skills — Same-name conflicts</span></a>.</p>
+<p>When called with <code class="docutils literal notranslate"><span class="pre">RuntimeContext.userId=&quot;alice&quot;</span></code>, the framework looks in <code class="docutils literal notranslate"><span class="pre">alice/skills/code-reviewer/</span></code> first and falls back to <code class="docutils literal notranslate"><span class="pre">skills/code-reviewer/</span></code>. Skills unique to a lower layer remain visible; only same-name conflicts are shadowed by the higher layer. Full precedence table in <a class="reference internal" href="#./skill#conflict-resolution"><span class="xref myst">Skills — Conflict resolution</span></a>.</p>
+<section id="one-agent-logic-customized-per-user">
+<h4>One agent logic, customized per user<a class="headerlink" href="#one-agent-logic-customized-per-user" title="Link to this heading">¶</a></h4>
+<p>This override mechanism is what lets a <strong>single <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> instance behave like a different agent for every tenant</strong> — without forking code or spinning up separate deployments. You ship one binary, one agent definition; each user gets their own slice on top:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Per-user layer</p></th>
+<th class="head"><p>What it customizes</p></th>
+<th class="head"><p>Resolution</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/AGENTS.md</span></code> <em>(via override)</em></p></td>
+<td><p>persona / behavior for that user</p></td>
+<td><p>upper layer of the two-layer read (shared <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> is the fallback)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/knowledge/</span></code></p></td>
+<td><p>domain knowledge that user is allowed to see</p></td>
+<td><p>per-user directory, shared <code class="docutils literal notranslate"><span class="pre">knowledge/</span></code> as the base</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code></p></td>
+<td><p>capabilities only that user unlocks</p></td>
+<td><p>overrides same-name shared skills; unique ones stack</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/subagents/</span></code></p></td>
+<td><p>sub-agents only that user can spawn</p></td>
+<td><p>overrides same-name shared specs</p></td>
+</tr>
+<tr class="row-even"><td><p>runtime data (memory / sessions / tasks)</p></td>
+<td><p>that user’s accumulated evolution</p></td>
+<td><p>namespaced per <code class="docutils literal notranslate"><span class="pre">userId</span></code> (path prefix / KV namespace / sandbox slot)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The result is <strong>two layers of multi-tenancy at once</strong>: the <em>definition</em> differs per user (via override directories), and the <em>evolution</em> is isolated per user (via namespacing). A shared base stays common to everyone, and each user’s customizations and learned state never leak across tenants — all from the same agent process. This is the file-based payoff the <a class="reference internal" href="#design-philosophy">optional-config callout</a> refers to: because definition is data, per-user customization is just another file, not another code path.</p>
+</section>
 </section>
 <section id="loading-behavior-under-each-filesystem-mode">
 <h3>Loading behavior under each filesystem mode<a class="headerlink" href="#loading-behavior-under-each-filesystem-mode" title="Link to this heading">¶</a></h3>
@@ -1107,7 +1245,8 @@ You are an XX assistant. Follow these behavior guidelines.
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;store&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">workspace</span><span class="p">(</span><span class="n">workspace</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">(</span><span class="n">redisStore</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">distributedStore</span><span class="p">(</span><span class="n">store</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">filesystem</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">RemoteFilesystemSpec</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">isolationScope</span><span class="p">(</span><span class="n">IsolationScope</span><span class="p">.</span><span class="na">USER</span><span class="p">))</span><span class="w">      </span><span class="c1">// namespace per userId</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -1150,25 +1289,46 @@ You are an XX assistant. Follow these behavior guidelines.
 </ul>
 </section>
 </section>
-<section id="how-session-and-memory-are-stored">
-<h2>How session and memory are stored<a class="headerlink" href="#how-session-and-memory-are-stored" title="Link to this heading">¶</a></h2>
-<p>Both of these are “runtime / long-term” content — you don’t hand-edit them. Their physical location is tied to the filesystem mode.</p>
-<section id="session-runtime-snapshot">
-<h3>Session (runtime snapshot)<a class="headerlink" href="#session-runtime-snapshot" title="Link to this heading">¶</a></h3>
-<p>When a <code class="docutils literal notranslate"><span class="pre">call()</span></code> completes, <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> (chat history, compaction summary, permission rules, Plan Mode state, tool state) is serialized to JSON and written to:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">&lt;</span><span class="n">workspace</span><span class="o">&gt;/</span><span class="p">[</span><span class="o">&lt;</span><span class="n">namespace</span><span class="o">&gt;/</span><span class="p">]</span><span class="n">agents</span><span class="o">/&lt;</span><span class="n">agentId</span><span class="o">&gt;/</span><span class="n">context</span><span class="o">/&lt;</span><span class="n">sessionId</span><span class="o">&gt;/</span><span class="n">agent_state</span><span class="o">.</span><span class="n">json</span>
-</pre></div>
+<section id="how-runtime-data-and-memory-are-stored">
+<h2>How runtime data and memory are stored<a class="headerlink" href="#how-runtime-data-and-memory-are-stored" title="Link to this heading">¶</a></h2>
+<p>The framework writes two data planes automatically — and they live in <strong>two different places</strong>. Keep them distinct:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Data plane</p></th>
+<th class="head"><p>What it is</p></th>
+<th class="head"><p>Where it lives</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong><code class="docutils literal notranslate"><span class="pre">AgentState</span></code></strong></p></td>
+<td><p>volatile runtime context: chat buffer, compaction summary, permission / tool / task / Plan-Mode contexts, plus metadata pointing at workspace artifacts</p></td>
+<td><p>the <strong><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong> — a separate subsystem, <strong>not</strong> the workspace (default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Workspace runtime/long-term files</strong></p></td>
+<td><p>durable artifacts: session logs, task records, <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/</span></code></p></td>
+<td><p>inside the workspace tree, physical location follows the filesystem mode</p></td>
+</tr>
+</tbody>
+</table>
 </div>
-<p>The next <code class="docutils literal notranslate"><span class="pre">call()</span></code> with the same <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> loads it back. This is <code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> (<code class="docutils literal notranslate"><span class="pre">io.agentscope.harness.agent.session.WorkspaceSession</span></code>) — the default <code class="docutils literal notranslate"><span class="pre">Session</span></code> implementation when <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> is built without <code class="docutils literal notranslate"><span class="pre">.session(...)</span></code>, backed by <code class="docutils literal notranslate"><span class="pre">JsonSession</span></code>.</p>
-<p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code> also holds:</p>
+<p>You don’t hand-edit either. The rest of this section walks the two planes in turn.</p>
+<section id="agent-state-a-separate-store-not-in-the-workspace">
+<h3>Agent state — a separate store, not in the workspace<a class="headerlink" href="#agent-state-a-separate-store-not-in-the-workspace" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> is the per-<code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> runtime context, and it is deliberately kept <strong>out of the workspace tree</strong>. When a <code class="docutils literal notranslate"><span class="pre">call()</span></code> completes, it is serialized to JSON and persisted via the configured <a class="reference internal" href="../../integration/session/index.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></span></a>, addressed by the call’s <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code>. The next <code class="docutils literal notranslate"><span class="pre">call()</span></code> with the same <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> loads it back.</p>
+<p>By default <code class="docutils literal notranslate"><span class="pre">HarnessAgent</span></code> uses a <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code> rooted <strong>outside</strong> the workspace at <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code> (override the base via the <code class="docutils literal notranslate"><span class="pre">agentscope.state.home</span></code> system property), so runtime state stays decoupled from workspace data. Configure another store via <code class="docutils literal notranslate"><span class="pre">.stateStore(...)</span></code>.</p>
+</section>
+<section id="session-logs-these-are-workspace-files">
+<h3>Session logs (these <em>are</em> workspace files)<a class="headerlink" href="#session-logs-these-are-workspace-files" title="Link to this heading">¶</a></h3>
+<p>Distinct from <code class="docutils literal notranslate"><span class="pre">AgentState</span></code>, the workspace holds the <strong>conversation logs</strong> under <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code>:</p>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">sessions.json</span></code></strong> — the agent’s session index (key = sessionId, value = summary + updatedAt).</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">&lt;sessionId&gt;.log.jsonl</span></code></strong> — the <strong>never-compacted</strong> raw conversation log, append-only. <code class="docutils literal notranslate"><span class="pre">session_search</span></code> / <code class="docutils literal notranslate"><span class="pre">session_history</span></code> query it.</p></li>
 </ul>
 <blockquote>
-<div><p><code class="docutils literal notranslate"><span class="pre">WorkspaceSession</span></code> is single-machine only. Multi-replica production must switch to a distributed backend (<code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code> / …). If you have configured <code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> or <code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> without swapping the Session, <code class="docutils literal notranslate"><span class="pre">build()</span></code> raises <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code> — a forced reminder not to make runtime state a single point of failure.</p>
+<div><p>The default <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code> is single-machine only. Multi-replica production must switch to a distributed store (<code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> / <code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> / …). If you have configured <code class="docutils literal notranslate"><span class="pre">filesystem(SandboxFilesystemSpec)</span></code> or <code class="docutils literal notranslate"><span class="pre">filesystem(RemoteFilesystemSpec)</span></code> without swapping in a distributed state store, <code class="docutils literal notranslate"><span class="pre">build()</span></code> raises <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code> — a forced reminder not to make runtime state a single point of failure.</p>
 </div></blockquote>
-<p>Full details (recovery flow, cross-node continuation, <code class="docutils literal notranslate"><span class="pre">SessionKey</span></code>) live in <a class="reference internal" href="context.html"><span class="doc std std-doc">Context</span></a>.</p>
+<p>Full details (recovery flow, cross-node continuation, <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> addressing) live in <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a>.</p>
 </section>
 <section id="memory-long-term">
 <h3>Memory (long-term)<a class="headerlink" href="#memory-long-term" title="Link to this heading">¶</a></h3>
@@ -1224,6 +1384,55 @@ You are an XX assistant. Follow these behavior guidelines.
 </div></blockquote>
 </section>
 </section>
+<section id="how-the-agent-evolves">
+<h2>How the agent evolves<a class="headerlink" href="#how-the-agent-evolves" title="Link to this heading">¶</a></h2>
+<p>Beyond its static definition, the workspace is where the agent’s <em>accumulated experience</em> lands. Five channels accrue automatically — turn on the matching capability and the data starts piling up in the workspace, isolated per tenant exactly like everything else. Each has its own deep-dive page; this table is the index:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Channel</p></th>
+<th class="head"><p>Where it lives</p></th>
+<th class="head"><p>Turn it on</p></th>
+<th class="head"><p>How it accrues</p></th>
+<th class="head"><p>Deep dive</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Long-term memory</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> + <code class="docutils literal notranslate"><span class="pre">memory/YYYY-MM-DD.md</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.compaction(...)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MemoryFlushMiddleware</span></code> extracts facts from the conversation prefix before compaction; a throttled background task merges + dedups them into <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, re-injected every turn</p></td>
+<td><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">Memory</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Self-learning skills</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">skills/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/_drafts/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/.archive/</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.enableSkillManageTool(...)</span></code></p></td>
+<td><p>the agent calls <code class="docutils literal notranslate"><span class="pre">propose_skill</span></code> to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d)</p></td>
+<td><p><a class="reference internal" href="#./skill#self-learning-loop-optional"><span class="xref myst">Skills — Self-learning loop</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Plans</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">plans/PLAN.md</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.enablePlanMode()</span></code></p></td>
+<td><p>a read-only planning phase writes the plan via <code class="docutils literal notranslate"><span class="pre">plan_write</span></code>; it persists across calls and drives the execution phase, decoupling intent from action</p></td>
+<td><p><a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Offloaded tool results</strong></p></td>
+<td><p>the eviction directory under the workspace</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.toolResultEviction(...)</span></code></p></td>
+<td><p>when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a <code class="docutils literal notranslate"><span class="pre">read_file</span></code> pointer</p></td>
+<td><p><a class="reference internal" href="compaction.html"><span class="doc std std-doc">Compaction</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Session logs</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/sessions/</span></code> (workspace)</p></td>
+<td><p>on by default</p></td>
+<td><p>every <code class="docutils literal notranslate"><span class="pre">call()</span></code> appends to the never-compacted JSONL log; <code class="docutils literal notranslate"><span class="pre">session_search</span></code> / <code class="docutils literal notranslate"><span class="pre">session_history</span></code> query it</p></td>
+<td><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The unifying idea: <strong>the agent improves between runs without you wiring up any storage.</strong> Memory, skills, plans, session logs, and offloaded results are all just files in the workspace — they get the same per-tenant isolation, the same two-layer reads, and the same filesystem-mode portability as everything else on this page. (The volatile <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> runtime context is the one exception — it lives in the separate <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>, not the workspace; see <a class="reference internal" href="#how-runtime-data-and-memory-are-stored">How runtime data and memory are stored</a>.)</p>
+</section>
 <section id="deep-dive-on-key-directories">
 <h2>Deep dive on key directories<a class="headerlink" href="#deep-dive-on-key-directories" title="Link to this heading">¶</a></h2>
 <section id="skills">
@@ -1238,7 +1447,7 @@ You are an XX assistant. Follow these behavior guidelines.
 <p>There are four registration layers (low → high priority):</p>
 <ol class="arabic simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">projectGlobalSkillsDir(Path)</span></code> — project global, e.g. <code class="docutils literal notranslate"><span class="pre">~/.agentscope/skills/</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> — marketplace backends (Git / Nacos / MySQL / classpath)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">skillRepository(...)</span></code> — marketplace stores (Git / Nacos / MySQL / classpath)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> — workspace shared</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">&lt;userId&gt;/skills/</span></code> — per-user (overrides all above)</p></li>
 </ol>
@@ -1301,14 +1510,12 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
 └── PLAN.md           ← current plan written by plan_write
 </pre></div>
 </div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">PlanModeContext</span></code> (whether the plan phase is active, current plan file path) lives in <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> — it is <strong>runtime state</strong>, persisted under <code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/context/&lt;sessionId&gt;/</span></code>. The files under <code class="docutils literal notranslate"><span class="pre">plans/</span></code> are only the markdown content itself. See <a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a>.</p>
+<p>Note: <code class="docutils literal notranslate"><span class="pre">PlanModeContext</span></code> (whether the plan phase is active, current plan file path) lives in <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> — it is <strong>runtime state</strong>, persisted via the <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (by default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>, outside the workspace). The files under <code class="docutils literal notranslate"><span class="pre">plans/</span></code> are only the markdown content itself. See <a class="reference internal" href="plan-mode.html"><span class="doc std std-doc">Plan Mode</span></a>.</p>
 </section>
 <section id="agents-agentid">
 <h3><code class="docutils literal notranslate"><span class="pre">agents/&lt;agentId&gt;/</span></code><a class="headerlink" href="#agents-agentid" title="Link to this heading">¶</a></h3>
 <p>This is the <strong>runtime root</strong>, framework-written and rarely hand-edited:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>agents/&lt;agentId&gt;/
-├── context/&lt;sessionId&gt;/
-│   └── agent_state.json      ← serialized AgentState snapshot (written at the end of each call)
 ├── sessions/
 │   ├── sessions.json          ← session index for this agent
 │   └── &lt;sessionId&gt;.log.jsonl  ← never-compacted raw conversation log (append-only)
@@ -1316,7 +1523,10 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
     └── &lt;sessionId&gt;.json       ← subagent background task records (taskId → TaskRecord)
 </pre></div>
 </div>
-<p>For cross-node recovery / multi-replica deployments this data must be shared (either <code class="docutils literal notranslate"><span class="pre">RedisSession</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>, or sandbox with distributed state). See <a class="reference internal" href="context.html"><span class="doc std std-doc">Context</span></a> and <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a>.</p>
+<blockquote>
+<div><p>The serialized <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> (<code class="docutils literal notranslate"><span class="pre">agent_state</span></code>) is <strong>not</strong> in the workspace by default — it lives in the configured <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (default <code class="docutils literal notranslate"><span class="pre">~/.agentscope/state/&lt;agentId&gt;/</span></code>). Only the conversation logs and task records above stay in the workspace.</p>
+</div></blockquote>
+<p>For cross-node recovery / multi-replica deployments this data must be shared (either <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code> + <code class="docutils literal notranslate"><span class="pre">RemoteFilesystemSpec</span></code>, or sandbox with distributed state). See <a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> and <a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a>.</p>
 </section>
 <section id="knowledge">
 <h3><code class="docutils literal notranslate"><span class="pre">knowledge/</span></code><a class="headerlink" href="#knowledge" title="Link to this heading">¶</a></h3>
@@ -1345,7 +1555,7 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
 <ul class="simple">
 <li><p><a class="reference internal" href="architecture.html"><span class="doc std std-doc">Architecture</span></a> — how the system prompt is assembled and how capabilities cooperate</p></li>
 <li><p><a class="reference internal" href="filesystem.html"><span class="doc std std-doc">Filesystem</span></a> — where the workspace physically lives (local / sandbox / shared store), <code class="docutils literal notranslate"><span class="pre">IsolationScope</span></code>, multi-user isolation</p></li>
-<li><p><a class="reference internal" href="context.html"><span class="doc std std-doc">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> and <code class="docutils literal notranslate"><span class="pre">Session</span></code> persistence, cross-node recovery</p></li>
+<li><p><a class="reference internal" href="#./context"><span class="xref myst">Context</span></a> — <code class="docutils literal notranslate"><span class="pre">AgentState</span></code> and <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> persistence, cross-node recovery</p></li>
 <li><p><a class="reference internal" href="memory.html"><span class="doc std std-doc">Memory</span></a> — how <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code> / <code class="docutils literal notranslate"><span class="pre">memory/</span></code> are produced and maintained, compaction, eviction</p></li>
 <li><p><a class="reference internal" href="skill.html"><span class="doc std std-doc">Skills</span></a> — four-layer composition, self-learning loop, the <code class="docutils literal notranslate"><span class="pre">&lt;available_skills&gt;</span></code> block</p></li>
 <li><p><a class="reference internal" href="subagent.html"><span class="doc std std-doc">Subagent</span></a> — <code class="docutils literal notranslate"><span class="pre">subagents/</span></code> declarations, sync vs background, stream forwarding</p></li>
@@ -1387,14 +1597,14 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="context.html">
+          <a class="prev-page" href="compaction.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Context &amp; Session</div>
+                <div class="title">Context Compaction</div>
                 
               </div>
             </a>
@@ -1407,7 +1617,7 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1449,16 +1659,21 @@ Full details (sync vs background, remote subagents, stream forwarding, task stor
 <li><a class="reference internal" href="#how-workspace-content-gets-loaded">How workspace content gets loaded</a><ul>
 <li><a class="reference internal" href="#system-prompt-assembly-per-turn">System-prompt assembly per turn</a></li>
 <li><a class="reference internal" href="#two-layer-reads-filesystem-first-local-fallback">Two-layer reads (filesystem-first + local fallback)</a></li>
-<li><a class="reference internal" href="#override-precedence-with-multiple-users-sharing-one-workspace">Override precedence with multiple users sharing one workspace</a></li>
+<li><a class="reference internal" href="#override-precedence-with-multiple-users-sharing-one-workspace">Override precedence with multiple users sharing one workspace</a><ul>
+<li><a class="reference internal" href="#one-agent-logic-customized-per-user">One agent logic, customized per user</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#loading-behavior-under-each-filesystem-mode">Loading behavior under each filesystem mode</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#how-session-and-memory-are-stored">How session and memory are stored</a><ul>
-<li><a class="reference internal" href="#session-runtime-snapshot">Session (runtime snapshot)</a></li>
+<li><a class="reference internal" href="#how-runtime-data-and-memory-are-stored">How runtime data and memory are stored</a><ul>
+<li><a class="reference internal" href="#agent-state-a-separate-store-not-in-the-workspace">Agent state — a separate store, not in the workspace</a></li>
+<li><a class="reference internal" href="#session-logs-these-are-workspace-files">Session logs (these <em>are</em> workspace files)</a></li>
 <li><a class="reference internal" href="#memory-long-term">Memory (long-term)</a></li>
 <li><a class="reference internal" href="#how-namespace-isolation-maps-to-physical-location">How namespace isolation maps to physical location</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#how-the-agent-evolves">How the agent evolves</a></li>
 <li><a class="reference internal" href="#deep-dive-on-key-directories">Deep dive on key directories</a><ul>
 <li><a class="reference internal" href="#skills"><code class="docutils literal notranslate"><span class="pre">skills/</span></code></a></li>
 <li><a class="reference internal" href="#subagents"><code class="docutils literal notranslate"><span class="pre">subagents/</span></code></a></li>

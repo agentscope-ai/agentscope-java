@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-02T16:19:40+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Redis Session" href="redis.html"><link rel="prev" title="会话（Session）" href="index.html">
+    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Redis 状态存储" href="redis.html"><link rel="prev" title="Agent 状态存储（AgentStateStore）" href="overview.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/integration/session/mysql.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>MySQL Session - AgentScope Java</title>
+        <title>MySQL 状态存储 - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/togglebutton.css?v=9c3e77be" />
@@ -89,7 +89,7 @@
     class="docs-top-tabs"
     aria-label="Documentation sections"
     data-current-page="v2/zh/integration/session/mysql"
-    data-current-lang="en"
+    data-current-lang="zh"
     data-current-version="v2"
   >
     <div class="docs-top-tabs__list">
@@ -105,7 +105,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/intro.html"
+              href="../../intro.html"
               data-tab-id="home"
               data-mirror-paths="true"
               data-href-en="v1/en/intro"
@@ -125,7 +125,7 @@
               data-sections-v2-en=""
               data-sections-v2-zh=""
             >
-              Home
+              首页
             </a>
           
         
@@ -141,7 +141,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/docs/index.html"
+              href="../../docs/index.html"
               data-tab-id="docs"
               data-mirror-paths="true"
               data-href-en="v1/en/docs/quickstart/installation"
@@ -161,7 +161,7 @@
               data-sections-v2-en="v2 · Quick Start|v2 · Building Blocks|v2 · Harness (English)|v2 · Reference"
               data-sections-v2-zh="v2 · 快速开始|v2 · 核心组件|v2 · Harness|v2 · 参考"
             >
-              Docs
+              文档
             </a>
           
         
@@ -177,7 +177,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/integration/overview.html"
+              href="../overview.html"
               data-tab-id="integration"
               data-mirror-paths="true"
               data-href-en="v1/en/integration/overview"
@@ -197,7 +197,7 @@
               data-sections-v2-en="v2 · Integration"
               data-sections-v2-zh="v2 · 集成"
             >
-              Integration
+              集成
             </a>
           
         
@@ -213,7 +213,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/blogs/agentscope-v2-release.html"
+              href="../../blogs/agentscope-v2-release.html"
               data-tab-id="blogs"
               data-mirror-paths="true"
               data-href-en="v1/en/blogs/index"
@@ -233,7 +233,7 @@
               data-sections-v2-en="v2 · Blogs"
               data-sections-v2-zh="v2 · 博客"
             >
-              Blogs
+              博客
             </a>
           
         
@@ -249,7 +249,7 @@
           
             <a
               class="docs-top-tabs__link"
-              href="../../../en/community/contributors.html"
+              href="../../community/contributors.html"
               data-tab-id="community"
               data-mirror-paths="true"
               data-href-en="v1/en/community/overview"
@@ -269,7 +269,7 @@
               data-sections-v2-en="v2 · Community"
               data-sections-v2-zh="v2 · 社区"
             >
-              Community
+              社区
             </a>
           
         
@@ -672,7 +672,6 @@
 <p class="caption" role="heading"><span class="caption-text">v2 · Quick Start</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/index.html">What's AgentScope 2.0?</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/quickstart.html">Quickstart</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Building Blocks</span></p>
@@ -683,11 +682,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/model.html">Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/permission-system.html">Permission System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/tool.html">Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/building-blocks/context.html">Context &amp; AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness (English)</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/architecture.html">Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/context.html">Context</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/compaction.html">Compaction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/workspace.html">Workspace</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/memory.html">Memory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/filesystem.html">Filesystem</a></li>
@@ -695,9 +695,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/subagent.html">Subagent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/skill.html">Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/plan-mode.html">Plan Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Reference</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/change-log.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/going-to-production.html">Going to Production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/docs/others/faq.html">FAQ</a></li>
 </ul>
@@ -705,17 +708,21 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../en/integration/overview.html">Overview</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/memory/index.html">Memory</a><input aria-label="Toggle navigation of Memory" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/bailian.html">Bailian Memory</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Session</a><input aria-label="Toggle navigation of Session" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis Session</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/session/index.html">Agent State Store</a><input aria-label="Toggle navigation of Agent State Store" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/overview.html">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/mysql.html">MySQL State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/redis.html">Redis State Store</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/session/oss.html">OSS State Store</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/rag/index.html">RAG Knowledge Base</a><input aria-label="Toggle navigation of RAG Knowledge Base" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/bailian.html">Bailian Knowledge</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/rag/dify.html">Dify</a></li>
@@ -724,26 +731,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/skill/index.html">Skill Repository</a><input aria-label="Toggle navigation of Skill Repository" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/git-repository.html">Git Skill Repository</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/mysql-repository.html">MySQL Skill Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/skill/postgresql-repository.html">PostgreSQL Skill Repository</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/protocol/index.html">Agent Protocols</a><input aria-label="Toggle navigation of Agent Protocols" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/infrastructure/index.html">Infrastructure</a><input aria-label="Toggle navigation of Infrastructure" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../en/integration/ecosystem/index.html">Ecosystem</a><input aria-label="Toggle navigation of Ecosystem" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/overview.html">Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../en/integration/ecosystem/training.html">Online Training</a></li>
 </ul>
@@ -760,7 +770,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../docs/change-log.html">更新日志</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/index.html">什么是 AgentScope 2.0？</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/quickstart.html">快速上手</a></li>
 </ul>
@@ -772,11 +781,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/model.html">模型</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/permission-system.html">权限系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/tool.html">工具</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/building-blocks/context.html">上下文与 AgentState</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · Harness</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/architecture.html">架构</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/context.html">上下文</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/compaction.html">上下文压缩</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/workspace.html">工作区</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/memory.html">记忆</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/filesystem.html">文件系统</a></li>
@@ -784,9 +794,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/subagent.html">子 Agent</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/skill.html">技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/harness/plan-mode.html">计划模式</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/harness/channel.html">Channel</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">v2 · 参考</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/change-log.html">迁移指南</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/others/release-notes.html">Release Notes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/others/going-to-production.html">上生产</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../docs/others/faq.html">常见问题</a></li>
 </ul>
@@ -794,17 +807,21 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../overview.html">概览</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../memory/index.html">记忆</a><input aria-label="Toggle navigation of 记忆" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../memory/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../memory/mem0.html">Mem0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../memory/bailian.html">百炼记忆</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../memory/reme.html">ReMe</a></li>
 </ul>
 </li>
-<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">会话</a><input aria-label="Toggle navigation of 会话" checked="" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
-<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">MySQL Session</a></li>
-<li class="toctree-l2"><a class="reference internal" href="redis.html">Redis Session</a></li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">Agent 状态存储</a><input aria-label="Toggle navigation of Agent 状态存储" checked="" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="overview.html">概览</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">MySQL 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="redis.html">Redis 状态存储</a></li>
+<li class="toctree-l2"><a class="reference internal" href="oss.html">OSS 状态存储</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../rag/index.html">RAG 知识库</a><input aria-label="Toggle navigation of RAG 知识库" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../rag/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../rag/simple.html">Simple</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../rag/bailian.html">百炼知识库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../rag/dify.html">Dify</a></li>
@@ -813,26 +830,29 @@
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../skill/index.html">技能仓库</a><input aria-label="Toggle navigation of 技能仓库" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../skill/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../skill/git-repository.html">Git 技能仓库</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../skill/mysql-repository.html">MySQL 技能仓库</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../skill/postgresql-repository.html">PostgreSQL 技能仓库</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../protocol/index.html">智能体协议</a><input aria-label="Toggle navigation of 智能体协议" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../protocol/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../protocol/a2a.html">A2A</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../protocol/agui.html">AG-UI</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../protocol/agent-protocol.html">Agent Protocol</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../infrastructure/index.html">基础设施</a><input aria-label="Toggle navigation of 基础设施" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../infrastructure/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../infrastructure/higress.html">Higress</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../infrastructure/nacos.html">Nacos</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../infrastructure/rocketmq.html">RocketMQ</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../infrastructure/scheduler.html">Scheduler</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../ecosystem/index.html">生态扩展</a><input aria-label="Toggle navigation of 生态扩展" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../ecosystem/overview.html">概览</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../ecosystem/chat-completions-web.html">Chat Completions Web</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../ecosystem/kotlin.html">Kotlin</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../ecosystem/studio.html">Studio</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../ecosystem/training.html">在线训练</a></li>
 </ul>
@@ -883,14 +903,18 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="mysql-session">
-<h1>MySQL Session<a class="headerlink" href="#mysql-session" title="Link to this heading">¶</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-session-mysql</span></code> 把 AgentScope 的会话状态持久化到 MySQL。适合已有 MySQL 基础设施、需要事务和 SQL 查询能力的场景。</p>
+          <div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>本页面内容已迁移至 <span class="xref myst">分布式存储 — MySQL</span>。以下内容保留作为参考，但建议使用新文档。</p>
+</div>
+<section id="mysql">
+<h1>MySQL 状态存储<a class="headerlink" href="#mysql" title="Link to this heading">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">agentscope-extensions-mysql</span></code> 把 AgentScope 的 Agent 状态持久化到 MySQL。适合已有 MySQL 基础设施、需要事务和 SQL 查询能力的场景。</p>
 <section id="id1">
 <h2>添加依赖<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-session-mysql<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-mysql<span class="nt">&lt;/artifactId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
@@ -900,8 +924,8 @@
 <section id="id2">
 <h2>快速上手<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.zaxxer.hikari.HikariDataSource</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.Session</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.mysql.MysqlSession</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.AgentStateStore</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.mysql.state.MysqlAgentStateStore</span><span class="p">;</span>
 
 <span class="n">HikariDataSource</span><span class="w"> </span><span class="n">ds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">HikariDataSource</span><span class="p">();</span>
 <span class="n">ds</span><span class="p">.</span><span class="na">setJdbcUrl</span><span class="p">(</span><span class="s">&quot;jdbc:mysql://localhost:3306/agentscope?serverTimezone=UTC&quot;</span><span class="p">);</span>
@@ -909,20 +933,24 @@
 <span class="n">ds</span><span class="p">.</span><span class="na">setPassword</span><span class="p">(</span><span class="s">&quot;***&quot;</span><span class="p">);</span>
 
 <span class="c1">// 第二个参数 createIfNotExist=true：自动创建库与表</span>
-<span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSession</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+<span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlAgentStateStore</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
 
-<span class="n">SessionManager</span><span class="w"> </span><span class="n">manager</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">session</span><span class="p">(</span><span class="n">session</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">stateStore</span><span class="p">(</span><span class="n">stateStore</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 <p>如果库与表已经预先创建好了，可以使用更安全的形式：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSession</span><span class="p">(</span><span class="n">ds</span><span class="p">);</span><span class="w">          </span><span class="c1">// 库/表不存在则抛 IllegalStateException</span>
-<span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSession</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span><span class="w">   </span><span class="c1">// 同上，显式声明</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlAgentStateStore</span><span class="p">(</span><span class="n">ds</span><span class="p">);</span><span class="w">          </span><span class="c1">// 库/表不存在则抛 IllegalStateException</span>
+<span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlAgentStateStore</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span><span class="w">   </span><span class="c1">// 同上，显式声明</span>
 </pre></div>
 </div>
 </section>
 <section id="id3">
 <h2>自定义库名 / 表名<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlSession</span><span class="p">(</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentStateStore</span><span class="w"> </span><span class="n">stateStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MysqlAgentStateStore</span><span class="p">(</span>
 <span class="w">    </span><span class="n">ds</span><span class="p">,</span>
 <span class="w">    </span><span class="s">&quot;agentscope_prod&quot;</span><span class="p">,</span><span class="w">        </span><span class="c1">// 库名</span>
 <span class="w">    </span><span class="s">&quot;session_state&quot;</span><span class="p">,</span><span class="w">          </span><span class="c1">// 表名</span>
@@ -947,30 +975,29 @@
 </pre></div>
 </div>
 <ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> 二元组会被打包进 <code class="docutils literal notranslate"><span class="pre">session_id</span></code> 列，形如 <code class="docutils literal notranslate"><span class="pre">{userSegment}:{sessionId}</span></code>（<code class="docutils literal notranslate"><span class="pre">userSegment</span></code> 为 <code class="docutils literal notranslate"><span class="pre">userId</span></code>，匿名 session 用 <code class="docutils literal notranslate"><span class="pre">__anon__</span></code>）。</p></li>
 <li><p>单值：<code class="docutils literal notranslate"><span class="pre">item_index</span> <span class="pre">=</span> <span class="pre">0</span></code></p></li>
 <li><p>列表：<code class="docutils literal notranslate"><span class="pre">item_index</span> <span class="pre">=</span> <span class="pre">0,1,2,...</span></code>，每项一行；同时另存一行 <code class="docutils literal notranslate"><span class="pre">state_key='xxx:_hash'</span></code> 用作变更检测。</p></li>
 </ul>
 </section>
 <section id="api">
 <h2>直接使用 API<a class="headerlink" href="#api" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">MysqlSession</span></code> 实现了 <code class="docutils literal notranslate"><span class="pre">Session</span></code> 接口，常用调用如下：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SessionKey</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleSessionKey</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">);</span>
-
-<span class="c1">// 单值</span>
-<span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;memory&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">state</span><span class="p">);</span>
-<span class="n">Optional</span><span class="o">&lt;</span><span class="n">MyState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">got</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;memory&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<p><code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code> 实现了 <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> 接口，常用调用如下：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 单值（匿名 session 时 userId 可传 null）</span>
+<span class="n">stateStore</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agent_state&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">state</span><span class="p">);</span>
+<span class="n">Optional</span><span class="o">&lt;</span><span class="n">MyState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">got</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateStore</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agent_state&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="c1">// 列表（增量 append；变更时整体重写）</span>
-<span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;messages&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">listOfMessages</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">MyState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">getList</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;messages&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="n">stateStore</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;messages&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">listOfMessages</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">MyState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateStore</span><span class="p">.</span><span class="na">getList</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;messages&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="c1">// 维护</span>
-<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
-<span class="n">session</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
-<span class="n">Set</span><span class="o">&lt;</span><span class="n">SessionKey</span><span class="o">&gt;</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">listSessionKeys</span><span class="p">();</span>
+<span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateStore</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">);</span>
+<span class="n">stateStore</span><span class="p">.</span><span class="na">delete</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;session-1&quot;</span><span class="p">);</span>
+<span class="n">Set</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">sessions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateStore</span><span class="p">.</span><span class="na">listSessionIds</span><span class="p">(</span><span class="s">&quot;user-42&quot;</span><span class="p">);</span><span class="w">   </span><span class="c1">// 传 null 列出匿名 session</span>
 
 <span class="c1">// 清理（请谨慎，仅用于测试）</span>
-<span class="n">session</span><span class="p">.</span><span class="na">truncateAllSessions</span><span class="p">();</span>
+<span class="n">stateStore</span><span class="p">.</span><span class="na">truncateAllSessions</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -1034,18 +1061,18 @@
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Redis Session</div>
+                <div class="title">Redis 状态存储</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="index.html">
+          <a class="prev-page" href="overview.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">会话（Session）</div>
+                <div class="title">Agent 状态存储（AgentStateStore）</div>
                 
               </div>
             </a>
@@ -1058,7 +1085,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-02</div>
+              Last updated on 2026-06-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1093,7 +1120,7 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">MySQL Session</a><ul>
+<li><a class="reference internal" href="#">MySQL 状态存储</a><ul>
 <li><a class="reference internal" href="#id1">添加依赖</a></li>
 <li><a class="reference internal" href="#id2">快速上手</a></li>
 <li><a class="reference internal" href="#id3">自定义库名 / 表名</a></li>
