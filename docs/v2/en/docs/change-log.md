@@ -4,7 +4,7 @@ description: "Complete migration guide from AgentScope Java 1.x to 2.0"
 ---
 
 :::{tip}
-Looking for per-version change records (2.0.0-RC1, 2.0.0-RC2, etc.)? See [Release Notes](others/release-notes.md).
+Looking for per-version change records? See [Release Notes](others/release-notes.md).
 :::
 
 AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level changes. This page splits those changes into two sections:

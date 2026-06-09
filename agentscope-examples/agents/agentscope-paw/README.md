@@ -4,7 +4,7 @@
 
 ## Overview
 
-paw is the Java port of [QwenPaw] — a personal assistant you install on your
+AgentScope Paw is the Java port of [QwenPaw] — a personal assistant you install on your
 own machine. It runs as you, on your filesystem and your shell, and it gets
 better over time: the skills it learns, the sub-agents it spawns, and the
 memory it keeps are all just files in a workspace it edits for itself.

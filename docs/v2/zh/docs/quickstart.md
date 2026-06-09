@@ -20,7 +20,7 @@ AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 ```
 
 :::{note}
-当前最新版本为 `2.0.0-RC1`，把 `${agentscope.version}` 替换为该值即可。完整发布说明见 [GitHub Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC1)。
+把 `${agentscope.version}` 替换为最新版本号即可，最新版本请参考 [Release Notes](others/release-notes.md)。
 :::
 
 只想跑裸 `ReActAgent`（不需要工作区 / 持久化 / 子 agent / 沙箱），单独依赖 `agentscope-core` 即可。两种用法的区别详见 [Harness 架构](./harness/architecture.md)。

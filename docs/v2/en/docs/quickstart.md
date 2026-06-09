@@ -20,7 +20,7 @@ AgentScope Java requires JDK 17 or newer. Maven 3.9+ is recommended.
 ```
 
 :::{note}
-The current latest version is `2.0.0-RC1` — substitute it for `${agentscope.version}`. See the [GitHub release notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC1) for full release details.
+Substitute `${agentscope.version}` with the latest version. See [Release Notes](others/release-notes.md) for the latest version and full release details.
 :::
 
 If you only need a bare `ReActAgent` (no workspace / persistence / subagents / sandbox), depend on `agentscope-core` alone. The difference between the two is covered in [Harness Architecture](./harness/architecture.md).

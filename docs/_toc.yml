@@ -276,8 +276,6 @@ parts:
   chapters:
   - file: v2/en/docs/index
     title: What's AgentScope 2.0?
-  - file: v2/en/docs/change-log
-    title: Change Log
   - file: v2/en/docs/quickstart
     title: Quickstart
 
@@ -325,6 +323,10 @@ parts:
 
 - caption: v2 · Reference
   chapters:
+  - file: v2/en/docs/change-log
+    title: Migration Guide
+  - file: v2/en/docs/others/release-notes
+    title: Release Notes
   - file: v2/en/docs/others/going-to-production
     title: Going to Production
   - file: v2/en/docs/others/faq
@@ -418,8 +420,6 @@ parts:
   chapters:
   - file: v2/zh/intro
     title: 首页
-  - file: v2/zh/docs/change-log
-    title: 更新日志
   - file: v2/zh/docs/index
     title: 什么是 AgentScope 2.0？
   - file: v2/zh/docs/quickstart
@@ -467,6 +467,10 @@ parts:
 
 - caption: v2 · 参考
   chapters:
+  - file: v2/zh/docs/change-log
+    title: 迁移指南
+  - file: v2/zh/docs/others/release-notes
+    title: Release Notes
   - file: v2/zh/docs/others/going-to-production
     title: 上生产
   - file: v2/zh/docs/others/faq

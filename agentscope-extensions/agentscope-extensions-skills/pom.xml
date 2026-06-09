@@ -34,6 +34,7 @@
     <modules>
         <module>agentscope-extensions-skill-git-repository</module>
         <module>agentscope-extensions-skill-mysql-repository</module>
+        <module>agentscope-extensions-skill-postgresql-repository</module>
     </modules>
 
 </project>
