@@ -268,10 +268,30 @@ public final class AgentSpecLoader {
         // ---- optional fields ----
         String model = asString(fm.get("model"));
 
-        int maxIters = 10;
-        Object maxItersObj = fm.get("maxIters");
-        if (maxItersObj instanceof Number n) {
-            maxIters = n.intValue();
+        // steps (preferred) > maxIters (deprecated alias). Both default to 10 via the builder.
+        int steps = 10;
+        Object stepsObj = fm.get("steps");
+        if (stepsObj instanceof Number sn) {
+            steps = sn.intValue();
+        } else {
+            Object maxItersObj = fm.get("maxIters");
+            if (maxItersObj instanceof Number n) {
+                steps = n.intValue();
+            }
+        }
+
+        Double temperature = asDouble(fm.get("temperature"));
+        Double topP = asDouble(fm.get("top_p"));
+        if (topP == null) {
+            topP = asDouble(fm.get("topP"));
+        }
+        String variant = asString(fm.get("variant"));
+
+        SubagentDeclaration.Mode declMode = parseDeclarationMode(asString(fm.get("mode")), name);
+        boolean hidden = asBoolean(fm.get("hidden"), false);
+        Boolean exposeToUser = asNullableBoolean(fm.get("expose_to_user"));
+        if (exposeToUser == null) {
+            exposeToUser = asNullableBoolean(fm.get("exposeToUser"));
         }
 
         List<String> tools = parseToolNames(asString(fm.get("tools")));
@@ -282,7 +302,13 @@ public final class AgentSpecLoader {
                         .description(description)
                         .workspaceMode(mode)
                         .model(model)
-                        .maxIters(maxIters)
+                        .steps(steps)
+                        .temperature(temperature)
+                        .topP(topP)
+                        .variant(variant)
+                        .mode(declMode)
+                        .hidden(hidden)
+                        .exposeToUser(exposeToUser)
                         .tools(tools.isEmpty() ? null : tools);
 
         if (workspacePath != null) {
@@ -319,6 +345,58 @@ public final class AgentSpecLoader {
 
     private static String asString(Object v) {
         return v != null ? v.toString().trim() : null;
+    }
+
+    private static boolean asBoolean(Object v, boolean def) {
+        if (v == null) return def;
+        if (v instanceof Boolean b) return b;
+        String s = v.toString().trim();
+        if (s.isEmpty()) return def;
+        return Boolean.parseBoolean(s);
+    }
+
+    /**
+     * Parses a tri-state boolean: {@code null} when the key is absent or blank (no opinion),
+     * otherwise the parsed boolean. Used for front-matter flags that distinguish "unset" from
+     * an explicit {@code false}.
+     */
+    private static Boolean asNullableBoolean(Object v) {
+        if (v == null) return null;
+        if (v instanceof Boolean b) return b;
+        String s = v.toString().trim();
+        if (s.isEmpty()) return null;
+        return Boolean.parseBoolean(s);
+    }
+
+    private static SubagentDeclaration.Mode parseDeclarationMode(String s, String name) {
+        if (s == null || s.isBlank()) return SubagentDeclaration.Mode.ALL;
+        switch (s.toLowerCase()) {
+            case "primary":
+                return SubagentDeclaration.Mode.PRIMARY;
+            case "subagent":
+                return SubagentDeclaration.Mode.SUBAGENT;
+            case "all":
+                return SubagentDeclaration.Mode.ALL;
+            default:
+                log.warn(
+                        "Unknown mode '{}' in subagent declaration '{}', defaulting to all",
+                        s,
+                        name);
+                return SubagentDeclaration.Mode.ALL;
+        }
+    }
+
+    private static Double asDouble(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.doubleValue();
+        String s = v.toString().trim();
+        if (s.isEmpty()) return null;
+        try {
+            return Double.parseDouble(s);
+        } catch (NumberFormatException e) {
+            log.warn("Failed to parse numeric value '{}' — treating as unset", s);
+            return null;
+        }
     }
 
     private static List<String> parseToolNames(String toolsStr) {

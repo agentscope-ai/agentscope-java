@@ -16,20 +16,20 @@
 package io.agentscope.builder.web.config;
 
 import io.agentscope.builder.runtime.BuilderBootstrap;
-import io.agentscope.builder.runtime.channel.ChannelConfig;
-import io.agentscope.builder.runtime.channel.DmScope;
-import io.agentscope.builder.runtime.channel.chatui.ChatUiChannel;
 import io.agentscope.builder.runtime.config.ChannelConfigEntry;
 import io.agentscope.builder.web.toolbus.ToolEventBus;
-import io.agentscope.builder.web.toolbus.ToolNotificationHook;
+import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.extensions.mysql.store.JdbcStore;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.agent.store.jdbc.JdbcStore;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.DmScope;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -180,7 +180,7 @@ public class BuilderConfig {
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             BaseStore baseStore,
-            Optional<Session> sessionOpt)
+            Optional<AgentStateStore> sessionOpt)
             throws IOException {
         Path cwd = resolveCwd();
         ensureAgentscopeConfig();
@@ -196,23 +196,24 @@ public class BuilderConfig {
                             + " available.");
         }
 
-        // RemoteFilesystemSpec requires a distributed Session backend; the harness rejects the
-        // default WorkspaceSession because conversation state would otherwise be pinned to one pod
-        // while the filesystem is shared. Operators should provide a Redis/MySQL Session bean for
-        // production; if none is wired (typical for unit/integration tests), fall back to a
-        // single-process InMemorySession with a clear warning.
-        Session session = sessionOpt.orElseGet(InMemorySession::new);
+        // RemoteFilesystemSpec requires a distributed AgentStateStore store; the harness rejects
+        // the default because conversation state would otherwise be pinned to one pod while the
+        // filesystem is shared. For production, provide a DistributedStore or AgentStateStore
+        // bean; for unit/integration tests, fall back to InMemoryAgentStateStore with a warning.
+        AgentStateStore stateStore = sessionOpt.orElseGet(InMemoryAgentStateStore::new);
         if (sessionOpt.isEmpty()) {
             log.warn(
-                    "No distributed Session bean configured ({}); using InMemorySession. Provide a"
-                            + " RedisSession / MysqlSession bean for multi-replica deployments.",
-                    Session.class.getName());
+                    "No distributed AgentStateStore bean configured ({}); using"
+                            + " InMemoryAgentStateStore. For multi-replica deployments, provide"
+                            + " a DistributedStore or a distributed AgentStateStore bean"
+                            + " (e.g. from agentscope-extensions-redis).",
+                    AgentStateStore.class.getName());
         }
 
         builder.configureAllAgents(
                 b -> {
-                    b.hook(new ToolNotificationHook(toolEventBus));
-                    b.session(session);
+                    b.middleware(new ToolNotificationMiddleware(toolEventBus));
+                    b.stateStore(stateStore);
                     // `activity/` is routed to the shared BaseStore so the per-agent audit log
                     // (written by AgentActivityStore) is visible across pods, not pinned to the
                     // local disk of whichever pod served the write.

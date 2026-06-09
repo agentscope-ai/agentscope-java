@@ -23,7 +23,6 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -306,7 +305,6 @@ class ToolEmitterIntegrationTest {
                         .sysPrompt("You are a helpful assistant.")
                         .model(model)
                         .toolkit(toolkit)
-                        .memory(new InMemoryMemory())
                         .hook(captureHook)
                         .build();
 

@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -45,13 +46,33 @@ class ToolGroupManager {
      * @throws IllegalArgumentException if group already exists
      */
     public void createToolGroup(String groupName, String description, boolean active) {
+        createToolGroup(groupName, description, active, ToolGroupScope.META);
+    }
+
+    /**
+     * Create tool groups with explicit scope.
+     *
+     * @param groupName Name of the tool group
+     * @param description Description of the tool group for the agent to understand
+     * @param active Whether the tool group is active by default
+     * @param scope Whether the group is managed by the meta tool ({@link ToolGroupScope#META})
+     *              or by developer code ({@link ToolGroupScope#EXTERNAL})
+     * @throws IllegalArgumentException if group already exists
+     */
+    public void createToolGroup(
+            String groupName, String description, boolean active, ToolGroupScope scope) {
         if (toolGroups.containsKey(groupName)) {
             throw new IllegalArgumentException(
                     String.format("Tool group '%s' already exists", groupName));
         }
 
         ToolGroup group =
-                ToolGroup.builder().name(groupName).description(description).active(active).build();
+                ToolGroup.builder()
+                        .name(groupName)
+                        .description(description)
+                        .active(active)
+                        .scope(scope)
+                        .build();
 
         toolGroups.put(groupName, group);
 
@@ -59,18 +80,62 @@ class ToolGroupManager {
             activeGroups.add(groupName);
         }
 
-        logger.info("Created tool group '{}': {}", groupName, description);
+        logger.info("Created tool group '{}' (scope={}): {}", groupName, scope, description);
     }
 
     /**
-     * Creates a tool group with default active status (true).
+     * Creates a tool group with default active status (true) and META scope.
      *
      * @param groupName Name of the tool group
      * @param description Description of the tool group for the agent to understand
      * @throws IllegalArgumentException if group already exists
      */
     public void createToolGroup(String groupName, String description) {
-        createToolGroup(groupName, description, true);
+        createToolGroup(groupName, description, true, ToolGroupScope.META);
+    }
+
+    /**
+     * Register a pre-built ToolGroup instance (including subclasses like {@link SkillToolGroup}).
+     *
+     * @param group The tool group to register
+     * @throws IllegalArgumentException if a group with the same name already exists
+     */
+    public void registerToolGroup(ToolGroup group) {
+        String groupName = group.getName();
+        if (toolGroups.containsKey(groupName)) {
+            throw new IllegalArgumentException(
+                    String.format("Tool group '%s' already exists", groupName));
+        }
+        toolGroups.put(groupName, group);
+        if (group.isActive() && !activeGroups.contains(groupName)) {
+            activeGroups.add(groupName);
+        }
+        logger.info(
+                "Registered tool group '{}' (scope={}): {}",
+                groupName,
+                group.getScope(),
+                group.getDescription());
+    }
+
+    /**
+     * Create a {@link SkillToolGroup} bound to a specific skill.
+     *
+     * @param groupName Name of the tool group
+     * @param description Description of the tool group
+     * @param active Whether the tool group is active by default
+     * @param activateOnSkill The skill name that this group is bound to
+     * @throws IllegalArgumentException if group already exists
+     */
+    public void createSkillToolGroup(
+            String groupName, String description, boolean active, String activateOnSkill) {
+        SkillToolGroup group =
+                SkillToolGroup.skillBuilder()
+                        .name(groupName)
+                        .description(description)
+                        .active(active)
+                        .activateOnSkill(activateOnSkill)
+                        .build();
+        registerToolGroup(group);
     }
 
     /**
@@ -160,9 +225,12 @@ class ToolGroupManager {
     }
 
     /**
-     * Get notes about all tool groups for display to user/agent.
+     * Get notes about META-scoped tool groups for display to the agent.
      *
-     * @return Formatted string describing active tool groups
+     * <p>Only {@link ToolGroupScope#META} groups are included because
+     * {@link ToolGroupScope#EXTERNAL} groups are invisible to the meta tool.
+     *
+     * @return Formatted string describing META-scoped tool groups
      */
     public String getNotes() {
         StringBuilder activatedNotes = new StringBuilder("Activated tool groups:\n");
@@ -170,6 +238,9 @@ class ToolGroupManager {
         boolean hasActivatedGroup = false;
         boolean hasInactiveGroup = false;
         for (ToolGroup group : toolGroups.values()) {
+            if (group.getScope() != ToolGroupScope.META) {
+                continue;
+            }
             if (group.isActive()) {
                 hasActivatedGroup = true;
                 activatedNotes.append(
@@ -259,6 +330,50 @@ class ToolGroupManager {
     }
 
     /**
+     * Get the names of all tool groups with {@link ToolGroupScope#META} scope.
+     *
+     * @return Set of META-scoped tool group names
+     */
+    public Set<String> getMetaGroupNames() {
+        Set<String> metaNames = new HashSet<>();
+        for (ToolGroup group : toolGroups.values()) {
+            if (group.getScope() == ToolGroupScope.META) {
+                metaNames.add(group.getName());
+            }
+        }
+        return metaNames;
+    }
+
+    /**
+     * Replace the active set of {@link ToolGroupScope#META} groups with the given list.
+     *
+     * <p>All META-scoped groups not in {@code toActivate} are deactivated.
+     * {@link ToolGroupScope#EXTERNAL} groups are not affected.
+     *
+     * @param toActivate group names to keep active (must all be META scope)
+     */
+    public void replaceMetaActiveGroups(List<String> toActivate) {
+        // Deactivate all META-scoped groups
+        for (ToolGroup group : toolGroups.values()) {
+            if (group.getScope() == ToolGroupScope.META && group.isActive()) {
+                group.setActive(false);
+                activeGroups.remove(group.getName());
+            }
+        }
+
+        // Activate the specified groups
+        for (String name : toActivate) {
+            ToolGroup group = toolGroups.get(name);
+            if (group != null && group.getScope() == ToolGroupScope.META) {
+                group.setActive(true);
+                if (!activeGroups.contains(name)) {
+                    activeGroups.add(name);
+                }
+            }
+        }
+    }
+
+    /**
      * Get all tools that belong to active groups.
      *
      * @return Set of tool names that are in active groups
@@ -267,6 +382,32 @@ class ToolGroupManager {
         Set<String> activeTools = new HashSet<>();
         for (ToolGroup group : toolGroups.values()) {
             if (group.isActive()) {
+                activeTools.addAll(group.getTools());
+            }
+        }
+        return activeTools;
+    }
+
+    /**
+     * Compute the active tool names for an explicitly supplied set of active group names,
+     * independent of the shared per-group {@code active} flags.
+     *
+     * <p>This is the per-call / stateless variant of {@link #getActiveToolNames()}: it lets a
+     * caller (e.g. {@code ReActAgent} during a {@code call}) resolve the tool surface from its own
+     * {@code (userId, sessionId)} slot's activated groups without mutating or reading the shared
+     * activation flags, so concurrent calls on different slots do not interfere.
+     *
+     * @param activeGroups the group names to treat as active (null/empty yields only ungrouped tools)
+     * @return the set of tool names belonging to at least one of the supplied groups
+     */
+    public Set<String> getActiveToolNames(Collection<String> activeGroups) {
+        Set<String> activeTools = new HashSet<>();
+        if (activeGroups == null) {
+            return activeTools;
+        }
+        for (String groupName : activeGroups) {
+            ToolGroup group = toolGroups.get(groupName);
+            if (group != null) {
                 activeTools.addAll(group.getTools());
             }
         }
@@ -322,12 +463,20 @@ class ToolGroupManager {
     /**
      * Set active groups (for state restoration).
      *
+     * <p>This is a full replacement: all existing groups are deactivated first,
+     * then only the specified groups are activated.
+     *
      * @param activeGroups List of group names to mark as active
      */
     public void setActiveGroups(List<String> activeGroups) {
+        // Deactivate all groups first
+        for (ToolGroup group : toolGroups.values()) {
+            group.setActive(false);
+        }
+
         this.activeGroups = new CopyOnWriteArrayList<>(activeGroups);
 
-        // Mark corresponding groups as active
+        // Activate specified groups
         for (String groupName : activeGroups) {
             ToolGroup group = toolGroups.get(groupName);
             if (group != null) {
@@ -355,19 +504,7 @@ class ToolGroupManager {
         target.tools.clear();
         target.toolGroups.clear();
         for (Map.Entry<String, ToolGroup> entry : toolGroups.entrySet()) {
-            String groupName = entry.getKey();
-            ToolGroup sourceGroup = entry.getValue();
-
-            // Create a copy of the tool group
-            ToolGroup copiedGroup =
-                    ToolGroup.builder()
-                            .name(groupName)
-                            .description(sourceGroup.getDescription())
-                            .active(sourceGroup.isActive())
-                            .tools(sourceGroup.getTools())
-                            .build();
-
-            target.toolGroups.put(groupName, copiedGroup);
+            target.toolGroups.put(entry.getKey(), entry.getValue().copy());
         }
 
         for (Map.Entry<String, Set<String>> entry : tools.entrySet()) {

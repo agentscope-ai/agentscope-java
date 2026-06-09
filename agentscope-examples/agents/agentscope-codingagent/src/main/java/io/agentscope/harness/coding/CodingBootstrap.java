@@ -18,40 +18,41 @@ package io.agentscope.harness.coding;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.Model;
+import io.agentscope.extensions.channel.dingtalk.DingTalkChannel;
+import io.agentscope.extensions.channel.feishu.FeishuChannel;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
-import io.agentscope.harness.agent.hook.SubagentsHook;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
-import io.agentscope.harness.agent.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.gateway.ChannelManager;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import io.agentscope.harness.coding.agent.CodingAgentFactory;
 import io.agentscope.harness.coding.agent.ReviewerAgentFactory;
-import io.agentscope.harness.coding.channel.Channel;
-import io.agentscope.harness.coding.channel.ChannelConfig;
-import io.agentscope.harness.coding.channel.chatui.ChatUiChannel;
-import io.agentscope.harness.coding.channel.dingtalk.DingtalkChannel;
-import io.agentscope.harness.coding.channel.feishu.FeishuChannel;
 import io.agentscope.harness.coding.config.AgentConfigEntry;
 import io.agentscope.harness.coding.config.AgentscopeConfig;
 import io.agentscope.harness.coding.config.ChannelConfigEntry;
 import io.agentscope.harness.coding.config.SkillRepositorySupport;
-import io.agentscope.harness.coding.gateway.ChannelManager;
-import io.agentscope.harness.coding.gateway.Gateway;
 import io.agentscope.harness.coding.gateway.HarnessGateway;
-import io.agentscope.harness.coding.hook.MessageQueueHook;
-import io.agentscope.harness.coding.hook.ModelCallLimitHook;
-import io.agentscope.harness.coding.hook.ThreadBudgetHook;
+import io.agentscope.harness.coding.middleware.MessageQueueMiddleware;
+import io.agentscope.harness.coding.middleware.ModelCallLimitMiddleware;
+import io.agentscope.harness.coding.middleware.ThreadBudgetMiddleware;
 import io.agentscope.harness.coding.session.AgentManagerConfig;
 import io.agentscope.harness.coding.session.SessionAgentManager;
 import io.agentscope.harness.coding.session.SessionStore;
 import io.agentscope.harness.coding.session.SubagentRunRegistry;
 import io.agentscope.harness.coding.session.tool.SessionsTool;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -286,10 +287,10 @@ public final class CodingBootstrap {
             }
             if (ChatUiChannel.CHANNEL_ID.equals(channelId)) {
                 merged.put(channelId, ChatUiChannel.create(ce.toChannelConfig(channelId)));
-            } else if (DingtalkChannel.TYPE.equals(channelId)) {
+            } else if (DingTalkChannel.TYPE.equals(channelId)) {
                 merged.put(
                         channelId,
-                        DingtalkChannel.fromProperties(
+                        DingTalkChannel.fromProperties(
                                 channelId, ce.toChannelConfig(channelId), ce.getProperties()));
             } else if (FeishuChannel.TYPE.equals(channelId)) {
                 merged.put(
@@ -435,10 +436,11 @@ public final class CodingBootstrap {
 
         /**
          * Same as {@link #withDualCodingAgents(io.agentscope.core.tool.Toolkit,
-         * io.agentscope.core.tool.Toolkit)} but additionally registers the open-swe-style hook
-         * stack ({@link MessageQueueHook}, {@link ThreadBudgetHook}, {@link ModelCallLimitHook})
-         * on both agents when {@code store} is non-null. Without a store the hooks degrade
-         * silently — useful for plain CLI/test usage where no thread-routing exists.
+         * io.agentscope.core.tool.Toolkit)} but additionally registers the open-swe-style
+         * middleware stack ({@link MessageQueueMiddleware}, {@link ThreadBudgetMiddleware},
+         * {@link ModelCallLimitMiddleware}) on both agents when {@code store} is non-null.
+         * Without a store the middlewares degrade silently — useful for plain CLI/test usage
+         * where no thread-routing exists.
          */
         public Builder withDualCodingAgents(
                 io.agentscope.core.tool.Toolkit codingToolkit,
@@ -459,6 +461,13 @@ public final class CodingBootstrap {
                                 io.agentscope.harness.coding.prompt.CodingSystemPrompt.build(
                                         CodingAgentFactory.resolveSandboxWorkingDir(), null));
                         b.maxIters(50);
+                        // opencode-style planning: a persistent todo list that is re-injected
+                        // every reasoning turn (todo_write + TaskReminderMiddleware). This is the
+                        // autonomous-safe planning primitive — no HITL gate, unlike the harness
+                        // Plan Mode whose plan_exit ASK has no confirmation handler in this app.
+                        b.enableTaskList();
+                        // Keep long issue->PR sessions from overflowing the context window.
+                        configureCompaction(b);
                         configureSandbox(b);
                         registerOpenSweHooks(b, store);
                     });
@@ -479,10 +488,27 @@ public final class CodingBootstrap {
                                                 CodingAgentFactory.resolveSandboxWorkingDir()));
                         b.maxIters(30);
                         b.disableSubagents();
+                        // Large PR diffs can blow the context window; compact long reviews too.
+                        configureCompaction(b);
                         configureSandbox(b);
                         registerOpenSweHooks(b, store);
                     });
             return this;
+        }
+
+        /**
+         * Configures conversation compaction for long-running sessions, mirroring opencode's
+         * automatic overflow handling. Was previously only wired in the unused {@link
+         * CodingAgentFactory}; this brings it onto the production {@link #withDualCodingAgents}
+         * path.
+         */
+        private static void configureCompaction(HarnessAgent.Builder b) {
+            b.compaction(
+                    CompactionConfig.builder()
+                            .triggerMessages(40)
+                            .keepMessages(15)
+                            .flushBeforeCompact(true)
+                            .build());
         }
 
         /**
@@ -497,20 +523,15 @@ public final class CodingBootstrap {
                 spec.workspaceRoot(CodingAgentFactory.resolveSandboxWorkingDir());
                 spec.isolationScope(IsolationScope.SESSION);
                 b.filesystem(spec);
-                // Single-node deployment: SqliteBaseStore is local, so a distributed Session
-                // would be inconsistent. Switch to RedisSession + a distributed store together
-                // if this ever runs multi-replica.
-                b.sandboxDistributed(
-                        SandboxDistributedOptions.builder().requireDistributed(false).build());
             }
         }
 
         private static void registerOpenSweHooks(HarnessAgent.Builder b, BaseStore store) {
             if (store != null) {
-                b.hook(new MessageQueueHook(store));
+                b.middleware(new MessageQueueMiddleware(store));
             }
-            b.hook(new ThreadBudgetHook(resolveThreadBudget()));
-            b.hook(new ModelCallLimitHook(resolveGlobalModelLimit()));
+            b.middleware(new ThreadBudgetMiddleware(resolveThreadBudget()));
+            b.middleware(new ModelCallLimitMiddleware(resolveGlobalModelLimit()));
         }
 
         private static int resolveThreadBudget() {
@@ -593,6 +614,9 @@ public final class CodingBootstrap {
 
             // Configure a temporary builder for the main agent to extract subagent entries.
             Path mainWorkspace = resolveAgentWorkspace(cwd, fileAgents.get(main));
+            // Seed bundled skills + subagent templates before subagent entries are scanned, so
+            // the general subagent declaration under <workspace>/subagents/ is picked up.
+            seedWorkspaceTemplates(mainWorkspace);
             HarnessAgent.Builder mainEntryBuilder = HarnessAgent.builder();
             applyFileEntry(cwd, main, fileAgents.get(main), mainEntryBuilder);
             if (model != null) {
@@ -603,8 +627,7 @@ public final class CodingBootstrap {
                 mainCustomizer.accept(mainEntryBuilder);
             }
 
-            List<SubagentsHook.SubagentEntry> entries =
-                    mainEntryBuilder.buildSubagentEntries(mainWorkspace);
+            List<SubagentEntry> entries = mainEntryBuilder.buildSubagentEntries(mainWorkspace);
 
             WorkspaceManager wsManager =
                     globalFileSystem != null
@@ -625,7 +648,7 @@ public final class CodingBootstrap {
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
-            TaskRepository taskRepo = new DefaultTaskRepository();
+            TaskRepository taskRepo = new WorkspaceTaskRepository(wsManager, main);
             SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
 
             // ---- Phase 2: Build agents with SessionsTool injected ----
@@ -645,6 +668,8 @@ public final class CodingBootstrap {
 
                 HarnessAgent.Builder b = HarnessAgent.builder();
                 applyFileEntry(cwd, id, entry, b);
+                // Seed coding skills into this agent's workspace (idempotent; copy-if-absent).
+                seedWorkspaceTemplates(resolveAgentWorkspace(cwd, entry));
 
                 if (model != null) {
                     b.model(model);
@@ -701,6 +726,56 @@ public final class CodingBootstrap {
                 return cwd.resolve(entry.getWorkspace()).normalize();
             }
             return DEFAULT_WORKSPACE_ROOT;
+        }
+
+        /**
+         * Bundled workspace templates seeded into the agent workspace on first run: opencode-style
+         * coding skills (auto-loaded from {@code <workspace>/skills/}) and the general subagent
+         * declaration (scanned from {@code <workspace>/subagents/}). Paths are relative to the
+         * {@code workspace-templates/} classpath root.
+         */
+        private static final List<String> WORKSPACE_TEMPLATE_RESOURCES =
+                List.of(
+                        "skills/verify-changes/SKILL.md",
+                        "skills/git-checkpoint/SKILL.md",
+                        "skills/apply-patch/SKILL.md",
+                        "skills/code-search/SKILL.md",
+                        "subagents/general.md");
+
+        /**
+         * Copies bundled workspace templates into {@code workspace}, skipping any file that
+         * already exists so user edits are never clobbered. Best-effort: failures are logged and
+         * do not abort startup.
+         */
+        private static void seedWorkspaceTemplates(Path workspace) {
+            if (workspace == null) {
+                return;
+            }
+            for (String rel : WORKSPACE_TEMPLATE_RESOURCES) {
+                Path target = workspace.resolve(rel).normalize();
+                if (Files.exists(target)) {
+                    continue;
+                }
+                String resource = "/workspace-templates/" + rel;
+                try (InputStream is = CodingBootstrap.class.getResourceAsStream(resource)) {
+                    if (is == null) {
+                        log.debug("Workspace template not found on classpath: {}", resource);
+                        continue;
+                    }
+                    Path parent = target.getParent();
+                    if (parent != null) {
+                        Files.createDirectories(parent);
+                    }
+                    Files.copy(is, target);
+                    log.info("Seeded workspace template {} -> {}", rel, target);
+                } catch (IOException e) {
+                    log.warn(
+                            "Failed to seed workspace template {} -> {}: {}",
+                            resource,
+                            target,
+                            e.getMessage());
+                }
+            }
         }
     }
 }

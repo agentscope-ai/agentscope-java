@@ -21,7 +21,7 @@ import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxState;
 
 /**
  * Registers Jackson polymorphic subtypes for {@link io.agentscope.harness.agent.sandbox.SandboxState}.
- * Official backends add their {@link NamedType} entries here; callers may also use {@link
+ * Official stores add their {@link NamedType} entries here; callers may also use {@link
  * com.fasterxml.jackson.databind.ObjectMapper#registerSubtypes} for application-specific state
  * classes without editing {@link io.agentscope.harness.agent.sandbox.SandboxState}.
  */

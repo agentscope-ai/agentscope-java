@@ -17,8 +17,10 @@ package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
-import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -52,6 +54,15 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     private final int defaultTimeout;
     private final int maxOutputBytes;
     private final Map<String, String> env;
+
+    /**
+     * Working directory passed to {@link ProcessBuilder#directory(java.io.File)} for shell
+     * commands. When {@code null}, falls back to {@link #getCwd()} (with per-call namespace
+     * prefix). Decouples shell {@code pwd} from the filesystem root so overlay-mode callers can
+     * keep filesystem operations rooted at the agent workspace while shell sees the user's
+     * project directory.
+     */
+    private final Path shellCwd;
 
     /**
      * Creates an abstract filesystem with default settings.
@@ -162,7 +173,79 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             Map<String, String> env,
             boolean inheritEnv,
             NamespaceFactory namespaceFactory) {
-        super(rootDir, virtualMode, 10, namespaceFactory);
+        this(
+                rootDir,
+                virtualMode,
+                timeout,
+                maxOutputBytes,
+                env,
+                inheritEnv,
+                namespaceFactory,
+                null);
+    }
+
+    /**
+     * Creates a abstract filesystem with full configuration, namespace support, and a custom
+     * shell working directory.
+     *
+     * @param rootDir working directory for filesystem operations (read/write/edit/glob/...)
+     * @param virtualMode enable virtual path mode for filesystem operations
+     * @param timeout default maximum time in seconds for shell command execution
+     * @param maxOutputBytes maximum number of bytes to capture from command output
+     * @param env environment variables for shell commands ({@code null} for empty)
+     * @param inheritEnv whether to inherit the parent process's environment variables
+     * @param namespaceFactory optional namespace factory for path scoping ({@code null} for none)
+     * @param shellCwd working directory for shell command execution; when {@code null}, falls
+     *     back to {@code rootDir} (with namespace prefix when configured)
+     */
+    public LocalFilesystemWithShell(
+            Path rootDir,
+            boolean virtualMode,
+            int timeout,
+            int maxOutputBytes,
+            Map<String, String> env,
+            boolean inheritEnv,
+            NamespaceFactory namespaceFactory,
+            Path shellCwd) {
+        this(
+                rootDir,
+                virtualMode ? LocalFsMode.SANDBOXED : LocalFsMode.UNRESTRICTED,
+                null,
+                timeout,
+                maxOutputBytes,
+                env,
+                inheritEnv,
+                namespaceFactory,
+                shellCwd);
+    }
+
+    /**
+     * Most-complete constructor: filesystem operations follow {@code mode} and {@code pathPolicy}
+     * (see {@link LocalFilesystem#LocalFilesystem(Path, LocalFsMode, PathPolicy, int, NamespaceFactory)});
+     * shell commands run with {@code pwd = shellCwd} when set, otherwise the filesystem root.
+     *
+     * @param rootDir filesystem root for relative-path operations
+     * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
+     * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
+     * @param timeout default shell timeout (seconds, must be positive)
+     * @param maxOutputBytes byte cap for captured shell output
+     * @param env environment variables for shell commands ({@code null} for empty)
+     * @param inheritEnv whether to inherit the parent process environment
+     * @param namespaceFactory optional per-user/session namespace factory
+     * @param shellCwd shell {@code pwd}; {@code null} falls back to {@code rootDir} (with
+     *     namespace prefix when configured)
+     */
+    public LocalFilesystemWithShell(
+            Path rootDir,
+            LocalFsMode mode,
+            PathPolicy pathPolicy,
+            int timeout,
+            int maxOutputBytes,
+            Map<String, String> env,
+            boolean inheritEnv,
+            NamespaceFactory namespaceFactory,
+            Path shellCwd) {
+        super(rootDir, mode, pathPolicy, 10, namespaceFactory);
 
         if (timeout <= 0) {
             throw new IllegalArgumentException("timeout must be positive, got " + timeout);
@@ -171,6 +254,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         this.defaultTimeout = timeout;
         this.maxOutputBytes = maxOutputBytes;
         this.sandboxId = "local-" + UUID.randomUUID().toString().substring(0, 8);
+        this.shellCwd = shellCwd != null ? shellCwd.toAbsolutePath().normalize() : null;
 
         if (inheritEnv) {
             Map<String, String> merged = new java.util.HashMap<>(System.getenv());
@@ -209,6 +293,15 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     @Override
     public String id() {
         return sandboxId;
+    }
+
+    /**
+     * Returns the working directory configured for shell {@code execute()} calls, or {@code null}
+     * when shell falls back to the filesystem root (with namespace prefix). Used by upstream
+     * code that needs to expose the user-visible project directory in prompts or diagnostics.
+     */
+    public Path getShellCwd() {
+        return shellCwd;
     }
 
     @Override
@@ -312,6 +405,9 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     }
 
     private Path resolveExecuteCwd(RuntimeContext rc) {
+        if (shellCwd != null) {
+            return shellCwd;
+        }
         NamespaceFactory nsf = getNamespaceFactory();
         if (nsf == null) {
             return getCwd();

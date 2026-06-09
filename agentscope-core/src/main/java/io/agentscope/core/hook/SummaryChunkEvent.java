@@ -56,7 +56,10 @@ import java.util.Objects;
  *     yield Mono.just(e);
  * }
  * }</pre>
+ *
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public final class SummaryChunkEvent extends SummaryEvent {
 
     private final Msg incrementalChunk;
