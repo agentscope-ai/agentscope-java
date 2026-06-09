@@ -1,13 +1,17 @@
+```{note}
+本页面内容已迁移至 [分布式存储 — Redis](../distributed/redis.md)。以下内容保留作为参考，但建议使用新文档。
+```
+
 # Redis 状态存储
 
-`agentscope-extensions-session-redis` 把 AgentScope 的 Agent 状态存到 Redis。统一抽象出 `RedisClientAdapter`，支持 **Jedis、Lettuce、Redisson** 三个客户端，覆盖 Standalone、Cluster、Sentinel 等部署模式。
+`agentscope-extensions-redis` 把 AgentScope 的 Agent 状态存到 Redis。统一抽象出 `RedisClientAdapter`，支持 **Jedis、Lettuce、Redisson** 三个客户端，覆盖 Standalone、Cluster、Sentinel 等部署模式。
 
 ## 添加依赖
 
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-session-redis</artifactId>
+    <artifactId>agentscope-extensions-redis</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -19,7 +23,7 @@
 ```java
 import io.lettuce.core.RedisClient;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.redis.RedisAgentStateStore;
+import io.agentscope.extensions.redis.state.RedisAgentStateStore;
 
 RedisClient redisClient = RedisClient.create("redis://localhost:6379");
 

@@ -67,7 +67,7 @@ public class ContextStatePersistenceExample {
                 HarnessAgent.builder()
                         .name("shared-assistant")
                         .sysPrompt("You are a helpful assistant. Keep answers under two sentences.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .stateStore(stateStore)
                         .build();
 
@@ -118,7 +118,7 @@ public class ContextStatePersistenceExample {
                 HarnessAgent.builder()
                         .name("shared-assistant")
                         .sysPrompt("You are a helpful assistant. Keep answers under two sentences.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .stateStore(stateStore)
                         .build();
 

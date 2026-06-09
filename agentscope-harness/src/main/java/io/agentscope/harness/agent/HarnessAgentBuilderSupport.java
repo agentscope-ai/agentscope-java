@@ -301,6 +301,11 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedAgentTracingLogEnabled = b.agentTracingLogEnabled;
         final List<String> capturedAdditionalContextFiles = List.copyOf(b.additionalContextFiles);
         final int capturedMaxContextTokens = b.maxContextTokens;
+        // Propagate the parent's (distributed) state store so an exposed subagent can be
+        // re-materialized on another node / after a restart and still load its conversation
+        // history by sessionId. Null in purely local default deployments — children then keep
+        // their own local store, preserving legacy behaviour.
+        final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
 
         return (RuntimeContext parentRc) -> {
             // general-purpose subagent shares the parent's workspace and is short-lived per spawn;
@@ -335,6 +340,7 @@ final class HarnessAgentBuilderSupport {
                 sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
             }
             if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
+            if (capturedStateStore != null) sub.stateStore(capturedStateStore);
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
             if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
@@ -374,6 +380,9 @@ final class HarnessAgentBuilderSupport {
         // lose any --add-dir style allow-list configured at the main level.
         final io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
                 capturedLocalFilesystemSpec = b.localFilesystemSpec;
+        // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
+        // subagent's conversation survives cross-node re-materialization. Null in local defaults.
+        final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
 
         return (RuntimeContext parentRc) -> {
             if (decl.isRemote()) {
@@ -433,6 +442,10 @@ final class HarnessAgentBuilderSupport {
             } else if (decl.getWorkspaceMode() != WorkspaceMode.SHARED
                     && capturedLocalFilesystemSpec != null) {
                 sub.filesystem(cloneLocalSpecForSubagent(capturedLocalFilesystemSpec));
+            }
+
+            if (capturedStateStore != null) {
+                sub.stateStore(capturedStateStore);
             }
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
@@ -495,7 +508,7 @@ final class HarnessAgentBuilderSupport {
      * back to the legacy single-bucket form: they're sharing the parent's full state tree by
      * design.
      *
-     * <p>This works uniformly across {@link io.agentscope.core.state.AgentStateStore} backends —
+     * <p>This works uniformly across {@link io.agentscope.core.state.AgentStateStore} stores —
      * Workspace, Redis, InMemory, or custom — because all of them bucket {@code save}/{@code get}
      * by session ID. (Phase B-0)
      */
@@ -517,7 +530,7 @@ final class HarnessAgentBuilderSupport {
 
     /**
      * Returns {@code null} when the input is null or blank; otherwise replaces characters that
-     * confuse path-based AgentStateStore backends (slashes, backslashes, whitespace, controls) with
+     * confuse path-based AgentStateStore stores (slashes, backslashes, whitespace, controls) with
      * underscores. Keeps Redis/InMemory/SQL keys unaffected since their stored form is opaque.
      */
     static String sanitizeIdentifier(String s) {

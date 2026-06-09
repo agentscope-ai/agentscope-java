@@ -24,7 +24,6 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
-import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.gateway.ChannelManager;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
@@ -32,9 +31,10 @@ import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import io.agentscope.harness.coding.agent.CodingAgentFactory;
 import io.agentscope.harness.coding.agent.ReviewerAgentFactory;
@@ -648,7 +648,7 @@ public final class CodingBootstrap {
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
-            TaskRepository taskRepo = new DefaultTaskRepository();
+            TaskRepository taskRepo = new WorkspaceTaskRepository(wsManager, main);
             SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
 
             // ---- Phase 2: Build agents with SessionsTool injected ----

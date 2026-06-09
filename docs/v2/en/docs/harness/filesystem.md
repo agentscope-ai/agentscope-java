@@ -32,12 +32,15 @@ Pick one with `filesystem(...)` on `HarnessAgent.Builder` (no call = mode 3 by d
 For "multi-replica, but the user's long-term memory must stay in sync". Pass a `BaseStore` implementation (Redis / JDBC / in-memory) and the framework automatically routes workspace files into the KV store by path prefix:
 
 ```java
-// minimal config
+// minimal config (recommended: use DistributedStore for one-line setup)
+DistributedStore store = RedisDistributedStore.fromJedis(jedis);
+
 HarnessAgent agent = HarnessAgent.builder()
     .name("store-agent")
     .model(model)
     .workspace(workspace)
-    .filesystem(new RemoteFilesystemSpec(redisStore)
+    .distributedStore(store)
+    .filesystem(new RemoteFilesystemSpec()   // baseStore auto-injected from store
         .isolationScope(IsolationScope.USER))
     .build();
 ```
@@ -72,16 +75,17 @@ Paths not in the table above fall through to a local `LocalFilesystem` (no shell
 Three pods each running a `HarnessAgent`, sharing one Redis as the `BaseStore`:
 
 ```java
-BaseStore redisStore = new RedisStore("redis://shared-redis:6379");
+DistributedStore store = RedisDistributedStore.fromJedis(
+        new JedisPooled("redis://shared-redis:6379"));
 
 HarnessAgent agent = HarnessAgent.builder()
     .name("customer-service")
     .model(model)
     .workspace(Paths.get("/opt/agent/workspace"))
-    .filesystem(new RemoteFilesystemSpec(redisStore)
-        .isolationScope(IsolationScope.USER)     // one namespace per user
-        .anonymousUserId("anonymous"))           // fallback for unauthenticated callers
-    .stateStore(new RedisAgentStateStore(jedis)) // state must also be distributed
+    .distributedStore(store)                  // stateStore + baseStore in one call
+    .filesystem(new RemoteFilesystemSpec()
+        .isolationScope(IsolationScope.USER)      // one namespace per user
+        .anonymousUserId("anonymous"))            // fallback for unauthenticated callers
     .build();
 ```
 
@@ -95,9 +99,9 @@ This mode **does not provide shell** — on purpose: for shell, use mode 2 (sand
 
 | Implementation | Description |
 |---------------|-------------|
-| `RedisStore` | Jedis-based, for low-latency high-concurrency |
-| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 |
-| `InMemoryStore` | In-memory, for testing |
+| `RedisStore` | Jedis-based, for low-latency high-concurrency | `agentscope-extensions-redis` |
+| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
+| `InMemoryStore` | In-memory, for testing | `agentscope-harness` |
 
 ---
 
@@ -216,7 +220,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | Method | Description | Default |
 |--------|-------------|---------|
-| `isolationScope(IsolationScope)` | Isolation dimension | backend-specific (usually `SESSION`) |
+| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (usually `SESSION`) |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency serialization guard for AGENT/GLOBAL scopes | none |
 | `workspaceProjectionEnabled(boolean)` | Project static assets from host to sandbox | `true` |
@@ -246,7 +250,7 @@ HarnessAgent codingAgent = HarnessAgent.builder()
         .isolationScope(IsolationScope.USER)
         .memorySizeBytes(1024 * 1024 * 1024L)
         .snapshotSpec(new LocalSnapshotSpec("/data/sandbox-snapshots")))
-    .stateStore(new RedisAgentStateStore(jedis))
+    .distributedStore(store)
     .build();
 
 // Alice's first call: npm install inside sandbox, snapshot saved afterward
@@ -310,6 +314,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `project(Path)` | Project root directory (overlay lower layer + shell cwd) | `System.getProperty("user.dir")` |
 | `addRoot(Path)` | Extra host directory the agent may access | none |
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
+| `projectWritable(boolean)` | Route non-workspace writes to the project directory instead of workspace | `false` |
 
 #### Path resolution policy (`LocalFsMode`)
 
@@ -327,6 +332,25 @@ Local mode actually produces an `OverlayFilesystem`:
 - **Lower** (read-only): `LocalFilesystem`, rooted at `project`.
 
 Reads check workspace first, then fall back to project (copy-on-write semantics). Shell `pwd` is the project directory, so `ls` shows project files.
+
+#### Project-writable mode (`projectWritable`)
+
+By default all writes land in the workspace — fine for read/analyze scenarios, but if the agent's job is to **generate code** (e.g. scaffold a microservice), files end up in `.agentscope/workspace/` instead of the project directory.
+
+Enable `projectWritable(true)` and the framework routes writes by path:
+
+| Path type | Written to | Examples |
+|-----------|-----------|----------|
+| Workspace metadata | workspace | `MEMORY.md`, `memory/`, `agents/`, `skills/`, `knowledge/`, `plans/`, `subagents/`, `rules/`, `tools.json` |
+| Everything else | project directory | `src/main/java/App.java`, `pom.xml`, `README.md`, `docker-compose.yml` |
+
+```java
+.filesystem(new LocalFilesystemSpec()
+    .projectWritable(true)      // code files go to the project directory
+    .inheritEnv(true))
+```
+
+Read behavior is unchanged — workspace first, project fallback.
 
 #### Example: local development assistant
 
@@ -391,7 +415,8 @@ Both mode 1 (shared store) and mode 2 (sandbox) use the same `IsolationScope` co
 **Scenario 3: shared-knowledge customer-service agent (shared store)**
 
 ```java
-.filesystem(new RemoteFilesystemSpec(redisStore)
+.distributedStore(store)
+    .filesystem(new RemoteFilesystemSpec()
     .isolationScope(IsolationScope.AGENT))     // all users and sessions share memory / skills
 ```
 
@@ -440,11 +465,11 @@ The four-layer priority is unchanged (low → high): `projectGlobalSkillsDir` �
 
 ### File tools (read_file / write_file / edit_file / ...)
 
-All file tools call through the `AbstractFilesystem` interface, passing the current `RuntimeContext` on every operation. The filesystem backend decides the actual read/write location. Agent code is completely unaware of the mode.
+All file tools call through the `AbstractFilesystem` interface, passing the current `RuntimeContext` on every operation. The filesystem implementation decides the actual read/write location. Agent code is completely unaware of the mode.
 
 | Mode | Read/write behavior |
 |------|-------------------|
-| Local | `OverlayFilesystem`: writes land in workspace (upper); reads check workspace first, then project (lower) |
+| Local | `OverlayFilesystem`: writes land in workspace (upper); reads check workspace first, then project (lower). With `projectWritable(true)`, non-metadata writes are routed to the project directory |
 | Shared store | `CompositeFilesystem`: routed paths go through KV overlay (remote upper + local template lower); others go local |
 | Sandbox | All file operations forwarded into the sandbox container |
 
@@ -466,9 +491,9 @@ Under shared-store mode, `tools.json` also follows the "remote upper, local temp
 
 ## Two-layer reading in the workspace
 
-Key files like `AGENTS.md`, `MEMORY.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem backend first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+Key files like `AGENTS.md`, `MEMORY.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
 
-Writes always go through the configured filesystem backend.
+Writes always go through the configured filesystem store.
 
 ## Fully self-managed: `abstractFilesystem(...)`
 

@@ -1,13 +1,17 @@
+```{note}
+本页面内容已迁移至 [分布式存储 — MySQL](../distributed/mysql.md)。以下内容保留作为参考，但建议使用新文档。
+```
+
 # MySQL 状态存储
 
-`agentscope-extensions-session-mysql` 把 AgentScope 的 Agent 状态持久化到 MySQL。适合已有 MySQL 基础设施、需要事务和 SQL 查询能力的场景。
+`agentscope-extensions-mysql` 把 AgentScope 的 Agent 状态持久化到 MySQL。适合已有 MySQL 基础设施、需要事务和 SQL 查询能力的场景。
 
 ## 添加依赖
 
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-session-mysql</artifactId>
+    <artifactId>agentscope-extensions-mysql</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -19,7 +23,7 @@
 ```java
 import com.zaxxer.hikari.HikariDataSource;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.mysql.MysqlAgentStateStore;
+import io.agentscope.extensions.mysql.state.MysqlAgentStateStore;
 
 HikariDataSource ds = new HikariDataSource();
 ds.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope?serverTimezone=UTC");

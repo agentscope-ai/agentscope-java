@@ -75,7 +75,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 
 This wiring lives in `ReActAgent` itself; `HarnessAgent` inherits it for free. The agent instance holds no fixed session — each call reads / writes the slot named by its `RuntimeContext` (falling back to the builder-time `defaultSessionId`).
 
-> Mid-`call()` state changes happen against the in-memory `AgentState`. **The state store is written once per call (and on shutdown), not on every message** — so the throughput pressure on your backend stays low.
+> Mid-`call()` state changes happen against the in-memory `AgentState`. **The state store is written once per call (and on shutdown), not on every message** — so the throughput pressure on your store stays low.
 
 ### Built-in and extension implementations
 
@@ -85,8 +85,8 @@ Anything implementing `io.agentscope.core.state.AgentStateStore` works. Pick by 
 |---|---|---|
 | `InMemoryAgentStateStore` | `agentscope-core` | Unit tests / single-process demos; lost on exit |
 | `JsonFileAgentStateStore` | `agentscope-core` | Local dev with file persistence; not cross-node. **`HarnessAgent` default**, rooted at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property); **single-host** |
-| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | **Production default** for multi-replica deployments; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
-| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | When state needs to flow into a relational store (audit, reporting) |
+| `RedisAgentStateStore` | `agentscope-extensions-redis` | **Production default** for multi-replica deployments; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
+| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | When state needs to flow into a relational store (audit, reporting) |
 
 Switching is one call at builder time:
 
@@ -98,18 +98,18 @@ HarnessAgent agent = HarnessAgent.builder()
     .workspace(workspace)
     .build();
 
-// Production multi-replica — swap in RedisAgentStateStore
+// Production multi-replica — use DistributedStore
 RedisClient client = RedisClient.create("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
-    .stateStore(RedisAgentStateStore.builder().lettuceClient(client).build())
+    .distributedStore(RedisDistributedStore.fromJedis(jedis))
     .build();
 ```
 
 :::{warning}
-The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed `AgentStateStore` (e.g. `RedisAgentStateStore`) via `.stateStore(...)`.
+The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed store via `.distributedStore(...)` (e.g. `RedisDistributedStore`) or `.stateStore(...)`.
 :::
 
 ### Real-time resume across processes and machines
@@ -129,7 +129,7 @@ agentA.call(msg, RuntimeContext.builder()
 // Node B — different physical machine, separate JVM
 HarnessAgent agentB = HarnessAgent.builder()
     .stateStore(redisStore)
-    /* same store backend */ .build();
+    /* same state store */ .build();
 
 // Node B's first call() with the same (userId, sessionId) loads the AgentState node A left in Redis
 agentB.call(nextMsg, RuntimeContext.builder()
@@ -279,7 +279,7 @@ Available accessors:
 | `RuntimeContext.empty()` | Empty context |
 
 :::{tip}
-**The `AgentStateStore` backend is bound at builder time and cannot be switched per call via `RuntimeContext`.** What *does* vary per call is the `(userId, sessionId)` slot it addresses — set `userId` for per-user isolation (or a custom `keyPrefix` on the store); do not try to hand each call a different state store instance.
+**The `AgentStateStore` is bound at builder time and cannot be switched per call via `RuntimeContext`.** What *does* vary per call is the `(userId, sessionId)` slot it addresses — set `userId` for per-user isolation (or a custom `keyPrefix` on the store); do not try to hand each call a different state store instance.
 :::
 
 :::{tip}

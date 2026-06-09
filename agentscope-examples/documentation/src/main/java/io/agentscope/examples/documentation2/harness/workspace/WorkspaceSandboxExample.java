@@ -22,7 +22,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -51,14 +51,16 @@ import java.nio.file.Path;
  * </ul>
  *
  * <p><b>Distributed deployment (multi-replica):</b> To share sandbox state across replicas,
- * configure a distributed {@code AgentStateStore} (e.g. {@code RedisAgentStateStore}) and a
- * non-{@code Noop} snapshot spec (e.g. {@code OssSnapshotSpec} or {@code RedisSnapshotSpec}):
+ * configure a {@link io.agentscope.harness.agent.DistributedStore}. It auto-wires
+ * {@code AgentStateStore}, {@code SandboxSnapshotSpec}, and {@code SandboxExecutionGuard}:
  * <pre>
- *   .stateStore(RedisAgentStateStore.builder().jedisClient(redisClient).build())
- *   .filesystem(new DockerFilesystemSpec()
- *       .image("ubuntu:24.04")
- *       .snapshotSpec(new OssSnapshotSpec(ossClient, "my-bucket", "agentscope/"))
- *       .isolationScope(IsolationScope.USER))
+ *   DistributedStore store = RedisDistributedStore.fromJedis(jedis);
+ *   HarnessAgent.builder()
+ *       .distributedStore(store)
+ *       .filesystem(new DockerFilesystemSpec()
+ *           .image("ubuntu:24.04")
+ *           .isolationScope(IsolationScope.USER))
+ *       .build();
  * </pre>
  *
  * <p><b>Run:</b>
@@ -92,7 +94,7 @@ public class WorkspaceSandboxExample {
                 HarnessAgent.builder()
                         .name("sandbox-agent")
                         .sysPrompt("You are a coding assistant in a Docker sandbox.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .workspace(workspace)
                         .filesystem(
                                 new DockerFilesystemSpec()

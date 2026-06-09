@@ -26,6 +26,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -76,21 +77,34 @@ public class PlanModeAutoExample {
 
         Path workspace = Files.createTempDirectory("agentscope-planmode-auto");
 
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
         HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("architect")
                         .sysPrompt(
-                                "You are a software architect. For complex, multi-step tasks, "
-                                        + "use plan_enter to enter plan mode first. In plan mode, "
-                                        + "investigate and write a plan with plan_write, then call "
-                                        + "plan_exit to get approval. After approval you are in "
-                                        + "build mode — start executing the plan step by step.")
-                        .model("qwen-plus")
+                                "You are a software architect. For complex, multi-step tasks, use"
+                                    + " plan_enter to enter plan mode first. In plan mode,"
+                                    + " investigate and write a plan with plan_write, then call"
+                                    + " plan_exit to get approval. After approval you are in build"
+                                    + " mode — start executing the plan step by step. If the"
+                                    + " workspace is empty (a greenfield project), do not get stuck"
+                                    + " investigating — plan the architecture directly and commit"
+                                    + " it with plan_write.")
+                        .model("dashscope:qwen3.7-plus")
                         .workspace(workspace)
+                        // Project-writable: scaffolded code lands in the project directory,
+                        // while workspace metadata (memory, sessions, plans) stays in workspace.
+                        .filesystem(
+                                new LocalFilesystemSpec().projectWritable(true).inheritEnv(true))
                         // Keep runs independent: state lives only for this JVM, so a paused
                         // plan_exit can never leak into the next run.
-                        .stateStore(new InMemoryAgentStateStore())
+                        .stateStore(stateStore)
                         .enablePlanMode()
+                        // Opt in: let the model run the shell read-only during plan mode so it can
+                        // investigate (cat / ls / grep / git log) and produce a realistic plan.
+                        // The plan banner instructs it to keep shell usage read-only; mutating
+                        // file-edit tools remain denied until the plan is approved.
+                        .allowShellInPlanMode()
                         .enableTaskList()
                         .build();
 
@@ -105,14 +119,23 @@ public class PlanModeAutoExample {
 
         Msg next =
                 new UserMessage(
-                        "Refactor a monolithic e-commerce application into microservices. "
-                                + "This is a complex task that requires careful planning. "
-                                + "Plan the migration strategy first, get approval, then "
-                                + "outline the implementation for the first service.");
+                        "Design a new microservices-based e-commerce backend from scratch. The"
+                            + " workspace is intentionally empty (greenfield) — there is NO"
+                            + " existing code to investigate or migrate, so plan the architecture"
+                            + " directly. This is a complex task that warrants planning: decide the"
+                            + " service boundaries, data ownership, and communication style, write"
+                            + " the plan with plan_write, get approval, then scaffold the project"
+                            + " layout for the first service.");
 
         // HITL loop: run the agent, and whenever it pauses for confirmation (plan_exit), approve
         // and resume by sending the ConfirmResults back. The loop ends when a turn completes
         // without requesting any confirmation. A turn cap guards against runaway loops.
+        // Track which plan-control tools the model actually invoked, so the final summary can tell
+        // "never entered plan mode" apart from "entered and exited" — both end with
+        // planActive=false
+        // but mean very different things.
+        java.util.Set<String> planToolsSeen = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
         int maxTurns = 8;
         for (int turn = 0; turn < maxTurns && next != null; turn++) {
             AtomicReference<RequireUserConfirmEvent> pending = new AtomicReference<>();
@@ -121,6 +144,11 @@ public class PlanModeAutoExample {
                     .doOnNext(PlanModeAutoExample::handleEvent)
                     .doOnNext(
                             event -> {
+                                if (event instanceof ToolCallStartEvent tc
+                                        && tc.getToolCallName() != null
+                                        && tc.getToolCallName().startsWith("plan_")) {
+                                    planToolsSeen.add(tc.getToolCallName());
+                                }
                                 if (event instanceof RequireUserConfirmEvent confirm) {
                                     pending.set(confirm);
                                 }
@@ -136,7 +164,10 @@ public class PlanModeAutoExample {
         System.out.println("\n\n── Result ──\n");
 
         Path planFile = workspace.resolve("plans/PLAN.md");
-        if (Files.exists(planFile)) {
+        boolean planWritten = Files.exists(planFile);
+        boolean planActive = agent.isPlanModeActive(ctx);
+
+        if (planWritten) {
             String content = Files.readString(planFile);
             System.out.println("── plans/PLAN.md ──");
             if (content.length() > 600) {
@@ -144,17 +175,62 @@ public class PlanModeAutoExample {
             } else {
                 System.out.println(content);
             }
-        } else {
-            Path plansDir = workspace.resolve("plans");
-            if (Files.isDirectory(plansDir)) {
-                System.out.println("── plans/ directory ──");
-                Files.list(plansDir).forEach(p -> System.out.println("  " + p.getFileName()));
-            }
+            System.out.println();
         }
 
-        System.out.println("\nPlan mode active after run: " + agent.isPlanModeActive(ctx));
-        System.out.println(
-                "(Expected: false — agent should have exited plan mode and entered build mode)");
+        // Classify the terminal state honestly. Two traps to avoid:
+        //  1. planActive=false conflates "never entered plan mode" with "entered then exited" —
+        // only
+        //     the latter is the success path; the former is the model autonomously declining to
+        // plan.
+        //  2. The model can end a turn with a confident-sounding message ("Let me write the
+        //     comprehensive plan:") yet never call plan_write/plan_exit — a "narrate but don't act"
+        //     failure that would otherwise read like success.
+        boolean planningHappened =
+                planToolsSeen.contains("plan_enter")
+                        || planToolsSeen.contains("plan_write")
+                        || planWritten;
+
+        if (!planActive && !planningHappened) {
+            System.out.println(
+                    "[OUTCOME] NO PLAN MODE — the agent worked directly in build mode and never"
+                        + " called plan_enter. Entering plan mode is autonomous (the model"
+                        + " decides), so this is a valid choice; it just means the plan → approve →"
+                        + " build lifecycle was not exercised this run.");
+            System.out.println(
+                    "          Likely cause: the model judged the task simple enough to handle"
+                        + " directly without a separate planning phase. Entering plan mode is the"
+                        + " model's call, so this can be legitimate.");
+            System.out.println(
+                    "          What to do: strengthen the system prompt to require plan_enter for"
+                        + " this kind of task, or make the task explicitly multi-phase so the model"
+                        + " chooses to plan first.");
+        } else if (!planActive) {
+            System.out.println(
+                    "[OUTCOME] OK — the agent entered plan mode and exited via plan_exit into build"
+                            + " mode.");
+        } else if (planWritten) {
+            System.out.println(
+                    "[OUTCOME] PARTIAL — a plan was drafted (plans/PLAN.md) but the agent is still"
+                        + " in PLAN mode: it never called plan_exit. Review the plan, then send a"
+                        + " follow-up message on the same session to approve and continue into"
+                        + " build mode.");
+        } else {
+            System.out.println(
+                    "[OUTCOME] NO PLAN PRODUCED — the agent ended its turn still in PLAN mode"
+                        + " without writing plans/PLAN.md or calling plan_exit. Its final message"
+                        + " may *read* like a plan, but no plan artifact was actually created.");
+            System.out.println(
+                    "          Likely cause: the model kept deliberating (or returned an empty"
+                        + " completion) instead of committing to plan_write — sometimes it tries to"
+                        + " investigate the empty greenfield workspace and stalls when it finds"
+                        + " nothing.");
+            System.out.println(
+                    "          What to do: make the task more concrete, or add a system-prompt hint"
+                        + " that the workspace is empty by design and it should plan the"
+                        + " architecture directly — then send a follow-up message to continue the"
+                        + " same session.");
+        }
 
         System.out.println("\nWorkspace: " + workspace);
         System.out.println("\n" + "=".repeat(60));

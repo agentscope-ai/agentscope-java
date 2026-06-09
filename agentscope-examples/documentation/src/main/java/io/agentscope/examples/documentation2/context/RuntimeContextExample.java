@@ -63,7 +63,7 @@ public class RuntimeContextExample {
                         .model(
                                 DashScopeChatModel.builder()
                                         .apiKey(apiKey)
-                                        .modelName("qwen-plus")
+                                        .modelName("dashscope:qwen-plus")
                                         .stream(false)
                                         .formatter(new DashScopeChatFormatter())
                                         .build())

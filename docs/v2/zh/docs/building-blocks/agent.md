@@ -272,7 +272,7 @@ agent.streamEvents(new UserMessage("总结一下 README 的内容。"))
 agent.observe(otherAgentMsg).block();
 ```
 
-## RuntimeContext（per-call 上下文）
+## RuntimeContext (per-call 上下文)
 
 `RuntimeContext`（`io.agentscope.core.agent.RuntimeContext`）是 **per-call 元数据袋**：每次 `call` / `stream` 把一份实例传进去，agent 在执行期间把它绑定到自身，下游的工具、middleware、hook 都能读到同一份引用；调用结束后自动解绑。
 
@@ -473,8 +473,8 @@ agent.call(List.of(new UserMessage("继续之前的任务。")), rc).block();
 |------|------|------|
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 / 单进程 demo |
 | `JsonFileAgentStateStore` | `agentscope-core` | 单机开发，按 `(userId, sessionId)` 分目录落 JSON |
-| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | 多副本生产，跨进程跨机器共享 |
-| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | 需要落关系型库（审计 / 报表） |
+| `RedisAgentStateStore` | `agentscope-extensions-redis` | 多副本生产，跨进程跨机器共享 |
+| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | 需要落关系型库（审计 / 报表） |
 
 大多数场景只用一个 `sessionId` 就够；要按用户分桶就在 `RuntimeContext` 上同时设置 `userId`，存储会按 `(userId, sessionId)` 二元组寻址每个槽位。
 

@@ -58,6 +58,7 @@ temperature: 0.2              # optional; overrides parent GenerateOptions
 top_p: 0.95                   # optional
 hidden: false                 # true = not listed to the model (still callable programmatically)
 mode: subagent                # primary / subagent / all (default all); primary can't be spawned
+expose_to_user: true          # optional tri-state; force/forbid user exposure (omit = no opinion)
 tools: [read_file, grep_files]   # optional; allowlist over inherited tools
 ---
 
@@ -211,7 +212,7 @@ Use `agent.channel(...)` — the bridge is wired automatically, zero configurati
 ```java
 HarnessAgent agent = HarnessAgent.builder()
     .name("orchestrator")
-    .model("qwen-plus")
+    .model("dashscope:qwen-plus")
     .build();
 
 // channel() creates the internal gateway and wires the bridge — expose_to_user just works.
@@ -219,6 +220,62 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());
 ```
 
 Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](./channel#thread-exposure-with-gatewaybootstrap).
+
+### Controlling exposure from code
+
+Relying on the LLM to pass `expose_to_user=true` is not always flexible enough. You can override the decision from application code in two ways, and the effective value is resolved with this precedence (highest first):
+
+1. **`RuntimeContext` per-call override** — applies to every `agent_spawn` in the current call
+2. **`SubagentDeclaration` per-type policy** — a static default for that subagent type
+3. **The LLM's `expose_to_user` tool argument**
+4. **`false`** when none of the above expresses an opinion
+
+**Per-call override via `RuntimeContext`.** Put a `Boolean` (or its string form) under the `AgentSpawnTool.CTX_EXPOSE_TO_USER` key:
+
+```java
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("user-1")
+    .put(AgentSpawnTool.CTX_EXPOSE_TO_USER, true)   // force on; false forbids exposure
+    .build();
+```
+
+**Per-type policy on the declaration.** Use the tri-state `exposeToUser` — `TRUE` always exposes, `FALSE` never exposes (overriding an LLM `expose_to_user=true`), and `null` (default) defers to the context override and then the LLM argument:
+
+```java
+SubagentDeclaration decl = SubagentDeclaration.builder()
+    .name("researcher")
+    .description("Investigates topics and returns a synthesized report.")
+    .exposeToUser(true)   // this subagent type is always user-addressable
+    .build();
+```
+
+Or in a Markdown subagent spec's front matter (also tri-state — omit the key for "no opinion"):
+
+```markdown
+---
+name: researcher
+description: Investigates topics and returns a synthesized report.
+expose_to_user: true
+---
+```
+
+This lets you force or forbid exposure regardless of what the model decides, while still allowing the LLM to choose when neither code source expresses an opinion.
+
+### Across restarts and multiple replicas
+
+By default the exposure is in-process: the `subagentId` is only valid on the node that created it and is lost on restart. To make an exposed subagent resolvable on **any replica** and **across restarts**, build the agent with a `distributedStore(...)` — the same one-liner used for state and filesystem:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("orchestrator")
+    .model("dashscope:qwen-plus")
+    .distributedStore(RedisDistributedStore.fromJedis(jedis))
+    .build();
+
+ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // recovery wired automatically
+```
+
+The `subagentId` is persisted in the store, and the subagent's own conversation is reloaded from the distributed `AgentStateStore` by session — so the user keeps talking to the *same* subagent even if a later message lands on a different node. For multi-agent `GatewayBootstrap`, pass `.distributedStore(...)` (otherwise it inherits the main agent's). Deployment guidance — including routing a `subagentId` back to its live node (sticky routing) — is in [Going to Production](../others/going-to-production.md).
 
 ## Let the agent author new subagent specs
 
@@ -268,7 +325,7 @@ When the parent is in Plan Mode, spawned subagents **automatically inherit the r
 
 ## Subagent streaming
 
-> New code should use `streamEvents()` (returns `Flux<AgentEvent>`). The legacy `stream()` family (`Flux<Event>`) is `@Deprecated(forRemoval = true)` since 2.0.0 — see [Message & Event](../building-blocks/message-and-event.md) and [Changelog B.4](../change-log.md).
+> New code should use `streamEvents()` (returns `Flux<AgentEvent>`). The legacy `stream()` family (`Flux<Event>`) is `@Deprecated(forRemoval = true)` since 2.0.0 — see [Message & Event](../building-blocks/message-and-event.md) and [V1 Migration Guide B.4](../change-log.md).
 
 When the parent calls a synchronous subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field (a `/`-separated path like `"main/researcher"`) so you can tell parent events (`source == null`) from child events.
 
@@ -374,4 +431,4 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 - [Plan Mode](./plan-mode) — restrictions on subagents during the plan phase
 - [Architecture](./architecture) — how parent and child cooperate
 - [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
-- [Changelog B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline
+- [V1 Migration Guide B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline

@@ -70,7 +70,7 @@ public class WorkspaceLocalShellExample {
                 HarnessAgent.builder()
                         .name("local-shell-agent")
                         .sysPrompt("You are a helpful assistant with shell access.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .workspace(workspace)
                         .filesystem(
                                 new LocalFilesystemSpec()

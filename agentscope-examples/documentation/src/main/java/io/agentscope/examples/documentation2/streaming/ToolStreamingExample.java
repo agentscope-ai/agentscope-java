@@ -81,7 +81,7 @@ public class ToolStreamingExample {
                         .sysPrompt(
                                 "You are a research assistant. Use the research_topic tool to"
                                         + " investigate topics.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .toolkit(toolkit)
                         .build();
 

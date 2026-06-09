@@ -164,6 +164,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
 
+    /**
+     * Distributed storage store, retained so the lazily-created gateway can build a durable
+     * {@link io.agentscope.harness.agent.gateway.SubagentRegistry} for cross-node exposed-subagent
+     * recovery. {@code null} for purely local deployments.
+     */
+    private final DistributedStore distributedStore;
+
     /** Lazily created internal gateway for {@link #channel}. */
     private volatile HarnessGateway internalGateway;
 
@@ -182,7 +189,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SkillCurator skillCurator,
             SkillAuditLog skillAuditLog,
             MemoryConfig memoryConfig,
-            Object subagentMiddleware) {
+            Object subagentMiddleware,
+            DistributedStore distributedStore) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
@@ -199,6 +207,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.skillAuditLog = skillAuditLog;
         this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
         this.subagentMiddleware = subagentMiddleware;
+        this.distributedStore = distributedStore;
     }
 
     /** Returns the workspace manager bound to this agent, or {@code null} if not configured. */
@@ -325,6 +334,32 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return s.getPlanModeContext().isPlanActive();
     }
 
+    /**
+     * Switches the {@link io.agentscope.core.permission.PermissionMode} for the session identified
+     * by the given {@link RuntimeContext} at runtime. See
+     * {@link ReActAgent#setPermissionMode(String, String, io.agentscope.core.permission.PermissionMode)}.
+     */
+    public void setPermissionMode(
+            RuntimeContext ctx, io.agentscope.core.permission.PermissionMode mode) {
+        delegate.setPermissionMode(ctx, mode);
+    }
+
+    /**
+     * Switches the {@link io.agentscope.core.permission.PermissionMode} for the given
+     * {@code (userId, sessionId)} session at runtime, preserving configured rules and rebuilding
+     * the cached permission engine.
+     */
+    public void setPermissionMode(
+            String userId, String sessionId, io.agentscope.core.permission.PermissionMode mode) {
+        delegate.setPermissionMode(userId, sessionId, mode);
+    }
+
+    /** @return the current permission mode for the given {@code (userId, sessionId)} session. */
+    public io.agentscope.core.permission.PermissionMode getPermissionMode(
+            String userId, String sessionId) {
+        return delegate.getPermissionMode(userId, sessionId);
+    }
+
     @Override
     public void close() {
         try {
@@ -357,6 +392,31 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     public AgentStateStore getStateStore() {
         return delegate.getStateStore();
+    }
+
+    /**
+     * The distributed store configured on this agent, or {@code null} for local
+     * deployments. Exposed so {@link io.agentscope.harness.agent.gateway.GatewayBootstrap} can build
+     * a durable {@link io.agentscope.harness.agent.gateway.SubagentRegistry} for exposed-subagent
+     * recovery.
+     */
+    public DistributedStore getDistributedStore() {
+        return distributedStore;
+    }
+
+    /**
+     * The internal {@link io.agentscope.harness.agent.subagent.DefaultAgentManager} able to
+     * re-materialize this agent's subagents, or {@code null} when none is owned (e.g. session-mode
+     * external subagent tool). Used to wire a gateway materializer for cross-node recovery.
+     */
+    public io.agentscope.harness.agent.subagent.DefaultAgentManager getSubagentAgentManager() {
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            return sm.getAgentManager();
+        }
+        if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            return dm.getAgentManager();
+        }
+        return null;
     }
 
     /** @see ReActAgent#getDefaultSessionId() */
@@ -447,10 +507,26 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     String subagentId = gw.exposeSubagent(agentId, sessionId, agent, replyTo);
                     return new SubagentGatewayBridge.ExposeResult(subagentId);
                 };
+        io.agentscope.harness.agent.subagent.DefaultAgentManager agentManager = null;
         if (subagentMiddleware instanceof SubagentsMiddleware sm) {
             sm.setGatewayBridge(bridge);
+            agentManager = sm.getAgentManager();
         } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
             dm.setGatewayBridge(bridge);
+            agentManager = dm.getAgentManager();
+        }
+
+        // Wire exposed-subagent recovery: a materializer rebuilds the agent on any node, and a
+        // durable registry (when a distributed store is present) makes the subagentId resolvable
+        // beyond this process. Without these, exposure stays in-process (legacy behaviour).
+        if (agentManager != null) {
+            final io.agentscope.harness.agent.subagent.DefaultAgentManager am = agentManager;
+            gw.setSubagentMaterializer(am::createAgentIfPresent);
+        }
+        if (distributedStore != null) {
+            gw.setSubagentRegistry(
+                    new io.agentscope.harness.agent.gateway.StoreBackedSubagentRegistry(
+                            distributedStore.baseStore()));
         }
 
         this.internalGateway = gw;
@@ -921,6 +997,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         io.agentscope.core.skill.SkillFilter skillFilter;
 
         boolean planModeEnabled = false;
+        boolean planModeAllowShell = false;
         String planFileDir = PlanModeManager.DEFAULT_PLAN_DIR;
 
         ToolsConfig toolsConfigOverride;
@@ -933,6 +1010,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         // can also be replaced inside orchestration when none is provided (defaults to a
         // JsonFileAgentStateStore rooted at ~/.agentscope/state/<agentId>/, outside any workspace).
         AgentStateStore stateStoreOverride;
+
+        DistributedStore distributedStore;
 
         private Builder() {}
 
@@ -1206,6 +1285,23 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Configures a distributed store that provides all storage components at once:
+         * {@link AgentStateStore}, {@link io.agentscope.harness.agent.filesystem.remote.store.BaseStore},
+         * {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}, and
+         * {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard}.
+         *
+         * <p>Explicit builder methods ({@code stateStore()}, {@code filesystem()}) take
+         * precedence over the distributed store for the components they configure.
+         *
+         * @param store the distributed store to use
+         * @return this builder
+         */
+        public Builder distributedStore(DistributedStore store) {
+            this.distributedStore = store;
+            return this;
+        }
+
         public Builder defaultSessionId(String defaultSessionId) {
             inner.defaultSessionId(defaultSessionId);
             return this;
@@ -1339,8 +1435,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /** Escape hatch: sets a custom {@link AbstractFilesystem} implementation directly. */
-        public Builder abstractFilesystem(AbstractFilesystem backend) {
-            this.abstractFilesystem = backend;
+        public Builder abstractFilesystem(AbstractFilesystem store) {
+            this.abstractFilesystem = store;
             return this;
         }
 
@@ -1551,6 +1647,23 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Allows the shell tool ({@code execute}) to run while plan mode is active. By default plan
+         * mode is strictly read-only and the shell is denied (it is dual-use and cannot be
+         * classified as read-only by name). Opt in when shell-based investigation (e.g.
+         * {@code cat}/{@code grep}/{@code git log}) is needed to produce a realistic plan; the plan
+         * banner instructs the model to keep shell usage read-only. Writes still flow through the
+         * (denied) file-editing tools. Prefer pairing this with a sandboxed filesystem.
+         */
+        public Builder allowShellInPlanMode() {
+            return allowShellInPlanMode(true);
+        }
+
+        public Builder allowShellInPlanMode(boolean allowed) {
+            this.planModeAllowShell = allowed;
+            return this;
+        }
+
         public Builder skillFilter(io.agentscope.core.skill.SkillFilter filter) {
             this.skillFilter = filter;
             return this;
@@ -1669,6 +1782,28 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     agentId != null && !agentId.isBlank()
                             ? agentId
                             : (name != null && !name.isBlank() ? name : "ReActAgent");
+            // ---- DistributedStore auto-wiring ----
+            // distributedStore provides storage components; filesystem mode is user's choice.
+            // Priority: explicit builder methods > distributedStore > local defaults
+            if (distributedStore != null) {
+                if (stateStoreOverride == null) {
+                    stateStoreOverride = distributedStore.agentStateStore();
+                    inner.stateStore(stateStoreOverride);
+                }
+                if (remoteFilesystemSpec != null) {
+                    remoteFilesystemSpec.injectStoreIfAbsent(distributedStore.baseStore());
+                }
+                if (sandboxFilesystemSpec != null) {
+                    if (sandboxFilesystemSpec.getSnapshotSpecOverride() == null) {
+                        sandboxFilesystemSpec.snapshotSpec(distributedStore.sandboxSnapshotSpec());
+                    }
+                    if (sandboxFilesystemSpec.getExecutionGuard() == null) {
+                        sandboxFilesystemSpec.executionGuard(
+                                distributedStore.sandboxExecutionGuard());
+                    }
+                }
+            }
+
             AgentStateStore effectiveSession = stateStoreOverride;
             NamespaceFactory nsFactory =
                     rc -> {
@@ -1686,7 +1821,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             + " multi-replica deployments, but the effective AgentStateStore is a"
                             + " local in-process implementation (JsonFileAgentStateStore /"
                             + " InMemoryAgentStateStore). Configure a distributed AgentStateStore"
-                            + " backend (for example RedisAgentStateStore) via .stateStore(...).");
+                            + " (for example RedisAgentStateStore) via .stateStore(...) or use"
+                            + " .distributedStore(...).");
             }
             WorkspaceIndex workspaceIndex =
                     remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
@@ -1860,13 +1996,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 agentToolkit.registerTool(new PlanModeTools.PlanWriteTool(planModeManager));
                 agentToolkit.registerTool(new PlanModeTools.PlanExitTool(planModeManager));
                 final Toolkit roToolkit = agentToolkit;
+                java.util.Set<String> planExtraAllowed =
+                        planModeAllowShell
+                                ? java.util.Set.of(ShellExecuteTool.NAME)
+                                : java.util.Set.of();
                 inner.middleware(
                         new io.agentscope.harness.agent.middleware.PlanModeMiddleware(
                                 planModeManager,
                                 toolName -> {
                                     AgentTool t = roToolkit.getTool(toolName);
                                     return t instanceof ToolBase tb && tb.isReadOnly();
-                                }));
+                                },
+                                planExtraAllowed));
             }
 
             // ---- workspace/tools.json: MCP servers + allow/deny filter ----
@@ -2039,7 +2180,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             log.info(
-                    "HarnessAgent '{}' built [workspace={}, backend={}, subagents={}]",
+                    "HarnessAgent '{}' built [workspace={}, filesystem={}, subagents={}]",
                     name,
                     resolvedWorkspace,
                     filesystem.getClass().getSimpleName(),
@@ -2065,7 +2206,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pendingSkillCurator,
                     pendingSkillAuditLog,
                     memoryConfig,
-                    capturedSubagentMw);
+                    capturedSubagentMw,
+                    distributedStore);
         }
     }
 }

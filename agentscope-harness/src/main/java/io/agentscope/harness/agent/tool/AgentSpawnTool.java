@@ -92,6 +92,25 @@ public class AgentSpawnTool {
     private static final int MAX_TIMEOUT_SECONDS = 600;
     private static final int MAX_SPAWN_DEPTH = 3;
 
+    /**
+     * {@link RuntimeContext} string key for a per-call override of subagent user-exposure. Put a
+     * {@link Boolean} (or its string form) under this key to control exposure for every
+     * {@code agent_spawn} in the current call, independent of what the LLM requests.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * RuntimeContext ctx = RuntimeContext.builder()
+     *     .userId("user-1")
+     *     .put(AgentSpawnTool.CTX_EXPOSE_TO_USER, true)
+     *     .build();
+     * }</pre>
+     *
+     * <p>Resolution precedence (highest first): this context value → the spawned subagent's
+     * {@link SubagentDeclaration#getExposeToUser()} policy → the LLM's {@code expose_to_user}
+     * argument → {@code false}.
+     */
+    public static final String CTX_EXPOSE_TO_USER = "agentscope.subagent.expose_to_user";
+
     private static final String BG_RESULT_TEMPLATE =
             """
             status: accepted
@@ -104,7 +123,7 @@ public class AgentSpawnTool {
     private final DefaultAgentManager agentManager;
     private final TaskRepository taskRepository;
     private final int parentSpawnDepth;
-    private final SubagentGatewayBridge gatewayBridge;
+    private volatile SubagentGatewayBridge gatewayBridge;
 
     private record SpawnedAgent(
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
@@ -143,6 +162,21 @@ public class AgentSpawnTool {
         this.agentManager = Objects.requireNonNull(agentManager, "agentManager");
         this.taskRepository = taskRepository;
         this.parentSpawnDepth = parentSpawnDepth;
+        this.gatewayBridge = gatewayBridge;
+    }
+
+    /**
+     * Wires (or re-wires) the gateway bridge used to expose subagents as user-addressable threads.
+     *
+     * <p>Mutating the bridge on the live instance — rather than constructing a replacement — is
+     * essential: the toolkit binds {@code agent_spawn} to this exact object at orchestration time,
+     * so a replacement tool would never receive calls. The bridge is typically supplied lazily,
+     * after the agent is built, when its internal gateway is created (see
+     * {@code HarnessAgent#ensureGateway}).
+     *
+     * @param gatewayBridge the bridge implementation, or {@code null} to disable exposure
+     */
+    public void setGatewayBridge(SubagentGatewayBridge gatewayBridge) {
         this.gatewayBridge = gatewayBridge;
     }
 
@@ -193,16 +227,14 @@ public class AgentSpawnTool {
                             required = false)
                     Boolean exposeToUser) {
 
-        System.err.println(
-                "[agentSpawn] called agentId="
-                        + agentId
-                        + " timeoutSeconds="
-                        + timeoutSeconds
-                        + " task="
-                        + task);
+        log.debug(
+                "agent_spawn called: agentId={}, timeoutSeconds={}, task={}",
+                agentId,
+                timeoutSeconds,
+                task);
         int nextDepth = parentSpawnDepth + 1;
         if (nextDepth > MAX_SPAWN_DEPTH) {
-            System.err.println("[agentSpawn] depth exceeded");
+            log.warn("agent_spawn depth exceeded: depth={}, max={}", nextDepth, MAX_SPAWN_DEPTH);
             return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
@@ -215,11 +247,10 @@ public class AgentSpawnTool {
                                 + agentId
                                 + "' is PRIMARY-only and cannot be spawned as a subagent.");
             }
-            System.err.println(
-                    "[agentSpawn] unknown agentId=" + agentId + " known=" + agentManager);
+            log.warn("agent_spawn unknown agentId={}, known={}", agentId, agentManager);
             return Mono.just("Error: Unknown agent_id: " + agentId);
         }
-        System.err.println("[agentSpawn] hasAgent=true, proceeding");
+        log.debug("agent_spawn resolved: agentId={}", agentId);
         Agent agent = agentOpt.get();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
@@ -273,9 +304,13 @@ public class AgentSpawnTool {
             propagateDenyRules(parentState, ra);
         }
 
-        // Expose subagent to user via gateway bridge if requested.
+        // Expose subagent to user via gateway bridge if requested. The effective decision combines
+        // (in priority order) a per-call RuntimeContext override, the declaration policy, and the
+        // LLM-supplied argument — so application code can force or forbid exposure regardless of
+        // what the model decides.
+        boolean effectiveExpose = resolveExposeToUser(exposeToUser, declOpt, runtimeContext);
         String subagentId = null;
-        if (Boolean.TRUE.equals(exposeToUser) && gatewayBridge != null) {
+        if (effectiveExpose && gatewayBridge != null) {
             OutboundAddress replyTo =
                     runtimeContext != null
                             ? runtimeContext.get("outboundAddress", OutboundAddress.class)
@@ -728,6 +763,46 @@ public class AgentSpawnTool {
             log.warn("agent remote sync interrupted: agentId={}", agentId);
             return header + "\nstatus: error\nerror: interrupted";
         }
+    }
+
+    /**
+     * Resolves the effective user-exposure decision for a spawn.
+     *
+     * <p>Precedence (highest first):
+     *
+     * <ol>
+     *   <li>A per-call {@link RuntimeContext} value under {@link #CTX_EXPOSE_TO_USER} — lets the
+     *       embedding application force/forbid exposure for the whole call.
+     *   <li>The spawned subagent's {@link SubagentDeclaration#getExposeToUser()} policy — a static
+     *       per-type default; {@code null} means "no opinion".
+     *   <li>The LLM-supplied {@code expose_to_user} tool argument.
+     *   <li>{@code false} when none of the above expresses an opinion.
+     * </ol>
+     */
+    private static boolean resolveExposeToUser(
+            Boolean llmParam, Optional<SubagentDeclaration> declOpt, RuntimeContext ctx) {
+        if (ctx != null) {
+            Boolean override = asBoolean(ctx.get(CTX_EXPOSE_TO_USER));
+            if (override != null) {
+                return override;
+            }
+        }
+        Boolean declPolicy = declOpt.map(SubagentDeclaration::getExposeToUser).orElse(null);
+        if (declPolicy != null) {
+            return declPolicy;
+        }
+        return Boolean.TRUE.equals(llmParam);
+    }
+
+    /** Coerces a context value (Boolean or its string form) to a tri-state Boolean. */
+    private static Boolean asBoolean(Object v) {
+        if (v instanceof Boolean b) {
+            return b;
+        }
+        if (v instanceof String s && !s.isBlank()) {
+            return Boolean.parseBoolean(s.trim());
+        }
+        return null;
     }
 
     private static long resolveTimeoutMs(Integer timeoutSeconds, int defaultSeconds) {

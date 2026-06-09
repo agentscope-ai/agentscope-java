@@ -74,6 +74,12 @@
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>dashscope-sdk-java</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- RAG Extensions -->
@@ -131,7 +137,7 @@
         <!-- Redis State Store (for distributed shared-store examples) -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-session-redis</artifactId>
+            <artifactId>agentscope-extensions-redis</artifactId>
         </dependency>
 
         <!-- PostgreSQL Driver for PgVectorStore -->

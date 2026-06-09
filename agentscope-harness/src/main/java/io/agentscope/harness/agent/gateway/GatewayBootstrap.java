@@ -15,16 +15,20 @@
  */
 package io.agentscope.harness.agent.gateway;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
@@ -174,6 +178,7 @@ public final class GatewayBootstrap {
         private String mainAgentId;
         private final List<Channel> channels = new ArrayList<>();
         private Consumer<HarnessAgent.Builder> agentCustomizer;
+        private DistributedStore distributedStore;
 
         private Builder() {}
 
@@ -228,6 +233,18 @@ public final class GatewayBootstrap {
         }
 
         /**
+         * Sets the distributed store used to build a durable
+         * {@link SubagentRegistry}, making subagents exposed via {@code expose_to_user} resolvable
+         * and re-materializable across nodes / restarts. When not set, the main agent's own
+         * {@code distributedStore} (if any) is used as a fallback; otherwise exposure stays
+         * in-process.
+         */
+        public Builder distributedStore(DistributedStore store) {
+            this.distributedStore = store;
+            return this;
+        }
+
+        /**
          * Builds the gateway bootstrap. At least one agent must be registered.
          *
          * @throws IllegalStateException if no agents are registered
@@ -261,6 +278,36 @@ public final class GatewayBootstrap {
                 if (!entry.getKey().equals(resolvedMainId)) {
                     gw.registerAgent(entry.getKey(), entry.getValue());
                 }
+            }
+
+            // ---- Exposed-subagent recovery wiring (cross-node / post-restart) ----
+            // A composite materializer rebuilds a subagent on any node by trying each registered
+            // agent's manager in turn; a durable registry (when a distributed store is present)
+            // makes the subagentId resolvable beyond this process. Without these, exposure stays
+            // in-process (legacy behaviour).
+            List<DefaultAgentManager> managers =
+                    agents.values().stream()
+                            .map(HarnessAgent::getSubagentAgentManager)
+                            .filter(Objects::nonNull)
+                            .toList();
+            if (!managers.isEmpty()) {
+                gw.setSubagentMaterializer(
+                        (agentId, rc) -> {
+                            for (DefaultAgentManager m : managers) {
+                                Optional<Agent> agent = m.createAgentIfPresent(agentId, rc);
+                                if (agent.isPresent()) {
+                                    return agent;
+                                }
+                            }
+                            return Optional.empty();
+                        });
+            }
+            DistributedStore store = distributedStore;
+            if (store == null) {
+                store = mainHa.getDistributedStore();
+            }
+            if (store != null) {
+                gw.setSubagentRegistry(new StoreBackedSubagentRegistry(store.baseStore()));
             }
 
             return new GatewayBootstrap(gw, cm, new LinkedHashMap<>(agents), resolvedMainId);

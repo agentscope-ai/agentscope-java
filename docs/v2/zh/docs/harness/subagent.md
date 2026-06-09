@@ -58,6 +58,7 @@ temperature: 0.2              # 可选；覆盖父的 GenerateOptions
 top_p: 0.95                   # 可选
 hidden: false                 # true 时不出现在 agent 可见列表（仍可程序化 spawn）
 mode: subagent                # primary / subagent / all，默认 all；primary 不允许被 spawn
+expose_to_user: true          # 可选三态；强制/禁止向用户暴露（不写表示不表态）
 tools: [read_file, grep_files]   # 可选；继承工具的白名单
 ---
 
@@ -211,7 +212,7 @@ chat.sendToSubagent(subagentId, "重点关注 LLM agent").block();
 ```java
 HarnessAgent agent = HarnessAgent.builder()
     .name("orchestrator")
-    .model("qwen-plus")
+    .model("dashscope:qwen-plus")
     .build();
 
 // channel() 创建内部 gateway 并自动接好 bridge——expose_to_user 直接可用。
@@ -219,6 +220,62 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());
 ```
 
 没有绑定 Channel 时，`agent_spawn` 里的 `expose_to_user=true` 会被静默忽略——子 agent 照常工作，只是不会暴露给用户。多 agent 场景用 `GatewayBootstrap` 的接法见 [Channel — GatewayBootstrap 下暴露子 Agent](./channel#gatewaybootstrap-下暴露子-agent)。
+
+### 用代码控制是否暴露
+
+完全依赖 LLM 传 `expose_to_user=true` 有时不够灵活。你可以从应用代码侧覆盖这个决策，有两种方式，最终生效值按以下优先级解析（从高到低）：
+
+1. **`RuntimeContext` 按调用覆盖** —— 作用于当前这次调用里的所有 `agent_spawn`
+2. **`SubagentDeclaration` 按类型策略** —— 该子 agent 类型的静态默认值
+3. **LLM 传入的 `expose_to_user` 工具参数**
+4. 以上都没有表态时，默认为 **`false`**
+
+**通过 `RuntimeContext` 按调用覆盖。** 在 `AgentSpawnTool.CTX_EXPOSE_TO_USER` 这个 key 下放一个 `Boolean`（或其字符串形式）：
+
+```java
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("user-1")
+    .put(AgentSpawnTool.CTX_EXPOSE_TO_USER, true)   // 强制开启；传 false 则禁止暴露
+    .build();
+```
+
+**通过声明设置按类型策略。** 使用三态的 `exposeToUser` —— `TRUE` 总是暴露，`FALSE` 永不暴露（即使 LLM 传了 `expose_to_user=true` 也会被覆盖），`null`（默认）则交给 context 覆盖、再交给 LLM 参数决定：
+
+```java
+SubagentDeclaration decl = SubagentDeclaration.builder()
+    .name("researcher")
+    .description("调研主题并返回汇总报告。")
+    .exposeToUser(true)   // 这个子 agent 类型始终对用户可直接寻址
+    .build();
+```
+
+或在 Markdown 子 agent spec 的 front matter 里（同样是三态——不写这个 key 表示"不表态"）：
+
+```markdown
+---
+name: researcher
+description: 调研主题并返回汇总报告。
+expose_to_user: true
+---
+```
+
+这样你就能不管模型怎么决定，都能强制或禁止暴露；同时在代码两侧都不表态时，仍然让 LLM 自行选择。
+
+### 跨重启与多副本
+
+默认情况下，暴露只存在于创建它的进程里：`subagentId` 只在那个节点有效，重启即失效。要让暴露的子 agent 在**任意副本**、**重启之后**都能解析，给 agent 配上 `distributedStore(...)` 即可——和配 state、filesystem 是同一行：
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("orchestrator")
+    .model("dashscope:qwen-plus")
+    .distributedStore(RedisDistributedStore.fromJedis(jedis))
+    .build();
+
+ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自动接好
+```
+
+`subagentId` 会持久化到后端，子 agent 自己的对话会按 session 从分布式 `AgentStateStore` 重新加载——即使后续消息落到不同节点，用户面对的仍是*同一个*子 agent。多 agent 的 `GatewayBootstrap` 传 `.distributedStore(...)`（不传则继承 main agent 的）。部署建议——包括把某个 `subagentId` 路由回它的活实例所在节点（粘性路由）——见 [上生产](../others/going-to-production.md)。
 
 ## 让 agent 自己写新的子 agent spec
 
@@ -268,7 +325,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());
 
 ## 子 Agent 流式
 
-> 新代码请用 `streamEvents()`（返回 `Flux<AgentEvent>`）。旧 `stream()` 系列（`Flux<Event>`）在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](../building-blocks/message-and-event.md) 与 [Changelog B.4](../change-log.md)。
+> 新代码请用 `streamEvents()`（返回 `Flux<AgentEvent>`）。旧 `stream()` 系列（`Flux<Event>`）在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](../building-blocks/message-and-event.md) 与 [V1 迁移指南 B.4](../change-log.md)。
 
 父 agent 通过 `agent_spawn` / `agent_send` 同步调用子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段（`/` 分隔的路径，如 `"main/researcher"`），父事件的 `source` 为 `null`。
 
@@ -374,4 +431,4 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 - [计划模式](./plan-mode) — plan 阶段对子 agent 的限制
 - [架构](./architecture) — 主/子 agent 怎么协作
 - [消息与事件](../building-blocks/message-and-event.md) — `AgentEvent` 体系（推荐）以及已弃用的 `Event` / `EventType` / `StreamOptions`
-- [Changelog B.4](../change-log.md) — `stream()` → `streamEvents()` 弃用时间线
+- [V1 迁移指南 B.4](../change-log.md) — `stream()` → `streamEvents()` 弃用时间线

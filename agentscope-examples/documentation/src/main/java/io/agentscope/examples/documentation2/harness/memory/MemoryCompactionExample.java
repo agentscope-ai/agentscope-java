@@ -61,7 +61,7 @@ public class MemoryCompactionExample {
                 HarnessAgent.builder()
                         .name("memory-demo")
                         .sysPrompt("You are a helpful assistant. Keep answers under two sentences.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .workspace(workspace)
                         .compaction(
                                 CompactionConfig.builder()

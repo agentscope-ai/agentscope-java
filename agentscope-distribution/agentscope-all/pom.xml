@@ -180,14 +180,14 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-session-mysql</artifactId>
+            <artifactId>agentscope-extensions-mysql</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-session-redis</artifactId>
+            <artifactId>agentscope-extensions-redis</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
@@ -279,6 +279,34 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-oss</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-sandbox-kubernetes</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-sandbox-agentrun</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-sandbox-daytona</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-sandbox-e2b</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>

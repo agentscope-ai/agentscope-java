@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-extensions</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>agentscope-extensions-sandbox</artifactId>
+    <name>AgentScope Java - Extensions - Sandbox</name>
+    <description>Sandbox backend implementations (Kubernetes, AgentRun, Daytona, E2B)</description>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>agentscope-extensions-sandbox-kubernetes</module>
+        <module>agentscope-extensions-sandbox-agentrun</module>
+        <module>agentscope-extensions-sandbox-daytona</module>
+        <module>agentscope-extensions-sandbox-e2b</module>
+    </modules>
+</project>

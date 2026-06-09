@@ -1,13 +1,17 @@
+```{note}
+This page has been superseded by [Distributed Storage — Redis](../distributed/redis.md). Content below is kept for reference.
+```
+
 # Redis State Store
 
-`agentscope-extensions-session-redis` persists AgentScope agent state in Redis. The unified `RedisClientAdapter` abstracts over **Jedis, Lettuce, and Redisson**, covering Standalone, Cluster, and Sentinel deployment modes.
+`agentscope-extensions-redis` persists AgentScope agent state in Redis. The unified `RedisClientAdapter` abstracts over **Jedis, Lettuce, and Redisson**, covering Standalone, Cluster, and Sentinel deployment modes.
 
 ## Add the dependency
 
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-session-redis</artifactId>
+    <artifactId>agentscope-extensions-redis</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -19,7 +23,7 @@ The module does not pin a Redis client — bring whatever you already use (Jedis
 ```java
 import io.lettuce.core.RedisClient;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.redis.RedisAgentStateStore;
+import io.agentscope.extensions.redis.state.RedisAgentStateStore;
 
 RedisClient redisClient = RedisClient.create("redis://localhost:6379");
 

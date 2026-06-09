@@ -32,7 +32,6 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.SubagentSpecGenerator;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskDelivery;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
@@ -58,8 +57,8 @@ import reactor.core.publisher.Flux;
  *
  * <p>In <strong>default mode</strong> (standalone harness setup), this middleware creates an
  * {@link AgentSpawnTool} backed by a {@link DefaultAgentManager}. In <strong>session mode</strong>
- * (orchestrated via {@code AgentBootstrap}), an external tool (typically {@code SessionsTool}) is
- * injected, replacing the default {@link AgentSpawnTool}.
+ * (orchestrated via {@code AgentBootstrap}), an external tool (typically {@code SessionsTool})
+ * is injected, replacing the default {@link AgentSpawnTool}.
  *
  * <p>Responsibilities:
  *
@@ -197,10 +196,10 @@ public class SubagentsMiddleware implements MiddlewareBase {
         this.isSessionMode = false;
         DefaultAgentManager dam = new DefaultAgentManager(entries, workspaceManager);
         this.agentManager = dam;
-        TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
-        this.taskRepository = repo;
-        this.subagentTool = new AgentSpawnTool(dam, repo, 0);
-        this.taskTool = new TaskTool(repo);
+        java.util.Objects.requireNonNull(taskRepository, "taskRepository");
+        this.taskRepository = taskRepository;
+        this.subagentTool = new AgentSpawnTool(dam, taskRepository, 0);
+        this.taskTool = new TaskTool(taskRepository);
         this.filesystem = filesystem;
         this.mainWorkspace = mainWorkspace;
         this.factoryBuilder = factoryBuilder;
@@ -228,16 +227,12 @@ public class SubagentsMiddleware implements MiddlewareBase {
         this.isSessionMode = true;
         this.agentManager = null;
         this.subagentTool = externalSubagentTool;
-        TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
-        this.taskRepository = repo;
-        this.taskTool = new TaskTool(repo);
+        java.util.Objects.requireNonNull(taskRepository, "taskRepository");
+        this.taskRepository = taskRepository;
+        this.taskTool = new TaskTool(taskRepository);
         this.filesystem = null;
         this.mainWorkspace = null;
         this.factoryBuilder = null;
-    }
-
-    public SubagentsMiddleware(List<SubagentEntry> entries) {
-        this(entries, (TaskRepository) null, (WorkspaceManager) null);
     }
 
     /**
@@ -275,8 +270,25 @@ public class SubagentsMiddleware implements MiddlewareBase {
             log.debug("setGatewayBridge ignored in session mode (no internal manager)");
             return this;
         }
-        this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+        // Mutate the bridge on the live tool instead of replacing it: the toolkit binds
+        // agent_spawn to the AgentSpawnTool instance returned by getTools() at orchestration
+        // time, so a fresh instance here would never be invoked and exposure would silently
+        // never fire.
+        if (this.subagentTool instanceof AgentSpawnTool ast) {
+            ast.setGatewayBridge(bridge);
+        } else {
+            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+        }
         return this;
+    }
+
+    /**
+     * Returns the internal {@link DefaultAgentManager} that can re-materialize subagents, or
+     * {@code null} in session mode (external tool). Used to wire a gateway materializer for
+     * cross-node exposed-subagent recovery.
+     */
+    public DefaultAgentManager getAgentManager() {
+        return agentManager;
     }
 
     /**

@@ -51,6 +51,11 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-mysql</artifactId>
+        </dependency>
+
         <!-- IM channel implementations -->
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -111,7 +116,7 @@
         </dependency>
 
         <!--
-          Persistence backend. The default DataSource is embedded H2 in file mode at
+          Persistence store. The default DataSource is embedded H2 in file mode at
           ${user.home}/.agentscope-builder/db; the `jdbc` Spring profile flips the
           defaults over to MySQL. MySQL and PostgreSQL JDBC drivers are bundled at
           runtime scope so the same artifact can be pointed at either RDBMS without

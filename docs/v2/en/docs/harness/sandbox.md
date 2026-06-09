@@ -72,6 +72,7 @@ Where snapshots land is decided by `snapshotSpec`:
 | `LocalSnapshotSpec` | Host local file (single-machine long-running) |
 | `OssSnapshotSpec` | OSS / S3-compatible (multi-replica) |
 | `RedisSnapshotSpec` | Redis (low latency, small workspaces) |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB (existing relational DB) |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -110,24 +111,32 @@ If you're using a local `AgentStateStore` (the default `JsonFileAgentStateStore`
 
 ## Concurrency control (multi-replica)
 
-In `USER` / `AGENT` / `GLOBAL` modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that's not OK, add a distributed lock. Redis-backed implementation built in:
+In `USER` / `AGENT` / `GLOBAL` modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that's not OK, you need a distributed lock.
+
+**Recommended**: use `distributedStore(...)` — snapshot and execution guard are auto-injected:
 
 ```java
-SandboxExecutionGuard guard = RedisSandboxExecutionGuard.builder(jedis)
-    .leaseTtl(Duration.ofMinutes(30))        // a bit larger than worst-case call duration
-    .retryInterval(Duration.ofMillis(500))
-    .build();
+DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 
+HarnessAgent.builder()
+    .distributedStore(store)    // auto-wires stateStore + snapshotSpec + executionGuard
+    .filesystem(new DockerFilesystemSpec()
+        .image("ubuntu:24.04")
+        .isolationScope(IsolationScope.USER))
+    .build();
+```
+
+To customize lock parameters, set the guard explicitly on the `SandboxFilesystemSpec`:
+
+```java
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
     .isolationScope(IsolationScope.USER)
-    .snapshotSpec(redisSnapshotSpec)
-    .executionGuard(guard))
+    .executionGuard(RedisSandboxExecutionGuard.builder(jedis)
+        .leaseTtl(Duration.ofMinutes(30)).build()))
 ```
 
-The lock key is bucketed by scope automatically (`USER` → by userId, `AGENT` → by agent name).
-
-You can also implement the `SandboxExecutionGuard` interface to plug in other lock backends (DB / Zookeeper / etcd).
+Built-in implementations: `RedisSandboxExecutionGuard` (Redis `SET NX PX`), `JdbcSandboxExecutionGuard` (MySQL `GET_LOCK()`). You can also implement `SandboxExecutionGuard` to plug in Zookeeper, etcd, or other lock stores.
 
 ## Self-managed sandbox instances (advanced)
 
@@ -167,9 +176,9 @@ SandboxContext callCtx = SandboxContext.builder()
 
 Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it yourself when done.
 
-## Choosing a sandbox backend
+## Choosing a sandbox store
 
-| Backend | Best for |
+| Store | Best for |
 |---------|----------|
 | **Docker** | Local dev / single machine / trusted shell |
 | **Kubernetes** | Self-hosted K8s, node-level bind mounts |
@@ -177,7 +186,7 @@ Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it y
 | **E2B** | Generic managed sandbox + native platform snapshots |
 | **AgentRun** | Aliyun-managed sandbox (Function Compute FC 3.0); per-instance NAS / OSS auto-mount; mainland-China low latency. Treated as a regular `SandboxFilesystemSpec` — full setup details (templates, RAM permissions, NAS-first config) live in the integration docs |
 
-All backends implement the same interface; agent code, toolkit, and `AGENTS.md` don't change.
+All stores implement the same interface; agent code, toolkit, and `AGENTS.md` don't change.
 
 ## How the workspace maps into the sandbox
 
@@ -187,7 +196,7 @@ To bind a host directory into the sandbox (e.g. a code repo), use `BindMountEntr
 
 File changes inside the sandbox don't sync back to the host — to retrieve sandbox-produced artifacts, have the agent `read_file` them.
 
-## Implementing your own sandbox backend
+## Implementing your own sandbox store
 
 To integrate a non-Docker isolation environment (self-hosted remote executor, commercial sandbox API, local mock, etc.), no Harness source changes needed — implement a few contract interfaces and pass them to `filesystem(...)`. The `InMemorySandbox` family under `agentscope-harness` tests is the minimal skeleton to copy.
 

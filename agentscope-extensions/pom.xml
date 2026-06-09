@@ -34,8 +34,9 @@
         <module>agentscope-spring-boot-starters</module>
         <module>agentscope-extensions-protocol</module>
         <module>agentscope-extensions-mem</module>
-        <module>agentscope-extensions-state</module>
         <module>agentscope-extensions-oss</module>
+        <module>agentscope-extensions-redis</module>
+        <module>agentscope-extensions-mysql</module>
         <module>agentscope-extensions-rag</module>
         <module>agentscope-extensions-higress</module>
         <module>agentscope-extensions-nacos</module>
@@ -44,5 +45,6 @@
         <module>agentscope-extensions-scheduler</module>
         <module>agentscope-extensions-training</module>
         <module>agentscope-extensions-channel</module>
+        <module>agentscope-extensions-sandbox</module>
     </modules>
 </project>

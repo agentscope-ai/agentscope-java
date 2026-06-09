@@ -83,7 +83,7 @@
         -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-session-redis</artifactId>
+            <artifactId>agentscope-extensions-redis</artifactId>
             <optional>true</optional>
         </dependency>
 
@@ -107,7 +107,7 @@
         </dependency>
 
         <!--
-          Persistence backend. Default DataSource is embedded H2 in file mode at
+          Persistence store. Default DataSource is embedded H2 in file mode at
           ${user.home}/.agentscope-dataagent/db; the `jdbc` Spring profile flips
           defaults over to MySQL. MySQL and PostgreSQL JDBC drivers are bundled
           at runtime scope so the same artifact can be pointed at either RDBMS

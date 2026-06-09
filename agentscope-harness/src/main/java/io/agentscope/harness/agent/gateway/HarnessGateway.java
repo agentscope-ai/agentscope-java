@@ -22,8 +22,10 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,9 +65,23 @@ public final class HarnessGateway implements Gateway {
     /** canonicalKey → stable session id */
     private final ConcurrentHashMap<String, String> sessionMap = new ConcurrentHashMap<>();
 
-    /** threadId → exposed subagent session */
+    /** Live-agent cache for the fast same-node path: subagentId → exposed subagent session. */
     private final ConcurrentHashMap<String, ExposedSession> exposedSessions =
             new ConcurrentHashMap<>();
+
+    /**
+     * Durable registry of exposure recipes. Defaults to {@link InMemorySubagentRegistry} (legacy
+     * single-process behaviour); a {@link StoreBackedSubagentRegistry} is injected when a
+     * distributed store is configured, enabling cross-node / cross-restart resolution.
+     */
+    private volatile SubagentRegistry subagentRegistry = new InMemorySubagentRegistry();
+
+    /**
+     * Rebuilds a subagent {@link Agent} from its type id when the live instance is not present on
+     * this node (cross-node / post-restart). {@code null} disables recovery — only cached live
+     * sessions are addressable.
+     */
+    private volatile SubagentMaterializer subagentMaterializer;
 
     /** session id → last outbound address (for proactive push delivery) */
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySession =
@@ -231,6 +247,14 @@ public final class HarnessGateway implements Gateway {
         String subagentId = "sub-" + UUID.randomUUID().toString().substring(0, 8);
         exposedSessions.put(
                 subagentId, new ExposedSession(subagentId, agentId, sessionId, agent, replyTo));
+        try {
+            subagentRegistry.register(
+                    new SubagentRecord(
+                            subagentId, agentId, sessionId, null, null, Instant.now(), null));
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Failed to persist exposed-subagent record {}: {}", subagentId, e.getMessage());
+        }
         log.debug(
                 "Exposed subagent agentId={} sessionId={} as subagentId={}",
                 agentId,
@@ -239,16 +263,82 @@ public final class HarnessGateway implements Gateway {
         return subagentId;
     }
 
-    /** Revokes a previously exposed subagent, removing it from routing. */
+    /** Revokes a previously exposed subagent, removing it from the live cache and the registry. */
     public void revokeSubagent(String subagentId) {
         if (subagentId != null) {
             exposedSessions.remove(subagentId);
+            try {
+                subagentRegistry.revoke(subagentId);
+            } catch (RuntimeException e) {
+                log.debug("Registry revoke failed for {}: {}", subagentId, e.getMessage());
+            }
         }
+    }
+
+    /**
+     * Installs the durable {@link SubagentRegistry}. Called during gateway wiring; defaults to an
+     * in-memory registry when not set.
+     */
+    public void setSubagentRegistry(SubagentRegistry registry) {
+        if (registry != null) {
+            this.subagentRegistry = registry;
+        }
+    }
+
+    /**
+     * Installs the {@link SubagentMaterializer} used to rebuild subagents that are not present in
+     * the local live cache (cross-node / post-restart recovery).
+     */
+    public void setSubagentMaterializer(SubagentMaterializer materializer) {
+        this.subagentMaterializer = materializer;
+    }
+
+    /**
+     * Resolves an exposed subagent to a runnable session: returns the cached live session when
+     * present, otherwise rebuilds it from the durable registry via the configured
+     * {@link SubagentMaterializer}. Returns {@code null} when the handle is unknown / expired or
+     * cannot be re-materialized.
+     */
+    private ExposedSession resolveExposed(String subagentId) {
+        ExposedSession live = exposedSessions.get(subagentId);
+        if (live != null) {
+            return live;
+        }
+        SubagentMaterializer materializer = this.subagentMaterializer;
+        if (materializer == null) {
+            return null;
+        }
+        Optional<SubagentRecord> recordOpt = subagentRegistry.find(subagentId);
+        if (recordOpt.isEmpty()) {
+            return null;
+        }
+        SubagentRecord record = recordOpt.get();
+        RuntimeContext.Builder rcb = RuntimeContext.builder().sessionId(record.sessionId());
+        if (record.userId() != null && !record.userId().isBlank()) {
+            rcb.userId(record.userId());
+        }
+        Optional<Agent> agentOpt = materializer.materialize(record.agentId(), rcb.build());
+        if (agentOpt.isEmpty()) {
+            log.warn(
+                    "Cannot re-materialize exposed subagent {} (agentId={}): unknown type",
+                    subagentId,
+                    record.agentId());
+            return null;
+        }
+        ExposedSession rebuilt =
+                new ExposedSession(
+                        record.subagentId(),
+                        record.agentId(),
+                        record.sessionId(),
+                        agentOpt.get(),
+                        null);
+        exposedSessions.putIfAbsent(subagentId, rebuilt);
+        return exposedSessions.get(subagentId);
     }
 
     @Override
     public Mono<Msg> runSubagent(String subagentId, List<Msg> messages) {
-        ExposedSession session = exposedSessions.get(subagentId);
+        ExposedSession session = resolveExposed(subagentId);
         if (session == null) {
             return Mono.error(new IllegalArgumentException("Unknown subagentId: " + subagentId));
         }
@@ -303,7 +393,7 @@ public final class HarnessGateway implements Gateway {
 
     @Override
     public Flux<AgentEvent> runSubagentStream(String subagentId, List<Msg> messages) {
-        ExposedSession session = exposedSessions.get(subagentId);
+        ExposedSession session = resolveExposed(subagentId);
         if (session == null) {
             return Flux.error(new IllegalArgumentException("Unknown subagentId: " + subagentId));
         }

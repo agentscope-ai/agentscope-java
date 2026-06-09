@@ -90,7 +90,7 @@ public class AgentEventStreamExample {
                 ReActAgent.builder()
                         .name("WeatherAgent")
                         .sysPrompt("You are a helpful assistant. Use tools when appropriate.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .toolkit(toolkit)
                         .build();
 

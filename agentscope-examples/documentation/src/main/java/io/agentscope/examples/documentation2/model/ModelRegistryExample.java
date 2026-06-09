@@ -94,7 +94,8 @@ public class ModelRegistryExample {
                 ReActAgent.builder()
                         .name("ModelStringDemo")
                         .sysPrompt("You are a concise assistant. Reply in one sentence.")
-                        .model("qwen-plus") // ← the only thing needed to configure the model
+                        .model("dashscope:qwen-plus") // ← the only thing needed to configure the
+                        // model
                         .build();
 
         Msg response = agent.call(new UserMessage("user", "What is 2 + 2?")).block();

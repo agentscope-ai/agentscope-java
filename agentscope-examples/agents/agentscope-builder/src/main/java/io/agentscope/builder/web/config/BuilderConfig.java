@@ -23,9 +23,9 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.extensions.mysql.store.JdbcStore;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
-import io.agentscope.harness.agent.filesystem.remote.store.jdbc.JdbcStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
@@ -196,19 +196,17 @@ public class BuilderConfig {
                             + " available.");
         }
 
-        // RemoteFilesystemSpec requires a distributed AgentStateStore backend; the harness rejects
-        // the
-        // default WorkspaceSession because conversation state would otherwise be pinned to one pod
-        // while the filesystem is shared. Operators should provide a Redis/MySQL AgentStateStore
-        // bean for
-        // production; if none is wired (typical for unit/integration tests), fall back to a
-        // single-process InMemoryAgentStateStore with a clear warning.
+        // RemoteFilesystemSpec requires a distributed AgentStateStore store; the harness rejects
+        // the default because conversation state would otherwise be pinned to one pod while the
+        // filesystem is shared. For production, provide a DistributedStore or AgentStateStore
+        // bean; for unit/integration tests, fall back to InMemoryAgentStateStore with a warning.
         AgentStateStore stateStore = sessionOpt.orElseGet(InMemoryAgentStateStore::new);
         if (sessionOpt.isEmpty()) {
             log.warn(
                     "No distributed AgentStateStore bean configured ({}); using"
-                            + " InMemoryAgentStateStore. Provide a RedisAgentStateStore /"
-                            + " MysqlAgentStateStore bean for multi-replica deployments.",
+                            + " InMemoryAgentStateStore. For multi-replica deployments, provide"
+                            + " a DistributedStore or a distributed AgentStateStore bean"
+                            + " (e.g. from agentscope-extensions-redis).",
                     AgentStateStore.class.getName());
         }
 

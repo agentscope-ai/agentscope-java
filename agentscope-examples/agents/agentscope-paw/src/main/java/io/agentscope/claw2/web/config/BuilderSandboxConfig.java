@@ -16,8 +16,8 @@
 package io.agentscope.claw2.web.config;
 
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

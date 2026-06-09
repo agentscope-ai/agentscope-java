@@ -17,32 +17,45 @@ package io.agentscope.examples.documentation2.harness.planmode;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * PlanModeManualExample — Application-driven plan mode: the code calls
- * {@code agent.enterPlanMode(ctx)} to force the agent into the read-only plan phase before sending
- * the user message.
+ * PlanModeManualExample — Application-driven plan mode, run as an <b>interactive terminal session</b>
+ * so you can experience the full plan → approve → build switch yourself.
  *
- * <p>What this example shows:
+ * <p>The code calls {@code agent.enterPlanMode(ctx)} to force the agent into the read-only plan
+ * phase before it sees the task. You then type a task, watch the agent investigate and write a
+ * plan, and when it calls {@code plan_exit} the run pauses for <b>your</b> approval at the terminal:
+ *
  * <ol>
  *   <li><b>Programmatic entry</b> — {@code agent.enterPlanMode(ctx)} puts the agent into read-only
  *       mode before it sees the task.</li>
- *   <li><b>Read-only restriction</b> — while in plan mode, only read-only tools and the plan
- *       tools ({@code plan_write}, {@code plan_exit}) are allowed.</li>
- *   <li><b>Plan file</b> — the agent writes its plan to {@code plans/PLAN.md}.</li>
- *   <li><b>HITL exit gate</b> — {@code plan_exit} triggers a permission ASK; the user confirms
- *       before the agent enters build mode.</li>
- *   <li><b>Programmatic exit</b> — {@code agent.exitPlanMode(ctx)} can also be used to
- *       programmatically leave plan mode without HITL.</li>
+ *   <li><b>Read-only restriction</b> — while in plan mode only read-only tools and the plan tools
+ *       ({@code plan_write} / {@code plan_exit}) are allowed.</li>
+ *   <li><b>HITL exit gate</b> — {@code plan_exit} emits a {@link RequireUserConfirmEvent}; the
+ *       example shows you the drafted plan and asks you to approve (switch to BUILD mode) or reject
+ *       (keep planning). Approval is sent back as a {@link ConfirmResult} to resume the agent.</li>
+ *   <li><b>Build phase</b> — after you approve, the agent leaves plan mode and starts executing.</li>
  * </ol>
  *
- * <p><b>Run:</b>
+ * <p>{@code agent.exitPlanMode(ctx)} is also available to leave plan mode programmatically without
+ * HITL, but this example intentionally drives the exit through the human approval gate.
+ *
+ * <p><b>Run (reads from stdin — run in a real terminal):</b>
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
  *   mvn exec:java -pl agentscope-examples/documentation \
@@ -51,9 +64,13 @@ import java.nio.file.Path;
  */
 public class PlanModeManualExample {
 
+    private static final String DEFAULT_TASK =
+            "Design the database schema for a blog platform with posts, comments, and tags. "
+                    + "Write the plan with plan_write, then call plan_exit when it is ready.";
+
     public static void main(String[] args) throws Exception {
         System.out.println("\n" + "=".repeat(60));
-        System.out.println("Plan Mode — Programmatic Entry (app-driven)");
+        System.out.println("Plan Mode — Programmatic Entry, Interactive HITL Exit");
         System.out.println("=".repeat(60) + "\n");
 
         Path workspace = Files.createTempDirectory("agentscope-planmode-manual");
@@ -65,45 +82,115 @@ public class PlanModeManualExample {
                                 "You are a software architect. You are currently in plan mode. "
                                         + "Investigate the task, write a plan with plan_write, "
                                         + "then call plan_exit when the plan is ready.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .workspace(workspace)
                         .enablePlanMode()
                         .enableTaskList()
                         .build();
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("manual-plan").build();
+        Scanner in = new Scanner(System.in);
 
-        // ── Force agent into plan mode before sending the task ──────────────
-
+        // ── Programmatic entry: force plan mode before the agent sees the task ──
         agent.enterPlanMode(ctx);
         System.out.println("enterPlanMode(ctx) → active: " + agent.isPlanModeActive(ctx));
-        System.out.println("Agent is now read-only before it sees the task.\n");
+        System.out.println("The agent is read-only until you approve plan_exit.\n");
 
-        // ── Send the task — agent plans in read-only mode ───────────────────
+        System.out.println("Enter a task for the planner (or press Enter for the default):");
+        System.out.print("> ");
+        String typed = in.hasNextLine() ? in.nextLine().trim() : "";
+        String task = typed.isEmpty() ? DEFAULT_TASK : typed;
+        System.out.println();
 
-        System.out.println("── Sending task (agent is already in plan mode) ──\n");
+        Msg next = new UserMessage(task);
 
-        agent.streamEvents(
-                        new UserMessage(
-                                "Design the database schema for a blog platform with posts, "
-                                        + "comments, and tags. Write a plan, then call plan_exit."),
-                        ctx)
-                .doOnNext(PlanModeManualExample::handleEvent)
-                .blockLast();
+        // Interactive loop: stream a turn; if the agent pauses for plan_exit confirmation, ask the
+        // user; if it yields with text while still planning, let the user reply; stop once it
+        // completes a turn in build mode. A turn cap guards against runaway loops.
+        int maxTurns = 12;
+        for (int turn = 0; turn < maxTurns && next != null; turn++) {
+            AtomicReference<RequireUserConfirmEvent> pending = new AtomicReference<>();
 
-        // ── Show plan file and state ────────────────────────────────────────
+            agent.streamEvents(next, ctx)
+                    .doOnNext(PlanModeManualExample::handleEvent)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof RequireUserConfirmEvent confirm) {
+                                    pending.set(confirm);
+                                }
+                            })
+                    .blockLast();
 
+            RequireUserConfirmEvent confirm = pending.get();
+            if (confirm != null) {
+                next = confirmInteractively(confirm, in, workspace);
+            } else if (agent.isPlanModeActive(ctx)) {
+                // Still planning but no approval was requested — the agent yielded with text
+                // (e.g. a clarifying question). Let the user reply or quit.
+                System.out.println("\n\n(agent is still in PLAN mode and waiting for your input)");
+                next = promptFollowUp(in);
+            } else {
+                // A build-phase turn finished with no further confirmation needed.
+                next = null;
+            }
+        }
+
+        // ── Result ──────────────────────────────────────────────────────────
         System.out.println("\n\n── Result ──\n");
         showPlanFile(workspace);
-        System.out.println("Plan mode active after run: " + agent.isPlanModeActive(ctx));
-
-        if (agent.isPlanModeActive(ctx)) {
-            agent.exitPlanMode(ctx);
-            System.out.println("exitPlanMode(ctx) called → active: " + agent.isPlanModeActive(ctx));
+        boolean planActive = agent.isPlanModeActive(ctx);
+        if (planActive) {
+            System.out.println(
+                    "[OUTCOME] Still in PLAN mode — plan_exit was not approved, so the agent never"
+                            + " switched to build mode.");
+        } else {
+            System.out.println(
+                    "[OUTCOME] Switched to BUILD mode — you approved plan_exit and the agent left"
+                            + " the read-only plan phase.");
         }
 
         System.out.println("\nWorkspace: " + workspace);
         System.out.println("\n" + "=".repeat(60));
+    }
+
+    /**
+     * Shows the drafted plan and asks the user to approve or reject each tool call awaiting
+     * confirmation (typically {@code plan_exit}). Builds the resume message carrying the
+     * {@link ConfirmResult}s under {@link Msg#METADATA_CONFIRM_RESULTS}.
+     */
+    private static Msg confirmInteractively(
+            RequireUserConfirmEvent confirm, Scanner in, Path workspace) throws Exception {
+        System.out.println("\n\n" + "─".repeat(60));
+        System.out.println("[HITL] The agent wants to leave PLAN mode and start executing.");
+        System.out.println("Review the drafted plan below, then approve or reject.\n");
+        showPlanFile(workspace);
+
+        List<ConfirmResult> results = new ArrayList<>();
+        for (ToolUseBlock call : confirm.getToolCalls()) {
+            System.out.printf(
+                    "%nApprove '%s'? [y = switch to BUILD mode / anything else = keep planning]: ",
+                    call.getName());
+            String ans = in.hasNextLine() ? in.nextLine().trim().toLowerCase() : "";
+            boolean approved = ans.equals("y") || ans.equals("yes");
+            results.add(new ConfirmResult(approved, call));
+            System.out.println(
+                    approved
+                            ? "  → approved; switching to BUILD mode"
+                            : "  → rejected; staying in PLAN mode");
+        }
+        return UserMessage.builder()
+                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, results))
+                .build();
+    }
+
+    /** Reads a free-form follow-up message from the terminal; {@code null} (quit) on blank / 'q'. */
+    private static Msg promptFollowUp(Scanner in) {
+        System.out.print("\nYour reply (or 'q' to quit): ");
+        String line = in.hasNextLine() ? in.nextLine().trim() : "q";
+        if (line.isEmpty() || line.equalsIgnoreCase("q")) {
+            return null;
+        }
+        return new UserMessage(line);
     }
 
     private static void showPlanFile(Path workspace) throws Exception {
@@ -117,11 +204,7 @@ public class PlanModeManualExample {
                 System.out.println(content);
             }
         } else {
-            Path plansDir = workspace.resolve("plans");
-            if (Files.isDirectory(plansDir)) {
-                System.out.println("── plans/ directory ──");
-                Files.list(plansDir).forEach(p -> System.out.println("  " + p.getFileName()));
-            }
+            System.out.println("(no plans/PLAN.md written yet)");
         }
     }
 

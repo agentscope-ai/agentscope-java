@@ -152,7 +152,7 @@ public class WorkspaceSetupExample {
                 HarnessAgent.builder()
                         .name("phoenix-assistant")
                         .sysPrompt("You are the Phoenix project assistant.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .workspace(workspace)
                         .additionalContextFile("PREFERENCES.md")
                         .maxContextTokens(4000)

@@ -211,17 +211,17 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions Session MySQL -->
+            <!-- AgentScope Extensions Redis (AgentStateStore + BaseStore + Sandbox) -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-session-mysql</artifactId>
+                <artifactId>agentscope-extensions-redis</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions Session Redis -->
+            <!-- AgentScope Extensions MySQL (AgentStateStore + JdbcStore) -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-session-redis</artifactId>
+                <artifactId>agentscope-extensions-mysql</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -229,6 +229,28 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-oss</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions Sandbox -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-kubernetes</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-agentrun</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-daytona</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-e2b</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

@@ -32,10 +32,12 @@ import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.harness.agent.tool.PlanModeTools;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -83,15 +85,33 @@ public class PlanModeMiddleware implements MiddlewareBase {
             or otherwise change state. Record your plan with the plan_write tool. When the plan is
             complete, call plan_exit to ask the user for approval; only after approval will you return
             to BUILD mode and be able to make changes.
+            ACT, do not just narrate: when you decide to record or finish the plan, call plan_write
+            (or plan_exit) in the SAME step — never say you "will write the plan" without actually
+            calling the tool, and never claim a plan exists unless you have called plan_write.
+            If you cannot produce a concrete plan because you lack information (for example the system
+            you were asked to work on is not present in this workspace), STOP and ask the user one
+            specific clarifying question instead of inventing a plan or assuming details.
             </system-reminder>\
             """;
 
     private static final String BUILD_MODE_PLAN_HINT =
-            "\n\n<system-reminder>Approved plan: %s — use read_file to reference it if needed."
-                    + "</system-reminder>";
+            "\n\n<system-reminder>You have switched from PLAN to BUILD mode; the read-only"
+                    + " restriction is lifted. An approved plan exists at %s — read it for the"
+                    + " details, then EXECUTE it step by step until the task is complete. Do NOT"
+                    + " stop after merely producing the plan. If a todo list is available, capture"
+                    + " the plan's steps with the todo_write tool and keep exactly one task"
+                    + " in_progress as you work through them.</system-reminder>";
+
+    private static final String PLAN_EXTRA_TOOLS_HINT =
+            "\n\n<system-reminder>The following tool(s) are additionally available during PLAN"
+                    + " mode for read-only investigation: %s. Use them ONLY to read/inspect (e.g."
+                    + " cat, ls, grep, git log/diff/show/status). Do NOT run mutating commands"
+                    + " (file writes, installs, git commit, rm, mv, network side effects, etc.)"
+                    + " until the plan is approved.</system-reminder>";
 
     private final PlanModeManager manager;
     private final Predicate<String> readOnlyResolver;
+    private final Set<String> additionalAllowed;
 
     /**
      * @param manager shared plan-mode state/file coordinator
@@ -99,8 +119,27 @@ public class PlanModeMiddleware implements MiddlewareBase {
      *     calls are permitted while plan mode is active
      */
     public PlanModeMiddleware(PlanModeManager manager, Predicate<String> readOnlyResolver) {
+        this(manager, readOnlyResolver, Set.of());
+    }
+
+    /**
+     * @param manager shared plan-mode state/file coordinator
+     * @param readOnlyResolver resolves whether a tool (by name) is read-only; used to decide which
+     *     calls are permitted while plan mode is active
+     * @param additionalAllowed extra tool names that are permitted while plan mode is active even
+     *     when not read-only (opt-in escape hatch — e.g. {@code execute} for shell-based
+     *     investigation). The model is instructed via the plan banner to use them read-only only.
+     */
+    public PlanModeMiddleware(
+            PlanModeManager manager,
+            Predicate<String> readOnlyResolver,
+            Set<String> additionalAllowed) {
         this.manager = manager;
         this.readOnlyResolver = readOnlyResolver != null ? readOnlyResolver : name -> false;
+        this.additionalAllowed =
+                additionalAllowed == null || additionalAllowed.isEmpty()
+                        ? Set.of()
+                        : new LinkedHashSet<>(additionalAllowed);
     }
 
     @Override
@@ -110,7 +149,12 @@ public class PlanModeMiddleware implements MiddlewareBase {
 
         if (manager.isPlanActive(state)) {
             String path = manager.planFilePath(state);
-            return Mono.just(base + PLAN_BANNER_TEMPLATE.formatted(path));
+            String banner = base + PLAN_BANNER_TEMPLATE.formatted(path);
+            if (!additionalAllowed.isEmpty()) {
+                String tools = additionalAllowed.stream().collect(Collectors.joining(", "));
+                banner += PLAN_EXTRA_TOOLS_HINT.formatted(tools);
+            }
+            return Mono.just(banner);
         }
 
         // BUILD mode: if a plan file was previously written, surface its path so the model
@@ -187,6 +231,8 @@ public class PlanModeMiddleware implements MiddlewareBase {
         if (toolName == null) {
             return false;
         }
-        return ALWAYS_ALLOWED.contains(toolName) || readOnlyResolver.test(toolName);
+        return ALWAYS_ALLOWED.contains(toolName)
+                || additionalAllowed.contains(toolName)
+                || readOnlyResolver.test(toolName);
     }
 }

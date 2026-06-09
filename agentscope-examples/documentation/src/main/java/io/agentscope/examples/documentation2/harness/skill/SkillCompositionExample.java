@@ -114,7 +114,7 @@ public class SkillCompositionExample {
                                 "You are a versatile assistant with multiple skills. When the"
                                         + " user's request matches a skill, load it first using"
                                         + " load_skill_through_path, then follow its instructions.")
-                        .model("qwen-plus")
+                        .model("qwen3.7-plus")
                         .workspace(workspace)
                         .skillRepository(classpathRepo)
                         .build();

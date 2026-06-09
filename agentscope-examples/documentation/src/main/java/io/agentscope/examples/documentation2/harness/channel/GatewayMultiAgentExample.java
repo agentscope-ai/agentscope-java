@@ -22,7 +22,7 @@ import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.gateway.channel.chatui.SendOptions;
 
 /**
- * GatewayMultiAgentExample — Routes messages to different agents using {@link GatewayBootstrap}
+ * Routes messages to different agents using {@link GatewayBootstrap}
  * and {@link SendOptions#withAgentId(String)}.
  *
  * <p>{@link GatewayBootstrap} manages multiple {@link HarnessAgent} instances. Use
@@ -51,14 +51,14 @@ public class GatewayMultiAgentExample {
                 HarnessAgent.builder()
                         .name("sales")
                         .sysPrompt("You are a sales assistant.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .build();
 
         HarnessAgent supportAgent =
                 HarnessAgent.builder()
                         .name("support")
                         .sysPrompt("You are a support agent.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .build();
 
         // Register both agents. mainAgent("sales") makes it the default.

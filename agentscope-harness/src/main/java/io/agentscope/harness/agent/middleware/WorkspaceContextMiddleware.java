@@ -21,6 +21,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
@@ -219,9 +220,17 @@ public class WorkspaceContextMiddleware implements MiddlewareBase {
                     .append(describeMode(mode))
                     .append(". File tools reject absolute paths outside the roots above")
                     .append(mode == LocalFsMode.ROOTED ? " with a security error" : "")
-                    .append(
-                            "; relative paths resolve under the workspace and read-fall-back to"
-                                    + " the project (overlay copy-on-write).\n");
+                    .append(".\n");
+            if (fs instanceof ProjectAwareOverlay) {
+                sb.append(
+                        "File tools write project files (code, configs, etc.) to the project"
+                                + " directory. Workspace metadata paths (memory, sessions, skills,"
+                                + " agents, knowledge) are written to the workspace.\n");
+            } else {
+                sb.append(
+                        "Relative paths resolve under the workspace and read-fall-back to"
+                                + " the project (overlay copy-on-write).\n");
+            }
             sb.append("Shell commands run with `pwd` set to the project directory.\n");
         } else if (fs instanceof AbstractSandboxFilesystem sandbox
                 && !(fs instanceof OverlayFilesystem)) {

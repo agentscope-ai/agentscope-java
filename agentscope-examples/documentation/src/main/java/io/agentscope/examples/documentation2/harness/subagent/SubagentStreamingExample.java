@@ -27,7 +27,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 
 /**
- * SubagentStreamingExample — Demonstrates live subagent event forwarding via
+ * Demonstrates live subagent event forwarding via
  * {@code streamEvents()}.
  *
  * <p>When a parent agent spawns a synchronous subagent via {@code agent_spawn}, the child's
@@ -71,7 +71,7 @@ public class SubagentStreamingExample {
                                 "You are an orchestrator. When the user asks a question, "
                                         + "spawn the researcher subagent to investigate, then "
                                         + "summarize the findings.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .subagent(
                                 SubagentDeclaration.builder()
                                         .name("researcher")

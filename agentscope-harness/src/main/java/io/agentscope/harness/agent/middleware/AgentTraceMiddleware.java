@@ -21,11 +21,11 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
-import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
@@ -36,6 +36,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -121,11 +122,27 @@ public class AgentTraceMiddleware implements MiddlewareBase {
                         })
                 .doOnComplete(
                         () -> {
-                            if (toolCalls.isEmpty()) {
+                            String text = textBuf.toString();
+                            boolean hasText = !text.isBlank();
+                            // Always surface the model's text, even when it accompanies tool calls
+                            // (a tool-call turn often carries a "thinking out loud" preamble that
+                            // would otherwise be silently dropped).
+                            if (hasText) {
                                 log.info(
-                                        "[{}] POST_REASONING | text response: {}",
+                                        "[{}] POST_REASONING | text: {}",
                                         name,
-                                        truncate(textBuf.toString(), 120));
+                                        truncate(text, 120));
+                            }
+                            if (toolCalls.isEmpty()) {
+                                // No tool call ends the ReAct loop. If there was also no text, the
+                                // model returned an empty completion — make that explicit instead
+                                // of logging a misleading "<empty>" that looks like normal output.
+                                if (!hasText) {
+                                    log.info(
+                                            "[{}] POST_REASONING | empty completion (no text, no"
+                                                    + " tool call) — ReAct loop will terminate",
+                                            name);
+                                }
                             } else {
                                 for (ToolCallStartEvent tc : toolCalls) {
                                     log.info(
@@ -159,53 +176,83 @@ public class AgentTraceMiddleware implements MiddlewareBase {
                 }
             }
         }
-        return next.apply(input).doOnComplete(() -> logPostActingFromState(agent, ctx));
-    }
-
-    private void logPostActingFromState(Agent agent, RuntimeContext rc) {
-        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
-        if (state == null) {
-            return;
-        }
-        String name = agent.getName();
-        List<Msg> ctx = state.getContext();
-        for (int i = ctx.size() - 1; i >= 0; i--) {
-            Msg m = ctx.get(i);
-            if (m.getRole() != MsgRole.TOOL) {
-                break;
-            }
-            for (ToolResultBlock tr : m.getContentBlocks(ToolResultBlock.class)) {
-                log.info(
-                        "[{}] POST_ACTING | id={}, name={}, result_len={}",
-                        name,
-                        tr.getId(),
-                        tr.getName(),
-                        toolResultLength(tr));
-                if (log.isDebugEnabled()) {
-                    log.debug(
-                            "[{}] POST_ACTING |   result={}",
-                            name,
-                            truncate(toolResultText(tr), 500));
-                }
-            }
-        }
+        // Derive POST_ACTING from the tool-result events flowing through the middleware stream
+        // (ToolResultStart/TextDelta/End), rather than scanning the context tail on completion.
+        // The context append happens after this stream completes, so the previous approach missed
+        // successfully-executed tools; observing the events captures every tool deterministically
+        // and keeps us off the deprecated hook path.
+        Map<String, String> toolNames = new ConcurrentHashMap<>();
+        Map<String, StringBuilder> toolText = new ConcurrentHashMap<>();
+        return next.apply(input)
+                .doOnNext(
+                        ev -> {
+                            if (ev instanceof ToolResultStartEvent start) {
+                                toolNames.put(start.getToolCallId(), start.getToolCallName());
+                                toolText.computeIfAbsent(
+                                        start.getToolCallId(), k -> new StringBuilder());
+                            } else if (ev instanceof ToolResultTextDeltaEvent delta) {
+                                if (delta.getDelta() != null) {
+                                    toolText.computeIfAbsent(
+                                                    delta.getToolCallId(), k -> new StringBuilder())
+                                            .append(delta.getDelta());
+                                }
+                            } else if (ev instanceof ToolResultEndEvent end) {
+                                String id = end.getToolCallId();
+                                String toolName = toolNames.getOrDefault(id, "<unknown>");
+                                String text =
+                                        toolText.getOrDefault(id, new StringBuilder()).toString();
+                                log.info(
+                                        "[{}] POST_ACTING | id={}, name={}, result_len={},"
+                                                + " state={}",
+                                        name,
+                                        id,
+                                        toolName,
+                                        text.length(),
+                                        end.getState());
+                                if (log.isDebugEnabled()) {
+                                    log.debug(
+                                            "[{}] POST_ACTING |   result={}",
+                                            name,
+                                            truncate(text, 500));
+                                }
+                            }
+                        });
     }
 
     private void logPostCall(Agent agent, RuntimeContext rc) {
         String name = agent.getName();
         AgentState state = RuntimeContext.resolveAgentState(rc, agent);
-        String preview = "<n/a>";
-        if (state != null) {
-            List<Msg> ctx = state.getContext();
-            for (int i = ctx.size() - 1; i >= 0; i--) {
-                Msg m = ctx.get(i);
-                if (m.getRole() == MsgRole.ASSISTANT) {
-                    preview = truncate(m.getTextContent(), 120);
-                    break;
-                }
+        if (state == null) {
+            log.info("[{}] POST_CALL | response: <n/a>", name);
+            return;
+        }
+        Msg lastAssistant = null;
+        List<Msg> ctx = state.getContext();
+        for (int i = ctx.size() - 1; i >= 0; i--) {
+            if (ctx.get(i).getRole() == MsgRole.ASSISTANT) {
+                lastAssistant = ctx.get(i);
+                break;
             }
         }
-        log.info("[{}] POST_CALL | response: {}", name, preview);
+        if (lastAssistant == null) {
+            log.info("[{}] POST_CALL | response: <n/a>", name);
+            return;
+        }
+        String text = lastAssistant.getTextContent();
+        // A turn carrying tool calls is never a clean final reply: if it is the last
+        // assistant message, the loop ended on a tool-call turn (e.g., the model returned an
+        // empty completion right after). Surfacing its preamble as the "response" is misleading,
+        // so we flag the situation explicitly and show the preamble only as context.
+        boolean endedOnToolCall = !lastAssistant.getContentBlocks(ToolUseBlock.class).isEmpty();
+        if (endedOnToolCall) {
+            log.info(
+                    "[{}] POST_CALL | ended on a tool-call turn with no final text reply; last"
+                            + " preamble: {}",
+                    name,
+                    truncate(text, 120));
+        } else {
+            log.info("[{}] POST_CALL | response: {}", name, truncate(text, 120));
+        }
     }
 
     private static String resolveModelName(Agent agent) {
@@ -234,31 +281,5 @@ public class AgentTraceMiddleware implements MiddlewareBase {
         } catch (Exception e) {
             return map.toString();
         }
-    }
-
-    private static int toolResultLength(ToolResultBlock tr) {
-        if (tr == null || tr.getOutput() == null) {
-            return 0;
-        }
-        int len = 0;
-        for (ContentBlock block : tr.getOutput()) {
-            if (block instanceof TextBlock tb && tb.getText() != null) {
-                len += tb.getText().length();
-            }
-        }
-        return len;
-    }
-
-    private static String toolResultText(ToolResultBlock tr) {
-        if (tr == null || tr.getOutput() == null) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder();
-        for (ContentBlock block : tr.getOutput()) {
-            if (block instanceof TextBlock tb && tb.getText() != null) {
-                sb.append(tb.getText());
-            }
-        }
-        return sb.toString();
     }
 }

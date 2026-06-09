@@ -18,28 +18,27 @@ package io.agentscope.examples.documentation2.harness.workspace;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.state.redis.RedisAgentStateStore;
+import io.agentscope.extensions.redis.RedisDistributedStore;
+import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
-import io.agentscope.harness.agent.filesystem.remote.store.RedisStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import redis.clients.jedis.JedisPooled;
 
 /**
- * WorkspaceSharedStoreExample — Filesystem mode 1 (shared store): multiple replicas share the
- * same long-term memory via a KV store backed by Redis.
+ * WorkspaceSharedStoreExample — Demonstrates the {@link DistributedStore} API for
+ * one-line distributed configuration using Redis.
  *
  * <p>What this example shows:
  * <ol>
- *   <li><b>{@link RemoteFilesystemSpec}</b> — routes memory, sessions, skills, and subagent
- *       data through a shared {@link BaseStore} (Redis-backed).</li>
- *   <li><b>{@link IsolationScope}</b> — {@code USER} scope means each user's memory and
- *       sessions live in an isolated namespace; {@code AGENT} scope shares everything.</li>
- *   <li><b>Multi-replica simulation</b> — two agent instances backed by the same Redis store
- *       demonstrate cross-replica memory continuity.</li>
+ *   <li><b>{@link RedisDistributedStore}</b> — a single {@code .distributedStore(...)}
+ *       call configures AgentStateStore, BaseStore, SandboxSnapshot, and ExecutionGuard
+ *       all backed by Redis.</li>
+ *   <li><b>Multi-replica simulation</b> — two agent instances backed by the same Redis
+ *       demonstrate cross-replica memory and session continuity.</li>
+ *   <li><b>User isolation</b> — each user's state lives in an isolated namespace.</li>
  * </ol>
  *
  * <p><b>Prerequisites:</b>
@@ -71,23 +70,15 @@ public class WorkspaceSharedStoreExample {
 
     public static void main(String[] args) throws Exception {
         System.out.println("\n" + "=".repeat(60));
-        System.out.println("Filesystem Mode 1 — Shared Store (multi-replica, multi-user)");
+        System.out.println("Distributed Store — One-line Redis Configuration");
         System.out.println("=".repeat(60) + "\n");
 
         String redisUrl = System.getenv().getOrDefault("REDIS_URL", DEFAULT_REDIS_URL);
         System.out.println("Connecting to Redis: " + redisUrl + "\n");
 
-        // Shared infrastructure backed by Redis.
-        // Both RedisStore (file store) and RedisAgentStateStore (agent state) share the
-        // same Jedis connection, using different key prefixes to avoid collisions.
         JedisPooled jedis = new JedisPooled(java.net.URI.create(redisUrl));
-
-        RedisStore sharedStore = new RedisStore(jedis, "agentscope:example:store:");
-        RedisAgentStateStore sharedStateStore =
-                RedisAgentStateStore.builder()
-                        .jedisClient(jedis)
-                        .keyPrefix("agentscope:example:session:")
-                        .build();
+        DistributedStore store =
+                RedisDistributedStore.fromJedis(jedis, "agentscope:example:");
 
         Path workspace = Files.createTempDirectory("agentscope-shared-store-example");
 
@@ -100,20 +91,18 @@ public class WorkspaceSharedStoreExample {
                 Keep answers concise (under two sentences).
                 """);
 
-        // ── Build "replica 1" ───────────────────────────────────────────────
+        // ── Build "replica 1" — one-line distributed configuration ──────────
 
-        System.out.println("── Building replica-1 and replica-2 with shared store ──\n");
+        System.out.println("── Building replica-1 and replica-2 with distributedStore ──\n");
 
         HarnessAgent replica1 =
                 HarnessAgent.builder()
                         .name("shared-agent")
                         .sysPrompt("You are a helpful assistant.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .workspace(workspace)
-                        .stateStore(sharedStateStore)
-                        .filesystem(
-                                new RemoteFilesystemSpec(sharedStore)
-                                        .isolationScope(IsolationScope.USER))
+                        .distributedStore(store)
+                        .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
                         .build();
 
         // ── Alice talks to replica-1 ────────────────────────────────────────
@@ -139,18 +128,16 @@ public class WorkspaceSharedStoreExample {
                         .block();
         System.out.println("Replica-1 reply: " + (r2 != null ? r2.getTextContent() : "(null)"));
 
-        // ── Build "replica 2" — same Redis store, same state store ──────────
+        // ── Build "replica 2" — same store, demonstrates cross-replica continuity ──
 
         HarnessAgent replica2 =
                 HarnessAgent.builder()
                         .name("shared-agent")
                         .sysPrompt("You are a helpful assistant.")
-                        .model("qwen-plus")
+                        .model("dashscope:qwen-plus")
                         .workspace(workspace)
-                        .stateStore(sharedStateStore)
-                        .filesystem(
-                                new RemoteFilesystemSpec(sharedStore)
-                                        .isolationScope(IsolationScope.USER))
+                        .distributedStore(store)
+                        .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
                         .build();
 
         // ── Alice resumes on replica-2 (cross-replica continuity) ───────────

@@ -90,6 +90,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionEngine;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.rag.GenericRAGHook;
 import io.agentscope.core.rag.Knowledge;
@@ -3197,6 +3198,60 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 sessionId,
                                 initialPermissionContext,
                                 getAgentId()));
+    }
+
+    /**
+     * Switches the {@link PermissionMode} for the given {@code (userId, sessionId)} session at
+     * runtime and rebuilds that session's cached {@link PermissionEngine} so the change takes
+     * effect on the next tool evaluation. The configured rules and working directories are
+     * preserved; only the mode changes. The change is persisted so the next {@code call} on that
+     * session sees it.
+     *
+     * <p>Use this to implement a deliberate, user-initiated "bypass permissions" toggle (pass
+     * {@link PermissionMode#BYPASS}) or to restore stricter enforcement afterwards (pass
+     * {@link PermissionMode#DEFAULT}). {@code BYPASS} disables all rule evaluation, so it should be
+     * an explicit, per-session action and is best paired with a sandboxed environment.
+     *
+     * <p>An in-flight call keeps the engine it started with; the new mode applies to subsequent
+     * calls on the slot.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param mode the permission mode to switch to
+     */
+    public void setPermissionMode(String userId, String sessionId, PermissionMode mode) {
+        Objects.requireNonNull(mode, "mode must not be null");
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        AgentState s = getAgentState(userId, sid);
+        s.setPermissionContext(s.getPermissionContext().withMode(mode));
+        permissionEngineCache.put(slot, new PermissionEngine(s.getPermissionContext()));
+        saveAgentState(userId, sid);
+    }
+
+    /**
+     * Switches the {@link PermissionMode} for the session identified by the given
+     * {@link RuntimeContext}. See {@link #setPermissionMode(String, String, PermissionMode)}.
+     *
+     * @param ctx the runtime context identifying the session
+     * @param mode the permission mode to switch to
+     */
+    public void setPermissionMode(RuntimeContext ctx, PermissionMode mode) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        setPermissionMode(uid, sid, mode);
+    }
+
+    /**
+     * Returns the current {@link PermissionMode} for the given {@code (userId, sessionId)} session.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @return the session's current permission mode
+     */
+    public PermissionMode getPermissionMode(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        return getAgentState(userId, sid).getPermissionContext().getMode();
     }
 
     /**

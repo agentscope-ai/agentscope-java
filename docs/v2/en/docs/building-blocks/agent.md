@@ -473,8 +473,8 @@ Built-in and extension implementations:
 |----------------|--------|-------------|
 | `InMemoryAgentStateStore` | `agentscope-core` | unit tests / single-process demos |
 | `JsonFileAgentStateStore` | `agentscope-core` | single-machine dev; JSON per `(userId, sessionId)` directory |
-| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | multi-replica production; shared across processes and nodes |
-| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | when state must live in a relational store (audit / reporting) |
+| `RedisAgentStateStore` | `agentscope-extensions-redis` | multi-replica production; shared across processes and nodes |
+| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | when state must live in a relational store (audit / reporting) |
 
 A single `sessionId` is enough for most cases. For per-user partitioning, also set `userId` on the `RuntimeContext`; the store addresses each slot by the `(userId, sessionId)` pair.
 

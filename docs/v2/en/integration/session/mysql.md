@@ -1,13 +1,17 @@
+```{note}
+This page has been superseded by [Distributed Storage — MySQL](../distributed/mysql.md). Content below is kept for reference.
+```
+
 # MySQL State Store
 
-`agentscope-extensions-session-mysql` persists AgentScope agent state into MySQL. A good fit when you already have a MySQL infrastructure or need transactional / SQL-based access to state data.
+`agentscope-extensions-mysql` persists AgentScope agent state into MySQL. A good fit when you already have a MySQL infrastructure or need transactional / SQL-based access to state data.
 
 ## Add the dependency
 
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-session-mysql</artifactId>
+    <artifactId>agentscope-extensions-mysql</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -19,7 +23,7 @@ Bring the matching JDBC driver yourself (e.g. `mysql:mysql-connector-j`).
 ```java
 import com.zaxxer.hikari.HikariDataSource;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.mysql.MysqlAgentStateStore;
+import io.agentscope.extensions.mysql.state.MysqlAgentStateStore;
 
 HikariDataSource ds = new HikariDataSource();
 ds.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope?serverTimezone=UTC");

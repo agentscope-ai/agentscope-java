@@ -73,17 +73,45 @@ import java.util.Set;
  */
 public class RemoteFilesystemSpec {
 
-    private final BaseStore store;
+    private BaseStore store;
     private final Set<String> extraSharedPrefixes = new LinkedHashSet<>();
     private String anonymousUserId = "_default";
     private IsolationScope isolationScope = IsolationScope.USER;
     private WorkspaceIndex workspaceIndex = null;
+
+    /**
+     * Creates a remote filesystem spec that defers store resolution to
+     * {@link io.agentscope.harness.agent.DistributedStore#baseStore()}.
+     *
+     * <p>When used with {@code HarnessAgent.builder().distributedStore(store)},
+     * the store is injected automatically during build. Without a distributed store,
+     * an {@link IllegalStateException} is thrown at build time.
+     */
+    public RemoteFilesystemSpec() {
+        this.store = null;
+    }
 
     public RemoteFilesystemSpec(BaseStore store) {
         if (store == null) {
             throw new IllegalArgumentException("store must not be null");
         }
         this.store = store;
+    }
+
+    /**
+     * Returns whether the store has been set (either via constructor or injection).
+     */
+    public boolean hasStore() {
+        return store != null;
+    }
+
+    /**
+     * Injects the store if not already set. Called by the builder during auto-wiring.
+     */
+    public void injectStoreIfAbsent(BaseStore store) {
+        if (this.store == null) {
+            this.store = store;
+        }
     }
 
     /**
@@ -159,6 +187,11 @@ public class RemoteFilesystemSpec {
      */
     public AbstractFilesystem toFilesystem(
             Path workspace, String agentId, NamespaceFactory localNamespaceFactory) {
+        if (store == null) {
+            throw new IllegalStateException(
+                    "RemoteFilesystemSpec has no BaseStore. Either pass one via the constructor"
+                            + " or configure a DistributedStore on the HarnessAgent builder.");
+        }
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
         AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
 

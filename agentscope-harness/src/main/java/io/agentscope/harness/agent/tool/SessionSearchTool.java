@@ -51,6 +51,7 @@ public class SessionSearchTool {
 
     @Tool(
             name = "session_search",
+            readOnly = true,
             description =
                     "Search past session transcripts for a keyword or phrase."
                             + " Returns matching entries with session context.")
@@ -101,6 +102,7 @@ public class SessionSearchTool {
 
     @Tool(
             name = "session_list",
+            readOnly = true,
             description = "List available sessions for an agent, showing session IDs and metadata.")
     public String sessionList(
             RuntimeContext runtimeContext,
@@ -162,6 +164,7 @@ public class SessionSearchTool {
 
     @Tool(
             name = "session_history",
+            readOnly = true,
             description =
                     "Get the conversation history for a specific session."
                             + " Returns the messages in the session.")

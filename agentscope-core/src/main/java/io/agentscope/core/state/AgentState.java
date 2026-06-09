@@ -65,7 +65,7 @@ public final class AgentState implements State {
     private String replyId;
     private int curIter;
     private boolean shutdownInterrupted;
-    private final PermissionContextState permissionContext;
+    private PermissionContextState permissionContext;
     private final ToolContextState toolContext;
     private final TaskContextState tasksContext;
     private final PlanModeContextState planModeContext;
@@ -219,6 +219,19 @@ public final class AgentState implements State {
         return permissionContext;
     }
 
+    /**
+     * Replaces the permission context for this session. Used to change the evaluation mode at
+     * runtime (e.g. switching into {@link io.agentscope.core.permission.PermissionMode#BYPASS}).
+     * Callers that cache a {@code PermissionEngine} per session must rebuild it after this call.
+     *
+     * @param permissionContext the new (non-null) permission context
+     */
+    public void setPermissionContext(PermissionContextState permissionContext) {
+        this.permissionContext =
+                java.util.Objects.requireNonNull(
+                        permissionContext, "permissionContext must not be null");
+    }
+
     @JsonProperty("tool_context")
     public ToolContextState getToolContext() {
         return toolContext;
@@ -260,7 +273,7 @@ public final class AgentState implements State {
     /**
      * Serialize this state to a pretty-printed JSON string.
      *
-     * <p>Intended for external storage backends to persist the entire agent state as a single
+     * <p>Intended for external storage stores to persist the entire agent state as a single
      * JSON document (e.g., {@code agent_state.json}).
      */
     public String toJson() {

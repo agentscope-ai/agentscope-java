@@ -40,8 +40,8 @@ import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -585,7 +585,7 @@ public final class ClawBootstrap {
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
-            TaskRepository taskRepo = new DefaultTaskRepository();
+            TaskRepository taskRepo = new WorkspaceTaskRepository(wsManager, main);
             SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
             OutboundTool outboundTool = new OutboundTool(channelMgr);
 

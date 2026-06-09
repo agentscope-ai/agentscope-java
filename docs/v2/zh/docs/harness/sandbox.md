@@ -72,6 +72,7 @@ agent.call(msg, RuntimeContext.builder()
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
 | `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -110,22 +111,32 @@ HarnessAgent.builder()
 
 ## 并发控制（多副本场景）
 
-`USER` / `AGENT` / `GLOBAL` 模式在多副本下，两个副本同时处理同一个用户的请求会都把状态写到同一个 slot，最后写入的为准。如果你不想这样，加一把分布式锁——内置一个基于 Redis 的实现：
+`USER` / `AGENT` / `GLOBAL` 模式在多副本下，两个副本同时处理同一个用户的请求会都把状态写到同一个 slot，最后写入的为准。如果你不想这样，需要一把分布式锁。
+
+**推荐方式**：使用 `distributedStore(...)`，快照和执行锁都会自动注入：
 
 ```java
-SandboxExecutionGuard guard = RedisSandboxExecutionGuard.builder(jedis)
-    .leaseTtl(Duration.ofMinutes(30))        // 比最坏情况 call 时长稍长
-    .retryInterval(Duration.ofMillis(500))
-    .build();
+DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 
+HarnessAgent.builder()
+    .distributedStore(store)    // 自动注入 stateStore + snapshotSpec + executionGuard
+    .filesystem(new DockerFilesystemSpec()
+        .image("ubuntu:24.04")
+        .isolationScope(IsolationScope.USER))
+    .build();
+```
+
+如需自定义锁参数，可在 `SandboxFilesystemSpec` 上显式设置来覆盖 store 的默认值：
+
+```java
 .filesystem(new DockerFilesystemSpec()
     .image("ubuntu:24.04")
     .isolationScope(IsolationScope.USER)
-    .snapshotSpec(redisSnapshotSpec)
-    .executionGuard(guard))
+    .executionGuard(RedisSandboxExecutionGuard.builder(jedis)
+        .leaseTtl(Duration.ofMinutes(30)).build()))
 ```
 
-锁的 key 会按 scope 自动分桶（`USER` → 按 userId，`AGENT` → 按 agent 名）。也可以实现 `SandboxExecutionGuard` 接口接其他锁后端（DB / Zookeeper / etcd 等）。
+内置实现：`RedisSandboxExecutionGuard`（Redis `SET NX PX`）、`JdbcSandboxExecutionGuard`（MySQL `GET_LOCK()`）。也可以实现 `SandboxExecutionGuard` 接口接其他锁后端（Zookeeper / etcd 等）。
 
 ## 自管沙箱实例（高级）
 

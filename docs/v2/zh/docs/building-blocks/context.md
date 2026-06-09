@@ -85,8 +85,8 @@ call(msgs, RuntimeContext(userId, sessionId))
 |---|---|---|
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 / 单进程演示;进程退出全部丢失 |
 | `JsonFileAgentStateStore` | `agentscope-core` | 单机开发、文件落盘即可恢复;不能跨节点共享。**`HarnessAgent` 默认值**,落在 `~/.agentscope/state/<agentId>/`(可通过 `agentscope.state.home` 系统属性改根目录);**单机** |
-| `RedisAgentStateStore` | `agentscope-extensions-session-redis` | **生产首选**,多副本共享;支持 Jedis / Lettuce / Redisson(Standalone / Cluster / Sentinel) |
-| `MysqlAgentStateStore` | `agentscope-extensions-session-mysql` | 需要把状态沉淀进关系型库(审计、报表)时使用 |
+| `RedisAgentStateStore` | `agentscope-extensions-redis` | **生产首选**,多副本共享;支持 Jedis / Lettuce / Redisson(Standalone / Cluster / Sentinel) |
+| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | 需要把状态沉淀进关系型库(审计、报表)时使用 |
 
 切换非常简单——只在构造期 `.stateStore(...)` 一次:
 
@@ -98,18 +98,18 @@ HarnessAgent agent = HarnessAgent.builder()
     .workspace(workspace)
     .build();
 
-// 多副本生产:换成 RedisAgentStateStore
+// 多副本生产:使用 DistributedStore
 RedisClient client = RedisClient.create("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
-    .stateStore(RedisAgentStateStore.builder().lettuceClient(client).build())
+    .distributedStore(RedisDistributedStore.fromJedis(jedis))
     .build();
 ```
 
 :::{warning}
-内置的 `JsonFileAgentStateStore` / `InMemoryAgentStateStore` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),HarnessAgent 会**强制要求**状态存储也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。请通过 `.stateStore(...)` 配置分布式 `AgentStateStore`(例如 `RedisAgentStateStore`)。
+内置的 `JsonFileAgentStateStore` / `InMemoryAgentStateStore` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),HarnessAgent 会**强制要求**状态存储也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。请通过 `.distributedStore(...)` 或 `.stateStore(...)` 配置分布式后端(例如 `RedisDistributedStore`)。
 :::
 
 ### 同 (userId, sessionId) 跨进程、跨机器实时恢复
