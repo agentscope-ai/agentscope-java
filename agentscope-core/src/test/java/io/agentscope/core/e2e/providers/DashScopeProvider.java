@@ -20,7 +20,6 @@ import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.Toolkit;
 import java.util.HashSet;
 import java.util.Set;
@@ -67,14 +66,7 @@ public class DashScopeProvider extends BaseModelProvider {
                     GenerateOptions.builder().thinkingBudget(thinkingBudget).build());
         }
 
-        return ReActAgent.builder()
-                .name(name)
-                .model(builder.build())
-                .toolkit(toolkit)
-                .structuredOutputReminder(
-                        enableThinking
-                                ? StructuredOutputReminder.PROMPT
-                                : StructuredOutputReminder.PROMPT);
+        return ReActAgent.builder().name(name).model(builder.build()).toolkit(toolkit);
     }
 
     @Override

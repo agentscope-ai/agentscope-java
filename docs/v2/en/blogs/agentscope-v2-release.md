@@ -64,7 +64,7 @@ AgentScope 2.0 introduces a **middleware** mechanism that lets developers inject
 
 As agents grow more capable, they are no longer only calling models — they also need to use tools, access files, load skills, talk to MCP services, and execute work in different environments. If all of that is baked into the agent's runtime logic, switching between a local environment, a container, or a cloud sandbox forces repeated adaptation. AgentScope 2.0 introduces the **Workspace** specifically to separate "what the agent does" from "where it runs," so that the execution environment becomes a replaceable, manageable system component.
 
-The Workspace is AgentScope 2.0's abstraction for the agent's execution environment. It provides tools, MCP services, the Skills library, and context persistence, and it unifies different execution backends — local filesystem, Docker container, E2B cloud sandbox — behind a single interface. The same agent can run in any of these environments without changing its runtime logic. The design comes down to three points:
+The Workspace is AgentScope 2.0's abstraction for the agent's execution environment. It provides tools, MCP services, the Skills library, and context persistence, and it unifies different execution stores — local filesystem, Docker container, E2B cloud sandbox — behind a single interface. The same agent can run in any of these environments without changing its runtime logic. The design comes down to three points:
 
 **First, a unified interface.** `WorkspaceBase` abstracts identity, lifecycle, resource discovery, context offloading, and dynamic resource management. Each backend only needs to implement the same set of interfaces to plug into AgentScope's execution system.
 

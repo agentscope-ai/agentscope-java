@@ -4,7 +4,7 @@
 
 ## When to use
 
-- You run Trinity (or a compatible service) as the training backend.
+- You run Trinity (or a compatible service) as the training store.
 - You want to use live traffic for reinforcement learning or online fine-tuning.
 - You want the training pipeline to be transparent to the Agent's callers.
 
@@ -65,7 +65,7 @@ TrainingRunner runner = TrainingRunner.builder()
 ## How it works
 
 1. After `runner.start()`, requests go through `TrainingRouter`:
-   - sampled → routed to the Trinity backend, traces collected;
+   - sampled → routed to the Trinity store, traces collected;
    - not sampled → original model is used, no side effects.
 2. Sampled trajectories invoke the reward calculator and feedback through `TrinityClient.feedback(...)`.
 3. Every `commitIntervalSeconds`, `commit(...)` triggers a training job.

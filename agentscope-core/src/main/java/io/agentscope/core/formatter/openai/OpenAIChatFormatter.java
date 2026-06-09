@@ -119,6 +119,13 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             request.setParallelToolCalls(parallelToolCalls);
         }
 
+        // Apply response format
+        ResponseFormat responseFormat =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getResponseFormat);
+        if (responseFormat != null) {
+            request.setResponseFormat(responseFormat);
+        }
+
         // Apply additional body params (must be last to allow overriding)
         applyAdditionalBodyParams(request, defaultOptions);
         applyAdditionalBodyParams(request, options);
