@@ -123,7 +123,7 @@ public final class RedisSandboxExecutionGuard implements SandboxExecutionGuard {
      * Creates a builder for this guard.
      *
      * @param jedis initialized Jedis client; the same instance used for
-     *              {@link io.agentscope.harness.agent.sandbox.snapshot.RedisSnapshotSpec} is fine
+     *              {@link io.agentscope.extensions.redis.snapshot.RedisSnapshotSpec} is fine
      */
     public static Builder builder(UnifiedJedis jedis) {
         return new Builder(jedis);
