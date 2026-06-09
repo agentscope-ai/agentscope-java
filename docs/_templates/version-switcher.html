@@ -1,0 +1,42 @@
+<!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+{% if docs_versions is defined and docs_versions %}
+<div class="version-switcher">
+  <div class="version-selector" id="version-selector">
+    <button
+      class="version-button"
+      type="button"
+      onclick="return toggleVersionMenu()"
+      aria-haspopup="listbox"
+      aria-expanded="false"
+      aria-label="Select documentation version"
+    >
+      <span id="current-version-label">{{ docs_version | default("latest") }}</span>
+    </button>
+    <div class="version-menu" id="version-menu" role="listbox">
+      {% for v in docs_versions %}
+        <a
+          href="{{ v.url }}"
+          class="version-option{% if v.current is defined and v.current %} active{% endif %}"
+          role="option"
+          aria-selected="{{ 'true' if v.current is defined and v.current else 'false' }}"
+        >{{ v.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}

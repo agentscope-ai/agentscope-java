@@ -117,7 +117,7 @@ class CoreAgentE2ETest {
                 "Should remember favorite color from previous turn for " + provider.getModelName());
 
         // Verify memory growth
-        int memorySize = agent.getMemory().getMessages().size();
+        int memorySize = agent.getAgentState().getContext().size();
         assertTrue(
                 memorySize >= 4,
                 "Memory should contain conversation history for " + provider.getModelName());
@@ -164,7 +164,7 @@ class CoreAgentE2ETest {
         assertNotNull(response3, "Should respond to thanks");
 
         // Verify all interactions are in memory
-        List<Msg> allMessages = agent.getMemory().getMessages();
+        List<Msg> allMessages = agent.getAgentState().getContext();
         assertTrue(allMessages.size() >= 3, "Should have at least 3 user messages in memory");
 
         System.out.println("Final memory size: " + allMessages.size() + " messages");

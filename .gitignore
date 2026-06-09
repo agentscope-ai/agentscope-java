@@ -57,10 +57,28 @@ CLAUDE.md
 ##Log
 logs/
 
-## boba-tea-shop example
+## Frontend (all frontend/ directories across examples and extensions)
+# Dependencies
+**/frontend/node_modules/
+# Build output
+**/frontend/dist/
+**/frontend/build/
+**/frontend/.output/
+# Vite / bundler caches
+**/frontend/.vite/
+**/frontend/.cache/
+**/frontend/.parcel-cache/
+# Type-check / tsc output
+**/frontend/*.tsbuildinfo
+# Env files (may contain secrets)
+**/frontend/.env.local
+**/frontend/.env.*.local
+# Coverage
+**/frontend/coverage/
+# Storybook
+**/frontend/storybook-static/
+# boba-tea-shop: generated static assets served by the supervisor-agent
 **/boba-tea-shop/supervisor-agent/**/static/
-**/boba-tea-shop/**/node_modules/
-**/boba-tea-shop/**/dist/
 
 ##agentscope
 .agentscope/

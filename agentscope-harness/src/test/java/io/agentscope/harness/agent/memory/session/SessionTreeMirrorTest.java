@@ -18,9 +18,11 @@ package io.agentscope.harness.agent.memory.session;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -33,8 +35,12 @@ class SessionTreeMirrorTest {
     @TempDir Path workspace;
 
     private AbstractFilesystem buildFs(InMemoryStore store) {
-        return new RemoteFilesystemSpec(store)
-                .toFilesystem(workspace, "agent-a", List::of, () -> "user-1");
+        AbstractFilesystem raw =
+                new RemoteFilesystemSpec(store)
+                        .toFilesystem(workspace, "agent-a", rc -> List.of("user-1"));
+        // Bake user-1 into the RC so that storeNamespace resolves to user-1 even when SessionTree
+        // calls without an explicit runtime context.
+        return new BakedContextFilesystem(raw, RuntimeContext.builder().userId("user-1").build());
     }
 
     // -----------------------------------------------------------------------

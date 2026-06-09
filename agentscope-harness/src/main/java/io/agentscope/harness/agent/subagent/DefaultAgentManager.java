@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventSource;
@@ -23,7 +24,7 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.HashMap;
@@ -44,8 +45,8 @@ import reactor.core.publisher.Mono;
  */
 public final class DefaultAgentManager {
 
-    private final Map<String, SubagentFactory> agentFactories;
-    private final Map<String, SubagentDeclaration> declarations;
+    private volatile Map<String, SubagentFactory> agentFactories;
+    private volatile Map<String, SubagentDeclaration> declarations;
     private final WorkspaceManager workspaceManager;
 
     /**
@@ -64,6 +65,74 @@ public final class DefaultAgentManager {
         this.agentFactories = Map.copyOf(factories);
         this.declarations = Map.copyOf(decls);
         this.workspaceManager = workspaceManager;
+    }
+
+    /**
+     * Replaces the current set of entries with a new snapshot. Called per-call from
+     * {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to reflect per-user subagent
+     * configurations.
+     */
+    public void refreshEntries(List<SubagentEntry> entries) {
+        Map<String, SubagentFactory> factories = new HashMap<>();
+        Map<String, SubagentDeclaration> decls = new HashMap<>();
+        for (SubagentEntry e : entries) {
+            factories.put(e.name(), e.factory());
+            if (e.declaration() != null) {
+                decls.put(e.name(), e.declaration());
+            }
+        }
+        this.agentFactories = Map.copyOf(factories);
+        this.declarations = Map.copyOf(decls);
+    }
+
+    /**
+     * Atomic alias of {@link #refreshEntries(List)} used by
+     * {@link io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware} to swap the registered
+     * subagent set on every reasoning step. The two volatile reference assignments below ensure
+     * any concurrent reader observes either the previous snapshot or the new one fully — never a
+     * partial state.
+     */
+    public void replaceAgents(List<SubagentEntry> entries) {
+        refreshEntries(entries);
+    }
+
+    /**
+     * Race-safe lookup-and-create. Returns {@link Optional#empty()} when no factory is registered
+     * for {@code agentId} at the moment of the volatile read, when the registered declaration is
+     * {@link SubagentDeclaration.Mode#PRIMARY}-only (cannot be spawned as a subagent), otherwise
+     * returns a freshly created agent. Preferred over the two-step {@link #hasAgent(String)} +
+     * {@link #createAgent(String, RuntimeContext)} pair when the registry may be replaced
+     * concurrently (e.g. dynamic reload between calls).
+     *
+     * <p>{@code parentRc} is forwarded to {@link SubagentFactory#create(RuntimeContext)} so child
+     * agents can bucket their persisted state by parent identity. Pass
+     * {@link RuntimeContext#empty()} when no parent context is available.
+     */
+    public Optional<Agent> createAgentIfPresent(String agentId, RuntimeContext parentRc) {
+        if (agentId == null) {
+            return Optional.empty();
+        }
+        SubagentFactory factory = agentFactories.get(agentId);
+        if (factory == null) {
+            return Optional.empty();
+        }
+        SubagentDeclaration decl = declarations.get(agentId);
+        if (decl != null && decl.getMode() == SubagentDeclaration.Mode.PRIMARY) {
+            return Optional.empty();
+        }
+        return Optional.of(factory.create(parentRc != null ? parentRc : RuntimeContext.empty()));
+    }
+
+    /**
+     * Returns {@code true} when {@code agentId} is registered with a {@code PRIMARY}-only
+     * declaration. Lets {@link io.agentscope.harness.agent.tool.AgentSpawnTool} produce a more
+     * helpful error message ("PRIMARY-only, cannot be spawned") instead of the generic
+     * "Unknown agent_id" when {@link #createAgentIfPresent} returns empty.
+     */
+    public boolean isPrimaryOnly(String agentId) {
+        if (agentId == null) return false;
+        SubagentDeclaration decl = declarations.get(agentId);
+        return decl != null && decl.getMode() == SubagentDeclaration.Mode.PRIMARY;
     }
 
     /** Whether a factory is registered for the given agent id. */
@@ -86,12 +155,12 @@ public final class DefaultAgentManager {
      *
      * @throws IllegalArgumentException if no factory is registered for the given id
      */
-    public Agent createAgent(String agentId) {
+    public Agent createAgent(String agentId, RuntimeContext parentRc) {
         SubagentFactory factory = agentFactories.get(agentId);
         if (factory == null) {
             throw new IllegalArgumentException("Unknown agent_id: " + agentId);
         }
-        return factory.create();
+        return factory.create(parentRc != null ? parentRc : RuntimeContext.empty());
     }
 
     /**
@@ -108,9 +177,11 @@ public final class DefaultAgentManager {
      * @param prompt the user message to send
      */
     public Mono<Msg> invokeAgent(Agent agent, String sessionId, String userId, String prompt) {
+        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        if (agent instanceof ReActAgent react) {
+            return react.call(List.of(userMessage(prompt)), ctx);
+        }
         if (agent instanceof HarnessAgent harness) {
-            RuntimeContext ctx =
-                    RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
             return harness.call(userMessage(prompt), ctx);
         }
         return agent.call(List.of(userMessage(prompt)));
@@ -143,13 +214,13 @@ public final class DefaultAgentManager {
             EventSource source,
             StreamOptions options) {
         Flux<Event> childFlux;
-        if (agent instanceof HarnessAgent harness) {
-            RuntimeContext ctx =
-                    RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
-            StreamOptions effective = options != null ? options : StreamOptions.defaults();
+        StreamOptions effective = options != null ? options : StreamOptions.defaults();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        if (agent instanceof ReActAgent react) {
+            childFlux = react.stream(List.of(userMessage(prompt)), effective, ctx);
+        } else if (agent instanceof HarnessAgent harness) {
             childFlux = harness.stream(List.of(userMessage(prompt)), effective, ctx);
         } else {
-            StreamOptions effective = options != null ? options : StreamOptions.defaults();
             childFlux = agent.stream(List.of(userMessage(prompt)), effective);
         }
         return childFlux.map(event -> event.withSource(source));

@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.memory;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -54,7 +55,12 @@ public class MemoryFlushManager {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushManager.class);
 
-    private static final String FLUSH_SYSTEM_PROMPT =
+    /**
+     * Default prompt for the memory extraction step. Exposed publicly so callers can extend
+     * (e.g. append project-specific guidelines) when constructing
+     * {@link io.agentscope.harness.agent.memory.MemoryConfig}.
+     */
+    public static final String DEFAULT_FLUSH_PROMPT =
             """
             You are a memory extraction assistant. Analyze the conversation below and extract \
             important facts, decisions, preferences, and contextual information that should be \
@@ -85,10 +91,20 @@ public class MemoryFlushManager {
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
+    private final String flushPrompt;
 
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model) {
+        this(workspaceManager, model, DEFAULT_FLUSH_PROMPT);
+    }
+
+    /**
+     * @param flushPrompt SYSTEM prompt for the extraction LLM call. {@code null} falls back to
+     *     {@link #DEFAULT_FLUSH_PROMPT}.
+     */
+    public MemoryFlushManager(WorkspaceManager workspaceManager, Model model, String flushPrompt) {
         this.workspaceManager = workspaceManager;
         this.model = model;
+        this.flushPrompt = flushPrompt != null ? flushPrompt : DEFAULT_FLUSH_PROMPT;
     }
 
     /**
@@ -97,16 +113,16 @@ public class MemoryFlushManager {
      * <p>Provides existing MEMORY.md and today's daily file content to the extraction LLM
      * so it can effectively deduplicate and avoid re-extracting known facts.
      */
-    public Mono<Void> flushMemories(List<Msg> messages) {
+    public Mono<Void> flushMemories(RuntimeContext rc, List<Msg> messages) {
         String conversationText = serializeMessages(messages);
         if (conversationText.isBlank()) {
             return Mono.empty();
         }
 
-        String existingMemory = readExistingContent(WorkspaceConstants.MEMORY_MD);
+        String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
-        String existingDaily = readExistingContent(dailyRelPath);
+        String existingDaily = readExistingContent(rc, dailyRelPath);
 
         StringBuilder userPrompt = new StringBuilder();
         if (!existingMemory.isBlank()) {
@@ -131,7 +147,7 @@ public class MemoryFlushManager {
         flushInput.add(
                 Msg.builder()
                         .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text(FLUSH_SYSTEM_PROMPT).build())
+                        .content(TextBlock.builder().text(flushPrompt).build())
                         .build());
         flushInput.add(
                 Msg.builder()
@@ -163,7 +179,7 @@ public class MemoryFlushManager {
                                 log.debug("No memories to flush");
                                 return Mono.empty();
                             }
-                            writeMemoryFiles(extracted);
+                            writeMemoryFiles(rc, extracted);
                             return Mono.empty();
                         });
     }
@@ -173,9 +189,9 @@ public class MemoryFlushManager {
      * session are offloaded. Used by the compaction layer to embed the archive location in the
      * summary message so the agent can retrieve full history if needed.
      */
-    public String resolveOffloadPath(String agentId, String sessionId) {
+    public String resolveOffloadPath(RuntimeContext rc, String agentId, String sessionId) {
         try {
-            Path p = workspaceManager.resolveSessionContextFile(agentId, sessionId);
+            Path p = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
             return p != null ? p.toString() : "";
         } catch (Exception e) {
             log.debug(
@@ -190,25 +206,39 @@ public class MemoryFlushManager {
     /**
      * Offloads raw messages to the JSONL session tree.
      */
-    public void offloadMessages(List<Msg> messages, String agentId, String sessionId) {
-        offloadToSessionTree(messages, agentId, sessionId);
+    public void offloadMessages(
+            RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
+        offloadToSessionTree(rc, messages, agentId, sessionId);
 
         log.debug(
                 "Offloaded {} messages for agent={}, session={}",
                 messages.size(),
                 agentId,
                 sessionId);
-        workspaceManager.updateSessionIndex(agentId, sessionId, "conversation offloaded");
+        workspaceManager.updateSessionIndex(rc, agentId, sessionId, "conversation offloaded");
     }
 
-    private void offloadToSessionTree(List<Msg> messages, String agentId, String sessionId) {
+    private void offloadToSessionTree(
+            RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
         try {
-            Path contextFile = workspaceManager.resolveSessionContextFile(agentId, sessionId);
+            Path contextFile = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
+            String contextRelPath =
+                    WorkspaceConstants.AGENTS_DIR
+                            + "/"
+                            + agentId
+                            + "/"
+                            + WorkspaceConstants.SESSIONS_DIR
+                            + "/"
+                            + sessionId
+                            + WorkspaceConstants.SESSION_CONTEXT_EXT;
             SessionTree tree =
                     new SessionTree(
-                            contextFile,
-                            workspaceManager.getWorkspace(),
-                            workspaceManager.getFilesystem());
+                                    contextFile,
+                                    workspaceManager.getWorkspace(),
+                                    workspaceManager.getFilesystem(),
+                                    workspaceManager.getIndex(),
+                                    contextRelPath)
+                            .setRuntimeContext(rc);
             tree.load();
             // Sync from remote before appending so that entries written by a previous replica
             // (cross-machine handoff) are included in the merged file pushed to remote.
@@ -261,7 +291,7 @@ public class MemoryFlushManager {
      * {@link MemoryConsolidator}, which periodically merges the daily ledgers into a
      * curated, size-bounded MEMORY.md.
      */
-    private void writeMemoryFiles(String content) {
+    private void writeMemoryFiles(RuntimeContext rc, String content) {
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
 
         String dailyEntry =
@@ -270,12 +300,12 @@ public class MemoryFlushManager {
                         java.time.Instant.now().toString(), content);
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
-        workspaceManager.appendUtf8WorkspaceRelative(dailyRelPath, dailyEntry);
+        workspaceManager.appendUtf8WorkspaceRelative(rc, dailyRelPath, dailyEntry);
     }
 
-    private String readExistingContent(String relativePath) {
+    private String readExistingContent(RuntimeContext rc, String relativePath) {
         try {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(relativePath);
+            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
             return content != null ? content : "";
         } catch (Exception e) {
             log.debug("Could not read {}: {}", relativePath, e.getMessage());

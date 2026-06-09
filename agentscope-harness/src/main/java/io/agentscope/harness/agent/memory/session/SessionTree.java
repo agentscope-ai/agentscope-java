@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -66,7 +67,12 @@ import org.slf4j.LoggerFactory;
  */
 public class SessionTree {
 
-    private static final RuntimeContext DEFAULT_FS_RUNTIME = RuntimeContext.empty();
+    /**
+     * Captured at construction time (or via {@link #setRuntimeContext}); used as the
+     * {@code RuntimeContext} for all remote filesystem operations so that namespace-aware stores
+     * resolve to the writer's namespace even when invoked from the async mirror thread.
+     */
+    private volatile RuntimeContext fsRc = RuntimeContext.empty();
 
     private static final Logger log = LoggerFactory.getLogger(SessionTree.class);
 
@@ -86,6 +92,9 @@ public class SessionTree {
     private final Path logFile;
     private final Path workspaceRoot;
     private final AbstractFilesystem filesystem;
+    private final WorkspaceIndex index;
+    private final String contextRelativePath;
+    private final String logRelativePath;
 
     private final Map<String, SessionEntry> entriesById = new LinkedHashMap<>();
     private final List<SessionEntry> appendOrder = new ArrayList<>();
@@ -105,12 +114,66 @@ public class SessionTree {
      *                     {@code null} to disable remote mirroring (local-only mode)
      */
     public SessionTree(Path contextFile, Path workspaceRoot, AbstractFilesystem filesystem) {
+        this(contextFile, workspaceRoot, filesystem, null, null);
+    }
+
+    public SessionTree(
+            Path contextFile,
+            Path workspaceRoot,
+            AbstractFilesystem filesystem,
+            WorkspaceIndex index) {
+        this(contextFile, workspaceRoot, filesystem, index, null);
+    }
+
+    /**
+     * Creates a SessionTree with optional best-effort workspace index support.
+     *
+     * @param contextFile          path to the {@code .jsonl} context file
+     * @param workspaceRoot        root of the agent workspace
+     * @param filesystem           remote filesystem; may be {@code null}
+     * @param index                best-effort workspace index; may be {@code null}
+     * @param contextRelativePath  workspace-relative path for the context file WITHOUT namespace
+     *                             prefix (e.g. {@code agents/X/sessions/Y.jsonl}); when non-null,
+     *                             used for filesystem mirror/restore instead of computing via
+     *                             {@link #toWorkspaceRelative(Path)}
+     */
+    public SessionTree(
+            Path contextFile,
+            Path workspaceRoot,
+            AbstractFilesystem filesystem,
+            WorkspaceIndex index,
+            String contextRelativePath) {
         this.contextFile = contextFile;
         String name = contextFile.getFileName().toString();
         String baseName = name.endsWith(".jsonl") ? name.substring(0, name.length() - 6) : name;
         this.logFile = contextFile.resolveSibling(baseName + ".log.jsonl");
         this.workspaceRoot = workspaceRoot;
         this.filesystem = filesystem;
+        this.index = index;
+        this.contextRelativePath = contextRelativePath;
+        if (contextRelativePath != null) {
+            String dir =
+                    contextRelativePath.contains("/")
+                            ? contextRelativePath.substring(
+                                    0, contextRelativePath.lastIndexOf('/') + 1)
+                            : "";
+            this.logRelativePath = dir + baseName + ".log.jsonl";
+        } else {
+            this.logRelativePath = null;
+        }
+    }
+
+    /**
+     * Binds a {@link RuntimeContext} to this tree so that all subsequent remote filesystem reads
+     * and writes (including async mirror operations) propagate the caller's identity into
+     * namespace-aware stores. Defaults to {@link RuntimeContext#empty()} when never set.
+     *
+     * @param rc the runtime context to bind; {@code null} resets to empty
+     * @return this tree, for fluent chaining
+     */
+    public SessionTree setRuntimeContext(RuntimeContext rc) {
+        this.fsRc = rc != null ? rc : RuntimeContext.empty();
+        return this;
     }
 
     /**
@@ -399,8 +462,8 @@ public class SessionTree {
         }
         MIRROR_EXECUTOR.execute(
                 () -> {
-                    mirrorToFilesystem(contextFile);
-                    mirrorToFilesystem(logFile);
+                    mirrorToFilesystem(contextFile, resolveRelativePath(contextFile));
+                    mirrorToFilesystem(logFile, resolveRelativePath(logFile));
                 });
     }
 
@@ -412,11 +475,11 @@ public class SessionTree {
         if (filesystem == null || workspaceRoot == null) {
             return List.of();
         }
-        String relativePath = toWorkspaceRelative(file);
+        String relativePath = resolveRelativePath(file);
         if (relativePath == null || relativePath.isBlank()) {
             return List.of();
         }
-        ReadResult read = filesystem.read(DEFAULT_FS_RUNTIME, relativePath, 0, 0);
+        ReadResult read = filesystem.read(fsRc, relativePath, 0, 0);
         if (!read.isSuccess() || read.fileData() == null || read.fileData().content() == null) {
             return List.of();
         }
@@ -510,17 +573,20 @@ public class SessionTree {
      * Uploads {@code file} to the remote filesystem (full-file upload). Only called from the
      * mirror executor thread; failures are logged as warnings.
      */
-    private void mirrorToFilesystem(Path file) {
+    private void mirrorToFilesystem(Path file, String relativePath) {
         if (filesystem == null || workspaceRoot == null || !Files.isRegularFile(file)) {
             return;
         }
-        String relativePath = toWorkspaceRelative(file);
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
         try {
             byte[] bytes = Files.readAllBytes(file);
-            filesystem.uploadFiles(DEFAULT_FS_RUNTIME, List.of(Map.entry(relativePath, bytes)));
+            filesystem.uploadFiles(fsRc, List.of(Map.entry(relativePath, bytes)));
+            // Best-effort: the local file already exists — update index with its current stats
+            if (index != null) {
+                index.upsertFromLocalFile(relativePath, file);
+            }
         } catch (IOException e) {
             log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
         }
@@ -534,11 +600,11 @@ public class SessionTree {
         if (filesystem == null || workspaceRoot == null || Files.isRegularFile(file)) {
             return;
         }
-        String relativePath = toWorkspaceRelative(file);
+        String relativePath = resolveRelativePath(file);
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
-        ReadResult read = filesystem.read(DEFAULT_FS_RUNTIME, relativePath, 0, 0);
+        ReadResult read = filesystem.read(fsRc, relativePath, 0, 0);
         if (!read.isSuccess() || read.fileData() == null || read.fileData().content() == null) {
             return;
         }
@@ -553,12 +619,28 @@ public class SessionTree {
                     StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE);
+            // Best-effort: record restored file in local index
+            if (index != null) {
+                index.upsertFromLocalFile(relativePath, file);
+            }
         } catch (IOException e) {
             log.warn(
                     "Failed to restore session file {} from filesystem mirror: {}",
                     file,
                     e.getMessage());
         }
+    }
+
+    private String resolveRelativePath(Path file) {
+        if (contextRelativePath != null) {
+            if (file.equals(contextFile)) {
+                return contextRelativePath;
+            }
+            if (file.equals(logFile)) {
+                return logRelativePath;
+            }
+        }
+        return toWorkspaceRelative(file);
     }
 
     private String toWorkspaceRelative(Path file) {

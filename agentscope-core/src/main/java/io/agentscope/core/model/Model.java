@@ -38,4 +38,16 @@ public interface Model {
      * @return model name
      */
     String getModelName();
+
+    /**
+     * Whether this model supports native structured output ({@code response_format} with
+     * {@code json_schema}) alongside tool use. When {@code true}, the agent can pass the output
+     * schema directly to the model via {@link GenerateOptions#getResponseFormat()} instead of
+     * injecting a synthetic {@code generate_response} tool.
+     *
+     * @return {@code true} if the model supports structured output with tools natively
+     */
+    default boolean supportsNativeStructuredOutput() {
+        return false;
+    }
 }

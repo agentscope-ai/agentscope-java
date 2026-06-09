@@ -87,7 +87,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
     }
 
@@ -98,14 +97,15 @@ class ReActAgentTest {
         assertNotNull(agent.getAgentId(), "Agent ID should not be null");
         assertEquals(
                 TestConstants.TEST_REACT_AGENT_NAME, agent.getName(), "Agent name should match");
-        assertEquals(memory, agent.getMemory(), "Memory should be the same instance");
+        assertNotNull(agent.getAgentState(), "AgentState should not be null");
         assertEquals(
                 TestConstants.DEFAULT_MAX_ITERS,
                 agent.getMaxIters(),
                 "Default max iterations should be 10");
 
         // Verify memory is initially empty
-        assertTrue(agent.getMemory().getMessages().isEmpty(), "Memory should be empty initially");
+        assertTrue(
+                agent.getAgentState().getContext().isEmpty(), "Memory should be empty initially");
     }
 
     @Test
@@ -131,7 +131,7 @@ class ReActAgentTest {
         assertFalse(text.isEmpty(), "Response text should not be empty");
 
         // Verify memory was updated
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         assertTrue(messages.size() >= 1, "Memory should contain at least the user message");
 
         // Verify model was called
@@ -153,7 +153,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -211,7 +210,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -230,7 +228,7 @@ class ReActAgentTest {
         assertEquals(1, mockToolkit.getCallCount(), "Tool should be called once");
 
         // Verify memory contains tool result
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         boolean hasToolResult =
                 messages.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
         assertTrue(hasToolResult, "Memory should contain tool result");
@@ -285,7 +283,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Execute tools");
@@ -351,7 +348,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Call failing tool");
@@ -364,7 +360,7 @@ class ReActAgentTest {
         assertTrue(mockToolkit.wasToolCalled("failing_tool"), "Failing tool should be called");
 
         // Verify memory contains tool result with error content
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         boolean hasErrorToolResult =
                 messages.stream()
                         .anyMatch(
@@ -419,15 +415,14 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
-        int initialMemorySize = memory.getMessages().size();
+        int initialMemorySize = agent.getAgentState().getContext().size();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Calculate 4 * 7");
         agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        List<Msg> messages = memory.getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
 
         // Memory should contain: user message, assistant tool call, tool result, final response
         assertTrue(
@@ -473,7 +468,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(loopModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(TestConstants.TEST_MAX_ITERS)
                         .build();
         mockModel = loopModel;
@@ -504,18 +498,18 @@ class ReActAgentTest {
         Msg msg1 = TestUtils.createUserMessage("User", "First message");
         agent.call(msg1).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        int sizeAfterFirst = agent.getMemory().getMessages().size();
+        int sizeAfterFirst = agent.getAgentState().getContext().size();
         assertTrue(sizeAfterFirst >= 1, "Memory should contain at least the first message");
 
         // Send second message
         Msg msg2 = TestUtils.createUserMessage("User", "Second message");
         agent.call(msg2).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        int sizeAfterSecond = agent.getMemory().getMessages().size();
+        int sizeAfterSecond = agent.getAgentState().getContext().size();
         assertTrue(sizeAfterSecond > sizeAfterFirst, "Memory should grow with more messages");
 
         // Verify both messages are in history
-        List<Msg> allMessages = agent.getMemory().getMessages();
+        List<Msg> allMessages = agent.getAgentState().getContext();
         assertTrue(
                 allMessages.stream()
                         .anyMatch(m -> TestUtils.extractTextContent(m).contains("First message")),
@@ -539,7 +533,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -571,7 +564,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -592,7 +584,7 @@ class ReActAgentTest {
         agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         int initialCallCount = mockModel.getCallCount();
-        int initialMemorySize = agent.getMemory().getMessages().size();
+        int initialMemorySize = agent.getAgentState().getContext().size();
 
         // Call without parameters to continue generation
         Msg continueResponse =
@@ -612,11 +604,11 @@ class ReActAgentTest {
 
         // Verify memory was updated with the new response (but no new user message was added)
         assertTrue(
-                agent.getMemory().getMessages().size() > initialMemorySize,
+                agent.getAgentState().getContext().size() > initialMemorySize,
                 "Memory should contain the continuation response");
 
         // Verify no new user message was added (only agent responses)
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         long userMessageCount = messages.stream().filter(m -> m.getRole() == MsgRole.USER).count();
         assertEquals(
                 1,
@@ -644,13 +636,18 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should have interrupt API methods")
     void testInterruptAfterToolCompletion() {
-        // Verify ReActAgent inherits interrupt API from AgentBase
-        assertNotNull(agent.getInterruptFlag(), "Should have interrupt flag");
-        assertFalse(agent.getInterruptFlag().get(), "Interrupt flag should be false initially");
+        // ReActAgent routes interrupts to the active session's per-session InterruptControl
+        // (on its AgentState) rather than a shared instance flag, so concurrent sessions are
+        // isolated.
+        assertFalse(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session should not be interrupted initially");
 
         // Test interrupt() method
         agent.interrupt();
-        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
+        assertTrue(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session interrupt control should be set");
     }
 
     @Test
@@ -658,12 +655,15 @@ class ReActAgentTest {
     void testInterruptRecoveryMessage() {
         Msg interruptMsg = TestUtils.createUserMessage("User", "Stop processing");
 
-        // Test interrupt(Msg) method
+        // Test interrupt(Msg) method: routed to the active session's InterruptControl
         agent.interrupt(interruptMsg);
-        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
-
-        // Note: The interrupt message is stored but only added to memory during handleInterrupt
-        // This test just verifies the API accepts the message and sets the flag
+        assertTrue(
+                agent.getAgentState().interruptControl().isInterrupted(),
+                "Session interrupt control should be set");
+        assertEquals(
+                interruptMsg,
+                agent.getAgentState().interruptControl().getUserMessage(),
+                "User message should be stored on the session interrupt control");
     }
 
     @Test
@@ -778,7 +778,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 
@@ -902,7 +901,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 
@@ -941,13 +939,11 @@ class ReActAgentTest {
                 new java.util.concurrent.CopyOnWriteArrayList<>();
 
         // Create a hook to capture ReasoningChunkEvent and check metadata
-        io.agentscope.core.hook.Hook captureHook =
-                new io.agentscope.core.hook.Hook() {
+        Hook captureHook =
+                new Hook() {
                     @Override
-                    public <T extends io.agentscope.core.hook.HookEvent>
-                            reactor.core.publisher.Mono<T> onEvent(T event) {
-                        if (event
-                                instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
+                    public <T extends HookEvent> reactor.core.publisher.Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
                             // Capture accumulated message and check its metadata
                             Msg accumulated = chunkEvent.getAccumulated();
                             if (accumulated != null) {
@@ -990,7 +986,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(modelWithUsage)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 

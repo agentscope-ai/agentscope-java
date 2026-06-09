@@ -19,8 +19,8 @@ package io.agentscope.harness.agent.sandbox.layout;
  * Layout entry that clones a Git repository into the sandbox workspace.
  *
  * <p>The repository is cloned from {@code url} at the given {@code ref}
- * (branch, tag, or commit SHA). Full git-clone logic is a Phase 2 feature;
- * this class serves as the type skeleton for JSON serialization.
+ * (branch, tag, or commit SHA).
+ * This class serves as the type skeleton for JSON serialization.
  */
 public class GitRepoEntry extends WorkspaceEntry {
 

@@ -48,7 +48,11 @@ import java.util.zip.ZipInputStream;
  * // Create skill from markdown with custom source
  * AgentSkill skill2 = SkillUtil.createFrom(skillMd, resources, "github");
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
+ *     application code.
  */
+@Deprecated(since = "2.0.0")
 public class SkillUtil {
 
     private static final String SKILL_FILE_NAME = "SKILL.md";

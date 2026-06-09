@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -35,10 +36,12 @@ public class MemoryGetTool {
 
     @Tool(
             name = "memory_get",
+            readOnly = true,
             description =
                     "Read specific lines from a memory file. Use after memory_search to pull"
                             + " full context around matched lines. Path is relative to workspace.")
     public String memoryGet(
+            RuntimeContext runtimeContext,
             @ToolParam(
                             name = "path",
                             description =
@@ -58,7 +61,8 @@ public class MemoryGetTool {
             return "Error: path traversal not allowed";
         }
 
-        String text = workspaceManager.readManagedWorkspaceFileUtf8(path);
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+        String text = workspaceManager.readManagedWorkspaceFileUtf8(rc, path);
         if (text == null || text.isBlank()) {
             return "Error: file not found: " + path;
         }

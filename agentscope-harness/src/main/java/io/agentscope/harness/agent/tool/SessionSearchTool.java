@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.memory.session.SessionEntry;
@@ -50,10 +51,12 @@ public class SessionSearchTool {
 
     @Tool(
             name = "session_search",
+            readOnly = true,
             description =
                     "Search past session transcripts for a keyword or phrase."
                             + " Returns matching entries with session context.")
     public String sessionSearch(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "query", description = "Search query (keyword or phrase)")
                     String query,
             @ToolParam(
@@ -70,13 +73,14 @@ public class SessionSearchTool {
             return "Error: query is required";
         }
 
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
         int limit = maxResults != null && maxResults > 0 ? maxResults : 10;
         String effectiveAgentId = agentId != null && !agentId.isBlank() ? agentId : null;
         String lowerQuery = query.toLowerCase();
 
         List<String> results = new ArrayList<>();
 
-        List<Path> sessionFiles = listLogFiles(effectiveAgentId);
+        List<Path> sessionFiles = listLogFiles(rc, effectiveAgentId);
         for (Path file : sessionFiles) {
             if (results.size() >= limit) {
                 break;
@@ -98,17 +102,22 @@ public class SessionSearchTool {
 
     @Tool(
             name = "session_list",
+            readOnly = true,
             description = "List available sessions for an agent, showing session IDs and metadata.")
     public String sessionList(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID to list sessions for")
                     String agentId) {
         if (agentId == null || agentId.isBlank()) {
             return "Error: agentId is required";
         }
 
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+
         // Prefer the structured session-store index (already two-layer: remote then local).
         String storeContent =
                 workspaceManager.readManagedWorkspaceFileUtf8(
+                        rc,
                         WorkspaceConstants.AGENTS_DIR
                                 + "/"
                                 + agentId
@@ -121,7 +130,7 @@ public class SessionSearchTool {
         }
 
         // List sessions from local cache only — remote sync is handled at write time.
-        Path sessionDir = workspaceManager.getSessionDir(agentId);
+        Path sessionDir = workspaceManager.getSessionDir(rc, agentId);
         if (!Files.isDirectory(sessionDir)) {
             return "No sessions found for agent: " + agentId;
         }
@@ -155,12 +164,14 @@ public class SessionSearchTool {
 
     @Tool(
             name = "session_history",
+            readOnly = true,
             description =
                     "Get the conversation history for a specific session."
                             + " Returns the messages in the session.")
     public String sessionHistory(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID") String agentId,
-            @ToolParam(name = "sessionId", description = "Session ID") String sessionId,
+            @ToolParam(name = "sessionId", description = "AgentStateStore ID") String sessionId,
             @ToolParam(
                             name = "lastN",
                             description = "Number of recent messages to return (default: 20)",
@@ -170,17 +181,18 @@ public class SessionSearchTool {
             return "Error: agentId and sessionId are required";
         }
 
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
         int limit = lastN != null && lastN > 0 ? lastN : 20;
 
-        Path contextFile = workspaceManager.resolveSessionContextFile(agentId, sessionId);
+        Path contextFile = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
         if (!Files.isRegularFile(contextFile)) {
             @SuppressWarnings("deprecation")
-            Path legacyFile = workspaceManager.resolveSessionFile(agentId, sessionId);
+            Path legacyFile = workspaceManager.resolveSessionFile(rc, agentId, sessionId);
             if (Files.isRegularFile(legacyFile)) {
                 log.debug("Falling back to legacy .json session file for {}", sessionId);
                 return readLegacySession(legacyFile, limit);
             }
-            return "Session not found: " + sessionId;
+            return "AgentStateStore not found: " + sessionId;
         }
 
         SessionTree tree = new SessionTree(contextFile, workspaceManager.getWorkspace(), null);
@@ -192,7 +204,7 @@ public class SessionSearchTool {
         StringBuilder sb = new StringBuilder();
         sb.append(
                 String.format(
-                        "Session %s (%d total messages, showing last %d):\n\n",
+                        "AgentStateStore %s (%d total messages, showing last %d):\n\n",
                         sessionId, messages.size(), Math.min(limit, messages.size())));
         for (int i = start; i < messages.size(); i++) {
             SessionEntry.MessageEntry msg = messages.get(i);
@@ -214,9 +226,9 @@ public class SessionSearchTool {
      * (or all agents when {@code agentId} is {@code null}).
      * Only scans the local disk; remote-only sessions are handled via sessionList / sessionHistory.
      */
-    private List<Path> listLogFiles(String agentId) {
+    private List<Path> listLogFiles(RuntimeContext rc, String agentId) {
         List<Path> files = new ArrayList<>();
-        Path agentsDir = workspaceManager.getWorkspace().resolve(WorkspaceConstants.AGENTS_DIR);
+        Path agentsDir = workspaceManager.resolveRuntimeDataPath(rc, WorkspaceConstants.AGENTS_DIR);
         if (!Files.isDirectory(agentsDir)) {
             return files;
         }

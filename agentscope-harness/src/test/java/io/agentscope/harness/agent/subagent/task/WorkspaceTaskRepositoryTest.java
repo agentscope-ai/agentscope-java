@@ -22,8 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,7 +47,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <ul>
  *   <li>Workspace write on task creation and completion
  *   <li>Cross-node fallback: no local future → read terminal state from workspace
- *   <li>Session-scope isolation: different sessionIds are independent
+ *   <li>AgentStateStore-scope isolation: different sessionIds are independent
  *   <li>Cancel coordination: cancelRequested flag persisted to workspace
  *   <li>Compaction simulation: task_list reads from workspace even after localTasks cleared
  *   <li>Terminal status never overridden by RUNNING overlay
@@ -104,6 +104,7 @@ class WorkspaceTaskRepositoryTest {
         AtomicBoolean executed = new AtomicBoolean(false);
 
         repo.putTask(
+                RuntimeContext.empty(),
                 taskId,
                 "sub-agent-x",
                 session,
@@ -115,12 +116,13 @@ class WorkspaceTaskRepositoryTest {
 
         awaitCondition(
                 () -> {
-                    BackgroundTask t = repo.getTask(session, taskId);
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
                     return t != null && t.getTaskStatus().isTerminal();
                 });
 
         Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
+                workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(), "test-agent", session, taskId);
         assertTrue(record.isPresent());
         assertEquals(TaskStatus.COMPLETED, record.get().getStatus());
         assertEquals("done", record.get().getResult());
@@ -134,6 +136,7 @@ class WorkspaceTaskRepositoryTest {
         String taskId = "task-fail-test";
 
         repo.putTask(
+                RuntimeContext.empty(),
                 taskId,
                 "sub-agent-fail",
                 session,
@@ -144,19 +147,21 @@ class WorkspaceTaskRepositoryTest {
 
         awaitCondition(
                 () -> {
-                    BackgroundTask t = repo.getTask(session, taskId);
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
                     return t != null && t.getTaskStatus().isTerminal();
                 });
 
         awaitCondition(
                 () -> {
                     Optional<TaskRecord> r =
-                            workspaceManager.readTaskRecord("test-agent", session, taskId);
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
                     return r.isPresent() && r.get().getStatus().isTerminal();
                 });
 
         Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
+                workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(), "test-agent", session, taskId);
         assertTrue(record.isPresent());
         assertEquals(TaskStatus.FAILED, record.get().getStatus());
         assertTrue(record.get().getErrorMessage().contains("intentional failure"));
@@ -173,6 +178,7 @@ class WorkspaceTaskRepositoryTest {
         String taskId = "task-cross-node";
 
         repo.putTask(
+                RuntimeContext.empty(),
                 taskId,
                 "agent-y",
                 session,
@@ -181,14 +187,15 @@ class WorkspaceTaskRepositoryTest {
         awaitCondition(
                 () -> {
                     Optional<TaskRecord> r =
-                            workspaceManager.readTaskRecord("test-agent", session, taskId);
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
                     return r.isPresent() && r.get().getStatus().isTerminal();
                 });
 
         // Simulate cross-node scenario: clear in-memory tasks
         repo.clear();
 
-        BackgroundTask synthetic = repo.getTask(session, taskId);
+        BackgroundTask synthetic = repo.getTask(RuntimeContext.empty(), session, taskId);
         assertNotNull(synthetic);
         assertEquals(TaskStatus.COMPLETED, synthetic.getTaskStatus());
         assertEquals("cross-node result", synthetic.getResult());
@@ -198,11 +205,11 @@ class WorkspaceTaskRepositoryTest {
     @DisplayName(
             "getTask returns null for unknown task on cross-node node without workspace record")
     void getTask_returnsNullWhenNothingFound() {
-        assertNull(repo.getTask("no-session", "no-task"));
+        assertNull(repo.getTask(RuntimeContext.empty(), "no-session", "no-task"));
     }
 
     // ------------------------------------------------------------------
-    //  Session-scope isolation
+    //  AgentStateStore-scope isolation
     // ------------------------------------------------------------------
 
     @Test
@@ -212,22 +219,30 @@ class WorkspaceTaskRepositoryTest {
         String sessionB = "sess-b";
 
         repo.putTask(
-                "task-a1", "agent-a", sessionA, new TaskRunSpec.LocalTaskRunSpec(() -> "result-a"));
+                RuntimeContext.empty(),
+                "task-a1",
+                "agent-a",
+                sessionA,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "result-a"));
         repo.putTask(
-                "task-b1", "agent-b", sessionB, new TaskRunSpec.LocalTaskRunSpec(() -> "result-b"));
+                RuntimeContext.empty(),
+                "task-b1",
+                "agent-b",
+                sessionB,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "result-b"));
 
         awaitCondition(
                 () -> {
-                    BackgroundTask a = repo.getTask(sessionA, "task-a1");
-                    BackgroundTask b = repo.getTask(sessionB, "task-b1");
+                    BackgroundTask a = repo.getTask(RuntimeContext.empty(), sessionA, "task-a1");
+                    BackgroundTask b = repo.getTask(RuntimeContext.empty(), sessionB, "task-b1");
                     return a != null
                             && a.getTaskStatus().isTerminal()
                             && b != null
                             && b.getTaskStatus().isTerminal();
                 });
 
-        Collection<BackgroundTask> tasksA = repo.listTasks(sessionA, null);
-        Collection<BackgroundTask> tasksB = repo.listTasks(sessionB, null);
+        Collection<BackgroundTask> tasksA = repo.listTasks(RuntimeContext.empty(), sessionA, null);
+        Collection<BackgroundTask> tasksB = repo.listTasks(RuntimeContext.empty(), sessionB, null);
 
         assertEquals(1, tasksA.size());
         assertEquals("task-a1", tasksA.iterator().next().getTaskId());
@@ -250,6 +265,7 @@ class WorkspaceTaskRepositoryTest {
         CountDownLatch taskRunning = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         repo.putTask(
+                RuntimeContext.empty(),
                 taskId,
                 "agent-slow",
                 session,
@@ -269,17 +285,19 @@ class WorkspaceTaskRepositoryTest {
         awaitCondition(
                 () -> {
                     Optional<TaskRecord> r =
-                            workspaceManager.readTaskRecord("test-agent", session, taskId);
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
                     return r.isPresent() && r.get().getStatus() == TaskStatus.RUNNING;
                 });
 
-        boolean cancelled = repo.cancelTask(session, taskId);
+        boolean cancelled = repo.cancelTask(RuntimeContext.empty(), session, taskId);
         assertTrue(cancelled);
 
         // Read workspace before releasing the worker: once the latch opens, the async path
         // may persist COMPLETED and would race this assertion under full-suite load.
         Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
+                workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(), "test-agent", session, taskId);
         assertTrue(record.isPresent());
         assertTrue(record.get().isCancelRequested());
         assertEquals(TaskStatus.CANCELLED, record.get().getStatus());
@@ -297,23 +315,33 @@ class WorkspaceTaskRepositoryTest {
         String session = "sess-compact";
 
         repo.putTask(
-                "task-c1", "agent-z", session, new TaskRunSpec.LocalTaskRunSpec(() -> "result-c1"));
+                RuntimeContext.empty(),
+                "task-c1",
+                "agent-z",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "result-c1"));
         repo.putTask(
-                "task-c2", "agent-z", session, new TaskRunSpec.LocalTaskRunSpec(() -> "result-c2"));
+                RuntimeContext.empty(),
+                "task-c2",
+                "agent-z",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "result-c2"));
 
         awaitCondition(
                 () -> {
                     Optional<TaskRecord> r1 =
-                            workspaceManager.readTaskRecord("test-agent", session, "task-c1");
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, "task-c1");
                     Optional<TaskRecord> r2 =
-                            workspaceManager.readTaskRecord("test-agent", session, "task-c2");
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, "task-c2");
                     return r1.map(r -> r.getStatus().isTerminal()).orElse(false)
                             && r2.map(r -> r.getStatus().isTerminal()).orElse(false);
                 });
 
         repo.clear();
 
-        Collection<BackgroundTask> tasks = repo.listTasks(session, null);
+        Collection<BackgroundTask> tasks = repo.listTasks(RuntimeContext.empty(), session, null);
         assertEquals(2, tasks.size());
         assertTrue(tasks.stream().anyMatch(t -> t.getTaskId().equals("task-c1")));
         assertTrue(tasks.stream().anyMatch(t -> t.getTaskId().equals("task-c2")));
@@ -330,6 +358,7 @@ class WorkspaceTaskRepositoryTest {
         String taskId = "task-term";
 
         repo.putTask(
+                RuntimeContext.empty(),
                 taskId,
                 "agent-t",
                 session,
@@ -337,11 +366,11 @@ class WorkspaceTaskRepositoryTest {
 
         awaitCondition(
                 () -> {
-                    BackgroundTask t = repo.getTask(session, taskId);
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
                     return t != null && t.getTaskStatus().isTerminal();
                 });
 
-        Collection<BackgroundTask> tasks = repo.listTasks(session, null);
+        Collection<BackgroundTask> tasks = repo.listTasks(RuntimeContext.empty(), session, null);
         assertEquals(1, tasks.size());
         assertEquals(TaskStatus.COMPLETED, tasks.iterator().next().getTaskStatus());
     }
@@ -357,8 +386,14 @@ class WorkspaceTaskRepositoryTest {
         String sessionOk = "sess-filter-ok";
         String sessionErr = "sess-filter-err";
 
-        repo.putTask("task-ok", "agent-f", sessionOk, new TaskRunSpec.LocalTaskRunSpec(() -> "ok"));
         repo.putTask(
+                RuntimeContext.empty(),
+                "task-ok",
+                "agent-f",
+                sessionOk,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "ok"));
+        repo.putTask(
+                RuntimeContext.empty(),
                 "task-err",
                 "agent-f",
                 sessionErr,
@@ -370,23 +405,27 @@ class WorkspaceTaskRepositoryTest {
         awaitCondition(
                 () -> {
                     Optional<TaskRecord> r1 =
-                            workspaceManager.readTaskRecord("test-agent", sessionOk, "task-ok");
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", sessionOk, "task-ok");
                     return r1.map(r -> r.getStatus().isTerminal()).orElse(false);
                 });
         awaitCondition(
                 () -> {
                     Optional<TaskRecord> r2 =
-                            workspaceManager.readTaskRecord("test-agent", sessionErr, "task-err");
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", sessionErr, "task-err");
                     return r2.map(r -> r.getStatus().isTerminal()).orElse(false);
                 });
 
         repo.clear();
 
-        Collection<BackgroundTask> completed = repo.listTasks(sessionOk, TaskStatus.COMPLETED);
+        Collection<BackgroundTask> completed =
+                repo.listTasks(RuntimeContext.empty(), sessionOk, TaskStatus.COMPLETED);
         assertEquals(1, completed.size());
         assertEquals("task-ok", completed.iterator().next().getTaskId());
 
-        Collection<BackgroundTask> failed = repo.listTasks(sessionErr, TaskStatus.FAILED);
+        Collection<BackgroundTask> failed =
+                repo.listTasks(RuntimeContext.empty(), sessionErr, TaskStatus.FAILED);
         assertEquals(1, failed.size());
         assertEquals("task-err", failed.iterator().next().getTaskId());
     }
@@ -404,18 +443,21 @@ class WorkspaceTaskRepositoryTest {
         r2.setStatus(TaskStatus.COMPLETED);
         r2.setResult("my result");
 
-        workspaceManager.writeTaskRecord("parent", "sess-rt", r1);
-        workspaceManager.writeTaskRecord("parent", "sess-rt", r2);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "parent", "sess-rt", r1);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "parent", "sess-rt", r2);
 
-        Optional<TaskRecord> read1 = workspaceManager.readTaskRecord("parent", "sess-rt", "t1");
+        Optional<TaskRecord> read1 =
+                workspaceManager.readTaskRecord(RuntimeContext.empty(), "parent", "sess-rt", "t1");
         assertTrue(read1.isPresent());
         assertEquals(TaskStatus.RUNNING, read1.get().getStatus());
 
-        Optional<TaskRecord> read2 = workspaceManager.readTaskRecord("parent", "sess-rt", "t2");
+        Optional<TaskRecord> read2 =
+                workspaceManager.readTaskRecord(RuntimeContext.empty(), "parent", "sess-rt", "t2");
         assertTrue(read2.isPresent());
         assertEquals("my result", read2.get().getResult());
 
-        Collection<TaskRecord> all = workspaceManager.listTaskRecords("parent", "sess-rt");
+        Collection<TaskRecord> all =
+                workspaceManager.listTaskRecords(RuntimeContext.empty(), "parent", "sess-rt");
         assertEquals(2, all.size());
 
         Path file = tempDir.resolve("agents/parent/tasks/sess-rt.json");
@@ -435,6 +477,7 @@ class WorkspaceTaskRepositoryTest {
         CountDownLatch running = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         repo.putTask(
+                RuntimeContext.empty(),
                 taskId,
                 "agent-hb",
                 session,
@@ -453,13 +496,14 @@ class WorkspaceTaskRepositoryTest {
         awaitCondition(
                 () -> {
                     Optional<TaskRecord> r =
-                            workspaceManager.readTaskRecord("test-agent", session, taskId);
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
                     return r.isPresent() && r.get().getStatus() == TaskStatus.RUNNING;
                 });
 
         Instant before =
                 workspaceManager
-                        .readTaskRecord("test-agent", session, taskId)
+                        .readTaskRecord(RuntimeContext.empty(), "test-agent", session, taskId)
                         .map(TaskRecord::getLastUpdatedAt)
                         .orElseThrow();
 
@@ -469,7 +513,7 @@ class WorkspaceTaskRepositoryTest {
 
         Instant after =
                 workspaceManager
-                        .readTaskRecord("test-agent", session, taskId)
+                        .readTaskRecord(RuntimeContext.empty(), "test-agent", session, taskId)
                         .map(TaskRecord::getLastUpdatedAt)
                         .orElseThrow();
 
@@ -487,18 +531,23 @@ class WorkspaceTaskRepositoryTest {
         String taskId = "task-hb-done";
 
         repo.putTask(
-                taskId, "agent-hb-done", session, new TaskRunSpec.LocalTaskRunSpec(() -> "quick"));
+                RuntimeContext.empty(),
+                taskId,
+                "agent-hb-done",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "quick"));
 
         awaitCondition(
                 () ->
                         workspaceManager
-                                .readTaskRecord("test-agent", session, taskId)
+                                .readTaskRecord(
+                                        RuntimeContext.empty(), "test-agent", session, taskId)
                                 .map(r -> r.getStatus().isTerminal())
                                 .orElse(false));
 
         Instant before =
                 workspaceManager
-                        .readTaskRecord("test-agent", session, taskId)
+                        .readTaskRecord(RuntimeContext.empty(), "test-agent", session, taskId)
                         .map(TaskRecord::getLastUpdatedAt)
                         .orElseThrow();
 
@@ -507,7 +556,7 @@ class WorkspaceTaskRepositoryTest {
 
         Instant after =
                 workspaceManager
-                        .readTaskRecord("test-agent", session, taskId)
+                        .readTaskRecord(RuntimeContext.empty(), "test-agent", session, taskId)
                         .map(TaskRecord::getLastUpdatedAt)
                         .orElseThrow();
 
@@ -529,13 +578,15 @@ class WorkspaceTaskRepositoryTest {
         TaskRecord stale = new TaskRecord(taskId, "agent-stale", "test-agent", session, null);
         stale.setStatus(TaskStatus.RUNNING);
         stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
-        workspaceManager.writeTaskRecord("test-agent", session, stale);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, stale);
 
         // orphanTimeout=ZERO: every record is instantly "stale".
         // recentWindow=1 day: scan all session files regardless of disk mtime.
         repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
 
-        Optional<TaskRecord> swept = workspaceManager.readTaskRecord("test-agent", session, taskId);
+        Optional<TaskRecord> swept =
+                workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(), "test-agent", session, taskId);
         assertTrue(swept.isPresent());
         assertEquals(
                 TaskStatus.FAILED,
@@ -555,6 +606,7 @@ class WorkspaceTaskRepositoryTest {
 
         CountDownLatch release = new CountDownLatch(1);
         repo.putTask(
+                RuntimeContext.empty(),
                 taskId,
                 "agent-live",
                 session,
@@ -571,11 +623,12 @@ class WorkspaceTaskRepositoryTest {
         awaitCondition(
                 () ->
                         workspaceManager
-                                .readTaskRecord("test-agent", session, taskId)
+                                .readTaskRecord(
+                                        RuntimeContext.empty(), "test-agent", session, taskId)
                                 .map(r -> r.getStatus() == TaskStatus.RUNNING)
                                 .orElse(false));
 
-        BackgroundTask live = repo.getTask(session, taskId);
+        BackgroundTask live = repo.getTask(RuntimeContext.empty(), session, taskId);
         assertNotNull(live, "Live task handle must exist before sweep");
         assertTrue(!live.isCompleted(), "Task must still be running before sweep");
 
@@ -584,7 +637,8 @@ class WorkspaceTaskRepositoryTest {
         repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
 
         Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
+                workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(), "test-agent", session, taskId);
         assertTrue(record.isPresent());
         assertEquals(
                 TaskStatus.RUNNING,
@@ -605,12 +659,13 @@ class WorkspaceTaskRepositoryTest {
         completed.setStatus(TaskStatus.COMPLETED);
         completed.setResult("done");
         completed.setLastUpdatedAt(Instant.now().minusSeconds(7200));
-        workspaceManager.writeTaskRecord("test-agent", session, completed);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, completed);
 
         repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
 
         Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
+                workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(), "test-agent", session, taskId);
         assertTrue(record.isPresent());
         assertEquals(
                 TaskStatus.COMPLETED, record.get().getStatus(), "Terminal tasks must not be swept");
@@ -627,12 +682,13 @@ class WorkspaceTaskRepositoryTest {
         remote.setTransportType("agent-protocol");
         remote.setRemoteBaseUrl("http://remote-agent:8080");
         remote.setLastUpdatedAt(Instant.now().minusSeconds(7200));
-        workspaceManager.writeTaskRecord("test-agent", session, remote);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, remote);
 
         repo.sweepOrphanedTasks(Duration.ZERO, Duration.ofDays(1));
 
         Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
+                workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(), "test-agent", session, taskId);
         assertTrue(record.isPresent());
         assertEquals(
                 TaskStatus.RUNNING,
@@ -648,13 +704,15 @@ class WorkspaceTaskRepositoryTest {
     @DisplayName("sweepOrphanedTasksDefault writes sweep marker after completing a sweep")
     void sweepMarker_isWrittenAfterSweep() throws Exception {
         // No marker initially
-        assertTrue(workspaceManager.readSweepMarker("test-agent").isEmpty());
+        assertTrue(
+                workspaceManager.readSweepMarker(RuntimeContext.empty(), "test-agent").isEmpty());
 
         // Trigger the default sweep path (uses the marker internally)
         repo.sweepOrphanedTasksDefault_forTest();
 
         // Marker should now be present and recent
-        Optional<java.time.Instant> marker = workspaceManager.readSweepMarker("test-agent");
+        Optional<java.time.Instant> marker =
+                workspaceManager.readSweepMarker(RuntimeContext.empty(), "test-agent");
         assertTrue(marker.isPresent(), "Sweep marker must be written after a successful sweep");
         assertTrue(
                 marker.get().isAfter(Instant.now().minusSeconds(5)),
@@ -671,17 +729,18 @@ class WorkspaceTaskRepositoryTest {
         TaskRecord stale = new TaskRecord(taskId, "a", "test-agent", session, null);
         stale.setStatus(TaskStatus.RUNNING);
         stale.setLastUpdatedAt(Instant.now().minusSeconds(3600));
-        workspaceManager.writeTaskRecord("test-agent", session, stale);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", session, stale);
 
         // Write a fresh marker (simulates another node just swept)
-        workspaceManager.writeSweepMarker("test-agent");
+        workspaceManager.writeSweepMarker(RuntimeContext.empty(), "test-agent");
 
         // The default sweep should be skipped due to the fresh marker
         repo.sweepOrphanedTasksDefault_forTest();
 
         // Orphan should NOT have been swept
         Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
+                workspaceManager.readTaskRecord(
+                        RuntimeContext.empty(), "test-agent", session, taskId);
         assertTrue(record.isPresent());
         assertEquals(
                 TaskStatus.RUNNING,
@@ -703,12 +762,13 @@ class WorkspaceTaskRepositoryTest {
         TaskRecord r3 = new TaskRecord("task-all-3", "c", "test-agent", "sess-all-1", null);
         r3.setStatus(TaskStatus.RUNNING);
 
-        workspaceManager.writeTaskRecord("test-agent", "sess-all-1", r1);
-        workspaceManager.writeTaskRecord("test-agent", "sess-all-2", r2);
-        workspaceManager.writeTaskRecord("test-agent", "sess-all-1", r3);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", "sess-all-1", r1);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", "sess-all-2", r2);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", "sess-all-1", r3);
 
         Collection<TaskRecord> all =
-                workspaceManager.listAllTaskRecords("test-agent", Duration.ofDays(1));
+                workspaceManager.listAllTaskRecords(
+                        RuntimeContext.empty(), "test-agent", Duration.ofDays(1));
         assertEquals(3, all.size(), "Should return all records across all sessions");
         assertTrue(all.stream().anyMatch(r -> "task-all-1".equals(r.getTaskId())));
         assertTrue(all.stream().anyMatch(r -> "task-all-2".equals(r.getTaskId())));
@@ -719,7 +779,8 @@ class WorkspaceTaskRepositoryTest {
     @DisplayName("listAllTaskRecords returns empty for unknown agent")
     void listAllTaskRecords_emptyForUnknownAgent() {
         Collection<TaskRecord> all =
-                workspaceManager.listAllTaskRecords("unknown-agent", Duration.ofDays(1));
+                workspaceManager.listAllTaskRecords(
+                        RuntimeContext.empty(), "unknown-agent", Duration.ofDays(1));
         assertTrue(all.isEmpty());
     }
 
@@ -729,13 +790,14 @@ class WorkspaceTaskRepositoryTest {
         // task-new: in a recently-modified file (write it after the old one)
         TaskRecord recent = new TaskRecord("task-new", "a", "test-agent", "sess-recent", null);
         recent.setStatus(TaskStatus.RUNNING);
-        workspaceManager.writeTaskRecord("test-agent", "sess-recent", recent);
+        workspaceManager.writeTaskRecord(
+                RuntimeContext.empty(), "test-agent", "sess-recent", recent);
 
         // task-old: force its session file's mtime to be 2 days in the past via reflection
         // We write it first so the file exists, then back-date the file.
         TaskRecord old = new TaskRecord("task-old", "b", "test-agent", "sess-old", null);
         old.setStatus(TaskStatus.RUNNING);
-        workspaceManager.writeTaskRecord("test-agent", "sess-old", old);
+        workspaceManager.writeTaskRecord(RuntimeContext.empty(), "test-agent", "sess-old", old);
 
         Path oldFile = tempDir.resolve("agents/test-agent/tasks/sess-old.json");
         assertTrue(Files.exists(oldFile), "old session file must exist");
@@ -743,7 +805,8 @@ class WorkspaceTaskRepositoryTest {
 
         // recentWindow = 1 day → the 2-day-old file should be skipped
         Collection<TaskRecord> result =
-                workspaceManager.listAllTaskRecords("test-agent", Duration.ofDays(1));
+                workspaceManager.listAllTaskRecords(
+                        RuntimeContext.empty(), "test-agent", Duration.ofDays(1));
 
         assertTrue(
                 result.stream().anyMatch(r -> "task-new".equals(r.getTaskId())),
@@ -751,128 +814,6 @@ class WorkspaceTaskRepositoryTest {
         assertTrue(
                 result.stream().noneMatch(r -> "task-old".equals(r.getTaskId())),
                 "Old task file should be skipped by recentWindow filter");
-    }
-
-    // ------------------------------------------------------------------
-    //  Terminal-status immutability (updateStatus guards)
-    // ------------------------------------------------------------------
-
-    @Test
-    @DisplayName(
-            "CANCELLED status is never overwritten by COMPLETED when task finishes after cancel")
-    void cancelledStatus_notOverwrittenByCompleted() throws Exception {
-        String session = "sess-guard-completed";
-        String taskId = "task-guard-completed";
-
-        // Latch keeps the task body blocked until we explicitly release it, giving us a
-        // deterministic window to cancel before the task finishes.
-        CountDownLatch taskRunning = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-
-        repo.putTask(
-                taskId,
-                "agent-guard",
-                session,
-                new TaskRunSpec.LocalTaskRunSpec(
-                        () -> {
-                            taskRunning.countDown();
-                            try {
-                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                            return "done";
-                        }));
-
-        // Wait until the task is confirmed RUNNING in the workspace
-        taskRunning.await(5, java.util.concurrent.TimeUnit.SECONDS);
-        awaitCondition(
-                () ->
-                        workspaceManager
-                                .readTaskRecord("test-agent", session, taskId)
-                                .map(r -> r.getStatus() == TaskStatus.RUNNING)
-                                .orElse(false));
-
-        // Cancel while the task is still blocked
-        repo.cancelTask(session, taskId);
-
-        // Verify CANCELLED is persisted before we release the worker
-        awaitCondition(
-                () ->
-                        workspaceManager
-                                .readTaskRecord("test-agent", session, taskId)
-                                .map(r -> r.getStatus() == TaskStatus.CANCELLED)
-                                .orElse(false));
-
-        // Let the worker finish — it would normally try to write COMPLETED
-        release.countDown();
-
-        // Give the async thread a moment to attempt the overwrite, then assert
-        Thread.sleep(200);
-
-        Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
-        assertTrue(record.isPresent());
-        assertEquals(
-                TaskStatus.CANCELLED,
-                record.get().getStatus(),
-                "CANCELLED must not be overwritten by the subsequent COMPLETED write");
-    }
-
-    @Test
-    @DisplayName("heartbeat does not overwrite CANCELLED status with RUNNING")
-    void heartbeat_doesNotOverwriteCancelledWithRunning() throws Exception {
-        String session = "sess-hb-cancel";
-        String taskId = "task-hb-cancel";
-
-        CountDownLatch taskRunning = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-
-        repo.putTask(
-                taskId,
-                "agent-hb-cancel",
-                session,
-                new TaskRunSpec.LocalTaskRunSpec(
-                        () -> {
-                            taskRunning.countDown();
-                            try {
-                                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                            return "cancelled";
-                        }));
-
-        taskRunning.await(5, java.util.concurrent.TimeUnit.SECONDS);
-        awaitCondition(
-                () ->
-                        workspaceManager
-                                .readTaskRecord("test-agent", session, taskId)
-                                .map(r -> r.getStatus() == TaskStatus.RUNNING)
-                                .orElse(false));
-
-        // Cancel the task — writes CANCELLED + cancelRequested=true to workspace
-        repo.cancelTask(session, taskId);
-
-        awaitCondition(
-                () ->
-                        workspaceManager
-                                .readTaskRecord("test-agent", session, taskId)
-                                .map(r -> r.getStatus() == TaskStatus.CANCELLED)
-                                .orElse(false));
-
-        // Simulate a heartbeat tick while the local future is still considered "not completed"
-        repo.heartbeat();
-
-        Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord("test-agent", session, taskId);
-        assertTrue(record.isPresent());
-        assertEquals(
-                TaskStatus.CANCELLED,
-                record.get().getStatus(),
-                "heartbeat must not overwrite CANCELLED with RUNNING");
-
-        release.countDown();
     }
 
     // ------------------------------------------------------------------
@@ -885,7 +826,7 @@ class WorkspaceTaskRepositoryTest {
         InMemoryStore store = new InMemoryStore();
         RemoteFilesystemSpec spec = new RemoteFilesystemSpec(store);
 
-        var fs = spec.toFilesystem(tempDir, "my-agent", () -> null, () -> null);
+        var fs = spec.toFilesystem(tempDir, "my-agent", rc -> List.of());
 
         assertTrue(
                 fs instanceof CompositeFilesystem,

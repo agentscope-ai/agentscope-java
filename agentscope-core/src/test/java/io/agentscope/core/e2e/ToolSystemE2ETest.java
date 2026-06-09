@@ -244,7 +244,7 @@ class ToolSystemE2ETest {
         assertNotNull(response, "Response should not be null");
 
         // Verify memory structure: user message + tool use + tool result + final answer
-        List<Msg> memory = agent.getMemory().getMessages();
+        List<Msg> memory = agent.getAgentState().getContext();
         assertTrue(
                 memory.size() >= 4,
                 "Memory should contain at least 4 messages (user, tool use, tool result, final"

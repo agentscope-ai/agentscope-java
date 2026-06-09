@@ -33,14 +33,14 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.Session;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.agent.store.InMemoryStore;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -79,7 +79,8 @@ class HarnessAgentTest {
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
 
-        assertTrue(agent.getWorkspaceManager().readAgentsMd().contains(marker));
+        assertTrue(
+                agent.getWorkspaceManager().readAgentsMd(RuntimeContext.empty()).contains(marker));
     }
 
     @Test
@@ -324,19 +325,25 @@ class HarnessAgentTest {
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
         InMemoryStore store = new InMemoryStore();
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("agent-a")
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .filesystem(new RemoteFilesystemSpec(store))
-                        .session(mock(Session.class))
-                        .build();
+                        .stateStore(mock(AgentStateStore.class))
+                        .build()) {
 
-        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "shared-memory");
+            agent.getWorkspaceManager()
+                    .writeUtf8WorkspaceRelative(
+                            RuntimeContext.empty(), "MEMORY.md", "shared-memory");
 
-        assertTrue(
-                store.get(List.of("agents", "agent-a", "users", "_default"), "/MEMORY.md") != null);
+            assertTrue(
+                    store.get(
+                                    List.of("agents", "agent-a", "users", "_default", "root"),
+                                    "/MEMORY.md")
+                            != null);
+        }
     }
 
     private static Msg userText(String text) {
@@ -379,7 +386,7 @@ class HarnessAgentTest {
 
         SubagentEntry entry =
                 entries.stream().filter(e -> "reviewer".equals(e.name())).findFirst().orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
         assertEquals(
                 defWorkspace.normalize(),
@@ -412,7 +419,7 @@ class HarnessAgentTest {
                         .filter(e -> "isolated-auto".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
         Path expected = workspace.resolve("agents/isolated-auto/workspace").normalize();
         assertEquals(
@@ -452,7 +459,7 @@ class HarnessAgentTest {
                         .filter(e -> "shared-ext".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
         assertEquals(
                 workspace.normalize(),
@@ -485,7 +492,7 @@ class HarnessAgentTest {
                         .filter(e -> "shared-inline".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) entry.factory().create();
+        HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty());
 
         assertEquals(
                 workspace.normalize(),
@@ -509,7 +516,7 @@ class HarnessAgentTest {
                         .filter(e -> "general-purpose".equals(e.name()))
                         .findFirst()
                         .orElseThrow();
-        HarnessAgent child = (HarnessAgent) gp.factory().create();
+        HarnessAgent child = (HarnessAgent) gp.factory().create(RuntimeContext.empty());
 
         assertEquals(
                 workspace.normalize(),
@@ -538,11 +545,9 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
         List<String> toolNames =
-                child.getDelegate().getToolkit().getToolSchemas().stream()
-                        .map(ToolSchema::getName)
-                        .toList();
+                child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
         assertFalse(toolNames.contains("read_file"), "disableFilesystemTools should be mirrored");
     }
 
@@ -564,7 +569,7 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
         assertNotNull(child.getCompactionHook(), "CompactionHook should be mirrored to GP child");
     }
 
@@ -609,7 +614,7 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
         HarnessAgent childB =
                 (HarnessAgent)
                         entries.stream()
@@ -617,7 +622,7 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
 
         assertEquals(
                 defWorkspace.normalize(), childA.getWorkspaceManager().getWorkspace().normalize());
@@ -662,11 +667,9 @@ class HarnessAgentTest {
                                 .findFirst()
                                 .orElseThrow()
                                 .factory()
-                                .create();
+                                .create(RuntimeContext.empty());
         List<String> toolNames =
-                child.getDelegate().getToolkit().getToolSchemas().stream()
-                        .map(ToolSchema::getName)
-                        .toList();
+                child.getToolkit().getToolSchemas().stream().map(ToolSchema::getName).toList();
         assertTrue(
                 toolNames.contains("parent_allowed"), "allowlisted inherited tool should remain");
         assertFalse(

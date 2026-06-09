@@ -48,8 +48,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Ground truth tests for DashScopeMultiAgentFormatter.
- * This test validates that the formatter output matches the expected DashScope API format
- * exactly as defined in the Python version.
+ * This test validates that the formatter output matches the expected DashScope API format.
  */
 class DashScopeMultiAgentFormatterGroundTruthTest {
 
@@ -73,13 +72,13 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
     static void setUp() throws IOException {
         formatter = new DashScopeMultiAgentFormatter();
 
-        // Create a temporary image file (matching Python test setup)
+        // Create a temporary image file.
         // Use unique filename to avoid conflicts with other test classes
         imagePath = "./image_multiagent_formatter.png";
         File imageFile = new File(imagePath);
         Files.write(imageFile.toPath(), "fake image content".getBytes());
 
-        // Mock audio path (matching Python test)
+        // Mock audio path
         mockAudioPath = "/var/folders/gf/krg8x_ws409cpw_46b2s6rjc0000gn/T/tmpfymnv2w9.wav";
 
         // Build test messages
@@ -283,7 +282,7 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
                                                         .build()))
                                 .role(MsgRole.ASSISTANT)
                                 .build(),
-                        // Tool result (note: different tool_call_id "2" in Python test)
+                        // Tool result (uses tool_call_id "2")
                         Msg.builder()
                                 .name("system")
                                 .content(

@@ -1,17 +1,28 @@
 {% if docs_top_tabs is defined and docs_top_tabs %}
-  {% set current_lang = "zh" if pagename.startswith("zh/") else "en" %}
+  {% set current_lang = "zh" if "/zh/" in pagename else "en" %}
+  {# pagename for v1 pages starts with "v1/", for v2 with "v2/"; default to v1. #}
+  {% set current_version = "v2" if pagename.startswith("v2/") else "v1" %}
   <nav
     class="docs-top-tabs"
     aria-label="Documentation sections"
     data-current-page="{{ pagename }}"
     data-current-lang="{{ current_lang }}"
+    data-current-version="{{ current_version }}"
   >
     <div class="docs-top-tabs__list">
       {% for tab in docs_top_tabs %}
         {% set supported_languages = tab.get("languages", ["en", "zh"]) %}
         {% if current_lang in supported_languages %}
           {% set label = tab.get("label_zh") if current_lang == "zh" and tab.get("label_zh") else tab.get("label_en") %}
-          {% set href = tab.get("href_zh") if current_lang == "zh" and tab.get("href_zh") else tab.get("href_en") %}
+          {# href chosen by current version + language; falls back to v1 if a v2 entry is absent. #}
+          {% if current_version == "v2" %}
+            {% set href = tab.get("href_v2_zh") if current_lang == "zh" and tab.get("href_v2_zh") else tab.get("href_v2_en") %}
+            {% if not href %}
+              {% set href = tab.get("href_zh") if current_lang == "zh" and tab.get("href_zh") else tab.get("href_en") %}
+            {% endif %}
+          {% else %}
+            {% set href = tab.get("href_zh") if current_lang == "zh" and tab.get("href_zh") else tab.get("href_en") %}
+          {% endif %}
           {% if href %}
             <a
               class="docs-top-tabs__link"
@@ -20,12 +31,20 @@
               data-mirror-paths="{{ 'true' if tab.get('mirror_paths') else 'false' }}"
               data-href-en="{{ tab.get('href_en', '') }}"
               data-href-zh="{{ tab.get('href_zh', '') }}"
+              data-href-v2-en="{{ tab.get('href_v2_en', '') }}"
+              data-href-v2-zh="{{ tab.get('href_v2_zh', '') }}"
               data-url-en="{{ pathto(tab.get('href_en')) if tab.get('href_en') else '' }}"
               data-url-zh="{{ pathto(tab.get('href_zh')) if tab.get('href_zh') else '' }}"
+              data-url-v2-en="{{ pathto(tab.get('href_v2_en')) if tab.get('href_v2_en') else '' }}"
+              data-url-v2-zh="{{ pathto(tab.get('href_v2_zh')) if tab.get('href_v2_zh') else '' }}"
               data-prefixes-en="{{ tab.get('prefixes_en', []) | join('|') }}"
               data-prefixes-zh="{{ tab.get('prefixes_zh', []) | join('|') }}"
+              data-prefixes-v2-en="{{ tab.get('prefixes_v2_en', []) | join('|') }}"
+              data-prefixes-v2-zh="{{ tab.get('prefixes_v2_zh', []) | join('|') }}"
               data-sections-en="{{ tab.get('sections_en', []) | join('|') }}"
               data-sections-zh="{{ tab.get('sections_zh', []) | join('|') }}"
+              data-sections-v2-en="{{ tab.get('sections_v2_en', []) | join('|') }}"
+              data-sections-v2-zh="{{ tab.get('sections_v2_zh', []) | join('|') }}"
             >
               {{ label }}
             </a>
