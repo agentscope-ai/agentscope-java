@@ -189,13 +189,6 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
-        // External tool short-circuit: surface the call to the caller without running schema
-        // validation, preset injection, or scheduling. SchemaOnlyTool and any
-        // @Tool(externalTool=true) method end up here.
-        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
-            return Mono.just(ToolResultBlock.suspended(toolCall));
-        }
-
         // Check tool activation
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
         if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
@@ -204,6 +197,13 @@ class ToolExecutor {
                             "Unauthorized tool call: '%s' is not available", toolCall.getName());
             logger.warn(errorMsg);
             return Mono.just(ToolResultBlock.error(errorMsg));
+        }
+
+        // External tool short-circuit: once availability is authorized, surface the call without
+        // running schema validation, preset injection, or local invocation. SchemaOnlyTool and any
+        // @Tool(externalTool=true) method end up here.
+        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
+            return Mono.just(ToolResultBlock.suspended(toolCall));
         }
 
         // Validate input against schema

@@ -212,6 +212,52 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should reject inactive grouped external tools before suspension")
+    void shouldRejectInactiveGroupedExternalToolsBeforeSuspension() {
+        toolkit.createToolGroup("inactiveExternal", "Inactive external tools", false);
+        toolkit.registration()
+                .agentTool(
+                        new SchemaOnlyTool(
+                                ToolSchema.builder()
+                                        .name("external_inactive")
+                                        .description("Inactive external API")
+                                        .parameters(
+                                                Map.of(
+                                                        "type",
+                                                        "object",
+                                                        "properties",
+                                                        Map.of(
+                                                                "endpoint",
+                                                                Map.of("type", "string"))))
+                                        .build()))
+                .group("inactiveExternal")
+                .apply();
+
+        Map<String, Object> input = Map.of("endpoint", "/users");
+        ToolUseBlock externalCall =
+                ToolUseBlock.builder()
+                        .id("call-inactive-external")
+                        .name("external_inactive")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Executor should return an authorization response");
+        assertEquals(1, responses.size(), "Single external call should yield one response");
+
+        ToolResultBlock response = responses.get(0);
+        assertEquals("call-inactive-external", response.getId(), "Response should keep call id");
+        assertEquals("external_inactive", response.getName(), "Response should keep tool name");
+        assertTrue(!response.isSuspended(), "Inactive external tool must not suspend");
+        assertEquals(
+                "Error: Unauthorized tool call: 'external_inactive' is not available",
+                extractFirstText(response));
+    }
+
+    @Test
     @DisplayName("Should NOT specially handle InterruptedException in error path")
     void testToolErrorWithoutInterruptSpecialCase() {
         // Create a tool that throws RuntimeException with InterruptedException cause
