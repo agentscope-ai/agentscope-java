@@ -186,10 +186,11 @@ All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the c
 | `getId()` | `String` | Unique event identifier |
 | `getCreatedAt()` | `String` | ISO 8601 timestamp |
 | `getType()` | `AgentEventType` | Event type enum |
+| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; a slash-separated path (e.g. `"main/researcher"`) for events forwarded from a subagent |
 
 Events are grouped below; unless noted otherwise, every event also carries `getReplyId()` linking it to the message being assembled.
 
-:::{dropdown} Lifecycle events
+  :::{dropdown} Lifecycle events
 **AgentStartEvent** — agent begins a new reply.
 
     | Method | Type | Description |
@@ -300,6 +301,17 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     **ExternalExecutionResultEvent** — external system returns execution results (input event); carries `List<ToolResultBlock>`.
 :::
 
+  :::{dropdown} Subagent events
+**SubagentExposedEvent** — a subagent spawned via `agent_spawn(expose_to_user=true)` has been exposed as a user-addressable entry point. SSE / streaming consumers can use this to render a new conversation entry in the UI.
+
+| Method | Type | Description |
+|--------|------|-------------|
+| `getSubagentId()` | `String` | Unique identifier of the subagent |
+| `getAgentId()` | `String` | Agent type ID of the subagent |
+| `getSessionId()` | `String` | Session ID of the subagent |
+| `getLabel()` | `String` | User-visible label (optional) |
+:::
+
 ## Reconstructing messages from events
 
 Events and messages are not separate worlds — they are two views of the same data. The event stream from `streamEvents` can be aggregated by `replyId` / `blockId` / `toolCallId` to reconstruct a complete `AssistantMessage`, ensuring the final message state is fully recoverable from events alone.
@@ -376,7 +388,7 @@ agent.streamEvents(new UserMessage("user", "Help me fix this bug"))
 How agents emit events and messages in the ReAct loop
 :::
   :::{grid-item-card} Context
-:link: ../harness/context.html
+:link: context.html
 
 How messages are stored and persisted
 :::

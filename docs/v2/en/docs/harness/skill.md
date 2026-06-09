@@ -7,7 +7,7 @@ A skill is a packaged capability: a directory with a `SKILL.md` (purpose + instr
 
 Harness lets you install skills from two places:
 
-- **Skill marketplaces** — Git repo, Nacos, MySQL, classpath, custom backends
+- **Skill marketplaces** — Git repo, Nacos, MySQL, classpath, custom stores
 - **Workspace** — `workspace/skills/` is shared by everyone; `<userId>/skills/` isolates per user
 
 Both sources are active simultaneously — no need to choose one. On top of that you can enable a **self-learning loop**: the agent drafts skills → review gate → background curator tidies up.
@@ -53,9 +53,9 @@ HarnessAgent agent = HarnessAgent.builder()
 
 During reasoning, the agent sees skills from the repo and calls `load_skill_through_path` for whichever one it needs.
 
-## Marketplace backends
+## Marketplace stores
 
-`skillRepository(...)` is the unified entry point — pass any backend.
+`skillRepository(...)` is the unified entry point — pass any store.
 
 ### Git
 
@@ -125,7 +125,7 @@ src/main/resources/skills/
 
 Works with both standard JARs and Spring Boot fat JARs.
 
-### Multiple backends
+### Multiple stores
 
 Call `skillRepository(...)` multiple times; later ones win:
 
@@ -170,6 +170,14 @@ workspace/
 
 This requires the caller to pass `userId="alice"` in `RuntimeContext`.
 
+`workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](./filesystem) you configure — so per-user skill isolation is decoupled from the storage backend:
+
+- **Local + shell** — literally `workspace/alice/skills/...` on the host disk.
+- **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next reasoning step.
+- **Sandbox (sandbox filesystem)** — the host-side user directory is hydrated into the container's `/workspace` via workspace projection at sandbox start, so the agent reads the same copy inside the sandbox.
+
+Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](./filesystem#how-multi-user-isolation-works).
+
 ## Conflict resolution
 
 All four sources can yield a same-named skill. Priority from low to high:
@@ -196,7 +204,7 @@ Example: the team Git has a generic `code-reviewer`; the project's `workspace/sk
 
 Subagents inherit the parent's marketplaces and project-global dir automatically.
 
-When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace backends you don't want to refetch per turn. Usually don't touch it.
+When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per turn. Usually don't touch it.
 
 ## Self-learning loop (optional)
 
@@ -321,6 +329,73 @@ Marketplace skill resources start as in-memory bytes. For shell execution to wor
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 
 If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.
+
+## Running skills in a sandbox
+
+In [sandbox mode](./filesystem#mode-2-sandbox-sandboxfilesystemspec-family) every file operation and shell command runs inside an isolated container — the host is untouched. That creates a problem: a skill's scripts (`scripts/run-checks.sh`, `scripts/foo.py`, …) are authored on the host, yet the agent has to execute them inside the container. Harness makes this transparent with a three-step "materialize → project → execute-in-container" pipeline, broken down below.
+
+### Which skills end up in the sandbox
+
+Two classes of skills can run in the container, with different staging points:
+
+| Source | Where it lives before the sandbox | Path inside the sandbox |
+|--------|-----------------------------------|-------------------------|
+| Workspace skills (Layer 3 `workspace/skills/`, Layer 4 `<userId>/skills/`) | already in the workspace tree | `/workspace/skills/<name>` |
+| Marketplace skills (Layer 1 project-global, Layer 2 Git / MySQL / Nacos / classpath) | start as in-memory bytes | `/workspace/.skills-cache/<source>/<name>` |
+
+### Step 1: materialize marketplace skills to the host
+
+Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each reasoning step, `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
+
+- **Per-file SHA-256 dedup** — only changed files are rewritten; unchanged ones are skipped.
+- **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass.
+- **Exec-bit recovery** — ingestion turns resources into Strings and discards POSIX mode, so the stager re-derives `+x` heuristically: a shebang (`#!`) at byte 0, or a known script suffix (`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`), adds the execute bit (following `chmod +x` semantics — only bits that already have read get execute). Pure static assets (`.json`/`.md`/`.txt`) stay 644.
+
+Workspace skills (Layer 3 / Layer 4) skip this step — they already live in the workspace tree.
+
+### Step 2: project the workspace into the sandbox
+
+At sandbox `start()`, harness tars the workspace's "static assets" and hydrates them into the container's `/workspace`. The default projection roots (`workspaceProjectionRoots`) cover exactly the two directories skills need:
+
+```
+AGENTS.md  skills/  subagents/  knowledge/  .skills-cache/
+```
+
+So `workspace/skills/` (including `<userId>/skills/`) and the `.skills-cache/` produced by step 1 are hydrated together. The projection computes one overall SHA-256 over all included files; if it matches the previous run, hydration is skipped — so repeated `call()`s don't re-transfer identical files, and content only re-enters on change.
+
+Tunables (on `DockerFilesystemSpec` / `KubernetesFilesystemSpec` / other sandbox specs):
+
+| Method | Effect |
+|--------|--------|
+| `workspaceProjectionRoots(List)` | customize which roots are projected (default includes `skills`, `.skills-cache`) |
+| `workspaceProjectionEnabled(false)` | disable projection entirely — with it off there are no skill files in the sandbox, so scripts can't run |
+
+### Step 3: execute scripts inside the container
+
+In sandbox mode, each skill's `<files-root>` in the `<available_skills>` block is rendered with the **in-container** prefix:
+
+| Skill type | `<files-root>` |
+|------------|----------------|
+| Workspace skill | `/workspace/skills/<name>` |
+| Marketplace skill | `/workspace/.skills-cache/<source>/<name>` |
+
+So the agent simply issues:
+
+```
+execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
+```
+
+That command runs in the container and reads exactly the file that was projected in. The agent doesn't need to know which layer a skill came from — the framework computes the prefix.
+
+> If a sandbox backend mounts the workspace at a non-default location (e.g. AgentRun uses `/home/agentscope/workspace`), the `<files-root>` prefix changes accordingly, and the agent still gets a correct absolute path.
+
+### Persisting script side effects across calls
+
+If a script installs dependencies or generates artifacts (`npm install`, `pip install`, build output) and you want them on the next `call()`, give the sandbox a [snapshot](./filesystem#snapshot-strategies) (`snapshotSpec(...)`). A snapshot captures the whole `/workspace`; the next call on the same scope key restores the snapshot first and then layers projection on top, so installed dependencies don't have to be reinstalled.
+
+### Note: reading SKILL.md doesn't need the sandbox
+
+A common point of confusion: **reading** a skill (`load_skill_through_path` fetching `SKILL.md` / `references/`) goes through memory or the host filesystem and has nothing to do with the sandbox; only **running scripts via shell** requires the files to actually be inside the container. So even with projection disabled, or for a skill that ships no scripts at all, the agent can still read its instructions and reference material normally.
 
 ## Tips
 

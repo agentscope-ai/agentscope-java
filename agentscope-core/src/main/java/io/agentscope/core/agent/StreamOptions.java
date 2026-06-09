@@ -26,7 +26,7 @@ import java.util.Set;
  * <p>Controls which event types to receive and how streaming content is delivered.
  *
  * <p><b>Reasoning filtering (Issue #265):</b>
- * Some streaming backends emit both:
+ * Some streaming stores emit both:
  * <ul>
  *   <li><b>Reasoning chunks</b>: incremental deltas during the reasoning process</li>
  *   <li><b>Reasoning result</b>: the final consolidated reasoning output</li>

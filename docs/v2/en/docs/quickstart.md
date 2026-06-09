@@ -20,20 +20,12 @@ AgentScope Java requires JDK 17 or newer. Maven 3.9+ is recommended.
 ```
 
 :::{note}
-The current latest version is `2.0.0-RC1` — substitute it for `${agentscope.version}`. See the [GitHub release notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC1) for full release details.
+Substitute `${agentscope.version}` with the latest version. See [Release Notes](others/release-notes.md) for the latest version and full release details.
 :::
 
 If you only need a bare `ReActAgent` (no workspace / persistence / subagents / sandbox), depend on `agentscope-core` alone. The difference between the two is covered in [Harness Architecture](./harness/architecture.md).
 
 The DashScope / OpenAI / Anthropic / Gemini / Ollama formatters and chat models all live inside `agentscope-core`. MCP integration requires the official MCP SDK — see `agentscope-examples/documentation/pom.xml` for a working example.
-
-### Build from source
-
-```bash
-git clone -b main https://github.com/agentscope-ai/agentscope-java
-cd agentscope-java
-./mvnw -DskipTests install
-```
 
 ## Your first agent
 
@@ -76,17 +68,26 @@ public class FirstAgent {
 }
 ```
 
-After this run the workspace directory has grown:
+After this run you get two directory trees — the **workspace** and the **state store**:
 
 ```
-.agentscope/workspace/
-├── AGENTS.md                    ← write one to give the agent its persona (optional)
+.agentscope/workspace/                          ← workspace (agent content)
+├── AGENTS.md                                   ← write one to give the agent its persona (optional)
 └── agents/note-taker/
-    ├── context/demo-session/    ← AgentState auto-saved / auto-loaded
-    └── sessions/                ← never-compacted raw conversation log
+    └── sessions/                               ← never-compacted raw conversation log
+
+~/.agentscope/state/note-taker/                 ← state store (outside workspace)
+└── alice/demo-session/                         ← AgentState auto-saved / auto-loaded
+    └── agent_state.json
 ```
 
-Restart the process with the same `sessionId` and the second turn still remembers the first — because `AgentState` lives under `agents/note-taker/context/demo-session/`. After enough turns trip compaction, distilled facts first land in `workspace/memory/YYYY-MM-DD.md`, then a throttled background job merges them into `MEMORY.md`, which is injected into the system prompt on the next reasoning step.
+`AgentState` lives **outside the workspace** at `~/.agentscope/state/<agentId>/` by default — because state is a prerequisite for restoring the workspace itself (e.g. after a sandbox wipe), so it must not be entangled with workspace data. Restart the process with the same `sessionId` and the second turn still remembers the first.
+
+:::{warning}
+The default `JsonFileAgentStateStore` is a local-file backend suitable for development and single-node deployment. For production clusters, use a distributed implementation such as `RedisAgentStateStore` (provided by `agentscope-extensions-redis`) or implement your own `AgentStateStore`. See [Going to Production](./others/going-to-production.md).
+:::
+
+After enough turns trip compaction, distilled facts first land in `workspace/memory/YYYY-MM-DD.md`, then a throttled background job merges them into `MEMORY.md`, which is injected into the system prompt on the next reasoning step.
 
 ### Streaming reasoning and tool calls
 
@@ -115,9 +116,42 @@ agent.streamEvents(new UserMessage("Summarize today in three bullets."))
 Set `DASHSCOPE_API_KEY` in the environment before running. To switch providers, change the string passed to `.model(...)` and export the matching API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). When you need explicit control over timeouts or custom endpoints, build the model with `DashScopeChatModel.builder()...build()` and pass it to `.model(Model)` instead.
 :::
 
+### Multi-user concurrency
+
+The agent is **stateless between calls** — a single instance can handle requests from different users and sessions. Pass `userId` / `sessionId` via `RuntimeContext` and the agent automatically loads and isolates the corresponding conversation state:
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+// Create one agent instance at startup (singleton is fine)
+HarnessAgent agent = HarnessAgent.builder()
+        .name("note-taker")
+        .sysPrompt("You are a note-taking assistant.")
+        .model("dashscope:qwen-plus")
+        .workspace(Paths.get(".agentscope/workspace"))
+        .compaction(CompactionConfig.builder()
+                .triggerMessages(30)
+                .keepMessages(10)
+                .build())
+        .build();
+
+// In your HTTP handler — different requests pass different RuntimeContexts
+agent.call(new UserMessage(userInput), RuntimeContext.builder()
+        .sessionId(sessionId)
+        .userId(userId)
+        .build()).block();
+```
+
+Calls targeting the same `(userId, sessionId)` are automatically serialized (no concurrent writes to one session); calls to different sessions run in parallel. For full production patterns (Redis session, sandbox, skill repositories), see [Going to Production](./others/going-to-production.md).
+
 ## Next steps
 
-- [Agent](./building-blocks/agent.md) — full `ReActAgent` API, builder fields, `call` / `streamEvents` / `observe`, human-in-the-loop, Session configuration
+- [Agent](./building-blocks/agent.md) — full `ReActAgent` API, builder fields, `call` / `streamEvents` / `observe`, human-in-the-loop, `AgentStateStore` configuration
 - [Harness Architecture](./harness/architecture.md) — how `HarnessAgent`'s capabilities cooperate, how state flows
 - [Workspace](./harness/workspace.md) — `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` directory layout and loading model
 - [Filesystem](./harness/filesystem.md) — local + shell / shared store / sandbox deployment modes

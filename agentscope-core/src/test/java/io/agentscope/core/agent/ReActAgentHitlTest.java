@@ -228,8 +228,8 @@ class ReActAgentHitlTest {
 
         // Verify state has been persisted: ToolUseBlock should be in ASKING state
         Msg lastAssistant = null;
-        for (int i = agent.getState().getContext().size() - 1; i >= 0; i--) {
-            Msg m = agent.getState().getContext().get(i);
+        for (int i = agent.getAgentState().getContext().size() - 1; i >= 0; i--) {
+            Msg m = agent.getAgentState().getContext().get(i);
             if (m.getRole() == MsgRole.ASSISTANT) {
                 lastAssistant = m;
                 break;
@@ -288,8 +288,8 @@ class ReActAgentHitlTest {
         assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
 
         Msg lastAssistant = null;
-        for (int i = agent.getState().getContext().size() - 1; i >= 0; i--) {
-            Msg m = agent.getState().getContext().get(i);
+        for (int i = agent.getAgentState().getContext().size() - 1; i >= 0; i--) {
+            Msg m = agent.getAgentState().getContext().get(i);
             if (m.getRole() == MsgRole.ASSISTANT) {
                 lastAssistant = m;
                 break;
@@ -303,7 +303,7 @@ class ReActAgentHitlTest {
 
         // Context should contain a DENIED ToolResultBlock for tc1
         boolean foundDenied =
-                agent.getState().getContext().stream()
+                agent.getAgentState().getContext().stream()
                         .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
                         .anyMatch(
                                 tr ->

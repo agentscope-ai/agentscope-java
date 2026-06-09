@@ -17,9 +17,17 @@ package io.agentscope.core.skill.repository;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,12 +60,28 @@ import org.slf4j.LoggerFactory;
 public class FileSystemSkillRepository implements AgentSkillRepository {
 
     private static final Logger logger = LoggerFactory.getLogger(FileSystemSkillRepository.class);
+    private static final String SKILL_FILE_NAME = "SKILL.md";
+
     private final Path baseDir;
     private final String source;
     private boolean writeable;
 
+    /**
+     * When {@code true}, only SKILL.md is read into memory by {@link #getAllSkills()};
+     * referenced support files are left out and consumers resolve them on demand through the
+     * skill's {@code originDir}. Defaults to {@code false} to preserve historical behaviour
+     * for callers that still inspect {@code skill.getResources()}.
+     */
+    private final boolean lazy;
+
+    /**
+     * Memoises (skillDirAbsolutePath → snapshot) so that repeated {@link #getAllSkills()} calls
+     * skip the {@code readString} of any SKILL.md whose mtime + size are unchanged.
+     */
+    private final Map<Path, Snapshot> skillCache = new ConcurrentHashMap<>();
+
     public FileSystemSkillRepository(Path baseDir) {
-        this(baseDir, true, null);
+        this(baseDir, true, null, false);
     }
 
     /**
@@ -69,7 +93,7 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
      *                                  or is empty
      */
     public FileSystemSkillRepository(Path baseDir, boolean writeable) {
-        this(baseDir, writeable, null);
+        this(baseDir, writeable, null, false);
     }
 
     /**
@@ -82,8 +106,25 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
      *                                  or is empty
      */
     public FileSystemSkillRepository(Path baseDir, boolean writeable, String source) {
+        this(baseDir, writeable, source, false);
+    }
+
+    /**
+     * Creates a FileSystemSkillRepository with explicit lazy mode.
+     *
+     * @param baseDir The base directory containing skill subdirectories (must not be null)
+     * @param writeable Whether the repository supports write operations
+     * @param source The custom source identifier for skills (null to use default)
+     * @param lazy when {@code true}, support files are NOT pre-loaded; consumers must resolve
+     *     them via the skill's {@code originDir}. Use this together with a
+     *     {@code load_skill_through_path} disk-fallback for large skill libraries
+     * @throws IllegalArgumentException if baseDir is null, doesn't exist, is not a directory,
+     *                                  or is empty
+     */
+    public FileSystemSkillRepository(Path baseDir, boolean writeable, String source, boolean lazy) {
         this.writeable = writeable;
         this.source = source;
+        this.lazy = lazy;
         if (baseDir == null) {
             throw new IllegalArgumentException("Base directory cannot be null");
         }
@@ -102,11 +143,30 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
                     "Base directory is not a directory: " + this.baseDir);
         }
 
-        logger.info("FileSystemSkillRepository initialized with base directory: {}", this.baseDir);
+        logger.info(
+                "FileSystemSkillRepository initialized [baseDir={}, lazy={}]", this.baseDir, lazy);
+    }
+
+    /** Whether this repository only reads SKILL.md and defers support-file loading. */
+    public boolean isLazy() {
+        return lazy;
     }
 
     @Override
     public AgentSkill getSkill(String name) {
+        // Single-skill lookup is rare on the hot path; just go through the same cache by
+        // running getAllSkills(), and pick the matching one. This keeps mtime invalidation
+        // logic in one place.
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+        for (AgentSkill skill : getAllSkills()) {
+            if (name.equals(skill.getName())) {
+                return skill;
+            }
+        }
+        // Fallback path for cases where a skill was just written and the cache hasn't seen
+        // it: read directly. Honour the lazy flag.
         return SkillFileSystemHelper.loadSkill(baseDir, name, getSource());
     }
 
@@ -117,8 +177,50 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
 
     @Override
     public List<AgentSkill> getAllSkills() {
-        return SkillFileSystemHelper.getAllSkills(baseDir, getSource());
+        List<AgentSkill> out = new ArrayList<>();
+        Set<Path> seenDirs = new HashSet<>();
+        try (Stream<Path> subdirs = Files.list(baseDir)) {
+            for (Path dir : (Iterable<Path>) subdirs::iterator) {
+                if (!Files.isDirectory(dir)) {
+                    continue;
+                }
+                Path skillFile = dir.resolve(SKILL_FILE_NAME);
+                if (!Files.exists(skillFile)) {
+                    continue;
+                }
+                Path key = dir.toAbsolutePath().normalize();
+                seenDirs.add(key);
+                try {
+                    BasicFileAttributes attrs =
+                            Files.readAttributes(skillFile, BasicFileAttributes.class);
+                    long mtime = attrs.lastModifiedTime().toMillis();
+                    long size = attrs.size();
+                    Snapshot cached = skillCache.get(key);
+                    if (cached != null && cached.mtime == mtime && cached.size == size) {
+                        out.add(cached.skill);
+                        continue;
+                    }
+                    AgentSkill skill =
+                            SkillFileSystemHelper.loadSkillFromDirectory(dir, getSource(), !lazy);
+                    skillCache.put(key, new Snapshot(mtime, size, skill));
+                    out.add(skill);
+                } catch (IOException e) {
+                    logger.warn("Failed to stat SKILL.md for '{}': {}", dir, e.getMessage(), e);
+                } catch (Exception e) {
+                    logger.warn("Failed to load skill from '{}': {}", dir, e.getMessage(), e);
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to list skill directories", e);
+        }
+        // Evict entries whose backing directory disappeared between calls so the cache does
+        // not pin removed skills.
+        skillCache.keySet().retainAll(seenDirs);
+        return out;
     }
+
+    /** Cache entry pairing the SKILL.md mtime/size with the parsed AgentSkill. */
+    private record Snapshot(long mtime, long size, AgentSkill skill) {}
 
     @Override
     public boolean save(List<AgentSkill> skills, boolean force) {
@@ -131,7 +233,9 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
             return false;
         }
 
-        return SkillFileSystemHelper.saveSkills(baseDir, skills, force);
+        boolean ok = SkillFileSystemHelper.saveSkills(baseDir, skills, force);
+        skillCache.clear();
+        return ok;
     }
 
     @Override
@@ -141,7 +245,9 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
             return false;
         }
 
-        return SkillFileSystemHelper.deleteSkill(baseDir, skillName);
+        boolean ok = SkillFileSystemHelper.deleteSkill(baseDir, skillName);
+        skillCache.clear();
+        return ok;
     }
 
     @Override

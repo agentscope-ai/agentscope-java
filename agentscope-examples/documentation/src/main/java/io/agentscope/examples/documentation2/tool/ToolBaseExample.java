@@ -16,9 +16,12 @@
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -27,7 +30,8 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -64,13 +68,16 @@ public class ToolBaseExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) throws java.io.IOException {
-        ExampleUtils.printWelcome(
-                "ToolBase Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("ToolBase Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates a custom tool that extends ToolBase.\n"
                         + "The temperature tool will ask for confirmation when reading\n"
                         + "a location considered outside the safe allow-list.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerAgentTool(new TemperatureTool());
@@ -92,7 +99,31 @@ public class ToolBaseExample {
         System.out.println(
                 "Try: 'What is the temperature in Shanghai?' or 'Get temperature for"
                         + " /etc/passwd'\n");
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("Chat started. Type 'exit' to quit.\n");
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+            Msg userMsg = new UserMessage(input.trim());
+            System.out.print("\nAgent: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
     }
 
     /**

@@ -19,12 +19,12 @@ package io.agentscope.core.state;
  * Marker interface for persistable state objects.
  *
  * <p>Classes implementing this interface can be serialized and stored by {@link
- * io.agentscope.core.session.Session} implementations. The recommended approach is to use Java
+ * io.agentscope.core.state.AgentStateStore} implementations. The recommended approach is to use Java
  * Records for simple state objects.
  *
  * <p>Existing domain objects (like {@link io.agentscope.core.message.Msg}) can implement this
  * interface directly to avoid conversion overhead.
  *
- * @see io.agentscope.core.session.Session
+ * @see io.agentscope.core.state.AgentStateStore
  */
 public interface State {}

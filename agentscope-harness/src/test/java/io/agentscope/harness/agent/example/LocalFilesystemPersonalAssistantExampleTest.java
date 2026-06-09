@@ -77,7 +77,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
     void localFilesystem_filesPersistAcrossCalls() throws Exception {
         Files.createDirectories(workspace);
 
-        // Build the agent with a LocalFilesystemWithShell backend.
+        // Build the agent with a LocalFilesystemWithShell store.
         // No distributed store, no sandbox — all operations go straight to disk.
         HarnessAgent agent =
                 HarnessAgent.builder()

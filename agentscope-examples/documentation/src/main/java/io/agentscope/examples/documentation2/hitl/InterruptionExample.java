@@ -17,6 +17,7 @@ package io.agentscope.examples.documentation2.hitl;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
@@ -31,8 +32,6 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
-import io.agentscope.examples.documentation2.common.MsgUtils;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -49,7 +48,7 @@ import reactor.core.publisher.Flux;
  *       {@code next.apply()}.</li>
  *   <li>{@code ActingChunkEvent} → tap {@code ToolResultTextDeltaEvent} in acting stream.</li>
  *   <li>{@code ErrorEvent} → {@code doOnError()} on the agent stream.</li>
- *   <li>{@code agent.getMemory().getMessages()} → {@code agent.getState().getContext()}.</li>
+ *   <li>{@code agent.getMemory().getMessages()} → {@code agent.getAgentState().getContext()}.</li>
  *   <li>Removed {@code .memory(new InMemoryMemory())}.</li>
  *   <li>{@code .hooks(List)} → {@code .middleware(...)}.</li>
  *   <li>{@code agent.interrupt(Msg)} is still the public API — no change needed.</li>
@@ -64,13 +63,16 @@ public class InterruptionExample {
      * @throws Exception if an I/O error occurs
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "Interruption Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Interruption Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "This example demonstrates user-initiated interruption of agent execution.\n"
                         + "The agent will start a long-running task and be interrupted after 2"
                         + " seconds.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new LongRunningTools());
@@ -100,7 +102,7 @@ public class InterruptionExample {
                         "User",
                         "Please process the 'customer_data' dataset with 'analyze' operation.");
 
-        System.out.println("\nUser: " + MsgUtils.getTextContent(userMsg));
+        System.out.println("\nUser: " + userMsg.getTextContent());
         System.out.println("\nStarting agent execution...");
         System.out.println(
                 "The agent will be interrupted after 2 seconds to demonstrate interruption"
@@ -114,8 +116,7 @@ public class InterruptionExample {
                                 Msg response = agent.call(userMsg).block();
                                 if (response != null) {
                                     System.out.println(
-                                            "\n[Agent Response] "
-                                                    + MsgUtils.getTextContent(response));
+                                            "\n[Agent Response] " + response.getTextContent());
                                 }
                             } catch (Exception e) {
                                 System.err.println("[Error] " + e.getMessage());
@@ -143,7 +144,7 @@ public class InterruptionExample {
             System.out.println("5. Agent returned a user-friendly recovery message");
             System.out.println(
                     "\nContext contains "
-                            + agent.getState().getContext().size()
+                            + agent.getAgentState().getContext().size()
                             + " messages including fake results and recovery.");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -159,7 +160,10 @@ public class InterruptionExample {
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
             System.out.println("[Middleware] Agent preCall: " + agent.getName());
             return next.apply(input)
                     .doOnComplete(
@@ -169,7 +173,10 @@ public class InterruptionExample {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             input.toolCalls()
                     .forEach(
                             tc ->

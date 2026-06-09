@@ -93,7 +93,7 @@ public final class WorkspaceMountSupport {
     }
 
     /**
-     * Top-level {@link BindMountEntry} instances keyed by entry key, for backends that only apply
+     * Top-level {@link BindMountEntry} instances keyed by entry key, for stores that only apply
      * flat manifest entries (Docker {@code -v}, Kubernetes HostPath).
      */
     public static Map<String, BindMountEntry> topLevelBindMounts(WorkspaceSpec spec) {

@@ -29,7 +29,7 @@ import io.agentscope.core.agent.RuntimeContext;
  * <p><b>Phase B-0:</b> Implementations should bake {@code parentRc.getUserId()} and
  * {@code parentRc.getSessionId()} into the child agent's persisted {@code SessionKey} so that
  * {@code AgentState} stays isolated per (user, parent-session) — regardless of which
- * {@link io.agentscope.core.session.Session} backend (Workspace / Redis / InMemory / custom) is
+ * {@link io.agentscope.core.state.AgentStateStore} backend (Workspace / Redis / InMemory / custom) is
  * configured. Both fields are nullable; when absent the child falls back to the legacy single
  * bucket form keyed only by declaration name.
  */
