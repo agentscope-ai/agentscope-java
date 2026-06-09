@@ -183,4 +183,40 @@ class ReActAgentMiddlewareIntegrationTest {
                 modelCallEnters,
                 "reasoning and modelCall enter counts must match");
     }
+
+    @Test
+    void onAgentHookFiresViaCallPath() {
+        List<String> trace = new CopyOnWriteArrayList<>();
+        ReActAgent agent =
+                buildAgent(new FixedTextModel("ok"), List.of(new RecordingMiddleware("A", trace)));
+
+        // Use call() instead of streamEvents() — this is the path reported in the bug
+        Msg reply = agent.call(List.of()).block();
+        assertNotNull(reply);
+
+        assertTrue(trace.contains("A:reply:enter"), "onAgent should fire via call(): " + trace);
+        assertTrue(trace.contains("A:reply:exit"), "onAgent should complete via call(): " + trace);
+        assertTrue(trace.contains("A:reasoning:enter"), "onReasoning should fire: " + trace);
+        assertTrue(trace.contains("A:modelCall:enter"), "onModelCall should fire: " + trace);
+    }
+
+    @Test
+    void onAgentHookOnionOrderingViaCallPath() {
+        List<String> trace = new CopyOnWriteArrayList<>();
+        ReActAgent agent =
+                buildAgent(
+                        new FixedTextModel("ok"),
+                        List.of(
+                                new RecordingMiddleware("A", trace),
+                                new RecordingMiddleware("B", trace)));
+
+        agent.call(List.of()).block();
+
+        int aEnter = trace.indexOf("A:reply:enter");
+        int bEnter = trace.indexOf("B:reply:enter");
+        int aExit = trace.indexOf("A:reply:exit");
+        int bExit = trace.indexOf("B:reply:exit");
+        assertTrue(aEnter >= 0 && bEnter > aEnter, "outer enters first via call(): " + trace);
+        assertTrue(aExit > bExit && bExit > aEnter, "outer exits last via call(): " + trace);
+    }
 }

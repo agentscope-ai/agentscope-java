@@ -576,7 +576,24 @@ public class ReActAgent extends StructuredOutputCapableAgent implements AutoClos
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
-        return doCallInner(msgs).flatMap(result -> saveStateToSession().thenReturn(result));
+        // When called from streamEvents(), the onAgent middleware chain is already applied
+        // at the Flux<AgentEvent> level (activeEventSink is set). Skip to avoid double
+        // invocation. For direct call() usage, apply the onAgent chain here.
+        if (middlewares.isEmpty() || activeEventSink.get() != null) {
+            return doCallInner(msgs).flatMap(result -> saveStateToSession().thenReturn(result));
+        }
+
+        AtomicReference<Msg> resultHolder = new AtomicReference<>();
+        Function<AgentInput, Flux<AgentEvent>> core =
+                input ->
+                        doCallInner(input.msgs())
+                                .flatMap(result -> saveStateToSession().thenReturn(result))
+                                .doOnNext(resultHolder::set)
+                                .flatMapMany(ignored -> Flux.<AgentEvent>empty());
+
+        return MiddlewareChain.build(middlewares, this, MiddlewareBase::onAgent, core)
+                .apply(new AgentInput(msgs))
+                .then(Mono.fromSupplier(resultHolder::get));
     }
 
     private Mono<Msg> doCallInner(List<Msg> msgs) {
