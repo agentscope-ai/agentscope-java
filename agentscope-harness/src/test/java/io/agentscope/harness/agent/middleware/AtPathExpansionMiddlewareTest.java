@@ -18,11 +18,8 @@ package io.agentscope.harness.agent.middleware;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -145,23 +142,6 @@ class AtPathExpansionMiddlewareTest {
         assertEquals(-1, secondBlock, "duplicate references should produce one block, not two");
     }
 
-    @Test
-    void expandsPathWhenAgentAlreadyHasRuntimeContext(
-            @TempDir Path project, @TempDir Path workspace) throws IOException {
-        Files.writeString(project.resolve("README.md"), "WITH_CONTEXT", StandardCharsets.UTF_8);
-
-        WorkspaceManager wm = workspaceManagerFor(project, workspace);
-        AtPathExpansionMiddleware mw = new AtPathExpansionMiddleware(wm);
-        Agent agent = mock(Agent.class);
-        when(agent.getRuntimeContext())
-                .thenReturn(RuntimeContext.builder().sessionId("ctx-session").build());
-        Msg user = userMsg("Open @./README.md");
-
-        List<Msg> result = runOnAgent(mw, agent, user);
-
-        assertTrue(result.get(0).getTextContent().contains("WITH_CONTEXT"));
-    }
-
     // -----------------------------------------------------------------
     //  helpers
     // -----------------------------------------------------------------
@@ -198,14 +178,11 @@ class AtPathExpansionMiddlewareTest {
      * the rewritten {@link AgentInput}, then returns its messages.
      */
     private static List<Msg> runOnAgent(AtPathExpansionMiddleware mw, Msg... msgs) {
-        return runOnAgent(mw, null, msgs);
-    }
-
-    private static List<Msg> runOnAgent(AtPathExpansionMiddleware mw, Agent agent, Msg... msgs) {
         AgentInput input = new AgentInput(List.of(msgs));
         List<Msg> captured = new ArrayList<>();
         mw.onAgent(
-                        agent,
+                        (Agent) null,
+                        null,
                         input,
                         in -> {
                             captured.addAll(in.msgs());

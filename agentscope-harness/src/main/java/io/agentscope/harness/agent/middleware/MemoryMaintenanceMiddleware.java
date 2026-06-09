@@ -86,9 +86,11 @@ public class MemoryMaintenanceMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
-        RuntimeContext runtimeContext = agent != null ? agent.getRuntimeContext() : null;
-        final RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+            Agent agent,
+            RuntimeContext ctx,
+            AgentInput input,
+            Function<AgentInput, Flux<AgentEvent>> next) {
+        final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         return next.apply(input).doOnComplete(() -> maybeRunMaintenance(rc));
     }
 

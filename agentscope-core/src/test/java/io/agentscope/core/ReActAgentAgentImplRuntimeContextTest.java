@@ -17,6 +17,7 @@ package io.agentscope.core;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.Agent;
@@ -28,7 +29,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.Middleware;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
@@ -61,7 +62,7 @@ class ReActAgentAgentImplRuntimeContextTest {
         }
     }
 
-    private static final class CapturingMiddleware implements Middleware {
+    private static final class CapturingMiddleware implements MiddlewareBase {
         private final boolean shortCircuit;
         private final AtomicReference<RuntimeContext> seen = new AtomicReference<>();
 
@@ -71,14 +72,18 @@ class ReActAgentAgentImplRuntimeContextTest {
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
-            seen.set(agent.getRuntimeContext());
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
+            seen.set(ctx);
             return shortCircuit ? Flux.empty() : next.apply(input);
         }
 
         @Override
         public Flux<AgentEvent> onReasoning(
                 Agent agent,
+                RuntimeContext ctx,
                 ReasoningInput input,
                 Function<ReasoningInput, Flux<AgentEvent>> next) {
             return next.apply(input);
@@ -87,6 +92,7 @@ class ReActAgentAgentImplRuntimeContextTest {
         @Override
         public Flux<AgentEvent> onModelCall(
                 Agent agent,
+                RuntimeContext ctx,
                 ModelCallInput input,
                 Function<ModelCallInput, Flux<AgentEvent>> next) {
             return next.apply(input);
@@ -94,17 +100,20 @@ class ReActAgentAgentImplRuntimeContextTest {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             return next.apply(input);
         }
 
         @Override
-        public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
             return Mono.just(currentPrompt);
         }
     }
 
-    private static ReActAgent buildAgent(Middleware middleware) {
+    private static ReActAgent buildAgent(MiddlewareBase middleware) {
         return ReActAgent.builder()
                 .name("asst")
                 .sysPrompt("hello-system")
@@ -115,28 +124,34 @@ class ReActAgentAgentImplRuntimeContextTest {
     }
 
     @Test
-    void agentImplRunsCoreLifecycleWithPendingRuntimeContext() {
+    void streamEventsRunsCoreLifecycleWithRuntimeContext() {
         CapturingMiddleware middleware = new CapturingMiddleware(false);
         ReActAgent agent = buildAgent(middleware);
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().sessionId("runtime-context-session").build();
 
-        List<AgentEvent> events = agent.agentImpl(List.of()).collectList().block();
+        List<AgentEvent> events =
+                agent.streamEvents(List.of(), runtimeContext).collectList().block();
 
         assertNotNull(events);
         assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
-        assertNotNull(middleware.seen.get());
+        assertSame(runtimeContext, middleware.seen.get());
         assertNull(agent.getRuntimeContext());
     }
 
     @Test
-    void agentImplClearsPendingRuntimeContextWhenShortCircuited() {
+    void streamEventsClearsRuntimeContextWhenShortCircuited() {
         CapturingMiddleware middleware = new CapturingMiddleware(true);
         ReActAgent agent = buildAgent(middleware);
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().sessionId("runtime-context-session").build();
 
-        List<AgentEvent> events = agent.agentImpl(List.of()).collectList().block();
+        List<AgentEvent> events =
+                agent.streamEvents(List.of(), runtimeContext).collectList().block();
 
         assertNotNull(events);
         assertTrue(events.isEmpty(), events.toString());
-        assertNotNull(middleware.seen.get());
+        assertSame(runtimeContext, middleware.seen.get());
         assertNull(agent.getRuntimeContext());
     }
 }

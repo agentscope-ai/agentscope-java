@@ -65,7 +65,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, "BASE\n").block();
+        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
         assertNotNull(prompt);
         // Project + Workspace lines
         assertTrue(prompt.contains("Project (the user's source tree"));
@@ -93,7 +93,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, "BASE\n").block();
+        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
         assertNotNull(prompt);
         assertTrue(prompt.contains("Additional roots: " + shared.toAbsolutePath()));
     }
@@ -109,7 +109,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, "BASE\n").block();
+        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
         assertNotNull(prompt);
         assertTrue(
                 prompt.contains("UNRESTRICTED"), () -> "UNRESTRICTED mode not surfaced: " + prompt);
@@ -123,10 +123,11 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
         Agent agent = mock(Agent.class);
-        when(agent.getRuntimeContext())
-                .thenReturn(RuntimeContext.builder().sessionId("workspace-session").build());
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().sessionId("workspace-session").build();
+        when(agent.getRuntimeContext()).thenReturn(runtimeContext);
 
-        String prompt = mw.onSystemPrompt(agent, "BASE\n").block();
+        String prompt = mw.onSystemPrompt(agent, runtimeContext, "BASE\n").block();
 
         assertNotNull(prompt);
         assertTrue(prompt.contains("Project (the user's source tree"));

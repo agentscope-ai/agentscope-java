@@ -17,19 +17,24 @@ package io.agentscope.examples.documentation2.middleware;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /**
  * ModelCallMiddlewareExample - Demonstrates intercepting the model API call via
- * {@link MiddlewareBase#onModelCall(Agent, ModelCallInput, Function)}.
+ * {@link MiddlewareBase#onModelCall(Agent, RuntimeContext, ModelCallInput, Function)}.
  *
  * <p>{@code onModelCall} wraps every call to the underlying model (LLM), giving you access to
  * the raw request before it is sent and the raw event stream as it arrives. This is useful for:
@@ -66,11 +71,14 @@ public class ModelCallMiddlewareExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) throws java.io.IOException {
-        ExampleUtils.printWelcome(
-                "Model Call Middleware Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Model Call Middleware Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates onModelCall() to log request metadata and measure latency.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         AuditingMiddleware auditMiddleware = new AuditingMiddleware();
 
@@ -89,7 +97,31 @@ public class ModelCallMiddlewareExample {
                         .build();
 
         System.out.println("Sending a few messages to observe middleware logging ...\n");
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("Chat started. Type 'exit' to quit.\n");
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+            Msg userMsg = new UserMessage(input.trim());
+            System.out.print("\nAgent: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
 
         System.out.println("\n--- Audit Summary ---");
         System.out.println("Total model calls intercepted: " + auditMiddleware.callCount.get());
@@ -122,6 +154,7 @@ public class ModelCallMiddlewareExample {
         @Override
         public Flux<AgentEvent> onModelCall(
                 Agent agent,
+                RuntimeContext ctx,
                 ModelCallInput input,
                 Function<ModelCallInput, Flux<AgentEvent>> next) {
 

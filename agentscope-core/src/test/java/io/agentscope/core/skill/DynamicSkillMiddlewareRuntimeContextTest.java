@@ -50,7 +50,7 @@ class DynamicSkillMiddlewareRuntimeContextTest {
         CapturingDynamicSkillMiddleware middleware =
                 new CapturingDynamicSkillMiddleware(List.of(skillRepo()));
 
-        String prompt = middleware.onSystemPrompt(null, "BASE").block();
+        String prompt = middleware.onSystemPrompt(null, RuntimeContext.empty(), "BASE").block();
 
         assertNotNull(prompt);
         assertTrue(prompt.startsWith("BASE"));
@@ -58,15 +58,14 @@ class DynamicSkillMiddlewareRuntimeContextTest {
     }
 
     @Test
-    void onSystemPromptUsesAgentRuntimeContextWhenAvailable() {
+    void onSystemPromptUsesSuppliedRuntimeContext() {
         RuntimeContext runtimeContext =
                 RuntimeContext.builder().sessionId("dynamic-skill-session").build();
         Agent agent = mock(Agent.class);
-        when(agent.getRuntimeContext()).thenReturn(runtimeContext);
         CapturingDynamicSkillMiddleware middleware =
                 new CapturingDynamicSkillMiddleware(List.of(skillRepo()));
 
-        String prompt = middleware.onSystemPrompt(agent, "BASE").block();
+        String prompt = middleware.onSystemPrompt(agent, runtimeContext, "BASE").block();
 
         assertNotNull(prompt);
         assertSame(runtimeContext, middleware.seen.get());

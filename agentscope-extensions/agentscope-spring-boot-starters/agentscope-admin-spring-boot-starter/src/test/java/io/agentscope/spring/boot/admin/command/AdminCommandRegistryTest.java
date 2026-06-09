@@ -74,7 +74,7 @@ class AdminCommandRegistryTest {
                 new AdminCommand(
                         "a.compact",
                         "A",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "POST",
                         "/a",
@@ -86,7 +86,7 @@ class AdminCommandRegistryTest {
                 new AdminCommand(
                         "a.abort",
                         "B",
-                        "Session",
+                        "AgentStateStore",
                         CommandPlane.DATA,
                         "POST",
                         "/b",

@@ -289,6 +289,10 @@ public final class AgentSpecLoader {
 
         SubagentDeclaration.Mode declMode = parseDeclarationMode(asString(fm.get("mode")), name);
         boolean hidden = asBoolean(fm.get("hidden"), false);
+        Boolean exposeToUser = asNullableBoolean(fm.get("expose_to_user"));
+        if (exposeToUser == null) {
+            exposeToUser = asNullableBoolean(fm.get("exposeToUser"));
+        }
 
         List<String> tools = parseToolNames(asString(fm.get("tools")));
 
@@ -304,6 +308,7 @@ public final class AgentSpecLoader {
                         .variant(variant)
                         .mode(declMode)
                         .hidden(hidden)
+                        .exposeToUser(exposeToUser)
                         .tools(tools.isEmpty() ? null : tools);
 
         if (workspacePath != null) {
@@ -347,6 +352,19 @@ public final class AgentSpecLoader {
         if (v instanceof Boolean b) return b;
         String s = v.toString().trim();
         if (s.isEmpty()) return def;
+        return Boolean.parseBoolean(s);
+    }
+
+    /**
+     * Parses a tri-state boolean: {@code null} when the key is absent or blank (no opinion),
+     * otherwise the parsed boolean. Used for front-matter flags that distinguish "unset" from
+     * an explicit {@code false}.
+     */
+    private static Boolean asNullableBoolean(Object v) {
+        if (v == null) return null;
+        if (v instanceof Boolean b) return b;
+        String s = v.toString().trim();
+        if (s.isEmpty()) return null;
         return Boolean.parseBoolean(s);
     }
 

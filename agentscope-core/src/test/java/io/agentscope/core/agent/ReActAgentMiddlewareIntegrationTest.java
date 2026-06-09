@@ -17,8 +17,6 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -29,7 +27,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.middleware.Middleware;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
@@ -41,7 +39,6 @@ import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -76,16 +73,8 @@ class ReActAgentMiddlewareIntegrationTest {
         }
     }
 
-    private static final class MiddlewareMarker {
-        private final String value;
-
-        private MiddlewareMarker(String value) {
-            this.value = value;
-        }
-    }
-
     /** Records entry/exit at every middleware hook to a shared trace list. */
-    private static final class RecordingMiddleware implements Middleware {
+    private static final class RecordingMiddleware implements MiddlewareBase {
         private final String tag;
         private final List<String> trace;
 
@@ -96,7 +85,10 @@ class ReActAgentMiddlewareIntegrationTest {
 
         @Override
         public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":reply:enter");
             return next.apply(input).doOnComplete(() -> trace.add(tag + ":reply:exit"));
         }
@@ -104,6 +96,7 @@ class ReActAgentMiddlewareIntegrationTest {
         @Override
         public Flux<AgentEvent> onReasoning(
                 Agent agent,
+                RuntimeContext ctx,
                 ReasoningInput input,
                 Function<ReasoningInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":reasoning:enter");
@@ -113,6 +106,7 @@ class ReActAgentMiddlewareIntegrationTest {
         @Override
         public Flux<AgentEvent> onModelCall(
                 Agent agent,
+                RuntimeContext ctx,
                 ModelCallInput input,
                 Function<ModelCallInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":modelCall:enter");
@@ -121,51 +115,22 @@ class ReActAgentMiddlewareIntegrationTest {
 
         @Override
         public Flux<AgentEvent> onActing(
-                Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
             trace.add(tag + ":acting:enter");
             return next.apply(input).doOnComplete(() -> trace.add(tag + ":acting:exit"));
         }
 
         @Override
-        public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
             trace.add(tag + ":systemPrompt");
             return Mono.just(currentPrompt);
         }
     }
 
-    private static final class RuntimeContextMiddleware implements Middleware {
-        private final AtomicReference<RuntimeContext> seen = new AtomicReference<>();
-
-        @Override
-        public Flux<AgentEvent> onAgent(
-                Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
-            RuntimeContext rc = agent.getRuntimeContext();
-            assertNotNull(rc);
-            rc.put(MiddlewareMarker.class, new MiddlewareMarker("from-on-agent"));
-            seen.set(rc);
-            return next.apply(input);
-        }
-
-        @Override
-        public Flux<AgentEvent> onReasoning(
-                Agent agent,
-                ReasoningInput input,
-                Function<ReasoningInput, Flux<AgentEvent>> next) {
-            RuntimeContext rc = agent.getRuntimeContext();
-            assertNotNull(rc);
-            assertSame(seen.get(), rc);
-            MiddlewareMarker marker = rc.get(MiddlewareMarker.class);
-            assertNotNull(marker);
-            assertEquals("from-on-agent", marker.value);
-            return next.apply(input);
-        }
-
-        RuntimeContext seenContext() {
-            return seen.get();
-        }
-    }
-
-    private static ReActAgent buildAgent(ChatModelBase model, List<Middleware> middlewares) {
+    private static ReActAgent buildAgent(ChatModelBase model, List<MiddlewareBase> middlewares) {
         return ReActAgent.builder()
                 .name("asst")
                 .sysPrompt("hello-system")
@@ -225,30 +190,5 @@ class ReActAgentMiddlewareIntegrationTest {
                 reasoningEnters,
                 modelCallEnters,
                 "reasoning and modelCall enter counts must match");
-    }
-
-    @Test
-    void onAgentHookCanAccessLiveRuntimeContext() {
-        RuntimeContextMiddleware middleware = new RuntimeContextMiddleware();
-        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(middleware));
-
-        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
-
-        assertNotNull(events);
-        assertNotNull(middleware.seenContext());
-        assertNull(agent.getRuntimeContext());
-    }
-
-    @Test
-    void onAgentHookSeesCallerSuppliedRuntimeContext() {
-        RuntimeContextMiddleware middleware = new RuntimeContextMiddleware();
-        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(middleware));
-        RuntimeContext supplied = RuntimeContext.builder().sessionId("supplied-session").build();
-
-        List<AgentEvent> events = agent.streamEvents(List.of(), supplied).collectList().block();
-
-        assertNotNull(events);
-        assertSame(supplied, middleware.seenContext());
-        assertNull(agent.getRuntimeContext());
     }
 }

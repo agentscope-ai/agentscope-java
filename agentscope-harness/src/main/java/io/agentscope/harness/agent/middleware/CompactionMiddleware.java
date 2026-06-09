@@ -67,12 +67,14 @@ public class CompactionMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
         if (!(agent instanceof ReActAgent reActAgent)) {
             return next.apply(input);
         }
-        RuntimeContext runtimeContext = agent != null ? agent.getRuntimeContext() : null;
-        final RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+        final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
 
         return Flux.defer(
                 () -> {
@@ -108,7 +110,9 @@ public class CompactionMiddleware implements MiddlewareBase {
                                             return next.apply(input);
                                         }
                                         List<Msg> compacted = optResult.get();
-                                        applyToContext(reActAgent.getAgentState(), compacted);
+                                        applyToContext(
+                                                RuntimeContext.resolveAgentState(rc, reActAgent),
+                                                compacted);
                                         log.debug(
                                                 "Compacted to {} messages before reasoning",
                                                 compacted.size());

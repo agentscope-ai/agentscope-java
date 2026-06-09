@@ -70,16 +70,18 @@ public class ToolResultEvictionMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
-        RuntimeContext runtimeContext = agent != null ? agent.getRuntimeContext() : null;
-        final RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        AgentState state = agent.getAgentState();
+            Agent agent,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
+        final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         final int sizeBefore = state != null ? state.contextMutable().size() : -1;
         return next.apply(input).doOnComplete(() -> evictAddedToolResults(agent, rc, sizeBefore));
     }
 
     private void evictAddedToolResults(Agent agent, RuntimeContext rc, int sizeBefore) {
-        AgentState state = agent.getAgentState();
+        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         if (state == null || sizeBefore < 0) {
             return;
         }

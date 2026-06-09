@@ -29,7 +29,6 @@ import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
@@ -77,7 +76,7 @@ public class DynamicSubagentsMiddleware implements MiddlewareBase {
     private final Path mainWorkspace;
     private final Function<SubagentDeclaration, SubagentFactory> factoryBuilder;
     private final DefaultAgentManager agentManager;
-    private final Object subagentTool;
+    private volatile Object subagentTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
 
@@ -94,11 +93,44 @@ public class DynamicSubagentsMiddleware implements MiddlewareBase {
         this.mainWorkspace = mainWorkspace;
         this.factoryBuilder = factoryBuilder;
         this.agentManager = agentManager;
-        TaskRepository repo = taskRepository != null ? taskRepository : new DefaultTaskRepository();
-        this.taskRepository = repo;
+        java.util.Objects.requireNonNull(taskRepository, "taskRepository");
+        this.taskRepository = taskRepository;
         this.subagentTool =
-                subagentTool != null ? subagentTool : new AgentSpawnTool(agentManager, repo, 0);
-        this.taskTool = new TaskTool(repo);
+                subagentTool != null
+                        ? subagentTool
+                        : new AgentSpawnTool(agentManager, taskRepository, 0);
+        this.taskTool = new TaskTool(taskRepository);
+    }
+
+    /**
+     * Wires a gateway bridge into the internal {@link AgentSpawnTool}, enabling spawned subagents
+     * to be exposed as user-addressable threads. Only effective when the middleware owns a
+     * {@link DefaultAgentManager}.
+     */
+    public DynamicSubagentsMiddleware setGatewayBridge(
+            io.agentscope.harness.agent.gateway.SubagentGatewayBridge bridge) {
+        if (agentManager == null) {
+            return this;
+        }
+        // Mutate the bridge on the live tool instead of replacing it: the toolkit binds
+        // agent_spawn to the AgentSpawnTool instance returned by getTools() at orchestration
+        // time, so a fresh instance here would never be invoked and exposure would silently
+        // never fire.
+        if (this.subagentTool instanceof AgentSpawnTool ast) {
+            ast.setGatewayBridge(bridge);
+        } else {
+            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+        }
+        return this;
+    }
+
+    /**
+     * Returns the internal {@link DefaultAgentManager} that can re-materialize subagents, or
+     * {@code null} when none is owned. Used to wire a gateway materializer for cross-node
+     * exposed-subagent recovery.
+     */
+    public DefaultAgentManager getAgentManager() {
+        return agentManager;
     }
 
     /**
@@ -111,11 +143,11 @@ public class DynamicSubagentsMiddleware implements MiddlewareBase {
 
     @Override
     public Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
-        RuntimeContext rc = agent != null ? agent.getRuntimeContext() : null;
-        if (rc == null) {
-            rc = RuntimeContext.empty();
-        }
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
+        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         List<SubagentEntry> merged = reloadEntries(rc);
         if (agentManager != null) {
             agentManager.replaceAgents(merged);

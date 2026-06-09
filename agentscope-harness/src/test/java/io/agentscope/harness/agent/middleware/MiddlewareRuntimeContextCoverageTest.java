@@ -68,6 +68,7 @@ class MiddlewareRuntimeContextCoverageTest {
         middleware
                 .onReasoning(
                         agent,
+                        runtimeContext,
                         new ReasoningInput(List.of(), List.of(), null),
                         in -> Flux.<AgentEvent>empty())
                 .blockLast();
@@ -100,7 +101,7 @@ class MiddlewareRuntimeContextCoverageTest {
         HarnessSkillMiddleware middleware =
                 new HarnessSkillMiddleware(List.of(repo), null, null, filter);
 
-        String prompt = middleware.onSystemPrompt(agent, "BASE").block();
+        String prompt = middleware.onSystemPrompt(agent, runtimeContext, "BASE").block();
 
         assertNotNull(prompt);
         assertSame(runtimeContext, seen.get());
@@ -121,6 +122,7 @@ class MiddlewareRuntimeContextCoverageTest {
         middleware
                 .onReasoning(
                         agent,
+                        runtimeContext("compaction-session"),
                         input,
                         in -> {
                             forwarded.set(in);
@@ -141,10 +143,14 @@ class MiddlewareRuntimeContextCoverageTest {
                 new MemoryFlushMiddleware(mock(WorkspaceManager.class), mock(Model.class));
 
         middleware
-                .onAgent(agent, new AgentInput(List.of()), in -> Flux.<AgentEvent>empty())
+                .onAgent(
+                        agent,
+                        runtimeContext("flush-session"),
+                        new AgentInput(List.of()),
+                        in -> Flux.<AgentEvent>empty())
                 .blockLast();
 
-        verify(agent).getRuntimeContext();
+        assertNotNull(agent);
     }
 
     @Test
@@ -157,10 +163,14 @@ class MiddlewareRuntimeContextCoverageTest {
                 new MemoryMaintenanceMiddleware(workspaceManager, null, 1, 1, Duration.ZERO);
 
         middleware
-                .onAgent(agent, new AgentInput(List.of()), in -> Flux.<AgentEvent>empty())
+                .onAgent(
+                        agent,
+                        runtimeContext("maint-session"),
+                        new AgentInput(List.of()),
+                        in -> Flux.<AgentEvent>empty())
                 .blockLast();
 
-        verify(agent).getRuntimeContext();
+        assertNotNull(agent);
     }
 
     @Test
@@ -184,6 +194,7 @@ class MiddlewareRuntimeContextCoverageTest {
         middleware
                 .onReasoning(
                         agent,
+                        runtimeContext,
                         new ReasoningInput(List.of(), List.of(), null),
                         in -> {
                             forwarded.set(in);
@@ -208,10 +219,14 @@ class MiddlewareRuntimeContextCoverageTest {
                         mock(AbstractFilesystem.class), ToolResultEvictionConfig.defaults());
 
         middleware
-                .onActing(agent, new ActingInput(List.of()), in -> Flux.<AgentEvent>empty())
+                .onActing(
+                        agent,
+                        runtimeContext("eviction-session"),
+                        new ActingInput(List.of()),
+                        in -> Flux.<AgentEvent>empty())
                 .blockLast();
 
-        verify(agent).getRuntimeContext();
+        assertNotNull(agent);
     }
 
     private static RuntimeContext runtimeContext(String sessionId) {

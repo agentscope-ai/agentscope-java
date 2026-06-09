@@ -137,8 +137,10 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
     }
 
     @Override
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
-        RuntimeContext ctx = resolveContext(agent);
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        if (ctx == null) {
+            ctx = RuntimeContext.empty();
+        }
 
         Map<String, RepoBound> merged = mergeRepositories(ctx);
         if (merged.isEmpty()) {
@@ -190,11 +192,6 @@ public class HarnessSkillMiddleware implements MiddlewareBase {
     // ---------------------------------------------------------------------
     //  Internals
     // ---------------------------------------------------------------------
-
-    private RuntimeContext resolveContext(Agent agent) {
-        RuntimeContext rc = agent != null ? agent.getRuntimeContext() : null;
-        return rc != null ? rc : RuntimeContext.empty();
-    }
 
     /**
      * Merge skills from every repository, in compose order. Later entries with the same
