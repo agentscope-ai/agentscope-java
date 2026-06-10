@@ -459,6 +459,48 @@ public class HarnessAgent implements Agent, AutoCloseable {
         delegate.interrupt(msg);
     }
 
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext}.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     */
+    public void interrupt(RuntimeContext ctx) {
+        delegate.interrupt(ctx);
+    }
+
+    /**
+     * Interrupts the in-flight call identified by the given {@link RuntimeContext} with an
+     * associated user message.
+     *
+     * @param ctx the runtime context identifying the session to interrupt
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    public void interrupt(RuntimeContext ctx, Msg msg) {
+        delegate.interrupt(ctx, msg);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     */
+    public void interrupt(String userId, String sessionId) {
+        delegate.interrupt(userId, sessionId);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with an
+     * associated user message.
+     *
+     * @param userId the user id ({@code null} = anonymous / single-tenant)
+     * @param sessionId the session id
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    public void interrupt(String userId, String sessionId, Msg msg) {
+        delegate.interrupt(userId, sessionId, msg);
+    }
+
     // -----------------------------------------------------------------
     //  Channel / Gateway
     // -----------------------------------------------------------------
