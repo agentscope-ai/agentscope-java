@@ -424,8 +424,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Per-call slot activation. Reads {@code (userId, sessionId)} from the given RuntimeContext
      * (falling back to {@link #defaultSessionId} when absent), and atomically swaps the active
-     * {@link #state} + {@link #permissionEngine} to that slot's cached entries (loading them on
-     * first use). Safe to call from {@code beforeAgentExecution} only — caller must hold the
+     * {@code #state} + {@code #permissionEngine} to that slot's cached entries.
+     *
+     * <p>When a {@link AgentStateStore} is configured the state is always reloaded from the store
+     * at the beginning of each call so that distributed deployments (where the same sessionId may
+     * drift across machines) see the latest persisted state rather than a stale local cache entry.
+     * The per-call cost of one store read is negligible compared to the LLM round-trip.
+     *
+     * <p>Safe to call from {@code beforeAgentExecution} only — caller must hold the
      * {@code AgentBase.acquireExecution} lock.
      */
     private CallExecution activateSlotForContext(RuntimeContext ctx) {
@@ -437,19 +443,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(uid, sid);
         final String finalUid = uid;
         final String finalSid = sid;
-        AgentState loaded =
-                stateCache.computeIfAbsent(
-                        slot,
-                        k ->
-                                loadOrCreateAgentStateForSlot(
-                                        stateStore,
-                                        finalUid,
-                                        finalSid,
-                                        initialPermissionContext,
-                                        getAgentId()));
-        PermissionEngine loadedEngine =
-                permissionEngineCache.computeIfAbsent(
-                        slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+        AgentState loaded;
+        if (stateStore != null) {
+            loaded =
+                    loadOrCreateAgentStateForSlot(
+                            stateStore, finalUid, finalSid, initialPermissionContext, getAgentId());
+            stateCache.put(slot, loaded);
+        } else {
+            loaded =
+                    stateCache.computeIfAbsent(
+                            slot,
+                            k ->
+                                    loadOrCreateAgentStateForSlot(
+                                            null,
+                                            finalUid,
+                                            finalSid,
+                                            initialPermissionContext,
+                                            getAgentId()));
+        }
+        PermissionEngine loadedEngine;
+        if (stateStore != null) {
+            loadedEngine = new PermissionEngine(loaded.getPermissionContext());
+            permissionEngineCache.put(slot, loadedEngine);
+        } else {
+            loadedEngine =
+                    permissionEngineCache.computeIfAbsent(
+                            slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+        }
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot);
         if (toolkit != null) {
             toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
