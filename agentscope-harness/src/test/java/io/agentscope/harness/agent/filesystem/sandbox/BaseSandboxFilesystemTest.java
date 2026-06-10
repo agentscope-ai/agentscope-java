@@ -47,6 +47,21 @@ class BaseSandboxFilesystemTest {
                 result.matches().stream().map(match -> match.path()).collect(Collectors.toList()));
     }
 
+    @Test
+    void glob_plainPattern_keepsFindNamePatternUnchanged() {
+        FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+
+        GlobResult result = filesystem.glob(RT, "*.md", "/workspace");
+
+        assertTrue(result.isSuccess());
+        assertEquals(
+                "find '/workspace' -type f -name '*.md' 2>/dev/null | sort",
+                filesystem.lastCommand);
+        assertEquals(
+                List.of("/workspace/README.md", "/workspace/docs/guide.md"),
+                result.matches().stream().map(match -> match.path()).collect(Collectors.toList()));
+    }
+
     private static final class FakeSandboxFilesystem extends BaseSandboxFilesystem {
 
         private String lastCommand;
