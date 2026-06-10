@@ -753,23 +753,18 @@ class DashScopeChatModelTest {
                         .parameters(DashScopeParameters.builder().build())
                         .build();
 
-        GenerateOptions options =
-                GenerateOptions.builder().enableThinking(false).build();
+        GenerateOptions options = GenerateOptions.builder().enableThinking(false).build();
 
         assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
         assertFalse(request.getParameters().getEnableThinking());
     }
 
     @Test
-    @DisplayName(
-            "Should throw when per-request enableThinking=true but model stream=false")
+    @DisplayName("Should throw when per-request enableThinking=true but model stream=false")
     void testApplyThinkingModePerRequestRequiresStreaming() {
         // Model built with stream=false and no model-level thinking
         DashScopeChatModel chatModel =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .stream(false)
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
                         .build();
 
         DashScopeRequest request =
@@ -777,8 +772,7 @@ class DashScopeChatModelTest {
                         .parameters(DashScopeParameters.builder().build())
                         .build();
 
-        GenerateOptions options =
-                GenerateOptions.builder().enableThinking(true).build();
+        GenerateOptions options = GenerateOptions.builder().enableThinking(true).build();
 
         assertThrows(
                 IllegalStateException.class,
