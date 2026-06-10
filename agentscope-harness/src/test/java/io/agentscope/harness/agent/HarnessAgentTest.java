@@ -758,4 +758,120 @@ class HarnessAgentTest {
         when(tool.getParameters()).thenReturn(Map.of("type", "object", "properties", Map.of()));
         return tool;
     }
+
+    @Test
+    void perSessionInterruptPassthrough_targetByUserIdAndSessionId() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        // Activate two distinct sessions by accessing their state.
+        String uid = "u1";
+        String sidA = "sess-A";
+        String sidB = "sess-B";
+        agent.getDelegate().getAgentState(uid, sidA);
+        agent.getDelegate().getAgentState(uid, sidB);
+
+        // Interrupt session A only.
+        agent.interrupt(uid, sidA);
+
+        assertTrue(
+                agent.getDelegate().getAgentState(uid, sidA).interruptControl().isInterrupted(),
+                "session A should be interrupted");
+        assertFalse(
+                agent.getDelegate().getAgentState(uid, sidB).interruptControl().isInterrupted(),
+                "session B should NOT be interrupted");
+    }
+
+    @Test
+    void perSessionInterruptPassthrough_targetByUserIdAndSessionIdWithMsg() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        String uid = "u1";
+        String sid = "sess-X";
+        agent.getDelegate().getAgentState(uid, sid);
+
+        Msg interruptMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("stop now").build())
+                        .build();
+        agent.interrupt(uid, sid, interruptMsg);
+
+        var ctrl = agent.getDelegate().getAgentState(uid, sid).interruptControl();
+        assertTrue(ctrl.isInterrupted());
+        assertNotNull(ctrl.getUserMessage());
+        assertEquals("stop now", ctrl.getUserMessage().getTextContent());
+    }
+
+    @Test
+    void perSessionInterruptPassthrough_targetByRuntimeContext() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().userId("u2").sessionId("sess-RC").build();
+        agent.getDelegate().getAgentState(ctx.getUserId(), ctx.getSessionId());
+
+        agent.interrupt(ctx);
+
+        assertTrue(
+                agent.getDelegate()
+                        .getAgentState(ctx.getUserId(), ctx.getSessionId())
+                        .interruptControl()
+                        .isInterrupted());
+    }
+
+    @Test
+    void perSessionInterruptPassthrough_targetByRuntimeContextWithMsg() throws Exception {
+        Files.createDirectories(workspace);
+        Model model = stubModel("ok");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().userId("u3").sessionId("sess-RC2").build();
+        agent.getDelegate().getAgentState(ctx.getUserId(), ctx.getSessionId());
+
+        Msg interruptMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("cancel").build())
+                        .build();
+        agent.interrupt(ctx, interruptMsg);
+
+        var ctrl =
+                agent.getDelegate()
+                        .getAgentState(ctx.getUserId(), ctx.getSessionId())
+                        .interruptControl();
+        assertTrue(ctrl.isInterrupted());
+        assertNotNull(ctrl.getUserMessage());
+        assertEquals("cancel", ctrl.getUserMessage().getTextContent());
+    }
 }
