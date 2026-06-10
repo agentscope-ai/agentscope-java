@@ -59,10 +59,12 @@ import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
+import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
 import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
 import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
+import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
 import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware;
 import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
@@ -1034,6 +1036,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         DistributedStore distributedStore;
 
+        io.agentscope.core.bus.MessageBus messageBus;
+        java.time.Duration asyncToolTimeout;
+
         private Builder() {}
 
         /**
@@ -1558,6 +1563,26 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Sets the {@link io.agentscope.core.bus.MessageBus} for inbox-based message delivery.
+         * When set, an {@link InboxMiddleware} is automatically registered to drain the session's
+         * inbox before each reasoning step.
+         */
+        public Builder messageBus(io.agentscope.core.bus.MessageBus messageBus) {
+            this.messageBus = messageBus;
+            return this;
+        }
+
+        /**
+         * Enables {@link AsyncToolMiddleware} with the given timeout. Requires
+         * {@link #messageBus(io.agentscope.core.bus.MessageBus)} to be set. Tool executions that
+         * exceed the timeout are offloaded to the background; results are delivered via the inbox.
+         */
+        public Builder asyncToolTimeout(java.time.Duration timeout) {
+            this.asyncToolTimeout = timeout;
+            return this;
+        }
+
         /** Injects an external subagent tool (typically {@code SessionsTool}). */
         public Builder externalSubagentTool(Object tool) {
             this.externalSubagentTool = tool;
@@ -2003,6 +2028,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(
                         new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
             }
+            if (messageBus != null) {
+                inner.middleware(new InboxMiddleware(messageBus));
+            }
+
             Object capturedSubagentMw = null;
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {
@@ -2028,6 +2057,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         capturedSubagentMw = subagentsMw;
                     }
                 }
+            }
+
+            if (messageBus != null && asyncToolTimeout != null) {
+                inner.middleware(new AsyncToolMiddleware(messageBus, asyncToolTimeout));
             }
 
             // ---- Toolkit (memory / filesystem / shell tools) ----
