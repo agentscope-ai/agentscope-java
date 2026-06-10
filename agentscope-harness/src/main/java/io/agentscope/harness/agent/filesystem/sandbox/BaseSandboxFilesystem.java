@@ -319,7 +319,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
         String escapedPath = FilesystemUtils.shellQuote(path != null ? path : "/");
-        String escapedPattern = FilesystemUtils.shellQuote(pattern);
+        String findNamePattern =
+                pattern != null && pattern.startsWith("**/") ? pattern.substring(3) : pattern;
+        String escapedPattern = FilesystemUtils.shellQuote(findNamePattern);
 
         String cmd =
                 "find " + escapedPath + " -type f -name " + escapedPattern + " 2>/dev/null | sort";
