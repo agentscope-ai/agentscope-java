@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -64,10 +65,25 @@ class ToolSchemaProvider {
      * @return List of ToolSchema objects
      */
     List<ToolSchema> getToolSchemas() {
+        return buildSchemas(groupManager.getActiveToolNames());
+    }
+
+    /**
+     * Get tool schemas filtered by an explicitly supplied set of active group names, independent
+     * of the shared per-group activation flags. Per-call / stateless variant of
+     * {@link #getToolSchemas()}.
+     *
+     * @param activeGroups the group names to treat as active
+     * @return List of ToolSchema objects visible for the supplied groups (plus all ungrouped tools)
+     */
+    List<ToolSchema> getToolSchemas(Collection<String> activeGroups) {
+        return buildSchemas(groupManager.getActiveToolNames(activeGroups));
+    }
+
+    private List<ToolSchema> buildSchemas(Set<String> activeTools) {
         List<ToolSchema> schemas = new ArrayList<>();
         List<RegisteredToolFunction> registeredTools =
                 new ArrayList<>(toolRegistry.getAllRegisteredTools().values());
-        Set<String> activeTools = groupManager.getActiveToolNames();
 
         for (RegisteredToolFunction registered : registeredTools) {
             AgentTool tool = registered.getTool();

@@ -16,6 +16,7 @@
 package io.agentscope.examples.documentation2.multimodal;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -25,8 +26,8 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
-import io.agentscope.examples.documentation2.common.MsgUtils;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 /**
  * VisionExample - Demonstrates vision capabilities with images.
@@ -45,14 +46,17 @@ public class VisionExample {
      * @throws Exception if an I/O error occurs
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "Vision Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Vision Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "This example demonstrates how to use vision capabilities.\n"
                         + "The agent can analyze images and describe what it sees.\n"
                         + "\nNote: DashScope vision requires Base64-encoded images for best"
                         + " compatibility.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         ReActAgent agent =
                 ReActAgent.builder()
@@ -79,7 +83,31 @@ public class VisionExample {
         System.out.println("You can now chat with the agent normally.");
         System.out.println("=".repeat(80) + "\n");
 
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("Chat started. Type 'exit' to quit.\n");
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+            Msg userMsg = new UserMessage(input.trim());
+            System.out.print("\nAgent: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
     }
 
     private static void demonstrateVision(ReActAgent agent) {
@@ -113,7 +141,7 @@ public class VisionExample {
 
             System.out.println("\nAgent Response:");
             System.out.println("-".repeat(80));
-            System.out.println(MsgUtils.getTextContent(response));
+            System.out.println(response.getTextContent());
             System.out.println("-".repeat(80));
             System.out.println("\nVision capability verified successfully!");
         } catch (Exception e) {

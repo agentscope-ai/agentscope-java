@@ -129,7 +129,7 @@ class ReActAgentRuntimeContextTest {
                         .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         assertNotNull(out);
-        String toolOut = lastToolText(agent);
+        String toolOut = lastToolText(agent, "per-call-uid", null);
         assertTrue(
                 toolOut.contains("per-call-uid|from-pre|tool-q"),
                 "unexpected tool output: " + toolOut);
@@ -138,12 +138,16 @@ class ReActAgentRuntimeContextTest {
         assertNull(r, "unbind should clear setRuntimeContext(null)");
 
         assertTrue(
-                agent.getAgentState().getContext().stream()
+                agent
+                        .getAgentState("per-call-uid", agent.getDefaultSessionId())
+                        .getContext()
+                        .stream()
                         .anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class)));
     }
 
-    private static String lastToolText(ReActAgent agent) {
-        List<Msg> list = new ArrayList<>(agent.getAgentState().getContext());
+    private static String lastToolText(ReActAgent agent, String userId, String sessionId) {
+        String sid = sessionId != null ? sessionId : agent.getDefaultSessionId();
+        List<Msg> list = new ArrayList<>(agent.getAgentState(userId, sid).getContext());
         Collections.reverse(list);
         for (Msg m : list) {
             if (m.getContent() == null) {

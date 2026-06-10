@@ -27,7 +27,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
 import java.util.List;
 import java.util.Scanner;
 
@@ -69,13 +68,16 @@ public class StreamingConsoleExample {
      * @param args command-line arguments (ignored)
      */
     public static void main(String[] args) {
-        ExampleUtils.printWelcome(
-                "Streaming Console Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Streaming Console Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates agent.stream() with real-time token printing.\n"
                         + "Reasoning tokens are printed incrementally; tool results are\n"
                         + "printed when the tool completes.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new SimpleCalcTools());

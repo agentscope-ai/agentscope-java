@@ -211,7 +211,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Optional sandbox backends (io.agentscope.harness.agent.sandbox.impl.*) -->
+        <!-- Optional sandbox stores (io.agentscope.harness.agent.sandbox.impl.*) -->
         <dependency>
             <groupId>io.fabric8</groupId>
             <artifactId>kubernetes-client</artifactId>

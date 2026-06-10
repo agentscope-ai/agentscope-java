@@ -79,7 +79,10 @@ public enum AgentEventType {
     REQUIRE_EXTERNAL_EXECUTION("REQUIRE_EXTERNAL_EXECUTION"),
     USER_CONFIRM_RESULT("USER_CONFIRM_RESULT"),
     EXTERNAL_EXECUTION_RESULT("EXTERNAL_EXECUTION_RESULT"),
-    REQUEST_STOP("REQUEST_STOP");
+    REQUEST_STOP("REQUEST_STOP"),
+
+    @JsonAlias({"THREAD_EXPOSED"})
+    SUBAGENT_EXPOSED("SUBAGENT_EXPOSED");
 
     private final String value;
 
@@ -122,6 +125,7 @@ public enum AgentEventType {
             case "BINARY_BLOCK_DELTA" -> DATA_BLOCK_DELTA;
             case "BINARY_BLOCK_END" -> DATA_BLOCK_END;
             case "TOOL_RESULT_BINARY_DELTA" -> TOOL_RESULT_DATA_DELTA;
+            case "THREAD_EXPOSED" -> SUBAGENT_EXPOSED;
             default -> throw new IllegalArgumentException("Unknown AgentEventType value: " + raw);
         };
     }

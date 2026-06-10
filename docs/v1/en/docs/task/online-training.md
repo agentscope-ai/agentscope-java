@@ -39,7 +39,7 @@ For multi-turn dialogues or complex task flows (such as book flight → select s
 ## Architecture
 
 
-This solution uses Trinity-RFT as the training backend. Trinity-RFT is a general-purpose, flexible, and user-friendly Large Language Model (LLM) Reinforcement Fine-Tuning (RFT) framework.
+This solution uses Trinity-RFT as the training store. Trinity-RFT is a general-purpose, flexible, and user-friendly Large Language Model (LLM) Reinforcement Fine-Tuning (RFT) framework.
 
 Github: https://github.com/agentscope-ai/Trinity-RFT
 

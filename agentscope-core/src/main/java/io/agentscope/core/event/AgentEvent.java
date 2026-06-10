@@ -61,12 +61,14 @@ import java.util.UUID;
     @JsonSubTypes.Type(
             value = ExternalExecutionResultEvent.class,
             name = "EXTERNAL_EXECUTION_RESULT"),
-    @JsonSubTypes.Type(value = RequestStopEvent.class, name = "REQUEST_STOP")
+    @JsonSubTypes.Type(value = RequestStopEvent.class, name = "REQUEST_STOP"),
+    @JsonSubTypes.Type(value = SubagentExposedEvent.class, name = "SUBAGENT_EXPOSED")
 })
 public abstract class AgentEvent {
 
     private final String id;
     private final String createdAt;
+    private String source;
 
     protected AgentEvent() {
         this.id = UUID.randomUUID().toString().replace("-", "");
@@ -86,6 +88,24 @@ public abstract class AgentEvent {
 
     public String getCreatedAt() {
         return createdAt;
+    }
+
+    /**
+     * Returns the source path identifying the originating agent. {@code null} for events from the
+     * top-level (parent) agent; a slash-separated path (e.g. {@code "main/researcher"}) for events
+     * forwarded from a subagent.
+     */
+    public String getSource() {
+        return source;
+    }
+
+    /**
+     * Sets the source path and returns this event. Used by the subagent event forwarding mechanism
+     * to tag child events before injecting them into the parent's event stream.
+     */
+    public AgentEvent withSource(String source) {
+        this.source = source;
+        return this;
     }
 
     @Override

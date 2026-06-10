@@ -186,10 +186,11 @@ sequenceDiagram
 | `getId()` | `String` | 唯一事件标识符 |
 | `getCreatedAt()` | `String` | ISO 8601 时间戳 |
 | `getType()` | `AgentEventType` | 事件类型枚举 |
+| `getSource()` | `String` | 事件来源路径。顶层 Agent 为 `null`；子 Agent 事件为斜杠分隔的路径（如 `"main/researcher"`），用于区分父子 Agent 事件 |
 
 事件按类别分组如下。除特别说明外，每个事件还携带 `getReplyId()`，关联到正在构建的消息。
 
-:::{dropdown} 生命周期事件
+  :::{dropdown} 生命周期事件
 **AgentStartEvent** — 智能体开始新的回复。
 
     | 方法 | 类型 | 说明 |
@@ -300,6 +301,17 @@ sequenceDiagram
     **ExternalExecutionResultEvent** — 外部系统提供执行结果（输入事件）。携带 `List<ToolResultBlock>`。
 :::
 
+  :::{dropdown} 子 Agent 事件
+**SubagentExposedEvent** — 通过 `agent_spawn(expose_to_user=true)` 生成的子 Agent 被暴露为用户可寻址的入口点。SSE / 流式消费端可据此在 UI 上渲染新的会话入口。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getSubagentId()` | `String` | 子 Agent 的唯一标识 |
+| `getAgentId()` | `String` | 子 Agent 的 agent 类型 ID |
+| `getSessionId()` | `String` | 子 Agent 的会话 ID |
+| `getLabel()` | `String` | 用户可见的标签名（可选） |
+:::
+
 ## 从事件流重建消息
 
 事件与消息并非相互独立，而是同一数据的两种视图。`streamEvents` 产出的事件流可以按 `replyId` / `blockId` / `toolCallId` 聚合还原成完整的 `AssistantMessage`。这保证了最终消息状态可以仅凭事件流完整还原。
@@ -376,7 +388,7 @@ agent.streamEvents(new UserMessage("user", "帮我修复这个 bug"))
 智能体如何在 ReAct 循环中产出事件和消息
 :::
   :::{grid-item-card} 上下文
-:link: ../harness/context.html
+:link: context.html
 
 消息如何存储与持久化
 :::

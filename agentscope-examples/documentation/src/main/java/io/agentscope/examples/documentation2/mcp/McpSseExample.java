@@ -16,12 +16,16 @@
 package io.agentscope.examples.documentation2.mcp;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 /**
  * McpSseExample - MCP (Model Context Protocol) integration via SSE (Server-Sent Events).
@@ -53,12 +57,15 @@ public class McpSseExample {
      * @throws Exception if the MCP connection fails
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "MCP SSE Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("MCP SSE Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Connects to a remote MCP server via Server-Sent Events (SSE).\n"
                         + "Set MCP_SSE_URL to the server endpoint before running.");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         String sseUrl = System.getenv("MCP_SSE_URL");
         if (sseUrl == null || sseUrl.isBlank()) {
@@ -102,6 +109,30 @@ public class McpSseExample {
                         .toolkit(toolkit)
                         .build();
 
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("Chat started. Type 'exit' to quit.\n");
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+            Msg userMsg = new UserMessage(input.trim());
+            System.out.print("\nAgent: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
     }
 }
