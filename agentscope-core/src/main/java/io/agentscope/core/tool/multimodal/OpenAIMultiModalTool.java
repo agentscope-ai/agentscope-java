@@ -67,13 +67,16 @@ public class OpenAIMultiModalTool {
     /** Base URL for OpenAI API (defaults to https://api.openai.com). */
     private final String baseUrl;
 
+    /** Default vision model used when the caller does not specify one. */
+    private final String defaultModelName;
+
     /**
      * Create a new OpenAIMultiModalTool with default base URL.
      *
      * @param apiKey the OpenAI API key
      */
     public OpenAIMultiModalTool(String apiKey) {
-        this(apiKey, null);
+        this(apiKey, null, "gpt-4o");
     }
 
     /**
@@ -83,11 +86,27 @@ public class OpenAIMultiModalTool {
      * @param baseUrl the base URL (null for default https://api.openai.com)
      */
     public OpenAIMultiModalTool(String apiKey, String baseUrl) {
+        this(apiKey, baseUrl, "gpt-4o");
+    }
+
+    /**
+     * Create a new OpenAIMultiModalTool with custom base URL and default vision model.
+     *
+     * @param apiKey the OpenAI API key
+     * @param baseUrl the base URL (null for default https://api.openai.com)
+     * @param defaultModelName the default vision model name used when the caller omits the model
+     *     parameter (e.g., "gpt-4o" for OpenAI, or your backend's vision model name)
+     */
+    public OpenAIMultiModalTool(String apiKey, String baseUrl, String defaultModelName) {
         if (apiKey == null || apiKey.trim().isEmpty()) {
             throw new IllegalArgumentException("OpenAI API key cannot be empty.");
         }
+        if (defaultModelName == null || defaultModelName.trim().isEmpty()) {
+            throw new IllegalArgumentException("defaultModelName cannot be empty.");
+        }
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
+        this.defaultModelName = defaultModelName;
         this.client = new OpenAIClient();
     }
 
@@ -99,6 +118,7 @@ public class OpenAIMultiModalTool {
     protected OpenAIMultiModalTool(OpenAIClient client) {
         this.apiKey = "test-key";
         this.baseUrl = null;
+        this.defaultModelName = "gpt-4o";
         this.client = client;
     }
 
@@ -249,7 +269,7 @@ public class OpenAIMultiModalTool {
      *
      * @param imageUrls the URLs of the images to analyze
      * @param prompt the text prompt describing what to extract from the images
-     * @param model the vision model to use (e.g., "gpt-4o", "gpt-4-vision-preview")
+     * @param model the vision model to use (leave empty to use the configured default)
      * @param maxTokens the maximum number of tokens in the response
      * @return a ToolResultBlock containing the text description of the images
      */
@@ -272,8 +292,8 @@ public class OpenAIMultiModalTool {
             @ToolParam(
                             name = "model",
                             description =
-                                    "The vision model to use, e.g., 'gpt-4o',"
-                                            + " 'gpt-4-vision-preview'",
+                                    "The vision model to use (leave empty to use the configured"
+                                            + " default)",
                             required = false)
                     String model,
             @ToolParam(
@@ -283,7 +303,9 @@ public class OpenAIMultiModalTool {
                     Integer maxTokens) {
 
         String finalModel =
-                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("gpt-4o");
+                Optional.ofNullable(model)
+                        .filter(s -> !s.trim().isEmpty())
+                        .orElse(this.defaultModelName);
         String finalPrompt =
                 Optional.ofNullable(prompt)
                         .filter(s -> !s.trim().isEmpty())
