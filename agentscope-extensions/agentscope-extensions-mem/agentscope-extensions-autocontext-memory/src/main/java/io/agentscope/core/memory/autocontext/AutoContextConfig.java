@@ -127,6 +127,7 @@ public class AutoContextConfig {
         }
 
         public AutoContextConfig build() {
+            validate();
             AutoContextConfig result = new AutoContextConfig();
             result.largePayloadThreshold = config.largePayloadThreshold;
             result.maxToken = config.maxToken;
@@ -139,6 +140,42 @@ public class AutoContextConfig {
             result.minCompressionTokenThreshold = config.minCompressionTokenThreshold;
             result.customPrompt = config.customPrompt;
             return result;
+        }
+
+        private void validate() {
+            requirePositive(config.largePayloadThreshold, "largePayloadThreshold");
+            requirePositive(config.maxToken, "maxToken");
+            requireRatio(config.tokenRatio, "tokenRatio");
+            requireNonNegative(config.offloadSinglePreview, "offloadSinglePreview");
+            requirePositive(config.msgThreshold, "msgThreshold");
+            requireNonNegative(config.lastKeep, "lastKeep");
+            requirePositive(config.minConsecutiveToolMessages, "minConsecutiveToolMessages");
+            requireRatio(config.currentRoundCompressionRatio, "currentRoundCompressionRatio");
+            requirePositive(config.minCompressionTokenThreshold, "minCompressionTokenThreshold");
+        }
+
+        private void requirePositive(long value, String fieldName) {
+            if (value <= 0) {
+                throw new IllegalArgumentException(fieldName + " must be positive");
+            }
+        }
+
+        private void requirePositive(int value, String fieldName) {
+            if (value <= 0) {
+                throw new IllegalArgumentException(fieldName + " must be positive");
+            }
+        }
+
+        private void requireNonNegative(int value, String fieldName) {
+            if (value < 0) {
+                throw new IllegalArgumentException(fieldName + " must be non-negative");
+            }
+        }
+
+        private void requireRatio(double value, String fieldName) {
+            if (value <= 0.0 || value > 1.0) {
+                throw new IllegalArgumentException(fieldName + " must be in (0.0, 1.0]");
+            }
         }
     }
 }

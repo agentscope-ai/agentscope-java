@@ -31,12 +31,16 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /** Hook that wires auto context compression into ReActAgent. */
 @SuppressWarnings("deprecation")
 public class AutoContextHook implements Hook {
+
+    private static final Logger log = LoggerFactory.getLogger(AutoContextHook.class);
 
     private final AutoContextConfig config;
     private final io.agentscope.core.model.Model model;
@@ -96,6 +100,8 @@ public class AutoContextHook implements Hook {
             }
         } catch (Exception e) {
             registrationFailed.set(true);
+            log.warn(
+                    "Failed to register context_reload tool for agent {}", reactAgent.getName(), e);
         }
         return Mono.just(event);
     }

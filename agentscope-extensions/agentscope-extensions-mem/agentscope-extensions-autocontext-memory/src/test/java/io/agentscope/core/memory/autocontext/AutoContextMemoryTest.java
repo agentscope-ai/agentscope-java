@@ -17,19 +17,30 @@ package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 class AutoContextMemoryTest {
 
     @Test
-    void deleteMessageRemovesTheIndexedMessageFromBothBuffers() {
+    void deleteMessageRemovesOnlyTheWorkingBufferEntry() {
         AutoContextMemory memory = new AutoContextMemory(AutoContextConfig.builder().build(), null);
         Msg first = AutoContextTestSupport.userMessage("first");
         Msg second = AutoContextTestSupport.assistantMessage("second");
@@ -44,9 +55,35 @@ class AutoContextMemoryTest {
         assertEquals(2, memory.getMessages().size());
         assertEquals("first", memory.getMessages().get(0).getTextContent());
         assertEquals("third", memory.getMessages().get(1).getTextContent());
+        assertEquals(3, memory.getOriginalMemoryMsgs().size());
+        assertEquals("first", memory.getOriginalMemoryMsgs().get(0).getTextContent());
+        assertEquals("second", memory.getOriginalMemoryMsgs().get(1).getTextContent());
+        assertEquals("third", memory.getOriginalMemoryMsgs().get(2).getTextContent());
+    }
+
+    @Test
+    void deleteMessageDoesNotDeleteOriginalHistoryAfterCompression() {
+        AutoContextMemory memory =
+                new AutoContextMemory(
+                        AutoContextConfig.builder()
+                                .msgThreshold(2)
+                                .lastKeep(0)
+                                .minCompressionTokenThreshold(1)
+                                .build(),
+                        AutoContextTestSupport.recordingModel(
+                                "compressed", new AtomicReference<>()));
+        memory.addMessage(AutoContextTestSupport.userMessage("first"));
+        memory.addMessage(AutoContextTestSupport.assistantMessage("second"));
+
+        assertTrue(memory.compressIfNeeded());
+        assertEquals(2, memory.getOriginalMemoryMsgs().size());
+
+        memory.deleteMessage(0);
+
+        assertTrue(memory.getMessages().isEmpty());
         assertEquals(2, memory.getOriginalMemoryMsgs().size());
         assertEquals("first", memory.getOriginalMemoryMsgs().get(0).getTextContent());
-        assertEquals("third", memory.getOriginalMemoryMsgs().get(1).getTextContent());
+        assertEquals("second", memory.getOriginalMemoryMsgs().get(1).getTextContent());
     }
 
     @Test
@@ -108,5 +145,91 @@ class AutoContextMemoryTest {
         assertEquals(1, memory.getMessages().size());
         assertEquals("compressed", memory.getMessages().get(0).getTextContent());
         assertEquals(1, memory.getCompressionEvents().size());
+    }
+
+    @Test
+    void compressIfNeededDoesNotHoldTheLockWhileTheModelCallIsInFlight() throws Exception {
+        CountDownLatch streamStarted = new CountDownLatch(1);
+        CountDownLatch releaseModel = new CountDownLatch(1);
+        Model blockingModel =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        streamStarted.countDown();
+                        try {
+                            if (!releaseModel.await(5, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("timed out waiting for release");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(e);
+                        }
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        io.agentscope.core.message.TextBlock
+                                                                .builder()
+                                                                .text("compressed")
+                                                                .build()))
+                                        .build());
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "blocking";
+                    }
+                };
+        AutoContextMemory memory =
+                new AutoContextMemory(
+                        AutoContextConfig.builder()
+                                .largePayloadThreshold(1)
+                                .msgThreshold(2)
+                                .lastKeep(0)
+                                .minCompressionTokenThreshold(1)
+                                .build(),
+                        blockingModel);
+        memory.addMessage(
+                AutoContextTestSupport.userMessage(
+                        "first message is large enough to trigger offload"));
+        memory.addMessage(AutoContextTestSupport.assistantMessage("second"));
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Boolean> compressionFuture = executor.submit(memory::compressIfNeeded);
+            assertTrue(streamStarted.await(1, TimeUnit.SECONDS));
+
+            Future<?> addFuture =
+                    executor.submit(
+                            () -> memory.addMessage(AutoContextTestSupport.userMessage("third")));
+            addFuture.get(500, TimeUnit.MILLISECONDS);
+
+            releaseModel.countDown();
+            assertTrue(compressionFuture.get(5, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(3, memory.getMessages().size());
+        assertEquals("compressed", memory.getMessages().get(0).getTextContent());
+        assertEquals("second", memory.getMessages().get(1).getTextContent());
+        assertEquals("third", memory.getMessages().get(2).getTextContent());
+    }
+
+    @Test
+    void builderRejectsInvalidCompressionSettings() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AutoContextConfig.builder().tokenRatio(0.0).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AutoContextConfig.builder().tokenRatio(1.1).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AutoContextConfig.builder().maxToken(0).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AutoContextConfig.builder().lastKeep(-1).build());
     }
 }

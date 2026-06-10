@@ -18,7 +18,13 @@ package io.agentscope.core.memory.autocontext;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 
-/** Lightweight token estimator for compression triggers. */
+/**
+ * Lightweight token estimator for compression triggers.
+ *
+ * <p>This uses a rough {@code chars / 4} heuristic, which is usually reasonable for English but
+ * can undercount CJK-heavy content where token counts are often materially higher. Replace with a
+ * model-specific tokenizer in production-sensitive paths.
+ */
 public final class TokenCounterUtil {
     private TokenCounterUtil() {}
 

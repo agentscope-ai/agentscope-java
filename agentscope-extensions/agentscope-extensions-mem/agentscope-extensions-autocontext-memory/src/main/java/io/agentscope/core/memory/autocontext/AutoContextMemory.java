@@ -42,7 +42,7 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
 
     private final AutoContextConfig autoContextConfig;
     private final PromptConfig customPrompt;
-    private Model model;
+    private volatile Model model;
     private final List<Msg> workingMemoryStorage = new ArrayList<>();
     private final List<Msg> originalMemoryStorage = new ArrayList<>();
     private final Map<String, List<Msg>> offloadContext = new HashMap<>();
@@ -62,6 +62,15 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
         return autoContextConfig;
     }
 
+    /**
+     * Reconciles runtime context back into the working buffer.
+     *
+     * <p>The incoming context is expected to be either the same session prefix plus newly appended
+     * tail messages, or a rebuilt working context after a reset/reload. When the prefix still
+     * matches, only the new tail is appended into both working/original buffers; when it no longer
+     * matches, the working buffer is replaced and the original history is seeded only if it was
+     * still empty.
+     */
     public synchronized void mergeWithContext(List<Msg> context) {
         if (context == null || context.isEmpty()) {
             return;
@@ -165,9 +174,6 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
             return;
         }
         workingMemoryStorage.remove(index);
-        if (index < originalMemoryStorage.size()) {
-            originalMemoryStorage.remove(index);
-        }
     }
 
     public synchronized List<Msg> getOriginalMemoryMsgs() {
@@ -192,24 +198,8 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
         return compressionEvents;
     }
 
-    public synchronized boolean compressIfNeeded() {
-        if (workingMemoryStorage.isEmpty()) {
-            return false;
-        }
-
-        int tokenCount = TokenCounterUtil.calculateToken(workingMemoryStorage);
-        boolean msgCountReached =
-                workingMemoryStorage.size() >= autoContextConfig.getMsgThreshold();
-        boolean tokenReached =
-                tokenCount
-                        >= (int)
-                                (autoContextConfig.getMaxToken()
-                                        * autoContextConfig.getTokenRatio());
-        if (!msgCountReached && !tokenReached) {
-            return false;
-        }
-
-        if (tokenCount < autoContextConfig.getMinCompressionTokenThreshold()) {
+    public boolean compressIfNeeded() {
+        if (!isCompressionTriggered()) {
             return false;
         }
 
@@ -263,93 +253,72 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
         workingMemoryStorage.addAll(copyMessages(messages));
     }
 
+    private synchronized boolean isCompressionTriggered() {
+        if (workingMemoryStorage.isEmpty()) {
+            return false;
+        }
+        int tokenCount = TokenCounterUtil.calculateToken(workingMemoryStorage);
+        boolean msgCountReached =
+                workingMemoryStorage.size() >= autoContextConfig.getMsgThreshold();
+        boolean tokenReached =
+                tokenCount
+                        >= (int)
+                                (autoContextConfig.getMaxToken()
+                                        * autoContextConfig.getTokenRatio());
+        if (!msgCountReached && !tokenReached) {
+            return false;
+        }
+        return tokenCount >= autoContextConfig.getMinCompressionTokenThreshold();
+    }
+
     private boolean compressToolGroups() {
-        int cursor = 0;
-        int upperLimit = Math.max(0, workingMemoryStorage.size() - autoContextConfig.getLastKeep());
         boolean changed = false;
-        while (cursor < upperLimit) {
-            IntRange range = findToolGroup(cursor, upperLimit);
-            if (range == null) {
+        int cursor = 0;
+        while (true) {
+            CompressionCandidate candidate = planToolGroupCompression(cursor);
+            if (candidate == null) {
                 break;
             }
-            List<Msg> messages =
-                    new ArrayList<>(workingMemoryStorage.subList(range.start, range.end + 1));
-            if (TokenCounterUtil.calculateToken(messages)
+            if (TokenCounterUtil.calculateToken(candidate.source())
                     < autoContextConfig.getMinCompressionTokenThreshold()) {
-                cursor = range.end + 1;
+                cursor = candidate.end() + 1;
                 continue;
             }
-            if (compressRange(
-                    range.start,
-                    range.end,
-                    CompressionEvent.TOOL_INVOCATION_COMPRESS,
-                    PromptProvider.getPreviousRoundToolCompressPrompt(customPrompt),
-                    true)) {
+            String summary =
+                    summarizeMessages(
+                            candidate.source(), candidate.prompt(), candidate.currentRound());
+            if (applyCompression(candidate, summary)) {
                 changed = true;
-                cursor = range.start + 1;
-                upperLimit =
-                        Math.max(0, workingMemoryStorage.size() - autoContextConfig.getLastKeep());
+                cursor = candidate.start() + 1;
             } else {
-                cursor = range.end + 1;
+                cursor = candidate.end() + 1;
             }
         }
         return changed;
     }
 
     private boolean offloadLargeMessages() {
-        int limit = Math.max(0, workingMemoryStorage.size() - autoContextConfig.getLastKeep());
-        for (int i = 0; i < limit; i++) {
-            Msg msg = workingMemoryStorage.get(i);
-            if (MsgUtils.calculateMessageCharCount(msg)
-                    < autoContextConfig.getLargePayloadThreshold()) {
-                continue;
-            }
-            String uuid = UUID.randomUUID().toString();
-            List<Msg> original = List.of(msg);
-            String summary =
-                    summarizeMessages(
-                            original,
-                            PromptProvider.getCurrentRoundLargeMessagePrompt(customPrompt),
-                            false);
-            if (summary == null || summary.isBlank()) {
-                summary = fallbackSummary(original);
-            }
-            offload(uuid, original);
-            Msg compressed = compressSingleMessage(msg, summary, uuid);
-            MsgUtils.replaceMsg(workingMemoryStorage, i, i, compressed);
-            recordCompressionEvent(
-                    msg.getRole() == MsgRole.TOOL
-                            ? CompressionEvent.LARGE_MESSAGE_OFFLOAD
-                            : CompressionEvent.LARGE_MESSAGE_OFFLOAD_WITH_PROTECTION,
-                    i,
-                    i,
-                    original,
-                    compressed,
-                    buildCompressionMetadata(compressed));
-            return true;
+        CompressionCandidate candidate = planLargeMessageOffload();
+        if (candidate == null) {
+            return false;
         }
-        return false;
+        String summary =
+                summarizeMessages(candidate.source(), candidate.prompt(), candidate.currentRound());
+        return applyCompression(candidate, summary);
     }
 
     private boolean compressPreviousRounds() {
         boolean changed = false;
         int guard = 0;
-        while (workingMemoryStorage.size() > autoContextConfig.getLastKeep() + 1 && guard++ < 32) {
-            int end = findPrefixCompressionEnd();
-            if (end < 0) {
+        while (guard++ < 32) {
+            CompressionCandidate candidate = planPreviousRoundCompression();
+            if (candidate == null) {
                 break;
             }
-            List<Msg> source = new ArrayList<>(workingMemoryStorage.subList(0, end + 1));
-            if (TokenCounterUtil.calculateToken(source)
-                    < autoContextConfig.getMinCompressionTokenThreshold()) {
-                break;
-            }
-            if (!compressRange(
-                    0,
-                    end,
-                    CompressionEvent.PREVIOUS_ROUND_CONVERSATION_SUMMARY,
-                    PromptProvider.getPreviousRoundSummaryPrompt(customPrompt),
-                    false)) {
+            String summary =
+                    summarizeMessages(
+                            candidate.source(), candidate.prompt(), candidate.currentRound());
+            if (!applyCompression(candidate, summary)) {
                 break;
             }
             changed = true;
@@ -358,6 +327,85 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
     }
 
     private boolean compressCurrentRound() {
+        CompressionCandidate candidate = planCurrentRoundCompression();
+        if (candidate == null) {
+            return false;
+        }
+        String summary =
+                summarizeMessages(candidate.source(), candidate.prompt(), candidate.currentRound());
+        return applyCompression(candidate, summary);
+    }
+
+    private synchronized CompressionCandidate planToolGroupCompression(int cursor) {
+        int upperLimit = Math.max(0, workingMemoryStorage.size() - autoContextConfig.getLastKeep());
+        if (cursor >= upperLimit) {
+            return null;
+        }
+        IntRange range = findToolGroup(cursor, upperLimit);
+        if (range == null) {
+            return null;
+        }
+        List<Msg> source =
+                new ArrayList<>(workingMemoryStorage.subList(range.start, range.end + 1));
+        return new CompressionCandidate(
+                range.start,
+                range.end,
+                CompressionEvent.TOOL_INVOCATION_COMPRESS,
+                PromptProvider.getPreviousRoundToolCompressPrompt(customPrompt),
+                source,
+                false,
+                true,
+                false);
+    }
+
+    private synchronized CompressionCandidate planLargeMessageOffload() {
+        int limit = Math.max(0, workingMemoryStorage.size() - autoContextConfig.getLastKeep());
+        for (int i = 0; i < limit; i++) {
+            Msg msg = workingMemoryStorage.get(i);
+            if (MsgUtils.calculateMessageCharCount(msg)
+                    < autoContextConfig.getLargePayloadThreshold()) {
+                continue;
+            }
+            return new CompressionCandidate(
+                    i,
+                    i,
+                    msg.getRole() == MsgRole.TOOL
+                            ? CompressionEvent.LARGE_MESSAGE_OFFLOAD
+                            : CompressionEvent.LARGE_MESSAGE_OFFLOAD_WITH_PROTECTION,
+                    PromptProvider.getCurrentRoundLargeMessagePrompt(customPrompt),
+                    List.of(msg),
+                    false,
+                    false,
+                    true);
+        }
+        return null;
+    }
+
+    private synchronized CompressionCandidate planPreviousRoundCompression() {
+        if (workingMemoryStorage.size() <= autoContextConfig.getLastKeep() + 1) {
+            return null;
+        }
+        int end = findPrefixCompressionEnd();
+        if (end < 0) {
+            return null;
+        }
+        List<Msg> source = new ArrayList<>(workingMemoryStorage.subList(0, end + 1));
+        if (TokenCounterUtil.calculateToken(source)
+                < autoContextConfig.getMinCompressionTokenThreshold()) {
+            return null;
+        }
+        return new CompressionCandidate(
+                0,
+                end,
+                CompressionEvent.PREVIOUS_ROUND_CONVERSATION_SUMMARY,
+                PromptProvider.getPreviousRoundSummaryPrompt(customPrompt),
+                source,
+                false,
+                false,
+                false);
+    }
+
+    private synchronized CompressionCandidate planCurrentRoundCompression() {
         int latestUserIndex = -1;
         for (int i = workingMemoryStorage.size() - 1; i >= 0; i--) {
             if (workingMemoryStorage.get(i).getRole() == MsgRole.USER) {
@@ -366,52 +414,64 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
             }
         }
         if (latestUserIndex < 0 || latestUserIndex >= workingMemoryStorage.size() - 1) {
-            return false;
+            return null;
         }
-
         int end = workingMemoryStorage.size() - 1;
         if (MsgUtils.isToolUseMessage(workingMemoryStorage.get(end))) {
             end--;
         }
         if (end <= latestUserIndex) {
-            return false;
+            return null;
         }
-
         List<Msg> source =
                 new ArrayList<>(workingMemoryStorage.subList(latestUserIndex + 1, end + 1));
         if (TokenCounterUtil.calculateToken(source)
                 < autoContextConfig.getMinCompressionTokenThreshold()) {
-            return false;
+            return null;
         }
-        return compressRange(
+        return new CompressionCandidate(
                 latestUserIndex + 1,
                 end,
                 CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS,
                 PromptProvider.getCurrentRoundCompressPrompt(customPrompt),
-                true);
+                source,
+                true,
+                true,
+                false);
     }
 
-    private boolean compressRange(
-            int start, int end, String eventType, String prompt, boolean appendOffloadTag) {
-        if (start < 0 || end < start || start >= workingMemoryStorage.size()) {
+    private boolean applyCompression(CompressionCandidate candidate, String summary) {
+        if (candidate == null) {
             return false;
         }
-        end = Math.min(end, workingMemoryStorage.size() - 1);
-        List<Msg> source = new ArrayList<>(workingMemoryStorage.subList(start, end + 1));
+        String resolvedSummary =
+                summary == null || summary.isBlank()
+                        ? fallbackSummary(candidate.source())
+                        : summary.trim();
         String uuid = UUID.randomUUID().toString();
-        offload(uuid, source);
-        String summary =
-                summarizeMessages(
-                        source,
-                        prompt,
-                        eventType.equals(CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS));
-        if (summary == null || summary.isBlank()) {
-            summary = fallbackSummary(source);
+        Msg compressedMessage =
+                candidate.singleMessageOffload()
+                        ? compressSingleMessage(candidate.source().get(0), resolvedSummary, uuid)
+                        : buildSummaryMessage(
+                                candidate.source(),
+                                resolvedSummary,
+                                uuid,
+                                candidate.appendOffloadTag());
+        synchronized (this) {
+            if (!matchesCandidate(candidate)) {
+                return false;
+            }
+            offloadContext.put(uuid, copyMessages(candidate.source()));
+            MsgUtils.replaceMsg(
+                    workingMemoryStorage, candidate.start(), candidate.end(), compressedMessage);
+            recordCompressionEvent(
+                    candidate.eventType(),
+                    candidate.start(),
+                    candidate.end(),
+                    candidate.source(),
+                    compressedMessage,
+                    buildCompressionMetadata(compressedMessage));
         }
-        Msg summaryMsg = buildSummaryMessage(source, summary, uuid, appendOffloadTag);
-        MsgUtils.replaceMsg(workingMemoryStorage, start, end, summaryMsg);
-        recordCompressionEvent(
-                eventType, start, end, source, summaryMsg, buildCompressionMetadata(summaryMsg));
         return true;
     }
 
@@ -419,7 +479,8 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
         if (messages == null || messages.isEmpty()) {
             return null;
         }
-        if (model == null) {
+        Model currentModel = model;
+        if (currentModel == null) {
             return fallbackSummary(messages);
         }
         try {
@@ -465,7 +526,7 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
                                 .build());
             }
             List<ChatResponse> responses =
-                    model.stream(input, null, GenerateOptions.builder().build())
+                    currentModel.stream(input, null, GenerateOptions.builder().build())
                             .collectList()
                             .block();
             if (responses == null || responses.isEmpty()) {
@@ -537,7 +598,10 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
         if (!summaryInserted) {
             content.add(TextBlock.builder().text(summary).build());
         }
-        Map<String, Object> metadata = new HashMap<>(message.getMetadata());
+        Map<String, Object> metadata =
+                message.getMetadata() == null
+                        ? new HashMap<>()
+                        : new HashMap<>(message.getMetadata());
         Map<String, Object> compressMeta = new HashMap<>();
         compressMeta.put("offloaduuid", uuid);
         metadata.put("_compress_meta", compressMeta);
@@ -580,20 +644,27 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
                         eventType,
                         System.currentTimeMillis(),
                         Math.max(1, endIndex - startIndex + 1),
-                        startIndex > 0
-                                ? workingMemoryStorage
-                                        .get(
-                                                Math.min(
-                                                        startIndex - 1,
-                                                        workingMemoryStorage.size() - 1))
-                                        .getId()
+                        startIndex > 0 && startIndex - 1 < workingMemoryStorage.size()
+                                ? workingMemoryStorage.get(startIndex - 1).getId()
                                 : null,
-                        endIndex < workingMemoryStorage.size() - 1
-                                ? workingMemoryStorage.get(endIndex + 1).getId()
+                        startIndex < workingMemoryStorage.size() - 1
+                                ? workingMemoryStorage.get(startIndex + 1).getId()
                                 : null,
                         compressedMessage != null ? compressedMessage.getId() : null,
                         metadata);
         compressionEvents.add(event);
+    }
+
+    private boolean matchesCandidate(CompressionCandidate candidate) {
+        if (candidate.start() < 0
+                || candidate.end() < candidate.start()
+                || candidate.end() >= workingMemoryStorage.size()) {
+            return false;
+        }
+        List<Msg> currentSlice =
+                new ArrayList<>(
+                        workingMemoryStorage.subList(candidate.start(), candidate.end() + 1));
+        return currentSlice.equals(candidate.source());
     }
 
     private IntRange findToolGroup(int startIndex, int upperLimit) {
@@ -720,4 +791,14 @@ public class AutoContextMemory implements Memory, ContextOffLoader {
     }
 
     private record IntRange(int start, int end) {}
+
+    private record CompressionCandidate(
+            int start,
+            int end,
+            String eventType,
+            String prompt,
+            List<Msg> source,
+            boolean currentRound,
+            boolean appendOffloadTag,
+            boolean singleMessageOffload) {}
 }
