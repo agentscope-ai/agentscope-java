@@ -42,6 +42,14 @@ class WorkspaceManagerPathNormalizationTest {
     }
 
     @Test
+    void toWorkspaceRelativePath_fallsBackWhenPathParsingFails(@TempDir Path tmp) {
+        WorkspaceManager wsm = new WorkspaceManager(tmp);
+        String invalidPath = "/memory/" + '\0' + "bad.md";
+
+        assertEquals("memory/" + '\0' + "bad.md", wsm.toWorkspaceRelativePath(invalidPath));
+    }
+
+    @Test
     void readManagedWorkspaceFileUtf8_readsLocalAbsolutePath(@TempDir Path tmp) throws Exception {
         Path file = tmp.resolve("memory").resolve("2026-05-20.md");
         Files.createDirectories(file.getParent());

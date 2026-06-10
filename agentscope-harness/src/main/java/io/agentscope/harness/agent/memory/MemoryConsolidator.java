@@ -24,6 +24,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -268,7 +269,7 @@ public class MemoryConsolidator {
             if (name != null) {
                 return name.toString();
             }
-        } catch (Exception ignored) {
+        } catch (InvalidPathException ignored) {
             // Fall through to string-based parsing.
         }
         String stripped = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;

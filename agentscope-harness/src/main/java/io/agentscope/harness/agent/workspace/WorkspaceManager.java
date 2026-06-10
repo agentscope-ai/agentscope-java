@@ -43,6 +43,7 @@ import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
@@ -116,6 +117,7 @@ public class WorkspaceManager implements AutoCloseable {
     private final Map<String, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
 
     private final Path workspace;
+    private final Path workspaceRoot;
     private final AbstractFilesystem filesystem;
 
     /** Best-effort local file index; may be {@code null} if SQLite is unavailable. */
@@ -158,6 +160,7 @@ public class WorkspaceManager implements AutoCloseable {
             NamespaceFactory namespaceFactory,
             boolean ownsIndex) {
         this.workspace = workspace;
+        this.workspaceRoot = workspace.toAbsolutePath().normalize();
         this.filesystem = filesystem;
         this.index = index;
         this.namespaceFactory = namespaceFactory;
@@ -241,7 +244,6 @@ public class WorkspaceManager implements AutoCloseable {
         }
 
         String normalized = path.strip().replace('\\', '/');
-        Path workspaceRoot = workspace.toAbsolutePath().normalize();
         try {
             Path candidate = Path.of(path).normalize();
             if (candidate.isAbsolute()) {
@@ -253,7 +255,7 @@ public class WorkspaceManager implements AutoCloseable {
                             .replace('\\', '/');
                 }
             }
-        } catch (Exception ignored) {
+        } catch (InvalidPathException ignored) {
             // Fall through to string-based normalization.
         }
 
