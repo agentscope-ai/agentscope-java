@@ -116,9 +116,22 @@ public class OpenAIMultiModalTool {
      * @param client the OpenAI client
      */
     protected OpenAIMultiModalTool(OpenAIClient client) {
+        this(client, "gpt-4o");
+    }
+
+    /**
+     * Create a new OpenAIMultiModalTool with custom client and default model (for testing).
+     *
+     * @param client the OpenAI client
+     * @param defaultModelName the default vision model name
+     */
+    protected OpenAIMultiModalTool(OpenAIClient client, String defaultModelName) {
+        if (defaultModelName == null || defaultModelName.trim().isEmpty()) {
+            throw new IllegalArgumentException("defaultModelName cannot be empty.");
+        }
         this.apiKey = "test-key";
         this.baseUrl = null;
-        this.defaultModelName = "gpt-4o";
+        this.defaultModelName = defaultModelName;
         this.client = client;
     }
 
