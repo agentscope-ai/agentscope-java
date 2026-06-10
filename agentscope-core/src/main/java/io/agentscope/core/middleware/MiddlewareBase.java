@@ -16,6 +16,7 @@
 package io.agentscope.core.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -46,9 +47,9 @@ import reactor.core.publisher.Mono;
  * MiddlewareBase logging = new MiddlewareBase() {
  *     @Override
  *     public Flux<AgentEvent> onReasoning(
- *             Agent agent, ReasoningInput input,
+ *             Agent agent, RuntimeContext ctx, ReasoningInput input,
  *             Function<ReasoningInput, Flux<AgentEvent>> next) {
- *         System.out.println("Before reasoning");
+ *         System.out.println("Before reasoning, session=" + ctx.getSessionId());
  *         return next.apply(input)
  *             .doOnComplete(() -> System.out.println("After reasoning"));
  *     }
@@ -61,12 +62,16 @@ public interface MiddlewareBase {
      * Intercept the entire agent invocation.
      *
      * @param agent the agent instance
+     * @param ctx   per-call runtime context (session, user, attributes)
      * @param input agent input (messages)
      * @param next  calls the next middleware or the core agent logic
      * @return event stream from the agent invocation
      */
     default Flux<AgentEvent> onAgent(
-            Agent agent, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            AgentInput input,
+            Function<AgentInput, Flux<AgentEvent>> next) {
         return next.apply(input);
     }
 
@@ -74,12 +79,16 @@ public interface MiddlewareBase {
      * Intercept the reasoning phase (LLM call + streaming output parsing).
      *
      * @param agent the agent instance
+     * @param ctx   per-call runtime context (session, user, attributes)
      * @param input reasoning input (messages, tools, options)
      * @param next  calls the next middleware or the core reasoning logic
      * @return event stream from reasoning
      */
     default Flux<AgentEvent> onReasoning(
-            Agent agent, ReasoningInput input, Function<ReasoningInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
         return next.apply(input);
     }
 
@@ -87,12 +96,16 @@ public interface MiddlewareBase {
      * Intercept the tool-call execution phase.
      *
      * @param agent the agent instance
+     * @param ctx   per-call runtime context (session, user, attributes)
      * @param input acting input (the tool calls)
      * @param next  calls the next middleware or the core acting logic
      * @return event stream from acting
      */
     default Flux<AgentEvent> onActing(
-            Agent agent, ActingInput input, Function<ActingInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
         return next.apply(input);
     }
 
@@ -100,12 +113,16 @@ public interface MiddlewareBase {
      * Intercept the raw model API call.
      *
      * @param agent the agent instance
+     * @param ctx   per-call runtime context (session, user, attributes)
      * @param input model-call input (messages, tools, options, model)
      * @param next  calls the next middleware or the actual model invocation
      * @return event stream from the model call
      */
     default Flux<AgentEvent> onModelCall(
-            Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
+            Agent agent,
+            RuntimeContext ctx,
+            ModelCallInput input,
+            Function<ModelCallInput, Flux<AgentEvent>> next) {
         return next.apply(input);
     }
 
@@ -116,10 +133,11 @@ public interface MiddlewareBase {
      * output of the previous one.
      *
      * @param agent         the agent instance
+     * @param ctx           per-call runtime context (session, user, attributes)
      * @param currentPrompt the current system prompt
      * @return the (possibly transformed) system prompt
      */
-    default Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+    default Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         return Mono.just(currentPrompt);
     }
 }

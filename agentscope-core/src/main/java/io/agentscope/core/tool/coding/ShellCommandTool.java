@@ -70,7 +70,6 @@ import reactor.core.scheduler.Schedulers;
  * @see UnixCommandValidator
  * @see WindowsCommandValidator
  */
-@Deprecated(forRemoval = true, since = "2.0.0")
 public class ShellCommandTool implements AgentTool {
 
     private static final Logger logger = LoggerFactory.getLogger(ShellCommandTool.class);

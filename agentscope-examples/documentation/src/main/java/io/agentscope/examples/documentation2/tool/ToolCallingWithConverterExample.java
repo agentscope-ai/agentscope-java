@@ -22,9 +22,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.DefaultToolResultConverter;
 import io.agentscope.core.tool.Tool;
@@ -32,7 +35,8 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
-import io.agentscope.examples.documentation2.common.ExampleUtils;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.lang.reflect.Type;
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -66,13 +70,16 @@ public class ToolCallingWithConverterExample {
      * @throws Exception if an I/O error occurs
      */
     public static void main(String[] args) throws Exception {
-        ExampleUtils.printWelcome(
-                "Tool Calling Custom ToolResultConverter Example",
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("Tool Calling Custom ToolResultConverter Example");
+        System.out.println("=".repeat(60));
+        System.out.println(
                 "Demonstrates custom ToolResultConverters:\n"
                     + "  - get_user_info: Masks sensitive fields (password, apiKey, creditCard)\n"
                     + "  - list_orders:   Appends the JSON Schema of the return type");
+        System.out.println("=".repeat(60) + "\n");
 
-        String apiKey = ExampleUtils.getDashScopeApiKey();
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new SimpleTools());
@@ -94,7 +101,31 @@ public class ToolCallingWithConverterExample {
                         .toolkit(toolkit)
                         .build();
 
-        ExampleUtils.startChat(agent);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        System.out.println("Chat started. Type 'exit' to quit.\n");
+
+        while (true) {
+            System.out.print("You: ");
+            String input = reader.readLine();
+            if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("\nGoodbye!");
+                break;
+            }
+            if (input.isBlank()) {
+                continue;
+            }
+            Msg userMsg = new UserMessage(input.trim());
+            System.out.print("\nAgent: ");
+            agent.streamEvents(userMsg)
+                    .doOnNext(
+                            event -> {
+                                if (event instanceof TextBlockDeltaEvent e) {
+                                    System.out.print(e.getDelta());
+                                }
+                            })
+                    .blockLast();
+            System.out.println("\n");
+        }
     }
 
     /** Simple tools used in this example. */

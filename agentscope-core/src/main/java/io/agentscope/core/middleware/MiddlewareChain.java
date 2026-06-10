@@ -16,6 +16,7 @@
 package io.agentscope.core.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import java.util.List;
 import java.util.function.Function;
@@ -36,6 +37,7 @@ public final class MiddlewareChain {
      *
      * @param middlewares ordered list of middlewares (first = outermost)
      * @param agent      the agent instance passed to each middleware
+     * @param ctx        per-call runtime context passed to each middleware
      * @param method     reference to the middleware hook method
      * @param core       the innermost logic to execute when all middlewares delegate
      * @param <I>        the input type for the interception point
@@ -44,6 +46,7 @@ public final class MiddlewareChain {
     public static <I> Function<I, Flux<AgentEvent>> build(
             List<? extends MiddlewareBase> middlewares,
             Agent agent,
+            RuntimeContext ctx,
             MiddlewareMethod<I> method,
             Function<I, Flux<AgentEvent>> core) {
         if (middlewares == null || middlewares.isEmpty()) {
@@ -53,7 +56,7 @@ public final class MiddlewareChain {
         for (int i = middlewares.size() - 1; i >= 0; i--) {
             MiddlewareBase mw = middlewares.get(i);
             Function<I, Flux<AgentEvent>> next = chain;
-            chain = input -> method.apply(mw, agent, input, next);
+            chain = input -> method.apply(mw, agent, ctx, input, next);
         }
         return chain;
     }
@@ -66,6 +69,10 @@ public final class MiddlewareChain {
     @FunctionalInterface
     public interface MiddlewareMethod<I> {
         Flux<AgentEvent> apply(
-                MiddlewareBase mw, Agent agent, I input, Function<I, Flux<AgentEvent>> next);
+                MiddlewareBase mw,
+                Agent agent,
+                RuntimeContext ctx,
+                I input,
+                Function<I, Flux<AgentEvent>> next);
     }
 }

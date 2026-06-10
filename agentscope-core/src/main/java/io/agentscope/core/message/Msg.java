@@ -230,6 +230,34 @@ public class Msg implements State {
     }
 
     /**
+     * Creates a builder for the concrete {@link Msg} subtype that matches the given role.
+     *
+     * <p>Unlike {@link #builder()} (which produces a plain {@link Msg}), this factory returns
+     * the role-specific builder so the resulting instance is the appropriate subtype:
+     * {@link UserMessage} for {@link MsgRole#USER}, {@link AssistantMessage} for
+     * {@link MsgRole#ASSISTANT}, {@link SystemMessage} for {@link MsgRole#SYSTEM}, and
+     * {@link ToolResultMessage} for {@link MsgRole#TOOL}. A {@code null} role falls back to the
+     * base {@link #builder()}.
+     *
+     * <p>The returned builder's {@code build()} is overridden covariantly, so the declared
+     * {@link Builder} static type still yields the concrete subtype instance at runtime.
+     *
+     * @param role the role whose concrete message subtype should be built
+     * @return a role-specific builder, or the base builder when {@code role} is {@code null}
+     */
+    public static Builder builderForRole(MsgRole role) {
+        if (role == null) {
+            return builder();
+        }
+        return switch (role) {
+            case USER -> UserMessage.builder();
+            case ASSISTANT -> AssistantMessage.builder();
+            case SYSTEM -> SystemMessage.builder();
+            case TOOL -> ToolResultMessage.builder();
+        };
+    }
+
+    /**
      * Generates a random UUID string for use as a message ID.
      * Exposed to subclasses so their convenience constructors can mirror the
      * behaviour of {@link Builder} without re-implementing UUID logic.

@@ -197,7 +197,7 @@ When your application needs an **isolation backend other than Docker** (custom r
 ### 5.3 `SandboxState` and Jackson
 
 - **Design intent**: the subtype table is provided at runtime via Module / `registerSubtypes`, making it easy for the same application or downstream jars to **extend state** without modifying **`SandboxState.java`**.
-- **This repo**: in **`io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule`**, add **`registerSubtypes(new NamedType(XxxSandboxState.class, "xxx"))`** for new official backends.
+- **This repo**: in **`io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule`**, add **`registerSubtypes(new NamedType(XxxSandboxState.class, "xxx"))`** for new official stores.
 - **Application-private subclasses**: call **`mapper.registerSubtypes(new NamedType(MySandboxState.class, "acme"))`** on any **`ObjectMapper`** that holds sandbox JSON, and ensure **`SandboxManager` / `SandboxStateStore`** paths use **the same** mapper configuration as the **`SandboxClient`**.
 
 ### 5.4 Implementing `SandboxFilesystemSpec`
@@ -240,7 +240,7 @@ These three remote sandbox implementations are in **`agentscope-harness`**'s **`
 | **`io.agentscope.harness.agent.sandbox.impl.daytona`** | Daytona HTTP API: **`DaytonaFilesystemSpec`**, **`DaytonaHarnessSandboxJacksonModule`** (`daytona`), timeouts with limited retries. Does **not** apply host bind mounts; **WARN** at startup if spec contains `bind_mount`. |
 | **`io.agentscope.harness.agent.sandbox.impl.e2b`** | E2B: `https://api.e2b.app` lifecycle + envd **`process.Process/Start`** (Connect+protobuf); **`E2bFilesystemSpec`**, **`E2bHarnessSandboxJacksonModule`** (`e2b`); **`E2bPersistenceMode#TAR`** and **`NATIVE_SNAPSHOT`** (platform snapshot API + **`E2bSnapshotRefs`** magic prefix). Does **not** apply host bind mounts; **WARN** at startup if spec contains `bind_mount`; TAR snapshots still add **`tar --exclude`** for bind paths (consistent with Docker/K8s). |
 
-**Jackson assembly**: register at least **`HarnessSandboxJacksonModule`** on any `ObjectMapper` holding sandbox state JSON, then register each backend's `SimpleModule` as needed (e.g., **`new KubernetesHarnessSandboxJacksonModule()`**), consistent with [§5.3](#53-sandboxstate-and-jackson). **Do not** add **`@JsonSubTypes`** on core **`SandboxClientOptions`** for optional backends — this would cause harness to reverse-depend on optional modules creating Maven cycles; optional backends are wired on the application side via their own **`FilesystemSpec`** + **`SandboxClientOptions` subclass**.
+**Jackson assembly**: register at least **`HarnessSandboxJacksonModule`** on any `ObjectMapper` holding sandbox state JSON, then register each backend's `SimpleModule` as needed (e.g., **`new KubernetesHarnessSandboxJacksonModule()`**), consistent with [§5.3](#53-sandboxstate-and-jackson). **Do not** add **`@JsonSubTypes`** on core **`SandboxClientOptions`** for optional stores — this would cause harness to reverse-depend on optional modules creating Maven cycles; optional stores are wired on the application side via their own **`FilesystemSpec`** + **`SandboxClientOptions` subclass**.
 
 **Dependency coordinates**: depend only on **`agentscope-harness`** (or harness coordinates managed by **`agentscope`** / BOM); **`agentscope-all`** includes these implementation classes alongside harness.
 
@@ -457,7 +457,7 @@ Implementation contract:
 
 When multi-replica or stateless workers need to share **the sandbox recovery capability of the same logical session**, you need:
 
-- A **distributed `Session`** (e.g., `RedisSession`), not just the default `WorkspaceSession` file backend; and
+- A **distributed `Session`** (e.g., `RedisSession`), not just the default `WorkspaceSession` file store; and
 - A non-no-op **`SandboxSnapshotSpec`** (archives the workspace for re-fetching), which passes the "must be distributed" validation.
 
 `HarnessAgent.Builder#sandboxDistributed(SandboxDistributedOptions)` can uniformly configure:
