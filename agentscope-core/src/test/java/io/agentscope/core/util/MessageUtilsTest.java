@@ -49,6 +49,21 @@ class MessageUtilsTest {
     }
 
     @Test
+    @DisplayName(
+            "Should return empty list when the latest assistant segment only contains compressed"
+                    + " messages")
+    void testExtractRecentToolCallsReturnsEmptyWhenLatestAssistantSegmentIsFullyCompressed() {
+        List<Msg> messages = new ArrayList<>();
+        messages.add(createAssistantToolUseMessage("stale-tool", "stale-call"));
+        messages.add(createUserMessage("continue"));
+        messages.add(createCompressedAssistantToolUseMessage("compressed-tool", "compressed-call"));
+
+        List<ToolUseBlock> toolCalls = MessageUtils.extractRecentToolCalls(messages, "assistant");
+
+        assertTrue(toolCalls.isEmpty());
+    }
+
+    @Test
     @DisplayName("Should return empty list when messages are null or empty")
     void testExtractRecentToolCallsWithEmptyInput() {
         assertTrue(MessageUtils.extractRecentToolCalls(null, "assistant").isEmpty());
@@ -105,6 +120,14 @@ class MessageUtilsTest {
                                         .build(),
                                 TextBlock.builder().text("Compressed summary").build()))
                 .metadata(metadata)
+                .build();
+    }
+
+    private Msg createUserMessage(String text) {
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .name("user")
+                .content(List.of(TextBlock.builder().text(text).build()))
                 .build();
     }
 }

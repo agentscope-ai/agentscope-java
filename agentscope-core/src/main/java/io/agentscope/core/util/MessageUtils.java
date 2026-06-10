@@ -53,18 +53,26 @@ public final class MessageUtils {
             return List.of();
         }
 
+        boolean scanningRecentAssistantSegment = false;
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT && Objects.equals(msg.getName(), agentName)) {
-                if (isCompressedMessage(msg)) {
-                    continue;
+            if (msg.getRole() != MsgRole.ASSISTANT || !Objects.equals(msg.getName(), agentName)) {
+                if (scanningRecentAssistantSegment) {
+                    break;
                 }
-                List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
-                if (!toolCalls.isEmpty()) {
-                    return toolCalls;
-                }
-                break;
+                continue;
             }
+
+            scanningRecentAssistantSegment = true;
+            if (isCompressedMessage(msg)) {
+                continue;
+            }
+
+            List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
+            if (!toolCalls.isEmpty()) {
+                return toolCalls;
+            }
+            break;
         }
 
         return List.of();
@@ -72,6 +80,6 @@ public final class MessageUtils {
 
     private static boolean isCompressedMessage(Msg msg) {
         Map<String, Object> metadata = msg.getMetadata();
-        return metadata.get(COMPRESS_META_KEY) instanceof Map;
+        return metadata != null && metadata.get(COMPRESS_META_KEY) instanceof Map;
     }
 }
