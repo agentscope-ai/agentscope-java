@@ -2022,7 +2022,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String replyId = UUID.randomUUID().toString().replace("-", "");
             AtomicBoolean textStarted = new AtomicBoolean(false);
             AtomicBoolean thinkingStarted = new AtomicBoolean(false);
-            Set<String> startedToolCalls = ConcurrentHashMap.newKeySet();
+            Map<String, String> startedToolCalls = new ConcurrentHashMap<>();
 
             Flux<AgentEvent> modelEvents =
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
@@ -2049,7 +2049,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     thinkingStarted,
                                                     withToolEvents
                                                             ? startedToolCalls
-                                                            : ConcurrentHashMap.newKeySet(),
+                                                            : new ConcurrentHashMap<>(),
                                                     events);
                                         }
                                         return Flux.fromIterable(events);
@@ -2065,8 +2065,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (thinkingStarted.get()) {
                                     events.add(new ThinkingBlockEndEvent(replyId, "thinking"));
                                 }
-                                for (String toolId : startedToolCalls) {
-                                    events.add(new ToolCallEndEvent(replyId, toolId));
+                                for (Map.Entry<String, String> tc : startedToolCalls.entrySet()) {
+                                    events.add(
+                                            new ToolCallEndEvent(
+                                                    replyId, tc.getKey(), tc.getValue()));
                                 }
                                 events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
                                 return Flux.fromIterable(events);
@@ -2081,7 +2083,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ReasoningContext context,
                 AtomicBoolean textStarted,
                 AtomicBoolean thinkingStarted,
-                Set<String> startedToolCalls,
+                Map<String, String> startedToolCalls,
                 List<AgentEvent> events) {
 
             if (block instanceof TextBlock tb) {
@@ -2100,8 +2102,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             } else if (block instanceof ToolUseBlock tub) {
                 String toolId = resolveToolCallId(tub, context);
-                if (toolId != null && startedToolCalls.add(toolId)) {
-                    String toolName = tub.getName();
+                String toolName = tub.getName();
+                if (toolId != null && startedToolCalls.putIfAbsent(toolId, toolName) == null) {
                     if (toolName != null && !toolName.startsWith("__")) {
                         events.add(new ToolCallStartEvent(replyId, toolId, toolName));
                     }
@@ -2109,7 +2111,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 if (tub.getContent() != null && !tub.getContent().isEmpty()) {
                     events.add(
                             new ToolCallDeltaEvent(
-                                    replyId, toolId != null ? toolId : "", tub.getContent()));
+                                    replyId,
+                                    toolId != null ? toolId : "",
+                                    toolName,
+                                    tub.getContent()));
                 }
             }
         }
@@ -2353,10 +2358,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 new ToolResultTextDeltaEvent(
                                                         replyId,
                                                         use.getId(),
+                                                        use.getName(),
                                                         "Permission denied by user"),
                                                 new ToolResultEndEvent(
                                                         replyId,
                                                         use.getId(),
+                                                        use.getName(),
                                                         ToolResultState.DENIED));
                                     });
 
@@ -2403,6 +2410,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         replyId,
                                                                                         toolUse
                                                                                                 .getId(),
+                                                                                        toolUse
+                                                                                                .getName(),
                                                                                         tb
                                                                                                 .getText()));
                                                                     } else {
@@ -2411,6 +2420,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         replyId,
                                                                                         toolUse
                                                                                                 .getId(),
+                                                                                        toolUse
+                                                                                                .getName(),
                                                                                         block));
                                                                     }
                                                                 }
@@ -2452,6 +2463,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         replyId,
                                                                                         entry.getKey()
                                                                                                 .getId(),
+                                                                                        entry.getKey()
+                                                                                                .getName(),
                                                                                         state));
                                                                     }
                                                                     sink.complete();
@@ -2560,6 +2573,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 Map.Entry<ToolUseBlock, ToolResultBlock> entry,
                 Set<String> chunkedToolIds) {
             String toolId = entry.getKey().getId();
+            String toolName = entry.getKey().getName();
             if (chunkedToolIds.contains(toolId)) {
                 return;
             }
@@ -2569,9 +2583,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             for (ContentBlock block : output) {
                 if (block instanceof TextBlock tb) {
-                    sink.next(new ToolResultTextDeltaEvent(replyId, toolId, tb.getText()));
+                    sink.next(
+                            new ToolResultTextDeltaEvent(replyId, toolId, toolName, tb.getText()));
                 } else {
-                    sink.next(new ToolResultDataDeltaEvent(replyId, toolId, block));
+                    sink.next(new ToolResultDataDeltaEvent(replyId, toolId, toolName, block));
                 }
             }
         }
@@ -3254,7 +3269,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Returns the {@link AgentState} for the given {@code (userId, sessionId)} slot, loading it
      * from the configured {@link AgentStateStore} on first access and caching it for subsequent
-     * calls.
+     * calls within this JVM.
+     *
+     * <p>Note: in distributed deployments the authoritative reload happens at call start inside
+     * {@code activateSlotForContext}. This method returns the locally cached instance (suitable
+     * for the "get → mutate → save" pattern used by admin APIs and tests).
      */
     public AgentState getAgentState(String userId, String sessionId) {
         String slot = slotKey(userId, sessionId);
