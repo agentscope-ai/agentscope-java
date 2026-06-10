@@ -42,6 +42,7 @@ public enum AgentEventType {
     AGENT_START("AGENT_START"),
     @JsonAlias({"RUN_FINISHED", "REPLY_END"})
     AGENT_END("AGENT_END"),
+    AGENT_RESULT("AGENT_RESULT"),
 
     @JsonAlias({"MODEL_CALL_STARTED"})
     MODEL_CALL_START("MODEL_CALL_START"),

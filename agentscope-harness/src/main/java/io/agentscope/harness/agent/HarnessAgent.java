@@ -1905,6 +1905,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
+                IsolationScope effectiveIsolationScope = IsolationScope.USER;
+                if (remoteFilesystemSpec != null
+                        && remoteFilesystemSpec.getIsolationScope() != null) {
+                    effectiveIsolationScope = remoteFilesystemSpec.getIsolationScope();
+                } else if (sandboxFilesystemSpec != null
+                        && sandboxFilesystemSpec.getIsolationScope() != null) {
+                    effectiveIsolationScope = sandboxFilesystemSpec.getIsolationScope();
+                }
+
                 String effectiveFlushPrompt =
                         memoryConfig.flushPrompt() != null
                                 ? memoryConfig.flushPrompt()
@@ -1914,7 +1923,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 wsManager,
                                 memoryModel,
                                 effectiveFlushPrompt,
-                                memoryConfig.flushTrigger()));
+                                memoryConfig.flushTrigger(),
+                                effectiveIsolationScope));
 
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null
@@ -1932,7 +1942,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 consolidator,
                                 memoryConfig.dailyFileRetentionDays(),
                                 memoryConfig.sessionRetentionDays(),
-                                memoryConfig.consolidationMinGap()));
+                                memoryConfig.consolidationMinGap(),
+                                effectiveIsolationScope));
             }
             CompactionMiddleware compactionHook = null;
             if (compactionConfig != null) {

@@ -34,6 +34,7 @@ import java.util.UUID;
 @JsonSubTypes({
     @JsonSubTypes.Type(value = AgentStartEvent.class, name = "AGENT_START"),
     @JsonSubTypes.Type(value = AgentEndEvent.class, name = "AGENT_END"),
+    @JsonSubTypes.Type(value = AgentResultEvent.class, name = "AGENT_RESULT"),
     @JsonSubTypes.Type(value = ModelCallStartEvent.class, name = "MODEL_CALL_START"),
     @JsonSubTypes.Type(value = ModelCallEndEvent.class, name = "MODEL_CALL_END"),
     @JsonSubTypes.Type(value = TextBlockStartEvent.class, name = "TEXT_BLOCK_START"),
