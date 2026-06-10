@@ -76,7 +76,8 @@ public enum EventType {
      * <ul>
      *   <li>Message role: {@link io.agentscope.core.message.MsgRole#ASSISTANT}</li>
      *   <li>Content: Final response text</li>
-     *   <li>Streaming: Not applicable</li>
+     *   <li>Streaming: Included when {@link StreamOptions} contains {@link #AGENT_RESULT}
+     *       or {@link #ALL} (the default)</li>
      * </ul>
      */
     AGENT_RESULT,
@@ -94,7 +95,7 @@ public enum EventType {
     SUMMARY,
 
     /**
-     * Special value to stream all event types (except {@link #AGENT_RESULT}).
+     * Special value to stream all event types, including {@link #AGENT_RESULT}.
      *
      * <p>Use this in {@link StreamOptions} to receive all events without filtering.
      */
