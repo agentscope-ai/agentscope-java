@@ -16,6 +16,7 @@
 package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -84,5 +85,82 @@ class ContextOffloadToolTest {
         assertEquals(2, messages.size());
         assertTrue(messages.get(0).getTextContent().contains("offloaded-one"));
         assertTrue(messages.get(1).getTextContent().contains("offloaded-two"));
+    }
+
+    @Test
+    void reloadReturnsErrorMessagesForInvalidOrUnavailableContext() {
+        ContextOffloadTool noLoaderTool = new ContextOffloadTool((ContextOffLoader) null);
+        List<Msg> blankUuidMessages = noLoaderTool.reload("  ");
+        assertEquals(1, blankUuidMessages.size());
+        assertTrue(blankUuidMessages.get(0).getTextContent().contains("UUID cannot be null"));
+
+        List<Msg> unavailableMessages = noLoaderTool.reload("uuid-1");
+        assertEquals(1, unavailableMessages.size());
+        assertTrue(
+                unavailableMessages
+                        .get(0)
+                        .getTextContent()
+                        .contains("Context offloader is not available"));
+    }
+
+    @Test
+    void reloadReturnsErrorMessageWhenLoaderThrowsOrNothingFound() {
+        ContextOffloadTool throwingTool =
+                new ContextOffloadTool(
+                        new ContextOffLoader() {
+                            @Override
+                            public void offload(String uuid, List<Msg> messages) {}
+
+                            @Override
+                            public List<Msg> reload(String uuid) {
+                                throw new IllegalStateException("boom");
+                            }
+
+                            @Override
+                            public void clear(String uuid) {}
+                        });
+
+        List<Msg> thrown = throwingTool.reload("uuid-2");
+        assertEquals(1, thrown.size());
+        assertTrue(thrown.get(0).getTextContent().contains("boom"));
+
+        ContextOffloadTool emptyTool =
+                new ContextOffloadTool(
+                        new ContextOffLoader() {
+                            @Override
+                            public void offload(String uuid, List<Msg> messages) {}
+
+                            @Override
+                            public List<Msg> reload(String uuid) {
+                                return List.of();
+                            }
+
+                            @Override
+                            public void clear(String uuid) {}
+                        });
+        List<Msg> missing = emptyTool.reload("uuid-3");
+        assertEquals(1, missing.size());
+        assertTrue(missing.get(0).getTextContent().contains("No messages found for UUID"));
+    }
+
+    @Test
+    void reloadWithoutAgentUsesHookBackedMemoryLookup() {
+        AutoContextHook hook = new AutoContextHook();
+        ContextOffloadTool tool = new ContextOffloadTool(hook);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("hook-default")
+                        .sysPrompt("system")
+                        .model(AutoContextTestSupport.noopModel())
+                        .build();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().sessionId("session-2").userId("bob").build();
+        List<Msg> expected = List.of(AutoContextTestSupport.userMessage("hook-only"));
+
+        hook.memoryFor(agent, runtimeContext).offload("hook-uuid", expected);
+
+        List<Msg> reloaded = tool.reload("hook-uuid", agent, runtimeContext);
+        assertEquals(1, reloaded.size());
+        assertSame(expected.get(0), reloaded.get(0));
     }
 }

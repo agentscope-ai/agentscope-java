@@ -19,12 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -103,6 +106,50 @@ class AutoContextHookTest {
 
         assertNotNull(threadName.get());
         assertTrue(threadName.get().contains("boundedElastic"));
+    }
+
+    @Test
+    void handlePreCallIgnoresNonReactAgentAndRegistersOnlyOnce() {
+        AutoContextHook hook = new AutoContextHook();
+        Agent nonReactAgent = mock(Agent.class);
+        PreCallEvent plainEvent =
+                new PreCallEvent(
+                        nonReactAgent, List.of(AutoContextTestSupport.userMessage("hello")));
+        StepVerifier.create(hook.handlePreCall(plainEvent)).expectNext(plainEvent).verifyComplete();
+
+        Toolkit toolkit = new Toolkit();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("register-once")
+                        .sysPrompt("system")
+                        .toolkit(toolkit)
+                        .model(AutoContextTestSupport.noopModel())
+                        .build();
+        PreCallEvent event =
+                new PreCallEvent(agent, List.of(AutoContextTestSupport.userMessage("hello")));
+
+        StepVerifier.create(hook.handlePreCall(event)).expectNext(event).verifyComplete();
+        int firstCount = agent.getToolkit().getToolNames().size();
+        StepVerifier.create(hook.handlePreCall(event)).expectNext(event).verifyComplete();
+        assertEquals(firstCount, agent.getToolkit().getToolNames().size());
+        assertTrue(agent.getToolkit().getToolNames().contains("context_reload"));
+    }
+
+    @Test
+    void handlePreReasoningIgnoresNonReactAgent() {
+        AutoContextHook hook = new AutoContextHook();
+        Agent agent = mock(Agent.class);
+
+        PreReasoningEvent event =
+                new PreReasoningEvent(
+                        agent, "noop", null, List.of(AutoContextTestSupport.userMessage("x")));
+
+        StepVerifier.create(hook.handlePreReasoning(event))
+                .assertNext(returned -> assertSame(event, returned))
+                .verifyComplete();
+        assertEquals(1, event.getInputMessages().size());
+        assertEquals("x", event.getInputMessages().get(0).getTextContent());
+        assertTrue(event.getSystemMessage() == null);
     }
 
     private static void setActiveRuntimeContext(ReActAgent agent, RuntimeContext runtimeContext) {
