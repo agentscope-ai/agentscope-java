@@ -83,7 +83,10 @@ public enum AgentEventType {
     REQUEST_STOP("REQUEST_STOP"),
 
     @JsonAlias({"THREAD_EXPOSED"})
-    SUBAGENT_EXPOSED("SUBAGENT_EXPOSED");
+    SUBAGENT_EXPOSED("SUBAGENT_EXPOSED"),
+
+    HINT_BLOCK("HINT_BLOCK"),
+    CUSTOM("CUSTOM");
 
     private final String value;
 

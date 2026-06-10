@@ -20,6 +20,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -63,13 +65,18 @@ import java.util.UUID;
             value = ExternalExecutionResultEvent.class,
             name = "EXTERNAL_EXECUTION_RESULT"),
     @JsonSubTypes.Type(value = RequestStopEvent.class, name = "REQUEST_STOP"),
-    @JsonSubTypes.Type(value = SubagentExposedEvent.class, name = "SUBAGENT_EXPOSED")
+    @JsonSubTypes.Type(value = SubagentExposedEvent.class, name = "SUBAGENT_EXPOSED"),
+    @JsonSubTypes.Type(value = HintBlockEvent.class, name = "HINT_BLOCK"),
+    @JsonSubTypes.Type(value = CustomEvent.class, name = "CUSTOM")
 })
 public abstract class AgentEvent {
 
     private final String id;
     private final String createdAt;
     private String source;
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, Object> metadata;
 
     protected AgentEvent() {
         this.id = UUID.randomUUID().toString().replace("-", "");
@@ -106,6 +113,21 @@ public abstract class AgentEvent {
      */
     public AgentEvent withSource(String source) {
         this.source = source;
+        return this;
+    }
+
+    /**
+     * Returns optional metadata attached to this event. May be {@code null} or empty.
+     */
+    public Map<String, Object> getMetadata() {
+        return metadata;
+    }
+
+    /**
+     * Attaches arbitrary key-value metadata to this event and returns it for chaining.
+     */
+    public AgentEvent withMetadata(Map<String, Object> metadata) {
+        this.metadata = metadata != null ? new LinkedHashMap<>(metadata) : null;
         return this;
     }
 
