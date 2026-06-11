@@ -174,7 +174,7 @@ public class KubernetesSandboxClient implements SandboxClient<KubernetesSandboxC
             o.setMemoryRequest(callOptions.getMemoryRequest());
         }
         if (callOptions.getEnvironment() != null && !callOptions.getEnvironment().isEmpty()) {
-            Map<String, String> merged = new HashMap<>(base.getEnvironment());
+            Map<String, String> merged = new HashMap<>(o.getEnvironment());
             merged.putAll(callOptions.getEnvironment());
             o.setEnvironment(merged);
         }

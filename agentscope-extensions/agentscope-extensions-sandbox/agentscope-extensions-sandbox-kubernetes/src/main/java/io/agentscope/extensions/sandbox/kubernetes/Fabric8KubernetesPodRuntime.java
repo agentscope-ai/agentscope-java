@@ -212,7 +212,7 @@ public class Fabric8KubernetesPodRuntime {
                         .withArgs("while true; do sleep 3600; done");
 
         Map<String, String> env = templateOptions.getEnvironment();
-        if (env != null && !env.isEmpty()) {
+        if (!env.isEmpty()) {
             List<EnvVar> envVars =
                     env.entrySet().stream()
                             .map(
@@ -222,7 +222,7 @@ public class Fabric8KubernetesPodRuntime {
                                                     .withValue(e.getValue())
                                                     .build())
                             .toList();
-            cb.withEnv(envVars);
+            cb.addAllToEnv(envVars);
         }
 
         if (templateOptions.getCpuRequest() != null || templateOptions.getMemoryRequest() != null) {
