@@ -24,6 +24,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -264,13 +265,21 @@ public class MemoryConsolidator {
     }
 
     /**
-     * Converts an absolute filesystem path (e.g. {@code /memory/2025-01-01.md}) to a
-     * workspace-relative path ({@code memory/2025-01-01.md}) for use with
-     * {@link WorkspaceManager#readManagedWorkspaceFileUtf8}.
+     * Converts an absolute filesystem path to a workspace-relative path for use
+     * with {@link WorkspaceManager#readManagedWorkspaceFileUtf8}. Strips the
+     * workspace root prefix when the path is an absolute local filesystem path;
+     * strips only the leading {@code /} for SANDBOXED virtual paths.
      */
-    private static String toRelative(String path) {
+    private String toRelative(String path) {
         if (path == null) {
             return "";
+        }
+        Path p = Path.of(path);
+        if (p.isAbsolute()) {
+            Path root = workspaceManager.getWorkspace();
+            if (p.startsWith(root)) {
+                return root.relativize(p).toString();
+            }
         }
         return path.startsWith("/") ? path.substring(1) : path;
     }
