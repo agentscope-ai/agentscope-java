@@ -13,29 +13,29 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
-  -->
+-->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-mem</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-mem</artifactId>
-    <name>AgentScope Java - Memory</name>
-    <description>Memory integrations for AgentScope Java</description>
-    <packaging>pom</packaging>
+    <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+    <name>AgentScope Java - Extensions - AutoContext Memory</name>
+    <description>Auto context compression and offload for AgentScope Java</description>
 
-    <modules>
-        <module>agentscope-extensions-mem0</module>
-        <module>agentscope-extensions-autocontext-memory</module>
-        <module>agentscope-extensions-memory-bailian</module>
-        <module>agentscope-extensions-reme</module>
-    </modules>
-
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
 </project>

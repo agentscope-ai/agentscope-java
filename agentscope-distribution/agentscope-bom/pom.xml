@@ -148,6 +148,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions Auto Context Memory -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Bailian Long Term Memory -->
             <dependency>
                 <groupId>io.agentscope</groupId>
