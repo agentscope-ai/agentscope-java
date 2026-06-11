@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.agentscope.core.e2e.E2ETestCondition;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.extension.ExtendWith;
 import reactor.test.StepVerifier;
 
 /**
@@ -62,6 +64,7 @@ import reactor.test.StepVerifier;
 @Tag("e2e")
 @Tag("openai")
 @Tag("official")
+@ExtendWith(E2ETestCondition.class)
 @DisplayName("OpenAI Official API E2E Tests (Real OpenAI API)")
 @EnabledIfEnvironmentVariable(
         named = "OPENAI_API_KEY",

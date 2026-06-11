@@ -35,6 +35,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * <h2>Algorithm</h2>
@@ -86,6 +87,19 @@ public class ConversationCompactor {
      *         message list consisting of {@code [summaryUserMsg] + preservedTail}
      */
     public Mono<Optional<List<Msg>>> compactIfNeeded(
+            RuntimeContext rc,
+            List<Msg> conversationMessages,
+            CompactionConfig config,
+            String agentId,
+            String sessionId) {
+        return Mono.defer(
+                        () ->
+                                compactIfNeededInternal(
+                                        rc, conversationMessages, config, agentId, sessionId))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private Mono<Optional<List<Msg>>> compactIfNeededInternal(
             RuntimeContext rc,
             List<Msg> conversationMessages,
             CompactionConfig config,
@@ -150,6 +164,7 @@ public class ConversationCompactor {
                                         return flushManager.resolveOffloadPath(
                                                 rc, agentId, sessionId);
                                     })
+                            .subscribeOn(Schedulers.boundedElastic())
                             .doOnSuccess(
                                     path ->
                                             log.debug(

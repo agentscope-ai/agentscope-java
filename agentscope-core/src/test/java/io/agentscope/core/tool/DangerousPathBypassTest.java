@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
@@ -99,6 +100,10 @@ class DangerousPathBypassTest {
 
     @Test
     void symlinkToSshIsDetected(@TempDir Path tempDir) throws IOException {
+        assumeTrue(
+                canCreateSymlink(tempDir),
+                "Symbolic link creation is not permitted on this environment");
+
         Path sshDir = tempDir.resolve(".ssh");
         Files.createDirectory(sshDir);
         Path sshConfig = sshDir.resolve("config");
@@ -112,6 +117,10 @@ class DangerousPathBypassTest {
 
     @Test
     void symlinkToDotEnvIsDetected(@TempDir Path tempDir) throws IOException {
+        assumeTrue(
+                canCreateSymlink(tempDir),
+                "Symbolic link creation is not permitted on this environment");
+
         Path envFile = tempDir.resolve(".env");
         Files.writeString(envFile, "SECRET=value\n");
 
@@ -119,5 +128,16 @@ class DangerousPathBypassTest {
         Files.createSymbolicLink(link, envFile);
 
         assertTrue(PROBE.check(link.toString()));
+    }
+
+    private static boolean canCreateSymlink(Path tempDir) {
+        try {
+            Path target = Files.writeString(tempDir.resolve("symlink-probe-target.txt"), "probe");
+            Path link = tempDir.resolve("symlink-probe-link.txt");
+            Files.createSymbolicLink(link, target);
+            return Files.isSymbolicLink(link);
+        } catch (IOException | UnsupportedOperationException | SecurityException e) {
+            return false;
+        }
     }
 }
