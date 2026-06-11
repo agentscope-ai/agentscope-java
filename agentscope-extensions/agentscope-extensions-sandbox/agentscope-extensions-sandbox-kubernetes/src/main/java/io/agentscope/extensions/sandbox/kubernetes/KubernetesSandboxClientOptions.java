@@ -19,6 +19,7 @@ import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -36,6 +37,7 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
     private Map<String, String> podLabels = new HashMap<>();
     private String cpuRequest;
     private String memoryRequest;
+    private Map<String, String> environment = new HashMap<>();
 
     @Override
     public String getType() {
@@ -137,5 +139,13 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
 
     public void setMemoryRequest(String memoryRequest) {
         this.memoryRequest = memoryRequest;
+    }
+
+    public Map<String, String> getEnvironment() {
+        return Collections.unmodifiableMap(environment);
+    }
+
+    public void setEnvironment(Map<String, String> environment) {
+        this.environment = environment != null ? new HashMap<>(environment) : new HashMap<>();
     }
 }

@@ -22,6 +22,8 @@ import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.layout.BindMountEntry;
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
+import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.EnvVarBuilder;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.PodSpecBuilder;
@@ -208,6 +210,20 @@ public class Fabric8KubernetesPodRuntime {
                         .withImage(state.getImage())
                         .withCommand("sh", "-c")
                         .withArgs("while true; do sleep 3600; done");
+
+        Map<String, String> env = templateOptions.getEnvironment();
+        if (!env.isEmpty()) {
+            List<EnvVar> envVars =
+                    env.entrySet().stream()
+                            .map(
+                                    e ->
+                                            new EnvVarBuilder()
+                                                    .withName(e.getKey())
+                                                    .withValue(e.getValue())
+                                                    .build())
+                            .toList();
+            cb.addAllToEnv(envVars);
+        }
 
         if (templateOptions.getCpuRequest() != null || templateOptions.getMemoryRequest() != null) {
             ResourceRequirementsBuilder rb = new ResourceRequirementsBuilder();

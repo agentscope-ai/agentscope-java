@@ -87,6 +87,11 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    public KubernetesFilesystemSpec environment(Map<String, String> environment) {
+        options.setEnvironment(environment);
+        return this;
+    }
+
     public KubernetesFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;
