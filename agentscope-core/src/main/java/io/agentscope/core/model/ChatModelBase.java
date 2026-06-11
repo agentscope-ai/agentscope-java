@@ -42,9 +42,15 @@ public abstract class ChatModelBase implements Model {
     @Override
     public final Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        GenerateOptions effectiveOptions =
+                options != null ? options : GenerateOptions.builder().build();
         return TracerRegistry.get()
                 .callModel(
-                        this, messages, tools, options, () -> doStream(messages, tools, options));
+                        this,
+                        messages,
+                        tools,
+                        effectiveOptions,
+                        () -> doStream(messages, tools, effectiveOptions));
     }
 
     /**
