@@ -15,9 +15,12 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.time.Duration;
@@ -30,17 +33,34 @@ import org.junit.jupiter.api.Test;
  */
 class MemoryFlushMiddlewareTriggerTest {
 
+    private static final RuntimeContext RC_ANON = RuntimeContext.empty();
+    private static final RuntimeContext RC_USER_A =
+            RuntimeContext.builder().userId("userA").build();
+    private static final RuntimeContext RC_USER_B =
+            RuntimeContext.builder().userId("userB").build();
+    private static final RuntimeContext RC_SESSION_1 =
+            RuntimeContext.builder().userId("userA").sessionId("session1").build();
+    private static final RuntimeContext RC_SESSION_2 =
+            RuntimeContext.builder().userId("userA").sessionId("session2").build();
+
+    /** Creates a USER-scope (default) middleware for trigger-gate tests. */
     private static MemoryFlushMiddleware make(MemoryConfig.FlushTrigger trigger) {
-        // workspaceManager + model are only consumed inside doFlush, which we don't call here
+        return make(trigger, IsolationScope.USER);
+    }
+
+    /** workspaceManager + model are only consumed inside doFlush, which we don't call here. */
+    private static MemoryFlushMiddleware make(
+            MemoryConfig.FlushTrigger trigger, IsolationScope scope) {
         return new MemoryFlushMiddleware(
-                null, null, MemoryFlushManager.DEFAULT_FLUSH_PROMPT, trigger);
+                null, null, MemoryFlushManager.DEFAULT_FLUSH_PROMPT, trigger, scope);
     }
 
     @Test
     void alwaysMode_returnsTrueOnEveryCall() {
         MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.always());
         for (int i = 0; i < 5; i++) {
-            assertTrue(mw.shouldFlushNow(), "ALWAYS should always return true (i=" + i + ")");
+            assertTrue(
+                    mw.shouldFlushNow(RC_ANON), "ALWAYS should always return true (i=" + i + ")");
         }
     }
 
@@ -48,7 +68,8 @@ class MemoryFlushMiddlewareTriggerTest {
     void neverMode_returnsFalseOnEveryCall() {
         MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.never());
         for (int i = 0; i < 5; i++) {
-            assertFalse(mw.shouldFlushNow(), "NEVER should always return false (i=" + i + ")");
+            assertFalse(
+                    mw.shouldFlushNow(RC_ANON), "NEVER should always return false (i=" + i + ")");
         }
     }
 
@@ -57,9 +78,9 @@ class MemoryFlushMiddlewareTriggerTest {
         // 1-hour gap — way larger than the test runtime, so only the first call should pass.
         MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.throttled(Duration.ofHours(1)));
 
-        assertTrue(mw.shouldFlushNow(), "first call must win the slot");
-        assertFalse(mw.shouldFlushNow(), "second call within the window must be throttled");
-        assertFalse(mw.shouldFlushNow(), "third call within the window must be throttled");
+        assertTrue(mw.shouldFlushNow(RC_ANON), "first call must win the slot");
+        assertFalse(mw.shouldFlushNow(RC_ANON), "second call within the window must be throttled");
+        assertFalse(mw.shouldFlushNow(RC_ANON), "third call within the window must be throttled");
     }
 
     @Test
@@ -67,14 +88,15 @@ class MemoryFlushMiddlewareTriggerTest {
         Duration gap = Duration.ofMillis(50);
         MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.throttled(gap));
 
-        assertTrue(mw.shouldFlushNow(), "first call wins");
-        assertFalse(mw.shouldFlushNow(), "immediate retry is throttled");
+        assertTrue(mw.shouldFlushNow(RC_ANON), "first call wins");
+        assertFalse(mw.shouldFlushNow(RC_ANON), "immediate retry is throttled");
 
         // Sleep just over the gap so the next call can re-acquire.
         Thread.sleep(gap.toMillis() * 3);
 
-        assertTrue(mw.shouldFlushNow(), "after gap, slot is free again");
-        assertFalse(mw.shouldFlushNow(), "immediate retry after the new winner is throttled");
+        assertTrue(mw.shouldFlushNow(RC_ANON), "after gap, slot is free again");
+        assertFalse(
+                mw.shouldFlushNow(RC_ANON), "immediate retry after the new winner is throttled");
     }
 
     @Test
@@ -83,7 +105,107 @@ class MemoryFlushMiddlewareTriggerTest {
         // behaves accordingly even when callers pass the zero-Duration form.
         MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.throttled(Duration.ZERO));
         for (int i = 0; i < 3; i++) {
-            assertTrue(mw.shouldFlushNow(), "zero-gap throttling must behave like ALWAYS");
+            assertTrue(mw.shouldFlushNow(RC_ANON), "zero-gap throttling must behave like ALWAYS");
         }
+    }
+
+    @Test
+    void throttledMode_perUserIsolation_userBNotBlockedByUserA() {
+        // 1-hour gap. User A wins the slot. User B must still get their own independent slot
+        // on the same shared middleware instance (shared agent multi-tenant scenario).
+        MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.throttled(Duration.ofHours(1)));
+
+        assertTrue(mw.shouldFlushNow(RC_USER_A), "user A wins their slot");
+        assertFalse(mw.shouldFlushNow(RC_USER_A), "user A is now throttled");
+
+        assertTrue(
+                mw.shouldFlushNow(RC_USER_B),
+                "user B must win their own independent slot even though user A already flushed");
+        assertFalse(mw.shouldFlushNow(RC_USER_B), "user B is now throttled in their own window");
+    }
+
+    @Test
+    void throttledMode_anonymousCallersShareOneSlot() {
+        // Callers without a userId are treated as a single anonymous tenant and share one slot.
+        MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.throttled(Duration.ofHours(1)));
+
+        assertTrue(mw.shouldFlushNow(RC_ANON), "first anonymous call wins");
+        assertFalse(mw.shouldFlushNow(RC_ANON), "second anonymous call is throttled");
+        assertFalse(mw.shouldFlushNow(null), "null rc also maps to anonymous slot");
+    }
+
+    // ── IsolationScope.SESSION ────────────────────────────────────────────────
+
+    @Test
+    void sessionScope_timerKeyUsesSessionId() {
+        MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.always(), IsolationScope.SESSION);
+        assertEquals("session1", mw.timerKeyFor(RC_SESSION_1));
+        assertEquals("session2", mw.timerKeyFor(RC_SESSION_2));
+        assertEquals("", mw.timerKeyFor(RC_ANON), "no sessionId → empty key");
+    }
+
+    @Test
+    void sessionScope_sameUserDifferentSessionsAreIndependent() {
+        // SESSION scope: same userId but different sessionIds → each session has its own throttle.
+        MemoryFlushMiddleware mw =
+                make(
+                        MemoryConfig.FlushTrigger.throttled(Duration.ofHours(1)),
+                        IsolationScope.SESSION);
+
+        assertTrue(mw.shouldFlushNow(RC_SESSION_1), "session1 wins its slot");
+        assertFalse(mw.shouldFlushNow(RC_SESSION_1), "session1 is now throttled");
+
+        assertTrue(
+                mw.shouldFlushNow(RC_SESSION_2),
+                "session2 must win its own independent slot even though session1 already flushed");
+        assertFalse(mw.shouldFlushNow(RC_SESSION_2), "session2 is now throttled");
+    }
+
+    // ── IsolationScope.AGENT / GLOBAL ────────────────────────────────────────
+
+    @Test
+    void agentScope_timerKeyIsConstant() {
+        MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.always(), IsolationScope.AGENT);
+        assertEquals("", mw.timerKeyFor(RC_USER_A), "AGENT scope uses empty key for all callers");
+        assertEquals("", mw.timerKeyFor(RC_USER_B));
+        assertEquals("", mw.timerKeyFor(RC_ANON));
+    }
+
+    @Test
+    void agentScope_allCallersShareOneThrottleSlot() {
+        // AGENT scope: memory is shared across all users → all callers must share one throttle
+        // window to avoid concurrent maintenance races on shared MEMORY.md.
+        MemoryFlushMiddleware mw =
+                make(
+                        MemoryConfig.FlushTrigger.throttled(Duration.ofHours(1)),
+                        IsolationScope.AGENT);
+
+        assertTrue(mw.shouldFlushNow(RC_USER_A), "userA wins the shared slot");
+        assertFalse(mw.shouldFlushNow(RC_USER_A), "userA is throttled");
+        assertFalse(
+                mw.shouldFlushNow(RC_USER_B),
+                "userB must also be blocked because they share the same memory namespace");
+    }
+
+    @Test
+    void globalScope_allCallersShareOneThrottleSlot() {
+        MemoryFlushMiddleware mw =
+                make(
+                        MemoryConfig.FlushTrigger.throttled(Duration.ofHours(1)),
+                        IsolationScope.GLOBAL);
+
+        assertTrue(mw.shouldFlushNow(RC_USER_A), "first caller wins the global slot");
+        assertFalse(mw.shouldFlushNow(RC_USER_B), "second caller blocked by shared global slot");
+    }
+
+    // ── timerKeyFor edge cases ────────────────────────────────────────────────
+
+    @Test
+    void userScope_timerKeyUsesUserId() {
+        MemoryFlushMiddleware mw = make(MemoryConfig.FlushTrigger.always(), IsolationScope.USER);
+        assertEquals("userA", mw.timerKeyFor(RC_USER_A));
+        assertEquals("userB", mw.timerKeyFor(RC_USER_B));
+        assertEquals("", mw.timerKeyFor(RC_ANON), "no userId → empty key");
+        assertEquals("", mw.timerKeyFor(null), "null rc → empty key");
     }
 }

@@ -83,6 +83,7 @@ import io.agentscope.harness.agent.skill.curator.SkillPromoter;
 import io.agentscope.harness.agent.skill.curator.SkillPromotionGate;
 import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
+import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.FilesystemTool;
@@ -100,6 +101,7 @@ import io.agentscope.harness.agent.tools.ToolsConfig;
 import io.agentscope.harness.agent.tools.ToolsConfigLoader;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -171,6 +173,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     private final DistributedStore distributedStore;
 
+    private final WorkspacePathNormalizer pathNormalizer;
+
     /** Lazily created internal gateway for {@link #channel}. */
     private volatile HarnessGateway internalGateway;
 
@@ -190,7 +194,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SkillAuditLog skillAuditLog,
             MemoryConfig memoryConfig,
             Object subagentMiddleware,
-            DistributedStore distributedStore) {
+            DistributedStore distributedStore,
+            WorkspacePathNormalizer pathNormalizer) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
@@ -208,6 +213,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
         this.subagentMiddleware = subagentMiddleware;
         this.distributedStore = distributedStore;
+        this.pathNormalizer = pathNormalizer;
     }
 
     /** Returns the workspace manager bound to this agent, or {@code null} if not configured. */
@@ -804,17 +810,29 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 ctx.get(SandboxContext.class) != null
                         ? ctx.get(SandboxContext.class)
                         : defaultSandboxContext;
+        AbstractFilesystem fs = workspaceManager != null ? workspaceManager.getFilesystem() : null;
 
         if (ctxSessionId.equals(ctx.getSessionId())
-                && sandboxCtx == ctx.get(SandboxContext.class)) {
+                && sandboxCtx == ctx.get(SandboxContext.class)
+                && (fs == null || fs == ctx.get(AbstractFilesystem.class))) {
             return ctx;
         }
-        return RuntimeContext.builder()
-                .sessionId(ctxSessionId)
-                .userId(ctx.getUserId())
-                .putAll(ctx.getExtra())
-                .put(SandboxContext.class, sandboxCtx)
-                .build();
+        RuntimeContext.Builder b =
+                RuntimeContext.builder()
+                        .sessionId(ctxSessionId)
+                        .userId(ctx.getUserId())
+                        .putAll(ctx.getExtra())
+                        .put(SandboxContext.class, sandboxCtx);
+        if (fs != null) {
+            b.put(AbstractFilesystem.class, fs);
+        }
+        if (workspaceManager != null) {
+            b.put(WorkspaceManager.class, workspaceManager);
+        }
+        if (pathNormalizer != null) {
+            b.put(WorkspacePathNormalizer.class, pathNormalizer);
+        }
+        return b.build();
     }
 
     private Mono<Msg> recoverFromOverflow(List<Msg> msgs, RuntimeContext effective) {
@@ -1906,6 +1924,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
+                IsolationScope effectiveIsolationScope = IsolationScope.USER;
+                if (remoteFilesystemSpec != null
+                        && remoteFilesystemSpec.getIsolationScope() != null) {
+                    effectiveIsolationScope = remoteFilesystemSpec.getIsolationScope();
+                } else if (sandboxFilesystemSpec != null
+                        && sandboxFilesystemSpec.getIsolationScope() != null) {
+                    effectiveIsolationScope = sandboxFilesystemSpec.getIsolationScope();
+                }
+
                 String effectiveFlushPrompt =
                         memoryConfig.flushPrompt() != null
                                 ? memoryConfig.flushPrompt()
@@ -1915,7 +1942,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 wsManager,
                                 memoryModel,
                                 effectiveFlushPrompt,
-                                memoryConfig.flushTrigger()));
+                                memoryConfig.flushTrigger(),
+                                effectiveIsolationScope));
 
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null
@@ -1933,7 +1961,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 consolidator,
                                 memoryConfig.dailyFileRetentionDays(),
                                 memoryConfig.sessionRetentionDays(),
-                                memoryConfig.consolidationMinGap()));
+                                memoryConfig.consolidationMinGap(),
+                                effectiveIsolationScope));
             }
             CompactionMiddleware compactionHook = null;
             if (compactionConfig != null) {
@@ -1982,8 +2011,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 agentToolkit.registerTool(new MemoryGetTool(wsManager));
                 agentToolkit.registerTool(new SessionSearchTool(wsManager));
             }
+            WorkspacePathNormalizer pathNormalizer;
+            if (filesystem instanceof AbstractSandboxFilesystem) {
+                pathNormalizer =
+                        WorkspacePathNormalizer.of(ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
+            } else {
+                pathNormalizer =
+                        WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
+            }
             if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem));
+                agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
             }
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
@@ -2208,7 +2245,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pendingSkillAuditLog,
                     memoryConfig,
                     capturedSubagentMw,
-                    distributedStore);
+                    distributedStore,
+                    pathNormalizer);
         }
     }
 }
