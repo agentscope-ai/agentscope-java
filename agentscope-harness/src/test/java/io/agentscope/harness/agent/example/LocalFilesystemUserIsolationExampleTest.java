@@ -126,7 +126,7 @@ class LocalFilesystemUserIsolationExampleTest {
         // Write files as alice
         agent.call(userMsg("hi"), ctx("s1", "alice")).block();
         AbstractFilesystem fs = agent.getWorkspaceManager().getFilesystem();
-        RuntimeContext rt = RuntimeContext.empty();
+        RuntimeContext rt = RuntimeContext.builder().userId("alice").build();
 
         fs.uploadFiles(
                 rt,
