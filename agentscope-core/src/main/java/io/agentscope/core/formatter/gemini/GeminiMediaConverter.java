@@ -128,7 +128,9 @@ public class GeminiMediaConverter {
     /**
      * Read a file from URL/path as byte array.
      *
-     * <p>Supports both remote URLs (http://, https://) and local file paths.
+     * <p>Supports both remote URLs (http://, https://) and local file paths. Query string
+     * and fragment are stripped from local file paths so that paths like {@code
+     * /tmp/cat.png?token=abc} resolve to the actual file on disk.
      *
      * @param url File URL or path
      * @return File content as byte array
@@ -146,13 +148,30 @@ public class GeminiMediaConverter {
                 throw new IOException("Failed to download remote file: " + url, e);
             }
         } else {
-            // Local file path
-            Path path = Paths.get(url);
+            // Local file path — strip query string / fragment before resolving
+            String localPath = stripQueryAndFragment(url);
+            Path path = Paths.get(localPath);
             if (!Files.exists(path)) {
                 throw new IOException("File not found: " + url);
             }
             return Files.readAllBytes(path);
         }
+    }
+
+    /**
+     * Strips query string ({@code ?...}) and fragment ({@code #...}) from a URL/path string.
+     */
+    private static String stripQueryAndFragment(String url) {
+        String path = url;
+        int fragmentIndex = path.indexOf('#');
+        if (fragmentIndex >= 0) {
+            path = path.substring(0, fragmentIndex);
+        }
+        int queryIndex = path.indexOf('?');
+        if (queryIndex >= 0) {
+            path = path.substring(0, queryIndex);
+        }
+        return path;
     }
 
     /**
@@ -186,14 +205,19 @@ public class GeminiMediaConverter {
     /**
      * Extract file extension from URL or path.
      *
+     * <p>Strips query string ({@code ?...}) and fragment ({@code #...}) before extracting
+     * the extension so that URLs like {@code http://example.com/cat.png?token=abc} produce
+     * {@code png} rather than {@code png?token=abc}.
+     *
      * @param url File URL or path
      * @return File extension in lowercase (without dot)
      */
     private String extractExtension(String url) {
-        int lastDotIndex = url.lastIndexOf('.');
-        if (lastDotIndex == -1 || lastDotIndex == url.length() - 1) {
+        String path = stripQueryAndFragment(url);
+        int lastDotIndex = path.lastIndexOf('.');
+        if (lastDotIndex == -1 || lastDotIndex == path.length() - 1) {
             throw new IllegalArgumentException("Cannot extract file extension from: " + url);
         }
-        return url.substring(lastDotIndex + 1).toLowerCase();
+        return path.substring(lastDotIndex + 1).toLowerCase();
     }
 }
