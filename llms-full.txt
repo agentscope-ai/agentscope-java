@@ -17078,6 +17078,8 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 
 **Keep `SKILL.md` lean.** Aim for ≤ 2k tokens; put reference material under `references/`, scripts under `scripts/`. The agent reads them on demand.
 
+**Use relative paths in SKILL.md and scripts.** Due to the multi-layer isolation of the abstract filesystem, always reference resources and scripts using paths relative to SKILL.md (e.g. `scripts/run.py`, `references/guide.md`). **Do not** hard-code absolute paths like `/workspace/scripts/run.py`. The framework automatically generates the correct `<files-root>` absolute path prefix for each skill based on the active filesystem mode, and the agent uses `<files-root>` to construct full paths at shell-execution time. Hard-coded absolute paths make a skill work only under a specific filesystem mode.
+
 **General capability in marketplaces, project-specific in the workspace.** Code review, table analysis → team Git for shared maintenance. Internal RPC conventions, project naming rules → `workspace/skills/` so they version with the code.
 
 **Per-user dirs are for "override + augment", not primary storage.** Keep critical skills visible to every user.
@@ -17860,6 +17862,31 @@ description: "Per-version change records for AgentScope Java"
 ---
 
 This page tracks per-version changes for AgentScope Java 2.0. For the overall migration guide from 1.x, see the [V1 Migration Guide](../change-log.md).
+
+---
+
+## 2.0.0-RC3
+
+> Released: 2026-06-11
+
+### Added
+
+- **`AgentResultEvent`** — new event type emitted when an agent finishes processing, immediately before `AgentEndEvent`, carrying the final `Msg` result. Consumers of `streamEvents()` can obtain the result directly from the event stream without separately subscribing to the `Mono<Msg>` return value
+- **`CustomEvent`** — generic extensible event for middleware to push application-level notifications (state changes, team updates, etc.) to front-end subscribers without adding per-use-case `AgentEventType` entries. Built-in well-known names: `state_updated`, `team_updated`
+- **`HintBlockEvent`** — one-shot hint block event for delivering complete content such as team messages, background tool results, and user interruptions, as opposed to streamed text/thinking blocks
+- **`WorkspacePathNormalizer`** — file path normalization utility that converts absolute paths to workspace-relative form. Registers prefixes based on the active filesystem mode (local / sandbox) to prevent cross-mode prefix collisions
+- **`toolCallName` on tool events** — `ToolCallDeltaEvent`, `ToolCallEndEvent`, `ToolResultDataDeltaEvent`, `ToolResultEndEvent`, and `ToolResultTextDeltaEvent` now carry a `toolCallName` field, so consumers no longer need to cache the name mapping from the start event
+
+### Changed
+
+- **Unified `call()` / `streamEvents()` core** — introduced an internal `buildAgentStream` method as the shared implementation for both `call()` and `streamEvents()`, ensuring the `onAgent` middleware chain fires consistently on all invocation paths. `call()` now extracts the result from `AgentResultEvent` in the event stream; the legacy standalone `agentImpl` logic has been removed
+- **Session state always reloaded from store in distributed deployments** — when an `AgentStateStore` is configured, `activateSlotForContext` now reloads the agent state and permission engine from the store at the start of every call, preventing stale local cache reads when the same sessionId drifts across machines
+- **`ToolResultEvictionMiddleware` timing fix** — moved from `onActing` (where state had not yet been written, making eviction a no-op) to `onReasoning`, ensuring tool results are persisted before eviction runs
+- **Simplified `LocalFilesystem` path resolution** — refactored path resolution logic to reduce redundant code
+
+### Fixed
+
+- Fixed `RuntimeContext` not setting `userId` in tests, causing inaccurate user isolation
 
 ---
 
@@ -27209,6 +27236,8 @@ execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-check
 
 **`SKILL.md` 保持精简。** 控制在 2k tokens 上下，详细参考资料放 `references/`，脚本放 `scripts/`。agent 需要时会自己读。
 
+**SKILL.md 和脚本中只使用相对路径。** 由于抽象文件系统多层隔离的特殊性，SKILL.md 中引用资源和脚本时请使用相对于 SKILL.md 的路径（如 `scripts/run.py`、`references/guide.md`），**不要**硬编码绝对路径（如 `/workspace/scripts/run.py`）。框架会根据当前文件系统模式自动为每个 skill 生成正确的 `<files-root>` 绝对路径前缀，agent 在 shell 执行时会用 `<files-root>` 拼出完整路径。硬编码绝对路径会导致 skill 只能在特定文件系统模式下工作。
+
 **通用能力放市场，项目特有的写工作区。** 代码评审、表格分析这种放团队 Git 上集中维护；公司内部 RPC 规范、本项目的命名约定写到 `workspace/skills/` 里跟着代码版本走。
 
 **用户目录用来"覆盖+补充"，不要拿来当主存放。** 关键能力请放在所有用户都能看到的层。
@@ -27991,6 +28020,31 @@ description: "AgentScope Java 各版本变更记录"
 ---
 
 本页记录 AgentScope Java 2.0 各版本的具体变更。从 1.x 升级的整体迁移指南请见 [V1 迁移指南](../change-log.md)。
+
+---
+
+## 2.0.0-RC3
+
+> 发布日期：2026-06-11
+
+### 新增
+
+- **`AgentResultEvent`** —— 新增事件类型，在 agent 调用完成后、`AgentEndEvent` 之前发出，携带最终 `Msg` 结果。`streamEvents()` 的消费方可直接从事件流中获取最终结果，无需额外订阅 `Mono<Msg>` 返回值
+- **`CustomEvent`** —— 通用可扩展事件，用于中间件向前端推送应用级通知（状态变更、团队变更等），无需为每种业务场景新增 `AgentEventType`。内置 well-known name：`state_updated`、`team_updated`
+- **`HintBlockEvent`** —— 一次性 hint block 事件，用于传递团队消息、后台工具结果、用户中断等完整内容，区别于需要流式拼接的 text/thinking block
+- **`WorkspacePathNormalizer`** —— 文件路径归一化工具，将绝对路径转换为 workspace 相对路径。根据当前文件系统模式（本地 / 沙箱）注册前缀，避免跨模式误匹配
+- **工具事件携带 `toolCallName`** —— `ToolCallDeltaEvent`、`ToolCallEndEvent`、`ToolResultDataDeltaEvent`、`ToolResultEndEvent`、`ToolResultTextDeltaEvent` 均新增 `toolCallName` 字段，消费端不再需要缓存 start 事件的名称映射
+
+### 变更
+
+- **`call()` 与 `streamEvents()` 共享执行核心** —— 新增内部 `buildAgentStream` 方法作为 `call()` 和 `streamEvents()` 的统一实现，确保 `onAgent` middleware 链在所有调用路径上一致触发。`call()` 从事件流中提取 `AgentResultEvent` 获得结果，移除了旧的独立 `agentImpl` 逻辑
+- **分布式部署下 session 状态始终从 store 加载** —— `activateSlotForContext` 在配置了 `AgentStateStore` 时，每次调用开头从 store 重新加载状态和权限引擎，避免分布式环境中同一 sessionId 漂移到不同机器时读到过期本地缓存
+- **`ToolResultEvictionMiddleware` 时机修正** —— 从 `onActing`（此时状态尚未写入，导致空操作）迁移到 `onReasoning`，确保工具结果已持久化后再执行淘汰
+- **`LocalFilesystem` 路径解析简化** —— 重构路径解析逻辑，减少冗余代码
+
+### 修复
+
+- 修复 `RuntimeContext` 在测试中未设置 `userId` 导致用户隔离不准确的问题
 
 ---
 

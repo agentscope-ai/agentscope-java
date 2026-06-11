@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Plan Mode" href="plan-mode.html"><link rel="prev" title="Subagent" href="subagent.html">
+    <meta property="article:modified_time" content="2026-06-11T02:29:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Plan Mode" href="plan-mode.html"><link rel="prev" title="Subagent" href="subagent.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/skill.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1376,6 +1376,7 @@ Steps:
 <h2>Tips<a class="headerlink" href="#tips" title="Link to this heading">¶</a></h2>
 <p><strong><code class="docutils literal notranslate"><span class="pre">description</span></code> decides whether the agent uses your skill.</strong> The agent only sees name + description initially and decides whether to load details. “Data-analysis tool” is much less useful than “Use when the user asks for stats, reports, or trend charts”.</p>
 <p><strong>Keep <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> lean.</strong> Aim for ≤ 2k tokens; put reference material under <code class="docutils literal notranslate"><span class="pre">references/</span></code>, scripts under <code class="docutils literal notranslate"><span class="pre">scripts/</span></code>. The agent reads them on demand.</p>
+<p><strong>Use relative paths in SKILL.md and scripts.</strong> Due to the multi-layer isolation of the abstract filesystem, always reference resources and scripts using paths relative to SKILL.md (e.g. <code class="docutils literal notranslate"><span class="pre">scripts/run.py</span></code>, <code class="docutils literal notranslate"><span class="pre">references/guide.md</span></code>). <strong>Do not</strong> hard-code absolute paths like <code class="docutils literal notranslate"><span class="pre">/workspace/scripts/run.py</span></code>. The framework automatically generates the correct <code class="docutils literal notranslate"><span class="pre">&lt;files-root&gt;</span></code> absolute path prefix for each skill based on the active filesystem mode, and the agent uses <code class="docutils literal notranslate"><span class="pre">&lt;files-root&gt;</span></code> to construct full paths at shell-execution time. Hard-coded absolute paths make a skill work only under a specific filesystem mode.</p>
 <p><strong>General capability in marketplaces, project-specific in the workspace.</strong> Code review, table analysis → team Git for shared maintenance. Internal RPC conventions, project naming rules → <code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> so they version with the code.</p>
 <p><strong>Per-user dirs are for “override + augment”, not primary storage.</strong> Keep critical skills visible to every user.</p>
 <p><strong>Enable self-learning in order</strong>: no point running curator before anyone writes new skills. Start with <code class="docutils literal notranslate"><span class="pre">enableSkillManageTool</span></code>, then add the promotion gate, then the curator.</p>
@@ -1443,7 +1444,7 @@ Steps:
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-06-11</div>
           </div>
           <div class="right-details">
             <div class="icons">

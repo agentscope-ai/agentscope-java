@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="计划模式（Plan Mode）" href="plan-mode.html"><link rel="prev" title="子 Agent（Subagent）" href="subagent.html">
+    <meta property="article:modified_time" content="2026-06-11T02:29:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="计划模式（Plan Mode）" href="plan-mode.html"><link rel="prev" title="子 Agent（Subagent）" href="subagent.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/zh/docs/harness/skill.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1376,6 +1376,7 @@ name: code-reviewer
 <h2>一些建议<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h2>
 <p><strong><code class="docutils literal notranslate"><span class="pre">description</span></code> 决定 agent 用不用这个 skill。</strong> agent 一开始只看得到 name 和 description，觉得相关才会 load 详情。写”数据分析工具”远不如写”当用户要算统计、出报表、做趋势图时使用”有效。</p>
 <p><strong><code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> 保持精简。</strong> 控制在 2k tokens 上下，详细参考资料放 <code class="docutils literal notranslate"><span class="pre">references/</span></code>，脚本放 <code class="docutils literal notranslate"><span class="pre">scripts/</span></code>。agent 需要时会自己读。</p>
+<p><strong>SKILL.md 和脚本中只使用相对路径。</strong> 由于抽象文件系统多层隔离的特殊性，SKILL.md 中引用资源和脚本时请使用相对于 SKILL.md 的路径（如 <code class="docutils literal notranslate"><span class="pre">scripts/run.py</span></code>、<code class="docutils literal notranslate"><span class="pre">references/guide.md</span></code>），<strong>不要</strong>硬编码绝对路径（如 <code class="docutils literal notranslate"><span class="pre">/workspace/scripts/run.py</span></code>）。框架会根据当前文件系统模式自动为每个 skill 生成正确的 <code class="docutils literal notranslate"><span class="pre">&lt;files-root&gt;</span></code> 绝对路径前缀，agent 在 shell 执行时会用 <code class="docutils literal notranslate"><span class="pre">&lt;files-root&gt;</span></code> 拼出完整路径。硬编码绝对路径会导致 skill 只能在特定文件系统模式下工作。</p>
 <p><strong>通用能力放市场，项目特有的写工作区。</strong> 代码评审、表格分析这种放团队 Git 上集中维护；公司内部 RPC 规范、本项目的命名约定写到 <code class="docutils literal notranslate"><span class="pre">workspace/skills/</span></code> 里跟着代码版本走。</p>
 <p><strong>用户目录用来”覆盖+补充”，不要拿来当主存放。</strong> 关键能力请放在所有用户都能看到的层。</p>
 <p><strong>自学习按顺序启用</strong>：没人写新 skill 之前开 curator 没意义。先开 <code class="docutils literal notranslate"><span class="pre">enableSkillManageTool</span></code>，再加 promotion gate 让审核流程介入，最后用 curator 处理”老的不再用”。</p>
@@ -1443,7 +1444,7 @@ name: code-reviewer
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-06-11</div>
           </div>
           <div class="right-details">
             <div class="icons">

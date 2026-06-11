@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-06-09T07:40:24+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Going to Production" href="going-to-production.html"><link rel="prev" title="V1 Migration Guide" href="../change-log.html">
+    <meta property="article:modified_time" content="2026-06-11T02:29:51+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Going to Production" href="going-to-production.html"><link rel="prev" title="V1 Migration Guide" href="../change-log.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/others/release-notes.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -907,13 +907,45 @@
 <h1>Release Notes<a class="headerlink" href="#release-notes" title="Link to this heading">¶</a></h1>
 <p>This page tracks per-version changes for AgentScope Java 2.0. For the overall migration guide from 1.x, see the <a class="reference internal" href="../change-log.html"><span class="std std-doc">V1 Migration Guide</span></a>.</p>
 <hr class="docutils" />
+<section id="rc3">
+<h2>2.0.0-RC3<a class="headerlink" href="#rc3" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p>Released: 2026-06-11</p>
+</div></blockquote>
+<section id="added">
+<h3>Added<a class="headerlink" href="#added" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">AgentResultEvent</span></code></strong> — new event type emitted when an agent finishes processing, immediately before <code class="docutils literal notranslate"><span class="pre">AgentEndEvent</span></code>, carrying the final <code class="docutils literal notranslate"><span class="pre">Msg</span></code> result. Consumers of <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> can obtain the result directly from the event stream without separately subscribing to the <code class="docutils literal notranslate"><span class="pre">Mono&lt;Msg&gt;</span></code> return value</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">CustomEvent</span></code></strong> — generic extensible event for middleware to push application-level notifications (state changes, team updates, etc.) to front-end subscribers without adding per-use-case <code class="docutils literal notranslate"><span class="pre">AgentEventType</span></code> entries. Built-in well-known names: <code class="docutils literal notranslate"><span class="pre">state_updated</span></code>, <code class="docutils literal notranslate"><span class="pre">team_updated</span></code></p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">HintBlockEvent</span></code></strong> — one-shot hint block event for delivering complete content such as team messages, background tool results, and user interruptions, as opposed to streamed text/thinking blocks</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">WorkspacePathNormalizer</span></code></strong> — file path normalization utility that converts absolute paths to workspace-relative form. Registers prefixes based on the active filesystem mode (local / sandbox) to prevent cross-mode prefix collisions</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">toolCallName</span></code> on tool events</strong> — <code class="docutils literal notranslate"><span class="pre">ToolCallDeltaEvent</span></code>, <code class="docutils literal notranslate"><span class="pre">ToolCallEndEvent</span></code>, <code class="docutils literal notranslate"><span class="pre">ToolResultDataDeltaEvent</span></code>, <code class="docutils literal notranslate"><span class="pre">ToolResultEndEvent</span></code>, and <code class="docutils literal notranslate"><span class="pre">ToolResultTextDeltaEvent</span></code> now carry a <code class="docutils literal notranslate"><span class="pre">toolCallName</span></code> field, so consumers no longer need to cache the name mapping from the start event</p></li>
+</ul>
+</section>
+<section id="changed">
+<h3>Changed<a class="headerlink" href="#changed" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong>Unified <code class="docutils literal notranslate"><span class="pre">call()</span></code> / <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code> core</strong> — introduced an internal <code class="docutils literal notranslate"><span class="pre">buildAgentStream</span></code> method as the shared implementation for both <code class="docutils literal notranslate"><span class="pre">call()</span></code> and <code class="docutils literal notranslate"><span class="pre">streamEvents()</span></code>, ensuring the <code class="docutils literal notranslate"><span class="pre">onAgent</span></code> middleware chain fires consistently on all invocation paths. <code class="docutils literal notranslate"><span class="pre">call()</span></code> now extracts the result from <code class="docutils literal notranslate"><span class="pre">AgentResultEvent</span></code> in the event stream; the legacy standalone <code class="docutils literal notranslate"><span class="pre">agentImpl</span></code> logic has been removed</p></li>
+<li><p><strong>Session state always reloaded from store in distributed deployments</strong> — when an <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> is configured, <code class="docutils literal notranslate"><span class="pre">activateSlotForContext</span></code> now reloads the agent state and permission engine from the store at the start of every call, preventing stale local cache reads when the same sessionId drifts across machines</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">ToolResultEvictionMiddleware</span></code> timing fix</strong> — moved from <code class="docutils literal notranslate"><span class="pre">onActing</span></code> (where state had not yet been written, making eviction a no-op) to <code class="docutils literal notranslate"><span class="pre">onReasoning</span></code>, ensuring tool results are persisted before eviction runs</p></li>
+<li><p><strong>Simplified <code class="docutils literal notranslate"><span class="pre">LocalFilesystem</span></code> path resolution</strong> — refactored path resolution logic to reduce redundant code</p></li>
+</ul>
+</section>
+<section id="fixed">
+<h3>Fixed<a class="headerlink" href="#fixed" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Fixed <code class="docutils literal notranslate"><span class="pre">RuntimeContext</span></code> not setting <code class="docutils literal notranslate"><span class="pre">userId</span></code> in tests, causing inaccurate user isolation</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
 <section id="rc2">
 <h2>2.0.0-RC2<a class="headerlink" href="#rc2" title="Link to this heading">¶</a></h2>
 <blockquote>
 <div><p>Released: 2026-06-09</p>
 </div></blockquote>
-<section id="added">
-<h3>Added<a class="headerlink" href="#added" title="Link to this heading">¶</a></h3>
+<section id="id1">
+<h3>Added<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">projectWritable</span></code> mode</strong> (<code class="docutils literal notranslate"><span class="pre">LocalFilesystemSpec</span></code>) — when enabled, the agent’s file writes are routed by path: workspace metadata (<code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>, <code class="docutils literal notranslate"><span class="pre">agents/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/</span></code>, etc.) goes to workspace; everything else (code, configs) lands in the project directory. Designed for code-generation agents. See <a class="reference internal" href="../harness/filesystem.html#project-writable-mode-projectwritable"><span class="std std-ref">Filesystem · Project-writable mode</span></a></p></li>
 <li><p><strong>Runtime permission mode switching</strong> — new <code class="docutils literal notranslate"><span class="pre">HarnessAgent.setPermissionMode()</span></code> / <code class="docutils literal notranslate"><span class="pre">getPermissionMode()</span></code> for dynamically adjusting the permission mode per session at runtime</p></li>
@@ -926,8 +958,8 @@
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">DistributedBackend</span></code> unified interface</strong> — new <code class="docutils literal notranslate"><span class="pre">DistributedBackend</span></code> abstraction that consolidates all distributed storage components (<code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">BaseStore</span></code>, <code class="docutils literal notranslate"><span class="pre">SandboxSnapshotSpec</span></code>) into a single configuration point. Built-in implementations include <code class="docutils literal notranslate"><span class="pre">RedisDistributedBackend</span></code>, <code class="docutils literal notranslate"><span class="pre">OssDistributedBackend</span></code>, and <code class="docutils literal notranslate"><span class="pre">MysqlDistributedBackend</span></code>. One call to <code class="docutils literal notranslate"><span class="pre">HarnessAgent.builder().distributedBackend(backend)</span></code> wires up the entire distributed backend — no more separate stateStore, baseStore, and snapshotSpec configuration</p></li>
 </ul>
 </section>
-<section id="changed">
-<h3>Changed<a class="headerlink" href="#changed" title="Link to this heading">¶</a></h3>
+<section id="id2">
+<h3>Changed<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Agent fully stateless</strong> — <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> no longer holds any mutable per-session state; all mutable state is encapsulated in an internal <code class="docutils literal notranslate"><span class="pre">CallExecution</span></code> and propagated via Reactor Context. A single agent instance can safely serve multiple <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code> combinations concurrently</p></li>
 <li><p><strong>Session interface replaced by <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code></strong> — removed <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code>, <code class="docutils literal notranslate"><span class="pre">StatePersistence</span></code>, and related legacy interfaces; unified on <code class="docutils literal notranslate"><span class="pre">AgentStateStore</span></code> (built-in: <code class="docutils literal notranslate"><span class="pre">InMemoryAgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">JsonFileAgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">RedisAgentStateStore</span></code>, <code class="docutils literal notranslate"><span class="pre">MysqlAgentStateStore</span></code>), auto-partitioned by <code class="docutils literal notranslate"><span class="pre">(userId,</span> <span class="pre">sessionId)</span></code></p></li>
@@ -941,8 +973,8 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">AgentState</span></code> serialization format updates</p></li>
 </ul>
 </section>
-<section id="fixed">
-<h3>Fixed<a class="headerlink" href="#fixed" title="Link to this heading">¶</a></h3>
+<section id="id3">
+<h3>Fixed<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Fixed <code class="docutils literal notranslate"><span class="pre">PermissionContextState</span></code> losing state during cross-session restoration</p></li>
 <li><p>Fixed <code class="docutils literal notranslate"><span class="pre">agentscope-all</span></code> missing 4 sandbox extension modules (<code class="docutils literal notranslate"><span class="pre">sandbox-kubernetes</span></code>, <code class="docutils literal notranslate"><span class="pre">sandbox-agentrun</span></code>, <code class="docutils literal notranslate"><span class="pre">sandbox-daytona</span></code>, <code class="docutils literal notranslate"><span class="pre">sandbox-e2b</span></code>)</p></li>
@@ -1018,7 +1050,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-06-09</div>
+              Last updated on 2026-06-11</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1054,10 +1086,16 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Release Notes</a><ul>
-<li><a class="reference internal" href="#rc2">2.0.0-RC2</a><ul>
+<li><a class="reference internal" href="#rc3">2.0.0-RC3</a><ul>
 <li><a class="reference internal" href="#added">Added</a></li>
 <li><a class="reference internal" href="#changed">Changed</a></li>
 <li><a class="reference internal" href="#fixed">Fixed</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#rc2">2.0.0-RC2</a><ul>
+<li><a class="reference internal" href="#id1">Added</a></li>
+<li><a class="reference internal" href="#id2">Changed</a></li>
+<li><a class="reference internal" href="#id3">Fixed</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#rc1">2.0.0-RC1</a></li>
