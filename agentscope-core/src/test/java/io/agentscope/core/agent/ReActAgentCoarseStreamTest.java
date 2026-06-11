@@ -93,7 +93,7 @@ class ReActAgentCoarseStreamTest {
 
     private static final class EchoTool extends ToolBase {
         EchoTool() {
-            super("echo", "echoes input", schema(), true, true, false, null, false, false);
+            super("echo", "echoes input", schema(), true, true, false, null, false, false, null);
         }
 
         private static Map<String, Object> schema() {

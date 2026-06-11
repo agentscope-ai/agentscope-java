@@ -23,6 +23,7 @@ public class ToolResultStartEvent extends AgentEvent {
     private final String replyId;
     private final String toolCallId;
     private final String toolCallName;
+    private final String toolCallTitle;
 
     @JsonCreator
     public ToolResultStartEvent(
@@ -30,17 +31,21 @@ public class ToolResultStartEvent extends AgentEvent {
             @JsonProperty("createdAt") String createdAt,
             @JsonProperty("replyId") String replyId,
             @JsonProperty("toolCallId") String toolCallId,
-            @JsonProperty("toolCallName") String toolCallName) {
+            @JsonProperty("toolCallName") String toolCallName,
+            @JsonProperty("toolCallTitle") String toolCallTitle) {
         super(id, createdAt);
         this.replyId = replyId;
         this.toolCallId = toolCallId;
         this.toolCallName = toolCallName;
+        this.toolCallTitle = toolCallTitle;
     }
 
-    public ToolResultStartEvent(String replyId, String toolCallId, String toolCallName) {
+    public ToolResultStartEvent(
+            String replyId, String toolCallId, String toolCallName, String toolCallTitle) {
         this.replyId = replyId;
         this.toolCallId = toolCallId;
         this.toolCallName = toolCallName;
+        this.toolCallTitle = toolCallTitle;
     }
 
     @Override
@@ -58,5 +63,9 @@ public class ToolResultStartEvent extends AgentEvent {
 
     public String getToolCallName() {
         return toolCallName;
+    }
+
+    public String getToolCallTitle() {
+        return toolCallTitle;
     }
 }

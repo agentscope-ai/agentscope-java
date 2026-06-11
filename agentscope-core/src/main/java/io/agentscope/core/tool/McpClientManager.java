@@ -178,6 +178,7 @@ class McpClientManager {
                                             mcpTool.description() != null
                                                     ? mcpTool.description()
                                                     : "",
+                                            mcpTool.title(),
                                             McpTool.convertMcpSchemaToParameters(
                                                     mcpTool.inputSchema(),
                                                     toolPresetParams != null

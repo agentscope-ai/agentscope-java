@@ -98,6 +98,7 @@ class ToolSchemaProvider {
                     ToolSchema.builder()
                             .name(toolName)
                             .description(tool.getDescription())
+                            .title(tool.getTitle())
                             .parameters(registered.getExtendedParameters())
                             .strict(tool.getStrict())
                             .outputSchema(tool.getOutputSchema())

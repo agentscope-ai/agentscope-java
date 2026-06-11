@@ -68,6 +68,7 @@ public abstract class ToolBase implements AgentTool {
     private final boolean stateInjected;
     private final boolean mcp;
     private final String mcpName;
+    private final String title;
 
     /** Sensitive files; subclasses may replace this list to widen or narrow protection. */
     protected List<String> dangerousFiles = ToolDangerousPathConstants.DEFAULT_DANGEROUS_FILES;
@@ -87,7 +88,8 @@ public abstract class ToolBase implements AgentTool {
                 builder.mcp,
                 builder.mcpName,
                 builder.externalTool,
-                builder.stateInjected);
+                builder.stateInjected,
+                builder.title);
         if (builder.dangerousFiles != null) {
             this.dangerousFiles = List.copyOf(builder.dangerousFiles);
         }
@@ -109,7 +111,8 @@ public abstract class ToolBase implements AgentTool {
             boolean mcp,
             String mcpName,
             boolean externalTool,
-            boolean stateInjected) {
+            boolean stateInjected,
+            String title) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.description = Objects.requireNonNull(description, "description must not be null");
         this.inputSchema = Objects.requireNonNull(inputSchema, "inputSchema must not be null");
@@ -119,6 +122,7 @@ public abstract class ToolBase implements AgentTool {
         this.mcpName = mcpName;
         this.externalTool = externalTool;
         this.stateInjected = stateInjected;
+        this.title = title;
         if (mcp && (mcpName == null || mcpName.isBlank())) {
             throw new IllegalArgumentException("mcpName is required when mcp is true");
         }
@@ -161,6 +165,11 @@ public abstract class ToolBase implements AgentTool {
 
     public final String getMcpName() {
         return mcpName;
+    }
+
+    @Override
+    public final String getTitle() {
+        return title;
     }
 
     /**
@@ -281,6 +290,7 @@ public abstract class ToolBase implements AgentTool {
         private boolean stateInjected = false;
         private boolean mcp = false;
         private String mcpName;
+        private String title;
         private List<String> dangerousFiles;
         private List<String> dangerousDirectories;
 
@@ -325,6 +335,11 @@ public abstract class ToolBase implements AgentTool {
         public Builder mcp(String mcpName) {
             this.mcp = true;
             this.mcpName = mcpName;
+            return this;
+        }
+
+        public Builder title(String title) {
+            this.title = title;
             return this;
         }
 

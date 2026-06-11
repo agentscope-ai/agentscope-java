@@ -68,6 +68,7 @@ public class SchemaOnlyTool extends ToolBase {
         this(
                 Objects.requireNonNull(schema, "schema cannot be null").getName(),
                 schema.getDescription(),
+                schema.getTitle(),
                 schema.getParameters(),
                 schema.getStrict());
     }
@@ -83,7 +84,7 @@ public class SchemaOnlyTool extends ToolBase {
      * @throws NullPointerException if name or description is null
      */
     public SchemaOnlyTool(String name, String description, Map<String, Object> parameters) {
-        this(name, description, parameters, null);
+        this(name, description, null, parameters, null);
     }
 
     /**
@@ -101,11 +102,25 @@ public class SchemaOnlyTool extends ToolBase {
      */
     public SchemaOnlyTool(
             String name, String description, Map<String, Object> parameters, Boolean strict) {
+        this(name, description, null, parameters, strict);
+    }
+
+    /**
+     * Creates a new SchemaOnlyTool with the specified name, description, title, parameters, and
+     * strict mode configuration.
+     */
+    public SchemaOnlyTool(
+            String name,
+            String description,
+            String title,
+            Map<String, Object> parameters,
+            Boolean strict) {
         super(
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
                         .description(
                                 Objects.requireNonNull(description, "description cannot be null"))
+                        .title(title)
                         .inputSchema(
                                 parameters != null
                                         ? Collections.unmodifiableMap(new HashMap<>(parameters))

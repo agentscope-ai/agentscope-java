@@ -50,6 +50,19 @@ public interface AgentTool {
     String getName();
 
     /**
+     * Gets the title of the tool.
+     *
+     * <p> Intended for UI and end-user contexts — optimized to be human-readable and easily
+     * understood, even by those unfamiliar with domain-specific terminology. If not
+     * provided, the name should be used for display.
+     *
+     * @return The tool title (never null)
+     */
+    default String getTitle() {
+        return getName();
+    }
+
+    /**
      * Gets the description of the tool.
      *
      * <p>The description should clearly explain what the tool does, when it should be used, and

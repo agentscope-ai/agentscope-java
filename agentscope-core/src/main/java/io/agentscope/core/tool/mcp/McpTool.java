@@ -60,6 +60,7 @@ public class McpTool extends ToolBase {
     public McpTool(
             String name,
             String description,
+            String title,
             Map<String, Object> parameters,
             Map<String, Object> outputSchema,
             McpClientWrapper clientWrapper,
@@ -70,6 +71,7 @@ public class McpTool extends ToolBase {
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
                         .description(description != null ? description : "")
+                        .title(title)
                         .inputSchema(parameters != null ? parameters : new HashMap<>())
                         .readOnly(readOnly)
                         .concurrencySafe(false)
@@ -80,9 +82,9 @@ public class McpTool extends ToolBase {
     }
 
     /**
-     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
-     *     boolean)} so the MCP server name and read-only hint are propagated. Kept for source
-     *     compatibility with callers that pre-date the {@link ToolBase} integration.
+     * @deprecated Use {@link #McpTool(String, String, String, Map, Map, McpClientWrapper, Map,
+     *     String, boolean)} so the title, MCP server name and read-only hint are propagated. Kept for
+     *     source compatibility with callers that pre-date the {@link ToolBase} integration.
      */
     @Deprecated(since = "2.0.0")
     public McpTool(
@@ -93,6 +95,7 @@ public class McpTool extends ToolBase {
         this(
                 name,
                 description,
+                null,
                 parameters,
                 null,
                 clientWrapper,
@@ -102,8 +105,8 @@ public class McpTool extends ToolBase {
     }
 
     /**
-     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
-     *     boolean)} so the MCP server name and read-only hint are propagated.
+     * @deprecated Use {@link #McpTool(String, String, String, Map, Map, McpClientWrapper, Map,
+     *     String, boolean)} so the title, MCP server name and read-only hint are propagated.
      */
     @Deprecated(since = "2.0.0")
     public McpTool(
@@ -115,6 +118,7 @@ public class McpTool extends ToolBase {
         this(
                 name,
                 description,
+                null,
                 parameters,
                 null,
                 clientWrapper,
@@ -124,8 +128,8 @@ public class McpTool extends ToolBase {
     }
 
     /**
-     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
-     *     boolean)} so the MCP server name and read-only hint are propagated.
+     * @deprecated Use {@link #McpTool(String, String, String, Map, Map, McpClientWrapper, Map,
+     *     String, boolean)} so the title, MCP server name and read-only hint are propagated.
      */
     @Deprecated(since = "2.0.0")
     public McpTool(
@@ -138,6 +142,7 @@ public class McpTool extends ToolBase {
         this(
                 name,
                 description,
+                null,
                 parameters,
                 outputSchema,
                 clientWrapper,
